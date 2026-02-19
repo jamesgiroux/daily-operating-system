@@ -357,6 +357,178 @@ impl ActionDb {
 }
 
 // ---------------------------------------------------------------------------
+// I353 Phase 2: Signal → Hygiene action rules
+// ---------------------------------------------------------------------------
+
+/// Evaluate signal-driven hygiene actions. Called after a signal is emitted.
+/// Unlike propagation rules (which emit new signals), hygiene rules trigger
+/// direct data maintenance operations and log the results.
+pub fn evaluate_hygiene_actions(signal: &SignalEvent, db: &ActionDb) {
+    // Rule 1: person_created → targeted duplicate check
+    if signal.signal_type == "person_created" && signal.entity_type == "person" {
+        if let Some(merge_result) = hygiene_check_person_duplicate(signal, db) {
+            let _ = db.log_hygiene_action(
+                Some(&signal.id),
+                "duplicate_merge",
+                &signal.entity_id,
+                "person",
+                signal.confidence,
+                &merge_result,
+            );
+        }
+    }
+
+    // Rule 2: email with sender name → name resolution
+    if signal.signal_type == "email_received" && signal.entity_type == "person" {
+        if let Some(resolve_result) = hygiene_resolve_person_name(signal, db) {
+            let _ = db.log_hygiene_action(
+                Some(&signal.id),
+                "name_resolved",
+                &signal.entity_id,
+                "person",
+                signal.confidence,
+                &resolve_result,
+            );
+        }
+    }
+
+    // Rule 3: meeting entity resolved → co-attendance linking
+    if signal.signal_type == "entity_resolved" {
+        if let Some(link_result) = hygiene_link_co_attendance(signal, db) {
+            let _ = db.log_hygiene_action(
+                Some(&signal.id),
+                "co_attendance_linked",
+                &signal.entity_id,
+                &signal.entity_type,
+                signal.confidence,
+                &link_result,
+            );
+        }
+    }
+}
+
+/// Check if a newly created person is a duplicate and auto-merge if high confidence.
+fn hygiene_check_person_duplicate(signal: &SignalEvent, db: &ActionDb) -> Option<String> {
+    let person = db.get_person(&signal.entity_id).ok()??;
+    if person.name.is_empty() || person.name.contains('@') {
+        return None;
+    }
+
+    // Search for existing people with similar names
+    let people = db.get_people(None).ok()?;
+    let name_lower = person.name.to_lowercase();
+
+    for other in &people {
+        if other.id == person.id || other.archived {
+            continue;
+        }
+        let other_lower = other.name.to_lowercase();
+        if other_lower == name_lower {
+            // Exact name match — merge the newer into the older
+            let (keep_id, merge_id) = if other.first_seen <= person.first_seen {
+                (&other.id, &person.id)
+            } else {
+                (&person.id, &other.id)
+            };
+            match db.merge_people(keep_id, merge_id) {
+                Ok(_) => {
+                    log::info!(
+                        "I353: auto-merged duplicate person {} into {} (signal: {})",
+                        merge_id, keep_id, signal.id
+                    );
+                    return Some(format!("merged {} into {}", merge_id, keep_id));
+                }
+                Err(e) => {
+                    log::warn!("I353: auto-merge failed for {} → {}: {}", merge_id, keep_id, e);
+                    return Some(format!("merge_failed: {}", e));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve a person's name from email sender display name.
+fn hygiene_resolve_person_name(signal: &SignalEvent, db: &ActionDb) -> Option<String> {
+    let person = db.get_person(&signal.entity_id).ok()??;
+
+    // Only resolve if name looks like an email (no display name yet)
+    if !person.name.contains('@') && person.name.contains(' ') {
+        return None; // Already has a proper name
+    }
+
+    // Try to extract name from the signal value (sender display name)
+    let sender_name = signal.value.as_deref()?;
+    if sender_name.is_empty() || sender_name.contains('@') || !sender_name.contains(' ') {
+        return None;
+    }
+
+    match db.update_person_name(&signal.entity_id, sender_name) {
+        Ok(_) => {
+            log::info!(
+                "I353: resolved person name '{}' → '{}' (signal: {})",
+                person.name, sender_name, signal.id
+            );
+            Some(format!("renamed '{}' → '{}'", person.name, sender_name))
+        }
+        Err(e) => {
+            log::warn!("I353: name resolve failed: {}", e);
+            Some(format!("resolve_failed: {}", e))
+        }
+    }
+}
+
+/// Link meeting attendees via co-attendance when an entity is resolved for a meeting.
+fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<String> {
+    // The signal value should contain the meeting_id
+    let meeting_id = signal.value.as_deref()?;
+
+    // Get meeting attendees
+    let conn = db.conn_ref();
+    let attendees_csv: String = conn
+        .query_row(
+            "SELECT COALESCE(attendees, '') FROM meetings_history WHERE id = ?1",
+            rusqlite::params![meeting_id],
+            |row| row.get(0),
+        )
+        .ok()?;
+
+    if attendees_csv.is_empty() {
+        return None;
+    }
+
+    let attendees: Vec<&str> = attendees_csv.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if attendees.len() < 2 {
+        return None;
+    }
+
+    // Find people from attendee emails and link them to the resolved entity
+    let mut linked = 0;
+    for email in &attendees {
+        if let Ok(Some(person)) = db.get_person_by_email_or_alias(email) {
+            // Link person to the resolved entity if not already linked
+            if let Ok(existing) = db.get_entities_for_person(&person.id) {
+                let already_linked = existing.iter().any(|e| e.id == signal.entity_id);
+                if !already_linked {
+                    let _ = db.link_person_to_entity(&person.id, &signal.entity_id, &signal.entity_type);
+                    linked += 1;
+                }
+            }
+        }
+    }
+
+    if linked > 0 {
+        log::info!(
+            "I353: linked {} attendees to entity {} via co-attendance (signal: {})",
+            linked, signal.entity_id, signal.id
+        );
+        Some(format!("linked {} people", linked))
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
