@@ -15,7 +15,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
-import { X, Building2, FolderKanban } from "lucide-react";
+import { X, Building2, FolderKanban, User } from "lucide-react";
 import { EntityPicker } from "./entity-picker";
 import type { LinkedEntity } from "@/types";
 
@@ -34,11 +34,13 @@ interface MeetingEntityChipsProps {
 const entityColor: Record<string, string> = {
   account: "var(--color-spice-turmeric)",
   project: "var(--color-garden-olive)",
+  person: "var(--color-sky-larkspur)",
 };
 
 const entityBg: Record<string, string> = {
   account: "rgba(201, 162, 39, 0.08)",
   project: "rgba(107, 124, 82, 0.08)",
+  person: "rgba(95, 130, 173, 0.08)",
 };
 
 export function MeetingEntityChips({
@@ -59,7 +61,7 @@ export function MeetingEntityChips({
   }, [linkedEntities]);
 
   const handleAdd = useCallback(
-    async (entityId: string | null, entityName?: string, pickerEntityType?: "account" | "project") => {
+    async (entityId: string | null, entityName?: string, pickerEntityType?: "account" | "project" | "person") => {
       if (!entityId) return;
       try {
         // Optimistic: add chip immediately
@@ -89,7 +91,7 @@ export function MeetingEntityChips({
   );
 
   const handleRemove = useCallback(
-    async (entityId: string, entityName: string, entityType: "account" | "project") => {
+    async (entityId: string, entityName: string, entityType: "account" | "project" | "person") => {
       // Optimistic: remove chip immediately
       setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
 
@@ -130,13 +132,21 @@ export function MeetingEntityChips({
       {localEntities.map((entity) => {
         const color = entityColor[entity.entityType] ?? "var(--color-text-tertiary)";
         const bg = entityBg[entity.entityType] ?? "rgba(30, 37, 48, 0.04)";
-        const Icon = entity.entityType === "project" ? FolderKanban : Building2;
+        const Icon = entity.entityType === "project"
+          ? FolderKanban
+          : entity.entityType === "person"
+            ? User
+            : Building2;
         const linkTo = entity.entityType === "project"
           ? "/projects/$projectId"
-          : "/accounts/$accountId";
+          : entity.entityType === "person"
+            ? "/people/$personId"
+            : "/accounts/$accountId";
         const linkParams = entity.entityType === "project"
           ? { projectId: entity.id }
-          : { accountId: entity.id };
+          : entity.entityType === "person"
+            ? { personId: entity.id }
+            : { accountId: entity.id };
 
         return (
           <span
