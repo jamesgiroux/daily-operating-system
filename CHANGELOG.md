@@ -4,6 +4,19 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.1] - 2026-02-19
+
+User feedback and onboarding polish. First real user session surfaced friction — fixed fast.
+
+### Added
+
+- **I344: Gmail teammate suggestions** — Onboarding "About You" chapter suggests closest teammates from Gmail frequent correspondents (scans `in:sent newer_than:90d`, filters to same domain, returns top 10 by frequency). Clickable chips above manual entry field.
+- **I346: Linear integration (data layer)** — Settings card with API key + test connection, background poller syncing assigned issues and team projects via GraphQL API, SQLite tables (`linear_issues`, `linear_projects`) with migration 024. Consumer side (signal bus integration, meeting prep enrichment) deferred to I306/I326/I332.
+
+### Fixed
+
+- **I345: Onboarding back navigation loses entered state** — AboutYou and PopulateWorkspace form data (name, company, title, domains, focus, colleagues, accounts, projects) lifted to OnboardingFlow parent component. Back navigation no longer unmounts and loses entered data.
+
 ## [0.10.0] - 2026-02-18
 
 The intelligence release. The system that learns from you. Signals compound, corrections teach, events drive action.
