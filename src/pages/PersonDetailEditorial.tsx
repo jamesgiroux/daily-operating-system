@@ -16,6 +16,7 @@ import {
   Network,
   Eye,
   Activity,
+  CheckSquare2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
@@ -44,6 +45,7 @@ import { PersonInsightChapter } from "@/components/person/PersonInsightChapter";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
+import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 
 /* ── Vitals assembly ── */
@@ -106,6 +108,7 @@ function buildChapters(relationship: string) {
     { id: "the-network", label: "The Network", icon: <Network size={18} strokeWidth={1.5} /> },
     { id: "the-landscape", label: "The Landscape", icon: <Eye size={18} strokeWidth={1.5} /> },
     { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
+    { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
   ];
 }
 
@@ -194,6 +197,20 @@ export default function PersonDetailEditorial() {
           recentCaptures: detail.recentCaptures,
           recentEmailSignals: detail.recentEmailSignals,
         }} />
+      </div>
+
+      {/* Chapter 6: The Work */}
+      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+        <TheWork
+          data={detail}
+          intelligence={intelligence}
+          addingAction={person.addingAction}
+          setAddingAction={person.setAddingAction}
+          newActionTitle={person.newActionTitle}
+          setNewActionTitle={person.setNewActionTitle}
+          creatingAction={person.creatingAction}
+          onCreateAction={person.handleCreateAction}
+        />
       </div>
 
       {/* Finis marker */}
