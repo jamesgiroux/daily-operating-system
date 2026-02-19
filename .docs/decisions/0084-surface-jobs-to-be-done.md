@@ -209,6 +209,25 @@ This resolves the D1/D2 rethinks cleanly:
 - The **schedule expansion panel** shows meeting facts (agenda, description, attendees, docs). No intelligence content. Zero overlap with the meeting briefing.
 - The **"Before This Meeting"** items (D6) are owned by the briefing. The card doesn't surface them.
 
+### 5. Entity Detail Editing — Inline, Not Drawers
+
+Entity detail pages are documents you read. Editing should be part of reading, not a separate mode. Pulling the user into a drawer to change a field breaks the editorial flow — the data is already displayed on the page, so edit it there.
+
+**Decision:** Eliminate field-editing drawers. All entity data is edited inline on the page where it's displayed.
+
+**What this means:**
+- **AccountFieldsDrawer** — delete. Name, health, lifecycle, ARR, NPS, renewal date are all displayed in the hero or vitals strip. They become inline-editable there (click to edit, same as StakeholderGallery names and roles).
+- **ProjectFieldsDrawer** — delete. Same pattern. Status, owner, milestone, target date edit inline.
+- **PresetFieldsEditor** — renders inline in the appropriate page section, not in a drawer or sidebar.
+- **TeamManagementDrawer** — exception. Adding team members involves search and create workflows that warrant a modal. But viewing/removing team members should be inline in the StakeholderGallery "Your Team" section.
+
+**Why this aligns:**
+- StakeholderGallery already works this way — inline editable names, roles, engagement badges. It's the model.
+- I343 (inline editing service) is scoped to make this the standard: unified `EditableText`, keyboard navigation between fields, signal emission on every edit.
+- The JTBD for entity detail is "the dossier." You read it, you correct it, you move on. A drawer says "stop reading and go fill out a form." Inline says "this is your data, tap to fix it."
+
+**Implementation note:** This is I343 scope. The drawers that shipped in 0.11.0 (I312) work and don't need to be ripped out today. But as I343 lands, each drawer's fields migrate to inline editing and the drawer is deleted. The direction is clear: no drawers for data that's already visible on the page.
+
 ---
 
 ## Consequences
