@@ -182,6 +182,17 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     };
 
+    // Step 6c: Person intelligence enrichment triggers (I338)
+    {
+        let person_guard = state.db.lock().ok();
+        if let Some(db) = person_guard.as_ref().and_then(|g| g.as_ref()) {
+            let n = queue_person_intelligence(&meeting_contexts, workspace, db, &state.intel_queue);
+            if n > 0 {
+                log::info!("prepare_today: queued {} person intelligence enrichments", n);
+            }
+        }
+    }
+
     // Step 7: File inventory
     let existing_today = inventory_today_files(workspace);
     let inbox_pending = count_inbox_pending(workspace);
@@ -364,6 +375,17 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         }
     };
 
+    // Person intelligence enrichment triggers (I338)
+    {
+        let person_guard = state.db.lock().ok();
+        if let Some(db) = person_guard.as_ref().and_then(|g| g.as_ref()) {
+            let n = queue_person_intelligence(&meeting_contexts, workspace, db, &state.intel_queue);
+            if n > 0 {
+                log::info!("prepare_week: queued {} person intelligence enrichments", n);
+            }
+        }
+    }
+
     let directive = json!({
         "command": "week",
         "generatedAt": now.to_rfc3339(),
@@ -525,6 +547,87 @@ pub fn deliver_week(workspace: &Path) -> Result<(), String> {
     log::info!("deliver_week: wrote {}", md_path.display());
 
     Ok(())
+}
+
+// ============================================================================
+// Person intelligence enrichment (I338)
+// ============================================================================
+
+/// Scan meeting contexts for person entities and trigger intelligence enrichment.
+///
+/// For each unique person entity with confidence >= 0.60:
+/// 1. Write/update `dashboard.json` via `write_person_dashboard_json()`
+/// 2. Check `intelligence.json` freshness (skip if < 2 hours old)
+/// 3. If stale/missing: enqueue for AI enrichment
+///
+/// Returns the number of person entities enqueued.
+fn queue_person_intelligence(
+    meeting_contexts: &[Value],
+    workspace: &Path,
+    db: &crate::db::ActionDb,
+    queue: &crate::intel_queue::IntelligenceQueue,
+) -> usize {
+    let mut seen = HashSet::new();
+    let mut enqueued = 0;
+
+    for ctx in meeting_contexts {
+        let pe = match ctx.get("primary_entity") {
+            Some(pe) => pe,
+            None => continue,
+        };
+
+        let entity_type = pe.get("entity_type").and_then(|v| v.as_str()).unwrap_or("");
+        if entity_type != "person" {
+            continue;
+        }
+
+        let confidence = pe.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        if confidence < 0.60 {
+            continue;
+        }
+
+        let entity_id = match pe.get("entity_id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+
+        if !seen.insert(entity_id.clone()) {
+            continue;
+        }
+
+        // Write/update dashboard.json
+        if let Ok(Some(person)) = db.get_person(&entity_id) {
+            let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
+        }
+
+        // Check intelligence.json freshness
+        let entity_name = pe.get("entity_name").and_then(|v| v.as_str()).unwrap_or(&entity_id);
+        let person_dir = crate::people::person_dir(workspace, entity_name);
+
+        if let Ok(intel) = crate::entity_intel::read_intelligence_json(&person_dir) {
+            if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&intel.enriched_at) {
+                let age_secs = (Utc::now() - ts.with_timezone(&Utc)).num_seconds();
+                if age_secs < 7200 {
+                    log::debug!(
+                        "queue_person_intelligence: skipping {} (enriched {}s ago)",
+                        entity_id,
+                        age_secs,
+                    );
+                    continue;
+                }
+            }
+        }
+
+        queue.enqueue(crate::intel_queue::IntelRequest {
+            entity_id,
+            entity_type: "person".to_string(),
+            priority: crate::intel_queue::IntelPriority::CalendarChange,
+            requested_at: std::time::Instant::now(),
+        });
+        enqueued += 1;
+    }
+
+    enqueued
 }
 
 // ============================================================================
@@ -2621,5 +2724,116 @@ mod tests {
             today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
         };
         assert_eq!(monday, NaiveDate::from_ymd_opt(2026, 2, 9).unwrap());
+    }
+
+    // ── I338: queue_person_intelligence tests ────────────────────────────
+
+    fn test_db() -> crate::db::ActionDb {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("test.db");
+        std::mem::forget(dir);
+        let db = crate::db::ActionDb::open_at(path).expect("open test DB");
+        db.conn_ref()
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable FK");
+        db
+    }
+
+    fn person_meeting_context(entity_id: &str, entity_name: &str, confidence: f64) -> Value {
+        json!({
+            "primary_entity": {
+                "entity_id": entity_id,
+                "entity_type": "person",
+                "entity_name": entity_name,
+                "confidence": confidence,
+            }
+        })
+    }
+
+    #[test]
+    fn test_queue_person_intelligence_from_contexts() {
+        let db = test_db();
+        let queue = crate::intel_queue::IntelligenceQueue::new();
+        let workspace = TempDir::new().unwrap();
+
+        // Insert person into DB so dashboard can be written
+        let person = crate::db::DbPerson {
+            id: "person_bob_example_com".to_string(),
+            email: "bob@example.com".to_string(),
+            name: "Bob Smith".to_string(),
+            organization: None,
+            role: None,
+            relationship: "external".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: None,
+            first_seen: None,
+            meeting_count: 5,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
+        };
+        let _ = db.upsert_person(&person);
+
+        let contexts = vec![
+            person_meeting_context("person_bob_example_com", "Bob Smith", 0.85),
+        ];
+
+        let n = queue_person_intelligence(&contexts, workspace.path(), &db, &queue);
+        assert_eq!(n, 1, "should enqueue 1 person intelligence request");
+        assert_eq!(queue.len(), 1);
+    }
+
+    #[test]
+    fn test_queue_person_intelligence_skips_low_confidence() {
+        let db = test_db();
+        let queue = crate::intel_queue::IntelligenceQueue::new();
+        let workspace = TempDir::new().unwrap();
+
+        let contexts = vec![
+            person_meeting_context("person_low_example_com", "Low Conf", 0.40),
+        ];
+
+        let n = queue_person_intelligence(&contexts, workspace.path(), &db, &queue);
+        assert_eq!(n, 0, "should skip low-confidence person entities");
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn test_queue_person_intelligence_skips_fresh() {
+        let db = test_db();
+        let queue = crate::intel_queue::IntelligenceQueue::new();
+        let workspace = TempDir::new().unwrap();
+
+        // Create a fresh intelligence.json
+        let person_dir = crate::people::person_dir(workspace.path(), "Fresh Person");
+        std::fs::create_dir_all(&person_dir).unwrap();
+        let intel_json = json!({
+            "version": 1,
+            "entityId": "person_fresh_example_com",
+            "entityType": "person",
+            "enrichedAt": Utc::now().to_rfc3339(),
+            "executiveAssessment": "Fresh assessment.",
+        });
+        let intel_str = serde_json::to_string_pretty(&intel_json).unwrap();
+        crate::util::atomic_write_str(&person_dir.join("intelligence.json"), &intel_str).unwrap();
+
+        let contexts = vec![
+            person_meeting_context("person_fresh_example_com", "Fresh Person", 0.90),
+        ];
+
+        let n = queue_person_intelligence(&contexts, workspace.path(), &db, &queue);
+        assert_eq!(n, 0, "should skip freshly-enriched person entities");
+        assert!(queue.is_empty());
     }
 }
