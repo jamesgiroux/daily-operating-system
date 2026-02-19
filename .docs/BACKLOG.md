@@ -69,6 +69,8 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I348** | Email digest — push DailyOS intelligence summaries via scheduled email | P2 | Distribution |
 | **I349** | Settings redesign — kill the control panel, build a connections hub | P1 | UX |
 | **I350** | In-app notifications — release announcements, what's new, system status alerts | P1 | UX / Infra |
+| **I351** | Standardize actions chapter across all entity types (ADR-0084 D5) | P1 | Entity / UX |
+| **I352** | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) | P1 | Entity / Code Quality |
 
 ---
 
@@ -143,10 +145,12 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 | P1 | I315 | Onboarding: role selection replaces entity mode selection |
 | P1 | I316 | Lift parent-child depth constraint (n-level entity nesting) |
 | P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
+| P1 | I351 | Standardize actions chapter across all entity types (ADR-0084 D5) |
+| P1 | I352 | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) |
 | P2 | I198 | Account merge + transcript reassignment |
 | P2 | I199 | Archived account recovery UX (restore + relink) |
 
-**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) stays — it builds on preset metadata fields and benefits from 0.10.0 signal intelligence.
+**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) stays — it builds on preset metadata fields and benefits from 0.10.0 signal intelligence. I351 and I352 land here from the I342 JTBD critique (ADR-0084): actions appear as a main chapter on accounts but are in the appendix on projects and absent on people — standardizing while entity detail is already being reworked for presets avoids re-touching these files in 0.12.1. Similarly, the shared intelligence field update hook and keywords component eliminate copy-paste code across all three entity detail pages during the same rework.
 
 ---
 
@@ -4376,6 +4380,62 @@ Remove the one-level depth restriction on parent-child account hierarchy. Allow 
 3. AccountsPage tree expands/collapses at each level
 4. Existing one-level accounts continue working (no regression)
 5. Internal org teams can nest to reflect real org structure
+
+---
+
+<a name="i351"></a>
+**I351: Standardize actions chapter across all entity types**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / UX
+**Source:** ADR-0084 decision D5 (I342 JTBD critique)
+**Related:** I312 (Preset-driven vitals + entity detail fields)
+
+The I342 audit found that actions appear as a main chapter ("The Work") on accounts, are buried in the appendix on projects, and are absent entirely on people. This inconsistency feels accidental rather than intentional. All three entity types have commitments — accounts have customer deliverables, projects have task items, people have follow-ups and relationship actions.
+
+**What changes:**
+- Projects: promote actions from the appendix to a main chapter (same position as accounts)
+- People: add an actions chapter showing actions linked to this person (either directly or through their associated entities)
+- Use the shared `TheWork` component (or its successor from C1 merge) across all three types
+- Maintain entity-specific content in the chapter: accounts keep "Next Meeting" readiness callout, projects keep milestone-adjacent positioning, people show relationship-relevant actions
+
+**What doesn't change:**
+- Chapter order within each entity type stays type-appropriate (The Work doesn't need to be in the same slot on all three)
+- Entity-specific chapters (Trajectory, Horizon, The Dynamic/Rhythm) remain unique
+
+**Acceptance criteria:**
+1. All three entity types show actions as a main chapter, not appendix
+2. People detail page shows actions linked to that person
+3. Shared component used across all three entity detail pages
+4. No regression on account or project action display
+
+---
+
+<a name="i352"></a>
+**I352: Shared entity detail hooks and components — intelligence field update, keywords**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Code Quality
+**Source:** ADR-0084 decisions C4 and C5 (I342 JTBD critique)
+**Related:** I312 (Preset-driven vitals + entity detail fields)
+
+The I342 audit found two significant code duplications across entity detail pages that should be consolidated while I312 is already reworking entity detail fields.
+
+**C4: Intelligence field update hook**
+All three entity detail pages (account, project, person) copy-paste the same `handleUpdateIntelField` callback (~20 lines each). Same pattern, same logic: take a field key, update the intelligence record, refresh local state.
+
+Extract `useIntelligenceFieldUpdate(entityType, entityId, refreshFn)` hook that returns the update handler.
+
+**C5: Keywords shared component**
+Accounts and projects both implement identical keyword parsing, rendering, and removal logic (~120 lines each). Same parsing of comma-separated strings, same chip rendering with remove buttons, same add-keyword input, same `invoke("update_*_keywords")` call pattern.
+
+Extract shared `EntityKeywords` component (or `MatchingKeywords` per ADR-0083 vocabulary) that takes `entityType`, `entityId`, and `keywords` string.
+
+**Acceptance criteria:**
+1. `useIntelligenceFieldUpdate` hook extracted and used by all three entity detail pages
+2. Shared keywords component extracted and used by accounts and projects
+3. No behavioral change — same functionality, shared implementation
+4. ~180 lines of duplicated code eliminated
 
 ---
 
