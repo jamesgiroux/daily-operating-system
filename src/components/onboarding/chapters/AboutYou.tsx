@@ -6,14 +6,25 @@ import { Input } from "@/components/ui/input";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 
-interface AboutYouProps {
-  onNext: () => void;
-}
-
 interface ColleagueRow {
   _key: number;
   name: string;
   email: string;
+}
+
+export interface AboutYouFormData {
+  name: string;
+  company: string;
+  title: string;
+  domains: string[];
+  focus: string;
+  colleagues: ColleagueRow[];
+}
+
+interface AboutYouProps {
+  formData: AboutYouFormData;
+  onFormChange: (data: AboutYouFormData) => void;
+  onNext: () => void;
 }
 
 /** Editorial form label */
@@ -56,26 +67,40 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 4,
 };
 
-export function AboutYou({ onNext }: AboutYouProps) {
+export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
   const { email } = useGoogleAuth();
 
-  const [name, setName] = useState("");
-  const [company, setCompany] = useState("");
-  const [title, setTitle] = useState("");
-  const [domains, setDomains] = useState<string[]>([]);
+  // Transient UI state stays local
   const [domainInput, setDomainInput] = useState("");
-  const [focus, setFocus] = useState("");
-  const [colleagues, setColleagues] = useState<ColleagueRow[]>([]);
   const [showTeammates, setShowTeammates] = useState(false);
   const [saving, setSaving] = useState(false);
   const nextKey = useRef(0);
+  const [suggestions, setSuggestions] = useState<Array<{ name: string; email: string; messageCount: number }>>([]);
+
+  // Destructure lifted state for convenient access
+  const { name, company, title, domains, focus, colleagues } = formData;
+
+  // Fetch frequent correspondents from Gmail
+  useEffect(() => {
+    if (!email) return;
+    invoke<Array<{ name: string; email: string; messageCount: number }>>(
+      "get_frequent_correspondents",
+      { userEmail: email }
+    )
+      .then((result) => setSuggestions(result))
+      .catch(() => {}); // graceful fallback: hide if fails
+  }, [email]);
+
+  const filteredSuggestions = suggestions.filter(
+    (s) => !formData.colleagues.some((c) => c.email.toLowerCase() === s.email.toLowerCase())
+  );
 
   // Pre-fill first domain from Google email
   useEffect(() => {
     if (email && domains.length === 0) {
       const at = email.indexOf("@");
       if (at !== -1) {
-        setDomains([email.slice(at + 1)]);
+        onFormChange({ ...formData, domains: [email.slice(at + 1)] });
       }
     }
   }, [email]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -83,26 +108,36 @@ export function AboutYou({ onNext }: AboutYouProps) {
   function addDomain() {
     const d = domainInput.trim().toLowerCase();
     if (d && !domains.includes(d)) {
-      setDomains([...domains, d]);
+      onFormChange({ ...formData, domains: [...domains, d] });
       setDomainInput("");
     }
   }
 
   function removeDomain(d: string) {
-    setDomains(domains.filter((x) => x !== d));
+    onFormChange({ ...formData, domains: domains.filter((x) => x !== d) });
   }
 
   function addColleague() {
-    setColleagues((prev) => [...prev, { _key: nextKey.current++, name: "", email: "" }]);
+    const key = nextKey.current++;
+    onFormChange({
+      ...formData,
+      colleagues: [...colleagues, { _key: key, name: "", email: "" }],
+    });
     if (!showTeammates) setShowTeammates(true);
   }
 
   function updateColleague(index: number, next: Partial<ColleagueRow>) {
-    setColleagues((prev) => prev.map((row, i) => (i === index ? { ...row, ...next } : row)));
+    onFormChange({
+      ...formData,
+      colleagues: colleagues.map((row, i) => (i === index ? { ...row, ...next } : row)),
+    });
   }
 
   function removeColleague(index: number) {
-    setColleagues((prev) => prev.filter((_, i) => i !== index));
+    onFormChange({
+      ...formData,
+      colleagues: colleagues.filter((_, i) => i !== index),
+    });
   }
 
   async function handleContinue() {
@@ -158,7 +193,7 @@ export function AboutYou({ onNext }: AboutYouProps) {
             type="text"
             placeholder="e.g. Alex Chen"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
             style={inputStyle}
           />
         </div>
@@ -170,7 +205,7 @@ export function AboutYou({ onNext }: AboutYouProps) {
             type="text"
             placeholder="e.g. Acme Inc."
             value={company}
-            onChange={(e) => setCompany(e.target.value)}
+            onChange={(e) => onFormChange({ ...formData, company: e.target.value })}
             style={inputStyle}
           />
         </div>
@@ -182,7 +217,7 @@ export function AboutYou({ onNext }: AboutYouProps) {
             type="text"
             placeholder="e.g. Customer Success Manager"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => onFormChange({ ...formData, title: e.target.value })}
             style={inputStyle}
           />
         </div>
@@ -268,7 +303,7 @@ export function AboutYou({ onNext }: AboutYouProps) {
             }}
             placeholder="e.g. Driving renewals for Q2, onboarding three new accounts"
             value={focus}
-            onChange={(e) => setFocus(e.target.value)}
+            onChange={(e) => onFormChange({ ...formData, focus: e.target.value })}
           />
           <HelperText>Share what you're focused on. This helps AI tailor your briefings.</HelperText>
         </div>
@@ -309,6 +344,50 @@ export function AboutYou({ onNext }: AboutYouProps) {
 
           {showTeammates && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+              {filteredSuggestions.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                    color: "var(--color-text-tertiary)",
+                    marginBottom: 8,
+                  }}>
+                    Suggested from Gmail
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {filteredSuggestions.map((s) => (
+                      <button
+                        key={s.email}
+                        onClick={() => {
+                          const key = nextKey.current++;
+                          onFormChange({
+                            ...formData,
+                            colleagues: [...formData.colleagues, { _key: key, name: s.name, email: s.email }],
+                          });
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 12,
+                          border: "1px solid var(--color-spice-turmeric)",
+                          borderRadius: 4,
+                          padding: "4px 10px",
+                          background: "none",
+                          cursor: "pointer",
+                          color: "var(--color-text-primary)",
+                        }}
+                      >
+                        <Plus size={12} />
+                        {s.name || s.email}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {colleagues.map((row, idx) => (
                 <div
                   key={row._key}
