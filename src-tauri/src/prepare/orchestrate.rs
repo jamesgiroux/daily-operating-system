@@ -143,6 +143,34 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
+    // Step 4c: Thread position tracking (I318 — "ball in your court")
+    let replies_needed = {
+        let thread_guard = state.db.lock().ok();
+        if let Some(db) = thread_guard.as_ref().and_then(|g| g.as_ref()) {
+            let tracked = track_thread_positions(
+                &email_result.all,
+                &primary_user_domain,
+                db,
+            );
+            log::info!("prepare_today: tracked {} threads, {} awaiting reply", tracked.0, tracked.1);
+            // Fetch threads awaiting reply for the directive
+            db.get_threads_awaiting_reply()
+                .unwrap_or_default()
+                .iter()
+                .map(|(tid, subject, sender, date)| {
+                    json!({
+                        "thread_id": tid,
+                        "subject": subject,
+                        "from": sender,
+                        "date": date,
+                    })
+                })
+                .collect::<Vec<Value>>()
+        } else {
+            Vec::new()
+        }
+    };
+
     // Step 5: Collect actions (workspace markdown + SQLite)
     let db_guard = state.db.lock().ok();
     let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
@@ -242,6 +270,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             "medium_count": email_result.medium_count,
             "low_count": email_result.low_count,
             "sync_error": email_result.sync_error.as_ref().map(EmailSyncFailure::to_json),
+            "repliesNeeded": replies_needed,
         },
         "files": {
             "existing_today": existing_today,
@@ -1047,6 +1076,62 @@ async fn fetch_and_classify_emails(
         low_count,
         sync_error: None,
     }
+}
+
+/// I318: Track thread positions from fetched emails.
+/// Groups emails by thread_id, determines last sender per thread,
+/// and persists to email_threads table.
+/// Returns (total_tracked, awaiting_reply_count).
+fn track_thread_positions(
+    emails: &[Value],
+    user_domain: &str,
+    db: &crate::db::ActionDb,
+) -> (usize, usize) {
+    use std::collections::HashMap;
+
+    // Group emails by thread_id, keeping the most recent per thread
+    let mut threads: HashMap<String, (&Value, String)> = HashMap::new(); // thread_id -> (email, date)
+
+    for email in emails {
+        let thread_id = email.get("thread_id").and_then(|v| v.as_str()).unwrap_or("");
+        if thread_id.is_empty() {
+            continue;
+        }
+        let date = email.get("date").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let entry = threads.entry(thread_id.to_string()).or_insert((email, date.clone()));
+        // Keep the email with the later date (simple string comparison works for RFC dates)
+        if date > entry.1 {
+            *entry = (email, date);
+        }
+    }
+
+    let mut total = 0;
+    let mut awaiting = 0;
+
+    for (thread_id, (email, date)) in &threads {
+        let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("");
+        let from_email = email.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
+        let sender_domain = from_email.split('@').nth(1).unwrap_or("");
+        let user_is_last_sender = !sender_domain.is_empty()
+            && !user_domain.is_empty()
+            && sender_domain.eq_ignore_ascii_case(user_domain);
+
+        if !user_is_last_sender {
+            awaiting += 1;
+        }
+
+        let _ = db.upsert_email_thread(
+            thread_id,
+            subject,
+            from_email,
+            date,
+            1, // message_count from single fetch; will accumulate over time
+            user_is_last_sender,
+        );
+        total += 1;
+    }
+
+    (total, awaiting)
 }
 
 /// Extract customer domains from classified meetings.

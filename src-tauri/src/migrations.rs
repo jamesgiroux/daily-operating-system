@@ -92,6 +92,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 26,
     sql: include_str!("migrations/026_attendee_display_names.sql"),
+}, Migration {
+    version: 27,
+    sql: include_str!("migrations/027_email_threads.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -253,13 +256,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 26,
-            "should apply all migrations including attendee_display_names"
+            applied, 27,
+            "should apply all migrations including email_threads"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 26);
+        assert_eq!(version, 27);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -695,11 +698,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 25, "bootstrap should mark v1, then apply v2 through v26");
+        assert_eq!(applied, 26, "bootstrap should mark v1, then apply v2 through v27");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 26);
+        assert_eq!(version, 27);
 
         // Verify existing data is untouched
         let title: String = conn
