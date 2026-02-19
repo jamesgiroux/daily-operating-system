@@ -4153,6 +4153,67 @@ impl ActionDb {
         Ok(signals)
     }
 
+    // ================================================================
+    // Email thread tracking (I318)
+    // ================================================================
+
+    /// Upsert an email thread position record.
+    pub fn upsert_email_thread(
+        &self,
+        thread_id: &str,
+        subject: &str,
+        last_sender_email: &str,
+        last_message_date: &str,
+        message_count: i32,
+        user_is_last_sender: bool,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO email_threads (thread_id, subject, last_sender_email, last_message_date,
+                    message_count, user_is_last_sender, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
+             ON CONFLICT(thread_id) DO UPDATE SET
+                subject = excluded.subject,
+                last_sender_email = excluded.last_sender_email,
+                last_message_date = excluded.last_message_date,
+                message_count = excluded.message_count,
+                user_is_last_sender = excluded.user_is_last_sender,
+                updated_at = datetime('now')",
+            params![
+                thread_id,
+                subject,
+                last_sender_email,
+                last_message_date,
+                message_count,
+                user_is_last_sender as i32,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get threads awaiting the user's reply (ball in your court).
+    pub fn get_threads_awaiting_reply(&self) -> Result<Vec<(String, String, String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT thread_id, subject, last_sender_email, last_message_date
+             FROM email_threads
+             WHERE user_is_last_sender = 0
+               AND updated_at >= datetime('now', '-7 days')
+             ORDER BY last_message_date DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
     /// Query actions extracted from a transcript for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
