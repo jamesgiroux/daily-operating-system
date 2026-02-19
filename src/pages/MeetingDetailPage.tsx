@@ -24,6 +24,7 @@ import type {
   LinkedEntity,
 } from "@/types";
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
+import { getPrimaryEntityName } from "@/lib/entity-helpers";
 import { CopyButton } from "@/components/ui/copy-button";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 
@@ -680,6 +681,9 @@ export default function MeetingDetailPage() {
               >
                 {data.timeRange}
                 {meetingType && <> &middot; {meetingType}</>}
+                {getPrimaryEntityName(linkedEntities) && (
+                  <> &middot; {getPrimaryEntityName(linkedEntities)}</>
+                )}
               </p>
 
               {/* Entity chips */}

@@ -18,7 +18,7 @@ import { useState, useRef, useLayoutEffect, useCallback } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { stripMarkdown, formatMeetingType } from "@/lib/utils";
-import { getPrimaryEntityName } from "@/lib/entity-helpers";
+import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
@@ -381,7 +381,7 @@ export function BriefingMeetingCard({
         <div className={s.scheduleContent}>
           <span className={s.scheduleTitle}>{meeting.title}</span>
           <div className={s.scheduleSubtitle}>
-            {getPrimaryEntityName(meeting.linkedEntities) ?? formatMeetingType(meeting.type)} &middot; Cancelled
+            {formatEntityByline(meeting.linkedEntities) ?? formatMeetingType(meeting.type)} &middot; Cancelled
           </div>
         </div>
       </div>
@@ -391,7 +391,7 @@ export function BriefingMeetingCard({
   // ── Schedule Row (all non-cancelled states) ──
   const attendeeCount = meeting.prep?.stakeholders?.length;
   const subtitleParts: string[] = [];
-  subtitleParts.push(getPrimaryEntityName(meeting.linkedEntities) ?? formatMeetingType(meeting.type));
+  subtitleParts.push(formatEntityByline(meeting.linkedEntities) ?? formatMeetingType(meeting.type));
   if (attendeeCount && attendeeCount > 0) {
     subtitleParts.push(`${attendeeCount} attendee${attendeeCount !== 1 ? "s" : ""}`);
   }
