@@ -143,6 +143,17 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
+    // Step 4b2: Email cadence monitoring (I319 — anomaly detection)
+    {
+        let cadence_guard = state.db.lock().ok();
+        if let Some(db) = cadence_guard.as_ref().and_then(|g| g.as_ref()) {
+            let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies(db);
+            if !anomalies.is_empty() {
+                log::info!("prepare_today: {} cadence anomalies detected", anomalies.len());
+            }
+        }
+    }
+
     // Step 4c: Thread position tracking (I318 — "ball in your court")
     let replies_needed = {
         let thread_guard = state.db.lock().ok();
