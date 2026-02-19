@@ -35,6 +35,8 @@ pub struct Config {
     #[serde(default)]
     pub clay: crate::clay::ClayConfig,
     #[serde(default)]
+    pub linear: crate::linear::LinearConfig,
+    #[serde(default)]
     pub features: HashMap<String, bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_domain: Option<String>,
@@ -1874,6 +1876,7 @@ mod tests {
             granola: crate::granola::GranolaConfig::default(),
             gravatar: crate::gravatar::GravatarConfig::default(),
             clay: crate::clay::ClayConfig::default(),
+            linear: crate::linear::LinearConfig::default(),
             features: HashMap::new(),
             user_domain: None,
             user_domains: None,

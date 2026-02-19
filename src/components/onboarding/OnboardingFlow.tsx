@@ -23,8 +23,8 @@ import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
 import { Workspace } from "./chapters/Workspace";
 import { GoogleConnect } from "./chapters/GoogleConnect";
 import { ClaudeCode } from "./chapters/ClaudeCode";
-import { AboutYou } from "./chapters/AboutYou";
-import { PopulateWorkspace } from "./chapters/PopulateWorkspace";
+import { AboutYou, type AboutYouFormData } from "./chapters/AboutYou";
+import { PopulateWorkspace, type PopulateFormData } from "./chapters/PopulateWorkspace";
 import { InboxTraining } from "./chapters/InboxTraining";
 import { DashboardTour } from "./chapters/DashboardTour";
 import { MeetingDeepDive } from "./chapters/MeetingDeepDive";
@@ -84,6 +84,20 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [workspacePath, setWorkspacePath] = useState("~/Documents/DailyOS");
   const [quickSetup, setQuickSetup] = useState(false);
   const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
+
+  // I345: Lifted form state to survive chapter navigation
+  const [aboutYouData, setAboutYouData] = useState<AboutYouFormData>({
+    name: "",
+    company: "",
+    title: "",
+    domains: [],
+    focus: "",
+    colleagues: [],
+  });
+  const [populateData, setPopulateData] = useState<PopulateFormData>({
+    accounts: [],
+    projects: [],
+  });
 
   const chapterIndex = CHAPTERS.indexOf(chapter);
 
@@ -185,6 +199,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "about-you" && (
           <AboutYou
+            formData={aboutYouData}
+            onFormChange={setAboutYouData}
             onNext={() => goToChapter("populate")}
           />
         )}
@@ -192,6 +208,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         {chapter === "populate" && (
           <PopulateWorkspace
             entityMode={entityMode}
+            formData={populateData}
+            onFormChange={setPopulateData}
             onNext={() => goToChapter("inbox-training")}
           />
         )}
