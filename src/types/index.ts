@@ -57,7 +57,7 @@ export type OverlayStatus = "enriched" | "cancelled" | "new" | "briefing_only";
 export interface LinkedEntity {
   id: string;
   name: string;
-  entityType: "account" | "project";
+  entityType: "account" | "project" | "person";
 }
 
 export interface Meeting {
