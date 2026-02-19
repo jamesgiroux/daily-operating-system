@@ -67,5 +67,9 @@
       "stakeholder_misalignment"
     ]
   },
-  "briefingEmphasis": "Focus on initiative timelines, blockers, and cross-functional dependencies. Prioritize initiatives approaching ship dates with unresolved blockers or stakeholder misalignment."
+  "briefingEmphasis": "Focus on initiative timelines, blockers, and cross-functional dependencies. Prioritize initiatives approaching ship dates with unresolved blockers or stakeholder misalignment.",
+  "emailPriorityKeywords": [
+    "roadmap", "release", "launch", "blocker", "p0", "p1", "incident", "outage", "feature request",
+    "customer feedback", "beta"
+  ]
 }

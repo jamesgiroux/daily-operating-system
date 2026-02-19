@@ -54,5 +54,6 @@
       "project_blocked"
     ]
   },
-  "briefingEmphasis": "Focus on upcoming deadlines, blocked work, and action items. Keep the briefing concise and action-oriented."
+  "briefingEmphasis": "Focus on upcoming deadlines, blocked work, and action items. Keep the briefing concise and action-oriented.",
+  "emailPriorityKeywords": []
 }

@@ -31,7 +31,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I317** | Meeting-aware email intelligence (structured digest, not excerpts) | P1 | Email / Intelligence |
 | **I318** | Thread position tracking ("ball in your court") | P1 | Email |
 | **I319** | Entity-level email cadence monitoring + anomaly surfacing | P1 | Intelligence |
-| **I320** | Hybrid email classification (semantic upgrade for ambiguous bucket) | P1 | Email |
+| **I320** | Hybrid email classification (semantic + signal-context boosting) | P1 | Email |
 | **I321** | Commitment & action extraction from email | P2 | Email / Data |
 | **I322** | Email briefing narrative (daily briefing integration) | P1 | UX |
 | **I323** | Zero-touch email disposition pipeline | P2 | Email |
@@ -4405,29 +4405,62 @@ I307 builds per-person email response time tracking as a signal source for Thomp
 
 ---
 
-**I320: Hybrid email classification (semantic upgrade for ambiguous bucket)**
+**I320: Hybrid email classification (semantic + signal-context upgrade)**
 
 **Priority:** P1 (0.12.0)
 **Area:** Email
+**Depends on:** I306 (signal bus — provides entity context for boosting)
 
-Upgrade email classification from pure header heuristics to a hybrid model. Keep the deterministic classifier (`email_classify.rs`) for obvious high and low. For the "medium" bucket (~20-40% of total), add Claude-based semantic classification using subject + snippet only.
+Upgrade email classification from pure header heuristics to a hybrid model with two new layers: semantic understanding of content, and signal-context boosting from what the system already knows about the entities involved.
 
-**Why:** The current classifier correctly identifies newsletters (low) and customer/urgent emails (high). The "medium" catch-all contains both genuinely important emails and noise that doesn't quite qualify as newsletter-level. Semantic understanding of subject + snippet resolves this ambiguity.
+**Why:** The current classifier correctly identifies newsletters (low) and customer/urgent emails (high via domain or keyword). But it's context-blind — it doesn't know that Bring a Trailer has a renewal approaching, risks flagged, and active intelligence about the renewal conversation. An email with "order form" + Bring a Trailer should be high priority not because "order form" is a keyword, but because the system already knows BaT's renewal is the most important thing happening right now. The email's importance is contextual, not textual.
 
-**Privacy-preserving:** Only subject + snippet sent to Claude — never full body content. Opt-in setting.
+**Two new classification layers:**
 
-**Implementation:**
-- After deterministic classification, collect "medium" emails
-- Batch send to Claude: subject + snippet + sender context (known account? upcoming meeting?)
+**Layer 1: Signal-context boosting** (entity-aware priority)
+
+After mechanical classification resolves an email to an entity, query active signals for that entity from the signal bus. Use compound signal confidence to boost or demote email priority.
+
+- Classify email mechanically → "medium"
+- Resolve email to entity → Bring a Trailer
+- Query active signals for BaT → `renewal_approaching` (0.9), `engagement_warning` (0.7), `risk_flagged` (0.8)
+- Compound: medium email + high-signal entity = high priority
+- Surface with context: "Renan sent the renewal order form to Bring a Trailer — renewal approaching in 47 days"
+
+Signal types that boost email priority:
+- `renewal_approaching` (I143b) — any email about a renewing account is elevated
+- `engagement_warning` — emails about accounts going quiet are elevated
+- `champion_risk` / `person_departed` — emails involving at-risk stakeholders are elevated
+- `project_health_warning` — emails about struggling projects are elevated
+
+This uses the Bayesian fusion infrastructure (I306) — the email's "medium" classification becomes a weak signal that compounds with existing entity signals to produce a priority decision. Thompson Sampling (I307) learns over time: when users correct the priority of entity-context-boosted emails, the system adjusts how aggressively it boosts for that signal pattern.
+
+**Layer 2: Semantic reclassification** (for the ambiguous bucket)
+
+For emails that remain "medium" after signal-context boosting (~20-40% of total), add Claude-based semantic classification using subject + snippet only.
+
+- After deterministic + signal-context classification, collect remaining "medium" emails
+- Batch send to Claude: subject + snippet + sender context (known account? upcoming meeting? active signals?)
 - Claude reclassifies: `high` (promote), `medium` (keep), `low` (demote)
 - Track reclassification via signal bus — corrections feed back to improve prompts
 
+**Privacy-preserving:** Only subject + snippet sent to Claude — never full body content. Semantic step is opt-in.
+
+**Implementation:**
+- `email_classify.rs`: after mechanical classification, call new `boost_with_entity_context()` that queries signal bus for the resolved entity
+- `boost_with_entity_context()`: returns a priority override when compound signal confidence exceeds threshold (e.g., 0.75)
+- For remaining "medium" emails: batch semantic reclassification via Claude (opt-in)
+- Track all reclassifications as signals — corrections feed Thompson Sampling
+
 **Acceptance criteria:**
-1. Medium-priority emails semantically reclassified using subject + snippet only
-2. Opt-in step in email processing pipeline
-3. At least 20% of medium emails reclassified (promoted or demoted)
-4. No email body content sent to Claude
-5. Disableable in settings (falls back to deterministic-only)
+1. Emails resolved to entities with active high-confidence signals are boosted to high priority
+2. Signal-context boosting runs for every email, not just "medium" — an internally-sent email about a renewing account should be boosted
+3. Medium-priority emails remaining after boost are semantically reclassified using subject + snippet only (opt-in)
+4. At least 20% of medium emails reclassified (promoted or demoted) across both layers
+5. No email body content sent to Claude
+6. Signal-context boosting is automatic (no opt-in — it uses data already in the system)
+7. Semantic reclassification is opt-in, disableable in settings
+8. Thompson Sampling learns from user corrections to boosted/reclassified emails
 
 ---
 

@@ -74,5 +74,9 @@
       "champion_disengaged"
     ]
   },
-  "briefingEmphasis": "Focus on pipeline movement, stalled deals, and upcoming close dates. Prioritize high-value deals approaching deadlines. Flag stage regressions and champion disengagement."
+  "briefingEmphasis": "Focus on pipeline movement, stalled deals, and upcoming close dates. Prioritize high-value deals approaching deadlines. Flag stage regressions and champion disengagement.",
+  "emailPriorityKeywords": [
+    "pipeline", "forecast", "quota", "commission", "deal", "opportunity", "close", "won", "lost",
+    "demo request", "rfp", "rfi", "procurement", "purchase order", "po number"
+  ]
 }

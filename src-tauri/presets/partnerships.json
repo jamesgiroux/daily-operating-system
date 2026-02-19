@@ -71,5 +71,9 @@
       "co_sell_pipeline_stalled"
     ]
   },
-  "briefingEmphasis": "Focus on partner engagement trends, joint pipeline health, and upcoming agreement renewals. Prioritize strategic partners with declining activity or stalled co-sell deals."
+  "briefingEmphasis": "Focus on partner engagement trends, joint pipeline health, and upcoming agreement renewals. Prioritize strategic partners with declining activity or stalled co-sell deals.",
+  "emailPriorityKeywords": [
+    "partner", "co-sell", "co-marketing", "referral", "commission", "mdf", "joint", "alliance",
+    "channel", "reseller", "integration"
+  ]
 }
