@@ -489,6 +489,7 @@ pub fn run() {
             commands::get_quill_sync_states,
             commands::set_quill_poll_interval,
             commands::start_quill_backfill,
+            commands::trigger_quill_sync_for_meeting,
             // Granola Integration (I226)
             commands::get_granola_status,
             commands::set_granola_enabled,
