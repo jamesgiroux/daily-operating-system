@@ -580,7 +580,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 enrichment_sources: None,
             };
 
-            if db.upsert_person(&person).is_ok() {
+            if let Ok(is_new) = db.upsert_person(&person) {
                 if let Err(e) = people::write_person_json(workspace, &person, db) {
                     log::warn!("Failed to write person.json for '{}': {}", person.name, e);
                 }
@@ -588,6 +588,19 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                     log::warn!("Failed to write person.md for '{}': {}", person.name, e);
                 }
                 new_people += 1;
+
+                // I353 Phase 2: Emit person_created signal for hygiene feedback loop
+                if is_new {
+                    let _ = crate::signals::bus::emit_signal(
+                        db,
+                        "person",
+                        &person.id,
+                        "person_created",
+                        "calendar_sync",
+                        None,
+                        0.95,
+                    );
+                }
 
                 // Auto-link to entity if meeting has an account
                 if let Some(ref account) = event.account {

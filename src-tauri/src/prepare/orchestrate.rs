@@ -183,36 +183,48 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     }
 
     // Step 4b2: Email cadence monitoring (I319 — anomaly detection)
-    {
+    let cadence_anomalies = {
         let cadence_guard = state.db.lock().ok();
         if let Some(db) = cadence_guard.as_ref().and_then(|g| g.as_ref()) {
             let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies(db);
             if !anomalies.is_empty() {
                 log::info!("prepare_today: {} cadence anomalies detected", anomalies.len());
             }
+            anomalies
+        } else {
+            Vec::new()
         }
-    }
+    };
 
     // Step 4c: Thread position tracking (I318 — "ball in your court")
+    // Only track high-priority email threads for "ball in your court" detection
     let replies_needed = {
         let thread_guard = state.db.lock().ok();
         if let Some(db) = thread_guard.as_ref().and_then(|g| g.as_ref()) {
+            let high_priority_emails: Vec<Value> = email_result.all
+                .iter()
+                .filter(|e| e.get("priority").and_then(|v| v.as_str()) == Some("high"))
+                .cloned()
+                .collect();
             let tracked = track_thread_positions(
-                &email_result.all,
+                &high_priority_emails,
                 &primary_user_domain,
                 db,
             );
-            log::info!("prepare_today: tracked {} threads, {} awaiting reply", tracked.0, tracked.1);
+            log::info!("prepare_today: tracked {} high-priority threads, {} awaiting reply", tracked.0, tracked.1);
             // Fetch threads awaiting reply for the directive
+            let now = Utc::now();
             db.get_threads_awaiting_reply()
                 .unwrap_or_default()
                 .iter()
                 .map(|(tid, subject, sender, date)| {
+                    let wait_duration = compute_wait_duration(date, &now);
                     json!({
                         "thread_id": tid,
                         "subject": subject,
                         "from": sender,
                         "date": date,
+                        "waitDuration": wait_duration,
                     })
                 })
                 .collect::<Vec<Value>>()
@@ -289,6 +301,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         &replies_needed,
         &email_result.high,
         &meeting_contexts,
+        &cadence_anomalies,
     );
 
     // Build lean events (strip attendees)
@@ -1136,9 +1149,9 @@ async fn fetch_and_classify_emails(
     }
 }
 
-/// I318: Track thread positions from fetched emails.
+/// I318: Track thread positions from fetched high-priority emails.
 /// Groups emails by thread_id, determines last sender per thread,
-/// and persists to email_threads table.
+/// persists to email_threads table, and emits thread_position signals.
 /// Returns (total_tracked, awaiting_reply_count).
 fn track_thread_positions(
     emails: &[Value],
@@ -1147,8 +1160,8 @@ fn track_thread_positions(
 ) -> (usize, usize) {
     use std::collections::HashMap;
 
-    // Group emails by thread_id, keeping the most recent per thread
-    let mut threads: HashMap<String, (&Value, String)> = HashMap::new(); // thread_id -> (email, date)
+    // Group emails by thread_id, keeping the most recent and counting per thread
+    let mut threads: HashMap<String, (&Value, String, usize)> = HashMap::new(); // -> (email, date, count)
 
     for email in emails {
         let thread_id = email.get("thread_id").and_then(|v| v.as_str()).unwrap_or("");
@@ -1156,17 +1169,19 @@ fn track_thread_positions(
             continue;
         }
         let date = email.get("date").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let entry = threads.entry(thread_id.to_string()).or_insert((email, date.clone()));
-        // Keep the email with the later date (simple string comparison works for RFC dates)
+        let entry = threads.entry(thread_id.to_string()).or_insert((email, date.clone(), 0));
+        entry.2 += 1; // increment message count
+        // Keep the email with the later date
         if date > entry.1 {
-            *entry = (email, date);
+            entry.0 = email;
+            entry.1 = date;
         }
     }
 
     let mut total = 0;
     let mut awaiting = 0;
 
-    for (thread_id, (email, date)) in &threads {
+    for (thread_id, (email, date, msg_count)) in &threads {
         let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("");
         let from_email = email.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
         let sender_domain = from_email.split('@').nth(1).unwrap_or("");
@@ -1183,13 +1198,54 @@ fn track_thread_positions(
             subject,
             from_email,
             date,
-            1, // message_count from single fetch; will accumulate over time
+            *msg_count as i32,
             user_is_last_sender,
         );
+
+        // Emit thread_position signal
+        let signal_value = if user_is_last_sender {
+            "waiting_on_them"
+        } else {
+            "awaiting_reply"
+        };
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            "thread",
+            thread_id,
+            "thread_position",
+            "email_thread",
+            Some(signal_value),
+            if user_is_last_sender { 0.7 } else { 0.85 },
+        );
+
         total += 1;
     }
 
     (total, awaiting)
+}
+
+/// Compute human-readable wait duration from a date string.
+fn compute_wait_duration(date_str: &str, now: &chrono::DateTime<Utc>) -> String {
+    // Try parsing various date formats
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(date_str) {
+        let days = (*now - dt.with_timezone(&Utc)).num_days();
+        return match days {
+            0 => "today".to_string(),
+            1 => "1 day".to_string(),
+            n if n > 0 => format!("{} days", n),
+            _ => String::new(),
+        };
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
+        let days = (*now - dt.with_timezone(&Utc)).num_days();
+        return match days {
+            0 => "today".to_string(),
+            1 => "1 day".to_string(),
+            n if n > 0 => format!("{} days", n),
+            _ => String::new(),
+        };
+    }
+    String::new()
 }
 
 /// I322: Synthesize a 2-4 sentence email briefing narrative from:
@@ -1202,6 +1258,7 @@ fn synthesize_email_narrative(
     replies_needed: &[Value],
     high_priority: &[Value],
     meeting_contexts: &[Value],
+    cadence_anomalies: &[crate::signals::cadence::CadenceAnomaly],
 ) -> Option<String> {
     let mut sentences = Vec::new();
 
@@ -1266,6 +1323,39 @@ fn synthesize_email_narrative(
                 "Email threads connected to {} of today's meetings.",
                 meetings_with_email.len()
             ));
+        }
+    }
+
+    // Cadence anomalies (I319)
+    let quiet_count = cadence_anomalies
+        .iter()
+        .filter(|a| a.anomaly_type == "gone_quiet")
+        .count();
+    let spike_count = cadence_anomalies
+        .iter()
+        .filter(|a| a.anomaly_type == "activity_spike")
+        .count();
+    if quiet_count > 0 {
+        if quiet_count == 1 {
+            let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "gone_quiet").unwrap();
+            sentences.push(format!(
+                "{} email volume dropped {:.0}% this week.",
+                a.entity_id,
+                (1.0 - a.current_count as f64 / a.rolling_avg) * 100.0,
+            ));
+        } else {
+            sentences.push(format!("{} accounts have gone quiet on email.", quiet_count));
+        }
+    }
+    if spike_count > 0 {
+        if spike_count == 1 {
+            let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "activity_spike").unwrap();
+            sentences.push(format!(
+                "Unusual email surge from {} ({} vs {:.0}/week average).",
+                a.entity_id, a.current_count, a.rolling_avg,
+            ));
+        } else {
+            sentences.push(format!("{} accounts spiking in email volume.", spike_count));
         }
     }
 
