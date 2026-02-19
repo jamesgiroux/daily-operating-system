@@ -100,6 +100,9 @@ pub struct DbAccount {
     /// UTC timestamp when keywords were last extracted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keywords_extracted_at: Option<String>,
+    /// JSON metadata for preset-driven custom fields (I311).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
 }
 
 /// A row from `account_team`.
@@ -351,6 +354,9 @@ pub struct DbProject {
     /// UTC timestamp when keywords were last extracted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keywords_extracted_at: Option<String>,
+    /// JSON metadata for preset-driven custom fields (I311).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
 }
 
 /// Activity signals for a project (parallel to StakeholderSignals).
@@ -529,6 +535,16 @@ pub fn days_since_iso(iso: &str) -> Option<i64> {
 /// This is intentionally NOT `Clone` or `Sync`. It is held behind a
 /// `std::sync::Mutex` in `AppState` so that Tauri sync commands can
 /// access it safely.
+/// Result of merging two accounts (I198).
+#[derive(Debug, serde::Serialize)]
+pub struct MergeResult {
+    pub actions_moved: usize,
+    pub meetings_moved: usize,
+    pub people_moved: usize,
+    pub events_moved: usize,
+    pub children_moved: usize,
+}
+
 pub struct ActionDb {
     conn: Connection,
 }
@@ -1494,7 +1510,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE id = ?1",
         )?;
@@ -1512,7 +1528,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -1530,7 +1546,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1542,7 +1558,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1554,10 +1570,53 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Walk the parent_id chain to get all ancestors (I316: n-level nesting).
+    pub fn get_account_ancestors(&self, account_id: &str) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE ancestors(id) AS (
+                SELECT parent_id FROM accounts WHERE id = ?1
+                UNION ALL
+                SELECT a.parent_id FROM accounts a JOIN ancestors anc ON a.id = anc.id
+                WHERE a.parent_id IS NOT NULL
+            )
+            SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
+                   nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                   keywords, keywords_extracted_at, metadata
+            FROM accounts
+            WHERE id IN (SELECT id FROM ancestors WHERE id IS NOT NULL)
+            ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![account_id], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get all descendants using recursive CTE with depth limit (I316: n-level nesting).
+    pub fn get_descendant_accounts(&self, ancestor_id: &str) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE descendants(id, depth) AS (
+                SELECT id, 1 FROM accounts WHERE parent_id = ?1
+                UNION ALL
+                SELECT a.id, d.depth + 1 FROM accounts a
+                JOIN descendants d ON a.parent_id = d.id
+                WHERE d.depth < 10
+            )
+            SELECT acc.id, acc.name, acc.lifecycle, acc.arr, acc.health,
+                   acc.contract_start, acc.contract_end, acc.nps, acc.tracker_path,
+                   acc.parent_id, acc.is_internal, acc.updated_at, acc.archived,
+                   acc.keywords, acc.keywords_extracted_at, acc.metadata
+            FROM accounts acc
+            JOIN descendants d ON acc.id = d.id
+            WHERE acc.archived = 0
+            ORDER BY acc.name",
+        )?;
+        let rows = stmt.query_map(params![ancestor_id], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -1597,7 +1656,7 @@ impl ActionDb {
         let query = if include_archived {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
                     a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at,
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
                     ad.domain
              FROM accounts a
              LEFT JOIN account_domains ad ON a.id = ad.account_id
@@ -1605,7 +1664,7 @@ impl ActionDb {
         } else {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
                     a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at,
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
                     ad.domain
              FROM accounts a
              LEFT JOIN account_domains ad ON a.id = ad.account_id
@@ -1621,7 +1680,7 @@ impl ActionDb {
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
-            let domain: Option<String> = row.get(15)?;
+            let domain: Option<String> = row.get(16)?;
 
             if current_id.as_deref() != Some(&account_id) {
                 // New account — push a new entry
@@ -1641,6 +1700,7 @@ impl ActionDb {
                     archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
                     keywords: row.get(13).unwrap_or(None),
                     keywords_extracted_at: row.get(14).unwrap_or(None),
+                    metadata: row.get(15).unwrap_or(None),
                 };
                 let domains = domain.into_iter().collect();
                 result.push((account, domains));
@@ -1695,7 +1755,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE is_internal = 1 AND parent_id IS NULL AND archived = 0
              ORDER BY updated_at DESC
@@ -1713,7 +1773,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE is_internal = 1 AND archived = 0
              ORDER BY name",
@@ -1990,6 +2050,47 @@ impl ActionDb {
     /// Update a single whitelisted field on an account.
     pub fn update_account_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
+        // parent_id uses NULL for empty values (top-level accounts)
+        if field == "parent_id" {
+            if value.is_empty() {
+                self.conn.execute(
+                    "UPDATE accounts SET parent_id = NULL, updated_at = ?2 WHERE id = ?1",
+                    params![id, now],
+                )?;
+            } else {
+                // Prevent self-reference
+                if value == id {
+                    return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                        "Cannot set an account as its own parent".to_string(),
+                    )));
+                }
+                // Prevent circular reference: check that value is not a descendant of id
+                let descendants = self.get_descendant_accounts(id).unwrap_or_default();
+                if descendants.iter().any(|d| d.id == value) {
+                    return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                        "Cannot set a descendant as parent (circular reference)".to_string(),
+                    )));
+                }
+                self.conn.execute(
+                    "UPDATE accounts SET parent_id = ?1, updated_at = ?3 WHERE id = ?2",
+                    params![value, id, now],
+                )?;
+
+                // Propagate is_internal: if the child is internal, the parent should be too
+                let child_is_internal: i32 = self.conn.query_row(
+                    "SELECT is_internal FROM accounts WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                ).unwrap_or(0);
+                if child_is_internal == 1 {
+                    self.conn.execute(
+                        "UPDATE accounts SET is_internal = 1, updated_at = ?2 WHERE id = ?1 AND is_internal = 0",
+                        params![value, now],
+                    )?;
+                }
+            }
+            return Ok(());
+        }
         let sql = match field {
             "name" => "UPDATE accounts SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "health" => "UPDATE accounts SET health = ?1, updated_at = ?3 WHERE id = ?2",
@@ -2010,6 +2111,49 @@ impl ActionDb {
         };
         self.conn.execute(sql, params![value, id, now])?;
         Ok(())
+    }
+
+    // =========================================================================
+    // Entity Metadata (I311)
+    // =========================================================================
+
+    /// Update JSON metadata for an entity (account or project).
+    pub fn update_entity_metadata(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        metadata_json: &str,
+    ) -> Result<(), String> {
+        let table = match entity_type {
+            "account" => "accounts",
+            "project" => "projects",
+            _ => return Err(format!("Invalid entity type for metadata: {}", entity_type)),
+        };
+        let sql = format!("UPDATE {} SET metadata = ?1 WHERE id = ?2", table);
+        self.conn
+            .execute(&sql, params![metadata_json, entity_id])
+            .map_err(|e| format!("Failed to update metadata: {}", e))?;
+        Ok(())
+    }
+
+    /// Get JSON metadata for an entity (account or project).
+    pub fn get_entity_metadata(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+    ) -> Result<String, String> {
+        let table = match entity_type {
+            "account" => "accounts",
+            "project" => "projects",
+            _ => return Err(format!("Invalid entity type for metadata: {}", entity_type)),
+        };
+        let sql = format!(
+            "SELECT COALESCE(metadata, '{{}}') FROM {} WHERE id = ?1",
+            table
+        );
+        self.conn
+            .query_row(&sql, params![entity_id], |row| row.get(0))
+            .map_err(|e| format!("Failed to get metadata: {}", e))
     }
 
     // =========================================================================
@@ -2273,6 +2417,7 @@ impl ActionDb {
             archived: row.get::<_, i32>(8).unwrap_or(0) != 0,
             keywords: row.get(9).unwrap_or(None),
             keywords_extracted_at: row.get(10).unwrap_or(None),
+            metadata: row.get(11).unwrap_or(None),
         })
     }
 
@@ -2326,7 +2471,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_project_row)?;
@@ -2341,7 +2486,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE LOWER(name) = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![name], Self::map_project_row)?;
@@ -2356,7 +2501,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -4324,7 +4469,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE contract_end IS NOT NULL
                AND contract_end >= date('now')
@@ -4345,7 +4490,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
@@ -4979,6 +5124,7 @@ impl ActionDb {
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
             keywords: row.get(13).unwrap_or(None),
             keywords_extracted_at: row.get(14).unwrap_or(None),
+            metadata: row.get(15).unwrap_or(None),
         })
     }
 
@@ -5339,12 +5485,145 @@ impl ActionDb {
         )?)
     }
 
+    /// Restore an archived account, optionally restoring archived children.
+    /// Returns the number of child accounts restored.
+    pub fn restore_account(&self, id: &str, restore_children: bool) -> Result<usize, DbError> {
+        let now = Utc::now().to_rfc3339();
+
+        // Unarchive the account itself
+        self.conn.execute(
+            "UPDATE accounts SET archived = 0, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+
+        // Optionally restore archived children
+        let children_restored = if restore_children {
+            self.conn.execute(
+                "UPDATE accounts SET archived = 0, updated_at = ?1 WHERE parent_id = ?2 AND archived = 1",
+                params![now, id],
+            )?
+        } else {
+            0
+        };
+
+        Ok(children_restored)
+    }
+
+    // =========================================================================
+    // I198: Account Merge
+    // =========================================================================
+
+    /// Merge source account into target account.
+    /// Reassigns all associated records and archives the source.
+    pub fn merge_accounts(&self, from_id: &str, into_id: &str) -> Result<MergeResult, DbError> {
+        let conn = self.conn_ref();
+
+        // Reassign actions
+        let actions_moved = conn.execute(
+            "UPDATE actions SET account_id = ?2 WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+
+        // Reassign meeting_entities (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE meeting_entities SET entity_id = ?2
+             WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id, into_id],
+        )?;
+        // Clean up remaining dupes
+        let meetings_moved = conn.execute(
+            "DELETE FROM meeting_entities WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id],
+        )?;
+
+        // Reassign entity_people (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE entity_people SET entity_id = ?2
+             WHERE entity_id = ?1",
+            params![from_id, into_id],
+        )?;
+        let people_moved = conn.execute(
+            "DELETE FROM entity_people WHERE entity_id = ?1",
+            params![from_id],
+        )?;
+
+        // Reassign account_team (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE account_team SET account_id = ?2
+             WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM account_team WHERE account_id = ?1",
+            params![from_id],
+        )?;
+
+        // Reassign account_events
+        let events_moved = conn.execute(
+            "UPDATE account_events SET account_id = ?2 WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+
+        // Reassign signal_events
+        conn.execute(
+            "UPDATE OR IGNORE signal_events SET entity_id = ?2
+             WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM signal_events WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id],
+        )?;
+
+        // Reassign content_index
+        conn.execute(
+            "UPDATE OR IGNORE content_index SET entity_id = ?2
+             WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM content_index WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id],
+        )?;
+
+        // Reassign account_domains (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE account_domains SET account_id = ?2
+             WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM account_domains WHERE account_id = ?1",
+            params![from_id],
+        )?;
+
+        // Reassign children
+        let children_moved = conn.execute(
+            "UPDATE accounts SET parent_id = ?2 WHERE parent_id = ?1",
+            params![from_id, into_id],
+        )?;
+
+        // Archive source account
+        conn.execute(
+            "UPDATE accounts SET archived = 1 WHERE id = ?1",
+            params![from_id],
+        )?;
+
+        Ok(MergeResult {
+            actions_moved,
+            meetings_moved,
+            people_moved,
+            events_moved,
+            children_moved,
+        })
+    }
+
     /// Get archived accounts (top-level + children).
     pub fn get_archived_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -5355,7 +5634,7 @@ impl ActionDb {
     pub fn get_archived_projects(&self) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date, tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -5441,6 +5720,15 @@ impl ActionDb {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![account_id, event_type, event_date, arr_impact, notes],
         )?;
+
+        // Auto-archive on churn
+        if event_type == "churn" {
+            self.conn.execute(
+                "UPDATE accounts SET archived = 1, updated_at = ?2 WHERE id = ?1",
+                params![account_id, chrono::Utc::now().to_rfc3339()],
+            )?;
+        }
+
         Ok(self.conn.last_insert_rowid())
     }
 
@@ -5822,6 +6110,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_account(&account).expect("upsert account");
@@ -5862,6 +6151,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         let archived = DbAccount {
@@ -5880,6 +6170,7 @@ mod tests {
             archived: true,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_account(&active).expect("upsert active");
@@ -6284,6 +6575,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert");
 
@@ -6311,6 +6603,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
             tracker_path: None,
             parent_id: None,
             is_internal: false,
@@ -6411,6 +6704,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         // upsert_account now calls ensure_entity_for_account automatically
@@ -6613,6 +6907,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&soon).expect("insert");
 
@@ -6633,6 +6928,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&no_end).expect("insert");
 
@@ -6653,6 +6949,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&expired).expect("insert");
 
@@ -6682,6 +6979,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&stale).expect("insert");
 
@@ -6702,6 +7000,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&fresh).expect("insert");
 
@@ -6812,6 +7111,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("insert account");
 
@@ -7159,6 +7459,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
 
@@ -7394,6 +7695,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
         db.link_person_to_entity(&remove.id, "acme", "associated")
@@ -7533,6 +7835,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
         db.link_person_to_entity(&person.id, "doom-corp", "associated")
@@ -7587,6 +7890,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -7614,6 +7918,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -7644,6 +7949,7 @@ mod tests {
                 archived: false,
                 keywords: None,
                 keywords_extracted_at: None,
+                metadata: None,
             };
             db.upsert_project(&project).expect("upsert");
         }
@@ -7670,6 +7976,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -7697,6 +8004,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -7721,6 +8029,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -7747,6 +8056,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -7803,6 +8113,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert project");
 
@@ -7899,6 +8210,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert project");
 
@@ -8535,6 +8847,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
         db.ensure_entity_for_account(&account)
@@ -8773,6 +9086,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         }
     }
 

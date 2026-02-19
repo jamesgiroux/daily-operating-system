@@ -1,9 +1,11 @@
-import { useMemo, useCallback } from "react";
+import { useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
+import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
+import { useActivePreset } from "@/hooks/useActivePreset";
+import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { smoothScrollTo } from "@/lib/smooth-scroll";
@@ -111,6 +113,7 @@ export default function PersonDetailEditorial() {
   const { personId } = useParams({ strict: false });
   const navigate = useNavigate();
   const person = usePersonDetail(personId);
+  const preset = useActivePreset();
   useRevealObserver(!person.loading && !!person.detail);
 
   const relationship = person.detail?.relationship ?? "unknown";
@@ -119,30 +122,15 @@ export default function PersonDetailEditorial() {
       folioLabel: "Person",
       atmosphereColor: "larkspur" as const,
       activePage: "people" as const,
-      backLink: { label: "People", onClick: () => navigate({ to: "/people" }) },
+      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/people" }) },
       chapters: buildChapters(relationship),
     }),
     [navigate, relationship],
   );
   useRegisterMagazineShell(shellConfig);
 
-  // Intelligence field update callback (I261)
-  const handleUpdateIntelField = useCallback(
-    async (fieldPath: string, value: string) => {
-      if (!personId) return;
-      try {
-        await invoke("update_intelligence_field", {
-          entityId: personId,
-          entityType: "person",
-          fieldPath,
-          value,
-        });
-      } catch (e) {
-        console.error("Failed to update intelligence field:", e);
-      }
-    },
-    [personId],
-  );
+  // I352: Shared intelligence field update hook
+  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("person", personId);
 
   if (person.loading) return <EditorialLoading />;
 
@@ -169,7 +157,7 @@ export default function PersonDetailEditorial() {
           onDelete={() => person.setDeleteConfirmOpen(true)}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={buildPersonVitals(detail)} />
+          <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.person, { ...detail, signals: detail.signals as Record<string, unknown> | undefined }) : buildPersonVitals(detail)} />
         </div>
       </section>
 

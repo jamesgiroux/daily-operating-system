@@ -69,7 +69,7 @@ pub fn enrich_file(
     let is_non_md = !matches!(format, super::extract::SupportedFormat::Markdown);
 
     // Build the prompt for Claude
-    let prompt = build_enrichment_prompt(filename, &content, user_ctx);
+    let prompt = build_enrichment_prompt(filename, &content, user_ctx, None);
 
     // Invoke Claude Code via PTY (Mechanical tier — I174)
     let default_config = AiModelConfig::default();
@@ -282,6 +282,7 @@ fn build_enrichment_prompt(
     filename: &str,
     content: &str,
     user_ctx: Option<&crate::types::UserContext>,
+    vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
 ) -> String {
     // Truncate very long content to fit in a reasonable prompt.
     // Must find a valid UTF-8 char boundary — slicing at an arbitrary byte panics.
@@ -307,6 +308,14 @@ fn build_enrichment_prompt(
         .map(|ctx| ctx.prompt_fragment())
         .unwrap_or_default();
 
+    // I313: Use vocabulary-driven entity noun when available
+    let entity_noun = vocabulary
+        .map(|v| v.entity_noun.as_str())
+        .unwrap_or("customer/account");
+    let success_verb = vocabulary
+        .map(|v| v.success_verb.as_str())
+        .unwrap_or("customer win");
+
     format!(
         r#"{user_fragment}Analyze this inbox file and respond in exactly this format:
 
@@ -318,7 +327,7 @@ ACTIONS:
 - <concise action title> P1/P2/P3 @Account due: YYYY-MM-DD #"context sentence"
 END_ACTIONS
 WINS:
-- <customer win, positive outcome, or success signal>
+- <{success_verb}, positive outcome, or success signal>
 END_WINS
 RISKS:
 - <risk, concern, or potential issue>
@@ -332,7 +341,7 @@ Rules for actions:
   - Good: "Follow up on renewal pricing"
   - Bad: "Follow up with the client regarding the renewal discussion they mentioned"
 - Include priority when urgency is inferable (P1=urgent, P2=normal, P3=low)
-- Include @AccountName when action relates to a specific customer/account
+- Include @AccountName when action relates to a specific {entity_noun}
 - Include due: YYYY-MM-DD when a deadline is mentioned or implied
 - Include #"context" with a short sentence explaining WHY this matters. Use quotes around multi-word context.
   - Good: #"Renewal decision pending CFO approval"
@@ -342,7 +351,7 @@ Rules for actions:
 - Example: Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2"
 
 Rules for wins/risks:
-- Only include if the file relates to a customer/account
+- Only include if the file relates to a {entity_noun}
 - Wins: successful launches, expanded usage, positive feedback, renewals, upsells
 - Risks: churn signals, budget cuts, champion leaving, low adoption, complaints
 - Keep each item to one concise sentence
@@ -831,6 +840,7 @@ Next renewal: March 2026
             "acme-transcript.md",
             "Alice: Hi\nBob: Hello\nAlice: Let's discuss the project.",
             None,
+            None,
         );
         assert!(prompt.contains("DISCUSSION:"));
         assert!(prompt.contains("END_DISCUSSION"));
@@ -839,7 +849,7 @@ Next renewal: March 2026
 
     #[test]
     fn test_non_transcript_prompt_no_discussion() {
-        let prompt = build_enrichment_prompt("acme-update.md", "# Account Update\nAll good.", None);
+        let prompt = build_enrichment_prompt("acme-update.md", "# Account Update\nAll good.", None, None);
         assert!(!prompt.contains("DISCUSSION:"));
         assert!(!prompt.contains("END_DISCUSSION"));
         assert!(prompt.contains("one-line summary"));

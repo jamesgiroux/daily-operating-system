@@ -1117,12 +1117,12 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // --- Accounts ---
     conn.execute(
         "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params!["acme-corp", "Acme Corp", "steady-state", 1_200_000.0, "green", "Accounts/Acme Corp/dashboard.md", &today],
+        rusqlite::params!["acme-corp", "Acme Corp", "nurture", 1_200_000.0, "green", "Accounts/Acme Corp/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
     conn.execute(
         "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params!["globex-industries", "Globex Industries", "at-risk", 800_000.0, "yellow", "Accounts/Globex Industries/dashboard.md", &today],
+        rusqlite::params!["globex-industries", "Globex Industries", "renewal", 800_000.0, "yellow", "Accounts/Globex Industries/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
     conn.execute(
@@ -1138,12 +1138,12 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     conn.execute(
         "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, contract_end, tracker_path, parent_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        rusqlite::params!["contoso--enterprise", "Enterprise", "steady-state", 1_800_000.0, "green", "2026-06-30", "Accounts/Contoso/Enterprise", "contoso", &today],
+        rusqlite::params!["contoso--enterprise", "Enterprise", "nurture", 1_800_000.0, "green", "2026-06-30", "Accounts/Contoso/Enterprise", "contoso", &today],
     ).map_err(|e| e.to_string())?;
 
     conn.execute(
         "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, contract_end, tracker_path, parent_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        rusqlite::params!["contoso--smb", "SMB", "at-risk", 600_000.0, "yellow", "2026-03-15", "Accounts/Contoso/SMB", "contoso", &today],
+        rusqlite::params!["contoso--smb", "SMB", "renewal", 600_000.0, "yellow", "2026-03-15", "Accounts/Contoso/SMB", "contoso", &today],
     ).map_err(|e| e.to_string())?;
 
     // --- Entities (mirrors accounts) ---
@@ -1856,22 +1856,22 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // --- Entity-people links ---
     let entity_links: Vec<(&str, &str, &str)> = vec![
         // (entity_id, person_id, relationship_type)
-        ("acme-corp", "sarah-chen-acme-com", "stakeholder"),
-        ("acme-corp", "alex-torres-acme-com", "stakeholder"),
-        ("acme-corp", "pat-kim-acme-com", "stakeholder"),
+        ("acme-corp", "sarah-chen-acme-com", "executive_sponsor"),
+        ("acme-corp", "alex-torres-acme-com", "primary_contact"),
+        ("acme-corp", "pat-kim-acme-com", "end_user"),
         (
             "globex-industries",
             "pat-reynolds-globex-com",
-            "stakeholder",
+            "decision_maker",
         ),
         (
             "globex-industries",
             "jamie-morrison-globex-com",
-            "stakeholder",
+            "champion",
         ),
-        ("globex-industries", "casey-lee-globex-com", "stakeholder"),
-        ("initech", "dana-patel-initech-com", "stakeholder"),
-        ("initech", "priya-sharma-initech-com", "stakeholder"),
+        ("globex-industries", "casey-lee-globex-com", "power_user"),
+        ("initech", "dana-patel-initech-com", "primary_contact"),
+        ("initech", "priya-sharma-initech-com", "technical_contact"),
     ];
 
     for (entity_id, person_id, rel) in &entity_links {
@@ -2218,10 +2218,9 @@ Phase 2 scoping underway with April kickoff target. Need KT plan before Alex dep
         "structured": {
             "arr": 1200000,
             "health": "green",
-            "lifecycle": "steady-state",
+            "lifecycle": "nurture",
             "renewalDate": "2025-09-15",
-            "csm": "You",
-            "champion": "Sarah Chen"
+            "csm": "You"
         },
         "companyOverview": {
             "description": "Acme Corp is a mid-market SaaS company specializing in supply chain optimization. They adopted our platform 18 months ago for their engineering team and expanded to ops last quarter. Strong executive sponsorship from Sarah Chen, with Phase 2 expansion planned for Q2.",
@@ -2289,10 +2288,9 @@ QBR is the highest-stakes meeting. Renewal decision expected this quarter.
         "structured": {
             "arr": 800000,
             "health": "yellow",
-            "lifecycle": "at-risk",
+            "lifecycle": "renewal",
             "renewalDate": "2025-06-30",
-            "csm": "You",
-            "champion": "Jamie Morrison"
+            "csm": "You"
         },
         "companyOverview": {
             "description": "Globex Industries is an enterprise manufacturing company using our platform across 3 teams. Renewal in 90 days with health at Yellow due to key stakeholder departure and declining usage in Team B. Jamie Morrison is the strongest internal champion.",
@@ -2374,10 +2372,9 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
         "structured": {
             "arr": 2400000,
             "health": "green",
-            "lifecycle": "steady-state",
+            "lifecycle": "nurture",
             "renewalDate": "2026-06-30",
-            "csm": "You",
-            "champion": "Marcus Webb"
+            "csm": "You"
         },
         "companyOverview": {
             "description": "Contoso is a Fortune 500 enterprise with two business units using our platform. The Enterprise division handles large-scale deployments while the SMB division supports small and mid-size customers.",
@@ -2404,10 +2401,9 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
         "structured": {
             "arr": 1800000,
             "health": "green",
-            "lifecycle": "steady-state",
+            "lifecycle": "nurture",
             "renewalDate": "2026-06-30",
-            "csm": "You",
-            "champion": "David Kim"
+            "csm": "You"
         },
         "parentId": "contoso",
         "notes": "Strong adoption. 85% DAU across engineering teams."
@@ -2428,7 +2424,7 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
         "structured": {
             "arr": 600000,
             "health": "yellow",
-            "lifecycle": "at-risk",
+            "lifecycle": "renewal",
             "renewalDate": "2026-03-15",
             "csm": "You"
         },
