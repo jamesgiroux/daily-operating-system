@@ -172,16 +172,20 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 
 ### 0.12.1 — Product Language & UX Polish
 
-*The app speaks like a chief of staff, not a developer. Every user-visible string earns its place.*
+*The first release that subtracts. Define each surface's job, cut what doesn't serve it, then give everything the right name.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
-| P1 | I342 | Surface JTBD critique — define, audit, cut, execute |
-| P1 | I341 | Product vocabulary audit — translate system terms in all UI copy (ADR-0083) |
+| P1 | I342 | Surface JTBD critique — define, audit, cut, execute (gate for all other UI work) |
+| P1 | I341 | Product vocabulary audit — translate system terms in all UI copy, informed by I342 outcomes |
 | P1 | I329 | Intelligence quality indicators (replace "needs prep" badge) |
 | P1 | I343 | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges |
 
-**Rationale:** Before 0.13.0 rewrites the weekly forecast and daily briefing as live intelligence surfaces (I330/I331), this release nails down what each surface is *for* (I342), how it speaks to the user (I341), and how editing *feels* (I343). ADR-0083 established the product vocabulary standard — the split between system terms (code, ADRs) and product terms (UI copy). I341 is the systematic audit that translates every user-visible string. I342 frames each surface as a job-to-be-done so I330/I331 build the right thing. I329 moves here from 0.13.0 because the vocabulary audit directly affects quality label language (Sparse → New, Developing → Building, etc.). I343 unifies the fragmented inline editing patterns into a coherent editing service — currently three patterns exist (EditableText, local EditableTextarea, risk briefing debounced save) that should be one. Long text fields currently drop users into cramped single-line inputs; textarea-first editing for multi-word content, keyboard navigation between fields, and emitting `user_correction` signals on every edit (weight 1.0, the strongest signal in the system) make corrections feel powerful rather than tedious. This is the "make it feel like a product" release — the right words *and* the right interactions.
+**Rationale:** DailyOS has been built at speed — features added because they were possible, scope expanded six times, a full design system refresh applied to content that was never questioned. The app has never had a "why is this here?" pass. Every time we've been critical, the app has been better for it. This release does the critique.
+
+I342 is the gate. It defines each surface's job-to-be-done (granular: section-level, not just page-level), inventories every element against that job, produces a cut/move/merge list, and executes the changes. This is not a report that informs future work — it ships code that reshapes the surfaces. I341 follows as a dependent step: with the JTBD frame established and the surfaces restructured, the vocabulary audit walks every surviving string and makes it speak in product terms (ADR-0083). The right words come from understanding the job, not from a translation table applied blindly. I329 moves here from 0.13.0 because quality indicator labels (Sparse → New, Developing → Building) are a vocabulary decision that must align with the JTBD findings. I343 addresses how editing feels — the interaction quality that makes corrections feel powerful rather than tedious.
+
+This is the "make it feel like a product" release. Not by adding polish — by subtracting everything that doesn't serve the user's actual job.
 
 ---
 
@@ -3733,14 +3737,16 @@ Umbrella issue for codebase hardening before first beta release (1.0.0). Finding
 
 **Priority:** P1 (0.12.1)
 **Area:** UX
-**Depends on:** ADR-0083 (Product Vocabulary standard)
+**Depends on:** I342 (Surface JTBD critique — vocabulary choices must reflect the jobs, not just translate system terms), ADR-0083 (Product Vocabulary standard)
 **Related:** ADR-0073 (editorial design language), ADR-0076 (brand identity), I329 (quality indicators)
 
-ADR-0083 defines the split between system vocabulary (code, ADRs, logs) and product vocabulary (anything a user sees). This issue is the systematic audit that translates every user-facing string.
+The follow-through step after I342. ADR-0083 defines the translation table between system vocabulary and product vocabulary. I342 defines what each surface is *for* and restructures what appears on it. This issue walks every surviving user-visible string and makes it speak in product vocabulary — informed by the JTBD outcomes.
+
+**Why this depends on I342:** ADR-0083's translation table was written before the JTBD critique. Some translations may shift once we understand the jobs. If I342 reveals that the daily surface's job is "ongoing situational awareness" rather than "morning preparation," then "Briefing" might not be the right word for it. The table is the starting point; I342's findings are the reality check.
 
 **The rule from ADR-0083:** If a user can see it, it uses product vocabulary. No exceptions.
 
-**Audit scope:**
+**Audit scope (on the surfaces as restructured by I342):**
 - Page titles and navigation labels
 - Button labels and action text (e.g., "Run Briefing" → "Refresh" / "Prepare my day")
 - Badge labels and status indicators (e.g., "Needs Prep" → quality indicators from I329)
@@ -3752,23 +3758,24 @@ ADR-0083 defines the split between system vocabulary (code, ADRs, logs) and prod
 
 **Not in scope:** Component names in code (`EntityPicker` stays), type names (`DbAction.status` stays `"proposed"`), log output, console messages.
 
-**Key translations (from ADR-0083 translation table):**
+**Key translations (from ADR-0083, subject to I342 refinement):**
 - Entity → use specific type (Account, Project, Person)
-- Intelligence (on meeting) → Briefing
-- Intelligence (on account/project) → Insights
+- Intelligence (on meeting) → Briefing *(validate against meeting surface JTBD)*
+- Intelligence (on account/project) → Insights *(validate against entity surface JTBD)*
 - Intelligence (general) → Context
 - Enrichment → invisible or "Updating"
 - Signal → Update / Change
-- Prep → Briefing
+- Prep → Briefing *(validate against daily surface JTBD)*
 - Proposed → Suggested
 - Archived (actions) → Dismissed
 
 **Acceptance criteria:**
 1. No user-visible string contains system vocabulary terms
-2. All translations follow ADR-0083 table
+2. All translations follow ADR-0083 table (updated if I342 findings warrant changes)
 3. Code identifiers unchanged (`entity_id`, `signal_events`, etc.)
 4. Quality indicator labels align with I329 (New, Building, Ready, Updated)
 5. Chief-of-staff voice throughout — confident, specific, warm, invisible when working
+6. Every vocabulary choice validated against the surface JTBD it appears on — the word fits the job, not just the translation table
 
 ---
 
@@ -3860,6 +3867,31 @@ Ship the changes. This is not a future consideration — it's part of this issue
 - Validate against JTBD: does each surface now do its job and only its job?
 
 I341 (vocabulary audit) follows as a dependent step, applying ADR-0083's product vocabulary to the restructured surfaces with full awareness of the JTBD outcomes.
+
+---
+
+#### Hypothesis: The Weekly Forecast May Not Be a Surface
+
+Going into Phase 1 with an open question: does the weekly forecast justify its existence as a separate surface, or is its job better served as a section within the daily briefing?
+
+**Evidence for collapsing:**
+- Actual usage pattern: time is spent on the daily briefing and meeting briefings. The weekly forecast is rarely visited.
+- The weekly planning job ("plan my week") sounds like a Monday-morning activity, not a surface that earns nav space seven days a week.
+- Almost everything on the weekly forecast is duplicated elsewhere: actions (Actions page + daily briefing), account health (entity detail), schedule (daily briefing). The unique value — multi-day horizon — could be a "Coming up" section within the daily.
+- The chief-of-staff metaphor: one briefing that covers today in detail and flags what's ahead. Not two separate documents.
+- I330 planned to bring meetings weeks out into the weekly surface. But if the user plans upcoming meetings within the context of their day, that content belongs on the daily surface, not a separate one.
+
+**What collapsing would mean:**
+- The daily briefing expands with a "Coming up" or "This week" section — upcoming meetings that need attention, shown with intelligence quality and new-signal indicators.
+- The Monday daily briefing is naturally richer (more forward-looking content) without a separate surface for that job.
+- I330 (weekly forecast as live intelligence surface) either gets absorbed into I331 (daily briefing assembly) or is scoped to "upcoming meetings section within daily" rather than a standalone rebuild.
+- One fewer surface to maintain, one fewer nav destination, clearer product story.
+
+**What collapsing would lose:**
+- The at-a-glance week shape (which days are heavy, where deep work fits). Could this be a compact visual within the daily?
+- A dedicated space for weekly narrative. Does anyone read this, or does the daily narrative serve the same purpose?
+
+**This hypothesis gets tested in Phase 1.** If the weekly forecast's JTBD can be distinguished from "a section within the daily briefing" in a way that justifies a separate surface, it stays. If it can't, it collapses. The critique decides — not the architecture that's already built.
 
 ---
 
