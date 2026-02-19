@@ -596,9 +596,10 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
         }
 
         // Skip system/hidden folders (e.g. _Uncategorized, .DS_Store)
+        // and structural folders (Internal/ is used for internal org workspace files)
         let dir_name = entry.file_name();
         let name_str = dir_name.to_string_lossy();
-        if name_str.starts_with('_') || name_str.starts_with('.') {
+        if name_str.starts_with('_') || name_str.starts_with('.') || name_str == "Internal" {
             continue;
         }
 
@@ -655,6 +656,9 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             let mut merged = file_account;
                             // Preserve DB-only fields
                             merged.contract_start = db_account.contract_start.clone();
+                            // Preserve user-edited name: the DB name is authoritative
+                            // because users rename via the UI, not by renaming directories.
+                            merged.name = db_account.name.clone();
                             let _ = db.upsert_account(&merged);
                             let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
