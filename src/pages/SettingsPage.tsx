@@ -217,6 +217,11 @@ export default function SettingsPage() {
   const [runResult, setRunResult] = useState<{ workflow: string; success: boolean; message: string } | null>(null);
   const scrolledRef = useRef(false);
 
+  // I199: Archived account recovery
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedAccounts, setArchivedAccounts] = useState<{ id: string; name: string; parentName?: string }[]>([]);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
   useEffect(() => {
     async function loadConfig() {
       try {
@@ -271,6 +276,28 @@ export default function SettingsPage() {
       setError(err instanceof Error ? err.message : "Failed to reload config");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // I199: Archived account recovery handlers
+  async function loadArchivedAccounts() {
+    try {
+      const accounts = await invoke<{ id: string; name: string; parent_id?: string }[]>("get_archived_accounts");
+      setArchivedAccounts(accounts.map(a => ({ id: a.id, name: a.name })));
+    } catch {
+      setArchivedAccounts([]);
+    }
+  }
+
+  async function handleRestoreAccount(accountId: string) {
+    setRestoringId(accountId);
+    try {
+      await invoke("restore_account", { accountId, restoreChildren: true });
+      await loadArchivedAccounts();
+    } catch (e) {
+      console.error("Failed to restore account:", e);
+    } finally {
+      setRestoringId(null);
     }
   }
 
@@ -448,6 +475,119 @@ export default function SettingsPage() {
           <MeetingBackfillCard />
         </section>
       )}
+
+      {/* ═══ ARCHIVED ACCOUNTS (I199) ═══ */}
+      <div style={{ marginTop: 40, paddingTop: 24, borderTop: "1px solid var(--color-rule-light)" }}>
+        <button
+          onClick={() => {
+            setShowArchived(!showArchived);
+            if (!showArchived) loadArchivedAccounts();
+          }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 500,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color: "var(--color-text-tertiary)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              width: 14,
+              height: 14,
+              transform: showArchived ? "rotate(180deg)" : "none",
+              transition: "transform 0.2s ease",
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          Archived Accounts
+        </button>
+
+        {showArchived && (
+          <div style={{ marginTop: 16 }}>
+            {archivedAccounts.length === 0 ? (
+              <p style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                color: "var(--color-text-tertiary)",
+                fontStyle: "italic",
+              }}>
+                No archived accounts.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                {archivedAccounts.map((account, idx) => (
+                  <div
+                    key={account.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "10px 0",
+                      borderBottom: idx < archivedAccounts.length - 1 ? "1px solid var(--color-rule-light)" : "none",
+                    }}
+                  >
+                    <div>
+                      <span style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        color: "var(--color-text-primary)",
+                      }}>
+                        {account.name}
+                      </span>
+                      {account.parentName && (
+                        <span style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 11,
+                          color: "var(--color-text-tertiary)",
+                          marginLeft: 8,
+                        }}>
+                          ({account.parentName})
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleRestoreAccount(account.id)}
+                      disabled={restoringId === account.id}
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        fontWeight: 500,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        color: "var(--color-garden-sage)",
+                        background: "none",
+                        border: "1px solid var(--color-garden-sage)",
+                        borderRadius: 4,
+                        padding: "4px 10px",
+                        cursor: restoringId === account.id ? "default" : "pointer",
+                        opacity: restoringId === account.id ? 0.5 : 1,
+                      }}
+                    >
+                      {restoringId === account.id ? "Restoring..." : "Restore"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <FinisMarker />
       <div style={{ height: 80 }} />
@@ -1319,6 +1459,9 @@ function UserProfileCard() {
             placeholder="e.g. Acme Inc."
             style={styles.input}
           />
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 4, letterSpacing: "0.04em" }}>
+            Updates your internal organization entity
+          </p>
         </div>
         <div>
           <label htmlFor="profile-title" style={styles.fieldLabel}>Title</label>
