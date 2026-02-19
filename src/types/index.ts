@@ -1331,7 +1331,13 @@ export type AccountEventType =
   | "renewal"
   | "expansion"
   | "churn"
-  | "downgrade";
+  | "downsell"
+  | "escalation"
+  | "champion_change"
+  | "go_live"
+  | "qbr_completed"
+  | "ebr_completed"
+  | "onboarding_complete";
 
 export interface AccountEvent {
   id: number;

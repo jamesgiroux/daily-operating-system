@@ -187,6 +187,11 @@ pub fn default_engine() -> ProactiveEngine {
         &[PROFILE_ALL],
         detectors::detect_no_contact_accounts,
     );
+    engine.register(
+        "detect_renewal_proximity",
+        &["cs", "sales", "partnerships", "executive"],
+        detectors::detect_renewal_proximity,
+    );
 
     engine
 }
