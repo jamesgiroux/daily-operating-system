@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 1.0.0 = beta gate.
 
 ---
 
@@ -65,6 +65,10 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I262** | Define and populate The Record — transcripts and content_index as timeline sources | P2 | UX / Entity |
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
+| **I340** | Glean integration — enterprise knowledge enrichment for meeting prep | P2 | Integrations |
+| **I341** | Product vocabulary audit — translate system terms in all user-facing UI copy (ADR-0083) | P1 | UX |
+| **I342** | Surface JTBD critique — define each surface's job, audit every element, cut what doesn't belong, execute | P1 | UX / Product |
+| **I343** | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges | P1 | UX |
 
 ---
 
@@ -166,6 +170,21 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 
 ---
 
+### 0.12.1 — Product Language & UX Polish
+
+*The app speaks like a chief of staff, not a developer. Every user-visible string earns its place.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I342 | Surface JTBD critique — define, audit, cut, execute |
+| P1 | I341 | Product vocabulary audit — translate system terms in all UI copy (ADR-0083) |
+| P1 | I329 | Intelligence quality indicators (replace "needs prep" badge) |
+| P1 | I343 | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges |
+
+**Rationale:** Before 0.13.0 rewrites the weekly forecast and daily briefing as live intelligence surfaces (I330/I331), this release nails down what each surface is *for* (I342), how it speaks to the user (I341), and how editing *feels* (I343). ADR-0083 established the product vocabulary standard — the split between system terms (code, ADRs) and product terms (UI copy). I341 is the systematic audit that translates every user-visible string. I342 frames each surface as a job-to-be-done so I330/I331 build the right thing. I329 moves here from 0.13.0 because the vocabulary audit directly affects quality label language (Sparse → New, Developing → Building, etc.). I343 unifies the fragmented inline editing patterns into a coherent editing service — currently three patterns exist (EditableText, local EditableTextarea, risk briefing debounced save) that should be one. Long text fields currently drop users into cramped single-line inputs; textarea-first editing for multi-word content, keyboard navigation between fields, and emitting `user_correction` signals on every edit (weight 1.0, the strongest signal in the system) make corrections feel powerful rather than tedious. This is the "make it feel like a product" release — the right words *and* the right interactions.
+
+---
+
 ### 0.13.0 — Meeting Intelligence
 
 *Every meeting gets intelligence. Days ahead, not day-of. Signals drive updates. The system prepares your week before you think to ask.*
@@ -175,9 +194,8 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | P1 | I326 | Per-meeting intelligence lifecycle — detect, enrich, update, archive |
 | P1 | I327 | Advance intelligence generation (weekly + polling, not day-of) |
 | P1 | I328 | Classification expansion — all meetings get intelligence |
-| P1 | I329 | Intelligence quality indicators (replace "needs prep" badge) |
-| P1 | I330 | Weekly forecast as live intelligence surface |
-| P1 | I331 | Daily briefing intelligence assembly (diff model, fast refresh) |
+| P1 | I330 | Weekly forecast as live intelligence surface *(depends on I342, I341)* |
+| P1 | I331 | Daily briefing intelligence assembly (diff model, fast refresh) *(depends on I342, I341)* |
 | P1 | I332 | Signal-triggered meeting intelligence refresh |
 | P2 | I333 | Meeting intelligence collaboration — share, request input, draft agenda |
 
@@ -3710,6 +3728,162 @@ Umbrella issue for codebase hardening before first beta release (1.0.0). Finding
 
 ---
 
+<a name="i341"></a>
+**I341: Product vocabulary audit — translate system terms in all user-facing UI copy**
+
+**Priority:** P1 (0.12.1)
+**Area:** UX
+**Depends on:** ADR-0083 (Product Vocabulary standard)
+**Related:** ADR-0073 (editorial design language), ADR-0076 (brand identity), I329 (quality indicators)
+
+ADR-0083 defines the split between system vocabulary (code, ADRs, logs) and product vocabulary (anything a user sees). This issue is the systematic audit that translates every user-facing string.
+
+**The rule from ADR-0083:** If a user can see it, it uses product vocabulary. No exceptions.
+
+**Audit scope:**
+- Page titles and navigation labels
+- Button labels and action text (e.g., "Run Briefing" → "Refresh" / "Prepare my day")
+- Badge labels and status indicators (e.g., "Needs Prep" → quality indicators from I329)
+- Loading/empty/error state messages (e.g., "Enrichment in progress" → "Updating context")
+- Tooltip text
+- Placeholder text in inputs (e.g., "Entity Picker" → "Link to account or project")
+- Notification text (toasts, alerts)
+- Any visible string containing: entity, enrichment, signal, intelligence, prep, proposed, resolution
+
+**Not in scope:** Component names in code (`EntityPicker` stays), type names (`DbAction.status` stays `"proposed"`), log output, console messages.
+
+**Key translations (from ADR-0083 translation table):**
+- Entity → use specific type (Account, Project, Person)
+- Intelligence (on meeting) → Briefing
+- Intelligence (on account/project) → Insights
+- Intelligence (general) → Context
+- Enrichment → invisible or "Updating"
+- Signal → Update / Change
+- Prep → Briefing
+- Proposed → Suggested
+- Archived (actions) → Dismissed
+
+**Acceptance criteria:**
+1. No user-visible string contains system vocabulary terms
+2. All translations follow ADR-0083 table
+3. Code identifiers unchanged (`entity_id`, `signal_events`, etc.)
+4. Quality indicator labels align with I329 (New, Building, Ready, Updated)
+5. Chief-of-staff voice throughout — confident, specific, warm, invisible when working
+
+---
+
+<a name="i342"></a>
+**I342: Surface JTBD critique — define each surface's job, audit every element, cut what doesn't belong, execute**
+
+**Priority:** P1 (0.12.1)
+**Area:** UX / Product
+**Depends on:** None
+**Blocks:** I341 (vocabulary audit — right words require knowing the job), I330 (weekly forecast), I331 (daily briefing)
+
+This is a product critique with execution authority. Not a report. Not a spec for future work. A four-phase process that defines what each surface is for, prosecutes every element against that definition, cuts what doesn't belong, and ships the changes.
+
+**Why this matters now:** DailyOS has been built at speed. Features were added because they were possible, not because they were interrogated. The UI was refreshed to an editorial design system without questioning whether the *content* deserved the new frame. Scope expanded from accounts to entities to signals to email to meeting intelligence — each time adding, never subtracting. The app has never had a "why is this here?" pass. Every time we've been critical, the app has been better for it. This is the most important critique it hasn't done yet.
+
+I330/I331 will rewrite the two primary surfaces. If we build them without first understanding what job each surface does — and proving that understanding by cutting what doesn't serve the job — we're optimizing plumbing while losing the user story. The vocabulary audit (I341) can't choose the right words without this work. You can't name a thing well if you don't know why it exists.
+
+---
+
+#### Phase 1: JTBD Definition
+
+Define each surface's job-to-be-done. Not "this page shows meetings" — the full JTBD frame: situation, motivation, desired outcome.
+
+**For each surface:**
+- **Situation:** When does the user reach for this surface? What just happened or is about to happen?
+- **Motivation:** What progress are they trying to make? What anxiety are they trying to resolve?
+- **Desired outcome:** What does "done" look like? When does the user close this surface feeling they got what they needed?
+- **Boundary:** This surface does X, not Y. What explicitly does *not* belong here?
+
+**Surfaces:**
+
+1. **Daily Briefing (Today)** — The morning surface. What's the job? Preparation for today? Ongoing awareness? Both? When does someone return to it mid-day and why?
+
+2. **Weekly Forecast (This Week)** — The planning surface. How is its job different from the daily briefing? Is it Monday-morning planning? Ongoing week awareness? Pre-week triage? What belongs here that doesn't belong on the daily?
+
+3. **Meeting Briefing (Meeting Detail)** — The pre-meeting surface. What triggers opening it — a calendar notification? Anxiety about an unfamiliar attendee? How deep does it go vs. what the daily/weekly already surfaced?
+
+4. **Actions** — The commitment surface. Is it a queue you work through or a dashboard you check? How does triage (proposed → accepted) relate to execution (pending → done)?
+
+5. **Accounts / Projects / People (Entity Detail)** — The relationship surface. What job does someone hire this for? Pre-meeting research? Ongoing health monitoring? Post-meeting debrief context?
+
+**Section-level JTBDs within each surface.** Get granular. The daily briefing has a schedule section, an actions section, a narrative section, a review section. Each one has a job. Define it. If a section can't articulate its job in one sentence, it probably shouldn't exist — or it's doing two jobs and should split.
+
+**Deliverable:** ADR-0084 (Surface Jobs-to-Be-Done). This becomes the reference for all subsequent UI work.
+
+---
+
+#### Phase 2: Element Inventory & Prosecution
+
+Walk every surface in the running app. For each section, component, badge, button, label, and card:
+
+- **What is it?** (Name, location, current behavior)
+- **What job does it serve?** (Reference Phase 1 JTBD)
+- **Does it serve that job well?** (Is it clear? Is it in the right place? Does the user understand it without explanation?)
+- **Is it duplicated?** (Does another surface show the same information? Which one should own it?)
+- **Could the user do their job without it?** (If yes — does it actively help or is it decoration?)
+- **Is it earning its space?** (On an editorial layout with generous whitespace, every element must justify its real estate)
+
+This is the critique. Be ruthless. The question isn't "is this useful?" — lots of things are useful. The question is "does this serve the specific job this surface was hired to do?"
+
+**Deliverable:** Element audit spreadsheet or structured document. Every element with a verdict: keep, cut, move, merge, rethink.
+
+---
+
+#### Phase 3: Cut List, Restructure Plan & Vocabulary
+
+The hard part. From the Phase 2 audit, produce:
+
+1. **Cut list** — Elements that don't serve the JTBD. These get removed.
+2. **Move list** — Elements on the wrong surface. These relocate.
+3. **Merge list** — Duplicated elements across surfaces. One surface owns it, others link to it.
+4. **Rethink list** — Elements that serve the job but do it poorly. These get redesigned.
+5. **Section restructure** — If the daily briefing's section order doesn't match the user's mental model of their morning, reorder it. If a section is doing two jobs, split it. If two sections are doing one job, merge them.
+6. **Vocabulary alignment** — With the JTBD frame established, review ADR-0083's translation table. Do the product terms still make sense? Does "Briefing" work for the daily surface if its job turns out to be "ongoing awareness" rather than "morning preparation"? This is where vocabulary gets tested against real jobs, not just translated from system terms.
+
+**Deliverable:** Structured changelist that I341 (vocabulary audit) and I329 (quality indicators) execute against. This is the source of truth for what the surfaces should look like.
+
+---
+
+#### Phase 4: Execute
+
+Ship the changes. This is not a future consideration — it's part of this issue.
+
+- Remove elements on the cut list
+- Relocate elements on the move list
+- Merge duplicated elements
+- Redesign rethink-list elements
+- Restructure sections as needed
+- Validate against JTBD: does each surface now do its job and only its job?
+
+I341 (vocabulary audit) follows as a dependent step, applying ADR-0083's product vocabulary to the restructured surfaces with full awareness of the JTBD outcomes.
+
+---
+
+#### What this is NOT
+
+- Not a theoretical exercise. Phases 1-3 produce findings; Phase 4 ships code.
+- Not additive. The goal is to subtract. If nothing gets cut, the critique wasn't honest.
+- Not just about I330/I331. All five surface types get the same treatment. The daily briefing and weekly forecast are the most urgent because 0.13.0 will rebuild them, but every surface benefits.
+- Not a redesign. The editorial design system (ADR-0073/0076/0077) is solid. This is about *content* — what appears, where, and why — not how it looks.
+
+---
+
+**Acceptance criteria:**
+1. ADR-0084 exists defining JTBD for each surface and each section within surfaces
+2. Element audit completed for all five surface types with verdicts documented
+3. Cut list executed — elements removed from the app
+4. Move/merge list executed — elements relocated or consolidated
+5. Section structure validated against JTBD (reordered/split/merged as needed)
+6. I330/I331 acceptance criteria reviewed and updated against JTBD findings
+7. I341 (vocabulary audit) has a clear, JTBD-informed scope to execute against
+8. No section on any surface exists without a one-sentence job statement justifying it
+
+---
+
 ## Parking Lot
 
 *Post-ship. Blocked by I27 (entity-mode architecture), 0.8.0 (editorial design), or needs usage data.*
@@ -3723,6 +3897,81 @@ Umbrella issue for codebase hardening before first beta release (1.0.0). Finding
 | I35 | ProDev Intelligence | I27 |
 | I55 | Executive Intelligence | I27 |
 | I86 | First-party integrations (beyond MCP) | I27 |
+| I340 | Glean integration — enterprise knowledge enrichment | Glean account access |
+
+<a name="i340"></a>
+### I340 — Glean Integration
+
+**Status:** Blocked until we have a Glean account to test against.
+
+**What Glean is:** Enterprise AI search platform that indexes 100+ SaaS apps (Google Workspace, Slack, Salesforce, Confluence, etc.) and provides permissions-aware search, a chat assistant, and agents on top of a unified knowledge graph. Our business has acquired it but not yet implemented.
+
+**Core thesis: Glean is a knowledge source, DailyOS is an intelligence layer.** Glean unlocks institutional memory (what the company knows across all systems); DailyOS synthesizes it into opinionated, proactive intelligence (what you need to know before your 2pm). They don't compete — they compound.
+
+#### DailyOS vs Glean Differentiation
+
+| Dimension | DailyOS | Glean |
+|---|---|---|
+| **Posture** | Proactive — prepares your day before you open the app | Reactive — answers when you search or ask |
+| **Scope** | Personal chief of staff — one user's context | Company-wide knowledge — everyone's docs, wikis, conversations |
+| **Intelligence** | Longitudinal — relationship temperature, account health over time | Cross-sectional — finds what exists right now |
+| **Output** | Synthesized briefings, opinionated prep, prioritized actions | Search results, citations, chat answers |
+| **Data residency** | Local-first (SQLite) | Cloud SaaS |
+| **Meeting prep** | Pre-meeting dossiers with relationship context, risks, talking points | Post-meeting summaries; no proactive pre-meeting briefings |
+| **Actions** | Full lifecycle: proposed → accepted → completed with triage | No native action management |
+| **Relationships** | Deep — interaction frequency, sentiment, stakeholder changes | Shallow — org chart and activity signals |
+
+#### Where Glean adds value DailyOS can't reach
+
+DailyOS is limited to what one person can see: their calendar, email, workspace files. Glean unlocks **institutional memory** — the Confluence page a colleague wrote about an account's architecture, the Slack thread where engineering discussed a customer's feature request, the Salesforce notes from the AE.
+
+#### Integration Phases
+
+**Phase 1: Pull — People Enrichment** (highest value, lowest effort)
+- Enrich meeting attendees with Glean People API (title, department, manager, team, location)
+- `POST /rest/api/v1/people { email }` per attendee during prep
+- Auth: OAuth via Google Workspace SSO (same IdP DailyOS already uses)
+- Cache in people table locally
+- Files: SettingsPage (connect UI), `glean.rs` (new client), prepare/ (enrichment), db.rs (cache)
+
+**Phase 2: Pull — Search Enrichment for Meeting Prep**
+- Query Glean for company docs mentioning the meeting's account
+- `POST /rest/api/v1/search { query: "{account}", pageSize: 5 }`
+- Surface as "Company Knowledge" section in meeting intelligence
+- Must label source clearly — snippets from Glean, not full content
+
+**Phase 3: Push — Meeting Outcomes to Glean** (evaluate later)
+- Register DailyOS as custom datasource via Indexing API
+- Push non-duplicative content: synthesized prep narratives, outcomes (wins/risks/decisions), actions
+- Don't push: calendar data, raw email, transcripts (Glean already indexes those natively)
+- Open question: is the unique value worth the complexity?
+
+#### Authentication
+
+- OAuth via Google Workspace SSO — fits alongside existing Google OAuth in Settings
+- User provides Glean instance URL (e.g., `acme.glean.com`)
+- All API calls permissions-aware — user only sees what they'd see in Glean
+- Indexing API (push) requires admin-issued tokens, separate from user auth
+
+#### Open Questions
+
+1. Can we auto-detect Glean instance URL from user's email domain?
+2. Token refresh flow — does Glean OAuth use refresh tokens?
+3. Rate limits in practice for people/search endpoints?
+4. What does Glean generate natively for post-meeting summaries? (evaluate to avoid duplication in push)
+5. Should DailyOS disclose to users when it queries Glean? (yes — transparency)
+6. Offline/degraded mode — prep must work with reduced context if Glean is unreachable
+
+#### Key API Documentation
+
+- Developer Portal: https://developers.glean.com/
+- Client API: https://developers.glean.com/api-info/client/getting-started/overview
+- Indexing API: https://developers.glean.com/api-info/indexing/getting-started/overview
+- OAuth Auth: https://developers.glean.com/api-info/client/authentication/oauth
+- People API: https://developers.glean.com/api/client-api/entities/overview
+- Search API: https://developers.glean.com/api/client-api/search/overview
+- MCP Server: https://developers.glean.com/guides/mcp
+- Connectors: https://www.glean.com/connectors
 
 ---
 
@@ -4454,9 +4703,9 @@ Expand meeting classification so every non-all-hands meeting gets an intelligenc
 
 **I329: Intelligence quality indicators (replace "needs prep" badge)**
 
-**Priority:** P1 (0.13.0)
+**Priority:** P1 (0.12.1)
 **Area:** UX
-**Depends on:** I326 (intelligence lifecycle with state tracking)
+**Depends on:** I326 (intelligence lifecycle with state tracking), ADR-0083 (product vocabulary for label language)
 
 Replace the binary "needs prep" badge with intelligence quality indicators that communicate what the system knows and doesn't know about each meeting.
 
@@ -4497,7 +4746,7 @@ Replace the binary "needs prep" badge with intelligence quality indicators that 
 
 **Priority:** P1 (0.13.0)
 **Area:** Surfaces
-**Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators)
+**Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators), I342 (surface JTBD definition), I341 (product vocabulary audit)
 
 Transform the weekly forecast from a static overview into a live meeting intelligence browser. Each meeting shows accumulated intelligence state. The forecast updates throughout the week as intelligence evolves.
 
@@ -4539,7 +4788,7 @@ Transform the weekly forecast from a static overview into a live meeting intelli
 
 **Priority:** P1 (0.13.0)
 **Area:** Surfaces
-**Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators)
+**Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators), I342 (surface JTBD definition), I341 (product vocabulary audit)
 
 Redesign the daily briefing's relationship with meeting intelligence. The briefing assembles from pre-computed intelligence rather than generating it. The "Run Briefing" action becomes a lightweight morning refresh.
 
@@ -4836,3 +5085,75 @@ Update all frontend surfaces to read `meeting.entities` instead of `meeting.acco
 3. Meeting card shows appropriate icon for entity type
 4. Meetings with no entities show meeting type as fallback
 5. `pnpm build` compiles clean
+
+---
+
+### I343 — Inline Editing Service
+
+**Version:** 0.12.1
+**Priority:** P1
+**Area:** UX
+
+**Problem:** Inline editing across DailyOS is fragmented into three patterns with inconsistent UX. Long text fields (assessments, context, narrative blocks) drop users into cramped single-line `<input>` elements where 75% of the content is hidden off the right edge. Edits don't emit signals, so user corrections — the highest-confidence data in the system — don't influence enrichment scores.
+
+**Current state (3 patterns):**
+
+| Pattern | Where | Mechanism | Issues |
+|---------|-------|-----------|--------|
+| EditableText + onChange | StakeholderGallery, WatchList, StateBlock | `update_intelligence_field` with JSON path | Single-line input for long text, no signal emission |
+| Local EditableTextarea | ActionDetailPage (lines 695-774) | `update_action` with partial fields | Duplicate of EditableText, not shared |
+| Risk briefing debounced | RiskBriefingPage slides | 500ms debounced full-file save | Separate pattern, inconsistent save feedback |
+
+**Core component:** `src/components/ui/EditableText.tsx` (131 lines, ~1-2KB). Well-architected but limited — always renders `<input>` for single-line and `<textarea>` only when `multiline={true}` is explicitly passed. Most call sites don't pass `multiline`, even for content that routinely exceeds one line (stakeholder assessments, risk descriptions, state-of-play items).
+
+**What this issue delivers:**
+
+1. **Textarea-first for long content** — EditableText auto-detects content length or accepts a threshold prop. Text over ~40 chars or containing line breaks renders as auto-resizing textarea in edit mode, not a single-line input. Users see and edit the full text, not a truncated sliver.
+
+2. **Unified editing hook** (`useEditableField`) — Handles debounced persistence, optimistic UI, save status indicator ("Saved"), and undo. All editable surfaces get consistent behavior through one hook instead of ad-hoc `useState` + `useRef` + `setTimeout` scattered across pages.
+
+3. **Signal emission on edit** — Every `update_intelligence_field` call also emits a `user_correction` signal event (source weight 1.0, 365-day half-life). User corrections become the strongest signal in the system, actively influencing enrichment scores rather than just protecting fields from overwrite.
+
+4. **Keyboard navigation** — Tab/Shift+Tab cycles between editable fields on a page. Focus management via refs. No library needed.
+
+5. **Merge local EditableTextarea** — The ActionDetailPage duplicate (lines 695-774) is replaced with the enhanced EditableText.
+
+6. **Consistent save feedback** — All editable surfaces show the same "Saved" indicator pattern currently only in RiskBriefingPage and ActionDetailPage.
+
+7. **Drag-to-reorder for structured lists** — Stakeholder order, risk priority, action items, and other ordered lists get drag handles on hover. Uses `dnd-kit` (~15KB, the only new dependency). Reorder persists through the same `update_intelligence_field` / `update_stakeholders` paths and emits signals. Subtle drag handle appears on hover, matching the editorial aesthetic (no heavy grip icons).
+
+8. **Switchable badges** (`BadgeSelector` component) — Generalize the `EngagementSelector` pattern into a reusable `BadgeSelector` that works for any enumerated field. Click a badge → dropdown with options → selection persists and propagates via signal emission. Current `EngagementSelector` (stakeholder engagement: Champion, Active Partner, Participates, Passive, Not Yet Seen, At Risk) becomes the first consumer, but the same component supports any badge type: sentiment, health status, priority, meeting role, relationship strength, etc. Badge changes on one surface propagate to all surfaces showing the same entity — change a stakeholder from "Passive" to "Champion" on the account detail page and it reflects in meeting intelligence, risk briefings, and daily briefing cards. This is particularly valuable when attaching people to meetings or reports: quickly correct a badge to reflect reality rather than what AI inferred.
+
+**Research conclusions:**
+- Block editors (TipTap 50-70KB, Lexical 22KB, Plate 60-80KB) are overkill — we edit fields, not documents
+- Lightweight inline-edit libraries (react-easy-edit) add abstraction we don't need
+- `dnd-kit` (~15KB) is the right fit for drag-to-reorder — headless, fully styleable, modern React 18+ support
+- Our homegrown EditableText is the right foundation; it just needs the enhancements above
+
+**Files to modify:**
+
+| File | Change |
+|------|--------|
+| `src/components/ui/EditableText.tsx` | Auto-textarea for long content, keyboard nav support |
+| `src/components/ui/BadgeSelector.tsx` | New — generalized switchable badge (from EngagementSelector pattern) |
+| `src/hooks/useEditableField.ts` | New — debounce, persistence, save status, undo |
+| `src/pages/ActionDetailPage.tsx` | Remove local EditableTextarea, use enhanced EditableText |
+| `src/components/entity/StakeholderGallery.tsx` | Use hook, BadgeSelector, dnd-kit reorder, multiline |
+| `src/components/entity/EngagementSelector.tsx` | Refactor to thin wrapper around BadgeSelector |
+| `src/components/entity/WatchList.tsx` | Use hook, dnd-kit reorder for risks/wins |
+| `src/components/editorial/StateBlock.tsx` | Use hook |
+| `src-tauri/src/commands.rs` | Emit `user_correction` signal in `update_intelligence_field` |
+| `src-tauri/src/entity_intel.rs` | Signal emission helper |
+| `package.json` | Add `@dnd-kit/core`, `@dnd-kit/sortable` |
+
+**Acceptance criteria:**
+1. Editing a stakeholder assessment opens a textarea showing the full text, not a truncated input
+2. Every intelligence field edit (text or badge) emits a `user_correction` signal event (visible in signal_events table)
+3. Tab navigates between editable fields on account/person detail pages
+4. ActionDetailPage uses shared EditableText (no local duplicate)
+5. Save feedback ("Saved") appears consistently across all editable surfaces
+6. Stakeholders, risks, and wins can be drag-reordered; new order persists
+7. Engagement badge is switchable via click-dropdown on any surface showing stakeholders
+8. Badge changes propagate — switching engagement on account detail reflects in meeting prep and briefing cards
+9. Only new npm dependency: `@dnd-kit/core` + `@dnd-kit/sortable`
+10. `pnpm build` compiles clean, `cargo test` passes
