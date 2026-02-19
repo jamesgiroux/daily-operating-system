@@ -3438,7 +3438,7 @@ impl ActionDb {
     ) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).format("%Y-%m-%d %H:%M:%S").to_string();
         self.conn.execute(
             "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, source, next_attempt_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -3451,7 +3451,7 @@ impl ActionDb {
     pub fn insert_quill_sync_state(&self, meeting_id: &str) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).format("%Y-%m-%d %H:%M:%S").to_string();
         self.conn.execute(
             "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, next_attempt_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -3575,7 +3575,7 @@ impl ActionDb {
 
         // Exponential backoff: 5 * 2^attempts minutes (5, 10, 20, 40, 80 min)
         let delay_minutes = 5i64 * (1i64 << new_attempts);
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(delay_minutes)).to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(delay_minutes)).format("%Y-%m-%d %H:%M:%S").to_string();
 
         self.conn.execute(
             "UPDATE quill_sync_state
@@ -4212,6 +4212,29 @@ impl ActionDb {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    // ================================================================
+    // Hygiene actions log (I353 Phase 2)
+    // ================================================================
+
+    /// Log a hygiene action triggered by a signal.
+    pub fn log_hygiene_action(
+        &self,
+        source_signal_id: Option<&str>,
+        action_type: &str,
+        entity_id: &str,
+        entity_type: &str,
+        confidence: f64,
+        result: &str,
+    ) -> Result<(), DbError> {
+        let id = format!("ha-{}", uuid::Uuid::new_v4());
+        self.conn.execute(
+            "INSERT INTO hygiene_actions_log (id, source_signal_id, action_type, entity_id, entity_type, confidence, result)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, source_signal_id, action_type, entity_id, entity_type, confidence, result],
+        )?;
+        Ok(())
     }
 
     /// Query actions extracted from a transcript for a specific meeting.
