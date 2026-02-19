@@ -197,6 +197,120 @@ pub fn classify_email_priority_with_extras(
 }
 
 // ============================================================================
+// I320: Signal-context boosting (Layer 1 of hybrid classification)
+// ============================================================================
+
+/// High-confidence signal types that warrant boosting a medium email to high.
+const BOOST_SIGNAL_TYPES: &[&str] = &[
+    "renewal_approaching",
+    "engagement_warning",
+    "champion_risk",
+    "churn_risk",
+    "escalation",
+    "expansion_opportunity",
+    "cadence_anomaly",
+];
+
+/// A boost result explaining why an email was elevated.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BoostResult {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub signal_type: String,
+    pub reason: String,
+}
+
+/// After mechanical classification, check if the email's sender resolves to
+/// an entity with active high-confidence signals. If so, boost "medium" → "high".
+///
+/// Returns `Some(BoostResult)` if the email should be boosted, `None` otherwise.
+/// Only operates on "medium" priority emails — high stays high, low stays low.
+pub fn boost_with_entity_context(
+    from_email: &str,
+    current_priority: &str,
+    db: &crate::db::ActionDb,
+) -> Option<BoostResult> {
+    if current_priority != "medium" {
+        return None;
+    }
+
+    // Find entity via email_signals (sender_email → entity mapping)
+    let conn = db.conn_ref();
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT entity_id, entity_type
+             FROM email_signals
+             WHERE sender_email = ?1
+             ORDER BY detected_at DESC
+             LIMIT 5",
+        )
+        .ok()?;
+
+    let entity_matches: Vec<(String, String)> = stmt
+        .query_map(rusqlite::params![from_email], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .ok()?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // Check each matched entity for active high-confidence signals
+    for (entity_id, entity_type) in &entity_matches {
+        let mut sig_stmt = match conn.prepare(
+            "SELECT signal_type, value, confidence
+             FROM signal_events
+             WHERE entity_id = ?1 AND entity_type = ?2
+               AND emitted_at >= datetime('now', '-30 days')
+               AND confidence >= 0.6
+             ORDER BY emitted_at DESC
+             LIMIT 20",
+        ) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let signals: Vec<(String, Option<String>, f64)> = sig_stmt
+            .query_map(rusqlite::params![entity_id, entity_type], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            })
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (signal_type, value, confidence) in &signals {
+            if BOOST_SIGNAL_TYPES.contains(&signal_type.as_str()) {
+                let reason = match value {
+                    Some(v) => format!(
+                        "elevated: {} (confidence {:.0}%)",
+                        v,
+                        confidence * 100.0
+                    ),
+                    None => format!(
+                        "elevated: {} (confidence {:.0}%)",
+                        signal_type,
+                        confidence * 100.0
+                    ),
+                };
+                return Some(BoostResult {
+                    entity_id: entity_id.clone(),
+                    entity_type: entity_type.clone(),
+                    signal_type: signal_type.clone(),
+                    reason,
+                });
+            }
+        }
+    }
+
+    None
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
