@@ -509,7 +509,11 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
         }
 
         match accounts::read_account_json(path) {
-            Ok(accounts::ReadAccountResult { account, json }) => {
+            Ok(accounts::ReadAccountResult { mut account, json }) => {
+                // Preserve user-edited name: the DB name is authoritative.
+                if let Ok(Some(existing)) = db.get_account(&account.id) {
+                    account.name = existing.name;
+                }
                 if db.upsert_account(&account).is_ok() {
                     let _ = accounts::write_account_markdown(workspace, &account, Some(&json), &db);
                     log::info!("Watcher: synced external edit to {}", path.display());
