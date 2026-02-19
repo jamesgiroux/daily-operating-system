@@ -145,6 +145,7 @@ export default function MeetingDetailPage() {
 
   // Transcript attach
   const [attaching, setAttaching] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const draft = useAgendaDraft({ onError: setError });
   const [prefillNotice, setPrefillNotice] = useState(false);
   const [prefilling, setPrefilling] = useState(false);
@@ -200,6 +201,25 @@ export default function MeetingDetailPage() {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
+    }
+  }, [meetingId]);
+
+  const handleSyncTranscript = useCallback(async () => {
+    if (!meetingId) return;
+    setSyncing(true);
+    try {
+      const result = await invoke<string>("trigger_quill_sync_for_meeting", { meetingId });
+      if (result === "already_completed") {
+        toast.success("Transcript already synced");
+      } else if (result === "already_in_progress") {
+        toast.success("Sync already in progress");
+      } else {
+        toast.success("Transcript sync started");
+      }
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Sync failed");
+    } finally {
+      setSyncing(false);
     }
   }, [meetingId]);
 
@@ -342,6 +362,16 @@ export default function MeetingDetailPage() {
         <button onClick={handleDraftAgendaMessage} style={folioBtn}>
           Draft Agenda
         </button>
+        {isPastMeeting && (
+          <button
+            onClick={handleSyncTranscript}
+            disabled={syncing}
+            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: syncing ? 0.5 : 1, cursor: syncing ? "not-allowed" : "pointer" }}
+          >
+            {syncing ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <RefreshCw style={{ width: 10, height: 10 }} />}
+            {syncing ? "Syncing…" : "Sync"}
+          </button>
+        )}
         <button
           onClick={handleAttachTranscript}
           disabled={attaching}
@@ -359,7 +389,7 @@ export default function MeetingDetailPage() {
         </button>
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, handlePrefillFromContext, handleDraftAgendaMessage, handleAttachTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, isPastMeeting, handlePrefillFromContext, handleDraftAgendaMessage, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──

@@ -9410,6 +9410,39 @@ pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bo
     Ok(true)
 }
 
+/// Trigger Quill transcript sync for a single meeting.
+/// Creates a sync row if none exists, or resets a failed/stale one to pending.
+#[tauri::command]
+pub fn trigger_quill_sync_for_meeting(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // Check if a sync row already exists
+    match db.get_quill_sync_state(&meeting_id).map_err(|e| e.to_string())? {
+        Some(existing) => {
+            match existing.state.as_str() {
+                "completed" => Ok("already_completed".to_string()),
+                "pending" | "polling" | "fetching" | "processing" => Ok("already_in_progress".to_string()),
+                _ => {
+                    // Failed or abandoned — reset to pending for retry
+                    crate::quill::sync::transition_state(
+                        db, &existing.id, "pending", None, None, None, Some("Manual retry"),
+                    ).map_err(|e| e.to_string())?;
+                    Ok("retrying".to_string())
+                }
+            }
+        }
+        None => {
+            crate::quill::sync::create_sync_for_meeting(db, &meeting_id)
+                .map_err(|e| e.to_string())?;
+            Ok("created".to_string())
+        }
+    }
+}
+
 /// Get Quill sync states, optionally filtered by meeting ID.
 #[tauri::command]
 pub fn get_quill_sync_states(
