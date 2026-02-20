@@ -468,17 +468,7 @@ pub fn validate_email(email: &str) -> Result<String, String> {
     Ok(trimmed)
 }
 
-/// Normalize domain list: trim, lowercase, dedup, remove empty.
-pub fn normalize_domains(domains: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = domains
-        .iter()
-        .map(|d| d.trim().to_lowercase())
-        .filter(|d| !d.is_empty())
-        .collect();
-    out.sort();
-    out.dedup();
-    out
-}
+// normalize_domains moved to crate::helpers::normalize_domains (DRY)
 
 /// Writes content to a file atomically: write to .tmp, then rename.
 /// Rename is atomic on the same filesystem (POSIX guarantee).
@@ -886,27 +876,7 @@ mod tests {
         assert!(validate_email("us..er@example.com").is_err());
     }
 
-    // Domain normalization tests
-
-    #[test]
-    fn test_normalize_domains() {
-        let input = vec![
-            "  Example.COM  ".to_string(),
-            "".to_string(),
-            "test.io".to_string(),
-        ];
-        assert_eq!(normalize_domains(&input), vec!["example.com", "test.io"]);
-    }
-
-    #[test]
-    fn test_normalize_domains_dedup() {
-        let input = vec![
-            "acme.com".to_string(),
-            "ACME.COM".to_string(),
-            "other.io".to_string(),
-        ];
-        assert_eq!(normalize_domains(&input), vec!["acme.com", "other.io"]);
-    }
+    // normalize_domains tests moved to helpers.rs (DRY dedup)
 
     // Managed workspace files tests (I275)
 
