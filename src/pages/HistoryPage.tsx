@@ -19,7 +19,7 @@ export default function HistoryPage() {
     () => ({
       folioLabel: "Processing History",
       atmosphereColor: "olive" as const,
-      activePage: "inbox" as const,
+      activePage: "dropbox" as const,
     }),
     [],
   );

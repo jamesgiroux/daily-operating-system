@@ -13,6 +13,7 @@ import React from 'react';
 import { BrandMark } from '../ui/BrandMark';
 import {
   Calendar,
+  Mail,
   Inbox,
   CheckSquare2,
   Users,
@@ -42,7 +43,7 @@ export interface FloatingNavIslandProps {
    * Currently active page for visual highlighting (app mode)
    * Default: 'today'
    */
-  activePage?: 'today' | 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
+  activePage?: 'today' | 'week' | 'emails' | 'dropbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
 
   /**
    * Color of active state indicator
@@ -77,7 +78,7 @@ export interface FloatingNavIslandProps {
 }
 
 interface NavItem {
-  id: 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
+  id: 'week' | 'emails' | 'dropbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
   label: string;
   icon: React.ReactNode;
   group: 'main' | 'entity' | 'admin';
@@ -136,7 +137,8 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   // App mode — icon-based page navigation
   const items: NavItem[] = [
     { id: 'week', label: 'This Week', icon: <Calendar size={18} strokeWidth={1.8} />, group: 'main' },
-    { id: 'inbox', label: 'Inbox', icon: <Inbox size={18} strokeWidth={1.8} />, group: 'main' },
+    { id: 'emails', label: 'Mail', icon: <Mail size={18} strokeWidth={1.8} />, group: 'main' },
+    { id: 'dropbox', label: 'Dropbox', icon: <Inbox size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'people', label: 'People', icon: <Users size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'accounts', label: 'Accounts', icon: <Building2 size={18} strokeWidth={1.8} />, group: 'entity' },

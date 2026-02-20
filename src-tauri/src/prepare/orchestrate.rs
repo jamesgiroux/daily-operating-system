@@ -1422,10 +1422,14 @@ fn compute_wait_duration(date_str: &str, now: &chrono::DateTime<Utc>) -> String 
     String::new()
 }
 
-/// I322: Synthesize a 2-4 sentence email briefing narrative from:
+/// I322: Synthesize a short editorial headline for the email page.
+///
+/// Must be a single punchy sentence — max ~10 words — suitable for display
+/// at 76px serif. Combines the most newsworthy signal from:
 /// - Thread positions (replies_needed from I318)
 /// - High-priority emails
 /// - Meeting contexts with email digests (I317)
+/// - Cadence anomalies (I319)
 ///
 /// Returns None if there's nothing meaningful to say.
 fn synthesize_email_narrative(
@@ -1434,110 +1438,79 @@ fn synthesize_email_narrative(
     meeting_contexts: &[Value],
     cadence_anomalies: &[crate::signals::cadence::CadenceAnomaly],
 ) -> Option<String> {
-    let mut sentences = Vec::new();
-
-    // Thread position sentence
-    if !replies_needed.is_empty() {
-        let count = replies_needed.len();
-        if count == 1 {
-            let subject = replies_needed[0]
-                .get("subject")
-                .and_then(|v| v.as_str())
-                .unwrap_or("a thread");
-            let from = replies_needed[0]
-                .get("from")
-                .and_then(|v| v.as_str())
-                .unwrap_or("someone");
-            sentences.push(format!("{} replied to \"{}\" — awaiting your response.", from, subject));
-        } else {
-            sentences.push(format!("{} threads are awaiting your reply.", count));
-        }
-    }
-
-    // High-priority count
-    if high_priority.len() > 2 {
-        sentences.push(format!("{} high-priority emails today.", high_priority.len()));
-    } else if high_priority.len() == 1 {
-        let from = high_priority[0]
-            .get("from")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown");
-        let subject = high_priority[0]
-            .get("subject")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if !subject.is_empty() {
-            sentences.push(format!("Priority email from {}: \"{}\".", from, subject));
-        }
-    }
-
-    // Meeting-linked emails
-    let meetings_with_email: Vec<&str> = meeting_contexts
+    // Count meeting-linked email threads
+    let meetings_with_email = meeting_contexts
         .iter()
         .filter(|mc| {
             mc.get("pre_meeting_email_context")
                 .and_then(|v| v.as_array())
                 .is_some_and(|a| !a.is_empty())
         })
-        .filter_map(|mc| {
-            mc.get("title")
-                .or_else(|| mc.get("account"))
-                .and_then(|v| v.as_str())
-        })
-        .collect();
-
-    if !meetings_with_email.is_empty() {
-        if meetings_with_email.len() == 1 {
-            sentences.push(format!(
-                "Email threads connected to your {} meeting.",
-                meetings_with_email[0]
-            ));
-        } else {
-            sentences.push(format!(
-                "Email threads connected to {} of today's meetings.",
-                meetings_with_email.len()
-            ));
-        }
-    }
-
-    // Cadence anomalies (I319)
-    let quiet_count = cadence_anomalies
-        .iter()
-        .filter(|a| a.anomaly_type == "gone_quiet")
         .count();
+
+    let reply_count = replies_needed.len();
+    let high_count = high_priority.len();
+
+    // Cadence anomaly counts
     let spike_count = cadence_anomalies
         .iter()
         .filter(|a| a.anomaly_type == "activity_spike")
         .count();
-    if quiet_count > 0 {
-        if quiet_count == 1 {
-            let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "gone_quiet").unwrap();
-            sentences.push(format!(
-                "{} email volume dropped {:.0}% this week.",
-                a.entity_id,
-                (1.0 - a.current_count as f64 / a.rolling_avg) * 100.0,
-            ));
-        } else {
-            sentences.push(format!("{} accounts have gone quiet on email.", quiet_count));
-        }
-    }
+
+    // Pick the single most newsworthy headline. Priority order:
+    // 1. Spike anomaly (unusual, attention-grabbing)
+    // 2. Replies needed + meeting context (actionable + timely)
+    // 3. Replies needed alone
+    // 4. High-priority count + meeting context
+    // 5. High-priority count alone
+    // 6. Meeting-linked threads
     if spike_count > 0 {
-        if spike_count == 1 {
-            let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "activity_spike").unwrap();
-            sentences.push(format!(
-                "Unusual email surge from {} ({} vs {:.0}/week average).",
-                a.entity_id, a.current_count, a.rolling_avg,
-            ));
-        } else {
-            sentences.push(format!("{} accounts spiking in email volume.", spike_count));
-        }
+        let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "activity_spike").unwrap();
+        return Some(format!("Email surge from {}.", a.entity_id));
     }
 
-    if sentences.is_empty() {
-        None
-    } else {
-        Some(sentences.join(" "))
+    if reply_count > 0 && meetings_with_email > 0 {
+        return Some(format!(
+            "{} threads waiting, {} linked to today's meetings.",
+            reply_count, meetings_with_email
+        ));
     }
+
+    if reply_count > 0 {
+        if reply_count == 1 {
+            let from = replies_needed[0]
+                .get("from")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Someone");
+            return Some(format!("{} is waiting on your reply.", from));
+        }
+        return Some(format!("{} conversations waiting on you.", reply_count));
+    }
+
+    if high_count > 0 && meetings_with_email > 0 {
+        return Some(format!(
+            "{} priority emails, {} tied to meetings.",
+            high_count, meetings_with_email
+        ));
+    }
+
+    if high_count > 0 {
+        return Some(format!(
+            "{} email{} need{} your attention.",
+            high_count,
+            if high_count == 1 { "" } else { "s" },
+            if high_count == 1 { "s" } else { "" },
+        ));
+    }
+
+    if meetings_with_email > 0 {
+        return Some(format!(
+            "Email threads tied to {} of today's meetings.",
+            meetings_with_email
+        ));
+    }
+
+    None
 }
 
 /// Extract customer domains from classified meetings.

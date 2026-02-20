@@ -313,6 +313,8 @@ pub fn default_features_for_mode(profile: &str, entity_mode: &str) -> HashMap<St
     features.insert("emailBodyAccess".to_string(), true);
     // I323: auto-archive low-priority emails
     features.insert("autoArchiveEnabled".to_string(), false);
+    // I357: semantic AI reclassification of medium-priority emails
+    features.insert("semanticEmailReclass".to_string(), false);
     features
 }
 
@@ -822,6 +824,15 @@ pub struct Email {
     /// Email category from AI classification
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_type: Option<String>,
+    /// Commitments extracted by AI enrichment (I354)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub commitments: Vec<String>,
+    /// Questions extracted by AI enrichment (I354)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub questions: Vec<String>,
+    /// Sentiment from AI enrichment (I354)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment: Option<String>,
 }
 
 /// Complete dashboard data payload
@@ -838,6 +849,12 @@ pub struct DashboardData {
     pub email_sync: Option<EmailSyncStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focus: Option<DailyFocus>,
+    /// AI-synthesized email narrative (I322/I355)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_narrative: Option<String>,
+    /// Threads awaiting user reply (I318/I355)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
 }
 
 // =============================================================================
@@ -1248,6 +1265,12 @@ pub struct EmailBriefingData {
     pub entity_threads: Vec<EntityEmailThread>,
     pub stats: EmailBriefingStats,
     pub has_enrichment: bool,
+    /// AI-synthesized email narrative from directive (I322/I355)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_narrative: Option<String>,
+    /// Threads awaiting user reply from directive (I318/I355)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
 }
 
 // =============================================================================

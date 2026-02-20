@@ -309,6 +309,8 @@ pub fn run() {
             commands::reopen_action,
             commands::accept_proposed_action,
             commands::reject_proposed_action,
+            commands::dismiss_email_item,
+            commands::list_dismissed_email_items,
             commands::get_proposed_actions,
             commands::get_meeting_history,
             commands::get_meeting_history_detail,

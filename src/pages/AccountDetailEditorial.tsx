@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { formatArr, formatShortDate } from "@/lib/utils";
@@ -40,7 +40,6 @@ import {
 } from "@/components/ui/dialog";
 import { AccountHero } from "@/components/account/AccountHero";
 import { AccountAppendix } from "@/components/account/AccountAppendix";
-import { WatchListPrograms } from "@/components/account/WatchListPrograms";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
 import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
@@ -48,8 +47,6 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { EntityKeywords } from "@/components/entity/EntityKeywords";
-import { AccountFieldsDrawer } from "@/components/account/AccountFieldsDrawer";
 import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
@@ -191,7 +188,6 @@ export default function AccountDetailEditorial() {
   useRegisterMagazineShell(shellConfig);
 
   // Drawer/dialog open state
-  const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
@@ -221,13 +217,33 @@ export default function AccountDetailEditorial() {
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
 
+  // Auto-save inline field edits with debounce
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleInlineAutoSave = useCallback(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      await acct.handleSave();
+      if (accountId && Object.keys(metadataValues).length > 0) {
+        await invoke("update_entity_metadata", {
+          entityType: "account",
+          entityId: accountId,
+          metadata: JSON.stringify(metadataValues),
+        }).catch((e: unknown) => console.error("Failed to save metadata:", e));
+      }
+    }, 600);
+  }, [acct.handleSave, accountId, metadataValues]);
+  useEffect(() => {
+    if (acct.dirty) handleInlineAutoSave();
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [acct.dirty, handleInlineAutoSave]);
+
   if (acct.loading) return <EditorialLoading />;
 
   if (acct.error || !acct.detail) {
     return <EditorialError message={acct.error ?? "Account not found"} onRetry={acct.load} />;
   }
 
-  const { detail, intelligence, events, files, programs } = acct;
+  const { detail, intelligence, events, files } = acct;
 
   // Notes dirty tracking (compare editNotes to saved detail.notes)
   const notesDirty = acct.editNotes !== (detail.notes ?? "");
@@ -299,7 +315,16 @@ export default function AccountDetailEditorial() {
         <AccountHero
           detail={detail}
           intelligence={intelligence}
-          onEditFields={() => setFieldsDrawerOpen(true)}
+          editHealth={acct.editHealth}
+          onHealthChange={(v) => { acct.setEditHealth(v); acct.setDirty(true); }}
+          editLifecycle={acct.editLifecycle}
+          onLifecycleChange={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
+          editArr={acct.editArr}
+          onArrChange={(v) => { acct.setEditArr(v); acct.setDirty(true); }}
+          editNps={acct.editNps}
+          onNpsChange={(v) => { acct.setEditNps(v); acct.setDirty(true); }}
+          editRenewal={acct.editRenewal}
+          onRenewalChange={(v) => { acct.setEditRenewal(v); acct.setDirty(true); }}
           onManageTeam={() => setTeamDrawerOpen(true)}
           onEnrich={acct.handleEnrich}
           enriching={acct.enriching}
@@ -312,8 +337,6 @@ export default function AccountDetailEditorial() {
             <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
           )}
         </div>
-        <EntityKeywords entityId={accountId} entityType="account" keywordsJson={detail.keywords} />
-
         {/* Auto-rollover prompt for past renewal dates */}
         {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
           <div
@@ -399,14 +422,6 @@ export default function AccountDetailEditorial() {
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
-          bottomSection={
-            <WatchListPrograms
-              programs={programs}
-              onProgramUpdate={acct.handleProgramUpdate}
-              onProgramDelete={acct.handleProgramDelete}
-              onAddProgram={acct.handleAddProgram}
-            />
-          }
         />
       </div>
 
@@ -438,7 +453,6 @@ export default function AccountDetailEditorial() {
       <div className="editorial-reveal">
         <AccountAppendix
           detail={detail}
-          intelligence={intelligence}
           events={events}
           files={files}
           editNotes={acct.editNotes}
@@ -458,45 +472,6 @@ export default function AccountDetailEditorial() {
       </div>
 
       {/* ─── Drawers ─── */}
-
-      <AccountFieldsDrawer
-        open={fieldsDrawerOpen}
-        onOpenChange={setFieldsDrawerOpen}
-        editName={acct.editName}
-        setEditName={acct.setEditName}
-        editHealth={acct.editHealth}
-        setEditHealth={acct.setEditHealth}
-        editLifecycle={acct.editLifecycle}
-        setEditLifecycle={acct.setEditLifecycle}
-        editArr={acct.editArr}
-        setEditArr={acct.setEditArr}
-        editNps={acct.editNps}
-        setEditNps={acct.setEditNps}
-        editRenewal={acct.editRenewal}
-        setEditRenewal={acct.setEditRenewal}
-        editParentId={acct.editParentId}
-        setEditParentId={acct.setEditParentId}
-        accountId={accountId}
-        setDirty={acct.setDirty}
-        onSave={async () => {
-          await acct.handleSave();
-          if (accountId && Object.keys(metadataValues).length > 0) {
-            await invoke("update_entity_metadata", {
-              entityType: "account",
-              entityId: accountId,
-              metadata: JSON.stringify(metadataValues),
-            }).catch((e: unknown) => console.error("Failed to save metadata:", e));
-          }
-        }}
-        onCancel={acct.handleCancelEdit}
-        saving={acct.saving}
-        dirty={acct.dirty}
-        metadataFields={preset?.metadata.account}
-        metadataValues={metadataValues}
-        onMetadataChange={(key, value) =>
-          setMetadataValues((prev) => ({ ...prev, [key]: value }))
-        }
-      />
 
       <TeamManagementDrawer
         open={teamDrawerOpen}

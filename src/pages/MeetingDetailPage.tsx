@@ -11,8 +11,6 @@ import type {
   FullMeetingPrep,
   Stakeholder,
   StakeholderSignals,
-  ActionWithContext,
-  SourceReference,
   AttendeeContext,
   AccountSnapshotItem,
   MeetingOutcomeData,
@@ -25,7 +23,6 @@ import type {
 } from "@/types";
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
-import { CopyButton } from "@/components/ui/copy-button";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -37,7 +34,6 @@ import { EditorialError } from "@/components/editorial/EditorialError";
 import {
   AlignLeft,
   AlertTriangle,
-  BookOpen,
   Check,
   ChevronRight,
   CircleDot,
@@ -71,19 +67,6 @@ const chapterHeadingStyle: React.CSSProperties = {
   color: "var(--color-text-tertiary)",
 };
 
-const editorialBtn: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 12,
-  fontWeight: 500,
-  letterSpacing: "0.04em",
-  padding: "6px 14px",
-  border: "1px solid var(--color-rule-light)",
-  borderRadius: 4,
-  background: "transparent",
-  color: "var(--color-text-secondary)",
-  cursor: "pointer",
-};
-
 const folioBtn: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 11,
@@ -114,7 +97,6 @@ const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "risks", label: "Risks", icon: <AlertTriangle size={18} strokeWidth={1.5} /> },
   { id: "the-room", label: "The Room", icon: <Users size={18} strokeWidth={1.5} /> },
   { id: "your-plan", label: "Your Plan", icon: <Target size={18} strokeWidth={1.5} /> },
-  { id: "deep-dive", label: "Deep Dive", icon: <BookOpen size={18} strokeWidth={1.5} /> },
 ];
 
 // ── Unified attendee type ──
@@ -342,7 +324,7 @@ export default function MeetingDetailPage() {
 
   // Register magazine shell with chapter nav + folio actions
   const shellConfig = useMemo(() => ({
-    folioLabel: "Intelligence Report",
+    folioLabel: "Meeting Briefing",
     atmosphereColor: "turmeric" as const,
     activePage: "today" as const,
     backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/" }) },
@@ -362,16 +344,7 @@ export default function MeetingDetailPage() {
         <button onClick={handleDraftAgendaMessage} style={folioBtn}>
           Draft Agenda
         </button>
-        {isPastMeeting && (
-          <button
-            onClick={handleSyncTranscript}
-            disabled={syncing}
-            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: syncing ? 0.5 : 1, cursor: syncing ? "not-allowed" : "pointer" }}
-          >
-            {syncing ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <RefreshCw style={{ width: 10, height: 10 }} />}
-            {syncing ? "Syncing…" : "Sync"}
-          </button>
-        )}
+
         <button
           onClick={handleAttachTranscript}
           disabled={attaching}
@@ -426,7 +399,7 @@ export default function MeetingDetailPage() {
               margin: "0 0 8px",
             }}
           >
-            Prep not ready yet
+            Not ready yet
           </h2>
           <p
             style={{
@@ -479,14 +452,9 @@ export default function MeetingDetailPage() {
       why: item.why ? cleanPrepLine(item.why) : undefined,
     }))
     .filter((item) => item.topic.length > 0);
-  const { wins: recentWins } = deriveRecentWins(data);
   const agendaNonWinItems = agendaItems.filter((item) => item.source !== "talking_point");
   const agendaDisplayItems = agendaNonWinItems.length > 0 ? agendaNonWinItems : agendaItems;
   const calendarNotes = normalizeCalendarNotes(data.calendarNotes);
-  const agendaTopics = new Set(agendaDisplayItems.map((item) => normalizePersonKey(item.topic)));
-  const recentWinsForDisplay = recentWins.filter(
-    (win) => !agendaTopics.has(normalizePersonKey(win))
-  );
 
   // Build unified attendees
   const unifiedAttendees = buildUnifiedAttendees(
@@ -494,15 +462,6 @@ export default function MeetingDetailPage() {
     data.attendees,
     data.stakeholderInsights,
     data.stakeholderSignals,
-  );
-  const extendedStakeholderInsights = (data.stakeholderInsights ?? []).filter(
-    (person) => {
-      const attendeeNames = new Set<string>([
-        ...(data.attendeeContext ?? []).map((p) => normalizePersonKey(p.name)),
-        ...(data.attendees ?? []).map((p) => normalizePersonKey(p.name)),
-      ]);
-      return !attendeeNames.has(normalizePersonKey(person.name));
-    }
   );
 
   // Key insight — first sentence from intelligence summary
@@ -524,15 +483,6 @@ export default function MeetingDetailPage() {
   const hasRisks = topRisks.length > 0;
   const hasRoom = unifiedAttendees.length > 0;
   const hasPlan = agendaDisplayItems.length > 0 || (meetingId && isEditable);
-  const hasDeepDive = Boolean(
-    recentWinsForDisplay.length > 0 ||
-    (data.openItems && data.openItems.length > 0) ||
-    (data.recentEmailSignals && data.recentEmailSignals.filter((s) => (s.confidence ?? 0) >= 0.6).length > 0) ||
-    hasReferenceContent(data) ||
-    (data.sinceLast?.length ?? 0) > 0 ||
-    (data.strategicPrograms?.length ?? 0) > 0
-  );
-
   return (
     <>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 0 80px" }}>
@@ -547,68 +497,6 @@ export default function MeetingDetailPage() {
               {isPastMeeting ? "Pre-Meeting Context" : "Meeting Prep"}
             </p>
           </>
-        )}
-
-        {/* Past meeting: prompt to attach transcript */}
-        {isPastMeeting && (
-          <div
-            style={{
-              border: "1px dashed var(--color-rule-light)",
-              padding: "20px 24px",
-              marginTop: 80,
-              marginBottom: 32,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: "var(--color-text-primary)",
-                  margin: "0 0 4px",
-                }}
-              >
-                {outcomes ? "Update outcomes" : "No outcomes captured yet"}
-              </p>
-              <p
-                style={{
-                  fontSize: 14,
-                  color: "var(--color-text-tertiary)",
-                  margin: 0,
-                }}
-              >
-                {outcomes
-                  ? "Attach a new transcript to re-process meeting outcomes."
-                  : "Attach a transcript or manually capture meeting outcomes."}
-              </p>
-              {meetingId && (
-                <div style={{ marginTop: 8 }}>
-                  <QuillSyncBadge meetingId={meetingId} />
-                </div>
-              )}
-            </div>
-            <button
-              onClick={handleAttachTranscript}
-              disabled={attaching}
-              style={{
-                ...editorialBtn,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                opacity: attaching ? 0.6 : 1,
-              }}
-            >
-              {attaching ? (
-                <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />
-              ) : (
-                <Paperclip style={{ width: 14, height: 14 }} />
-              )}
-              {attaching ? "Processing..." : "Attach Transcript"}
-            </button>
-          </div>
         )}
 
         {!hasAnyContent && !outcomes && (
@@ -632,7 +520,7 @@ export default function MeetingDetailPage() {
                 margin: "0 0 8px",
               }}
             >
-              Prep is being generated
+              Briefing is being generated
             </p>
             <p
               style={{
@@ -641,7 +529,7 @@ export default function MeetingDetailPage() {
                 margin: 0,
               }}
             >
-              Meeting context will appear here once AI enrichment completes.
+              Meeting context will appear here once analysis completes.
             </p>
           </div>
         )}
@@ -675,7 +563,7 @@ export default function MeetingDetailPage() {
 
               {/* Kicker */}
               <p style={monoOverline}>
-                Meeting Intelligence Report
+                Meeting Briefing
               </p>
 
               {/* Title — 76px editorial hero scale */}
@@ -926,106 +814,6 @@ export default function MeetingDetailPage() {
               <FinisMarker />
             </div>
 
-            {/* ================================================================
-                ACT III: "Go Deeper" — supporting intelligence
-               ================================================================ */}
-            {hasDeepDive && (
-              <section id="deep-dive" className="editorial-reveal-slow" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
-                <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", marginBottom: 16 }} />
-                <p style={monoOverline}>Supporting Intelligence</p>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 48, marginTop: 48 }}>
-                  {/* Recent Wins — sage accent */}
-                  {recentWinsForDisplay.length > 0 && (
-                    <div>
-                      <SectionLabel
-                        label="Recent Wins"
-                        labelColor="var(--color-garden-sage)"
-                      />
-                      <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
-                        {recentWinsForDisplay.slice(0, 4).map((win, i) => (
-                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 14 }}>
-                            <span style={bulletDot("rgba(126, 170, 123, 0.7)")} />
-                            <span style={{ lineHeight: 1.55, color: "var(--color-text-primary)" }}>{win}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Open Items */}
-                  {data.openItems && data.openItems.length > 0 && (
-                    <div>
-                      <SectionLabel
-                        label="Open Items"
-                        copyText={formatOpenItems(data.openItems)}
-                        copyLabel="open items"
-                      />
-                      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
-                        {data.openItems.map((item, i) => (
-                          <ActionItem key={i} action={item} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Email Signals — compact, filtered by confidence */}
-                  {data.recentEmailSignals && data.recentEmailSignals.filter((s) => (s.confidence ?? 0) >= 0.6).length > 0 && (
-                    <div>
-                      <SectionLabel
-                        label="Email Signals"
-                        labelColor="var(--color-spice-turmeric)"
-                      />
-                      <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
-                        {data.recentEmailSignals.filter((s) => (s.confidence ?? 0) >= 0.6).slice(0, 4).map((signal, i) => (
-                          <li key={`${signal.id ?? i}-${signal.signalType}`} style={{ fontSize: 14, borderBottom: "1px solid rgba(30, 37, 48, 0.04)", paddingBottom: 10 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <span
-                                style={{
-                                  fontFamily: "var(--font-mono)",
-                                  fontSize: 10,
-                                  fontWeight: 500,
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.06em",
-                                  color: "var(--color-spice-turmeric)",
-                                }}
-                              >
-                                {signal.signalType}
-                              </span>
-                              {signal.detectedAt && (
-                                <span
-                                  style={{
-                                    fontFamily: "var(--font-mono)",
-                                    fontSize: 10,
-                                    color: "var(--color-text-tertiary)",
-                                  }}
-                                >
-                                  {formatRelativeDateLong(signal.detectedAt)}
-                                </span>
-                              )}
-                            </div>
-                            <p style={{ marginTop: 4, marginBottom: 0, lineHeight: 1.55, color: "var(--color-text-primary)" }}>
-                              {signal.signalText}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Appendix toggle */}
-                  <AppendixSection
-                    data={data}
-                    extendedStakeholderInsights={extendedStakeholderInsights}
-                  />
-                </div>
-              </section>
-            )}
-
-            {/* Finis */}
-            <div style={{ paddingTop: 48 }}>
-              <FinisMarker />
-            </div>
           </div>
         )}
 
@@ -1040,39 +828,6 @@ export default function MeetingDetailPage() {
     </>
   );
 }
-
-// =============================================================================
-// SectionLabel (chapter heading pattern)
-// =============================================================================
-
-function SectionLabel({
-  label,
-  labelColor,
-  copyText,
-  copyLabel,
-}: {
-  label: string;
-  labelColor?: string;
-  copyText?: string;
-  copyLabel?: string;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span
-        style={{
-          ...chapterHeadingStyle,
-          color: labelColor || "var(--color-text-tertiary)",
-        }}
-      >
-        {label}
-      </span>
-      {copyText && (
-        <CopyButton text={copyText} label={copyLabel} />
-      )}
-    </div>
-  );
-}
-
 
 // =============================================================================
 // Unified Attendee List (merges attendees, context, insights, signals)
@@ -2012,7 +1767,7 @@ function OutcomeActionRow({
           </button>
           <button
             onClick={handleReject}
-            title="Reject"
+            title="Dismiss"
             style={{
               width: 20,
               height: 20,
@@ -2115,428 +1870,6 @@ function OutcomeActionRow({
 }
 
 // =============================================================================
-// Shared Components
-// =============================================================================
-
-function ActionItem({ action }: { action: ActionWithContext }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-        paddingBottom: 10,
-        paddingLeft: action.isOverdue ? 12 : 0,
-        borderLeft: action.isOverdue ? "3px solid var(--color-spice-terracotta)" : "none",
-      }}
-    >
-      <span style={bulletDot(action.isOverdue ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)")} />
-      <div style={{ flex: 1 }}>
-        <p style={{ fontWeight: 500, fontSize: 14, color: "var(--color-text-primary)", margin: 0 }}>
-          {action.title}
-        </p>
-        {action.dueDate && (
-          <p
-            style={{
-              fontSize: 13,
-              color: action.isOverdue ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-              margin: "2px 0 0",
-            }}
-          >
-            Due: {action.dueDate}
-          </p>
-        )}
-        {action.context && (
-          <p style={{ marginTop: 4, marginBottom: 0, fontSize: 13, color: "var(--color-text-tertiary)" }}>
-            {action.context}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ReferenceRow({ reference }: { reference: SourceReference }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "8px 12px",
-        borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-      }}
-    >
-      <div>
-        <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
-          {reference.label}
-        </p>
-        {reference.path && (
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              margin: "2px 0 0",
-            }}
-          >
-            {reference.path}
-          </p>
-        )}
-      </div>
-      {reference.lastUpdated && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-          }}
-        >
-          {reference.lastUpdated}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
-// Appendix Section
-// =============================================================================
-
-function AppendixSection({
-  data,
-  extendedStakeholderInsights,
-}: {
-  data: FullMeetingPrep;
-  extendedStakeholderInsights: StakeholderInsight[];
-}) {
-  const [open, setOpen] = useState(false);
-
-  const hasContent = Boolean(
-    (data.intelligenceSummary && data.intelligenceSummary.split("\n").filter((l) => l.trim()).length > 1) ||
-    (data.sinceLast && data.sinceLast.length > 0) ||
-    (data.strategicPrograms && data.strategicPrograms.length > 0) ||
-    (data.meetingContext && data.meetingContext.split("\n").length > 3) ||
-    (data.currentState && data.currentState.length > 0) ||
-    (data.questions && data.questions.length > 0) ||
-    (data.keyPrinciples && data.keyPrinciples.length > 0) ||
-    (data.references && data.references.length > 0) ||
-    extendedStakeholderInsights.length > 0
-  );
-
-  if (!hasContent) return null;
-
-  return (
-    <section id="appendix" style={{ paddingTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-      <p style={monoOverline}>Appendix</p>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "4px 0",
-          width: "100%",
-          ...chapterHeadingStyle,
-        }}
-      >
-        <ChevronRight
-          style={{
-            width: 14,
-            height: 14,
-            transition: "transform 0.2s",
-            transform: open ? "rotate(90deg)" : "rotate(0deg)",
-          }}
-        />
-        Open Supporting Context
-      </button>
-      {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 32, marginTop: 12 }}>
-          {/* Full intelligence summary */}
-          {data.intelligenceSummary && data.intelligenceSummary.split("\n").filter((l) => l.trim()).length > 1 && (
-            <section>
-              <SectionLabel
-                label="Full Intelligence Summary"
-                copyText={data.intelligenceSummary}
-                copyLabel="summary"
-              />
-              <div style={{ marginTop: 12 }}>
-                {data.intelligenceSummary
-                  .split("\n")
-                  .filter((line) => line.trim())
-                  .map((line, i) => (
-                    <p
-                      key={i}
-                      style={{
-                        fontSize: 14,
-                        lineHeight: 1.75,
-                        color: "var(--color-text-primary)",
-                        margin: 0,
-                        marginTop: i > 0 ? 8 : 0,
-                      }}
-                    >
-                      {line}
-                    </p>
-                  ))}
-              </div>
-            </section>
-          )}
-
-          {data.sinceLast && data.sinceLast.length > 0 && (
-            <section>
-              <SectionLabel
-                label="Since Last Meeting"
-                copyText={formatBulletList(data.sinceLast)}
-                copyLabel="since last meeting"
-              />
-              <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-                {data.sinceLast.map((item, i) => (
-                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
-                    <span style={bulletDot("var(--color-spice-turmeric)")} />
-                    <span style={{ color: "var(--color-text-primary)" }}>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {data.strategicPrograms && data.strategicPrograms.length > 0 && (
-            <section>
-              <SectionLabel
-                label="Strategic Programs"
-                copyText={formatBulletList(data.strategicPrograms)}
-                copyLabel="programs"
-              />
-              <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-                {data.strategicPrograms.map((item, i) => (
-                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
-                    <span
-                      style={{
-                        marginTop: 3,
-                        fontSize: 14,
-                        color: item.startsWith("✓") ? "var(--color-garden-sage)" : "var(--color-text-tertiary)",
-                      }}
-                    >
-                      {item.startsWith("✓") ? "✓" : "○"}
-                    </span>
-                    <span style={{ color: "var(--color-text-primary)" }}>{item.replace(/^[✓○]\s*/, "")}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {data.meetingContext && data.meetingContext.split("\n").length > 3 && (
-            <section>
-              <SectionLabel
-                label="Full Context"
-                copyText={data.meetingContext}
-                copyLabel="context"
-              />
-              <p
-                style={{
-                  marginTop: 12,
-                  marginBottom: 0,
-                  whiteSpace: "pre-wrap",
-                  fontSize: 14,
-                  lineHeight: 1.65,
-                  color: "var(--color-text-primary)",
-                }}
-              >
-                {data.meetingContext}
-              </p>
-            </section>
-          )}
-
-          {data.currentState && data.currentState.length > 0 && (
-            <section>
-              <SectionLabel label="Current State" copyText={formatBulletList(data.currentState)} copyLabel="current state" />
-              <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-                {data.currentState.map((item, i) => (
-                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
-                    <span style={bulletDot("var(--color-text-tertiary)")} />
-                    <span style={{ color: "var(--color-text-primary)" }}>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {data.questions && data.questions.length > 0 && (
-            <section>
-              <SectionLabel
-                label="Questions to Surface"
-                copyText={formatNumberedList(data.questions)}
-                copyLabel="questions"
-              />
-              <ol style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-                {data.questions.map((q, i) => (
-                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        color: "var(--color-text-tertiary)",
-                        width: 16,
-                        textAlign: "right",
-                        flexShrink: 0,
-                        paddingTop: 2,
-                      }}
-                    >
-                      {i + 1}.
-                    </span>
-                    <span style={{ color: "var(--color-text-primary)" }}>{q}</span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
-
-          {data.keyPrinciples && data.keyPrinciples.length > 0 && (
-            <section>
-              <SectionLabel
-                label="Key Principles"
-                copyText={formatBulletList(data.keyPrinciples)}
-                copyLabel="principles"
-              />
-              <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
-                {data.keyPrinciples.map((principle, i) => (
-                  <blockquote
-                    key={i}
-                    style={{
-                      borderLeft: "2px solid rgba(201, 162, 39, 0.3)",
-                      paddingLeft: 16,
-                      margin: 0,
-                      fontSize: 14,
-                      fontStyle: "italic",
-                      color: "var(--color-text-tertiary)",
-                      lineHeight: 1.55,
-                    }}
-                  >
-                    {principle}
-                  </blockquote>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Extended stakeholder map */}
-          {extendedStakeholderInsights.length > 0 && (
-            <section>
-              <SectionLabel
-                label={`Extended Stakeholder Map (${extendedStakeholderInsights.length})`}
-              />
-              <StakeholderInsightList people={extendedStakeholderInsights} />
-            </section>
-          )}
-
-          {data.references && data.references.length > 0 && (
-            <section>
-              <SectionLabel label="References" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginTop: 12 }}>
-                {data.references.map((ref_, i) => (
-                  <ReferenceRow key={i} reference={ref_} />
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-// =============================================================================
-// StakeholderInsightList (used in appendix for extended stakeholders)
-// =============================================================================
-
-function StakeholderInsightList({ people }: { people: StakeholderInsight[] }) {
-  const engagementColor: Record<string, string> = {
-    champion: "var(--color-garden-sage)",
-    detractor: "var(--color-spice-terracotta)",
-    neutral: "var(--color-text-tertiary)",
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 16 }}>
-      {people.map((person, i) => (
-        <div
-          key={i}
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-            borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-            paddingBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: "50%",
-              background: "rgba(201, 162, 39, 0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              fontWeight: 500,
-              color: "var(--color-spice-turmeric)",
-              flexShrink: 0,
-            }}
-          >
-            {person.name.charAt(0)}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
-                {person.name}
-              </p>
-              {person.role && (
-                <span style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
-                  {sanitizeInlineText(person.role)}
-                </span>
-              )}
-              {person.engagement && (
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 500,
-                    textTransform: "capitalize",
-                    color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)",
-                  }}
-                >
-                  {person.engagement}
-                </span>
-              )}
-            </div>
-            {person.assessment && (
-              <p
-                style={{
-                  marginTop: 3,
-                  marginBottom: 0,
-                  fontSize: 13,
-                  lineHeight: 1.55,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                {truncateText(sanitizeInlineText(person.assessment), 180)}
-              </p>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// =============================================================================
 // Helpers
 // =============================================================================
 
@@ -2614,16 +1947,6 @@ function buildUnifiedAttendees(
   }
 
   return Array.from(byKey.values());
-}
-
-function hasReferenceContent(data: FullMeetingPrep): boolean {
-  return Boolean(
-    (data.meetingContext && data.meetingContext.split("\n").length > 3) ||
-    (data.currentState && data.currentState.length > 0) ||
-    (data.questions && data.questions.length > 0) ||
-    (data.keyPrinciples && data.keyPrinciples.length > 0) ||
-    (data.references && data.references.length > 0)
-  );
 }
 
 function getLifecycleForDisplay(data: FullMeetingPrep): string | null {
@@ -2724,208 +2047,7 @@ function cleanPrepLine(value: string): string {
     .trim();
 }
 
-function deriveRecentWins(data: FullMeetingPrep): { wins: string[]; sources: SourceReference[] } {
-  const wins: string[] = [];
-  const sources: SourceReference[] = [];
-  const seenWins = new Set<string>();
-  const seenSources = new Set<string>();
-
-  const addSource = (rawSource: string | undefined) => {
-    if (!rawSource) return;
-    const clean = sanitizeInlineText(rawSource);
-    if (!clean) return;
-    const label = clean.split(/[\\/]/).filter(Boolean).pop() ?? clean;
-    const key = normalizePersonKey(clean);
-    if (!seenSources.has(key)) {
-      seenSources.add(key);
-      sources.push({
-        label,
-        path: clean,
-      });
-    }
-  };
-
-  for (const source of data.recentWinSources ?? []) {
-    const key = normalizePersonKey(source.path ?? source.label);
-    if (!seenSources.has(key)) {
-      seenSources.add(key);
-      sources.push({
-        label: sanitizeInlineText(source.label),
-        path: source.path ? sanitizeInlineText(source.path) : undefined,
-        lastUpdated: source.lastUpdated,
-      });
-    }
-  }
-
-  const hasStructuredWins = Boolean(data.recentWins && data.recentWins.length > 0);
-  const winCandidates = hasStructuredWins ? (data.recentWins ?? []) : (data.talkingPoints ?? []);
-
-  for (const point of winCandidates) {
-    const { source } = splitInlineSourceTail(point);
-    if (!data.recentWinSources || data.recentWinSources.length === 0) {
-      addSource(source);
-    }
-
-    const win = cleanPrepLine(point);
-    const winKey = normalizePersonKey(win);
-    if (win && !seenWins.has(winKey)) {
-      seenWins.add(winKey);
-      wins.push(win);
-    }
-  }
-
-  if (!hasStructuredWins) {
-    for (const point of data.talkingPoints ?? []) {
-      const { source } = splitInlineSourceTail(point);
-      if (!data.recentWinSources || data.recentWinSources.length === 0) {
-        addSource(source);
-      }
-    }
-  }
-
-  return { wins, sources };
-}
-
 function truncateText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, maxChars - 1).trim()}…`;
-}
-
-// =============================================================================
-// Copy-to-clipboard formatters
-// =============================================================================
-
-function formatBulletList(items: string[]): string {
-  return items.map((item) => `- ${item}`).join("\n");
-}
-
-function formatNumberedList(items: string[]): string {
-  return items.map((item, i) => `${i + 1}. ${item}`).join("\n");
-}
-
-function formatOpenItems(items: ActionWithContext[]): string {
-  return items
-    .map((item) => {
-      let line = `- ${item.title}`;
-      if (item.dueDate) line += ` (due: ${item.dueDate})`;
-      if (item.isOverdue) line += " [OVERDUE]";
-      return line;
-    })
-    .join("\n");
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// QuillSyncBadge — shows transcript sync status for a meeting
-// ═══════════════════════════════════════════════════════════════════════════
-
-function QuillSyncBadge({ meetingId }: { meetingId: string }) {
-  const [syncState, setSyncState] = useState<import("@/types").QuillSyncState | null>(null);
-
-  const loadSync = useCallback(async () => {
-    try {
-      const rows = await invoke<import("@/types").QuillSyncState[]>(
-        "get_quill_sync_states",
-        { meetingId },
-      );
-      setSyncState(rows.length > 0 ? rows[0] : null);
-    } catch {
-      // Quill not enabled or no sync state — expected
-    }
-  }, [meetingId]);
-
-  useEffect(() => {
-    loadSync();
-  }, [loadSync]);
-
-  // Poll for state transitions while sync is in progress
-  useEffect(() => {
-    if (!syncState || syncState.state === "completed" || syncState.state === "failed" || syncState.state === "abandoned") {
-      return;
-    }
-    const interval = setInterval(loadSync, 10_000);
-    return () => clearInterval(interval);
-  }, [syncState?.state, loadSync]);
-
-  // Listen for transcript-processed event to refresh
-  useEffect(() => {
-    let cancelled = false;
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<string>("transcript-processed", (event) => {
-        if (!cancelled && event.payload === meetingId) {
-          loadSync();
-        }
-      });
-    });
-    return () => { cancelled = true; };
-  }, [meetingId, loadSync]);
-
-  if (!syncState) return null;
-
-  const { state, matchConfidence, source } = syncState;
-  const sourceLabel = source === "granola" ? "via Granola" : "via Quill";
-
-  // Define badge content based on state
-  let icon: React.ReactNode;
-  let label: string;
-  let color: string;
-
-  switch (state) {
-    case "pending":
-      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
-      label = `Waiting to sync transcript ${sourceLabel}`;
-      color = "var(--color-golden-turmeric)";
-      break;
-    case "polling":
-      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
-      label = `Searching for transcript ${sourceLabel}`;
-      color = "var(--color-golden-turmeric)";
-      break;
-    case "fetching":
-      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
-      label = `Downloading transcript ${sourceLabel}`;
-      color = "var(--color-golden-turmeric)";
-      break;
-    case "processing":
-      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
-      label = `Processing transcript ${sourceLabel}`;
-      color = "var(--color-sky-larkspur)";
-      break;
-    case "completed":
-      icon = <Check style={{ width: 14, height: 14 }} />;
-      label = matchConfidence
-        ? `Transcript synced ${sourceLabel} (${Math.round(matchConfidence * 100)}% match)`
-        : `Transcript synced ${sourceLabel}`;
-      color = "var(--color-garden-olive)";
-      break;
-    case "failed":
-    case "abandoned":
-      icon = <AlertTriangle style={{ width: 14, height: 14 }} />;
-      label = state === "abandoned" ? "Sync abandoned" : "Sync failed";
-      color = "var(--color-spice-terracotta)";
-      break;
-    default:
-      return null;
-  }
-
-  return (
-    <div
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-        fontWeight: 500,
-        letterSpacing: "0.04em",
-        color,
-        padding: "4px 10px",
-        border: `1px solid ${color}`,
-        borderRadius: 4,
-      }}
-    >
-      {icon}
-      {label}
-    </div>
-  );
 }

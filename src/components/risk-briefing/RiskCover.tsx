@@ -142,6 +142,7 @@ export function RiskCover({ data, onUpdate }: RiskCoverProps) {
           <EditableText
             value={data.tamName || ""}
             onChange={(v) => onUpdate?.({ ...data, tamName: v })}
+            multiline={false}
             placeholder="Add name"
             style={{
               fontFamily: "var(--font-sans)",

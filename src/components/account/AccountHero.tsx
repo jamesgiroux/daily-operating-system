@@ -2,17 +2,50 @@
  * AccountHero — editorial headline for an account.
  * Mockup: h1 76px serif, 2-3 sentence italic lede from intelligence,
  * hero-date line, watermark asterisk, health/lifecycle badges, and meta row.
+ * Inline editable fields below badges for health, lifecycle, ARR, NPS, renewal.
  */
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { EditableText } from "@/components/ui/EditableText";
+import { CyclingPill } from "@/components/ui/CyclingPill";
+import { DatePicker } from "@/components/ui/date-picker";
 import styles from "./AccountHero.module.css";
+
+const healthOptions = ["green", "yellow", "red"];
+const lifecycleOptions = ["onboarding", "adoption", "nurture", "renewal", "churned"];
+
+const healthColorMap: Record<string, string> = {
+  green: "var(--color-garden-sage)",
+  yellow: "var(--color-spice-turmeric)",
+  red: "var(--color-spice-terracotta)",
+};
+
+const inlineFieldLabelStyle: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 9,
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "var(--color-text-tertiary)",
+  marginBottom: 2,
+};
 
 interface AccountHeroProps {
   detail: AccountDetail;
   intelligence: EntityIntelligence | null;
-  onEditFields?: () => void;
+  editHealth: string;
+  onHealthChange: (v: string) => void;
+  editLifecycle: string;
+  onLifecycleChange: (v: string) => void;
+  editArr: string;
+  onArrChange: (v: string) => void;
+  editNps: string;
+  onNpsChange: (v: string) => void;
+  editRenewal: string;
+  onRenewalChange: (v: string) => void;
   onManageTeam?: () => void;
   onEnrich?: () => void;
   enriching?: boolean;
@@ -30,7 +63,16 @@ const healthClass: Record<string, string> = {
 export function AccountHero({
   detail,
   intelligence,
-  onEditFields,
+  editHealth,
+  onHealthChange,
+  editLifecycle,
+  onLifecycleChange,
+  editArr,
+  onArrChange,
+  editNps,
+  onNpsChange,
+  editRenewal,
+  onRenewalChange,
   onManageTeam,
   onEnrich,
   enriching,
@@ -43,10 +85,7 @@ export function AccountHero({
   const LEDE_LIMIT = 300;
   const [showFullLede, setShowFullLede] = useState(false);
   const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
-  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "…" : ledeFull;
-  // Company context from intelligence
-  const companyContext = intelligence?.companyContext ?? null;
-
+  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "..." : ledeFull;
   return (
     <div className={styles.hero}>
       {/* Parent breadcrumb */}
@@ -71,8 +110,8 @@ export function AccountHero({
 
       {/* Hero date / intelligence timestamp */}
       <div className={styles.heroDate}>
-        Account Intelligence
-        {intelligence && ` · Last enriched ${formatRelativeDateShort(intelligence.enrichedAt)}`}
+        <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
+        {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
       </div>
 
       {/* Account name — 76px serif */}
@@ -120,18 +159,80 @@ export function AccountHero({
         )}
       </div>
 
-      {/* Company context — prose after vitals strip (rendered here but visually after VitalsStrip) */}
-      {companyContext?.description && (
-        <div className={styles.companyContext}>{companyContext.description}</div>
+      {/* Inline editable fields */}
+      {!detail.isInternal && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            gap: 20,
+            flexWrap: "wrap",
+            marginTop: 8,
+            marginBottom: 8,
+          }}
+        >
+          <div>
+            <div style={inlineFieldLabelStyle}>Health</div>
+            <CyclingPill
+              options={healthOptions}
+              value={editHealth}
+              onChange={onHealthChange}
+              colorMap={healthColorMap}
+              placeholder="Not set"
+            />
+          </div>
+          <div>
+            <div style={inlineFieldLabelStyle}>Lifecycle</div>
+            <CyclingPill
+              options={lifecycleOptions}
+              value={editLifecycle}
+              onChange={onLifecycleChange}
+              placeholder="Not set"
+            />
+          </div>
+          <div>
+            <div style={inlineFieldLabelStyle}>ARR</div>
+            <EditableText
+              value={editArr}
+              onChange={onArrChange}
+              as="span"
+              multiline={false}
+              placeholder="--"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--color-text-secondary)",
+              }}
+            />
+          </div>
+          <div>
+            <div style={inlineFieldLabelStyle}>NPS</div>
+            <EditableText
+              value={editNps}
+              onChange={onNpsChange}
+              as="span"
+              multiline={false}
+              placeholder="--"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--color-text-secondary)",
+              }}
+            />
+          </div>
+          <div>
+            <div style={inlineFieldLabelStyle}>Renewal</div>
+            <DatePicker
+              value={editRenewal}
+              onChange={onRenewalChange}
+              placeholder="Not set"
+            />
+          </div>
+        </div>
       )}
 
       {/* Meta row: action links */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
-        {onEditFields && (
-          <button className={styles.metaButton} onClick={onEditFields}>
-            Edit Fields
-          </button>
-        )}
         {onManageTeam && (
           <button className={styles.metaButton} onClick={onManageTeam}>
             Manage Team
@@ -143,7 +244,7 @@ export function AccountHero({
             onClick={onEnrich}
             disabled={enriching}
           >
-            {enriching ? `Building intelligence… ${enrichSeconds ?? 0}s` : "Build Intelligence"}
+            {enriching ? `Refreshing... ${enrichSeconds ?? 0}s` : "Refresh"}
           </button>
         )}
         {detail.archived && onUnarchive && (
