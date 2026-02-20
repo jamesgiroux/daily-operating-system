@@ -40,7 +40,6 @@ import {
 } from "@/components/ui/dialog";
 import { AccountHero } from "@/components/account/AccountHero";
 import { AccountAppendix } from "@/components/account/AccountAppendix";
-import { WatchListPrograms } from "@/components/account/WatchListPrograms";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
 import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
@@ -48,7 +47,6 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { EntityKeywords } from "@/components/entity/EntityKeywords";
 import { AccountFieldsDrawer } from "@/components/account/AccountFieldsDrawer";
 import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
@@ -227,7 +225,7 @@ export default function AccountDetailEditorial() {
     return <EditorialError message={acct.error ?? "Account not found"} onRetry={acct.load} />;
   }
 
-  const { detail, intelligence, events, files, programs } = acct;
+  const { detail, intelligence, events, files } = acct;
 
   // Notes dirty tracking (compare editNotes to saved detail.notes)
   const notesDirty = acct.editNotes !== (detail.notes ?? "");
@@ -312,8 +310,6 @@ export default function AccountDetailEditorial() {
             <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
           )}
         </div>
-        <EntityKeywords entityId={accountId} entityType="account" keywordsJson={detail.keywords} />
-
         {/* Auto-rollover prompt for past renewal dates */}
         {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
           <div
@@ -399,14 +395,6 @@ export default function AccountDetailEditorial() {
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
-          bottomSection={
-            <WatchListPrograms
-              programs={programs}
-              onProgramUpdate={acct.handleProgramUpdate}
-              onProgramDelete={acct.handleProgramDelete}
-              onAddProgram={acct.handleAddProgram}
-            />
-          }
         />
       </div>
 
@@ -438,7 +426,6 @@ export default function AccountDetailEditorial() {
       <div className="editorial-reveal">
         <AccountAppendix
           detail={detail}
-          intelligence={intelligence}
           events={events}
           files={files}
           editNotes={acct.editNotes}

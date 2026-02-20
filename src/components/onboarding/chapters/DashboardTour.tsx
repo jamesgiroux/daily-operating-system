@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Target, ChevronRight, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EmailList } from "@/components/dashboard/EmailList";
-import { ActionList } from "@/components/dashboard/ActionList";
 import { TourHighlight } from "@/components/onboarding/TourHighlight";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { DashboardData, DataFreshness } from "@/types";
@@ -107,7 +105,6 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
   const stop = TOUR_STOPS[currentStop];
   const emails = data.emails ?? [];
-  const emailSync = data.emailSync;
 
   return (
     <>
@@ -183,11 +180,31 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           </TourHighlight>
 
           <TourHighlight ref={setStopRef(2)} active={stop.key === "actions"}>
-            <ActionList actions={data.actions} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+                {data.actions.length} action{data.actions.length !== 1 ? "s" : ""}
+              </div>
+              {data.actions.slice(0, 5).map((a) => (
+                <div key={a.id} style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 8 }}>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{a.title}</p>
+                  <p style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>{a.priority}</p>
+                </div>
+              ))}
+            </div>
           </TourHighlight>
 
           <TourHighlight ref={setStopRef(3)} active={stop.key === "emails"}>
-            <EmailList emails={emails} emailSync={emailSync} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+                {emails.length} email{emails.length !== 1 ? "s" : ""}
+              </div>
+              {emails.slice(0, 5).map((e, i) => (
+                <div key={i} style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 8 }}>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{e.subject}</p>
+                  <p style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>{e.sender}</p>
+                </div>
+              ))}
+            </div>
           </TourHighlight>
         </div>
       </div>
