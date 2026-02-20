@@ -154,6 +154,101 @@ fn attendee_domains(attendees: &[String]) -> HashSet<String> {
         .collect()
 }
 
+/// Auto-extract distinctive title fragments as resolution keywords for an entity.
+///
+/// When a user manually links a meeting to an entity, this extracts words from
+/// the meeting title that aren't generic meeting words (1:1, sync, review, etc.)
+/// and aren't already in the entity's keyword list. This teaches the keyword
+/// matcher to recognize similar titles in future meetings.
+fn auto_extract_title_keywords(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    meeting_title: &str,
+) -> Result<(), String> {
+    // Words to ignore — generic meeting vocabulary
+    const STOP_WORDS: &[&str] = &[
+        "1:1", "1-1", "sync", "meeting", "call", "review", "check-in",
+        "checkin", "catch", "up", "weekly", "daily", "monthly", "quarterly",
+        "bi-weekly", "standup", "retro", "planning", "prep", "debrief",
+        "follow", "kickoff", "onboarding", "training", "workshop", "session",
+        "the", "a", "an", "and", "or", "of", "for", "with", "re", "fwd",
+        "qbr", "ebr", "deck", "demo", "presentation",
+    ];
+
+    let stop: std::collections::HashSet<&str> = STOP_WORDS.iter().copied().collect();
+
+    // Extract meaningful words from title (>= 3 chars, not stop words)
+    let title_words: Vec<String> = meeting_title
+        .split(|c: char| !c.is_alphanumeric() && c != '-' && c != '\'')
+        .filter(|w| w.len() >= 3 && !stop.contains(&w.to_lowercase().as_str()))
+        .map(|w| w.to_string())
+        .collect();
+
+    if title_words.is_empty() {
+        return Ok(());
+    }
+
+    // Build candidate multi-word phrases from consecutive meaningful words
+    let mut candidates: Vec<String> = Vec::new();
+    // Individual words
+    for w in &title_words {
+        candidates.push(w.clone());
+    }
+    // Adjacent pairs (e.g., "Janus Henderson" from title words)
+    for pair in title_words.windows(2) {
+        candidates.push(format!("{} {}", pair[0], pair[1]));
+    }
+
+    // Load existing keywords
+    let existing_json = match entity_type {
+        "account" => db
+            .get_account(entity_id)
+            .ok()
+            .flatten()
+            .and_then(|a| a.keywords),
+        "project" => db
+            .get_project(entity_id)
+            .ok()
+            .flatten()
+            .and_then(|p| p.keywords),
+        _ => return Ok(()),
+    };
+
+    let mut keywords: Vec<String> = existing_json
+        .as_deref()
+        .and_then(|j| serde_json::from_str::<Vec<String>>(j).ok())
+        .unwrap_or_default();
+
+    let existing_lower: std::collections::HashSet<String> =
+        keywords.iter().map(|k| k.to_lowercase()).collect();
+
+    // Add new candidates that aren't already present
+    let mut added = false;
+    for candidate in candidates {
+        if !existing_lower.contains(&candidate.to_lowercase()) {
+            keywords.push(candidate);
+            added = true;
+        }
+    }
+
+    if !added {
+        return Ok(());
+    }
+
+    // Persist updated keywords
+    let json = serde_json::to_string(&keywords).map_err(|e| e.to_string())?;
+    match entity_type {
+        "account" => db
+            .update_account_keywords(entity_id, &json)
+            .map_err(|e| e.to_string()),
+        "project" => db
+            .update_project_keywords(entity_id, &json)
+            .map_err(|e| e.to_string()),
+        _ => Ok(()),
+    }
+}
+
 fn build_live_event_domain_map(events: &[CalendarEvent]) -> HashMap<String, HashSet<String>> {
     let mut map = HashMap::new();
     for event in events {
@@ -3032,7 +3127,42 @@ pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result
 pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.reject_proposed_action(&id).map_err(|e| e.to_string())
+
+    // Look up the action before rejecting to get entity context for the signal
+    let action = db.get_action_by_id(&id).ok().flatten();
+
+    db.reject_proposed_action(&id).map_err(|e| e.to_string())?;
+
+    // Emit rejection signal for correction learning (I307)
+    if let Some(ref action) = action {
+        let entity_type = if action.account_id.is_some() {
+            "account"
+        } else if action.project_id.is_some() {
+            "project"
+        } else {
+            "action"
+        };
+        let entity_id = action
+            .account_id
+            .as_deref()
+            .or(action.project_id.as_deref())
+            .unwrap_or(&id);
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            entity_type,
+            entity_id,
+            "action_rejected",
+            action.source_type.as_deref().unwrap_or("unknown"),
+            Some(&format!(
+                "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                id,
+                action.title.replace('"', "\\\"")
+            )),
+            0.3,
+        );
+    }
+
+    Ok(())
 }
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
@@ -5225,6 +5355,20 @@ pub fn update_meeting_entity(
                             db, &meeting_id, &old_entity_ids, new_id, &entity_type,
                         );
                     }
+                }
+            }
+        }
+    }
+
+    // I307: Auto-extract title keywords for the corrected entity.
+    // When a user links "Janus Henderson QBR" to entity "Janus Henderson",
+    // extract distinctive title fragments as resolution keywords so future
+    // meetings with similar titles auto-resolve without correction.
+    if let Some(ref new_id) = entity_id {
+        if entity_type == "account" || entity_type == "project" {
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    let _ = auto_extract_title_keywords(db, new_id, &entity_type, &meeting_title);
                 }
             }
         }
@@ -9570,6 +9714,17 @@ pub fn update_intelligence_field(
 
     // Update SQLite cache
     let _ = db.upsert_entity_intelligence(&intel);
+
+    // Emit user_correction signal so Thompson Sampling learns from user edits (I307)
+    let _ = crate::signals::bus::emit_signal(
+        db,
+        &entity_type,
+        &entity_id,
+        "user_correction",
+        "user_edit",
+        Some(&format!("{{\"field\":\"{}\"}}", field_path)),
+        1.0,
+    );
 
     Ok(())
 }
