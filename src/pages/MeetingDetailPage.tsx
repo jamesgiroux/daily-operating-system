@@ -39,7 +39,9 @@ import {
   ChevronRight,
   CircleDot,
   Clock,
+  Copy,
   Loader2,
+  Mail,
   Paperclip,
   RefreshCw,
   Target,
@@ -137,6 +139,9 @@ export default function MeetingDetailPage() {
 
   // Save status for folio bar
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  // Clipboard copy indicator for collaboration actions
+  const [copiedAction, setCopiedAction] = useState<string | null>(null);
 
   // Persisted user overrides
   const [dismissedTopics, setDismissedTopics] = useState<string[]>([]);
@@ -319,6 +324,84 @@ export default function MeetingDetailPage() {
     }
   }, [meetingId, loadMeetingIntelligence]);
 
+  const copyToClipboard = useCallback(async (text: string, action: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedAction(action);
+    setTimeout(() => setCopiedAction(null), 2000);
+  }, []);
+
+  const handleShareIntelligence = useCallback(async () => {
+    if (!data) return;
+
+    const lines: string[] = [];
+    lines.push(`Meeting Briefing: ${data.title}`);
+    if (data.timeRange) lines.push(data.timeRange);
+    lines.push("");
+
+    const summary = data.intelligenceSummary || data.meetingContext;
+    if (summary) {
+      lines.push("Summary");
+      lines.push(sanitizeInlineText(summary));
+      lines.push("");
+    }
+
+    const risks = [
+      ...((data.entityRisks ?? []).map((r) => sanitizeInlineText(r.text))),
+      ...(data.risks ?? []).map((r) => sanitizeInlineText(r)),
+    ].filter((r) => r.length > 0).slice(0, 3);
+    if (risks.length > 0) {
+      lines.push("Key Risks");
+      risks.forEach((r) => lines.push(`\u2022 ${r}`));
+      lines.push("");
+    }
+
+    const points = (data.talkingPoints ?? [])
+      .map((p) => sanitizeInlineText(p))
+      .filter((p) => p.length > 0)
+      .slice(0, 5);
+    if (points.length > 0) {
+      lines.push("Discussion Points");
+      points.forEach((p) => lines.push(`\u2022 ${p}`));
+      lines.push("");
+    }
+
+    const context = (data.currentState ?? [])
+      .map((c) => sanitizeInlineText(c))
+      .filter((c) => c.length > 0)
+      .slice(0, 3);
+    if (context.length > 0) {
+      lines.push("Context");
+      context.forEach((c) => lines.push(`\u2022 ${c}`));
+    }
+
+    await copyToClipboard(lines.join("\n").trim(), "share");
+  }, [data, copyToClipboard]);
+
+  const handleRequestInput = useCallback(async () => {
+    if (!data) return;
+
+    const userAgendaItems = data.userAgenda && data.userAgenda.length > 0
+      ? data.userAgenda.map((item) => `- ${item}`).join("\n")
+      : (data.proposedAgenda && data.proposedAgenda.length > 0
+        ? data.proposedAgenda.slice(0, 5).map((item) => `- ${cleanPrepLine(item.topic)}`).join("\n")
+        : "No agenda items yet");
+
+    const meetingDate = data.timeRange || "upcoming";
+
+    const message = `Hi team,
+
+We have ${data.title} coming up on ${meetingDate}. I'd like to make sure we cover everything important.
+
+Current agenda:
+${userAgendaItems}
+
+Please reply with any topics, questions, or materials you'd like to discuss.
+
+Thanks!`;
+
+    await copyToClipboard(message, "request");
+  }, [data, copyToClipboard]);
+
   useEffect(() => {
     loadMeetingIntelligence();
   }, [loadMeetingIntelligence]);
@@ -339,6 +422,16 @@ export default function MeetingDetailPage() {
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
+  // Collaboration action visibility
+  const isFutureMeeting = !isPastMeeting;
+  const isReadyOrFresh = intelligenceQuality?.level === "ready" || intelligenceQuality?.level === "fresh";
+  const isThreeDaysOut = useMemo(() => {
+    if (!meetingMeta?.startTime) return false;
+    const start = parseDate(meetingMeta.startTime);
+    if (!start) return false;
+    return start.getTime() > Date.now() + 3 * 24 * 60 * 60 * 1000;
+  }, [meetingMeta?.startTime]);
+
   // Register magazine shell with chapter nav + folio actions
   const shellConfig = useMemo(() => ({
     folioLabel: "Intelligence Report",
@@ -349,6 +442,40 @@ export default function MeetingDetailPage() {
     folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     folioActions: data ? (
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {copiedAction && (
+          <span style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            color: "var(--color-garden-sage)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+          }}>
+            <Check style={{ width: 10, height: 10 }} /> Copied
+          </span>
+        )}
+        {isFutureMeeting && isReadyOrFresh && (
+          <button
+            onClick={handleShareIntelligence}
+            title="Share Intelligence"
+            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            <Copy style={{ width: 10, height: 10 }} />
+            Share
+          </button>
+        )}
+        {isFutureMeeting && isThreeDaysOut && (
+          <button
+            onClick={handleRequestInput}
+            title="Request Input"
+            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            <Mail style={{ width: 10, height: 10 }} />
+            Request Input
+          </button>
+        )}
         {isEditable && (
           <button
             onClick={handlePrefillFromContext}
@@ -368,9 +495,11 @@ export default function MeetingDetailPage() {
             {refreshingIntel ? "Refreshing…" : "Refresh Intel"}
           </button>
         )}
-        <button onClick={handleDraftAgendaMessage} style={folioBtn}>
-          Draft Agenda
-        </button>
+        {isFutureMeeting && (
+          <button onClick={handleDraftAgendaMessage} style={folioBtn}>
+            Draft Agenda
+          </button>
+        )}
         <button
           onClick={handleAttachTranscript}
           disabled={attaching}
@@ -388,7 +517,7 @@ export default function MeetingDetailPage() {
         </button>
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, refreshingIntel, isPastMeeting, meetingId, handlePrefillFromContext, handleRefreshIntelligence, handleDraftAgendaMessage, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, handlePrefillFromContext, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
