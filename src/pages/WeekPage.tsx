@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type {
@@ -22,13 +21,12 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { MeetingRow } from "@/components/shared/MeetingRow";
 import {
-  Play,
   AlertTriangle,
   Database,
   Wand2,
   Package,
-  Check,
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
@@ -486,8 +484,8 @@ export default function WeekPage() {
     );
   }
 
-  // ─── Empty state ───────────────────────────────────────────────────────────
-  if (!data) {
+  // ─── Empty state — only when truly no data (no timeline either) ────────────
+  if (!data && timeline.length === 0) {
     return (
       <div
         style={{
@@ -533,12 +531,8 @@ export default function WeekPage() {
                 maxWidth: 360,
               }}
             >
-              Generate your weekly forecast to see what your week actually means.
+              Connect your calendar to see your week.
             </p>
-            <Button className="gap-1.5" onClick={handleRunWeek}>
-              <Play className="size-3.5" />
-              Run Weekly Forecast
-            </Button>
           </>
         )}
         {error && <ErrorCard error={error} />}
@@ -583,11 +577,15 @@ export default function WeekPage() {
               marginBottom: 32,
             }}
           >
-            WEEK {data.weekNumber} &middot; {data.dateRange.toUpperCase()}
+            {data ? (
+              <>WEEK {data.weekNumber} &middot; {data.dateRange.toUpperCase()}</>
+            ) : (
+              <>WEEKLY FORECAST</>
+            )}
           </p>
 
           {/* Narrative headline */}
-          {data.weekNarrative ? (
+          {data?.weekNarrative ? (
             <p
               className="editorial-reveal"
               style={{
@@ -615,7 +613,7 @@ export default function WeekPage() {
                 maxWidth: 480,
               }}
             >
-              Enrichment pending. Mechanical data available below.
+              {data ? "Enrichment pending. Mechanical data available below." : "Your meetings this week"}
             </p>
           )}
 
@@ -1026,148 +1024,20 @@ function TimelineDayGroup({
         }}
       >
         {meetings.map((m) => (
-          <TimelineMeetingRow key={m.id} meeting={m} isPast={isPast} />
+          <MeetingRow
+            key={m.id}
+            variant="timeline"
+            meeting={m}
+            isPast={isPast}
+            QualityBadge={IntelligenceQualityBadge}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function TimelineMeetingRow({
-  meeting,
-  isPast,
-}: {
-  meeting: TimelineMeeting;
-  isPast?: boolean;
-}) {
-  const entityLabel =
-    meeting.entities.length > 0
-      ? meeting.entities.map((e) => e.name).join(", ")
-      : undefined;
-
-  const quality = meeting.intelligenceQuality
-    ? {
-        level: meeting.intelligenceQuality.level,
-        hasNewSignals: meeting.intelligenceQuality.hasNewSignals,
-        lastEnriched: meeting.intelligenceQuality.lastEnriched,
-      }
-    : undefined;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "4px 0",
-      }}
-    >
-      {/* Meeting title — clickable */}
-      <Link
-        to="/meeting/$meetingId"
-        params={{ meetingId: meeting.id }}
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          color: "var(--color-text-primary)",
-          textDecoration: "none",
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {meeting.title}
-      </Link>
-
-      {/* Entity name */}
-      {entityLabel && (
-        <span
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            flexShrink: 0,
-          }}
-        >
-          {entityLabel}
-        </span>
-      )}
-
-      {/* Spacer */}
-      <span style={{ flex: 1 }} />
-
-      {/* Intelligence quality badge */}
-      {quality && (
-        <IntelligenceQualityBadge quality={quality} showLabel />
-      )}
-
-      {/* Past: outcome indicator */}
-      {isPast && meeting.hasOutcomes && (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-garden-sage)",
-            flexShrink: 0,
-          }}
-          title={meeting.outcomeSummary || "Outcomes captured"}
-        >
-          <Check size={12} />
-          {meeting.outcomeSummary ? (
-            <span
-              style={{
-                maxWidth: 180,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {meeting.outcomeSummary}
-            </span>
-          ) : (
-            "captured"
-          )}
-        </span>
-      )}
-
-      {/* Future: new signals indicator */}
-      {!isPast && meeting.hasNewSignals && (
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "var(--color-garden-larkspur)",
-            flexShrink: 0,
-          }}
-          title="New signals available"
-        />
-      )}
-
-      {/* Future: prior meeting link */}
-      {!isPast && meeting.priorMeetingId && (
-        <Link
-          to="/meeting/$meetingId"
-          params={{ meetingId: meeting.priorMeetingId }}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-garden-larkspur)",
-            textDecoration: "none",
-            flexShrink: 0,
-            whiteSpace: "nowrap",
-          }}
-        >
-          Review last meeting &rarr;
-        </Link>
-      )}
-    </div>
-  );
-}
+// TimelineMeetingRow consolidated into shared/MeetingRow.tsx (ADR-0084 C3)
 
 const FORECAST_PHASES = [
   { key: "preparing", label: "Reading your calendar", detail: "Fetching meetings, classifying events, gathering account context" },
