@@ -349,6 +349,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     capturedActionCount={getCapturedActionCount(meeting.id)}
                     proposedActionCount={getProposedActionCount(meeting.id)}
                     isUpNext={upNext?.id === meeting.id}
+                    userDomain={data.userDomains?.[0]}
                   />
                 ))}
               </div>

@@ -790,6 +790,15 @@ pub struct DirectiveEvent {
     pub end: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// Raw attendee email list from Google Calendar.
+    #[serde(default)]
+    pub attendees: Vec<String>,
+    /// Email → display name map from Google Calendar.
+    #[serde(default)]
+    pub attendee_names: std::collections::HashMap<String, String>,
+    /// Email → RSVP status map (accepted/tentative/declined/needsAction).
+    #[serde(default)]
+    pub attendee_rsvp: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
