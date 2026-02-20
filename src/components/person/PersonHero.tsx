@@ -1,7 +1,7 @@
 /**
  * PersonHero — editorial headline for a person.
  * Larkspur-tinted watermark, circular initial avatar, relationship + temperature badges.
- * Meta row: Edit Details, Refresh, Merge, Archive, Delete.
+ * Meta row: Refresh, Merge, Archive, Delete. Name and role are inline-editable.
  */
 import { useState } from "react";
 import type { PersonDetail, EntityIntelligence } from "@/types";

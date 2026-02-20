@@ -10,10 +10,6 @@ import { FileListSection } from "@/components/entity/FileListSection";
 
 interface PersonAppendixProps {
   detail: PersonDetail;
-  editName: string;
-  setEditName: (v: string) => void;
-  editRole: string;
-  setEditRole: (v: string) => void;
   editNotes: string;
   setEditNotes: (v: string) => void;
   onSave: () => void;
@@ -47,10 +43,6 @@ const ruleStyle: React.CSSProperties = {
 
 export function PersonAppendix({
   detail,
-  editName,
-  setEditName,
-  editRole,
-  setEditRole,
   editNotes,
   setEditNotes,
   onSave,
@@ -64,10 +56,7 @@ export function PersonAppendix({
   indexing,
   indexFeedback,
 }: PersonAppendixProps) {
-  const fieldDirty =
-    editName !== detail.name ||
-    editRole !== (detail.role ?? "") ||
-    editNotes !== (detail.notes ?? "");
+  const notesDirty = editNotes !== (detail.notes ?? "");
 
   return (
     <section id="appendix" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
@@ -79,37 +68,9 @@ export function PersonAppendix({
       >
         <div style={sectionLabelStyle}>Appendix</div>
 
-        {/* Details — editable fields */}
+        {/* Details — read-only metadata (name/role are inline-editable in hero) */}
         <div style={ruleStyle}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              marginBottom: 16,
-            }}
-          >
-            <div style={sectionLabelStyle}>Details</div>
-            {(dirty || fieldDirty) && (
-              <button
-                onClick={onSave}
-                disabled={saving}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-garden-larkspur)",
-                  background: "none",
-                  border: "none",
-                  cursor: saving ? "default" : "pointer",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  padding: 0,
-                }}
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-            )}
-          </div>
+          <div style={sectionLabelStyle}>Details</div>
 
           <div
             style={{
@@ -118,14 +79,8 @@ export function PersonAppendix({
               gap: "12px 24px",
             }}
           >
-            <FieldLabel>Name</FieldLabel>
-            <FieldInput value={editName} onChange={setEditName} placeholder="Full name" />
-
             <FieldLabel>Email</FieldLabel>
             <FieldValue>{detail.email}</FieldValue>
-
-            <FieldLabel>Role</FieldLabel>
-            <FieldInput value={editRole} onChange={setEditRole} placeholder="Role / Title" />
 
             <FieldLabel>Organization</FieldLabel>
             <FieldValue>{detail.organization ?? "—"}</FieldValue>
@@ -151,7 +106,35 @@ export function PersonAppendix({
 
         {/* Notes (editable) */}
         <div style={ruleStyle}>
-          <div style={sectionLabelStyle}>Notes</div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              marginBottom: 0,
+            }}
+          >
+            <div style={sectionLabelStyle}>Notes</div>
+            {(dirty || notesDirty) && (
+              <button
+                onClick={onSave}
+                disabled={saving}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  color: "var(--color-garden-larkspur)",
+                  background: "none",
+                  border: "none",
+                  cursor: saving ? "default" : "pointer",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  padding: 0,
+                }}
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            )}
+          </div>
           <textarea
             value={editNotes}
             onChange={(e) => setEditNotes(e.target.value)}
@@ -298,32 +281,3 @@ function FieldValue({
   );
 }
 
-function FieldInput({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      style={{
-        fontFamily: "var(--font-sans)",
-        fontSize: 14,
-        color: "var(--color-text-primary)",
-        background: "none",
-        border: "none",
-        borderBottom: "1px solid var(--color-rule-light)",
-        outline: "none",
-        padding: "4px 0",
-        width: "100%",
-      }}
-    />
-  );
-}
