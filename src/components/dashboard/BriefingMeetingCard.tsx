@@ -20,7 +20,7 @@ import clsx from "clsx";
 import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
-import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
+import type { Meeting, CalendarEvent, Action, Stakeholder, CalendarAttendee } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -43,6 +43,8 @@ interface BriefingMeetingCardProps {
   proposedActionCount?: number;
   /** When true, this is the next upcoming meeting — renders expanded by default with richer context */
   isUpNext?: boolean;
+  /** User's org domain for internal/external attendee grouping */
+  userDomain?: string;
 }
 
 type TemporalState = "upcoming" | "in-progress" | "past" | "cancelled";
@@ -153,14 +155,64 @@ function getExpansionTintClass(meeting: Meeting): string {
 // ─── Shared Sub-Components ───────────────────────────────────────────────────
 // Exported for use in DailyBriefing lead story section.
 
-/** "The Room" — grouped attendee display: their side vs our side. */
-export function KeyPeopleFlow({ stakeholders }: { stakeholders: Stakeholder[] }) {
-  if (stakeholders.length === 0) return null;
+/** "The Room" — calendar invitees grouped by side (their/our).
+ *  Uses raw Google Calendar attendee data, not AI-enriched stakeholders. */
+export function KeyPeopleFlow({
+  attendees,
+  userDomain,
+  stakeholders,
+}: {
+  attendees?: CalendarAttendee[];
+  userDomain?: string;
+  /** Fallback: AI-enriched stakeholders if calendar attendees unavailable */
+  stakeholders?: Stakeholder[];
+}) {
+  // Use calendar attendees when available, fall back to prep stakeholders
+  if (attendees && attendees.length > 0 && userDomain) {
+    const external = attendees.filter((a) => a.domain !== userDomain);
+    const internal = attendees.filter((a) => a.domain === userDomain);
+    const hasBothSides = external.length > 0 && internal.length > 0;
+
+    const renderAttendee = (a: CalendarAttendee) => (
+      <div key={a.email} className={s.theRoomPerson}>
+        <span className={s.theRoomName}>{a.name}</span>
+        {a.domain && a.domain !== userDomain && (
+          <span className={s.theRoomCompany}>{a.domain}</span>
+        )}
+        {a.rsvp === "tentative" && (
+          <span className={s.theRoomRole} style={{ fontStyle: "italic" }}>tentative</span>
+        )}
+      </div>
+    );
+
+    return (
+      <div className={s.theRoom}>
+        <div className={s.theRoomLabel}>The Room</div>
+        {hasBothSides ? (
+          <>
+            <div className={s.theRoomGroup}>
+              <div className={s.theRoomGroupLabel}>Their Side</div>
+              {external.map(renderAttendee)}
+            </div>
+            <div className={s.theRoomGroup}>
+              <div className={s.theRoomGroupLabel}>Our Side</div>
+              {internal.map(renderAttendee)}
+            </div>
+          </>
+        ) : (
+          <div className={s.theRoomGroup}>
+            {attendees.map(renderAttendee)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback: prep stakeholders (legacy)
+  if (!stakeholders || stakeholders.length === 0) return null;
 
   const external = stakeholders.filter((p) => p.relationship === "external" || p.relationship === "unknown" || !p.relationship);
   const internal = stakeholders.filter((p) => p.relationship === "internal");
-
-  // If we can't distinguish sides, show as a single flat list
   const hasBothSides = external.length > 0 && internal.length > 0;
 
   const renderPerson = (person: Stakeholder) => (
@@ -323,6 +375,7 @@ export function BriefingMeetingCard({
   capturedActionCount,
   proposedActionCount,
   isUpNext = false,
+  userDomain,
 }: BriefingMeetingCardProps) {
   const navigate = useNavigate();
   const state = getTemporalState(meeting, now, currentMeeting);
@@ -489,9 +542,13 @@ export function BriefingMeetingCard({
             ) : null}
 
             {/* The Room — calendar invitees grouped by side */}
-            {meeting.prep?.stakeholders && meeting.prep.stakeholders.length > 0 && (
-              <KeyPeopleFlow stakeholders={meeting.prep.stakeholders} />
-            )}
+            {(meeting.calendarAttendees?.length || meeting.prep?.stakeholders?.length) ? (
+              <KeyPeopleFlow
+                attendees={meeting.calendarAttendees}
+                userDomain={userDomain}
+                stakeholders={meeting.prep?.stakeholders}
+              />
+            ) : null}
 
             {/* Bridge link */}
             <div className={s.meetingLinks}>
