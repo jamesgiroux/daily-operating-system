@@ -23,7 +23,8 @@ import {
   BriefingMeetingCard,
   getTemporalState,
 } from "./BriefingMeetingCard";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { Loader2 } from "lucide-react";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
@@ -185,19 +186,12 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       ? { preparing: "Preparing…", enriching: "AI Processing…", delivering: "Delivering…" }[workflowStatus.phase]
       : null;
     return (
-      <button
+      <FolioRefreshButton
         onClick={onRunBriefing}
-        disabled={isRunning}
-        className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+        loading={!!isRunning}
+        loadingLabel={phaseLabel ?? "Running\u2026"}
         title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and intelligence"}
-      >
-        {isRunning ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <RefreshCw className="h-3 w-3" />
-        )}
-        <span>{phaseLabel ?? "Refresh"}</span>
-      </button>
+      />
     );
   }, [onRunBriefing, isRunning, workflowStatus]);
 

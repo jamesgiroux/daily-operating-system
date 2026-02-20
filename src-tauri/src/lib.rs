@@ -293,6 +293,7 @@ pub fn run() {
             commands::get_next_run_time,
             commands::get_meeting_intelligence,
             commands::generate_meeting_intelligence,
+            commands::enrich_meeting_background,
             commands::get_meeting_prep,
             commands::backfill_prep_semantics,
             commands::get_all_actions,
