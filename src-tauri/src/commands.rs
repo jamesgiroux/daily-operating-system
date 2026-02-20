@@ -543,6 +543,10 @@ fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
         focus,
         email_narrative: None,
         replies_needed: Vec::new(),
+        user_domains: crate::state::load_config()
+            .ok()
+            .map(|c| c.resolved_user_domains())
+            .filter(|d| !d.is_empty()),
     })
 }
 
@@ -911,6 +915,10 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                 focus,
                 email_narrative,
                 replies_needed,
+                user_domains: {
+                    let domains = config.resolved_user_domains();
+                    if domains.is_empty() { None } else { Some(domains) }
+                },
             },
             freshness,
             google_auth,

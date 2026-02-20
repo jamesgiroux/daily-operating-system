@@ -945,6 +945,9 @@ pub struct DashboardData {
     /// Threads awaiting user reply (I318/I355)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
+    /// User org domains for internal/external attendee grouping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_domains: Option<Vec<String>>,
 }
 
 // =============================================================================
