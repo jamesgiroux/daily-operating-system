@@ -563,30 +563,27 @@ fn gather_meeting_context(
     } else {
         // No entity resolved — type-based fallbacks
 
-        // Internal/1:1 fallback: try resolve_internal_account_for_meeting
-        let internal_types = ["internal", "team_sync", "one_on_one"];
-        if internal_types.contains(&meeting_type) {
-            if let Some(db) = db {
-                if let Some(internal_account) = resolve_internal_account_for_meeting(
-                    db,
-                    event_id,
-                    title,
-                    meeting.get("attendees"),
-                ) {
-                    ctx["account"] = json!(internal_account.name.clone());
-                    ctx["entity_id"] = json!(internal_account.id.clone());
-                    let account_path =
-                        crate::accounts::resolve_account_dir(workspace, &internal_account);
-                    if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
-                        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-                    }
-                    if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
-                        ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
-                    }
-                    ctx["open_actions"] = get_account_actions(db, &internal_account.id);
-                    ctx["meeting_history"] =
-                        get_meeting_history(db, &internal_account.id, 30, 3);
+        // Account fallback: try resolve_account_for_meeting (internal + external)
+        if let Some(db) = db {
+            if let Some(resolved_account) = resolve_account_for_meeting(
+                db,
+                event_id,
+                title,
+                meeting.get("attendees"),
+            ) {
+                ctx["account"] = json!(resolved_account.name.clone());
+                ctx["entity_id"] = json!(resolved_account.id.clone());
+                let account_path =
+                    crate::accounts::resolve_account_dir(workspace, &resolved_account);
+                if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
+                    ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
                 }
+                if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
+                    ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
+                }
+                ctx["open_actions"] = get_account_actions(db, &resolved_account.id);
+                ctx["meeting_history"] =
+                    get_meeting_history(db, &resolved_account.id, 30, 3);
             }
         }
 
@@ -654,6 +651,7 @@ fn gather_meeting_context(
         }
 
         // Fallback pending actions for internal types
+        let internal_types = ["internal", "team_sync", "one_on_one"];
         if internal_types.contains(&meeting_type) {
             if let Some(db) = db {
                 ctx["open_actions"] = get_all_pending_actions(db, 10);
@@ -1044,7 +1042,7 @@ fn attendee_emails_from_value(attendees: Option<&Value>) -> HashSet<String> {
         .unwrap_or_default()
 }
 
-fn resolve_internal_account_for_meeting(
+fn resolve_account_for_meeting(
     db: &crate::db::ActionDb,
     event_id: &str,
     title: &str,
@@ -1058,7 +1056,7 @@ fn resolve_internal_account_for_meeting(
                         continue;
                     }
                     if let Ok(Some(account)) = db.get_account(&entity.id) {
-                        if account.is_internal && !account.archived {
+                        if !account.archived {
                             return Some(account);
                         }
                     }
@@ -1111,6 +1109,29 @@ fn resolve_internal_account_for_meeting(
                         && account.name.to_lowercase() < best_account.name.to_lowercase())
                 {
                     best = Some((score, account));
+                }
+            }
+        }
+    }
+
+    // If no internal account matched, check external accounts by title match
+    if best.as_ref().is_none_or(|(s, _)| *s == 0) {
+        if let Ok(all_accounts) = db.get_all_accounts() {
+            for account in all_accounts {
+                if account.is_internal || account.archived {
+                    continue;
+                }
+                let account_key = normalize_account_key(&account.name);
+                if !account_key.is_empty() && title_key.contains(&account_key) {
+                    // External account name found in title — strong signal
+                    let score = 5;
+                    match &best {
+                        None => best = Some((score, account)),
+                        Some((best_score, _)) if score > *best_score => {
+                            best = Some((score, account));
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
