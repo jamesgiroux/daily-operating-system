@@ -19,7 +19,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
-import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
@@ -311,54 +310,16 @@ export function MeetingActionChecklist({
   );
 }
 
-/** Single-line signal per prep category — used in schedule expansion panels. */
-function QuickContext({ meeting }: { meeting: Meeting }) {
-  const prep = meeting.prep;
-  if (!prep) return null;
-
-  const discuss = (prep.actions ?? prep.questions ?? [])[0];
-  const watch = (prep.risks ?? [])[0];
-  const win = (prep.wins ?? [])[0];
-
-  if (!discuss && !watch && !win) return null;
-
-  return (
-    <div className={s.quickContext}>
-      {discuss && (
-        <div className={s.quickContextLine}>
-          <span className={clsx(s.quickContextDot, s.prepDotTurmeric)} />
-          <span className={s.quickContextLabel}>Discuss</span>
-          <span className={s.quickContextText}>{stripMarkdown(discuss)}</span>
-        </div>
-      )}
-      {watch && (
-        <div className={s.quickContextLine}>
-          <span className={clsx(s.quickContextDot, s.prepDotTerracotta)} />
-          <span className={s.quickContextLabel}>Watch</span>
-          <span className={s.quickContextText}>{stripMarkdown(watch)}</span>
-        </div>
-      )}
-      {win && (
-        <div className={s.quickContextLine}>
-          <span className={clsx(s.quickContextDot, s.prepDotSage)} />
-          <span className={s.quickContextLabel}>Win</span>
-          <span className={s.quickContextText}>{stripMarkdown(win)}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function BriefingMeetingCard({
   meeting,
   now,
   currentMeeting,
-  meetingActions = [],
-  onComplete,
-  completedIds,
-  onEntitiesChanged,
+  meetingActions: _meetingActions = [],
+  onComplete: _onComplete,
+  completedIds: _completedIds,
+  onEntitiesChanged: _onEntitiesChanged,
   capturedActionCount,
   proposedActionCount,
   isUpNext = false,
@@ -491,8 +452,24 @@ export function BriefingMeetingCard({
           style={{ maxHeight: isExpanded ? measuredHeight : 0 }}
         >
           <div ref={innerRef} className={s.expansionInner}>
-            {/* Intelligence brief — editorial lede */}
-            {meeting.prep?.context && (
+            {/* Meeting context: calendar description (organizer's words) or AI brief */}
+            {meeting.calendarDescription ? (
+              <p
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: 14,
+                  fontWeight: 400,
+                  color: "var(--color-text-primary)",
+                  margin: "0 0 20px 0",
+                  lineHeight: 1.55,
+                  maxWidth: 560,
+                }}
+              >
+                {meeting.calendarDescription.length > 400
+                  ? `${meeting.calendarDescription.slice(0, 400)}…`
+                  : meeting.calendarDescription}
+              </p>
+            ) : meeting.prep?.context ? (
               <p
                 style={{
                   fontFamily: "var(--font-serif)",
@@ -509,37 +486,14 @@ export function BriefingMeetingCard({
                   ? `${meeting.prep.context.slice(0, 320)}…`
                   : meeting.prep.context}
               </p>
-            )}
+            ) : null}
 
-            {/* Key people */}
+            {/* The Room — calendar invitees grouped by side */}
             {meeting.prep?.stakeholders && meeting.prep.stakeholders.length > 0 && (
               <KeyPeopleFlow stakeholders={meeting.prep.stakeholders} />
             )}
 
-            {/* Quick context (1 signal per category) */}
-            <QuickContext meeting={meeting} />
-
-            {/* Before-this-meeting actions */}
-            <MeetingActionChecklist
-              actions={meetingActions}
-              completedIds={completedIds}
-              onComplete={onComplete}
-            />
-
-            {/* Entity assignment */}
-            <div style={{ marginBottom: 20 }}>
-              <MeetingEntityChips
-                meetingId={meeting.id}
-                meetingTitle={meeting.title}
-                meetingStartTime={meeting.startIso ?? new Date().toISOString()}
-                meetingType={meeting.type}
-                linkedEntities={meeting.linkedEntities ?? []}
-                onEntitiesChanged={onEntitiesChanged}
-                compact
-              />
-            </div>
-
-            {/* Bridge links */}
+            {/* Bridge link */}
             <div className={s.meetingLinks}>
               <Link
                 to="/meeting/$meetingId"
