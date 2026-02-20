@@ -876,6 +876,9 @@ pub struct DirectiveMeetingContext {
     /// Calendar event description (I185).
     #[serde(default)]
     pub description: Option<String>,
+    /// I317: Pre-meeting email context gathered from email signals/bridge.
+    #[serde(default)]
+    pub pre_meeting_email_context: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
