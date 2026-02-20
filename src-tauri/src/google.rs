@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter};
 use crate::db::DbPerson;
 use crate::google_api;
 use crate::people;
+use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 use crate::util::{name_from_email, org_from_email, person_id_from_email};
@@ -1012,9 +1013,79 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                         if !new_ids.is_empty() {
                             log::info!(
-                                "Email poll: {} new emails detected, queueing enrichment",
+                                "Email poll: {} new emails detected, running AI enrichment",
                                 new_ids.len()
                             );
+
+                            // Reuse Executor's enrichment pipeline (same as manual refresh)
+                            let executor = crate::executor::Executor::new(
+                                state.clone(), app_handle.clone()
+                            );
+                            let user_ctx = state.config.read().ok()
+                                .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+                                .unwrap_or_default();
+                            let ai_config = executor.ai_model_config();
+                            let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config);
+                            let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+
+                            // AI enrichment (fault-tolerant, same as execute_email_refresh)
+                            match executor.enrich_emails_with_fallback(
+                                &data_dir, &workspace, &user_ctx,
+                                &extraction_pty, &synthesis_pty,
+                            ) {
+                                Ok(()) => {
+                                    log::info!("Email poll: AI enrichment succeeded");
+                                    let _ = app_handle.emit("emails-updated", ());
+                                }
+                                Err(e) => {
+                                    log::warn!("Email poll: AI enrichment failed (non-fatal): {}", e);
+                                }
+                            }
+
+                            // Sync enriched signals to DB
+                            match executor.sync_email_signals_from_payload(&data_dir) {
+                                Ok(count) if count > 0 => {
+                                    log::info!("Email poll: persisted {} email signal rows", count);
+                                }
+                                Err(e) => {
+                                    log::warn!("Email poll: signal sync failed (non-fatal): {}", e);
+                                }
+                                _ => {}
+                            }
+
+                            // I357: Semantic reclassification of medium-priority emails (opt-in)
+                            let reclass_enabled = state.config.read().ok()
+                                .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "semanticEmailReclass")))
+                                .unwrap_or(false);
+                            if reclass_enabled {
+                                let emails_path = data_dir.join("emails.json");
+                                if let Ok(raw) = std::fs::read_to_string(&emails_path) {
+                                    if let Ok(emails_val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                                        let medium: Vec<serde_json::Value> = emails_val
+                                            .get("mediumPriority")
+                                            .and_then(|v| v.as_array())
+                                            .cloned()
+                                            .unwrap_or_default();
+                                        if !medium.is_empty() {
+                                            let results = crate::prepare::email_classify::reclassify_with_ai(
+                                                &medium,
+                                                &extraction_pty,
+                                                &workspace,
+                                            );
+                                            if !results.is_empty() {
+                                                log::info!(
+                                                    "Email poll: semantic reclassification changed {} emails",
+                                                    results.len()
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Final event so frontend picks up enriched data
+                            let _ = app_handle.emit("operation-delivered", "emails-enriched");
+                            let _ = app_handle.emit("emails-updated", ());
                         } else {
                             log::info!("Email poll: no new emails");
                         }
