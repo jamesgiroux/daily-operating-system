@@ -59,6 +59,13 @@ export interface SourceReference {
 
 export type OverlayStatus = "enriched" | "cancelled" | "new" | "briefing_only";
 
+export interface CalendarAttendee {
+  email: string;
+  name: string;
+  rsvp: string;
+  domain: string;
+}
+
 export interface LinkedEntity {
   id: string;
   name: string;
@@ -90,6 +97,8 @@ export interface Meeting {
   suggestedUnarchiveAccountId?: string;
   /** Calendar event description from Google Calendar */
   calendarDescription?: string;
+  /** Raw calendar attendees (not AI-enriched) with RSVP status */
+  calendarAttendees?: CalendarAttendee[];
   /** Structured intelligence quality assessment for schedule meetings */
   intelligenceQuality?: {
     level: "sparse" | "developing" | "ready" | "fresh";
@@ -238,6 +247,8 @@ export interface DashboardData {
   stats: DayStats;
   meetings: Meeting[];
   actions: Action[];
+  /** User org domains for internal/external attendee grouping */
+  userDomains?: string[];
   emails?: Email[];
   emailSync?: EmailSyncStatus;
   focus?: DailyFocus;
