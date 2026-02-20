@@ -1,8 +1,8 @@
-import { useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
-import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
@@ -42,10 +42,12 @@ import { PersonNetwork } from "@/components/person/PersonNetwork";
 import { PersonAppendix } from "@/components/person/PersonAppendix";
 import { PersonInsightChapter } from "@/components/person/PersonInsightChapter";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
+import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 
 /* ── Vitals assembly ── */
 
@@ -131,6 +133,20 @@ export default function PersonDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
+  // I312: Preset metadata state
+  const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!personId) return;
+    invoke<string>("get_entity_metadata", { entityType: "person", entityId: personId })
+      .then((json) => {
+        try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
+      })
+      .catch((err) => {
+        console.error("get_entity_metadata (person) failed:", err);
+        setMetadataValues({});
+      });
+  }, [personId]);
+
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("person", personId);
 
@@ -163,8 +179,49 @@ export default function PersonDetailEditorial() {
           onDelete={() => person.setDeleteConfirmOpen(true)}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.person, { ...detail, signals: detail.signals as Record<string, unknown> | undefined }) : buildPersonVitals(detail)} />
+          {preset ? (
+            <EditableVitalsStrip
+              fields={preset.vitals.person}
+              entityData={{ ...detail, signals: detail.signals as Record<string, unknown> | undefined }}
+              metadata={metadataValues}
+              onFieldChange={(key, _columnMapping, source, value) => {
+                if (source === "metadata") {
+                  setMetadataValues((prev) => {
+                    const updated = { ...prev, [key]: value };
+                    invoke("update_entity_metadata", {
+                      entityId: personId,
+                      entityType: "person",
+                      metadata: JSON.stringify(updated),
+                    }).catch((err) => console.error("update_entity_metadata failed:", err));
+                    return updated;
+                  });
+                }
+              }}
+            />
+          ) : (
+            <VitalsStrip vitals={buildPersonVitals(detail)} />
+          )}
         </div>
+        {/* I312: Preset metadata fields */}
+        {preset && preset.metadata.person.length > 0 && (
+          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+            <PresetFieldsEditor
+              fields={preset.metadata.person}
+              values={metadataValues}
+              onChange={(key, value) => {
+                setMetadataValues((prev) => {
+                  const updated = { ...prev, [key]: value };
+                  invoke("update_entity_metadata", {
+                    entityId: personId,
+                    entityType: "person",
+                    metadata: JSON.stringify(updated),
+                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  return updated;
+                });
+              }}
+            />
+          </div>
+        )}
       </section>
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
@@ -268,8 +325,8 @@ export default function PersonDetailEditorial() {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 12,
-                    padding: "8px 12px",
+                    gap: "var(--space-sm)",
+                    padding: "var(--space-sm) var(--space-md)",
                     borderRadius: 6,
                     background: "none",
                     border: "none",
@@ -284,7 +341,7 @@ export default function PersonDetailEditorial() {
                       width: 32,
                       height: 32,
                       borderRadius: "50%",
-                      background: "rgba(143, 163, 196, 0.15)",
+                      background: "var(--color-garden-larkspur-15)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
