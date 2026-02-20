@@ -324,7 +324,7 @@ fn parse_meeting_header(line: &str) -> Option<(String, String)> {
     }
 }
 
-fn parse_meeting_type(s: &str) -> MeetingType {
+pub fn parse_meeting_type(s: &str) -> MeetingType {
     match s.to_lowercase().as_str() {
         "customer" => MeetingType::Customer,
         "qbr" => MeetingType::Qbr,
