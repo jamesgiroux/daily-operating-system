@@ -2070,8 +2070,7 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
         day,
         WeekMeeting {
             time,
-            title: account_or_title.clone(),
-            account: Some(account_or_title),
+            title: account_or_title,
             meeting_id: None,
             meeting_type,
             prep_status,

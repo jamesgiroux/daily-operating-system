@@ -128,6 +128,7 @@ pub fn db_meeting_to_calendar_event(meeting: &crate::db::DbMeeting) -> CalendarE
         account: None,
         attendees: vec![],
         is_all_day: false,
+        linked_entities: None,
     }
 }
 

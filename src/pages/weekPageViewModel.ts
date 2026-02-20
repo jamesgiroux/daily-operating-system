@@ -289,12 +289,12 @@ export function computeShapeEpigraph(dayShapes: DayShape[]): string {
   return `${shape}. ${crux} is the crux${recovery ? " \u2014" + recovery : "."}`;
 }
 
-/** Derive a display label from a WeekMeeting's linked entities, falling back to account string (I339). */
+/** Derive a display label from a WeekMeeting's linked entities (I339). */
 function meetingEntityLabel(m: WeekMeeting): string | undefined {
   if (m.linkedEntities?.length) {
     return m.linkedEntities.map((e) => e.name).join(", ");
   }
-  return m.account;
+  return undefined;
 }
 
 /** External meeting types for filtering. */

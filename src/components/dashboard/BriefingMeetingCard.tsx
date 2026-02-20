@@ -42,6 +42,8 @@ interface BriefingMeetingCardProps {
   capturedActionCount?: number;
   /** Number of proposed actions needing review from this meeting */
   proposedActionCount?: number;
+  /** When true, this is the next upcoming meeting — renders expanded by default with richer context */
+  isUpNext?: boolean;
 }
 
 type TemporalState = "upcoming" | "in-progress" | "past" | "cancelled";
@@ -338,17 +340,18 @@ export function BriefingMeetingCard({
   onEntitiesChanged,
   capturedActionCount,
   proposedActionCount,
+  isUpNext = false,
 }: BriefingMeetingCardProps) {
   const navigate = useNavigate();
   const state = getTemporalState(meeting, now, currentMeeting);
-  const isInitiallyExpanded = state === "in-progress";
+  const isInitiallyExpanded = state === "in-progress" || isUpNext;
   const [isExpanded, setIsExpanded] = useState(isInitiallyExpanded);
   const innerRef = useRef<HTMLDivElement>(null);
   const [measuredHeight, setMeasuredHeight] = useState<number>(isInitiallyExpanded ? 2000 : 0);
 
   const duration = formatDuration(meeting);
   const hasPrepContent = !!(meeting.prep && Object.keys(meeting.prep).length > 0);
-  const canExpand = (state === "upcoming" || state === "in-progress") && hasPrepContent;
+  const canExpand = (state === "upcoming" || state === "in-progress") && (hasPrepContent || isUpNext);
 
   // Measure expansion panel content
   useLayoutEffect(() => {
@@ -418,6 +421,7 @@ export function BriefingMeetingCard({
         <div className={s.scheduleContent}>
           <div className={s.scheduleTitleRow}>
             <span className={s.scheduleTitle}>{meeting.title}</span>
+            {isUpNext && state !== "in-progress" && <span className={s.upNextPill}>UP NEXT</span>}
             {state === "in-progress" && <span className={s.nowPill}>NOW</span>}
             {state === "past" && <span className={s.pastArrow}>&rarr;</span>}
             {canExpand && (
@@ -428,7 +432,10 @@ export function BriefingMeetingCard({
           </div>
           <div className={s.scheduleSubtitle}>
             {subtitleParts.join(" \u00B7 ")}
-            {meeting.hasPrep && <span className={s.schedulePrepDot} title="Prep available" />}
+            {meeting.hasPrep
+              ? <span className={s.schedulePrepDot} title="Prep available" />
+              : isUpNext && <span className={s.schedulePrepDotMuted} title="No prep yet" />
+            }
           </div>
           {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
             <div
