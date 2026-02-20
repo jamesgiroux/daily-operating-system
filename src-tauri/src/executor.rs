@@ -1128,6 +1128,18 @@ impl Executor {
         }
         let _ = self.app_handle.emit("operation-delivered", "briefing");
 
+        // Re-deliver schedule.json after all enrichment so the dashboard
+        // reflects AI-enriched prep summaries, not the pre-enrichment stubs.
+        let schedule_data = {
+            let db_ref = own_db.as_ref();
+            crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)
+                .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?
+        };
+        let _ = self
+            .app_handle
+            .emit("operation-delivered", "schedule-refreshed");
+        log::info!("Today pipeline: schedule re-delivered after enrichment");
+
         // Final manifest (partial: false — all ops complete)
         crate::workflow::deliver::deliver_manifest(
             &directive,
