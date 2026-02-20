@@ -4,6 +4,7 @@ import type {
   MeetingType,
   ReadinessCheck,
   TimeBlock,
+  TimelineMeeting,
   TopPriority,
   WeekAction,
   WeekDay,
@@ -305,6 +306,75 @@ const EXTERNAL_MEETING_TYPES: Set<MeetingType> = new Set([
   "external",
 ]);
 
+
+/**
+ * Derive mechanical Top Three items when full week-overview.json is unavailable.
+ * Uses timeline future meetings and live suggestions as data sources.
+ */
+export function pickTopThreeFromTimeline(
+  timeline: TimelineMeeting[],
+  liveSuggestions: LiveProactiveSuggestion[]
+): TopThreeItem[] {
+  const now = new Date();
+  const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const future = timeline.filter((m) => new Date(m.startTime) > now);
+
+  const items: TopThreeItem[] = [];
+
+  // Item 1: first live suggestion with a meeting reference
+  const liveMeeting = liveSuggestions.find((s) => !!s.meetingId);
+  if (liveMeeting) {
+    items.push({
+      number: 1,
+      title: liveMeeting.title,
+      reason: liveMeeting.reason,
+      contextLine: `${liveMeeting.day} \u00b7 ${formatBlockRange(liveMeeting.start, liveMeeting.end)}`,
+      actionId: liveMeeting.actionId,
+      meetingId: liveMeeting.meetingId,
+    });
+  }
+
+  // Item 2: next future meeting with sparse intelligence (context building opportunity)
+  const sparseMeeting = future.find(
+    (m) => m.intelligenceQuality?.level === "sparse"
+  );
+  if (sparseMeeting && items.length < 2) {
+    items.push({
+      number: (items.length + 1) as 1 | 2 | 3,
+      title: sparseMeeting.title,
+      reason: "Building context for this meeting.",
+      contextLine: new Date(sparseMeeting.startTime).toLocaleDateString(
+        "en-US",
+        { weekday: "long", month: "short", day: "numeric" }
+      ),
+      meetingId: sparseMeeting.id,
+    });
+  }
+
+  // Item 3: next future external/customer meeting within 7 days
+  const externalTypes = new Set(["customer", "external", "partnership", "qbr"]);
+  const externalMeeting = future.find((m) => {
+    const start = new Date(m.startTime);
+    return start <= sevenDaysOut && externalTypes.has(m.meetingType);
+  });
+  if (externalMeeting && items.length < 3) {
+    const alreadyUsed = items.some((i) => i.meetingId === externalMeeting.id);
+    if (!alreadyUsed) {
+      items.push({
+        number: (items.length + 1) as 1 | 2 | 3,
+        title: externalMeeting.title,
+        reason: "External meeting this week.",
+        contextLine: new Date(externalMeeting.startTime).toLocaleDateString(
+          "en-US",
+          { weekday: "long", month: "short", day: "numeric" }
+        ),
+        meetingId: externalMeeting.id,
+      });
+    }
+  }
+
+  return items;
+}
 
 /** Synthesize readiness into FolioBar stats. */
 export function synthesizeReadinessStats(
