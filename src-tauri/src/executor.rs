@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::Utc;
-use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
@@ -1256,93 +1255,10 @@ impl Executor {
             return Err(format!("Email refresh failed: {}", e));
         }
 
-        // Step 2: Read refresh directive
-        let refresh_path = data_dir.join("email-refresh-directive.json");
-
-        if !refresh_path.exists() {
-            return Err("Email refresh did not produce directive".to_string());
-        }
-
-        let raw = std::fs::read_to_string(&refresh_path)
-            .map_err(|e| format!("Failed to read refresh directive: {}", e))?;
-        let refresh_data: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("Failed to parse refresh directive: {}", e))?;
-
-        // Step 3: Build emails data matching deliver_emails output shape
-        let emails_section = refresh_data.get("emails").cloned().unwrap_or(json!({}));
-
-        let map_email = |e: &serde_json::Value, default_priority: &str| -> serde_json::Value {
-            json!({
-                "id": e.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "sender": e.get("from").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "senderEmail": e.get("from_email").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "subject": e.get("subject").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "snippet": e.get("snippet").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "priority": e.get("priority").and_then(serde_json::Value::as_str).unwrap_or(default_priority),
-            })
-        };
-
-        let high_priority: Vec<serde_json::Value> = emails_section
-            .get("highPriority")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().map(|e| map_email(e, "high")).collect())
-            .unwrap_or_default();
-
-        // Classified contains medium + low emails
-        let classified = emails_section
-            .get("classified")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-
-        let mut medium_priority: Vec<serde_json::Value> = Vec::new();
-        let mut low_priority: Vec<serde_json::Value> = Vec::new();
-        for e in &classified {
-            let prio = e
-                .get("priority")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("medium");
-            let mapped = map_email(e, prio);
-            match prio {
-                "low" => low_priority.push(mapped),
-                _ => medium_priority.push(mapped),
-            }
-        }
-
-        let now = Utc::now().to_rfc3339();
-        let sync = EmailSyncStatus {
-            state: EmailSyncState::Ok,
-            stage: EmailSyncStage::Refresh,
-            code: None,
-            message: None,
-            using_last_known_good: Some(false),
-            can_retry: Some(true),
-            last_attempt_at: Some(now.clone()),
-            last_success_at: Some(now),
-        };
-        let emails_json = json!({
-            "highPriority": high_priority,
-            "mediumPriority": medium_priority,
-            "lowPriority": low_priority,
-            "stats": {
-                "highCount": high_priority.len(),
-                "mediumCount": medium_priority.len(),
-                "lowCount": low_priority.len(),
-                "total": high_priority.len() + medium_priority.len() + low_priority.len(),
-            },
-            "sync": serde_json::to_value(&sync)
-                .map_err(|e| format!("Failed to serialize email sync status: {}", e))?,
-        });
-
-        crate::workflow::deliver::write_json(&data_dir.join("emails.json"), &emails_json)?;
+        // Step 2: Read refresh directive → build and write emails.json
+        let _email_ids = crate::google::deliver_from_refresh_directive(&data_dir, &self.app_handle)?;
         let _ = self.app_handle.emit("operation-delivered", "emails");
-        self.emit_email_sync_status(&sync);
-        log::info!(
-            "Email refresh: emails.json written ({} high, {} medium, {} low)",
-            high_priority.len(),
-            medium_priority.len(),
-            low_priority.len()
-        );
+        let _ = self.app_handle.emit("emails-updated", ());
 
         // Step 4: AI enrichment (fault-tolerant)
         let user_ctx = self
@@ -1393,6 +1309,7 @@ impl Executor {
         let _ = self
             .app_handle
             .emit("operation-delivered", "emails-enriched");
+        let _ = self.app_handle.emit("emails-updated", ());
 
         // I357: Semantic reclassification (opt-in, email refresh path)
         {
@@ -1430,8 +1347,8 @@ impl Executor {
             }
         }
 
-        // Step 5: Clean up refresh directive
-        let _ = std::fs::remove_file(&refresh_path);
+        // Wake the email poller so it resets its sleep timer
+        self.state.email_poller_wake.notify_one();
 
         log::info!("Email refresh complete");
         Ok(())

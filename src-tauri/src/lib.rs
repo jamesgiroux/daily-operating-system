@@ -142,6 +142,13 @@ pub fn run() {
                 google::run_calendar_poller(poller_state, poller_handle).await;
             });
 
+            // Spawn email poller
+            let email_poller_state = state.clone();
+            let email_poller_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                google::run_email_poller(email_poller_state, email_poller_handle).await;
+            });
+
             // Spawn capture detection loop (Phase 3B)
             let capture_state = state.clone();
             let capture_handle = app.handle().clone();
