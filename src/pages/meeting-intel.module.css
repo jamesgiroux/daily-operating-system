@@ -1,3 +1,12 @@
+/* =============================================================================
+   MeetingDetailPage CSS Module
+   Phase 5: Design System Violations Remediation — inline style → CSS module migration
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EXISTING CLASSES (preserved)
+   ───────────────────────────────────────────────────────────────────────────── */
+
 .heroTitle {
   font-size: 76px;
   font-weight: 400;
@@ -24,4 +33,916 @@
 /* Details chevron rotation for calendar notes toggle */
 details[open] .detailsChevron {
   transform: rotate(90deg);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SHARED / REUSABLE PATTERNS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.monoOverline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--color-text-tertiary);
+}
+
+.chapterHeading {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-tertiary);
+}
+
+.folioBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.folioBtnInline {
+  composes: folioBtn;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.folioBtnDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bulletDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+
+.bulletDotInline {
+  composes: bulletDot;
+  margin-top: 0;
+}
+
+.sectionRule {
+  height: 1px;
+  background: var(--color-rule-heavy);
+}
+
+.iconSm {
+  width: 10px;
+  height: 10px;
+}
+
+.iconMd {
+  width: 12px;
+  height: 12px;
+}
+
+.iconLg {
+  width: 13px;
+  height: 13px;
+}
+
+.iconXl {
+  width: 32px;
+  height: 32px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PAGE LAYOUT
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pageContainer {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 0 var(--space-5xl);
+}
+
+.pageContainerPadded {
+  composes: pageContainer;
+  padding: var(--space-2xl) 0 var(--space-5xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMPTY / NOT-READY STATES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.emptyState {
+  text-align: center;
+  padding: 60px 0;
+}
+
+.emptyIcon {
+  width: 32px;
+  height: 32px;
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+  margin: 0 auto var(--space-md);
+  display: block;
+}
+
+.emptyTitle {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-sm);
+}
+
+.emptyText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.emptyGenerating {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-sm);
+}
+
+.syncButton {
+  margin-top: var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px var(--space-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.syncButtonDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FOLIO BAR ACTIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.folioActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.folioCopied {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-sage);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   OUTCOMES SECTION
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.outcomesWrap {
+  padding-top: var(--space-5xl);
+}
+
+.outcomesDivider {
+  height: 1px;
+  background: var(--color-rule-light);
+  margin: var(--space-2xl) 0;
+}
+
+.outcomesContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.outcomesTitle {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.outcomesBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  font-size: 14px;
+}
+
+.outcomesSummary {
+  color: var(--color-text-tertiary);
+  margin: 0;
+  line-height: 1.65;
+}
+
+.outcomesGrid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.outcomeSectionWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.outcomeSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.outcomeSectionCount {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+
+.outcomeSectionItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.outcomeSectionItem {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.55;
+}
+
+.outcomeActionsWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.outcomeActionsTitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.outcomeActionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HERO SECTION
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.heroSection {
+  padding-top: var(--space-5xl);
+  scroll-margin-top: 60px;
+}
+
+.pastMeetingOpacity {
+  opacity: 0.7;
+}
+
+.urgencyBanner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--space-md);
+}
+
+.urgencyUrgent {
+  color: var(--color-spice-terracotta);
+}
+
+.urgencySoon {
+  color: var(--color-spice-turmeric);
+}
+
+.lifecycleBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.lifecycleText {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--color-spice-turmeric);
+}
+
+.metadataLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 8px 0 0;
+}
+
+.metadataText {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.entityChipsWrap {
+  margin-top: 10px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   NEW SIGNALS BANNER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.newSignalsBanner {
+  padding: 10px var(--space-md);
+  background: var(--color-garden-larkspur-8);
+  border-left: 3px solid var(--color-garden-larkspur);
+  border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-garden-larkspur);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.newSignalsRefreshBtn {
+  background: none;
+  border: 1px solid var(--color-garden-larkspur);
+  border-radius: var(--radius-editorial-sm);
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-garden-larkspur);
+  cursor: pointer;
+}
+
+.newSignalsRefreshBtnDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   KEY INSIGHT (pull quote)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.keyInsight {
+  margin: 28px 0 0 0;
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding: var(--space-md) 0 var(--space-md) var(--space-lg);
+}
+
+.keyInsightText {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  margin: 0;
+  max-width: 620px;
+}
+
+.keyInsightEmpty {
+  margin-top: 28px;
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENTITY READINESS ("Before This Meeting")
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.readinessWrap {
+  margin-top: var(--space-xl);
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding: 12px 0 12px 20px;
+}
+
+.readinessHeading {
+  composes: chapterHeading;
+  color: var(--color-spice-turmeric);
+  margin-bottom: 12px;
+}
+
+.readinessList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.readinessItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RISKS CHAPTER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.chapterSection {
+  padding-top: var(--space-5xl);
+  scroll-margin-top: 60px;
+}
+
+.risksContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.featuredRisk {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding: var(--space-md) 0 var(--space-md) var(--space-lg);
+  margin: 0;
+}
+
+.featuredRiskText {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.subordinateRisk {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-md);
+}
+
+.subordinateRiskHighUrgency {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.subordinateRiskText {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROOM / ATTENDEES CHAPTER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.attendeeList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.attendeeRowOuter {
+  display: flex;
+  align-items: flex-start;
+}
+
+.attendeeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.attendeeLink {
+  text-decoration: none;
+  color: inherit;
+  flex: 1;
+  min-width: 0;
+}
+
+.attendeeNonLink {
+  flex: 1;
+  min-width: 0;
+}
+
+.attendeeAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.attendeeBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.attendeeNameRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.attendeeName {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+  font-size: 14px;
+  cursor: default;
+}
+
+.attendeeRole {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.attendeeTempDot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.attendeeTempIndicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.attendeeTempLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.attendeeEngagement {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: capitalize;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
+.attendeeNewContact {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-garden-sage);
+}
+
+.attendeeAssessment {
+  margin-top: 6px;
+  margin-bottom: 0;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+}
+
+.attendeeMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.attendeeOrg {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.attendeeMetaMono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.attendeeMetaCold {
+  composes: attendeeMetaMono;
+  color: var(--color-spice-terracotta);
+}
+
+.attendeeNotes {
+  margin-top: 4px;
+  margin-bottom: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.attendeeHideBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  padding: 12px 4px 0;
+  opacity: 0.35;
+  flex-shrink: 0;
+}
+
+.attendeeShowMore {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  text-align: left;
+}
+
+/* Tooltip styles (attendees) */
+.attendeeTooltipWrap {
+  position: relative;
+}
+
+.attendeeTooltip {
+  display: none;
+  position: absolute;
+  /* … keep existing tooltip CSS from index.css */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   YOUR PLAN CHAPTER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.prefillNotice {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-spice-turmeric);
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding-left: 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  margin-bottom: var(--space-md);
+}
+
+.planContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.planList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.planItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 12px 0;
+}
+
+.planNumber {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-spice-turmeric);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.planNumberGhost {
+  composes: planNumber;
+  color: var(--color-spice-turmeric-30);
+}
+
+.planItemBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.planEditWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.planEditInput {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-spice-turmeric);
+  background: transparent;
+  padding: 2px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.planEditInputWhy {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.planTopic {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.planTopicEditable {
+  composes: planTopic;
+  cursor: text;
+}
+
+.planWhy {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  margin-bottom: 0;
+  line-height: 1.5;
+}
+
+.planWhyEditable {
+  composes: planWhy;
+  cursor: text;
+}
+
+.planItemActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.planDismissBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  padding: 0 4px;
+  opacity: 0.5;
+}
+
+.planEmptyText {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Ghost input row */
+.ghostInputRow {
+  display: flex;
+  gap: 12px;
+  padding-top: 12px;
+  align-items: flex-start;
+}
+
+.ghostInputBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ghostInput {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  padding: 4px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.ghostInputWhy {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+/* Calendar description details */
+.calendarDetails {
+  margin-top: var(--space-lg);
+}
+
+.calendarSummary {
+  composes: chapterHeading;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendarBody {
+  margin-top: 12px;
+  margin-bottom: 0;
+  white-space: pre-wrap;
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.65;
+  padding-left: 18px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FINIS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.finisWrap {
+  padding-top: var(--space-5xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRE-MEETING CONTEXT LABEL (shown when outcomes present)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.preMeetingLabel {
+  composes: chapterHeading;
+  margin-bottom: 20px;
 }
