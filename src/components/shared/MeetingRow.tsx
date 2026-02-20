@@ -131,7 +131,7 @@ function TimelineMeetingRow({
 
       <span style={{ flex: 1 }} />
 
-      {quality && QualityBadge && <QualityBadge quality={quality} showLabel />}
+      {quality && QualityBadge && !isPast && <QualityBadge quality={quality} showLabel />}
 
       {isPast && meeting.hasOutcomes && (
         <span
