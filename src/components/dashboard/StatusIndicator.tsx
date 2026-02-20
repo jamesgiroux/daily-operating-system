@@ -112,7 +112,7 @@ function StatusTooltip({
           )}
           {aiUnavailable && (
             <p className="text-muted-foreground text-xs">
-              AI enrichment unavailable. Briefing will run in base prep mode.
+              AI unavailable. Briefing will run in base mode.
             </p>
           )}
         </div>
@@ -127,7 +127,7 @@ function StatusTooltip({
           </p>
           {aiUnavailable && status.phase === "enriching" && (
             <p className="text-muted-foreground text-xs">
-              Enrichment may be limited. Core schedule, actions, and prep still deliver.
+              AI may be limited. Core schedule, actions, and prep still deliver.
             </p>
           )}
         </div>
@@ -160,7 +160,7 @@ function StatusTooltip({
           )}
           {aiUnavailable && (
             <p className="text-muted-foreground text-xs">
-              You can still run core briefing output without AI enrichment.
+              You can still run a core briefing without AI.
             </p>
           )}
         </div>

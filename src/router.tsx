@@ -10,7 +10,6 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
 import { Header } from "@/components/dashboard/Header";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
@@ -54,12 +53,17 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { PersonalityProvider } from "@/hooks/usePersonality";
 
 const settingsTabs = new Set([
+  "you",
+  "connections",
+  "system",
+  "diagnostics",
+  // Legacy tab IDs for backwards compatibility
   "profile",
+  "role",
   "integrations",
   "workflows",
   "intelligence",
   "hygiene",
-  "diagnostics",
 ]);
 const peopleRelationshipTabs = new Set(["all", "external", "internal", "unknown"]);
 const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
@@ -111,7 +115,8 @@ function RootLayout() {
     const routes: Record<string, string> = {
       today: "/",
       week: "/week",
-      inbox: "/inbox",
+      emails: "/emails",
+      dropbox: "/inbox",
       actions: "/actions",
       people: "/people",
       accounts: "/accounts",
@@ -169,7 +174,6 @@ function RootLayout() {
     <ThemeProvider>
       <PersonalityProvider>
         <SidebarProvider defaultOpen={false}>
-          <AppSidebar />
           <SidebarInset>
             <Header onCommandMenuOpen={() => setCommandOpen(true)} />
             <Outlet />

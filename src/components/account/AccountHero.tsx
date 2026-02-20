@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import styles from "./AccountHero.module.css";
 
 interface AccountHeroProps {
@@ -44,9 +45,6 @@ export function AccountHero({
   const [showFullLede, setShowFullLede] = useState(false);
   const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
   const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "…" : ledeFull;
-  // Company context from intelligence
-  const companyContext = intelligence?.companyContext ?? null;
-
   return (
     <div className={styles.hero}>
       {/* Parent breadcrumb */}
@@ -71,8 +69,8 @@ export function AccountHero({
 
       {/* Hero date / intelligence timestamp */}
       <div className={styles.heroDate}>
-        Account Intelligence
-        {intelligence && ` · Last enriched ${formatRelativeDateShort(intelligence.enrichedAt)}`}
+        <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
+        {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
       </div>
 
       {/* Account name — 76px serif */}
@@ -120,11 +118,6 @@ export function AccountHero({
         )}
       </div>
 
-      {/* Company context — prose after vitals strip (rendered here but visually after VitalsStrip) */}
-      {companyContext?.description && (
-        <div className={styles.companyContext}>{companyContext.description}</div>
-      )}
-
       {/* Meta row: action links */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
         {onEditFields && (
@@ -143,7 +136,7 @@ export function AccountHero({
             onClick={onEnrich}
             disabled={enriching}
           >
-            {enriching ? `Building intelligence… ${enrichSeconds ?? 0}s` : "Build Intelligence"}
+            {enriching ? `Refreshing… ${enrichSeconds ?? 0}s` : "Refresh"}
           </button>
         )}
         {detail.archived && onUnarchive && (

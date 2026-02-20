@@ -40,7 +40,6 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { EntityKeywords } from "@/components/entity/EntityKeywords";
 
 /* ── Vitals assembly ── */
 
@@ -154,7 +153,6 @@ export default function ProjectDetailEditorial() {
         <div className="editorial-reveal">
           <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.project, detail) : buildProjectVitals(detail)} />
         </div>
-        <EntityKeywords entityId={projectId} entityType="project" keywordsJson={detail.keywords} />
       </section>
 
       {/* Chapter 2: Trajectory */}

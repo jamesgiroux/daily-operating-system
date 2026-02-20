@@ -4,6 +4,76 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.12.1] - 2026-02-19
+
+The first release that subtracts. Every surface asked "does this earn its keep?" — what failed got cut, system jargon got replaced with product language, and 0.12.0 email intelligence got an editorial UI.
+
+### The Correspondent — Email Intelligence Page
+
+- Email page redesigned as "The Correspondent" — an editorial dispatch, not an email client
+- 76px narrative headline synthesized from inbox signals (replies waiting, meeting-linked threads, cadence anomalies)
+- Four margin-grid sections: Your Move (replies needed), Commitments (extracted promises), Open Questions (with account/sender context), Signals (per-entity prose assessments)
+- Entity-scoped relevance filtering — only emails linked to tracked accounts/projects surface intelligence
+- Noise filtering excludes support tickets, notifications, marketing, and billing emails automatically
+- Inline dismiss on every item with SQLite persistence for future relevance learning
+- Enrichment prompts now request contextual prose ("Sarah Chen committed to delivering the revised SOW by Friday") instead of terse fragments
+
+### Surface Cuts
+
+- Week page: removed Meetings, Open Time, and Commitments chapters — keeps The Three and The Shape only
+- Meeting detail: removed Deep Dive zone and Appendix (2931 → 2061 lines) — keeps Brief, Risks, Room, Plan, Finis
+- Daily briefing: merged Hero and Focus into single Day Frame section, cut Later This Week action group
+- Actions page: three tabs only (proposed, pending, completed) with smart default
+- Entity pages: removed Value Delivered, Portfolio Summary, Resolution Keywords, meeting readiness callouts
+- Deleted 5 unused components (ActionItem, ActionList, EmailList, WatchItem, AppSidebar)
+
+### Product Vocabulary
+
+- "Build Intelligence" → "Refresh" across all entity heroes
+- "Account Intelligence" → "Last updated" with timestamp
+- "Entity mode" → "Work mode" in settings
+- "AI enrichment" → "AI analysis" in status messages and onboarding
+- "intelligence layer" → "daily briefings" in settings
+
+### Intelligence Quality Indicators
+
+- New IntelligenceQualityBadge component with freshness dots (green < 24h, amber < 48h, saffron > 48h, gray = none)
+- Integrated into all entity heroes (accounts, people, projects)
+
+### Inline Editing
+
+- EditableText rewritten: textarea-first default, Tauri event emission on commit, Tab/Shift+Tab keyboard navigation, Escape cancels
+- New EditableList component with HTML5 drag-to-reorder and grip handles
+
+### Email Intelligence Backend
+
+- Email enrichment groups by thread_id for thread-level context before AI analysis
+- Commitments, questions, and sentiment extracted per email and persisted to emails.json
+- Semantic email reclassification: opt-in AI re-scoring of medium-priority emails (behind semanticEmailReclass feature flag)
+- Entity thread signal summaries upgraded from mechanical counts to editorial prose
+
+### Navigation
+
+- Dropbox added to nav island (above Actions, after separator) for document/file inbox
+- Mail nav item for email intelligence page
+- InboxPage folio label updated to "Dropbox"
+
+### Settings
+
+- Settings page refactored into component modules (YouCard, ConnectionsGrid, SystemStatus, DiagnosticsSection)
+- Day start time picker for morning briefing schedule
+
+### Changed
+
+- Email narrative headline capped at 12 words for 76px readability
+- Extracted commitments and questions render in primary text color with per-item source context (entity, sender, subject)
+- Entity signal summaries are editorial prose instead of "2 risks, 1 expansion" counts
+
+### Stats
+
+- 915 Rust tests passing, 0 clippy warnings, 29 frontend tests passing
+- Net -1,333 lines across 71 files
+
 ## [0.12.0] - 2026-02-19
 
 The chief of staff reads your email. Signals, not summaries. Briefing, not inbox. Built on the 0.10.0 signal bus.

@@ -12,8 +12,8 @@ use tauri::{Emitter, Manager, State};
 use crate::executor::request_workflow_execution;
 use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
 use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_emails_json, load_emails_json_with_sync,
-    load_prep_json, load_schedule_json, DataFreshness,
+    check_data_freshness, load_actions_json, load_directive, load_emails_json,
+    load_emails_json_with_sync, load_prep_json, load_schedule_json, DataFreshness,
 };
 use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
@@ -54,6 +54,89 @@ const DASHBOARD_LATENCY_BUDGET_MS: u128 = 300;
 const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
 // TODO(I197 follow-up): migrate remaining command DB call sites to AppState DB
 // helpers in passes, prioritizing frequent reads before one-off write paths.
+
+/// Build an editorial prose summary for an entity's email signals.
+/// Instead of "2 risks, 1 expansion" produces something like
+/// "Risk signals detected across 3 emails. Expansion opportunity flagged."
+fn build_entity_signal_prose(signals: &[EmailSignal], email_count: usize) -> String {
+    use std::collections::HashMap;
+    let mut type_counts: HashMap<&str, usize> = HashMap::new();
+    for s in signals {
+        let key = s.signal_type.as_str();
+        *type_counts.entry(key).or_insert(0) += 1;
+    }
+
+    if type_counts.is_empty() {
+        return format!(
+            "{} email{} this period.",
+            email_count,
+            if email_count == 1 { "" } else { "s" },
+        );
+    }
+
+    let mut parts = Vec::new();
+
+    // Risks first (most newsworthy)
+    for key in &["risk", "churn", "escalation"] {
+        if let Some(&count) = type_counts.get(key) {
+            parts.push(if count == 1 {
+                format!("One {} signal detected.", key)
+            } else {
+                format!("{} {} signals detected.", count, key)
+            });
+        }
+    }
+
+    // Positive signals
+    for key in &["expansion", "positive", "success"] {
+        if let Some(&count) = type_counts.get(key) {
+            parts.push(if count == 1 {
+                format!("{} opportunity flagged.", capitalize_first(key))
+            } else {
+                format!("{} {} signals.", count, key)
+            });
+        }
+    }
+
+    // Informational
+    for key in &["question", "timeline", "sentiment", "feedback", "relationship"] {
+        if let Some(&count) = type_counts.get(key) {
+            if count == 1 {
+                parts.push(format!("{} signal noted.", capitalize_first(key)));
+            } else {
+                parts.push(format!("{} {} signals.", count, key));
+            }
+        }
+    }
+
+    // Catch any remaining types
+    for (key, &count) in &type_counts {
+        let is_handled = ["risk", "churn", "escalation", "expansion", "positive",
+            "success", "question", "timeline", "sentiment", "feedback", "relationship"]
+            .contains(key);
+        if !is_handled {
+            parts.push(format!("{} {} signal{}.", count, key, if count == 1 { "" } else { "s" }));
+        }
+    }
+
+    if parts.is_empty() {
+        format!(
+            "{} email{} this period.",
+            email_count,
+            if email_count == 1 { "" } else { "s" },
+        )
+    } else {
+        parts.join(" ")
+    }
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().to_string() + c.as_str(),
+    }
+}
 
 fn normalize_match_key(value: &str) -> String {
     value
@@ -433,6 +516,11 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
 
         let freshness = check_data_freshness(&today_dir);
 
+        // Load email narrative + replies_needed from directive (I355)
+        let (email_narrative, replies_needed) = load_directive(&today_dir)
+            .map(|d| (d.emails.narrative, d.emails.replies_needed))
+            .unwrap_or_default();
+
         DashboardResult::Success {
             data: DashboardData {
                 overview,
@@ -442,6 +530,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                 emails,
                 email_sync,
                 focus,
+                email_narrative,
+                replies_needed,
             },
             freshness,
             google_auth,
@@ -1996,6 +2086,11 @@ pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingD
 
     let emails = load_emails_json(&today_dir).unwrap_or_default();
 
+    // Load email narrative + replies_needed from directive (I355)
+    let (email_narrative, replies_needed) = load_directive(&today_dir)
+        .map(|d| (d.emails.narrative, d.emails.replies_needed))
+        .unwrap_or_default();
+
     // Collect email IDs for batch signal lookup
     let email_ids: Vec<String> = emails.iter().map(|e| e.id.clone()).collect();
 
@@ -2083,16 +2178,8 @@ pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingD
                 }
             };
 
-            // Build signal summary like "2 risks, 1 expansion signal"
-            let mut type_counts: HashMap<String, usize> = HashMap::new();
-            for s in &signals {
-                *type_counts.entry(s.signal_type.clone()).or_insert(0) += 1;
-            }
-            let summary_parts: Vec<String> = type_counts
-                .iter()
-                .map(|(t, c)| format!("{} {}", c, t))
-                .collect();
-            let signal_summary = summary_parts.join(", ");
+            // Build editorial signal summary as a prose sentence
+            let signal_summary = build_entity_signal_prose(&signals, email_set.len());
 
             EntityEmailThread {
                 entity_id,
@@ -2119,6 +2206,8 @@ pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingD
         low_priority: low,
         entity_threads,
         has_enrichment,
+        email_narrative,
+        replies_needed,
     })
 }
 
@@ -2645,6 +2734,42 @@ pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.reject_proposed_action(&id).map_err(|e| e.to_string())
+}
+
+/// Dismiss an email-extracted item (commitment, question, reply_needed) from
+/// The Correspondent. Records the dismissal in SQLite for relevance learning.
+#[tauri::command]
+pub fn dismiss_email_item(
+    item_type: String,
+    email_id: String,
+    item_text: String,
+    sender_domain: Option<String>,
+    email_type: Option<String>,
+    entity_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.dismiss_email_item(
+        &item_type,
+        &email_id,
+        &item_text,
+        sender_domain.as_deref(),
+        email_type.as_deref(),
+        entity_id.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Get all dismissed email item keys for frontend filtering.
+#[tauri::command]
+pub fn list_dismissed_email_items(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<String>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let set = db.list_dismissed_email_items().map_err(|e| e.to_string())?;
+    Ok(set.into_iter().collect())
 }
 
 /// Get all proposed (AI-suggested) actions (I256).

@@ -150,7 +150,7 @@ export function TrajectoryChapter({ detail, intelligence, onUpdateField }: Traje
             fontStyle: "italic",
           }}
         >
-          Build intelligence to reveal this project's trajectory.
+          Refresh to reveal this project's trajectory.
         </p>
       )}
     </section>
