@@ -14,6 +14,50 @@ import { stripMarkdown } from "@/lib/utils";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { DatePicker } from "@/components/ui/date-picker";
 
+// ─── Action Group Types ──────────────────────────────────────────────────────
+
+interface ActionGroup {
+  label: string;
+  actions: DbAction[];
+}
+
+function groupPendingActions(actions: DbAction[]): ActionGroup[] {
+  const now = new Date();
+  const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const overdue: DbAction[] = [];
+  const thisWeek: DbAction[] = [];
+  const later: DbAction[] = [];
+
+  for (const a of actions) {
+    if (a.dueDate && new Date(a.dueDate) < now) {
+      overdue.push(a);
+    } else if (a.dueDate && new Date(a.dueDate) <= sevenDaysOut) {
+      thisWeek.push(a);
+    } else {
+      later.push(a);
+    }
+  }
+
+  // Sort within groups by due date (nulls last)
+  const sortByDue = (x: DbAction, y: DbAction) => {
+    if (!x.dueDate && !y.dueDate) return 0;
+    if (!x.dueDate) return 1;
+    if (!y.dueDate) return -1;
+    return new Date(x.dueDate).getTime() - new Date(y.dueDate).getTime();
+  };
+
+  overdue.sort(sortByDue);
+  thisWeek.sort(sortByDue);
+  later.sort(sortByDue);
+
+  const groups: ActionGroup[] = [];
+  if (overdue.length > 0) groups.push({ label: "Overdue", actions: overdue });
+  if (thisWeek.length > 0) groups.push({ label: "This Week", actions: thisWeek });
+  if (later.length > 0) groups.push({ label: "Later", actions: later });
+  return groups;
+}
+
 type StatusTab = "proposed" | "pending" | "completed";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
 
@@ -323,6 +367,9 @@ export default function ActionsPage() {
               personality,
             )}
           />
+        ) : statusFilter === "pending" ? (
+          // Grouped view for pending tab
+          <PendingGroupedView actions={actions} onToggle={toggleAction} />
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
             {actions.map((action, i) => (
@@ -360,6 +407,72 @@ export default function ActionsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Pending Grouped View ───────────────────────────────────────────────────
+
+function PendingGroupedView({
+  actions,
+  onToggle,
+}: {
+  actions: DbAction[];
+  onToggle: (id: string) => void;
+}) {
+  const groups = useMemo(() => groupPendingActions(actions), [actions]);
+
+  const groupLabelColors: Record<string, string> = {
+    Overdue: "var(--color-spice-terracotta)",
+    "This Week": "var(--color-spice-turmeric)",
+    Later: "var(--color-text-tertiary)",
+  };
+
+  return (
+    <div>
+      {groups.map((group) => (
+        <div key={group.label} style={{ marginBottom: 32 }}>
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: groupLabelColors[group.label] ?? "var(--color-text-tertiary)",
+              paddingBottom: 8,
+              borderBottom: "1px solid var(--color-rule-light)",
+              marginBottom: 0,
+            }}
+          >
+            {group.label}
+            <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{group.actions.length}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {group.actions.map((action, i) => (
+              <ActionRow
+                key={action.id}
+                action={action}
+                onToggle={() => onToggle(action.id)}
+                showBorder={i < group.actions.length - 1}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+      {/* Auto-archive tooltip */}
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-tertiary)",
+          opacity: 0.6,
+          textAlign: "center",
+          marginTop: 16,
+        }}
+      >
+        Actions pending for 30+ days are automatically archived
+      </div>
     </div>
   );
 }
