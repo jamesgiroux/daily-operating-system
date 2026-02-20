@@ -547,7 +547,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         &cadence_anomalies,
     );
 
-    // Build lean events (strip attendees)
+    // Build lean events (keep attendees + description for schedule delivery)
     let lean_events: Vec<Value> = events
         .iter()
         .map(|ev| {
@@ -556,6 +556,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 "summary": ev.get("summary").or_else(|| ev.get("title")),
                 "start": ev.get("start"),
                 "end": ev.get("end"),
+                "description": ev.get("description"),
+                "attendees": ev.get("attendees"),
+                "attendee_names": ev.get("attendee_names"),
+                "attendee_rsvp": ev.get("attendee_rsvp"),
             })
         })
         .collect();
@@ -808,7 +812,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     let gaps_by_day = gaps::compute_all_gaps(&events_by_day, monday, user_tz);
     let suggestions = gaps::suggest_focus_blocks(&gaps_by_day);
 
-    // Build lean events by day (strip attendees)
+    // Build lean events by day (keep attendees + description for delivery)
     let mut serializable_by_day = serde_json::Map::new();
     if let Some(obj) = events_by_day.as_object() {
         for (day_name, day_events) in obj {
@@ -824,6 +828,10 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                         "end": ev.get("end"),
                         "type": ev.get("type"),
                         "external_domains": ev.get("external_domains"),
+                        "description": ev.get("description"),
+                        "attendees": ev.get("attendees"),
+                        "attendee_names": ev.get("attendee_names"),
+                        "attendee_rsvp": ev.get("attendee_rsvp"),
                     })
                 })
                 .collect();
