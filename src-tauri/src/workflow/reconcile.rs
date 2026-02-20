@@ -758,6 +758,7 @@ mod tests {
             has_prep: false,
             prep_file: None,
             prep_summary: None,
+            linked_entities: None,
         };
 
         assert!(is_meeting_completed(&meeting, late_now));
@@ -783,6 +784,7 @@ mod tests {
             has_prep: false,
             prep_file: None,
             prep_summary: None,
+            linked_entities: None,
         };
 
         assert!(!is_meeting_completed(&meeting, now));
@@ -814,6 +816,7 @@ mod tests {
             has_prep: false,
             prep_file: None,
             prep_summary: None,
+            linked_entities: None,
         };
 
         let status = check_transcript_status(temp.path(), &meeting, "2026-02-06");
@@ -848,6 +851,7 @@ mod tests {
             has_prep: false,
             prep_file: None,
             prep_summary: None,
+            linked_entities: None,
         };
 
         let status = check_transcript_status(temp.path(), &meeting, "2026-02-06");
@@ -878,6 +882,7 @@ mod tests {
             has_prep: false,
             prep_file: None,
             prep_summary: None,
+            linked_entities: None,
         };
 
         let status = check_transcript_status(temp.path(), &meeting, "2026-02-06");
