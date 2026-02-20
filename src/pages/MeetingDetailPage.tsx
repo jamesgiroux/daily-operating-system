@@ -48,50 +48,8 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
+import clsx from "clsx";
 import styles from "./meeting-intel.module.css";
-
-// ── Shared style fragments ──
-
-const monoOverline: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.2em",
-  color: "var(--color-text-tertiary)",
-};
-
-const chapterHeadingStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.12em",
-  color: "var(--color-text-tertiary)",
-};
-
-const folioBtn: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: "0.06em",
-  textTransform: "uppercase",
-  color: "var(--color-text-secondary)",
-  background: "none",
-  border: "1px solid var(--color-rule-light)",
-  borderRadius: 4,
-  padding: "2px 10px",
-  cursor: "pointer",
-};
-
-const bulletDot = (color: string): React.CSSProperties => ({
-  width: 6,
-  height: 6,
-  borderRadius: "50%",
-  background: color,
-  flexShrink: 0,
-  marginTop: 7,
-});
 
 // ── Chapter Nav definitions ──
 
@@ -441,38 +399,21 @@ Thanks!`;
     chapters: CHAPTERS,
     folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     folioActions: data ? (
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div className={styles.folioActions}>
         {copiedAction && (
-          <span style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            color: "var(--color-garden-sage)",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-          }}>
-            <Check style={{ width: 10, height: 10 }} /> Copied
+          <span className={styles.folioCopied}>
+            <Check className={styles.iconSm} /> Copied
           </span>
         )}
         {isFutureMeeting && isReadyOrFresh && (
-          <button
-            onClick={handleShareIntelligence}
-            title="Share Intelligence"
-            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
-          >
-            <Copy style={{ width: 10, height: 10 }} />
+          <button onClick={handleShareIntelligence} title="Share Intelligence" className={styles.folioBtnInline}>
+            <Copy className={styles.iconSm} />
             Share
           </button>
         )}
         {isFutureMeeting && isThreeDaysOut && (
-          <button
-            onClick={handleRequestInput}
-            title="Request Input"
-            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
-          >
-            <Mail style={{ width: 10, height: 10 }} />
+          <button onClick={handleRequestInput} title="Request Input" className={styles.folioBtnInline}>
+            <Mail className={styles.iconSm} />
             Request Input
           </button>
         )}
@@ -480,39 +421,44 @@ Thanks!`;
           <button
             onClick={handlePrefillFromContext}
             disabled={prefilling}
-            style={{ ...folioBtn, opacity: prefilling ? 0.5 : 1, cursor: prefilling ? "not-allowed" : "pointer" }}
+            className={clsx(styles.folioBtn, prefilling && styles.folioBtnDisabled)}
           >
             {prefilling ? "Prefilling…" : "Prefill"}
           </button>
         )}
-        {!isPastMeeting && (
-          <button
-            onClick={handleRefreshIntelligence}
-            disabled={refreshingIntel}
-            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: refreshingIntel ? 0.5 : 1, cursor: refreshingIntel ? "not-allowed" : "pointer" }}
-          >
-            {refreshingIntel ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <RefreshCw style={{ width: 10, height: 10 }} />}
-            {refreshingIntel ? "Refreshing…" : "Refresh Intel"}
+        <button
+          onClick={handleRefreshIntelligence}
+          disabled={refreshingIntel}
+          className={clsx(styles.folioBtnInline, refreshingIntel && styles.folioBtnDisabled)}
+        >
+          {refreshingIntel ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconSm} />}
+          {refreshingIntel ? "Refreshing…" : "Refresh Intel"}
+        </button>
+        {isFutureMeeting && (
+          <button onClick={handleDraftAgendaMessage} className={styles.folioBtn}>
+            Draft Agenda
           </button>
         )}
-        {isFutureMeeting && (
-          <button onClick={handleDraftAgendaMessage} style={folioBtn}>
-            Draft Agenda
+        {isPastMeeting && (
+          <button
+            onClick={handleSyncTranscript}
+            disabled={syncing}
+            className={clsx(styles.folioBtnInline, syncing && styles.folioBtnDisabled)}
+          >
+            {syncing ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconSm} />}
+            {syncing ? "Syncing…" : "Sync Transcript"}
           </button>
         )}
         <button
           onClick={handleAttachTranscript}
           disabled={attaching}
-          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: attaching ? 0.5 : 1, cursor: attaching ? "not-allowed" : "pointer" }}
+          className={clsx(styles.folioBtnInline, attaching && styles.folioBtnDisabled)}
         >
-          {attaching ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <Paperclip style={{ width: 10, height: 10 }} />}
+          {attaching ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <Paperclip className={styles.iconSm} />}
           {attaching ? "Processing…" : "Transcript"}
         </button>
-        <button
-          onClick={() => loadMeetingIntelligence()}
-          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
-        >
-          <RefreshCw style={{ width: 10, height: 10 }} />
+        <button onClick={() => loadMeetingIntelligence()} className={styles.folioBtnInline}>
+          <RefreshCw className={styles.iconSm} />
           Refresh
         </button>
       </div>
@@ -533,39 +479,11 @@ Thanks!`;
   // ── Empty / not-ready state ──
   if (!data) {
     return (
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 0 80px" }}>
-        <div style={{ textAlign: "center", padding: "60px 0" }}>
-          <Clock
-            style={{
-              width: 32,
-              height: 32,
-              color: "var(--color-text-tertiary)",
-              opacity: 0.5,
-              margin: "0 auto 16px",
-              display: "block",
-            }}
-          />
-          <h2
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 20,
-              fontWeight: 600,
-              color: "var(--color-text-primary)",
-              margin: "0 0 8px",
-            }}
-          >
-            Not ready yet
-          </h2>
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-tertiary)",
-              margin: 0,
-            }}
-          >
-            Meeting context will appear here after the daily briefing runs.
-          </p>
+      <div className={styles.pageContainerPadded}>
+        <div className={styles.emptyState}>
+          <Clock className={styles.emptyIcon} />
+          <h2 className={styles.emptyTitle}>Not ready yet</h2>
+          <p className={styles.emptyText}>Meeting context will appear here after the daily briefing runs.</p>
         </div>
       </div>
     );
@@ -640,76 +558,32 @@ Thanks!`;
   const hasPlan = agendaDisplayItems.length > 0 || (meetingId && isEditable);
   return (
     <>
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 0 80px" }}>
+      <div className={styles.pageContainer}>
         {/* Outcomes always at top when present */}
         {outcomes && (
           <>
-            <div style={{ paddingTop: 80 }}>
+            <div className={styles.outcomesWrap}>
               <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
             </div>
-            <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", margin: "48px 0" }} />
-            <p style={{ ...chapterHeadingStyle, marginBottom: 20 }}>
+            <div className={styles.outcomesDivider} />
+            <p className={styles.preMeetingLabel}>
               {isPastMeeting ? "Pre-Meeting Context" : "Meeting Prep"}
             </p>
           </>
         )}
 
         {!hasAnyContent && !outcomes && (
-          <div style={{ textAlign: "center", padding: "60px 0" }}>
-            <Clock
-              style={{
-                width: 32,
-                height: 32,
-                color: "var(--color-text-tertiary)",
-                opacity: 0.5,
-                margin: "0 auto 16px",
-                display: "block",
-              }}
-            />
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 18,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-                margin: "0 0 8px",
-              }}
-            >
-              Prep is being generated
-            </p>
-            <p
-              style={{
-                fontSize: 14,
-                color: "var(--color-text-tertiary)",
-                margin: 0,
-              }}
-            >
-              Meeting context will appear here once analysis completes.
-            </p>
+          <div className={styles.emptyState}>
+            <Clock className={styles.emptyIcon} />
+            <p className={styles.emptyGenerating}>Prep is being generated</p>
+            <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
             {isPastMeeting && (
               <button
                 onClick={handleSyncTranscript}
                 disabled={syncing}
-                style={{
-                  marginTop: 24,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--color-spice-turmeric)",
-                  background: "none",
-                  border: "1px solid var(--color-spice-turmeric)",
-                  borderRadius: 4,
-                  padding: "6px 16px",
-                  cursor: syncing ? "not-allowed" : "pointer",
-                  opacity: syncing ? 0.5 : 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
+                className={clsx(styles.syncButton, syncing && styles.syncButtonDisabled)}
               >
-                {syncing ? <Loader2 style={{ width: 12, height: 12, animation: "spin 1s linear infinite" }} /> : <RefreshCw style={{ width: 12, height: 12 }} />}
+                {syncing ? <Loader2 className={styles.iconMd} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconMd} />}
                 {syncing ? "Syncing transcript…" : "Sync transcript"}
               </button>
             )}
@@ -717,34 +591,22 @@ Thanks!`;
         )}
 
         {(hasAnyContent || outcomes) && (
-          <div style={isPastMeeting && outcomes ? { opacity: 0.7 } : undefined}>
+          <div className={isPastMeeting && outcomes ? styles.pastMeetingOpacity : undefined}>
 
             {/* ================================================================
                 ACT I: "Ground Me" — visible immediately, NO editorial-reveal
                ================================================================ */}
-            <section id="headline" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+            <section id="headline" className={styles.heroSection}>
               {/* Time-aware urgency banner */}
               {minutesUntilMeeting != null && (
-                <div
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: "0.06em",
-                    color: minutesUntilMeeting <= 15 ? "var(--color-spice-terracotta)" : "var(--color-spice-turmeric)",
-                    marginBottom: 16,
-                  }}
-                >
-                  <Clock style={{ width: 13, height: 13 }} />
+                <div className={clsx(styles.urgencyBanner, minutesUntilMeeting <= 15 ? styles.urgencyUrgent : styles.urgencySoon)}>
+                  <Clock className={styles.iconLg} />
                   Meeting starts in {minutesUntilMeeting} minute{minutesUntilMeeting !== 1 ? "s" : ""}
                 </div>
               )}
 
               {/* Kicker */}
-              <p style={monoOverline}>
+              <p className={styles.monoOverline}>
                 Meeting Briefing
               </p>
 
@@ -753,40 +615,15 @@ Thanks!`;
                 {data.title}
               </h1>
               {lifecycle && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12 }}>
-                  <span style={{ ...bulletDot("var(--color-spice-turmeric)"), marginTop: 0 }} />
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      fontWeight: 500,
-                      letterSpacing: "0.06em",
-                      color: "var(--color-spice-turmeric)",
-                    }}
-                  >
-                    {lifecycle}
-                  </span>
+                <div className={styles.lifecycleBadge}>
+                  <span className={styles.bulletDotInline} style={{ background: "var(--color-spice-turmeric)" }} />
+                  <span className={styles.lifecycleText}>{lifecycle}</span>
                 </div>
               )}
 
               {/* Metadata line */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  margin: "8px 0 0",
-                }}
-              >
-                <p
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    letterSpacing: "0.04em",
-                    color: "var(--color-text-tertiary)",
-                    margin: 0,
-                  }}
-                >
+              <div className={styles.metadataLine}>
+                <p className={styles.metadataText}>
                   {data.timeRange}
                   {meetingType && <> &middot; {meetingType}</>}
                   {getPrimaryEntityName(linkedEntities) && (
@@ -800,7 +637,7 @@ Thanks!`;
 
               {/* Entity chips */}
               {meetingId && meetingMeta && (
-                <div style={{ marginTop: 10 }}>
+                <div className={styles.entityChipsWrap}>
                   <MeetingEntityChips
                     meetingId={meetingId}
                     meetingTitle={meetingMeta.title}
@@ -814,38 +651,12 @@ Thanks!`;
 
               {/* New signals banner */}
               {intelligenceQuality?.hasNewSignals && (
-                <div style={{
-                  padding: "10px 16px",
-                  background: "rgba(106, 135, 171, 0.08)",
-                  borderLeft: "3px solid var(--color-accent-larkspur)",
-                  borderRadius: 4,
-                  fontFamily: "var(--font-body)",
-                  fontSize: 13,
-                  color: "var(--color-accent-larkspur)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginTop: 16,
-                  marginBottom: 16,
-                }}>
+                <div className={styles.newSignalsBanner}>
                   <span>New information available since your last view</span>
                   <button
                     onClick={handleRefreshIntelligence}
                     disabled={refreshingIntel}
-                    style={{
-                      background: "none",
-                      border: "1px solid var(--color-accent-larkspur)",
-                      borderRadius: 4,
-                      padding: "4px 12px",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      letterSpacing: "0.04em",
-                      textTransform: "uppercase",
-                      color: "var(--color-accent-larkspur)",
-                      cursor: refreshingIntel ? "not-allowed" : "pointer",
-                      opacity: refreshingIntel ? 0.5 : 1,
-                    }}
+                    className={clsx(styles.newSignalsRefreshBtn, refreshingIntel && styles.newSignalsRefreshBtnDisabled)}
                   >
                     {refreshingIntel ? "Refreshing…" : "Refresh"}
                   </button>
@@ -854,70 +665,24 @@ Thanks!`;
 
               {/* The Key Insight — pull quote style */}
               {keyInsight && (
-                <blockquote
-                  style={{
-                    marginTop: 28,
-                    marginBottom: 0,
-                    marginLeft: 0,
-                    marginRight: 0,
-                    borderLeft: "3px solid var(--color-spice-turmeric)",
-                    paddingLeft: 24,
-                    paddingTop: 16,
-                    paddingBottom: 16,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontFamily: "var(--font-serif)",
-                      fontSize: 28,
-                      fontStyle: "italic",
-                      fontWeight: 300,
-                      lineHeight: 1.45,
-                      color: "var(--color-text-primary)",
-                      margin: 0,
-                      maxWidth: 620,
-                    }}
-                  >
-                    {keyInsight}
-                  </p>
+                <blockquote className={styles.keyInsight}>
+                  <p className={styles.keyInsightText}>{keyInsight}</p>
                 </blockquote>
               )}
               {!keyInsight && (
-                <p
-                  style={{
-                    marginTop: 28,
-                    fontSize: 14,
-                    color: "var(--color-text-tertiary)",
-                  }}
-                >
+                <p className={styles.keyInsightEmpty}>
                   Intelligence builds as you meet with this account.
                 </p>
               )}
 
               {/* Entity Readiness — "Before This Meeting" checklist */}
               {data.entityReadiness && data.entityReadiness.length > 0 && (
-                <div
-                  style={{
-                    marginTop: 32,
-                    borderLeft: "3px solid var(--color-spice-turmeric)",
-                    paddingLeft: 20,
-                    paddingTop: 12,
-                    paddingBottom: 12,
-                  }}
-                >
-                  <p
-                    style={{
-                      ...chapterHeadingStyle,
-                      color: "var(--color-spice-turmeric)",
-                      marginBottom: 12,
-                    }}
-                  >
-                    Before This Meeting
-                  </p>
-                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div className={styles.readinessWrap}>
+                  <p className={styles.readinessHeading}>Before This Meeting</p>
+                  <ul className={styles.readinessList}>
                     {data.entityReadiness.slice(0, 4).map((item, i) => (
-                      <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, color: "var(--color-text-primary)" }}>
-                        <span style={bulletDot("rgba(201, 162, 39, 0.6)")} />
+                      <li key={i} className={styles.readinessItem}>
+                        <span className={styles.bulletDot} style={{ background: "rgba(201, 162, 39, 0.6)" }} />
                         <span>{item}</span>
                       </li>
                     ))}
@@ -932,60 +697,24 @@ Thanks!`;
 
             {/* Chapter: The Risks */}
             {hasRisks && (
-              <section id="risks" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+              <section id="risks" className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="The Risks" />
-                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                <div className={styles.risksContainer}>
                   {topRisks.map((risk, i) => {
                     const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
                     return i === 0 ? (
-                      /* Featured risk — serif italic, terracotta border, pulse if high urgency */
                       <blockquote
                         key={i}
-                        className={isHighUrgency ? "risk-pulse-once" : undefined}
-                        style={{
-                          borderLeft: "3px solid var(--color-spice-terracotta)",
-                          paddingLeft: 24,
-                          paddingTop: 16,
-                          paddingBottom: 16,
-                          margin: 0,
-                        }}
+                        className={clsx(styles.featuredRisk, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 20,
-                            fontStyle: "italic",
-                            fontWeight: 400,
-                            lineHeight: 1.5,
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                          }}
-                        >
-                          {risk}
-                        </p>
+                        <p className={styles.featuredRiskText}>{risk}</p>
                       </blockquote>
                     ) : (
-                      /* Subordinate risks — body scale, light rules, generous spacing */
                       <div
                         key={i}
-                        className={isHighUrgency ? "risk-pulse-once" : undefined}
-                        style={{
-                          borderTop: "1px solid rgba(30, 37, 48, 0.04)",
-                          borderLeft: isHighUrgency ? "3px solid var(--color-spice-terracotta)" : "none",
-                          paddingTop: 16,
-                          paddingLeft: isHighUrgency ? 16 : 0,
-                        }}
+                        className={clsx(styles.subordinateRisk, isHighUrgency && styles.subordinateRiskHighUrgency, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 1.65,
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                          }}
-                        >
-                          {risk}
-                        </p>
+                        <p className={styles.subordinateRiskText}>{risk}</p>
                       </div>
                     );
                   })}
@@ -995,7 +724,7 @@ Thanks!`;
 
             {/* Chapter: The Room */}
             {hasRoom && (
-              <section id="the-room" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+              <section id="the-room" className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="The Room" />
                 <UnifiedAttendeeList
                   attendees={unifiedAttendees}
@@ -1009,22 +738,11 @@ Thanks!`;
 
             {/* Chapter: Your Plan */}
             {hasPlan && (
-              <section id="your-plan" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+              <section id="your-plan" className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="Your Plan" />
 
                 {meetingId && prefillNotice && (
-                  <div
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      color: "var(--color-spice-turmeric)",
-                      borderLeft: "3px solid var(--color-spice-turmeric)",
-                      paddingLeft: 12,
-                      paddingTop: 6,
-                      paddingBottom: 6,
-                      marginBottom: 16,
-                    }}
-                  >
+                  <div className={styles.prefillNotice}>
                     Prefill appended new agenda/notes content.
                   </div>
                 )}
@@ -1044,7 +762,7 @@ Thanks!`;
             {/* ================================================================
                 "You're Briefed" — FinisMarker
                ================================================================ */}
-            <div style={{ paddingTop: 80 }}>
+            <div className={styles.finisWrap}>
               <FinisMarker />
             </div>
 
@@ -1102,7 +820,7 @@ function UnifiedAttendeeList({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+    <div className={styles.attendeeList}>
       {visible.map((person, i) => {
         const tempColor = tempColorMap[person.temperature ?? ""] ?? "var(--color-text-tertiary)";
         const isNew = person.meetingCount === 0;
@@ -1114,52 +832,33 @@ function UnifiedAttendeeList({
           : { bg: "rgba(201, 162, 39, 0.1)", fg: "var(--color-spice-turmeric)" };
 
         const inner = (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 12,
-              padding: "12px 0",
-              borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-            }}
-          >
+          <div className={styles.attendeeRow}>
             {/* Avatar */}
             <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                background: circleColor.bg,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 14,
-                fontWeight: 500,
-                color: circleColor.fg,
-                flexShrink: 0,
-              }}
+              className={styles.attendeeAvatar}
+              style={{ background: circleColor.bg, color: circleColor.fg }}
             >
               {person.name.charAt(0)}
             </div>
 
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className={styles.attendeeBody}>
               {/* Name + role + temperature dot + engagement badge */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div className={styles.attendeeNameRow}>
                 <span className="attendee-tooltip-wrap">
-                  <p style={{ fontWeight: 500, color: "var(--color-text-primary)", margin: 0, fontSize: 14, cursor: "default" }}>
+                  <p className={styles.attendeeName}>
                     {person.name}
                   </p>
                   {/* Hover tooltip — last meeting + assessment */}
                   {(person.lastSeen || person.assessment) && (
                     <span className="attendee-tooltip">
                       {person.lastSeen && (
-                        <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: person.assessment ? 6 : 0 }}>
+                        <span className={styles.attendeeMetaMono} style={{ display: "block", marginBottom: person.assessment ? 6 : 0 }}>
                           Last met {formatRelativeDateLong(person.lastSeen)}
                           {person.meetingCount != null && person.meetingCount > 0 && ` \u00b7 ${person.meetingCount} meeting${person.meetingCount !== 1 ? "s" : ""}`}
                         </span>
                       )}
                       {person.assessment && (
-                        <span style={{ display: "block", fontFamily: "var(--font-serif)", fontSize: 13, fontStyle: "italic", lineHeight: 1.45, color: "var(--color-text-primary)" }}>
+                        <span style={{ display: "block", fontFamily: "var(--font-serif)", fontSize: 13, fontStyle: "italic", lineHeight: 1.45 }}>
                           {truncateText(sanitizeInlineText(person.assessment), 140)}
                         </span>
                       )}
@@ -1167,109 +866,57 @@ function UnifiedAttendeeList({
                   )}
                 </span>
                 {person.role && (
-                  <span style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
+                  <span className={styles.attendeeRole}>
                     {sanitizeInlineText(person.role)}
                   </span>
                 )}
                 {person.temperature && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: tempColor, flexShrink: 0 }} />
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 11,
-                        fontWeight: 500,
-                        textTransform: "capitalize",
-                        color: tempColor,
-                      }}
-                    >
+                  <span className={styles.attendeeTempDot}>
+                    <span className={styles.attendeeTempIndicator} style={{ background: tempColor }} />
+                    <span className={styles.attendeeTempLabel} style={{ color: tempColor }}>
                       {person.temperature}
                     </span>
                   </span>
                 )}
                 {person.engagement && (
                   <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "capitalize",
-                      color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)",
-                      border: "1px solid var(--color-rule-light)",
-                      borderRadius: 3,
-                      padding: "1px 6px",
-                    }}
+                    className={styles.attendeeEngagement}
+                    style={{ color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)" }}
                   >
                     {person.engagement}
                   </span>
                 )}
                 {isNew && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: "var(--color-garden-sage)",
-                    }}
-                  >
-                    New contact
-                  </span>
+                  <span className={styles.attendeeNewContact}>New contact</span>
                 )}
               </div>
 
               {/* Assessment — the killer insight, serif italic, prominent */}
               {person.assessment && (
-                <p
-                  style={{
-                    marginTop: 6,
-                    marginBottom: 0,
-                    fontFamily: "var(--font-serif)",
-                    fontSize: 14,
-                    fontStyle: "italic",
-                    fontWeight: 400,
-                    lineHeight: 1.55,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
+                <p className={styles.attendeeAssessment}>
                   {truncateText(sanitizeInlineText(person.assessment), 200)}
                 </p>
               )}
 
               {/* Metadata line */}
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 4 }}>
+              <div className={styles.attendeeMeta}>
                 {person.organization && (
-                  <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-                    {person.organization}
-                  </span>
+                  <span className={styles.attendeeOrg}>{person.organization}</span>
                 )}
                 {person.meetingCount != null && person.meetingCount > 0 && (
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                  <span className={styles.attendeeMetaMono}>
                     {person.meetingCount} meeting{person.meetingCount !== 1 ? "s" : ""}
                   </span>
                 )}
                 {person.lastSeen && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      color: isCold ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-                    }}
-                  >
+                  <span className={isCold ? styles.attendeeMetaCold : styles.attendeeMetaMono}>
                     Last seen {formatRelativeDateLong(person.lastSeen)}
                   </span>
                 )}
               </div>
 
               {person.notes && (
-                <p
-                  style={{
-                    marginTop: 4,
-                    marginBottom: 0,
-                    fontSize: 12,
-                    color: "var(--color-text-tertiary)",
-                    fontStyle: "italic",
-                  }}
-                >
+                <p className={styles.attendeeNotes}>
                   {person.notes}
                 </p>
               )}
@@ -1281,16 +928,16 @@ function UnifiedAttendeeList({
           <Link
             to="/people/$personId"
             params={{ personId: person.personId }}
-            style={{ textDecoration: "none", color: "inherit", flex: 1, minWidth: 0 }}
+            className={styles.attendeeLink}
           >
             {inner}
           </Link>
         ) : (
-          <div style={{ flex: 1, minWidth: 0 }}>{inner}</div>
+          <div className={styles.attendeeNonLink}>{inner}</div>
         );
 
         return (
-          <div key={i} style={{ display: "flex", alignItems: "flex-start" }}>
+          <div key={i} className={styles.attendeeRowOuter}>
             {row}
             {isEditable && (
               <button
@@ -1313,17 +960,7 @@ function UnifiedAttendeeList({
                     }
                   }
                 }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 16,
-                  lineHeight: 1,
-                  color: "var(--color-text-tertiary)",
-                  padding: "12px 4px 0",
-                  opacity: 0.35,
-                  flexShrink: 0,
-                }}
+                className={styles.attendeeHideBtn}
               >
                 &times;
               </button>
@@ -1333,19 +970,7 @@ function UnifiedAttendeeList({
       })}
 
       {!showAll && remaining > 0 && (
-        <button
-          onClick={() => setShowAll(true)}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "12px 0",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            textAlign: "left",
-          }}
-        >
+        <button onClick={() => setShowAll(true)} className={styles.attendeeShowMore}>
           + {remaining} more
         </button>
       )}
@@ -1491,46 +1116,27 @@ function UnifiedPlanEditor({
 
   if (allItems.length === 0 && !isEditable && !calendarNotes) {
     return (
-      <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-        No agenda prepared yet.
-      </p>
+      <p className={styles.planEmptyText}>No agenda prepared yet.</p>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+    <div className={styles.planContainer}>
       {/* Unified numbered list */}
       {allItems.length > 0 && (
-        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 0 }}>
+        <ol className={styles.planList}>
           {allItems.map((item, i) => (
             <li
               key={`${item.isUser ? "u" : "p"}-${i}`}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 12,
-                borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                padding: "12px 0",
-              }}
+              className={styles.planItem}
             >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "var(--color-spice-turmeric)",
-                  width: 24,
-                  textAlign: "right",
-                  flexShrink: 0,
-                  paddingTop: 1,
-                }}
-              >
+              <span className={styles.planNumber}>
                 {i + 1}
               </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className={styles.planItemBody}>
                 {editingIndex === i && isEditable ? (
                   <div
-                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                    className={styles.planEditWrap}
                     onBlur={(e) => {
                       // Only commit if focus leaves both inputs (not moving between them)
                       if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -1546,18 +1152,7 @@ function UnifiedPlanEditor({
                         if (e.key === "Enter") commitEdit();
                         if (e.key === "Escape") setEditingIndex(null);
                       }}
-                      style={{
-                        width: "100%",
-                        border: "none",
-                        borderBottom: "1px solid var(--color-spice-turmeric)",
-                        background: "transparent",
-                        padding: "2px 0",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-text-primary)",
-                        fontFamily: "var(--font-sans)",
-                        outline: "none",
-                      }}
+                      className={styles.planEditInput}
                     />
                     <input
                       id={`plan-why-${i}`}
@@ -1568,45 +1163,21 @@ function UnifiedPlanEditor({
                         if (e.key === "Escape") setEditingIndex(null);
                       }}
                       placeholder="Why this matters..."
-                      style={{
-                        width: "100%",
-                        border: "none",
-                        borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                        background: "transparent",
-                        padding: "2px 0",
-                        fontSize: 13,
-                        color: "var(--color-text-tertiary)",
-                        fontFamily: "var(--font-sans)",
-                        outline: "none",
-                      }}
+                      className={styles.planEditInputWhy}
                     />
                   </div>
                 ) : (
                   <>
                     <p
                       onClick={() => startEditing(i)}
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 500,
-                        lineHeight: 1.4,
-                        margin: 0,
-                        color: "var(--color-text-primary)",
-                        cursor: isEditable ? "text" : "default",
-                      }}
+                      className={isEditable ? styles.planTopicEditable : styles.planTopic}
                     >
                       {item.topic}
                     </p>
                     {item.why && (
                       <p
                         onClick={() => startEditing(i, "why")}
-                        style={{
-                          fontSize: 13,
-                          color: "var(--color-text-tertiary)",
-                          marginTop: 4,
-                          marginBottom: 0,
-                          lineHeight: 1.5,
-                          cursor: isEditable ? "text" : "default",
-                        }}
+                        className={isEditable ? styles.planWhyEditable : styles.planWhy}
                       >
                         {item.why}
                       </p>
@@ -1614,7 +1185,7 @@ function UnifiedPlanEditor({
                   </>
                 )}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <div className={styles.planItemActions}>
                 {isEditable && (
                   <button
                     onClick={() => {
@@ -1637,16 +1208,7 @@ function UnifiedPlanEditor({
                         saveLayer(cleaned, newDismissed);
                       }
                     }}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 16,
-                      lineHeight: 1,
-                      color: "var(--color-text-tertiary)",
-                      padding: "0 4px",
-                      opacity: 0.5,
-                    }}
+                    className={styles.planDismissBtn}
                   >
                     &times;
                   </button>
@@ -1659,39 +1221,17 @@ function UnifiedPlanEditor({
 
       {/* Ghost input — topic + why */}
       {isEditable && meetingId && (
-        <div style={{ display: "flex", gap: 12, paddingTop: 12, alignItems: "flex-start" }}>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              fontWeight: 600,
-              color: "rgba(201, 162, 39, 0.3)",
-              width: 24,
-              textAlign: "right",
-              flexShrink: 0,
-              paddingTop: 5,
-            }}
-          >
+        <div className={styles.ghostInputRow}>
+          <span className={styles.planNumberGhost} style={{ paddingTop: 5 }}>
             {allItems.length + 1}
           </span>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className={styles.ghostInputBody}>
             <input
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addItem()}
               placeholder="Add agenda item..."
-              style={{
-                width: "100%",
-                border: "none",
-                borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                background: "transparent",
-                padding: "4px 0",
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-                fontFamily: "var(--font-sans)",
-                outline: "none",
-              }}
+              className={styles.ghostInput}
             />
             {newItem.trim() && (
               <input
@@ -1699,17 +1239,7 @@ function UnifiedPlanEditor({
                 onChange={(e) => setNewItemWhy(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addItem()}
                 placeholder="Why this matters..."
-                style={{
-                  width: "100%",
-                  border: "none",
-                  borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                  background: "transparent",
-                  padding: "4px 0",
-                  fontSize: 13,
-                  color: "var(--color-text-tertiary)",
-                  fontFamily: "var(--font-sans)",
-                  outline: "none",
-                }}
+                className={styles.ghostInputWhy}
               />
             )}
           </div>
@@ -1718,41 +1248,12 @@ function UnifiedPlanEditor({
 
       {/* Calendar description — collapsed toggle */}
       {calendarNotes && (
-        <details style={{ marginTop: 24 }}>
-          <summary
-            style={{
-              ...chapterHeadingStyle,
-              cursor: "pointer",
-              userSelect: "none",
-              listStyle: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <ChevronRight
-              style={{
-                width: 12,
-                height: 12,
-                transition: "transform 0.2s",
-              }}
-              className={styles.detailsChevron}
-            />
+        <details className={styles.calendarDetails}>
+          <summary className={styles.calendarSummary}>
+            <ChevronRight className={clsx(styles.iconMd, styles.detailsChevron)} style={{ transition: "transform 0.2s" }} />
             Calendar Description
           </summary>
-          <p
-            style={{
-              marginTop: 12,
-              marginBottom: 0,
-              whiteSpace: "pre-wrap",
-              fontSize: 14,
-              color: "var(--color-text-tertiary)",
-              lineHeight: 1.65,
-              paddingLeft: 18,
-            }}
-          >
-            {calendarNotes}
-          </p>
+          <p className={styles.calendarBody}>{calendarNotes}</p>
         </details>
       )}
     </div>
@@ -1773,26 +1274,16 @@ function OutcomesSection({
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <h2
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 22,
-          fontWeight: 600,
-          color: "var(--color-text-primary)",
-          margin: 0,
-        }}
-      >
-        Meeting Outcomes
-      </h2>
+    <div className={styles.outcomesContainer}>
+      <h2 className={styles.outcomesTitle}>Meeting Outcomes</h2>
       {/* Inlined MeetingOutcomes */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: 14 }}>
+      <div className={styles.outcomesBody}>
         {/* Summary */}
         {outcomes.summary && (
-          <p style={{ color: "var(--color-text-tertiary)", margin: 0, lineHeight: 1.65 }}>{outcomes.summary}</p>
+          <p className={styles.outcomesSummary}>{outcomes.summary}</p>
         )}
 
-        <div style={{ display: "grid", gap: 20, gridTemplateColumns: "repeat(2, 1fr)" }}>
+        <div className={styles.outcomesGrid}>
           {/* Wins */}
           {outcomes.wins.length > 0 && (
             <OutcomeSection
@@ -1823,19 +1314,9 @@ function OutcomesSection({
 
         {/* Actions */}
         {outcomes.actions.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <h4
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-                margin: 0,
-              }}
-            >
-              Actions
-            </h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className={styles.outcomeActionsWrap}>
+            <h4 className={styles.outcomeActionsTitle}>Actions</h4>
+            <div className={styles.outcomeActionsList}>
               {outcomes.actions.map((action) => (
                 <ActionRow
                   key={action.id}
@@ -1884,42 +1365,15 @@ function OutcomeSection({
   items: string[];
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <h4
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          fontWeight: 500,
-          color: "var(--color-text-primary)",
-          margin: 0,
-        }}
-      >
+    <div className={styles.outcomeSectionWrap}>
+      <h4 className={styles.outcomeSectionTitle}>
         {icon}
         {title}
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 400,
-            color: "var(--color-text-tertiary)",
-          }}
-        >
-          ({items.length})
-        </span>
+        <span className={styles.outcomeSectionCount}>({items.length})</span>
       </h4>
-      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+      <ul className={styles.outcomeSectionItems}>
         {items.map((item, i) => (
-          <li
-            key={i}
-            style={{
-              fontSize: 14,
-              color: "var(--color-text-tertiary)",
-              lineHeight: 1.55,
-            }}
-          >
+          <li key={i} className={styles.outcomeSectionItem}>
             {item}
           </li>
         ))}
