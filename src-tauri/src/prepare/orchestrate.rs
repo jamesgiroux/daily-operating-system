@@ -218,15 +218,22 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     }
                 }
 
-                // Phase 2: Extract commitments (sync, with db lock)
+                // Phase 2: Extract commitments via PTY (blocking — runs in background task, not UI thread)
                 if !fetched_bodies.is_empty() {
+                    let ai_config = {
+                        let cfg = state.config.read().ok();
+                        cfg.as_ref()
+                            .and_then(|g| g.as_ref())
+                            .map(|c| c.ai_models.clone())
+                            .unwrap_or_default()
+                    };
                     let commitment_guard = state.db.lock().ok();
                     if let Some(db) = commitment_guard.as_ref().and_then(|g| g.as_ref()) {
                         let mut total_commitments = 0usize;
                         for (email_id, subject, from_email, body) in &fetched_bodies {
                             let commitments =
                                 crate::processor::email_actions::extract_email_commitments(
-                                    body, email_id, subject, from_email, db,
+                                    workspace, &ai_config, body, email_id, subject, from_email, db,
                                 );
                             total_commitments += commitments.len();
                         }

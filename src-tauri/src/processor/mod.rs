@@ -6,6 +6,7 @@
 //! Files classified as Unknown are flagged for AI processing (Step 2.5).
 
 pub mod classifier;
+pub mod email_actions;
 pub mod embeddings;
 pub mod enrich;
 pub mod extract;
