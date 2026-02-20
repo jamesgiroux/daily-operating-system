@@ -21,7 +21,6 @@ import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
-import { Avatar } from "@/components/ui/Avatar";
 import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
@@ -155,26 +154,47 @@ function getExpansionTintClass(meeting: Meeting): string {
 // ─── Shared Sub-Components ───────────────────────────────────────────────────
 // Exported for use in DailyBriefing lead story section.
 
-/** Compact inline flow of stakeholders with relationship temperature dots. */
+/** "The Room" — grouped attendee display: their side vs our side. */
 export function KeyPeopleFlow({ stakeholders }: { stakeholders: Stakeholder[] }) {
   if (stakeholders.length === 0) return null;
 
+  const external = stakeholders.filter((p) => p.relationship === "external" || p.relationship === "unknown" || !p.relationship);
+  const internal = stakeholders.filter((p) => p.relationship === "internal");
+
+  // If we can't distinguish sides, show as a single flat list
+  const hasBothSides = external.length > 0 && internal.length > 0;
+
+  const renderPerson = (person: Stakeholder) => (
+    <div key={person.name} className={s.theRoomPerson}>
+      <span className={s.theRoomName}>{person.name}</span>
+      {person.role && (
+        <>
+          <span className={s.theRoomSep}>&middot;</span>
+          <span className={s.theRoomRole}>{person.role}</span>
+        </>
+      )}
+    </div>
+  );
+
   return (
-    <div className={s.keyPeople}>
-      <div className={s.keyPeopleLabel}>Key People</div>
-      <div className={s.keyPeopleFlow}>
-        {stakeholders.map((person, i) => (
-          <span key={person.name}>
-            {i > 0 && <span className={s.keyPeopleSep}>&middot;</span>}
-            <span className={s.keyPeoplePerson}>
-              <Avatar name={person.name} size={20} />
-              <span className={s.keyPeopleName}>{person.name}</span>
-              {person.role && <span className={s.keyPeopleRole}>{person.role}</span>}
-              <span className={clsx(s.keyPeopleTemp, s.keyPeopleTempHot)} />
-            </span>
-          </span>
-        ))}
-      </div>
+    <div className={s.theRoom}>
+      <div className={s.theRoomLabel}>The Room</div>
+      {hasBothSides ? (
+        <>
+          <div className={s.theRoomGroup}>
+            <div className={s.theRoomGroupLabel}>Their Side</div>
+            {external.map(renderPerson)}
+          </div>
+          <div className={s.theRoomGroup}>
+            <div className={s.theRoomGroupLabel}>Our Side</div>
+            {internal.map(renderPerson)}
+          </div>
+        </>
+      ) : (
+        <div className={s.theRoomGroup}>
+          {stakeholders.map(renderPerson)}
+        </div>
+      )}
     </div>
   );
 }
@@ -471,20 +491,22 @@ export function BriefingMeetingCard({
           style={{ maxHeight: isExpanded ? measuredHeight : 0 }}
         >
           <div ref={innerRef} className={s.expansionInner}>
-            {/* Inline intelligence brief */}
+            {/* Intelligence brief — editorial lede */}
             {meeting.prep?.context && (
               <p
                 style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: 13,
-                  color: "var(--color-text-secondary)",
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 15,
+                  fontWeight: 300,
                   fontStyle: "italic",
-                  margin: "0 0 12px 0",
-                  lineHeight: 1.5,
+                  color: "var(--color-text-secondary)",
+                  margin: "0 0 20px 0",
+                  lineHeight: 1.55,
+                  maxWidth: 560,
                 }}
               >
-                {meeting.prep.context.length > 120
-                  ? `${meeting.prep.context.slice(0, 120)}…`
+                {meeting.prep.context.length > 320
+                  ? `${meeting.prep.context.slice(0, 320)}…`
                   : meeting.prep.context}
               </p>
             )}

@@ -183,66 +183,81 @@
 }
 
 /* =============================================================================
-   KEY PEOPLE — Compact inline flow
+   THE ROOM — Grouped attendee display (their side / our side)
    ============================================================================= */
 
-.keyPeople {
-  margin-bottom: 32px;
+.theRoom {
+  margin-bottom: 24px;
 }
 
-.keyPeopleLabel {
+.theRoomLabel {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
-  margin-bottom: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-rule-light);
 }
 
-.keyPeopleFlow {
+.theRoomGroup {
+  margin-bottom: 14px;
+}
+
+.theRoomGroupLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.theRoomPerson {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  padding: 3px 0;
   font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.75;
+  font-size: 13px;
+  line-height: 1.4;
   color: var(--color-text-primary);
 }
 
-.keyPeoplePerson {
-  white-space: nowrap;
-}
-
-.keyPeopleName {
+.theRoomName {
   font-weight: 500;
 }
 
-.keyPeopleRole {
-  font-weight: 300;
-  color: var(--color-text-secondary);
-  margin-left: 4px;
-}
-
-.keyPeopleTemp {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-left: 4px;
-  vertical-align: middle;
-  position: relative;
-  top: -1px;
-}
-
-.keyPeopleTempHot { background: var(--color-garden-sage); }
-.keyPeopleTempWarm { background: var(--color-spice-saffron); }
-.keyPeopleTempNeutral { background: var(--color-paper-linen); }
-.keyPeopleTempCold { background: var(--color-spice-terracotta); }
-
-.keyPeopleSep {
+.theRoomSep {
   color: var(--color-text-tertiary);
   opacity: 0.4;
-  margin: 0 10px;
+  margin: 0 6px;
+  font-size: 11px;
 }
+
+.theRoomRole {
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.theRoomCompany {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-tertiary);
+  margin-left: 6px;
+}
+
+/* Legacy aliases for backward compat if any external refs exist */
+.keyPeople { margin-bottom: 24px; }
+.keyPeopleLabel { display: none; }
+.keyPeopleFlow { display: none; }
 
 /* =============================================================================
    PREP GRID — 2-column editorial layout
