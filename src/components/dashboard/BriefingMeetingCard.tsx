@@ -21,6 +21,7 @@ import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { Avatar } from "@/components/ui/Avatar";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
@@ -428,7 +429,7 @@ export function BriefingMeetingCard({
           </div>
           <div className={s.scheduleSubtitle}>
             {subtitleParts.join(" \u00B7 ")}
-            {meeting.hasPrep && <span className={s.schedulePrepDot} title="Prep available" />}
+            {meeting.hasPrep && <IntelligenceQualityBadge enrichedAt={new Date().toISOString()} />}
           </div>
           {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
             <div
@@ -498,7 +499,7 @@ export function BriefingMeetingCard({
                 className={s.meetingLinkPrimary}
                 onClick={(e) => e.stopPropagation()}
               >
-                Read full intelligence &rarr;
+                Read full briefing &rarr;
               </Link>
               <button
                 className={s.expansionCollapse}
