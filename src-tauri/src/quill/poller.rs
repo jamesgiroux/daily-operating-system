@@ -315,7 +315,7 @@ async fn process_sync_row(
         ai_config.as_ref(),
     );
 
-    // Re-acquire lock briefly to write results
+    // Re-acquire lock briefly to write results + captures
     {
         let db_guard = match state.db.lock() {
             Ok(g) => g,
@@ -323,13 +323,78 @@ async fn process_sync_row(
         };
         if let Some(db) = db_guard.as_ref() {
             match &result {
-                Ok((dest, summary)) => {
+                Ok(tr) => {
+                    let dest = tr.destination.as_deref().unwrap_or("");
+                    let processed_at = chrono::Utc::now().to_rfc3339();
                     let _ = db.update_meeting_transcript_metadata(
                         &calendar_event.id,
                         dest,
-                        &chrono::Utc::now().to_rfc3339(),
-                        summary.as_deref(),
+                        &processed_at,
+                        tr.summary.as_deref(),
                     );
+
+                    // Write captures (wins, risks, decisions) that were extracted by AI
+                    // but couldn't be written during pipeline (db was None).
+                    let account = calendar_event.account.as_deref();
+                    for win in &tr.wins {
+                        let _ = db.insert_capture(
+                            &calendar_event.id, &calendar_event.title,
+                            account, "win", win,
+                        );
+                    }
+                    for risk in &tr.risks {
+                        let _ = db.insert_capture(
+                            &calendar_event.id, &calendar_event.title,
+                            account, "risk", risk,
+                        );
+                    }
+                    for decision in &tr.decisions {
+                        let _ = db.insert_capture(
+                            &calendar_event.id, &calendar_event.title,
+                            account, "decision", decision,
+                        );
+                    }
+
+                    // Write extracted actions as proposed actions
+                    let now = chrono::Utc::now().to_rfc3339();
+                    for (i, action) in tr.actions.iter().enumerate() {
+                        let db_action = crate::db::DbAction {
+                            id: format!("quill-{}-{}", row.meeting_id, i),
+                            title: action.title.clone(),
+                            priority: "P2".to_string(),
+                            status: "proposed".to_string(),
+                            created_at: now.clone(),
+                            due_date: action.due_date.clone(),
+                            completed_at: None,
+                            account_id: account.map(|a| {
+                                // Try to resolve account name to ID
+                                db.get_account_by_name(a)
+                                    .ok()
+                                    .flatten()
+                                    .map(|acc| acc.id)
+                                    .unwrap_or_default()
+                            }).filter(|s| !s.is_empty()),
+                            project_id: None,
+                            source_type: Some("transcript".to_string()),
+                            source_id: Some(calendar_event.id.clone()),
+                            source_label: Some(calendar_event.title.clone()),
+                            context: None,
+                            waiting_on: None,
+                            updated_at: now.clone(),
+                            person_id: None,
+                            account_name: None,
+                        };
+                        let _ = db.upsert_action_if_not_completed(&db_action);
+                    }
+
+                    let capture_count = tr.wins.len() + tr.risks.len() + tr.decisions.len() + tr.actions.len();
+                    if capture_count > 0 {
+                        log::info!(
+                            "Quill sync: wrote {} captures for '{}'",
+                            capture_count, calendar_event.title
+                        );
+                    }
+
                     let _ = sync::transition_state(db, &row.id, "completed", None, None, Some(dest), None);
                 }
                 Err(error) => {
@@ -340,11 +405,11 @@ async fn process_sync_row(
     }
 
     match &result {
-        Ok((dest, _)) => {
+        Ok(tr) => {
             log::info!(
                 "Quill sync: transcript processed for '{}' → {} ({} chars)",
                 meeting.title,
-                dest,
+                tr.destination.as_deref().unwrap_or(""),
                 transcript.len()
             );
         }
