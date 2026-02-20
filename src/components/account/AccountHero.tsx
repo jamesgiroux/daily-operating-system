@@ -8,12 +8,19 @@ import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { EditableText } from "@/components/ui/EditableText";
 import styles from "./AccountHero.module.css";
 
 interface AccountHeroProps {
   detail: AccountDetail;
   intelligence: EntityIntelligence | null;
-  onEditFields?: () => void;
+  editName?: string;
+  setEditName?: (value: string) => void;
+  editHealth?: string;
+  setEditHealth?: (value: string) => void;
+  editLifecycle?: string;
+  setEditLifecycle?: (value: string) => void;
+  onSave?: () => void;
   onManageTeam?: () => void;
   onEnrich?: () => void;
   enriching?: boolean;
@@ -31,7 +38,13 @@ const healthClass: Record<string, string> = {
 export function AccountHero({
   detail,
   intelligence,
-  onEditFields,
+  editName,
+  setEditName,
+  editHealth,
+  setEditHealth,
+  editLifecycle,
+  setEditLifecycle,
+  onSave,
   onManageTeam,
   onEnrich,
   enriching,
@@ -73,8 +86,21 @@ export function AccountHero({
         {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
       </div>
 
-      {/* Account name — 76px serif */}
-      <h1 className={styles.name}>{detail.name}</h1>
+      {/* Account name — 76px serif, inline-editable */}
+      <h1 className={styles.name}>
+        {editName != null && setEditName ? (
+          <EditableText
+            as="span"
+            value={editName}
+            onChange={(v) => { setEditName(v); onSave?.(); }}
+            multiline={false}
+            placeholder="Account name"
+            fieldId="account-name"
+          />
+        ) : (
+          detail.name
+        )}
+      </h1>
 
       {/* Lede from intelligence — italic serif */}
       {lede && (
@@ -101,14 +127,39 @@ export function AccountHero({
 
       {/* Badges row */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
-        {detail.health && (
-          <span className={`${styles.badge} ${healthClass[detail.health] ?? ""}`}>
-            {detail.health}
+        {(editHealth ?? detail.health) && (
+          <span
+            className={`${styles.badge} ${healthClass[editHealth ?? detail.health ?? ""] ?? ""}`}
+            onClick={() => {
+              if (!setEditHealth) return;
+              const cycle = ["green", "yellow", "red"];
+              const current = editHealth ?? detail.health ?? "green";
+              const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
+              setEditHealth(next);
+              onSave?.();
+            }}
+            style={{ cursor: setEditHealth ? "pointer" : "default" }}
+            title={setEditHealth ? "Click to cycle health" : undefined}
+          >
+            {editHealth ?? detail.health}
           </span>
         )}
-        {detail.lifecycle && (
-          <span className={`${styles.badge} ${styles.lifecycleBadge}`}>
-            {detail.lifecycle}
+        {(editLifecycle ?? detail.lifecycle) && (
+          <span
+            className={`${styles.badge} ${styles.lifecycleBadge}`}
+            onClick={() => {
+              if (!setEditLifecycle) return;
+              const stages = ["Onboarding", "Adopted", "Expanding", "Renewing", "At Risk"];
+              const current = editLifecycle ?? detail.lifecycle ?? "";
+              const idx = stages.findIndex(s => s.toLowerCase() === current.toLowerCase());
+              const next = stages[(idx + 1) % stages.length];
+              setEditLifecycle(next);
+              onSave?.();
+            }}
+            style={{ cursor: setEditLifecycle ? "pointer" : "default" }}
+            title={setEditLifecycle ? "Click to cycle lifecycle" : undefined}
+          >
+            {editLifecycle ?? detail.lifecycle}
           </span>
         )}
         {detail.isInternal && (
@@ -120,11 +171,6 @@ export function AccountHero({
 
       {/* Meta row: action links */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
-        {onEditFields && (
-          <button className={styles.metaButton} onClick={onEditFields}>
-            Edit Fields
-          </button>
-        )}
         {onManageTeam && (
           <button className={styles.metaButton} onClick={onManageTeam}>
             Manage Team

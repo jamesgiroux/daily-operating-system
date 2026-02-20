@@ -62,6 +62,7 @@ type StatusTab = "proposed" | "pending" | "completed";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
 
 const statusTabs: StatusTab[] = ["proposed", "pending", "completed"];
+const statusTabLabels: Record<StatusTab, string> = { proposed: "Suggested", pending: "Pending", completed: "Completed" };
 const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
 
 export default function ActionsPage() {
@@ -258,7 +259,7 @@ export default function ActionsPage() {
                 gap: 6,
               }}
             >
-              {tab}
+              {statusTabLabels[tab]}
               {tab === "proposed" && proposedCount > 0 && (
                 <span
                   style={{
@@ -645,7 +646,7 @@ function ProposedActionRow({
               color: "var(--color-spice-turmeric)",
             }}
           >
-            AI Suggested
+            Suggested
           </span>
           <span
             style={{
