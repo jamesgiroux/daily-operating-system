@@ -678,14 +678,8 @@ fn outcome_confidence(outcome: &ResolutionOutcome) -> f64 {
     }
 }
 
-/// Normalize a string for fuzzy matching (lowercase, alphanumeric only).
-fn normalize_key(value: &str) -> String {
-    value
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
-}
+// normalize_key moved to crate::helpers::normalize_key (DRY)
+use crate::helpers::normalize_key;
 
 /// Build multi-word tokens from text for fuzzy matching.
 /// Includes individual words (>= 3 chars) and adjacent word pairs.
