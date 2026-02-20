@@ -7,13 +7,18 @@ import { useState } from "react";
 import type { PersonDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { EditableText } from "@/components/ui/EditableText";
 import { Avatar } from "@/components/ui/Avatar";
 import styles from "./PersonHero.module.css";
 
 interface PersonHeroProps {
   detail: PersonDetail;
   intelligence: EntityIntelligence | null;
-  onEditDetails?: () => void;
+  editName?: string;
+  setEditName?: (value: string) => void;
+  editRole?: string;
+  setEditRole?: (value: string) => void;
+  onSave?: () => void;
   onEnrich?: () => void;
   enriching?: boolean;
   enrichSeconds?: number;
@@ -41,7 +46,11 @@ const temperatureClass: Record<string, string> = {
 export function PersonHero({
   detail,
   intelligence,
-  onEditDetails,
+  editName,
+  setEditName,
+  editRole,
+  setEditRole,
+  onSave,
   onEnrich,
   enriching,
   enrichSeconds,
@@ -95,7 +104,20 @@ export function PersonHero({
       {/* Name with avatar */}
       <div className={styles.nameRow}>
         <Avatar name={detail.name} personId={detail.id} size={48} />
-        <h1 className={styles.name}>{detail.name}</h1>
+        <h1 className={styles.name}>
+          {editName != null && setEditName ? (
+            <EditableText
+              as="span"
+              value={editName}
+              onChange={(v) => { setEditName(v); onSave?.(); }}
+              multiline={false}
+              placeholder="Full name"
+              fieldId="person-name"
+            />
+          ) : (
+            detail.name
+          )}
+        </h1>
       </div>
 
       {/* Lede from intelligence */}
@@ -121,9 +143,26 @@ export function PersonHero({
         </p>
       )}
 
-      {/* Subtitle: email, org, role */}
-      {subtitleParts.length > 0 && (
-        <p className={styles.subtitle}>{subtitleParts.join(" \u2014 ")}</p>
+      {/* Subtitle: email, org, role (role is inline-editable) */}
+      {(subtitleParts.length > 0 || (editRole != null && setEditRole)) && (
+        <div className={styles.subtitle} style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+          {detail.email && <span>{detail.email}</span>}
+          {detail.email && (orgLabel || editRole != null) && <span> — </span>}
+          {orgLabel && <span>{orgLabel}</span>}
+          {orgLabel && (editRole != null || detail.role) && <span> · </span>}
+          {editRole != null && setEditRole ? (
+            <EditableText
+              as="span"
+              value={editRole}
+              onChange={(v) => { setEditRole(v); onSave?.(); }}
+              multiline={false}
+              placeholder="Role / Title"
+              fieldId="person-role"
+            />
+          ) : (
+            detail.role && <span>{detail.role}</span>
+          )}
+        </div>
       )}
 
       {/* Social links (Clay enrichment I228) */}
@@ -176,11 +215,6 @@ export function PersonHero({
 
       {/* Meta row */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
-        {onEditDetails && (
-          <button className={styles.metaButton} onClick={onEditDetails}>
-            Edit Details
-          </button>
-        )}
         {onEnrich && (
           <button
             className={enriching ? styles.metaButtonEnriching : styles.metaButton}
