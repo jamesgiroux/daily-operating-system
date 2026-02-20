@@ -11290,6 +11290,7 @@ pub fn get_meeting_timeline(
 ) -> Result<Vec<crate::types::TimelineMeeting>, String> {
     let days_before = days_before.unwrap_or(7);
     let days_after = days_after.unwrap_or(7);
+    log::info!("get_meeting_timeline: ±{}/{} days", days_before, days_after);
 
     let today = chrono::Local::now().date_naive();
     let range_start = today - chrono::Duration::days(days_before);
@@ -11341,6 +11342,7 @@ pub fn get_meeting_timeline(
         .filter_map(|r| r.ok())
         .collect();
 
+    log::info!("get_meeting_timeline: {} raw meetings found", raw_meetings.len());
     if raw_meetings.is_empty() {
         return Ok(Vec::new());
     }
