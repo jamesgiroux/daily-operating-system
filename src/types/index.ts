@@ -88,6 +88,8 @@ export interface Meeting {
   linkedEntities?: LinkedEntity[];
   /** Account ID suggestion when meeting matches an archived account (I161) */
   suggestedUnarchiveAccountId?: string;
+  /** Calendar event description from Google Calendar */
+  calendarDescription?: string;
   /** Structured intelligence quality assessment for schedule meetings */
   intelligenceQuality?: {
     level: "sparse" | "developing" | "ready" | "fresh";

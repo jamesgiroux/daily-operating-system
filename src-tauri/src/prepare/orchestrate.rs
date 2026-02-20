@@ -1226,6 +1226,7 @@ async fn fetch_and_classify_today(
             "summary": ev.title,
             "start": ev.start,
             "end": ev.end,
+            "description": cm.description,
         }));
     }
 
@@ -1360,6 +1361,7 @@ async fn fetch_and_classify_week(
             "summary": ev.title,
             "start": ev.start,
             "end": ev.end,
+            "description": cm.description,
         }));
     }
 
