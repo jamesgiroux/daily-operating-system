@@ -103,6 +103,7 @@ export function useDashboardData(): {
   useTauriEvent("calendar-updated", silentRefresh);
   useTauriEvent("prep-ready", silentRefresh);
   useTauriEvent("entity-updated", silentRefresh);
+  useTauriEvent("emails-updated", silentRefresh);
 
   return {
     state,
