@@ -336,6 +336,7 @@ mod tests {
             prep_reviewed: None,
             linked_entities: None,
             suggested_unarchive_account_id: None,
+            intelligence_quality: None,
         }
     }
 

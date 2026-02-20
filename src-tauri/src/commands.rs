@@ -277,15 +277,22 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             accounts_with_domains: Option<Vec<(crate::db::DbAccount, Vec<String>)>>,
             non_briefing_actions: Option<Vec<crate::db::DbAction>>,
             focus_candidates: Option<Vec<crate::db::DbAction>>,
+            intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
         }
 
         let db_snapshot = match state.with_db_try_read(|db| {
+            let mut iq_map = HashMap::new();
+            for mid in &meeting_ids {
+                let q = crate::intelligence_lifecycle::assess_intelligence_quality(db, mid);
+                iq_map.insert(mid.clone(), q);
+            }
             DashboardDbSnapshot {
                 reviewed: db.get_reviewed_preps().ok(),
                 entity_map: db.get_meeting_entity_map(&meeting_ids).ok(),
                 accounts_with_domains: db.get_all_accounts_with_domains(true).ok(),
                 non_briefing_actions: db.get_non_briefing_pending_actions().ok(),
                 focus_candidates: db.get_focus_candidate_actions(7).ok(),
+                intelligence_qualities: iq_map,
             }
         }) {
             DbTryRead::Ok(snap) => Some(snap),
@@ -407,6 +414,15 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                             m.suggested_unarchive_account_id = Some(account_id);
                         }
                     }
+                }
+            }
+        }
+
+        // Annotate meetings with intelligence quality from lifecycle assessment (I329)
+        if let Some(ref snap) = db_snapshot {
+            for m in &mut meetings {
+                if let Some(q) = snap.intelligence_qualities.get(&m.id) {
+                    m.intelligence_quality = Some(q.clone());
                 }
             }
         }
@@ -10621,4 +10637,191 @@ pub async fn correct_email_disposition(
         );
         Ok(format!("Disposition corrected to {}", corrected_priority))
     })
+}
+
+// =============================================================================
+// I330: Meeting Timeline (±7 days)
+// =============================================================================
+
+/// Return meetings for ±N days around today with intelligence quality data.
+#[tauri::command]
+pub fn get_meeting_timeline(
+    state: State<Arc<AppState>>,
+    days_before: Option<i64>,
+    days_after: Option<i64>,
+) -> Result<Vec<crate::types::TimelineMeeting>, String> {
+    let days_before = days_before.unwrap_or(7);
+    let days_after = days_after.unwrap_or(7);
+
+    let today = chrono::Local::now().date_naive();
+    let range_start = today - chrono::Duration::days(days_before);
+    let range_end = today + chrono::Duration::days(days_after);
+    let start_str = range_start.format("%Y-%m-%d").to_string();
+    let end_str = format!("{}T23:59:59", range_end.format("%Y-%m-%d"));
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let conn = db.conn_ref();
+
+    // Query meetings in the date range
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, meeting_type, start_time, end_time, summary,
+                    transcript_processed_at, has_new_signals, intelligence_state
+             FROM meetings_history
+             WHERE start_time >= ?1 AND start_time <= ?2
+               AND (intelligence_state IS NULL OR intelligence_state != 'archived')
+             ORDER BY start_time ASC",
+        )
+        .map_err(|e| format!("Failed to prepare timeline query: {}", e))?;
+
+    struct RawMeeting {
+        id: String,
+        title: String,
+        meeting_type: String,
+        start_time: String,
+        end_time: Option<String>,
+        summary: Option<String>,
+        transcript_processed_at: Option<String>,
+        has_new_signals: Option<i32>,
+    }
+
+    let raw_meetings: Vec<RawMeeting> = stmt
+        .query_map(rusqlite::params![start_str, end_str], |row| {
+            Ok(RawMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                summary: row.get(5)?,
+                transcript_processed_at: row.get(6)?,
+                has_new_signals: row.get(7)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query timeline: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if raw_meetings.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Batch fetch linked entities for all meetings
+    let meeting_ids: Vec<String> = raw_meetings.iter().map(|m| m.id.clone()).collect();
+    let entity_map = db
+        .get_meeting_entity_map(&meeting_ids)
+        .unwrap_or_default();
+
+    // Check for captures per meeting (batch)
+    let capture_placeholders: Vec<String> = (0..meeting_ids.len())
+        .map(|i| format!("?{}", i + 1))
+        .collect();
+    let capture_sql = format!(
+        "SELECT meeting_id, COUNT(*) FROM captures WHERE meeting_id IN ({}) GROUP BY meeting_id",
+        capture_placeholders.join(", ")
+    );
+    let mut capture_stmt = conn
+        .prepare(&capture_sql)
+        .map_err(|e| format!("Failed to prepare captures query: {}", e))?;
+    let capture_params: Vec<&dyn rusqlite::types::ToSql> = meeting_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
+    let capture_counts: HashMap<String, i64> = capture_stmt
+        .query_map(capture_params.as_slice(), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(|e| format!("Failed to query captures: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // Build timeline meetings
+    let mut result: Vec<crate::types::TimelineMeeting> = Vec::with_capacity(raw_meetings.len());
+    for m in &raw_meetings {
+        // Intelligence quality assessment (skip on error)
+        let quality = match crate::intelligence_lifecycle::assess_intelligence_quality(db, &m.id) {
+            q if q.level == crate::types::QualityLevel::Sparse
+                && q.signal_count == 0
+                && !q.has_entity_context =>
+            {
+                // Minimal quality — still include it
+                Some(q)
+            }
+            q => Some(q),
+        };
+
+        let capture_count = capture_counts.get(&m.id).copied().unwrap_or(0);
+        let has_outcomes =
+            capture_count > 0 || m.transcript_processed_at.is_some();
+
+        let outcome_summary = if has_outcomes {
+            m.summary.clone()
+        } else {
+            None
+        };
+
+        let entities = entity_map.get(&m.id).cloned().unwrap_or_default();
+
+        let has_new_signals = m.has_new_signals.unwrap_or(0) != 0;
+
+        // Find prior meeting: most recent earlier meeting sharing at least one entity
+        let prior_meeting_id = if !entities.is_empty() {
+            let entity_ids: Vec<&str> = entities.iter().map(|e| e.id.as_str()).collect();
+            find_prior_meeting(conn, &m.id, &m.start_time, &entity_ids)
+        } else {
+            None
+        };
+
+        result.push(crate::types::TimelineMeeting {
+            id: m.id.clone(),
+            title: m.title.clone(),
+            start_time: m.start_time.clone(),
+            end_time: m.end_time.clone(),
+            meeting_type: m.meeting_type.clone(),
+            intelligence_quality: quality,
+            has_outcomes,
+            outcome_summary,
+            entities,
+            has_new_signals,
+            prior_meeting_id,
+        });
+    }
+
+    Ok(result)
+}
+
+/// Find the most recent past meeting that shares at least one entity with the current meeting.
+fn find_prior_meeting(
+    conn: &rusqlite::Connection,
+    current_meeting_id: &str,
+    current_start_time: &str,
+    entity_ids: &[&str],
+) -> Option<String> {
+    if entity_ids.is_empty() {
+        return None;
+    }
+    let placeholders: Vec<String> = (0..entity_ids.len())
+        .map(|i| format!("?{}", i + 3))
+        .collect();
+    let sql = format!(
+        "SELECT DISTINCT mh.id FROM meetings_history mh
+         INNER JOIN meeting_entities me ON me.meeting_id = mh.id
+         WHERE me.entity_id IN ({})
+           AND mh.start_time < ?1
+           AND mh.id != ?2
+         ORDER BY mh.start_time DESC
+         LIMIT 1",
+        placeholders.join(", ")
+    );
+    let mut stmt = conn.prepare(&sql).ok()?;
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    params.push(Box::new(current_start_time.to_string()));
+    params.push(Box::new(current_meeting_id.to_string()));
+    for eid in entity_ids {
+        params.push(Box::new(eid.to_string()));
+    }
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    stmt.query_row(param_refs.as_slice(), |row| row.get::<_, String>(0))
+        .ok()
 }
