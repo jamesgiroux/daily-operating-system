@@ -68,10 +68,60 @@ pub fn default_half_life(source: &str) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
+// Builder struct for signal emission (ADR-0080 cleanup)
+// ---------------------------------------------------------------------------
+
+/// A structured parameter object for emitting signals, replacing long
+/// positional argument lists.
+pub struct SignalEmission<'a> {
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub signal_type: &'a str,
+    pub source: &'a str,
+    pub value: Option<&'a str>,
+    pub confidence: f64,
+    pub source_context: Option<&'a str>,
+}
+
+/// Emit a signal using the builder struct. Returns the generated signal ID.
+pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError> {
+    let id = format!("sig-{}", Uuid::new_v4());
+    let half_life = default_half_life(signal.source);
+    if signal.source_context.is_some() {
+        db.insert_signal_event_with_context(
+            &id, signal.entity_type, signal.entity_id, signal.signal_type,
+            signal.source, signal.value, signal.confidence, half_life,
+            signal.source_context,
+        )?;
+    } else {
+        db.insert_signal_event(
+            &id, signal.entity_type, signal.entity_id, signal.signal_type,
+            signal.source, signal.value, signal.confidence, half_life,
+        )?;
+    }
+
+    // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
+    let _ = db.conn_ref().execute(
+        "UPDATE meetings_history SET has_new_signals = 1
+         WHERE id IN (
+             SELECT me.meeting_id FROM meeting_entities me
+             WHERE me.entity_id = ?1 AND me.entity_type = ?2
+         )
+         AND start_time > datetime('now')
+         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+        rusqlite::params![signal.entity_id, signal.entity_type],
+    );
+
+    Ok(id)
+}
+
+// ---------------------------------------------------------------------------
 // Signal event operations
 // ---------------------------------------------------------------------------
 
 /// Emit a new signal event. Returns the generated signal ID.
+///
+/// Prefer [`emit`] with [`SignalEmission`] for new call sites.
 pub fn emit_signal(
     db: &ActionDb,
     entity_type: &str,
@@ -84,27 +134,20 @@ pub fn emit_signal(
     let id = format!("sig-{}", Uuid::new_v4());
     let half_life = default_half_life(source);
     db.insert_signal_event(&id, entity_type, entity_id, signal_type, source, value, confidence, half_life)?;
-    Ok(id)
-}
 
-/// Emit a new signal event with context tagging. Returns the generated signal ID.
-#[allow(clippy::too_many_arguments)]
-pub fn emit_signal_with_context(
-    db: &ActionDb,
-    entity_type: &str,
-    entity_id: &str,
-    signal_type: &str,
-    source: &str,
-    value: Option<&str>,
-    confidence: f64,
-    source_context: Option<&str>,
-) -> Result<String, DbError> {
-    let id = format!("sig-{}", Uuid::new_v4());
-    let half_life = default_half_life(source);
-    db.insert_signal_event_with_context(
-        &id, entity_type, entity_id, signal_type, source, value,
-        confidence, half_life, source_context,
-    )?;
+    // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
+    // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
+    let _ = db.conn_ref().execute(
+        "UPDATE meetings_history SET has_new_signals = 1
+         WHERE id IN (
+             SELECT me.meeting_id FROM meeting_entities me
+             WHERE me.entity_id = ?1 AND me.entity_type = ?2
+         )
+         AND start_time > datetime('now')
+         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+        rusqlite::params![entity_id, entity_type],
+    );
+
     Ok(id)
 }
 
@@ -235,6 +278,27 @@ pub fn get_learned_reliability(
 // ---------------------------------------------------------------------------
 
 impl ActionDb {
+    /// Map a row from `signal_events` to a `SignalEvent`.
+    ///
+    /// Expected column order:
+    /// `id, entity_type, entity_id, signal_type, source, value,
+    ///  confidence, decay_half_life_days, created_at, superseded_by, source_context`
+    pub fn map_signal_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignalEvent> {
+        Ok(SignalEvent {
+            id: row.get(0)?,
+            entity_type: row.get(1)?,
+            entity_id: row.get(2)?,
+            signal_type: row.get(3)?,
+            source: row.get(4)?,
+            value: row.get(5)?,
+            confidence: row.get(6)?,
+            decay_half_life_days: row.get(7)?,
+            created_at: row.get(8)?,
+            superseded_by: row.get(9)?,
+            source_context: row.get(10)?,
+        })
+    }
+
     /// Insert a signal event row.
     #[allow(clippy::too_many_arguments)]
     pub fn insert_signal_event(
@@ -290,7 +354,8 @@ impl ActionDb {
         let (sql, params_vec): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match signal_type {
             Some(st) => (
                 "SELECT id, entity_type, entity_id, signal_type, source, value,
-                        confidence, decay_half_life_days, created_at, superseded_by
+                        confidence, decay_half_life_days, created_at, superseded_by,
+                        source_context
                  FROM signal_events
                  WHERE entity_type = ?1 AND entity_id = ?2 AND signal_type = ?3
                    AND superseded_by IS NULL
@@ -303,7 +368,8 @@ impl ActionDb {
             ),
             None => (
                 "SELECT id, entity_type, entity_id, signal_type, source, value,
-                        confidence, decay_half_life_days, created_at, superseded_by
+                        confidence, decay_half_life_days, created_at, superseded_by,
+                        source_context
                  FROM signal_events
                  WHERE entity_type = ?1 AND entity_id = ?2
                    AND superseded_by IS NULL
@@ -317,21 +383,7 @@ impl ActionDb {
 
         let mut stmt = self.conn_ref().prepare(sql)?;
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt.query_map(param_refs.as_slice(), |row| {
-            Ok(SignalEvent {
-                id: row.get(0)?,
-                entity_type: row.get(1)?,
-                entity_id: row.get(2)?,
-                signal_type: row.get(3)?,
-                source: row.get(4)?,
-                value: row.get(5)?,
-                confidence: row.get(6)?,
-                decay_half_life_days: row.get(7)?,
-                created_at: row.get(8)?,
-                superseded_by: row.get(9)?,
-                source_context: None,
-            })
-        })?;
+        let rows = stmt.query_map(param_refs.as_slice(), Self::map_signal_event_row)?;
 
         let mut events = Vec::new();
         for row in rows {
@@ -376,13 +428,7 @@ impl ActionDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_source_base_weights() {

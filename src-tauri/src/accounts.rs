@@ -1125,13 +1125,7 @@ fn default_account_json(account: &DbAccount) -> AccountJson {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn sample_account(name: &str) -> DbAccount {
         let now = Utc::now().to_rfc3339();

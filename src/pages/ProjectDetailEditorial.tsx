@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import type { VitalDisplay } from "@/lib/entity-types";
-import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { useProjectDetail } from "@/hooks/useProjectDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
@@ -34,11 +34,13 @@ import { WatchListMilestones } from "@/components/project/WatchListMilestones";
 import { TrajectoryChapter } from "@/components/project/TrajectoryChapter";
 import { HorizonChapter } from "@/components/project/HorizonChapter";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
+import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 
 /* ── Vitals assembly ── */
 
@@ -122,6 +124,20 @@ export default function ProjectDetailEditorial() {
 
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
+  // I312: Preset metadata state
+  const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!projectId) return;
+    invoke<string>("get_entity_metadata", { entityType: "project", entityId: projectId })
+      .then((json) => {
+        try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
+      })
+      .catch((err) => {
+        console.error("get_entity_metadata (project) failed:", err);
+        setMetadataValues({});
+      });
+  }, [projectId]);
+
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("project", projectId);
 
@@ -153,8 +169,54 @@ export default function ProjectDetailEditorial() {
           onUnarchive={proj.handleUnarchive}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.project, detail) : buildProjectVitals(detail)} />
+          {preset ? (
+            <EditableVitalsStrip
+              fields={preset.vitals.project}
+              entityData={detail}
+              metadata={metadataValues}
+              onFieldChange={(key, columnMapping, source, value) => {
+                if (source === "metadata") {
+                  setMetadataValues((prev) => {
+                    const updated = { ...prev, [key]: value };
+                    invoke("update_entity_metadata", {
+                      entityId: projectId,
+                      entityType: "project",
+                      metadata: JSON.stringify(updated),
+                    }).catch((err) => console.error("update_entity_metadata failed:", err));
+                    return updated;
+                  });
+                } else if (source === "column") {
+                  const field = columnMapping ?? key;
+                  invoke("update_project_field", { projectId: detail.id, field, value })
+                    .then(() => proj.load())
+                    .catch((err) => console.error("update_project_field failed:", err));
+                }
+              }}
+            />
+          ) : (
+            <VitalsStrip vitals={buildProjectVitals(detail)} />
+          )}
         </div>
+        {/* I312: Preset metadata fields */}
+        {preset && preset.metadata.project.length > 0 && (
+          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+            <PresetFieldsEditor
+              fields={preset.metadata.project}
+              values={metadataValues}
+              onChange={(key, value) => {
+                setMetadataValues((prev) => {
+                  const updated = { ...prev, [key]: value };
+                  invoke("update_entity_metadata", {
+                    entityId: projectId,
+                    entityType: "project",
+                    metadata: JSON.stringify(updated),
+                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  return updated;
+                });
+              }}
+            />
+          </div>
+        )}
       </section>
 
       {/* Chapter 2: Trajectory */}
