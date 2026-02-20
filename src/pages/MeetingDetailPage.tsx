@@ -157,11 +157,14 @@ export default function MeetingDetailPage() {
     if (!meetingId) return;
     setSyncing(true);
     try {
-      const result = await invoke<string>("trigger_quill_sync_for_meeting", { meetingId });
-      if (result === "already_completed") {
-        toast.success("Transcript already synced");
-      } else if (result === "already_in_progress") {
+      const result = await invoke<string>("trigger_quill_sync_for_meeting", {
+        meetingId,
+        force: true,
+      });
+      if (result === "already_in_progress") {
         toast.success("Sync already in progress");
+      } else if (result === "resyncing") {
+        toast.success("Re-syncing transcript");
       } else {
         toast.success("Transcript sync started");
       }
@@ -456,10 +459,6 @@ Thanks!`;
         >
           {attaching ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <Paperclip className={styles.iconSm} />}
           {attaching ? "Processing…" : "Transcript"}
-        </button>
-        <button onClick={() => loadMeetingIntelligence()} className={styles.folioBtnInline}>
-          <RefreshCw className={styles.iconSm} />
-          Refresh
         </button>
       </div>
     ) : undefined,
