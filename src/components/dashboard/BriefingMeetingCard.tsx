@@ -20,6 +20,7 @@ import clsx from "clsx";
 import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
@@ -432,10 +433,16 @@ export function BriefingMeetingCard({
           </div>
           <div className={s.scheduleSubtitle}>
             {subtitleParts.join(" \u00B7 ")}
-            {meeting.hasPrep
-              ? <span className={s.schedulePrepDot} title="Prep available" />
-              : isUpNext && <span className={s.schedulePrepDotMuted} title="No prep yet" />
-            }
+            {meeting.intelligenceQuality ? (
+              <IntelligenceQualityBadge
+                quality={meeting.intelligenceQuality}
+                enrichedAt={meeting.hasPrep ? meeting.intelligenceQuality.lastEnriched : undefined}
+              />
+            ) : meeting.hasPrep ? (
+              <span className={s.schedulePrepDot} title="Prep available" />
+            ) : isUpNext ? (
+              <span className={s.schedulePrepDotMuted} title="No prep yet" />
+            ) : null}
           </div>
           {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
             <div
@@ -464,9 +471,22 @@ export function BriefingMeetingCard({
           style={{ maxHeight: isExpanded ? measuredHeight : 0 }}
         >
           <div ref={innerRef} className={s.expansionInner}>
-            {/* Narrative context */}
+            {/* Inline intelligence brief */}
             {meeting.prep?.context && (
-              <p className={s.expansionNarrative}>{meeting.prep.context}</p>
+              <p
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: 13,
+                  color: "var(--color-text-secondary)",
+                  fontStyle: "italic",
+                  margin: "0 0 12px 0",
+                  lineHeight: 1.5,
+                }}
+              >
+                {meeting.prep.context.length > 120
+                  ? `${meeting.prep.context.slice(0, 120)}…`
+                  : meeting.prep.context}
+              </p>
             )}
 
             {/* Key people */}
@@ -505,7 +525,7 @@ export function BriefingMeetingCard({
                 className={s.meetingLinkPrimary}
                 onClick={(e) => e.stopPropagation()}
               >
-                Read full intelligence &rarr;
+                Read full briefing &rarr;
               </Link>
               <button
                 className={s.expansionCollapse}
