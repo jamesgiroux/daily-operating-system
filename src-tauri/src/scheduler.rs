@@ -87,6 +87,7 @@ impl Scheduler {
             // Pre-meeting auto-refresh every 30 minutes (Phase 4A)
             if (now - last_pre_meeting_refresh).num_minutes() >= 30 {
                 self.check_pre_meeting_refresh().await;
+                self.run_post_meeting_email_correlation();
                 last_pre_meeting_refresh = now;
             }
 
@@ -202,6 +203,20 @@ impl Scheduler {
                 Err(e) => {
                     log::warn!("Pre-meeting refresh failed for {}: {}", meeting_id, e);
                 }
+            }
+        }
+    }
+
+    /// Post-meeting email correlation (I308)
+    fn run_post_meeting_email_correlation(&self) {
+        match crate::db::ActionDb::open() {
+            Ok(db) => {
+                if let Err(e) = crate::signals::post_meeting::correlate_post_meeting_emails(&db) {
+                    log::warn!("Post-meeting email correlation failed: {}", e);
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to open DB for post-meeting email correlation: {}", e);
             }
         }
     }
