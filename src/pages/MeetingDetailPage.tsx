@@ -18,13 +18,13 @@ import type {
   CalendarEvent,
   StakeholderInsight,
   ApplyPrepPrefillResult,
-  DbAction,
   LinkedEntity,
 } from "@/types";
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { ActionRow } from "@/components/shared/ActionRow";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -1837,10 +1837,33 @@ function OutcomesSection({
             </h4>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {outcomes.actions.map((action) => (
-                <OutcomeActionRow
+                <ActionRow
                   key={action.id}
+                  variant="outcome"
                   action={action}
-                  onRefresh={onRefresh}
+                  onComplete={async () => {
+                    try {
+                      if (action.status === "completed") {
+                        await invoke("reopen_action", { id: action.id });
+                      } else {
+                        await invoke("complete_action", { id: action.id });
+                      }
+                      onRefresh();
+                    } catch (err) { console.error("Failed to toggle action:", err); }
+                  }}
+                  onAccept={async () => {
+                    try { await invoke("accept_proposed_action", { id: action.id }); onRefresh(); }
+                    catch (err) { console.error("Failed to accept action:", err); }
+                  }}
+                  onReject={async () => {
+                    try { await invoke("reject_proposed_action", { id: action.id }); onRefresh(); }
+                    catch (err) { console.error("Failed to reject action:", err); }
+                  }}
+                  onCyclePriority={async () => {
+                    const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
+                    try { await invoke("update_action_priority", { id: action.id, priority: cycle[action.priority] || "P2" }); onRefresh(); }
+                    catch (err) { console.error("Failed to update priority:", err); }
+                  }}
                 />
               ))}
             </div>
@@ -1905,203 +1928,7 @@ function OutcomeSection({
   );
 }
 
-function OutcomeActionRow({
-  action,
-  onRefresh,
-}: {
-  action: DbAction;
-  onRefresh: () => void;
-}) {
-  const isCompleted = action.status === "completed";
-  const isProposed = action.status === "proposed";
-
-  const handleComplete = useCallback(async () => {
-    try {
-      if (isCompleted) {
-        await invoke("reopen_action", { id: action.id });
-      } else {
-        await invoke("complete_action", { id: action.id });
-      }
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to toggle action:", err);
-    }
-  }, [action.id, isCompleted, onRefresh]);
-
-  const handleAccept = useCallback(async () => {
-    try {
-      await invoke("accept_proposed_action", { id: action.id });
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to accept action:", err);
-    }
-  }, [action.id, onRefresh]);
-
-  const handleReject = useCallback(async () => {
-    try {
-      await invoke("reject_proposed_action", { id: action.id });
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to reject action:", err);
-    }
-  }, [action.id, onRefresh]);
-
-  const handleCyclePriority = useCallback(async () => {
-    const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
-    const next = cycle[action.priority] || "P2";
-    try {
-      await invoke("update_action_priority", {
-        id: action.id,
-        priority: next,
-      });
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to update priority:", err);
-    }
-  }, [action.id, action.priority, onRefresh]);
-
-  const priorityColor: Record<string, string> = {
-    P1: "var(--color-spice-terracotta)",
-    P3: "var(--color-text-tertiary)",
-  };
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "3px 4px",
-        borderLeft: isProposed ? "2px dashed var(--color-spice-turmeric)" : "none",
-        paddingLeft: isProposed ? 8 : 4,
-      }}
-    >
-      {isProposed ? (
-        /* Accept / Reject buttons for proposed actions */
-        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-          <button
-            onClick={handleAccept}
-            title="Accept"
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 3,
-              border: "1px solid var(--color-garden-sage)",
-              background: "transparent",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-              <path d="M2.5 6L5 8.5L9.5 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          <button
-            onClick={handleReject}
-            title="Reject"
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 3,
-              border: "1px solid var(--color-spice-terracotta)",
-              background: "transparent",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-              <path d="M3 3L9 9M9 3L3 9" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-      ) : (
-        /* Checkbox for accepted actions */
-        <button
-          onClick={handleComplete}
-          style={{
-            width: 16,
-            height: 16,
-            borderRadius: 3,
-            border: isCompleted
-              ? "1px solid var(--color-garden-sage)"
-              : "1px solid var(--color-text-tertiary)",
-            background: isCompleted ? "rgba(126, 170, 123, 0.2)" : "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            padding: 0,
-          }}
-        >
-          {isCompleted && <Check style={{ width: 12, height: 12, color: "var(--color-garden-sage)" }} />}
-        </button>
-      )}
-
-      {isProposed ? (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "var(--color-spice-turmeric)",
-          }}
-        >
-          Suggested
-        </span>
-      ) : (
-        <button
-          onClick={handleCyclePriority}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            letterSpacing: "0.04em",
-            padding: "1px 6px",
-            border: "1px solid var(--color-rule-light)",
-            borderRadius: 3,
-            background: "transparent",
-            color: priorityColor[action.priority] ?? "var(--color-text-secondary)",
-            cursor: "pointer",
-          }}
-        >
-          {action.priority}
-        </button>
-      )}
-
-      <span
-        style={{
-          flex: 1,
-          fontSize: 13,
-          color: isCompleted ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
-          textDecoration: isCompleted ? "line-through" : "none",
-        }}
-      >
-        {action.title}
-      </span>
-
-      {action.dueDate && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            color: "var(--color-text-tertiary)",
-          }}
-        >
-          {action.dueDate}
-        </span>
-      )}
-    </div>
-  );
-}
+// OutcomeActionRow consolidated into shared/ActionRow.tsx variant="outcome" (ADR-0084 C1)
 
 // =============================================================================
 // Helpers
