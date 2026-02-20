@@ -2268,13 +2268,7 @@ fn detect_low_confidence_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn seed_person(db: &ActionDb, id: &str, email: &str, name: &str, relationship: &str) {
         let now = Utc::now().to_rfc3339();
