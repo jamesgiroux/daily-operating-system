@@ -69,7 +69,11 @@ pub fn enrich_file(
     let is_non_md = !matches!(format, super::extract::SupportedFormat::Markdown);
 
     // Build the prompt for Claude
-    let prompt = build_enrichment_prompt(filename, &content, user_ctx, None);
+    // I313: Read vocabulary from active preset for domain-specific prompt language
+    let vocabulary = state
+        .and_then(|s| s.active_preset.read().ok())
+        .and_then(|guard| guard.as_ref().map(|p| p.vocabulary.clone()));
+    let prompt = build_enrichment_prompt(filename, &content, user_ctx, vocabulary.as_ref());
 
     // Invoke Claude Code via PTY (Mechanical tier — I174)
     let default_config = AiModelConfig::default();
@@ -308,13 +312,28 @@ fn build_enrichment_prompt(
         .map(|ctx| ctx.prompt_fragment())
         .unwrap_or_default();
 
-    // I313: Use vocabulary-driven entity noun when available
+    // I313: Use vocabulary-driven terms when available
     let entity_noun = vocabulary
         .map(|v| v.entity_noun.as_str())
         .unwrap_or("customer/account");
+    let entity_noun_plural = vocabulary
+        .map(|v| v.entity_noun_plural.as_str())
+        .unwrap_or("customers/accounts");
+    let primary_metric = vocabulary
+        .map(|v| v.primary_metric.as_str())
+        .unwrap_or("revenue");
+    let health_label = vocabulary
+        .map(|v| v.health_label.as_str())
+        .unwrap_or("health");
+    let risk_label = vocabulary
+        .map(|v| v.risk_label.as_str())
+        .unwrap_or("risk");
     let success_verb = vocabulary
         .map(|v| v.success_verb.as_str())
         .unwrap_or("customer win");
+    let cadence_noun = vocabulary
+        .map(|v| v.cadence_noun.as_str())
+        .unwrap_or("check-in");
 
     format!(
         r#"{user_fragment}Analyze this inbox file and respond in exactly this format:
@@ -352,10 +371,12 @@ Rules for actions:
 
 Rules for wins/risks:
 - Only include if the file relates to a {entity_noun}
-- Wins: successful launches, expanded usage, positive feedback, renewals, upsells
-- Risks: churn signals, budget cuts, champion leaving, low adoption, complaints
+- Wins: successful launches, expanded usage, positive feedback, {success_verb} signals, {primary_metric} improvements
+- Risks ({risk_label}): churn signals, budget cuts, champion leaving, low adoption, declining {primary_metric}, complaints
+- Frame wins/risks in terms of {health_label} impact on {entity_noun_plural}
 - Keep each item to one concise sentence
 - If none are apparent, leave the section empty (just the markers)
+- When timing is relevant, note impact on {cadence_noun} cadence
 
 Rules for decisions:
 - Only include if clear decisions or commitments were made

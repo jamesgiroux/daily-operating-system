@@ -199,6 +199,19 @@ fn resolve_primary_entity(
         _ => return None,
     };
 
+    // I353 Phase 2: Emit entity_resolved signal for hygiene feedback loop
+    if confidence >= 0.70 {
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            entity_type.as_str(),
+            &entity_id,
+            "entity_resolved",
+            "meeting_context",
+            Some(event_id),
+            confidence,
+        );
+    }
+
     Some(EntityContextMatch {
         entity_id,
         entity_type,

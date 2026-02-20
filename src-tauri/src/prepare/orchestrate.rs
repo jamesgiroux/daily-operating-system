@@ -110,7 +110,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         .ok()
         .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
         .unwrap_or_default();
-    let email_result =
+    let mut email_result =
         fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords).await;
     if let Some(ref sync_error) = email_result.sync_error {
         log::warn!(
@@ -127,6 +127,129 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         email_result.low_count,
     );
 
+    // Step 4a2: Signal-context boosting (I320 — boost medium emails with entity signals)
+    {
+        let boost_guard = state.db.lock().ok();
+        if let Some(db) = boost_guard.as_ref().and_then(|g| g.as_ref()) {
+            let mut boosted_count = 0u32;
+            let mut new_high = Vec::new();
+            let mut new_all = Vec::new();
+
+            for email_val in &email_result.all {
+                let priority = email_val.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
+                let from_email = email_val.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
+
+                if let Some(boost) = email_classify::boost_with_entity_context(from_email, priority, db) {
+                    // Clone and update priority
+                    let mut boosted = email_val.clone();
+                    if let Some(obj) = boosted.as_object_mut() {
+                        obj.insert("priority".to_string(), json!("high"));
+                        obj.insert("boost_reason".to_string(), json!(boost.reason));
+                    }
+                    new_high.push(boosted.clone());
+                    new_all.push(boosted);
+                    boosted_count += 1;
+                } else {
+                    new_all.push(email_val.clone());
+                    if priority == "high" {
+                        new_high.push(email_val.clone());
+                    }
+                }
+            }
+
+            if boosted_count > 0 {
+                email_result.all = new_all;
+                email_result.high = new_high;
+                email_result.medium_count = email_result.medium_count.saturating_sub(boosted_count as u64);
+                log::info!("prepare_today: boosted {} medium emails to high via entity signals", boosted_count);
+            }
+        }
+    }
+
+    // Step 4a3: Email commitment extraction (I321 — extract actions from high-priority email bodies)
+    {
+        let body_access_enabled = {
+            let config_guard = state.config.read().ok();
+            config_guard
+                .as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|c| crate::types::is_feature_enabled(c, "emailBodyAccess"))
+                .unwrap_or(false)
+        };
+
+        if body_access_enabled {
+            let access_token = google_api::get_valid_access_token().await.ok();
+            if let Some(token) = access_token {
+                // Phase 1: Fetch bodies (async, no db lock held)
+                let mut fetched_bodies: Vec<(String, String, String, String)> = Vec::new();
+                for email_val in &email_result.high {
+                    let email_id =
+                        email_val.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let subject =
+                        email_val.get("subject").and_then(|v| v.as_str()).unwrap_or("");
+                    let from_email = email_val
+                        .get("from_email")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    if email_id.is_empty() {
+                        continue;
+                    }
+
+                    match google_api::gmail::fetch_message_body(&token, email_id).await {
+                        Ok(Some(body)) => {
+                            fetched_bodies.push((
+                                email_id.to_string(),
+                                subject.to_string(),
+                                from_email.to_string(),
+                                body,
+                            ));
+                        }
+                        Ok(None) => {
+                            log::debug!("prepare_today: no body for email {}", email_id);
+                        }
+                        Err(e) => {
+                            log::debug!(
+                                "prepare_today: failed to fetch body for {}: {}",
+                                email_id,
+                                e
+                            );
+                        }
+                    }
+                }
+
+                // Phase 2: Extract commitments via PTY (blocking — runs in background task, not UI thread)
+                if !fetched_bodies.is_empty() {
+                    let ai_config = {
+                        let cfg = state.config.read().ok();
+                        cfg.as_ref()
+                            .and_then(|g| g.as_ref())
+                            .map(|c| c.ai_models.clone())
+                            .unwrap_or_default()
+                    };
+                    let commitment_guard = state.db.lock().ok();
+                    if let Some(db) = commitment_guard.as_ref().and_then(|g| g.as_ref()) {
+                        let mut total_commitments = 0usize;
+                        for (email_id, subject, from_email, body) in &fetched_bodies {
+                            let commitments =
+                                crate::processor::email_actions::extract_email_commitments(
+                                    workspace, &ai_config, body, email_id, subject, from_email, db,
+                                );
+                            total_commitments += commitments.len();
+                        }
+                        if total_commitments > 0 {
+                            log::info!(
+                                "prepare_today: extracted {} commitments from {} high-priority emails",
+                                total_commitments,
+                                email_result.high.len()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Step 4b: Email-meeting bridge (I306 — correlate email signals with upcoming meetings)
     {
         let bridge_guard = state.db.lock().ok();
@@ -142,6 +265,131 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             }
         }
     }
+
+    // Step 4b2: Email cadence monitoring (I319 — anomaly detection)
+    let cadence_anomalies = {
+        let cadence_guard = state.db.lock().ok();
+        if let Some(db) = cadence_guard.as_ref().and_then(|g| g.as_ref()) {
+            let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies(db);
+            if !anomalies.is_empty() {
+                log::info!("prepare_today: {} cadence anomalies detected", anomalies.len());
+            }
+            anomalies
+        } else {
+            Vec::new()
+        }
+    };
+
+    // Step 4b3: Auto-archive low-priority emails (I323)
+    let mut archived_count = 0u64;
+    {
+        let auto_archive_enabled = {
+            let config_guard = state.config.read().ok();
+            config_guard
+                .as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|c| crate::types::is_feature_enabled(c, "autoArchiveEnabled"))
+                .unwrap_or(false)
+        };
+
+        if auto_archive_enabled && !email_result.low.is_empty() {
+            match google_api::get_valid_access_token().await {
+                Ok(token) => {
+                    let low_ids: Vec<String> = email_result
+                        .low
+                        .iter()
+                        .filter_map(|e| e.get("id").and_then(|v| v.as_str()).map(String::from))
+                        .collect();
+
+                    if !low_ids.is_empty() {
+                        match google_api::gmail::archive_emails(&token, &low_ids).await {
+                            Ok(count) => {
+                                log::info!(
+                                    "prepare_today: auto-archived {} low-priority emails",
+                                    count
+                                );
+                                archived_count = count as u64;
+
+                                // Write disposition manifest
+                                let manifest: Vec<Value> = email_result
+                                    .low
+                                    .iter()
+                                    .map(|e| {
+                                        json!({
+                                            "id": e.get("id"),
+                                            "from": e.get("from"),
+                                            "subject": e.get("subject"),
+                                            "reason": "low_priority_auto_archive",
+                                            "archived_at": chrono::Utc::now().to_rfc3339(),
+                                        })
+                                    })
+                                    .collect();
+
+                                let manifest_path = workspace
+                                    .join("_today")
+                                    .join("data")
+                                    .join("email-disposition.json");
+                                if let Ok(manifest_json) = serde_json::to_string_pretty(&manifest)
+                                {
+                                    if let Err(e) =
+                                        crate::util::atomic_write_str(&manifest_path, &manifest_json)
+                                    {
+                                        log::warn!(
+                                            "prepare_today: failed to write disposition manifest: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("prepare_today: auto-archive failed: {}", e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("prepare_today: auto-archive skipped (auth failed): {}", e);
+                }
+            }
+        }
+    }
+
+    // Step 4c: Thread position tracking (I318 — "ball in your court")
+    // Only track high-priority email threads for "ball in your court" detection
+    let replies_needed = {
+        let thread_guard = state.db.lock().ok();
+        if let Some(db) = thread_guard.as_ref().and_then(|g| g.as_ref()) {
+            let high_priority_emails: Vec<Value> = email_result.all
+                .iter()
+                .filter(|e| e.get("priority").and_then(|v| v.as_str()) == Some("high"))
+                .cloned()
+                .collect();
+            let tracked = track_thread_positions(
+                &high_priority_emails,
+                &primary_user_domain,
+                db,
+            );
+            log::info!("prepare_today: tracked {} high-priority threads, {} awaiting reply", tracked.0, tracked.1);
+            // Fetch threads awaiting reply for the directive
+            let now = Utc::now();
+            db.get_threads_awaiting_reply()
+                .unwrap_or_default()
+                .iter()
+                .map(|(tid, subject, sender, date)| {
+                    let wait_duration = compute_wait_duration(date, &now);
+                    json!({
+                        "thread_id": tid,
+                        "subject": subject,
+                        "from": sender,
+                        "date": date,
+                        "waitDuration": wait_duration,
+                    })
+                })
+                .collect::<Vec<Value>>()
+        } else {
+            Vec::new()
+        }
+    };
 
     // Step 5: Collect actions (workspace markdown + SQLite)
     let db_guard = state.db.lock().ok();
@@ -206,6 +454,14 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 8: Generate AI tasks
     let ai_tasks = generate_ai_tasks(&classified, &time_status, &email_result.high);
 
+    // Step 7b: Synthesize email briefing narrative (I322)
+    let email_narrative = synthesize_email_narrative(
+        &replies_needed,
+        &email_result.high,
+        &meeting_contexts,
+        &cadence_anomalies,
+    );
+
     // Build lean events (strip attendees)
     let lean_events: Vec<Value> = events
         .iter()
@@ -242,6 +498,16 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             "medium_count": email_result.medium_count,
             "low_count": email_result.low_count,
             "sync_error": email_result.sync_error.as_ref().map(EmailSyncFailure::to_json),
+            "repliesNeeded": replies_needed,
+            "narrative": email_narrative,
+            "disposition": if archived_count > 0 {
+                json!({
+                    "archived_count": archived_count,
+                    "manifest_path": "data/email-disposition.json",
+                })
+            } else {
+                json!(null)
+            },
         },
         "files": {
             "existing_today": existing_today,
@@ -938,6 +1204,7 @@ async fn fetch_and_classify_week(
 struct EmailResult {
     all: Vec<Value>,
     high: Vec<Value>,
+    low: Vec<Value>,
     medium_count: u64,
     low_count: u64,
     sync_error: Option<EmailSyncFailure>,
@@ -973,6 +1240,7 @@ async fn fetch_and_classify_emails(
             return EmailResult {
                 all: Vec::new(),
                 high: Vec::new(),
+                low: Vec::new(),
                 medium_count: 0,
                 low_count: 0,
                 sync_error: Some(EmailSyncFailure {
@@ -991,6 +1259,7 @@ async fn fetch_and_classify_emails(
             return EmailResult {
                 all: Vec::new(),
                 high: Vec::new(),
+                low: Vec::new(),
                 medium_count: 0,
                 low_count: 0,
                 sync_error: Some(EmailSyncFailure {
@@ -1004,6 +1273,7 @@ async fn fetch_and_classify_emails(
 
     let mut all = Vec::new();
     let mut high = Vec::new();
+    let mut low = Vec::new();
     let mut medium_count: u64 = 0;
     let mut low_count: u64 = 0;
 
@@ -1036,16 +1306,237 @@ async fn fetch_and_classify_emails(
         match priority {
             "high" => high.push(obj),
             "medium" => medium_count += 1,
-            _ => low_count += 1,
+            _ => {
+                low_count += 1;
+                low.push(obj);
+            }
         }
     }
 
     EmailResult {
         all,
         high,
+        low,
         medium_count,
         low_count,
         sync_error: None,
+    }
+}
+
+/// I318: Track thread positions from fetched high-priority emails.
+/// Groups emails by thread_id, determines last sender per thread,
+/// persists to email_threads table, and emits thread_position signals.
+/// Returns (total_tracked, awaiting_reply_count).
+fn track_thread_positions(
+    emails: &[Value],
+    user_domain: &str,
+    db: &crate::db::ActionDb,
+) -> (usize, usize) {
+    use std::collections::HashMap;
+
+    // Group emails by thread_id, keeping the most recent and counting per thread
+    let mut threads: HashMap<String, (&Value, String, usize)> = HashMap::new(); // -> (email, date, count)
+
+    for email in emails {
+        let thread_id = email.get("thread_id").and_then(|v| v.as_str()).unwrap_or("");
+        if thread_id.is_empty() {
+            continue;
+        }
+        let date = email.get("date").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let entry = threads.entry(thread_id.to_string()).or_insert((email, date.clone(), 0));
+        entry.2 += 1; // increment message count
+        // Keep the email with the later date
+        if date > entry.1 {
+            entry.0 = email;
+            entry.1 = date;
+        }
+    }
+
+    let mut total = 0;
+    let mut awaiting = 0;
+
+    for (thread_id, (email, date, msg_count)) in &threads {
+        let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("");
+        let from_email = email.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
+        let sender_domain = from_email.split('@').nth(1).unwrap_or("");
+        let user_is_last_sender = !sender_domain.is_empty()
+            && !user_domain.is_empty()
+            && sender_domain.eq_ignore_ascii_case(user_domain);
+
+        if !user_is_last_sender {
+            awaiting += 1;
+        }
+
+        let _ = db.upsert_email_thread(
+            thread_id,
+            subject,
+            from_email,
+            date,
+            *msg_count as i32,
+            user_is_last_sender,
+        );
+
+        // Emit thread_position signal
+        let signal_value = if user_is_last_sender {
+            "waiting_on_them"
+        } else {
+            "awaiting_reply"
+        };
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            "thread",
+            thread_id,
+            "thread_position",
+            "email_thread",
+            Some(signal_value),
+            if user_is_last_sender { 0.7 } else { 0.85 },
+        );
+
+        total += 1;
+    }
+
+    (total, awaiting)
+}
+
+/// Compute human-readable wait duration from a date string.
+fn compute_wait_duration(date_str: &str, now: &chrono::DateTime<Utc>) -> String {
+    // Try parsing various date formats
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(date_str) {
+        let days = (*now - dt.with_timezone(&Utc)).num_days();
+        return match days {
+            0 => "today".to_string(),
+            1 => "1 day".to_string(),
+            n if n > 0 => format!("{} days", n),
+            _ => String::new(),
+        };
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
+        let days = (*now - dt.with_timezone(&Utc)).num_days();
+        return match days {
+            0 => "today".to_string(),
+            1 => "1 day".to_string(),
+            n if n > 0 => format!("{} days", n),
+            _ => String::new(),
+        };
+    }
+    String::new()
+}
+
+/// I322: Synthesize a 2-4 sentence email briefing narrative from:
+/// - Thread positions (replies_needed from I318)
+/// - High-priority emails
+/// - Meeting contexts with email digests (I317)
+///
+/// Returns None if there's nothing meaningful to say.
+fn synthesize_email_narrative(
+    replies_needed: &[Value],
+    high_priority: &[Value],
+    meeting_contexts: &[Value],
+    cadence_anomalies: &[crate::signals::cadence::CadenceAnomaly],
+) -> Option<String> {
+    let mut sentences = Vec::new();
+
+    // Thread position sentence
+    if !replies_needed.is_empty() {
+        let count = replies_needed.len();
+        if count == 1 {
+            let subject = replies_needed[0]
+                .get("subject")
+                .and_then(|v| v.as_str())
+                .unwrap_or("a thread");
+            let from = replies_needed[0]
+                .get("from")
+                .and_then(|v| v.as_str())
+                .unwrap_or("someone");
+            sentences.push(format!("{} replied to \"{}\" — awaiting your response.", from, subject));
+        } else {
+            sentences.push(format!("{} threads are awaiting your reply.", count));
+        }
+    }
+
+    // High-priority count
+    if high_priority.len() > 2 {
+        sentences.push(format!("{} high-priority emails today.", high_priority.len()));
+    } else if high_priority.len() == 1 {
+        let from = high_priority[0]
+            .get("from")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown");
+        let subject = high_priority[0]
+            .get("subject")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !subject.is_empty() {
+            sentences.push(format!("Priority email from {}: \"{}\".", from, subject));
+        }
+    }
+
+    // Meeting-linked emails
+    let meetings_with_email: Vec<&str> = meeting_contexts
+        .iter()
+        .filter(|mc| {
+            mc.get("pre_meeting_email_context")
+                .and_then(|v| v.as_array())
+                .is_some_and(|a| !a.is_empty())
+        })
+        .filter_map(|mc| {
+            mc.get("title")
+                .or_else(|| mc.get("account"))
+                .and_then(|v| v.as_str())
+        })
+        .collect();
+
+    if !meetings_with_email.is_empty() {
+        if meetings_with_email.len() == 1 {
+            sentences.push(format!(
+                "Email threads connected to your {} meeting.",
+                meetings_with_email[0]
+            ));
+        } else {
+            sentences.push(format!(
+                "Email threads connected to {} of today's meetings.",
+                meetings_with_email.len()
+            ));
+        }
+    }
+
+    // Cadence anomalies (I319)
+    let quiet_count = cadence_anomalies
+        .iter()
+        .filter(|a| a.anomaly_type == "gone_quiet")
+        .count();
+    let spike_count = cadence_anomalies
+        .iter()
+        .filter(|a| a.anomaly_type == "activity_spike")
+        .count();
+    if quiet_count > 0 {
+        if quiet_count == 1 {
+            let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "gone_quiet").unwrap();
+            sentences.push(format!(
+                "{} email volume dropped {:.0}% this week.",
+                a.entity_id,
+                (1.0 - a.current_count as f64 / a.rolling_avg) * 100.0,
+            ));
+        } else {
+            sentences.push(format!("{} accounts have gone quiet on email.", quiet_count));
+        }
+    }
+    if spike_count > 0 {
+        if spike_count == 1 {
+            let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "activity_spike").unwrap();
+            sentences.push(format!(
+                "Unusual email surge from {} ({} vs {:.0}/week average).",
+                a.entity_id, a.current_count, a.rolling_avg,
+            ));
+        } else {
+            sentences.push(format!("{} accounts spiking in email volume.", spike_count));
+        }
+    }
+
+    if sentences.is_empty() {
+        None
+    } else {
+        Some(sentences.join(" "))
     }
 }
 

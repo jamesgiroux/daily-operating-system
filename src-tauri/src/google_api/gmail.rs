@@ -72,6 +72,9 @@ pub struct RawEmail {
     pub date: String,
     pub list_unsubscribe: String,
     pub precedence: String,
+    /// Optional email body text (only fetched when emailBodyAccess is enabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 // ============================================================================
@@ -193,7 +196,119 @@ async fn fetch_message_metadata(
         date: get_header("Date"),
         list_unsubscribe: get_header("List-Unsubscribe"),
         precedence: get_header("Precedence"),
+        body: None,
     })
+}
+
+// ============================================================================
+// Full message body fetch (I321)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FullMessageDetail {
+    #[serde(default)]
+    payload: Option<FullPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FullPayload {
+    #[serde(default)]
+    mime_type: String,
+    #[serde(default)]
+    body: Option<PayloadBody>,
+    #[serde(default)]
+    parts: Vec<FullPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PayloadBody {
+    #[serde(default)]
+    data: Option<String>,
+}
+
+/// Fetch the full message body for a single email.
+///
+/// Requests `format=full`, walks MIME parts to find `text/plain` (preferred)
+/// or `text/html`, and decodes the URL-safe base64 body data.
+/// Returns `Ok(None)` if no text body is found (e.g., attachment-only messages).
+pub async fn fetch_message_body(
+    access_token: &str,
+    message_id: &str,
+) -> Result<Option<String>, GoogleApiError> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/{}",
+        message_id
+    );
+
+    let resp = send_with_retry(
+        client
+            .get(&url)
+            .bearer_auth(access_token)
+            .query(&[("format", "full")]),
+        &RetryPolicy::default(),
+    )
+    .await?;
+
+    let status = resp.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(GoogleApiError::AuthExpired);
+    }
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(GoogleApiError::ApiError {
+            status: status.as_u16(),
+            message: body,
+        });
+    }
+
+    let detail: FullMessageDetail = resp.json().await?;
+
+    let payload = match detail.payload {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    // Try text/plain first, then text/html
+    if let Some(text) = extract_body_text(&payload, "text/plain") {
+        return Ok(Some(text));
+    }
+    if let Some(text) = extract_body_text(&payload, "text/html") {
+        return Ok(Some(text));
+    }
+
+    Ok(None)
+}
+
+/// Recursively walk MIME parts to find body data matching the target MIME type.
+fn extract_body_text(payload: &FullPayload, target_mime: &str) -> Option<String> {
+    // Check this node
+    if payload.mime_type == target_mime {
+        if let Some(ref body) = payload.body {
+            if let Some(ref data) = body.data {
+                return decode_url_safe_base64(data);
+            }
+        }
+    }
+    // Recurse into child parts
+    for part in &payload.parts {
+        if let Some(text) = extract_body_text(part, target_mime) {
+            return Some(text);
+        }
+    }
+    None
+}
+
+/// Decode URL-safe base64 (no padding) as used by Gmail API.
+fn decode_url_safe_base64(data: &str) -> Option<String> {
+    use base64::Engine;
+    match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(data) {
+        Ok(bytes) => String::from_utf8(bytes).ok(),
+        Err(_) => None,
+    }
 }
 
 // ============================================================================
@@ -477,6 +592,7 @@ mod tests {
             date: "2026-02-08".to_string(),
             list_unsubscribe: "".to_string(),
             precedence: "".to_string(),
+            body: None,
         };
 
         let json = serde_json::to_value(&email).unwrap();
