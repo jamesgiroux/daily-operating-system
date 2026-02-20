@@ -21,7 +21,6 @@ interface AccountHeroProps {
   editLifecycle?: string;
   setEditLifecycle?: (value: string) => void;
   onSave?: () => void;
-  onManageTeam?: () => void;
   onEnrich?: () => void;
   enriching?: boolean;
   enrichSeconds?: number;
@@ -45,7 +44,6 @@ export function AccountHero({
   editLifecycle,
   setEditLifecycle,
   onSave,
-  onManageTeam,
   onEnrich,
   enriching,
   enrichSeconds,
@@ -171,11 +169,6 @@ export function AccountHero({
 
       {/* Meta row: action links */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
-        {onManageTeam && (
-          <button className={styles.metaButton} onClick={onManageTeam}>
-            Manage Team
-          </button>
-        )}
         {onEnrich && (
           <button
             className={enriching ? styles.metaButtonEnriching : styles.metaButton}
