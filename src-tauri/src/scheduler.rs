@@ -55,6 +55,7 @@ impl Scheduler {
     pub async fn run(&self) {
         let mut last_check = Utc::now();
         let mut last_proposed_archive = Utc::now();
+        let mut last_pre_meeting_refresh = Utc::now();
 
         loop {
             tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
@@ -81,6 +82,12 @@ impl Scheduler {
             if (now - last_proposed_archive).num_hours() >= 24 {
                 self.auto_archive_proposed_actions();
                 last_proposed_archive = now;
+            }
+
+            // Pre-meeting auto-refresh every 30 minutes (Phase 4A)
+            if (now - last_pre_meeting_refresh).num_minutes() >= 30 {
+                self.check_pre_meeting_refresh().await;
+                last_pre_meeting_refresh = now;
             }
 
             last_check = now;
@@ -136,6 +143,65 @@ impl Scheduler {
             },
             Err(e) => {
                 log::warn!("Failed to open DB for proposed action archival: {}", e);
+            }
+        }
+    }
+
+    /// Check for meetings starting in the next 2 hours that need intelligence refresh (Phase 4A).
+    async fn check_pre_meeting_refresh(&self) {
+        let meetings_to_refresh: Vec<String> = match crate::db::ActionDb::open() {
+            Ok(db) => {
+                let conn = db.conn_ref();
+                let mut stmt = match conn.prepare(
+                    "SELECT id FROM meetings_history
+                     WHERE start_time > datetime('now')
+                     AND start_time <= datetime('now', '+2 hours')
+                     AND intelligence_state != 'archived'
+                     AND (has_new_signals = 1
+                          OR last_enriched_at IS NULL
+                          OR last_enriched_at < datetime('now', '-12 hours'))"
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("Pre-meeting refresh query failed: {}", e);
+                        return;
+                    }
+                };
+                stmt.query_map([], |row| row.get::<_, String>(0))
+                    .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                    .unwrap_or_default()
+            }
+            Err(e) => {
+                log::warn!("Failed to open DB for pre-meeting refresh: {}", e);
+                return;
+            }
+        };
+
+        if meetings_to_refresh.is_empty() {
+            return;
+        }
+
+        log::info!(
+            "Pre-meeting refresh: {} meeting(s) need intelligence update",
+            meetings_to_refresh.len()
+        );
+
+        for meeting_id in meetings_to_refresh {
+            match crate::intelligence_lifecycle::generate_meeting_intelligence(
+                &self.state, &meeting_id, false,
+            )
+            .await
+            {
+                Ok(quality) => {
+                    log::info!(
+                        "Pre-meeting refresh for {}: {:?}",
+                        meeting_id,
+                        quality.level
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Pre-meeting refresh failed for {}: {}", meeting_id, e);
+                }
             }
         }
     }

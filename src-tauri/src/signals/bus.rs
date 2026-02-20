@@ -139,7 +139,49 @@ pub fn emit_signal_and_propagate(
     };
 
     let derived_ids = engine.propagate(db, &signal)?;
+
+    // Propagate signal to linked meetings (ADR-0081 Phase 4A)
+    if let Err(e) = propagate_signal_to_meetings(db, entity_id) {
+        log::warn!("Failed to propagate signal to meetings: {}", e);
+    }
+
     Ok((id, derived_ids))
+}
+
+/// When a signal is emitted for an entity, flag all future meetings
+/// linked to that entity as having new signals.
+pub fn propagate_signal_to_meetings(
+    db: &ActionDb,
+    entity_id: &str,
+) -> Result<usize, DbError> {
+    let conn = db.conn_ref();
+    let mut stmt = conn.prepare(
+        "SELECT me.meeting_id FROM meeting_entities me
+         INNER JOIN meetings_history mh ON mh.id = me.meeting_id
+         WHERE me.entity_id = ?1
+         AND mh.start_time > datetime('now')
+         AND mh.intelligence_state != 'archived'"
+    )?;
+
+    let meeting_ids: Vec<String> = stmt
+        .query_map(params![entity_id], |row| row.get(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let count = meeting_ids.len();
+    for meeting_id in &meeting_ids {
+        db.mark_meeting_new_signals(meeting_id)?;
+    }
+
+    if count > 0 {
+        log::info!(
+            "Propagated signal for entity {} to {} future meeting(s)",
+            entity_id,
+            count
+        );
+    }
+
+    Ok(count)
 }
 
 /// Mark an old signal as superseded by a new one.
