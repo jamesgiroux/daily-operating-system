@@ -58,6 +58,27 @@
   --color-entity-action: var(--color-spice-terracotta); /* Actions, overdue */
 
   /* ─────────────────────────────────────────────────────────────────────────
+     OPACITY VARIANTS — Tinted backgrounds, borders, hover states
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-turmeric-30: rgba(201, 162, 39, 0.30);
+  --color-spice-saffron-8: rgba(222, 184, 65, 0.08);
+  --color-spice-saffron-12: rgba(222, 184, 65, 0.12);
+  --color-spice-saffron-30: rgba(222, 184, 65, 0.30);
+  --color-spice-terracotta-8: rgba(196, 101, 74, 0.08);
+  --color-spice-terracotta-12: rgba(196, 101, 74, 0.12);
+  --color-spice-terracotta-30: rgba(196, 101, 74, 0.30);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-sage-30: rgba(126, 170, 123, 0.30);
+  --color-garden-olive-12: rgba(107, 124, 82, 0.12);
+  --color-garden-larkspur-8: rgba(143, 163, 196, 0.08);
+  --color-garden-larkspur-12: rgba(143, 163, 196, 0.12);
+  --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
+  --color-garden-larkspur-30: rgba(143, 163, 196, 0.30);
+  --color-desk-ink-12: rgba(42, 43, 61, 0.12);
+
+  /* ─────────────────────────────────────────────────────────────────────────
      TYPOGRAPHY — Font Families (ADR-0073)
      ───────────────────────────────────────────────────────────────────────── */
   --font-serif: 'Newsreader', Georgia, serif; /* Display, headlines, narrative */
