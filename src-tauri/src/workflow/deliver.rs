@@ -4551,7 +4551,7 @@ mod tests {
                     summary: Some("Customer Sync".to_string()),
                     start: Some("2026-02-12T14:00:00+00:00".to_string()),
                     end: Some("2026-02-12T14:30:00+00:00".to_string()),
-                    description: None,
+                    ..Default::default()
                 }],
             },
             meetings: {
@@ -4603,7 +4603,7 @@ mod tests {
                     summary: Some("Team Standup".to_string()),
                     start: Some("2025-02-07T09:00:00+00:00".to_string()),
                     end: Some("2025-02-07T09:30:00+00:00".to_string()),
-                    description: None,
+                    ..Default::default()
                 }],
             },
             meetings: {

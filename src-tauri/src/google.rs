@@ -766,6 +766,11 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
                 meeting_id
             );
         }
+        // Emit cancellation signal (I308)
+        let _ = crate::signals::bus::emit_signal(
+            db, "meeting", meeting_id, "meeting_cancelled", "calendar",
+            None, 0.9,
+        );
     }
 }
 

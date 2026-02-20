@@ -3105,7 +3105,34 @@ pub fn get_actions_from_db(
 pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.complete_action(&id).map_err(|e| e.to_string())
+    let action = db.get_action_by_id(&id).ok().flatten();
+    db.complete_action(&id).map_err(|e| e.to_string())?;
+
+    if let Some(ref action) = action {
+        let entity_type = if action.account_id.is_some() {
+            "account"
+        } else if action.project_id.is_some() {
+            "project"
+        } else {
+            "action"
+        };
+        let entity_id = action
+            .account_id
+            .as_deref()
+            .or(action.project_id.as_deref())
+            .unwrap_or(&id);
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            entity_type,
+            entity_id,
+            "action_completed",
+            action.source_type.as_deref().unwrap_or("unknown"),
+            Some(&format!("{{\"action_id\":\"{}\"}}", id)),
+            0.7,
+        );
+    }
+
+    Ok(())
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -3113,7 +3140,34 @@ pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), St
 pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.reopen_action(&id).map_err(|e| e.to_string())
+    let action = db.get_action_by_id(&id).ok().flatten();
+    db.reopen_action(&id).map_err(|e| e.to_string())?;
+
+    if let Some(ref action) = action {
+        let entity_type = if action.account_id.is_some() {
+            "account"
+        } else if action.project_id.is_some() {
+            "project"
+        } else {
+            "action"
+        };
+        let entity_id = action
+            .account_id
+            .as_deref()
+            .or(action.project_id.as_deref())
+            .unwrap_or(&id);
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            entity_type,
+            entity_id,
+            "action_reopened",
+            "user_correction",
+            Some(&format!("{{\"action_id\":\"{}\"}}", id)),
+            0.4,
+        );
+    }
+
+    Ok(())
 }
 
 /// Accept a proposed action, moving it to pending (I256).
@@ -3121,7 +3175,38 @@ pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), Stri
 pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.accept_proposed_action(&id).map_err(|e| e.to_string())
+    let action = db.get_action_by_id(&id).ok().flatten();
+    db.accept_proposed_action(&id).map_err(|e| e.to_string())?;
+
+    if let Some(ref action) = action {
+        let entity_type = if action.account_id.is_some() {
+            "account"
+        } else if action.project_id.is_some() {
+            "project"
+        } else {
+            "action"
+        };
+        let entity_id = action
+            .account_id
+            .as_deref()
+            .or(action.project_id.as_deref())
+            .unwrap_or(&id);
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            entity_type,
+            entity_id,
+            "action_accepted",
+            action.source_type.as_deref().unwrap_or("unknown"),
+            Some(&format!(
+                "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+                id,
+                action.title.replace('"', "\\\"")
+            )),
+            0.8,
+        );
+    }
+
+    Ok(())
 }
 
 /// Reject a proposed action by archiving it (I256).
@@ -3189,7 +3274,24 @@ pub fn dismiss_email_item(
         email_type.as_deref(),
         entity_id.as_deref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    let etype = entity_id.as_deref().map(|_| "account").unwrap_or("email");
+    let eid = entity_id.as_deref().unwrap_or(&email_id);
+    let _ = crate::signals::bus::emit_signal(
+        db,
+        etype,
+        eid,
+        "email_item_dismissed",
+        &item_type,
+        Some(&format!(
+            "{{\"email_id\":\"{}\",\"item_type\":\"{}\"}}",
+            email_id, item_type
+        )),
+        0.3,
+    );
+
+    Ok(())
 }
 
 /// Get all dismissed email item keys for frontend filtering.
@@ -3971,8 +4073,38 @@ pub fn update_action_priority(
     }
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let action = db.get_action_by_id(&id).ok().flatten();
     db.update_action_priority(&id, &priority)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if let Some(ref action) = action {
+        let entity_type = if action.account_id.is_some() {
+            "account"
+        } else if action.project_id.is_some() {
+            "project"
+        } else {
+            "action"
+        };
+        let entity_id = action
+            .account_id
+            .as_deref()
+            .or(action.project_id.as_deref())
+            .unwrap_or(&id);
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            entity_type,
+            entity_id,
+            "priority_corrected",
+            action.source_type.as_deref().unwrap_or("unknown"),
+            Some(&format!(
+                "{{\"action_id\":\"{}\",\"old\":\"{}\",\"new\":\"{}\"}}",
+                id, action.priority, priority
+            )),
+            0.5,
+        );
+    }
+
+    Ok(())
 }
 
 // =============================================================================
@@ -5169,6 +5301,10 @@ pub fn link_person_entity(
     db.link_person_to_entity(&person_id, &entity_id, &relationship_type)
         .map_err(|e| e.to_string())?;
 
+    // Emit person linked signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, &relationship_type, &entity_id, "person_linked", "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.9);
+
     // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
     if let Ok(Some(person)) = db.get_person(&person_id) {
         let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -5194,6 +5330,10 @@ pub fn unlink_person_entity(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.unlink_person_from_entity(&person_id, &entity_id)
         .map_err(|e| e.to_string())?;
+
+    // Emit person unlinked signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, "entity", &entity_id, "person_unlinked", "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.7);
 
     // Regenerate person.json so linked_entities reflects removal (ADR-0048)
     if let Ok(Some(person)) = db.get_person(&person_id) {
@@ -5658,6 +5798,10 @@ pub fn delete_person(person_id: String, state: State<Arc<AppState>>) -> Result<(
 
     // Perform DB delete
     db.delete_person(&person_id).map_err(|e| e.to_string())?;
+
+    // Emit deletion signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, "person", &person_id, "entity_deleted", "user_action",
+        Some(&format!("{{\"name\":\"{}\"}}", person.name.replace('"', "\\\""))), 1.0);
 
     // Filesystem cleanup
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -6186,6 +6330,10 @@ pub fn update_account_field(
 
     db.update_account_field(&account_id, &field, &value)
         .map_err(|e| e.to_string())?;
+
+    // Emit field update signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, "account", &account_id, "field_updated", "user_edit",
+        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
 
     // Regenerate workspace files
     if let Ok(Some(account)) = db.get_account(&account_id) {
@@ -7708,6 +7856,10 @@ pub fn update_project_field(
     db.update_project_field(&project_id, &field, &value)
         .map_err(|e| e.to_string())?;
 
+    // Emit field update signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, "project", &project_id, "field_updated", "user_edit",
+        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
+
     // Regenerate workspace files
     if let Ok(Some(project)) = db.get_project(&project_id) {
         let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -8015,6 +8167,11 @@ pub fn archive_account(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.archive_account(&id, archived)
         .map_err(|e| e.to_string())?;
+
+    // Emit archive/unarchive signal (I308)
+    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
+    let _ = crate::signals::bus::emit_signal(db, "account", &id, signal_type, "user_action", None, 0.9);
+
     Ok(())
 }
 
@@ -8042,6 +8199,11 @@ pub fn archive_project(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.archive_project(&id, archived)
         .map_err(|e| e.to_string())?;
+
+    // Emit archive/unarchive signal (I308)
+    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
+    let _ = crate::signals::bus::emit_signal(db, "project", &id, signal_type, "user_action", None, 0.9);
+
     Ok(())
 }
 
@@ -8056,6 +8218,11 @@ pub fn archive_person(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.archive_person(&id, archived)
         .map_err(|e| e.to_string())?;
+
+    // Emit archive/unarchive signal (I308)
+    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
+    let _ = crate::signals::bus::emit_signal(db, "person", &id, signal_type, "user_action", None, 0.9);
+
     Ok(())
 }
 
@@ -8682,6 +8849,40 @@ pub fn update_meeting_user_agenda(
                 }
             }
         }
+    }
+
+    // Emit prep quality feedback signal
+    let edit_count =
+        layer.items.len() + layer.dismissed_topics.len() + layer.hidden_attendees.len();
+    if edit_count > 0 {
+        // Try to get the meeting's linked entity for signal attribution
+        let entity_info = db
+            .get_meeting_entities(&meeting_id)
+            .ok()
+            .and_then(|entities| {
+                entities.into_iter().find(|e| {
+                    e.entity_type == crate::entity::EntityType::Account
+                        || e.entity_type == crate::entity::EntityType::Project
+                })
+            });
+        let (etype, eid) = entity_info
+            .map(|e| (e.entity_type.as_str().to_string(), e.id))
+            .unwrap_or_else(|| ("meeting".to_string(), meeting_id.clone()));
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            &etype,
+            &eid,
+            "prep_edited",
+            "user_edit",
+            Some(&format!(
+                "{{\"meeting_id\":\"{}\",\"agenda_items\":{},\"dismissed\":{},\"hidden_attendees\":{}}}",
+                meeting_id,
+                layer.items.len(),
+                layer.dismissed_topics.len(),
+                layer.hidden_attendees.len()
+            )),
+            0.6,
+        );
     }
 
     Ok(())
