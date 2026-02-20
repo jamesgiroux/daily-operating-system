@@ -23,8 +23,6 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import {
-  Target,
-  Clock,
   Play,
   AlertTriangle,
   Database,
@@ -74,12 +72,6 @@ const waitingMessages = [
   "Almost done thinking about thinking...",
   `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
   "Polishing the details...",
-];
-
-// Chapter definitions for the editorial layout
-const CHAPTERS = [
-  { id: "the-three", label: "The Three", icon: <Target size={18} strokeWidth={1.5} /> },
-  { id: "the-timeline", label: "The Timeline", icon: <Clock size={18} strokeWidth={1.5} /> },
 ];
 
 // Circled number glyphs for The Three
@@ -251,7 +243,7 @@ export default function WeekPage() {
     }
   }, [loadWeek]);
 
-  // Register magazine shell — larkspur atmosphere, chapter mode
+  // Register magazine shell — larkspur atmosphere, global app nav
   const folioActions = useMemo(
     () => (
       <button
@@ -314,7 +306,6 @@ export default function WeekPage() {
       folioLabel: "Weekly Forecast",
       atmosphereColor: "larkspur" as const,
       activePage: "week" as const,
-      chapters: CHAPTERS,
       folioActions,
       folioDateText: data
         ? `WEEK ${data.weekNumber} \u00b7 ${data.dateRange.toUpperCase()}`
