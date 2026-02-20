@@ -315,7 +315,7 @@ export default function MeetingDetailPage() {
     if (!meetingId) return;
     setRefreshingIntel(true);
     try {
-      await invoke("generate_meeting_intelligence", { meetingId });
+      await invoke("generate_meeting_intelligence", { meetingId, force: true });
       await loadMeetingIntelligence();
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Refresh failed");

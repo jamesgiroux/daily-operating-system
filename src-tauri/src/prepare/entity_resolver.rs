@@ -81,11 +81,54 @@ pub fn resolve_meeting_entities(
     _accounts_dir: &Path,
     embedding_model: Option<&EmbeddingModel>,
 ) -> Vec<ResolutionOutcome> {
-    let mut all_signals: Vec<ResolutionSignal> = Vec::new();
+    // Gate 1: Junction table is DEFINITIVE. If manual links exist,
+    // they are the answer — no further resolution needed.
+    // This prevents attendee/keyword/embedding signals from introducing
+    // competing entities (e.g., a CSM linked to multiple accounts).
+    let junction_signals = signal_junction_lookup(db, event_id, meeting);
+    if !junction_signals.is_empty() {
+        log::debug!(
+            "resolve_meeting_entities: junction table definitive for event {}",
+            event_id
+        );
+        let fused = fuse_signals(&junction_signals, Some(db));
+        let mut outcomes: Vec<ResolutionOutcome> = Vec::new();
+        for ((entity_id, entity_type), (confidence, source)) in fused {
+            let entity = ResolvedEntity {
+                entity_id,
+                entity_type,
+                confidence: confidence.max(0.95), // Junction is always high confidence
+                source,
+            };
+            outcomes.push(ResolutionOutcome::Resolved(entity));
+        }
+        if !outcomes.is_empty() {
+            // Emit signals and return — skip all other resolution
+            for outcome in &outcomes {
+                if let ResolutionOutcome::Resolved(entity) = outcome {
+                    let value = serde_json::json!({
+                        "event_id": event_id,
+                        "source": entity.source,
+                        "outcome": "resolved",
+                    })
+                    .to_string();
+                    let _ = signals::bus::emit_signal(
+                        db,
+                        entity.entity_type.as_str(),
+                        &entity.entity_id,
+                        "entity_resolution",
+                        &entity.source,
+                        Some(&value),
+                        entity.confidence,
+                    );
+                }
+            }
+            return outcomes;
+        }
+    }
 
-    // Gather signals from all producers.
-    // Junction table is authoritative (user-confirmed links).
-    all_signals.extend(signal_junction_lookup(db, event_id, meeting));
+    // Gate 2: No junction links — run full signal cascade
+    let mut all_signals: Vec<ResolutionSignal> = Vec::new();
     all_signals.extend(signal_attendee_inference(db, meeting));
     all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(db, meeting));
     all_signals.extend(signal_keyword_match(db, meeting));
