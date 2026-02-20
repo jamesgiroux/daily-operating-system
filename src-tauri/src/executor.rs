@@ -36,7 +36,7 @@ impl Executor {
     }
 
     /// Read AI model config from current config, falling back to defaults.
-    fn ai_model_config(&self) -> AiModelConfig {
+    pub(crate) fn ai_model_config(&self) -> AiModelConfig {
         self.state
             .config
             .read()
@@ -74,7 +74,7 @@ impl Executor {
     }
 
     /// Build set of known external domains from account_domains + person emails.
-    fn build_known_domains(&self) -> HashSet<String> {
+    pub(crate) fn build_known_domains(&self) -> HashSet<String> {
         let mut domains = HashSet::new();
         if let Ok(guard) = self.state.db.lock() {
             if let Some(db) = guard.as_ref() {
@@ -101,7 +101,7 @@ impl Executor {
         domains
     }
 
-    fn enrich_emails_with_fallback(
+    pub(crate) fn enrich_emails_with_fallback(
         &self,
         data_dir: &Path,
         workspace: &Path,
@@ -142,7 +142,7 @@ impl Executor {
         }
     }
 
-    fn sync_email_signals_from_payload(&self, data_dir: &Path) -> Result<usize, String> {
+    pub(crate) fn sync_email_signals_from_payload(&self, data_dir: &Path) -> Result<usize, String> {
         let emails_path = data_dir.join("emails.json");
         if !emails_path.exists() {
             return Ok(0);
