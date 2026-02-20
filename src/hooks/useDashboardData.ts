@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { useTauriEvent } from "./useTauriEvent";
 import type { DashboardData, DataFreshness, GoogleAuthStatus } from "@/types";
 
 /**
@@ -97,73 +97,12 @@ export function useDashboardData(): {
     return () => window.removeEventListener("focus", onFocus);
   }, [loadData]);
 
-  // Auto-refresh on workflow completion (works when Dashboard is mounted)
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    let cancelled = false;
-
-    listen("workflow-completed", () => {
-      loadData(false);
-    }).then((fn) => {
-      if (cancelled) {
-        fn(); // Component already unmounted — immediately unlisten
-      } else {
-        unlisten = fn;
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [loadData]);
-
-  // Silent refresh when calendar poll detects changes (ADR-0032)
-  // Also refreshes on prep-ready (I41 — reactive prep generation)
-  // Also refreshes on entity-updated (meeting entity reassignment cascade)
-  useEffect(() => {
-    let unlistenCalendar: UnlistenFn | undefined;
-    let unlistenPrep: UnlistenFn | undefined;
-    let unlistenEntity: UnlistenFn | undefined;
-    let cancelled = false;
-
-    listen("calendar-updated", () => {
-      loadData(false);
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-      } else {
-        unlistenCalendar = fn;
-      }
-    });
-
-    listen("prep-ready", () => {
-      loadData(false);
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-      } else {
-        unlistenPrep = fn;
-      }
-    });
-
-    listen("entity-updated", () => {
-      loadData(false);
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-      } else {
-        unlistenEntity = fn;
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      unlistenCalendar?.();
-      unlistenPrep?.();
-      unlistenEntity?.();
-    };
-  }, [loadData]);
+  // Auto-refresh on backend events
+  const silentRefresh = useCallback(() => { loadData(false); }, [loadData]);
+  useTauriEvent("workflow-completed", silentRefresh);
+  useTauriEvent("calendar-updated", silentRefresh);
+  useTauriEvent("prep-ready", silentRefresh);
+  useTauriEvent("entity-updated", silentRefresh);
 
   return {
     state,

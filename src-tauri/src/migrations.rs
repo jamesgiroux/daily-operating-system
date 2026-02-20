@@ -110,6 +110,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 32,
     sql: include_str!("migrations/032_junction_fks_and_expr_indexes.sql"),
+}, Migration {
+    version: 33,
+    sql: include_str!("migrations/033_people_last_seen_index.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -271,13 +274,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 32,
-            "should apply all migrations including junction_fks_and_expr_indexes"
+            applied, 33,
+            "should apply all migrations including people_last_seen_index"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 32);
+        assert_eq!(version, 33);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -667,7 +670,8 @@ mod tests {
                 id TEXT PRIMARY KEY,
                 email TEXT NOT NULL,
                 name TEXT NOT NULL,
-                relationship TEXT NOT NULL DEFAULT 'unknown'
+                relationship TEXT NOT NULL DEFAULT 'unknown',
+                last_seen TEXT
              );
              CREATE TABLE entity_people (
                 entity_id TEXT NOT NULL,
@@ -692,6 +696,11 @@ mod tests {
                 updated_at TEXT NOT NULL,
                 archived INTEGER DEFAULT 0
              );
+             CREATE TABLE meeting_attendees (
+                meeting_id TEXT NOT NULL,
+                person_id TEXT NOT NULL,
+                PRIMARY KEY (meeting_id, person_id)
+             );
              CREATE TABLE content_index (
                 id TEXT PRIMARY KEY,
                 entity_id TEXT NOT NULL,
@@ -713,11 +722,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 31, "bootstrap should mark v1, then apply v2 through v32");
+        assert_eq!(applied, 32, "bootstrap should mark v1, then apply v2 through v33");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 31);
+        assert_eq!(version, 33);
 
         // Verify existing data is untouched
         let title: String = conn
