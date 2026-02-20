@@ -1442,13 +1442,13 @@ pub struct FullMeetingPrep {
     pub intelligence_summary: Option<String>,
     /// Entity-level risks from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub entity_risks: Option<Vec<crate::entity_intel::IntelRisk>>,
+    pub entity_risks: Option<Vec<crate::intelligence::IntelRisk>>,
     /// Entity meeting readiness items from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_readiness: Option<Vec<String>>,
     /// Stakeholder insights from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
+    pub stakeholder_insights: Option<Vec<crate::intelligence::StakeholderInsight>>,
     /// Recent email signals linked to this meeting's entity context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
@@ -1568,6 +1568,8 @@ pub struct GoogleConfig {
     pub token_path: Option<String>,
     #[serde(default = "default_poll_interval")]
     pub calendar_poll_interval_minutes: u32,
+    #[serde(default = "default_email_poll_interval")]
+    pub email_poll_interval_minutes: u32,
     #[serde(default = "default_work_hours_start")]
     pub work_hours_start: u8,
     #[serde(default = "default_work_hours_end")]
@@ -1576,6 +1578,9 @@ pub struct GoogleConfig {
 
 fn default_poll_interval() -> u32 {
     5
+}
+fn default_email_poll_interval() -> u32 {
+    15
 }
 fn default_work_hours_start() -> u8 {
     9
@@ -1590,6 +1595,7 @@ impl Default for GoogleConfig {
             enabled: false,
             token_path: None,
             calendar_poll_interval_minutes: default_poll_interval(),
+            email_poll_interval_minutes: default_email_poll_interval(),
             work_hours_start: default_work_hours_start(),
             work_hours_end: default_work_hours_end(),
         }
