@@ -256,8 +256,32 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     ? "A clear day. Nothing needs you."
     : "Your day is ready.");
 
+  const isStale = freshness.freshness === "stale";
+
   return (
     <div>
+      {/* Stale data indicator — non-blocking, shows refresh is in progress */}
+      {isStale && (
+        <div
+          style={{
+            padding: "8px 16px",
+            borderBottom: "1px solid var(--color-rule-light)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--color-text-tertiary)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Loader2 className="h-3 w-3 animate-spin" style={{ width: 12, height: 12 }} />
+          Morning refresh in progress
+        </div>
+      )}
+
       {/* ═══ DAY FRAME (Hero + Focus) ═══ */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{heroHeadline}</h1>
@@ -334,6 +358,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       )}
 
       {/* ═══ ATTENTION ═══ */}
+      {/* When stale, only show attention section if we have actions (emails/narrative won't exist yet) */}
       <AttentionSection
         proposedActions={proposedActions}
         acceptAction={acceptAction}
@@ -342,11 +367,11 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         pendingActions={pendingActions}
         completedIds={completedIds}
         onComplete={handleComplete}
-        briefingEmails={briefingEmails}
+        briefingEmails={isStale ? [] : briefingEmails}
         emailSectionLabel={emailSectionLabel}
-        allEmails={emails}
-        emailNarrative={data.emailNarrative}
-        repliesNeeded={data.repliesNeeded}
+        allEmails={isStale ? [] : emails}
+        emailNarrative={isStale ? undefined : data.emailNarrative}
+        repliesNeeded={isStale ? undefined : data.repliesNeeded}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
       />
 
