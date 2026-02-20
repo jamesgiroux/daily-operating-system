@@ -79,7 +79,6 @@ export default function WeekPage() {
   const [data, setData] = useState<WeekOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [_liveError, setLiveError] = useState<string | null>(null);
   const [liveSuggestions, setLiveSuggestions] = useState<
     LiveProactiveSuggestion[]
   >([]);
@@ -102,14 +101,9 @@ export default function WeekPage() {
               "get_live_proactive_suggestions"
             );
             setLiveSuggestions(live);
-            setLiveError(null);
           } catch (err) {
+            console.error("get_live_proactive_suggestions failed:", err);
             setLiveSuggestions([]);
-            setLiveError(
-              err instanceof Error
-                ? err.message
-                : "Live suggestions unavailable"
-            );
           }
         }
 
@@ -158,7 +152,9 @@ export default function WeekPage() {
           setPhase(status.phase ?? "preparing");
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error("get_workflow_status failed:", err);
+      });
   }, [loadWeek]);
 
   useEffect(() => {

@@ -759,6 +759,8 @@ mod tests {
             prep_file: None,
             prep_summary: None,
             linked_entities: None,
+            calendar_attendees: None,
+            calendar_description: None,
         };
 
         assert!(is_meeting_completed(&meeting, late_now));
@@ -785,6 +787,8 @@ mod tests {
             prep_file: None,
             prep_summary: None,
             linked_entities: None,
+            calendar_attendees: None,
+            calendar_description: None,
         };
 
         assert!(!is_meeting_completed(&meeting, now));
@@ -817,6 +821,8 @@ mod tests {
             prep_file: None,
             prep_summary: None,
             linked_entities: None,
+            calendar_attendees: None,
+            calendar_description: None,
         };
 
         let status = check_transcript_status(temp.path(), &meeting, "2026-02-06");
@@ -852,6 +858,8 @@ mod tests {
             prep_file: None,
             prep_summary: None,
             linked_entities: None,
+            calendar_attendees: None,
+            calendar_description: None,
         };
 
         let status = check_transcript_status(temp.path(), &meeting, "2026-02-06");
@@ -883,6 +891,8 @@ mod tests {
             prep_file: None,
             prep_summary: None,
             linked_entities: None,
+            calendar_attendees: None,
+            calendar_description: None,
         };
 
         let status = check_transcript_status(temp.path(), &meeting, "2026-02-06");

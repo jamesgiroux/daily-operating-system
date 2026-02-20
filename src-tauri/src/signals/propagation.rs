@@ -4,6 +4,8 @@
 //! to derive new signals on related entities. For example, a `title_change` on
 //! a person propagates `stakeholder_change` to all linked accounts.
 
+use std::sync::{Arc, Mutex};
+
 use rusqlite::params;
 use uuid::Uuid;
 
@@ -24,7 +26,6 @@ pub struct DerivedSignal {
     pub source: String,
     pub value: Option<String>,
     pub confidence: f64,
-    pub rule_name: String,
 }
 
 /// A named propagation rule: given a source signal and DB access, returns
@@ -34,6 +35,9 @@ pub type PropagationRule = fn(&SignalEvent, &ActionDb) -> Vec<DerivedSignal>;
 /// Registry of propagation rules evaluated after each signal emission.
 pub struct PropagationEngine {
     rules: Vec<(String, PropagationRule)>,
+    /// Shared prep invalidation queue — signals that affect meeting prep content
+    /// push meeting IDs here for regeneration by the scheduler.
+    prep_queue: Option<Arc<Mutex<Vec<String>>>>,
 }
 
 impl Default for PropagationEngine {
@@ -44,7 +48,15 @@ impl Default for PropagationEngine {
 
 impl PropagationEngine {
     pub fn new() -> Self {
-        Self { rules: Vec::new() }
+        Self {
+            rules: Vec::new(),
+            prep_queue: None,
+        }
+    }
+
+    /// Set the shared prep invalidation queue for signal-driven prep invalidation.
+    pub fn set_prep_queue(&mut self, queue: Arc<Mutex<Vec<String>>>) {
+        self.prep_queue = Some(queue);
     }
 
     /// Register a named propagation rule.
@@ -91,6 +103,11 @@ impl PropagationEngine {
 
         // I353 Phase 2: Evaluate signal-driven hygiene actions
         super::rules::evaluate_hygiene_actions(source_signal, db);
+
+        // Signal-driven prep invalidation: queue affected meetings for regeneration
+        if let Some(ref queue) = self.prep_queue {
+            super::invalidation::check_and_invalidate_preps(db, source_signal, queue);
+        }
 
         Ok(derived_ids)
     }
@@ -139,13 +156,7 @@ impl ActionDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_propagation_engine_empty() {
@@ -184,7 +195,6 @@ mod tests {
                 source: "propagation".to_string(),
                 value: Some("test".to_string()),
                 confidence: 0.75,
-                rule_name: "test_rule".to_string(),
             }]
         }
 

@@ -1,9 +1,10 @@
 /**
  * GeneratingProgress — shared phase-step loading screen for long-running
- * workflows (weekly forecast, risk briefing, etc.).
+ * workflows (daily briefing, weekly forecast, risk briefing, etc.).
  *
- * Renders a vertical step list with circle indicators (complete / current / pending),
- * a rotating editorial quote, and an elapsed timer.
+ * Renders a vertical step list with circle indicators (complete / current /
+ * pending), a rotating editorial quote with pull-quote treatment, and an
+ * elapsed timer. Quotes rotate on an 8-second interval.
  */
 import { useState, useEffect, useRef } from "react";
 
@@ -52,7 +53,7 @@ export function GeneratingProgress({
   }, []);
 
   useEffect(() => {
-    if (elapsedProp != null) return; // parent manages elapsed
+    if (elapsedProp != null) return;
     const interval = setInterval(() => {
       setLocalElapsed(Math.floor((Date.now() - startTime.current) / 1000));
     }, 1000);
@@ -68,172 +69,183 @@ export function GeneratingProgress({
   return (
     <div
       style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "70vh",
-        padding: "80px 40px",
+        display: "grid",
+        gridTemplateColumns: "100px 32px 1fr",
+        paddingTop: 80,
+        paddingBottom: 96,
       }}
     >
-      {/* Title */}
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color: accentColor,
-          marginBottom: 40,
-        }}
-      >
-        {title}
-      </div>
-
-      {/* Phase list */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          width: "100%",
-          maxWidth: 480,
-          marginBottom: 48,
-        }}
-      >
-        {phases.map((phase, i) => {
-          const isComplete = i < currentPhaseIndex;
-          const isCurrent = i === currentPhaseIndex;
-          const isPending = i > currentPhaseIndex;
-
-          return (
-            <div
-              key={phase.key}
-              style={{
-                display: "flex",
-                gap: 16,
-                alignItems: "flex-start",
-                padding: "10px 0",
-                opacity: isPending ? 0.3 : 1,
-                transition: "opacity 0.5s ease",
-              }}
-            >
-              <div
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  border: `2px solid ${
-                    isComplete
-                      ? "var(--color-garden-sage)"
-                      : isCurrent
-                        ? accentColor
-                        : "var(--color-rule-light)"
-                  }`,
-                  background: isComplete
-                    ? "var(--color-garden-sage)"
-                    : "transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  transition: "all 0.3s ease",
-                }}
-              >
-                {isComplete && (
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path
-                      d="M2 6l3 3 5-5"
-                      stroke="white"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-                {isCurrent && (
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: accentColor,
-                      animation: "generating-pulse 1.5s ease infinite",
-                    }}
-                  />
-                )}
-              </div>
-
-              <div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: isCurrent ? 600 : 400,
-                    color: isCurrent
-                      ? "var(--color-text-primary)"
-                      : isComplete
-                        ? "var(--color-text-secondary)"
-                        : "var(--color-text-tertiary)",
-                    transition: "all 0.3s ease",
-                  }}
-                >
-                  {phase.label}
-                </div>
-                {isCurrent && (
-                  <div
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 12,
-                      color: "var(--color-text-tertiary)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {phase.detail}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Rotating quote */}
-      <p
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 17,
-          fontStyle: "italic",
-          color: "var(--color-text-tertiary)",
-          textAlign: "center",
-          maxWidth: 400,
-          lineHeight: 1.5,
-          marginBottom: 24,
-          transition: "opacity 0.5s ease",
-        }}
-      >
-        &ldquo;{shuffled.current[quoteIndex]}&rdquo;
-      </p>
-
-      {/* Timer + hint */}
-      <div style={{ textAlign: "center" }}>
+      {/* ── Label column ──────────────────────────────────────────────── */}
+      <div style={{ paddingTop: 6 }}>
         <div
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            letterSpacing: "0.04em",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase" as const,
+            color: accentColor,
           }}
         >
           {formatElapsed(elapsed)}
         </div>
+      </div>
+
+      <div />
+
+      {/* ── Content column ────────────────────────────────────────────── */}
+      <div style={{ maxWidth: 520 }}>
+
+        {/* Section rule */}
+        <div style={{ borderTop: "1px solid var(--color-rule-heavy)", marginBottom: 32 }} />
+
+        {/* Title */}
         <div
           style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase" as const,
+            letterSpacing: "0.1em",
+            color: accentColor,
+            marginBottom: 32,
+          }}
+        >
+          {title}
+        </div>
+
+        {/* Phase list */}
+        <div style={{ marginBottom: 56 }}>
+          {phases.map((phase, i) => {
+            const isComplete = i < currentPhaseIndex;
+            const isCurrent = i === currentPhaseIndex;
+            const isPending = i > currentPhaseIndex;
+
+            return (
+              <div
+                key={phase.key}
+                style={{
+                  display: "flex",
+                  gap: 16,
+                  alignItems: "flex-start",
+                  padding: "10px 0",
+                  borderBottom: i < phases.length - 1
+                    ? "1px solid var(--color-rule-light)"
+                    : "none",
+                  opacity: isPending ? 0.3 : 1,
+                  transition: "opacity 0.5s ease",
+                }}
+              >
+                {/* Phase indicator circle */}
+                <div
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    border: `2px solid ${
+                      isComplete
+                        ? "var(--color-garden-sage)"
+                        : isCurrent
+                          ? accentColor
+                          : "var(--color-rule-light)"
+                    }`,
+                    background: isComplete ? "var(--color-garden-sage)" : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    marginTop: 2,
+                    transition: "all 0.3s ease",
+                  }}
+                >
+                  {isComplete && (
+                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M2 6l3 3 5-5"
+                        stroke="white"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                  {isCurrent && (
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: accentColor,
+                        animation: "generating-pulse 1.5s ease infinite",
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Phase text */}
+                <div style={{ paddingTop: 1 }}>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 14,
+                      fontWeight: isCurrent ? 600 : 400,
+                      color: isCurrent
+                        ? "var(--color-text-primary)"
+                        : isComplete
+                          ? "var(--color-text-secondary)"
+                          : "var(--color-text-tertiary)",
+                      transition: "all 0.3s ease",
+                    }}
+                  >
+                    {phase.label}
+                  </div>
+                  {isCurrent && (
+                    <div
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 12,
+                        color: "var(--color-text-tertiary)",
+                        marginTop: 3,
+                      }}
+                    >
+                      {phase.detail}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Pull quote ──────────────────────────────────────────────── */}
+        <div>
+          <div style={{ borderTop: "1px solid var(--color-rule-light)", marginBottom: 20 }} />
+          <p
+            key={quoteIndex}
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 16,
+              fontStyle: "italic",
+              fontWeight: 300,
+              color: "var(--color-text-tertiary)",
+              lineHeight: 1.6,
+              margin: 0,
+              animation: "quote-fade 0.6s ease",
+            }}
+          >
+            {shuffled.current[quoteIndex]}
+          </p>
+          <div style={{ borderTop: "1px solid var(--color-rule-light)", marginTop: 20 }} />
+        </div>
+
+        {/* Navigate away hint */}
+        <div
+          style={{
+            marginTop: 20,
             fontFamily: "var(--font-sans)",
             fontSize: 12,
             color: "var(--color-text-tertiary)",
             opacity: 0.6,
-            marginTop: 8,
           }}
         >
           This runs in the background — feel free to navigate away
@@ -244,6 +256,10 @@ export function GeneratingProgress({
         @keyframes generating-pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.5; transform: scale(0.8); }
+        }
+        @keyframes quote-fade {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>

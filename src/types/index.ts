@@ -102,8 +102,13 @@ export interface Meeting {
   /** Structured intelligence quality assessment for schedule meetings */
   intelligenceQuality?: {
     level: "sparse" | "developing" | "ready" | "fresh";
-    hasNewSignals: boolean;
+    signalCount: number;
     lastEnriched?: string;
+    hasEntityContext: boolean;
+    hasAttendeeHistory: boolean;
+    hasRecentSignals: boolean;
+    staleness: "current" | "aging" | "stale";
+    hasNewSignals: boolean;
   };
 }
 
@@ -619,6 +624,7 @@ export interface PostMeetingCaptureConfig {
   enabled: boolean;
   delayMinutes: number;
   autoDismissSecs: number;
+  transcriptWaitMinutes?: number;
 }
 
 export interface CapturedOutcome {
@@ -1517,6 +1523,10 @@ export interface QuillStatus {
   failedSyncs: number;
   completedSyncs: number;
   lastSyncAt: string | null;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+  abandonedSyncs?: number;
+  pollIntervalMinutes?: number;
 }
 
 export interface QuillSyncState {
@@ -1541,6 +1551,18 @@ export interface GravatarStatus {
   enabled: boolean;
   cachedCount: number;
   apiKeySet: boolean;
+}
+
+export interface GranolaStatus {
+  enabled: boolean;
+  cacheExists: boolean;
+  cachePath: string;
+  documentCount: number;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+  pollIntervalMinutes: number;
 }
 
 // =============================================================================

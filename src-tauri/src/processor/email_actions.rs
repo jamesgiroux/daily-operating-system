@@ -109,6 +109,7 @@ pub fn extract_email_commitments(
             waiting_on: None,
             updated_at: now.clone(),
             person_id: None,
+            account_name: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {

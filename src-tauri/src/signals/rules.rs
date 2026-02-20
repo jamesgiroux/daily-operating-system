@@ -47,7 +47,6 @@ pub fn rule_person_job_change(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
                 source: "propagation".to_string(),
                 value: Some(value),
                 confidence: 0.85,
-                rule_name: "rule_person_job_change".to_string(),
             }
         })
         .collect()
@@ -93,7 +92,6 @@ pub fn rule_meeting_frequency_drop(signal: &SignalEvent, _db: &ActionDb) -> Vec<
         source: "propagation".to_string(),
         value: Some(value),
         confidence: 0.75,
-        rule_name: "rule_meeting_frequency_drop".to_string(),
     }]
 }
 
@@ -101,10 +99,11 @@ pub fn rule_meeting_frequency_drop(signal: &SignalEvent, _db: &ActionDb) -> Vec<
 // Rule: Overdue actions threshold → project_health_warning
 // ---------------------------------------------------------------------------
 
-/// When an entity has an `action_overdue` signal, check if ≥3 overdue actions
-/// exist. If so, emit `project_health_warning`.
+/// When an entity has a `proactive_action_cluster` signal (emitted by the
+/// proactive detector for accounts/projects with many pending+overdue actions),
+/// check if ≥3 overdue actions exist. If so, emit `project_health_warning`.
 pub fn rule_overdue_actions(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
-    if signal.signal_type != "action_overdue" {
+    if signal.signal_type != "proactive_action_cluster" {
         return Vec::new();
     }
 
@@ -130,7 +129,6 @@ pub fn rule_overdue_actions(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedS
         source: "propagation".to_string(),
         value: Some(value),
         confidence: 0.70,
-        rule_name: "rule_overdue_actions".to_string(),
     }]
 }
 
@@ -179,7 +177,6 @@ pub fn rule_champion_sentiment(signal: &SignalEvent, db: &ActionDb) -> Vec<Deriv
                 source: "propagation".to_string(),
                 value: Some(value),
                 confidence: 0.80,
-                rule_name: "rule_champion_sentiment".to_string(),
             });
         }
     }
@@ -256,7 +253,6 @@ pub fn rule_departure_renewal(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
                 source: "propagation".to_string(),
                 value: Some(value),
                 confidence: 0.90,
-                rule_name: "rule_departure_renewal".to_string(),
             });
         }
     }
@@ -304,7 +300,6 @@ pub fn rule_renewal_engagement_compound(signal: &SignalEvent, db: &ActionDb) -> 
         source: "propagation".to_string(),
         value: Some(value),
         confidence: 0.85,
-        rule_name: "rule_renewal_engagement_compound".to_string(),
     }]
 }
 
@@ -535,14 +530,7 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signals::bus;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn make_signal(entity_type: &str, entity_id: &str, signal_type: &str, value: Option<&str>) -> SignalEvent {
         SignalEvent {
@@ -658,7 +646,7 @@ mod tests {
             .unwrap();
         }
 
-        let signal = make_signal("account", "a1", "action_overdue", None);
+        let signal = make_signal("account", "a1", "proactive_action_cluster", None);
         let derived = rule_overdue_actions(&signal, &db);
 
         assert_eq!(derived.len(), 1);

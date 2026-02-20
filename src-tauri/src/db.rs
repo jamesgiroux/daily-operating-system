@@ -75,6 +75,7 @@ pub struct DbAction {
     pub waiting_on: Option<String>,
     pub updated_at: String,
     pub person_id: Option<String>,
+    pub account_name: Option<String>,
 }
 
 /// A row from the `accounts` table.
@@ -945,10 +946,11 @@ impl ActionDb {
     /// Results are ordered: overdue first, then by priority, then by due date.
     pub fn get_due_actions(&self, days_ahead: i32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'pending'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
@@ -958,26 +960,7 @@ impl ActionDb {
         )?;
 
         let days_param = format!("+{days_ahead}");
-        let rows = stmt.query_map(params![days_param], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![days_param], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -992,10 +975,11 @@ impl ActionDb {
     /// Ordered by urgency first, then priority/due date.
     pub fn get_focus_candidate_actions(&self, days_ahead: i32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status IN ('pending', 'waiting')
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
              ORDER BY
@@ -1010,26 +994,7 @@ impl ActionDb {
         )?;
 
         let days_param = format!("+{days_ahead}");
-        let rows = stmt.query_map(params![days_param], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![days_param], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1041,35 +1006,17 @@ impl ActionDb {
     /// Query pending and waiting actions for a specific account.
     pub fn get_account_actions(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
                AND status IN ('pending', 'waiting')
              ORDER BY priority, due_date",
         )?;
 
-        let rows = stmt.query_map(params![account_id], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![account_id], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1088,8 +1035,10 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.created_at, a.due_date,
                     a.completed_at, a.account_id, a.project_id, a.source_type, a.source_id,
-                    a.source_label, a.context, a.waiting_on, a.updated_at, a.person_id
+                    a.source_label, a.context, a.waiting_on, a.updated_at, a.person_id,
+                    acc.name AS account_name
              FROM actions a
+             LEFT JOIN accounts acc ON a.account_id = acc.id
              WHERE a.status IN ('pending', 'completed')
                AND (
                  -- Direct person assignment
@@ -1114,26 +1063,7 @@ impl ActionDb {
              LIMIT 20",
         )?;
 
-        let rows = stmt.query_map(params![person_id], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![person_id], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1217,33 +1147,15 @@ impl ActionDb {
     /// Get a single action by its ID.
     pub fn get_action_by_id(&self, id: &str) -> Result<Option<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
-             WHERE id = ?1",
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             WHERE actions.id = ?1",
         )?;
 
-        let mut rows = stmt.query_map(params![id], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let mut rows = stmt.query_map(params![id], Self::map_action_row)?;
 
         match rows.next() {
             Some(row) => Ok(Some(row?)),
@@ -1254,36 +1166,18 @@ impl ActionDb {
     /// Get all actions completed within the last N hours (for display in the UI).
     pub fn get_completed_actions(&self, since_hours: u32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'completed'
                AND completed_at >= datetime('now', ?1)
              ORDER BY completed_at DESC",
         )?;
 
         let hours_param = format!("-{} hours", since_hours);
-        let rows = stmt.query_map(params![hours_param], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![hours_param], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1296,10 +1190,11 @@ impl ActionDb {
     /// that have a source_label set (so we know which file to update).
     pub fn get_recently_completed(&self, since_hours: u32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'completed'
                AND completed_at >= datetime('now', ?1)
                AND source_label IS NOT NULL
@@ -1307,26 +1202,7 @@ impl ActionDb {
         )?;
 
         let hours_param = format!("-{} hours", since_hours);
-        let rows = stmt.query_map(params![hours_param], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![hours_param], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1433,35 +1309,17 @@ impl ActionDb {
     /// merge captured actions into the dashboard view (I17).
     pub fn get_non_briefing_pending_actions(&self) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status IN ('pending', 'waiting')
                AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual')
              ORDER BY priority, created_at DESC",
         )?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map([], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1490,34 +1348,16 @@ impl ActionDb {
     /// Get all proposed actions.
     pub fn get_proposed_actions(&self) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'proposed'
              ORDER BY priority, created_at DESC",
         )?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map([], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -2849,10 +2689,11 @@ impl ActionDb {
     /// Get pending/waiting actions for a project.
     pub fn get_project_actions(&self, project_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE project_id = ?1
                AND status IN ('pending', 'waiting')
              ORDER BY priority, due_date",
@@ -4534,34 +4375,16 @@ impl ActionDb {
     /// Query actions extracted from a transcript for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE source_id = ?1 AND source_type = 'transcript'
              ORDER BY priority, created_at",
         )?;
 
-        let rows = stmt.query_map(params![meeting_id], |row| {
-            Ok(DbAction {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                priority: row.get(2)?,
-                status: row.get(3)?,
-                created_at: row.get(4)?,
-                due_date: row.get(5)?,
-                completed_at: row.get(6)?,
-                account_id: row.get(7)?,
-                project_id: row.get(8)?,
-                source_type: row.get(9)?,
-                source_id: row.get(10)?,
-                source_label: row.get(11)?,
-                context: row.get(12)?,
-                waiting_on: row.get(13)?,
-                updated_at: row.get(14)?,
-                person_id: row.get(15)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![meeting_id], Self::map_action_row)?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -4846,10 +4669,11 @@ impl ActionDb {
     /// that haven't been resolved. Ordered by staleness (oldest first).
     pub fn get_stale_delegations(&self, stale_days: i32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'waiting'
                AND created_at <= datetime('now', ?1 || ' days')
              ORDER BY created_at ASC",
@@ -4871,10 +4695,11 @@ impl ActionDb {
     /// Actions with no due date are included (they still need decisions).
     pub fn get_flagged_decisions(&self, days_ahead: i32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE needs_decision = 1
                AND status = 'pending'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
@@ -5596,6 +5421,7 @@ impl ActionDb {
             waiting_on: row.get(13)?,
             updated_at: row.get(14)?,
             person_id: row.get(15)?,
+            account_name: row.get(16)?,
         })
     }
 
@@ -6374,30 +6200,38 @@ impl ActionDb {
 }
 
 // =============================================================================
+// Shared test utilities
+// =============================================================================
+
+#[cfg(test)]
+pub mod test_utils {
+    use super::ActionDb;
+
+    /// Create a temporary database for testing.
+    ///
+    /// We leak the `TempDir` so the directory persists for the duration of the test.
+    /// Test temp dirs are cleaned up by the OS. FK enforcement is disabled so that
+    /// unit tests can insert rows without satisfying every foreign key constraint.
+    pub fn test_db() -> ActionDb {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let path = dir.path().join("test.db");
+        std::mem::forget(dir);
+        let db = ActionDb::open_at(path).expect("Failed to open test database");
+        db.conn_ref()
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable FK for tests");
+        db
+    }
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Create a temporary database for testing.
-    ///
-    /// We leak the `TempDir` so the directory persists for the duration of the test.
-    /// Test temp dirs are cleaned up by the OS.
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("Failed to create temp dir");
-        let path = dir.path().join("test_actions.db");
-        // Leak the TempDir so it is not deleted while the DB connection is open.
-        std::mem::forget(dir);
-        let db = ActionDb::open_at(path).expect("Failed to open test database");
-        // Disable FK enforcement for unit tests — FK integrity is validated
-        // separately in migration tests and production open_at() enables it.
-        db.conn_ref()
-            .execute_batch("PRAGMA foreign_keys = OFF;")
-            .expect("disable FK for tests");
-        db
-    }
+    use super::test_utils::test_db;
 
     fn sample_action(id: &str, title: &str) -> DbAction {
         let now = Utc::now().to_rfc3339();
@@ -6418,6 +6252,7 @@ mod tests {
             waiting_on: None,
             updated_at: now,
             person_id: None,
+            account_name: None,
         }
     }
 
@@ -8563,6 +8398,7 @@ mod tests {
             waiting_on: None,
             updated_at: now,
             person_id: None,
+            account_name: None,
         };
         db.upsert_action(&action).expect("upsert action");
 
@@ -9054,6 +8890,7 @@ mod tests {
             waiting_on: None,
             updated_at: now.clone(),
             person_id: Some("person-jane".to_string()),
+            account_name: None,
         };
         db.upsert_action(&action).unwrap();
 
@@ -9096,6 +8933,7 @@ mod tests {
             waiting_on: None,
             updated_at: now,
             person_id: None,
+            account_name: None,
         };
         db.upsert_action(&action).unwrap();
 
@@ -9162,6 +9000,7 @@ mod tests {
             waiting_on: None,
             updated_at: now,
             person_id: Some("person-alice".to_string()),
+            account_name: None,
         };
         db.upsert_action(&action).unwrap();
 
@@ -9243,6 +9082,7 @@ mod tests {
             waiting_on: None,
             updated_at: now,
             person_id: None,
+            account_name: None,
         };
         db.upsert_action(&action).unwrap();
 

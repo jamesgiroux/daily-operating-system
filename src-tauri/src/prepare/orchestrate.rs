@@ -270,7 +270,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let cadence_anomalies = {
         let cadence_guard = state.db.lock().ok();
         if let Some(db) = cadence_guard.as_ref().and_then(|g| g.as_ref()) {
-            let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies(db);
+            let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies_with_engine(db, Some(&state.signal_engine));
             if !anomalies.is_empty() {
                 log::info!("prepare_today: {} cadence anomalies detected", anomalies.len());
             }
@@ -3101,6 +3101,7 @@ impl IsoWeekFields for NaiveDate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
     use tempfile::TempDir;
 
     #[test]
@@ -3534,17 +3535,6 @@ mod tests {
     }
 
     // ── I338: queue_person_intelligence tests ────────────────────────────
-
-    fn test_db() -> crate::db::ActionDb {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        let db = crate::db::ActionDb::open_at(path).expect("open test DB");
-        db.conn_ref()
-            .execute_batch("PRAGMA foreign_keys = OFF;")
-            .expect("disable FK");
-        db
-    }
 
     fn person_meeting_context(entity_id: &str, entity_name: &str, confidence: f64) -> Value {
         json!({

@@ -658,7 +658,7 @@ export default function DiagnosticsSection() {
   useEffect(() => {
     invoke<Config>("get_config")
       .then(setConfig)
-      .catch(() => {});
+      .catch((err) => console.error("get_config (diagnostics) failed:", err));
   }, []);
 
   async function handleRunWorkflow(workflow: string) {

@@ -113,13 +113,7 @@ impl ActionDb {
 mod tests {
     use super::*;
     use std::sync::Mutex;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn make_signal(signal_type: &str, confidence: f64) -> SignalEvent {
         SignalEvent {

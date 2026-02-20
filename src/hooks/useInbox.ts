@@ -84,7 +84,9 @@ export function useInboxCount(): number {
   useEffect(() => {
     invoke<InboxResult>("get_inbox_files")
       .then((result) => setCount(result.count))
-      .catch(() => {});
+      .catch((err) => {
+        console.error("get_inbox_files (count) failed:", err);
+      });
   }, []);
 
   // Listen for watcher events

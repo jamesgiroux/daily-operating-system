@@ -40,7 +40,7 @@ export function ProjectHero({
   editName,
   setEditName,
   editStatus,
-  setEditStatus,
+  setEditStatus: _setEditStatus,
   onSave,
   onEnrich,
   enriching,
@@ -110,28 +110,13 @@ export function ProjectHero({
         </p>
       )}
 
-      {/* Badges row — always show when editable, with placeholder for empty status */}
+      {/* Badges row — read-only display (editing happens via VitalsStrip) */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
-        {((editStatus ?? detail.status) || setEditStatus) && (
+        {(editStatus ?? detail.status) && (
           <span
             className={`${styles.badge} ${statusClass[editStatus ?? detail.status ?? ""] ?? styles.statusDefault}`}
-            onClick={() => {
-              if (!setEditStatus) return;
-              const cycle = ["active", "on_hold", "completed"];
-              const current = editStatus ?? detail.status ?? "";
-              const idx = cycle.indexOf(current);
-              const next = cycle[(idx + 1) % cycle.length];
-              setEditStatus(next);
-              onSave?.();
-            }}
-            style={{
-              cursor: setEditStatus ? "pointer" : "default",
-              opacity: (editStatus ?? detail.status) ? 1 : 0.4,
-              borderStyle: (editStatus ?? detail.status) ? undefined : "dashed",
-            }}
-            title={setEditStatus ? "Click to set status" : undefined}
           >
-            {formatStatus(editStatus ?? detail.status ?? "Status")}
+            {formatStatus(editStatus ?? detail.status ?? "")}
           </span>
         )}
         {detail.owner && (

@@ -501,6 +501,7 @@ pub fn sync_people_from_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_infer_cadence_weekly() {
@@ -526,17 +527,6 @@ mod tests {
         assert_eq!(infer_cadence(0, 0), "ad-hoc");
         assert_eq!(infer_cadence(0, 2), "ad-hoc");
         assert_eq!(infer_cadence(0, 1), "ad-hoc");
-    }
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("Failed to create temp dir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        let db = ActionDb::open_at(path).expect("open test DB");
-        db.conn_ref()
-            .execute_batch("PRAGMA foreign_keys = OFF;")
-            .expect("disable FK");
-        db
     }
 
     fn sample_person() -> DbPerson {

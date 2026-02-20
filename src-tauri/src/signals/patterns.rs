@@ -8,6 +8,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 use crate::db::{ActionDb, DbError};
+use crate::helpers;
 use crate::prepare::entity_resolver::ResolutionSignal;
 use crate::entity::EntityType;
 
@@ -47,7 +48,7 @@ pub fn mine_attendee_patterns(db: &ActionDb) -> Result<usize, DbError> {
 
     let mut updated = 0;
     for (meeting_id, attendees_raw) in &meetings {
-        let emails = parse_attendee_emails(attendees_raw.as_deref().unwrap_or(""));
+        let emails = helpers::parse_attendee_emails(attendees_raw.as_deref().unwrap_or(""));
         if emails.len() < 2 {
             continue; // Need at least 2 attendees for a meaningful group
         }
@@ -79,7 +80,7 @@ pub fn signal_attendee_group_pattern(
     db: &ActionDb,
     meeting: &serde_json::Value,
 ) -> Vec<ResolutionSignal> {
-    let emails = extract_attendee_emails(meeting);
+    let emails = helpers::extract_attendee_emails(meeting);
     if emails.len() < 2 {
         return Vec::new();
     }
@@ -104,35 +105,6 @@ pub fn signal_attendee_group_pattern(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Parse attendee emails from the DB format (comma-separated or JSON array).
-fn parse_attendee_emails(raw: &str) -> Vec<String> {
-    // Try JSON array first
-    if let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) {
-        return arr
-            .into_iter()
-            .map(|e| e.trim().to_lowercase())
-            .filter(|e| e.contains('@'))
-            .collect();
-    }
-    // Fall back to comma-separated
-    raw.split(',')
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| s.contains('@'))
-        .collect()
-}
-
-/// Extract attendee emails from meeting JSON (same logic as entity_resolver).
-fn extract_attendee_emails(meeting: &serde_json::Value) -> Vec<String> {
-    if let Some(arr) = meeting.get("attendees").and_then(|v| v.as_array()) {
-        return arr
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| s.contains('@'))
-            .collect();
-    }
-    Vec::new()
-}
 
 // ---------------------------------------------------------------------------
 // ActionDb methods
@@ -193,13 +165,7 @@ impl ActionDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_compute_group_hash_order_independent() {
@@ -263,14 +229,14 @@ mod tests {
 
     #[test]
     fn test_parse_attendee_emails_json() {
-        let emails = parse_attendee_emails("[\"Alice@Acme.com\",\"bob@partner.com\"]");
+        let emails = helpers::parse_attendee_emails("[\"Alice@Acme.com\",\"bob@partner.com\"]");
         assert_eq!(emails.len(), 2);
         assert!(emails.contains(&"alice@acme.com".to_string()));
     }
 
     #[test]
     fn test_parse_attendee_emails_csv() {
-        let emails = parse_attendee_emails("alice@acme.com, bob@partner.com");
+        let emails = helpers::parse_attendee_emails("alice@acme.com, bob@partner.com");
         assert_eq!(emails.len(), 2);
     }
 

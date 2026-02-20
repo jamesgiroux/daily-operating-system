@@ -119,29 +119,6 @@ fn update_weights_from_correction(
     db.upsert_signal_weight(wrong_source, entity_type, signal_type, 0.0, 1.0)
 }
 
-/// Get correction statistics for a source: (correct_count, corrected_count).
-pub fn get_correction_stats(
-    db: &ActionDb,
-    source: &str,
-    entity_type: &str,
-) -> Result<(u32, u32), DbError> {
-    let correct: u32 = db.conn_ref().query_row(
-        "SELECT COUNT(*) FROM entity_resolution_feedback
-         WHERE signal_source != ?1 AND new_entity_type = ?2",
-        params![source, entity_type],
-        |row| row.get(0),
-    )?;
-
-    let corrected: u32 = db.conn_ref().query_row(
-        "SELECT COUNT(*) FROM entity_resolution_feedback
-         WHERE signal_source = ?1 AND old_entity_type = ?2",
-        params![source, entity_type],
-        |row| row.get(0),
-    )?;
-
-    Ok((correct, corrected))
-}
-
 // ---------------------------------------------------------------------------
 // ActionDb methods
 // ---------------------------------------------------------------------------
@@ -175,7 +152,8 @@ impl ActionDb {
         let pattern = format!("%\"event_id\":\"{}\"%", meeting_id);
         let mut stmt = self.conn_ref().prepare(
             "SELECT id, entity_type, entity_id, signal_type, source, value,
-                    confidence, decay_half_life_days, created_at, superseded_by
+                    confidence, decay_half_life_days, created_at, superseded_by,
+                    source_context
              FROM signal_events
              WHERE signal_type = 'entity_resolution'
                AND superseded_by IS NULL
@@ -183,21 +161,7 @@ impl ActionDb {
              ORDER BY created_at DESC",
         )?;
 
-        let rows = stmt.query_map(params![pattern], |row| {
-            Ok(SignalEvent {
-                id: row.get(0)?,
-                entity_type: row.get(1)?,
-                entity_id: row.get(2)?,
-                signal_type: row.get(3)?,
-                source: row.get(4)?,
-                value: row.get(5)?,
-                confidence: row.get(6)?,
-                decay_half_life_days: row.get(7)?,
-                created_at: row.get(8)?,
-                superseded_by: row.get(9)?,
-                source_context: None,
-            })
-        })?;
+        let rows = stmt.query_map(params![pattern], Self::map_signal_event_row)?;
 
         let mut events = Vec::new();
         for row in rows {
@@ -237,13 +201,7 @@ impl ActionDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_insert_resolution_feedback() {

@@ -1639,7 +1639,7 @@ pub fn parse_intelligence_response(
 
 /// Extract a JSON object from the response text.
 /// Handles responses with markdown fences or surrounding text.
-fn extract_json_from_response(response: &str) -> Option<&str> {
+pub(crate) fn extract_json_from_response(response: &str) -> Option<&str> {
     // Try to find JSON in a ```json code fence
     if let Some(start) = response.find("```json") {
         let json_start = start + 7;
@@ -2840,13 +2840,7 @@ fn compute_signal_age(detected_at: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("entity_intel_test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open test db")
-    }
+    use crate::db::test_utils::test_db;
 
     fn sample_intel() -> IntelligenceJson {
         IntelligenceJson {

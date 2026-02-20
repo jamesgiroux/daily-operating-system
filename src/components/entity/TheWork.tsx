@@ -2,10 +2,11 @@
  * TheWork — Meeting readiness, upcoming meetings, and commitments.
  * Generalized: accepts WorkSource instead of AccountDetail.
  */
-import { Link } from "@tanstack/react-router";
 import type { EntityIntelligence } from "@/types";
 import type { WorkSource } from "@/lib/entity-types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { ActionRow } from "@/components/shared/ActionRow";
+import { MeetingRow } from "@/components/shared/MeetingRow";
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
 import { classifyAction, meetingTypeBadgeStyle, formatMeetingRowDate } from "@/lib/entity-utils";
 
@@ -33,77 +34,6 @@ const sectionLabelStyle: React.CSSProperties = {
 };
 
 /* ── Action sub-components ── */
-
-interface ActionRowProps {
-  action: { id: string; title: string; dueDate?: string; source?: string };
-  accentColor?: string;
-  dateColor?: string;
-  bold?: boolean;
-}
-
-function ActionRow({ action, accentColor, dateColor = "var(--color-text-tertiary)", bold }: ActionRowProps) {
-  return (
-    <Link
-      to="/actions/$actionId"
-      params={{ actionId: action.id }}
-      style={{
-        display: "block",
-        position: "relative",
-        padding: "14px 0 14px 20px",
-        borderBottom: "1px solid var(--color-rule-light)",
-        textDecoration: "none",
-        color: "inherit",
-      }}
-    >
-      {accentColor && (
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 14,
-            bottom: 14,
-            width: 3,
-            borderRadius: 2,
-            background: accentColor,
-          }}
-        />
-      )}
-      <div
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          lineHeight: 1.55,
-          fontWeight: bold ? 500 : 400,
-          color: "var(--color-text-primary)",
-        }}
-      >
-        {action.title}
-      </div>
-      {(action.dueDate || action.source) && (
-        <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
-          {action.dueDate && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 500,
-                letterSpacing: "0.04em",
-                color: dateColor,
-              }}
-            >
-              {formatShortDate(action.dueDate)}
-            </span>
-          )}
-          {action.source && (
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-text-tertiary)" }}>
-              {action.source}
-            </span>
-          )}
-        </div>
-      )}
-    </Link>
-  );
-}
 
 interface ActionGroupProps {
   label: string;
@@ -134,7 +64,7 @@ function ActionGroup({ label, labelColor, actions, accentColor, dateColor, bold 
         {label}
       </div>
       {actions.map((a) => (
-        <ActionRow key={a.id} action={a} accentColor={accentColor} dateColor={dateColor} bold={bold} />
+        <ActionRow key={a.id} variant="compact" action={a} accentColor={accentColor} dateColor={dateColor} bold={bold} formatDate={formatShortDate} />
       ))}
     </div>
   );
@@ -247,44 +177,14 @@ export function TheWork({
           <div style={sectionLabelStyle}>Upcoming Meetings</div>
           <div>
             {upcomingMeetings.map((m) => (
-              <div
+              <MeetingRow
                 key={m.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "90px 1fr auto",
-                  gap: 16,
-                  padding: "14px 0",
-                  borderBottom: "1px solid var(--color-rule-light)",
-                  alignItems: "baseline",
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    fontWeight: 500,
-                    color: "var(--color-text-primary)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {formatMeetingRowDate(m.startTime)}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 400,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
-                  {m.title}
-                </span>
-                <span style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                  <span style={meetingTypeBadgeStyle(m.meetingType)}>
-                    {formatMeetingType(m.meetingType)}
-                  </span>
-                </span>
-              </div>
+                variant="entity"
+                meeting={m}
+                formatDate={formatMeetingRowDate}
+                formatType={formatMeetingType}
+                typeBadgeStyle={meetingTypeBadgeStyle}
+              />
             ))}
           </div>
         </div>
