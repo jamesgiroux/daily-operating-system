@@ -3653,7 +3653,9 @@ impl ActionDb {
             idx += 1;
         }
 
-        sql.push_str(", last_enriched_at = datetime('now')");
+        sql.push_str(&format!(", last_enriched_at = ?{idx}"));
+        params.push(Box::new(chrono::Utc::now().to_rfc3339()));
+        idx += 1;
         sql.push_str(&format!(" WHERE id = ?{idx}"));
         params.push(Box::new(meeting_id.to_string()));
 
@@ -3675,9 +3677,10 @@ impl ActionDb {
 
     /// Clear new signals flag (when user views the meeting).
     pub fn clear_meeting_new_signals(&self, meeting_id: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
-            "UPDATE meetings_history SET has_new_signals = 0, last_viewed_at = datetime('now') WHERE id = ?1",
-            params![meeting_id],
+            "UPDATE meetings_history SET has_new_signals = 0, last_viewed_at = ?2 WHERE id = ?1",
+            params![meeting_id, now],
         )?;
         Ok(())
     }
