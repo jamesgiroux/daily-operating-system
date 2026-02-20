@@ -759,6 +759,24 @@ pub struct Meeting {
     /// Structured intelligence quality assessment for schedule rows (I329).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence_quality: Option<IntelligenceQuality>,
+    /// Raw calendar attendees from Google Calendar (not AI-enriched).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_attendees: Option<Vec<CalendarAttendeeEntry>>,
+    /// Calendar event description from Google Calendar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_description: Option<String>,
+}
+
+/// Raw attendee from Google Calendar event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarAttendeeEntry {
+    pub email: String,
+    pub name: String,
+    #[serde(default)]
+    pub rsvp: String,
+    #[serde(default)]
+    pub domain: String,
 }
 
 /// An entity linked to a meeting via the junction table.

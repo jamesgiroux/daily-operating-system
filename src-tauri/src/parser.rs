@@ -393,6 +393,8 @@ impl MeetingBuilder {
             linked_entities: None,
             suggested_unarchive_account_id: None,
             intelligence_quality: None,
+            calendar_attendees: None,
+            calendar_description: None,
         })
     }
 }
@@ -2244,6 +2246,8 @@ pub fn parse_meetings_from_overview(
                     linked_entities: None,
                     suggested_unarchive_account_id: None,
                     intelligence_quality: None,
+                    calendar_attendees: None,
+                    calendar_description: None,
                 });
 
                 id_counter += 1;
