@@ -179,7 +179,51 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 }
 
                 // Populate people from calendar attendees (I51)
-                populate_people_from_events(&events, &state, &workspace);
+                let sync_intel = populate_people_from_events(&events, &state, &workspace);
+
+                // Trigger intelligence lifecycle for new/changed meetings (ADR-0081)
+                if !sync_intel.new_meetings.is_empty() || !sync_intel.changed_meetings.is_empty() {
+                    let state_clone = state.clone();
+                    let new_ids = sync_intel.new_meetings;
+                    let changed_ids = sync_intel.changed_meetings;
+                    tokio::spawn(async move {
+                        for mid in &new_ids {
+                            match crate::intelligence_lifecycle::generate_meeting_intelligence(
+                                &state_clone, mid, false,
+                            )
+                            .await
+                            {
+                                Ok(q) => log::info!(
+                                    "Calendar poll: generated intelligence for new meeting '{}' (quality={:?})",
+                                    mid, q.level
+                                ),
+                                Err(e) => log::warn!(
+                                    "Calendar poll: intelligence generation failed for '{}': {}",
+                                    mid, e
+                                ),
+                            }
+                        }
+                        for mid in &changed_ids {
+                            match crate::intelligence_lifecycle::generate_meeting_intelligence(
+                                &state_clone, mid, true,
+                            )
+                            .await
+                            {
+                                Ok(q) => log::info!(
+                                    "Calendar poll: refreshed intelligence for changed meeting '{}' (quality={:?})",
+                                    mid, q.level
+                                ),
+                                Err(e) => log::warn!(
+                                    "Calendar poll: intelligence refresh failed for '{}': {}",
+                                    mid, e
+                                ),
+                            }
+                        }
+                    });
+                }
+
+                // Detect cancelled meetings: today's DB meetings not in current poll (ADR-0081)
+                detect_cancelled_meetings(&events, &state);
 
                 if let Ok(mut guard) = state.calendar_events.write() {
                     *guard = events;
@@ -445,6 +489,14 @@ fn enrich_prep_from_db(prep: &mut serde_json::Value, account_id: &str, db: &crat
     }
 }
 
+/// Result of syncing calendar events: meeting IDs that need intelligence triggers.
+struct CalendarSyncIntelligence {
+    /// Meeting IDs that are newly detected (need initial intelligence generation).
+    new_meetings: Vec<String>,
+    /// Meeting IDs that changed (title/time shifted — need force-full refresh).
+    changed_meetings: Vec<String>,
+}
+
 /// Populate people table from calendar event attendees (I51).
 ///
 /// For each event, for each attendee email:
@@ -454,7 +506,9 @@ fn enrich_prep_from_db(prep: &mut serde_json::Value, account_id: &str, db: &crat
 /// - Upsert into people table (idempotent)
 /// - Write People/{name}/person.json + person.md if new
 /// - Auto-link to entity if meeting has an account field
-fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) {
+///
+/// Returns sync intelligence for new/changed meetings that need intelligence triggers.
+fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) -> CalendarSyncIntelligence {
     // Acquire config/auth locks first (short-lived), then DB lock
     let self_email = state.google_auth.lock().ok().and_then(|g| match &*g {
         GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
@@ -468,16 +522,23 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
         .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
         .unwrap_or_default();
 
+    let empty_result = CalendarSyncIntelligence {
+        new_meetings: Vec::new(),
+        changed_meetings: Vec::new(),
+    };
+
     let db_guard = match state.db.lock().ok() {
         Some(g) => g,
-        None => return,
+        None => return empty_result,
     };
     let db = match db_guard.as_ref() {
         Some(db) => db,
-        None => return,
+        None => return empty_result,
     };
 
     let mut new_people = 0;
+    let mut new_meetings = Vec::new();
+    let mut changed_meetings = Vec::new();
 
     for event in events {
         // Skip all-hands (>50 attendees)
@@ -492,7 +553,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             &event.start.to_rfc3339(),
             event.meeting_type.as_str(),
         );
-        if let Err(e) = db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+        match db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
             id: &meeting_id,
             title: &event.title,
             meeting_type: event.meeting_type.as_str(),
@@ -500,11 +561,22 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             end_time: Some(&event.end.to_rfc3339()),
             calendar_event_id: Some(&event.id),
         }) {
-            log::warn!(
-                "Failed to ensure meeting '{}' in history: {}",
-                event.title,
-                e
-            );
+            Ok(crate::db::MeetingSyncOutcome::New) => {
+                new_meetings.push(meeting_id.clone());
+            }
+            Ok(crate::db::MeetingSyncOutcome::Changed) => {
+                // Mark as having new signals so intelligence refreshes
+                let _ = db.mark_meeting_new_signals(&meeting_id);
+                changed_meetings.push(meeting_id.clone());
+            }
+            Ok(crate::db::MeetingSyncOutcome::Unchanged) => {}
+            Err(e) => {
+                log::warn!(
+                    "Failed to ensure meeting '{}' in history: {}",
+                    event.title,
+                    e
+                );
+            }
         }
 
         for email in &event.attendees {
@@ -616,6 +688,82 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
     if new_people > 0 {
         log::info!("People: discovered {} new people from calendar", new_people);
     }
+
+    if !new_meetings.is_empty() || !changed_meetings.is_empty() {
+        log::info!(
+            "Calendar sync intelligence: {} new, {} changed meetings",
+            new_meetings.len(),
+            changed_meetings.len()
+        );
+    }
+
+    CalendarSyncIntelligence {
+        new_meetings,
+        changed_meetings,
+    }
+}
+
+/// Detect meetings that were in the DB for today but disappeared from the calendar poll.
+///
+/// These are likely cancelled meetings. Updates their intelligence_state to "archived".
+fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState) {
+    let today = Utc::now().date_naive().to_string(); // "YYYY-MM-DD"
+
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return,
+    };
+
+    // Build set of current calendar event IDs from this poll
+    let current_ids: std::collections::HashSet<&str> = current_events
+        .iter()
+        .map(|e| e.id.as_str())
+        .collect();
+
+    // Query today's meetings from DB that have a calendar_event_id
+    let mut stmt = match db.conn_ref().prepare(
+        "SELECT id, calendar_event_id FROM meetings_history
+         WHERE start_time LIKE ?1 || '%'
+         AND calendar_event_id IS NOT NULL
+         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+    ) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let cancelled: Vec<String> = stmt
+        .query_map(rusqlite::params![today], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+            ))
+        })
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r.ok())
+        .filter(|(_id, cal_id)| !current_ids.contains(cal_id.as_str()))
+        .map(|(id, _)| id)
+        .collect();
+
+    for meeting_id in &cancelled {
+        if let Err(e) = db.update_intelligence_state(meeting_id, "archived", None, None) {
+            log::warn!(
+                "Failed to archive cancelled meeting '{}': {}",
+                meeting_id,
+                e
+            );
+        } else {
+            log::info!(
+                "Calendar poll: meeting '{}' cancelled, intelligence archived",
+                meeting_id
+            );
+        }
+    }
 }
 
 /// Get workspace path from config
@@ -655,6 +803,7 @@ mod tests {
             account: account.map(|a| a.to_string()),
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }
     }
 
@@ -787,6 +936,7 @@ mod tests {
             account: Some("acme".to_string()),
             attendees: vec![],
             is_all_day: true,
+            linked_entities: None,
         };
 
         assert!(event.is_all_day || !PREP_ELIGIBLE_TYPES.contains(&event.meeting_type));
