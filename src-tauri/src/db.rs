@@ -212,6 +212,17 @@ pub struct EnsureMeetingHistoryInput<'a> {
     pub calendar_event_id: Option<&'a str>,
 }
 
+/// Outcome of syncing a meeting into meetings_history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeetingSyncOutcome {
+    /// Meeting was newly inserted.
+    New,
+    /// Meeting already existed but title or start_time changed.
+    Changed,
+    /// Meeting already existed and nothing meaningful changed.
+    Unchanged,
+}
+
 /// A row from the `processing_log` table.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -4714,22 +4725,51 @@ impl ActionDb {
     pub fn ensure_meeting_in_history(
         &self,
         input: EnsureMeetingHistoryInput<'_>,
-    ) -> Result<(), DbError> {
-        self.conn.execute(
-            "INSERT OR IGNORE INTO meetings_history
-                (id, title, meeting_type, start_time, end_time, created_at, calendar_event_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                input.id,
-                input.title,
-                input.meeting_type,
-                input.start_time,
-                input.end_time,
-                Utc::now().to_rfc3339(),
-                input.calendar_event_id,
-            ],
+    ) -> Result<MeetingSyncOutcome, DbError> {
+        // Check if meeting already exists and detect changes
+        let mut stmt = self.conn.prepare(
+            "SELECT title, start_time FROM meetings_history WHERE id = ?1",
         )?;
-        Ok(())
+        let mut rows = stmt.query_map(params![input.id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let existing = rows.next().transpose()?;
+
+        match existing {
+            None => {
+                // New meeting — insert
+                self.conn.execute(
+                    "INSERT INTO meetings_history
+                        (id, title, meeting_type, start_time, end_time, created_at, calendar_event_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        input.id,
+                        input.title,
+                        input.meeting_type,
+                        input.start_time,
+                        input.end_time,
+                        Utc::now().to_rfc3339(),
+                        input.calendar_event_id,
+                    ],
+                )?;
+                Ok(MeetingSyncOutcome::New)
+            }
+            Some((old_title, old_start)) => {
+                // Existing meeting — check for meaningful changes
+                let changed =
+                    old_title != input.title || old_start != input.start_time;
+                if changed {
+                    self.conn.execute(
+                        "UPDATE meetings_history SET title = ?1, start_time = ?2, end_time = ?3
+                         WHERE id = ?4",
+                        params![input.title, input.start_time, input.end_time, input.id],
+                    )?;
+                    Ok(MeetingSyncOutcome::Changed)
+                } else {
+                    Ok(MeetingSyncOutcome::Unchanged)
+                }
+            }
+        }
     }
 
     // =========================================================================
@@ -6595,6 +6635,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
 
         db.upsert_meeting(&meeting).expect("upsert meeting");
@@ -6637,6 +6683,12 @@ mod tests {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             };
             db.upsert_meeting(&meeting).expect("upsert");
             db.link_meeting_entity(&mid, "acme-corp", "account")
@@ -6722,6 +6774,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
 
@@ -7465,6 +7523,12 @@ mod tests {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             };
             db.upsert_meeting(&meeting).expect("insert meeting");
             db.link_meeting_entity(&mid, "acme-corp", "account")
@@ -7900,6 +7964,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
         db.record_meeting_attendance("mtg-attend-001", &person.id)
@@ -8033,6 +8103,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
     }
@@ -8655,6 +8731,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert");
         db.link_meeting_entity("mtg-link", "acme-auto", "account")
@@ -9265,6 +9347,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
     }
