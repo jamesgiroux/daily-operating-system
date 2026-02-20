@@ -717,6 +717,34 @@ pub fn deliver_schedule(
                 }
             }
 
+            // Structured attendee list from Google Calendar (not AI-enriched)
+            if !event.attendees.is_empty() {
+                let attendee_arr: Vec<Value> = event
+                    .attendees
+                    .iter()
+                    .filter_map(|email| {
+                        let rsvp = event.attendee_rsvp.get(email).cloned().unwrap_or_default();
+                        // Skip declined attendees
+                        if rsvp == "declined" {
+                            return None;
+                        }
+                        let name = event
+                            .attendee_names
+                            .get(email)
+                            .cloned()
+                            .unwrap_or_else(|| email.split('@').next().unwrap_or(email).to_string());
+                        let domain = email.split('@').nth(1).unwrap_or("");
+                        Some(json!({
+                            "email": email,
+                            "name": name,
+                            "rsvp": rsvp,
+                            "domain": domain,
+                        }))
+                    })
+                    .collect();
+                obj.insert("calendarAttendees".to_string(), json!(attendee_arr));
+            }
+
             // Embed linked entities from junction table (I52)
             if let Some(db) = db {
                 if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
@@ -771,11 +799,18 @@ pub fn deliver_schedule(
         parts.join(" with ")
     });
 
+    // Resolve user domains for internal/external attendee grouping
+    let user_domains = crate::state::load_config()
+        .ok()
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
+
     let mut schedule = json!({
         "date": date,
         "greeting": greeting,
         "summary": summary,
         "meetings": meetings_json,
+        "userDomains": user_domains,
     });
 
     if let Some(ref focus) = directive.context.focus {
