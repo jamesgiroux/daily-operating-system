@@ -27,7 +27,7 @@ import { RefreshCw, Loader2 } from "lucide-react";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
-import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction, ReplyNeeded } from "@/types";
+import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -377,8 +377,6 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         briefingEmails={isStale ? [] : briefingEmails}
         emailSectionLabel={emailSectionLabel}
         allEmails={isStale ? [] : emails}
-        emailNarrative={isStale ? undefined : data.emailNarrative}
-        repliesNeeded={isStale ? undefined : data.repliesNeeded}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
       />
 
@@ -401,8 +399,6 @@ function AttentionSection({
   briefingEmails,
   emailSectionLabel,
   allEmails,
-  emailNarrative,
-  repliesNeeded,
   todayMeetingIds,
 }: {
   proposedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
@@ -415,8 +411,6 @@ function AttentionSection({
   briefingEmails: Email[];
   emailSectionLabel: string;
   allEmails: Email[];
-  emailNarrative?: string;
-  repliesNeeded?: ReplyNeeded[];
   todayMeetingIds: Set<string>;
 }) {
   const navigate = useNavigate();
@@ -450,9 +444,7 @@ function AttentionSection({
   const hasProposed = proposedActions.length > 0;
   const hasActions = attentionActions.length > 0;
   const hasEmails = briefingEmails.length > 0;
-  const hasNarrative = !!emailNarrative;
-  const hasReplies = repliesNeeded && repliesNeeded.length > 0;
-  const hasAnything = hasProposed || hasActions || hasEmails || hasNarrative || hasReplies;
+  const hasAnything = hasProposed || hasActions || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -466,10 +458,6 @@ function AttentionSection({
         <div className={s.marginContent}>
           <div className={s.sectionRule} />
 
-          {/* AI capacity summary */}
-          {focus?.implications?.summary && (
-            <p className={s.prioritiesIntro}>{focus.implications.summary}</p>
-          )}
 
           {/* Proposed action triage (max 3) */}
           {hasProposed && (
@@ -593,16 +581,6 @@ function AttentionSection({
             </>
           )}
 
-          {/* Email narrative (I355) */}
-          {hasNarrative && (
-            <EmailBriefingNarrative narrative={emailNarrative!} />
-          )}
-
-          {/* Replies needed (I355/I356) */}
-          {hasReplies && (
-            <RepliesNeededList replies={repliesNeeded!} />
-          )}
-
           {/* View all links */}
           <div className={s.prioritiesViewAll}>
             {pendingActions.length > 3 && (
@@ -687,46 +665,6 @@ function PrioritizedActionItem({
         )}
       </div>
     </Link>
-  );
-}
-
-// ─── Email Briefing Narrative (I355) ──────────────────────────────────────────
-
-function EmailBriefingNarrative({ narrative }: { narrative: string }) {
-  return (
-    <div style={{ marginTop: 24 }}>
-      <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>Email Intelligence</div>
-      <p className={s.emailNarrative}>{narrative}</p>
-    </div>
-  );
-}
-
-// ─── Replies Needed (I355/I356) ──────────────────────────────────────────────
-
-function RepliesNeededList({ replies }: { replies: ReplyNeeded[] }) {
-  return (
-    <div style={{ marginTop: 24 }}>
-      <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
-        Awaiting Your Reply
-        <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{replies.length}</span>
-      </div>
-      <div className={s.priorityItems}>
-        {replies.map((reply) => (
-          <div key={reply.threadId} className={s.replyItem}>
-            <div className={s.replyDot} />
-            <div className={s.replyContent}>
-              <div className={s.replySubject}>{reply.subject}</div>
-              <div className={s.replyMeta}>
-                {reply.from}
-                {reply.waitDuration && (
-                  <> &middot; <span className={s.replyWait}>{reply.waitDuration}</span></>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
