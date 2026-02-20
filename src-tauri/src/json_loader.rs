@@ -340,6 +340,14 @@ pub struct JsonEmail {
     pub conversation_arc: Option<String>,
     /// Email category from AI classification
     pub email_type: Option<String>,
+    /// Commitments extracted by AI enrichment (I354)
+    #[serde(default)]
+    pub commitments: Vec<String>,
+    /// Questions extracted by AI enrichment (I354)
+    #[serde(default)]
+    pub questions: Vec<String>,
+    /// Sentiment from AI enrichment (I354)
+    pub sentiment: Option<String>,
 }
 
 /// Loaded email payload with optional sync status metadata.
@@ -391,6 +399,9 @@ pub fn load_emails_json_with_sync(today_dir: &Path) -> Result<LoadedEmailsData, 
                 recommended_action: e.recommended_action,
                 conversation_arc: e.conversation_arc,
                 email_type: e.email_type,
+                commitments: e.commitments,
+                questions: e.questions,
+                sentiment: e.sentiment,
             }
         })
         .collect();
@@ -940,6 +951,28 @@ pub struct DirectiveEmails {
     pub low_count: u32,
     #[serde(default, alias = "syncError")]
     pub sync_error: Option<DirectiveEmailSyncError>,
+    /// AI-synthesized email narrative (I322)
+    #[serde(default)]
+    pub narrative: Option<String>,
+    /// Threads awaiting user reply (I318/I355)
+    #[serde(default, alias = "repliesNeeded")]
+    pub replies_needed: Vec<DirectiveReplyNeeded>,
+}
+
+/// A thread awaiting the user's reply (I318 — "ball in your court").
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectiveReplyNeeded {
+    #[serde(default)]
+    pub thread_id: String,
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub from: String,
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
+    pub wait_duration: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
