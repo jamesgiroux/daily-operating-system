@@ -1057,6 +1057,40 @@ impl Executor {
             let _ = self
                 .app_handle
                 .emit("operation-delivered", "emails-enriched");
+
+            // I357: Semantic reclassification of medium-priority emails (opt-in)
+            let reclass_enabled = self
+                .state
+                .config
+                .read()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "semanticEmailReclass")))
+                .unwrap_or(false);
+            if reclass_enabled {
+                let emails_path = data_dir.join("emails.json");
+                if let Ok(raw) = std::fs::read_to_string(&emails_path) {
+                    if let Ok(emails_val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                        let medium: Vec<serde_json::Value> = emails_val
+                            .get("mediumPriority")
+                            .and_then(|v| v.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        if !medium.is_empty() {
+                            let results = crate::prepare::email_classify::reclassify_with_ai(
+                                &medium,
+                                &extraction_pty,
+                                workspace,
+                            );
+                            if !results.is_empty() {
+                                log::info!(
+                                    "Semantic reclassification: {} emails reclassified",
+                                    results.len()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // AI: Enrich prep agendas (feature-gated I39)
@@ -1323,6 +1357,42 @@ impl Executor {
         let _ = self
             .app_handle
             .emit("operation-delivered", "emails-enriched");
+
+        // I357: Semantic reclassification (opt-in, email refresh path)
+        {
+            let reclass_enabled = self
+                .state
+                .config
+                .read()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "semanticEmailReclass")))
+                .unwrap_or(false);
+            if reclass_enabled {
+                let emails_path = data_dir.join("emails.json");
+                if let Ok(raw) = std::fs::read_to_string(&emails_path) {
+                    if let Ok(emails_val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                        let medium: Vec<serde_json::Value> = emails_val
+                            .get("mediumPriority")
+                            .and_then(|v| v.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        if !medium.is_empty() {
+                            let results = crate::prepare::email_classify::reclassify_with_ai(
+                                &medium,
+                                &extraction_pty,
+                                workspace,
+                            );
+                            if !results.is_empty() {
+                                log::info!(
+                                    "Email refresh: semantic reclassification changed {} emails",
+                                    results.len()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Step 5: Clean up refresh directive
         let _ = std::fs::remove_file(&refresh_path);

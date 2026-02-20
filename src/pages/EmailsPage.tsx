@@ -1,61 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Link } from "@tanstack/react-router";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
-import { AlertTriangle, Eye, Archive, Zap, RefreshCw } from "lucide-react";
-import type { EmailBriefingData, EnrichedEmail, EntityEmailThread } from "@/types";
-import type { ReadinessStat } from "@/components/layout/FolioBar";
-import type { ChapterItem } from "@/components/layout/FloatingNavIsland";
-
-// =============================================================================
-// Chapters
-// =============================================================================
-
-function buildChapters(data: EmailBriefingData | null): ChapterItem[] {
-  if (!data) return [];
-  const chapters: ChapterItem[] = [];
-  if (data.stats.highCount > 0) chapters.push({ id: "emails-attention", label: "Attention", icon: <AlertTriangle size={18} strokeWidth={1.5} /> });
-  if (data.stats.mediumCount > 0) chapters.push({ id: "emails-look", label: "Worth a Look", icon: <Eye size={18} strokeWidth={1.5} /> });
-  if (data.stats.lowCount > 0) chapters.push({ id: "emails-filed", label: "Filed Away", icon: <Archive size={18} strokeWidth={1.5} /> });
-  if (data.entityThreads.some((t) => filterConfidentSignals(t.signals).length > 0)) chapters.push({ id: "emails-signals", label: "Signals", icon: <Zap size={18} strokeWidth={1.5} /> });
-  return chapters;
-}
-
-// =============================================================================
-// Signal dot color by type
-// =============================================================================
-
-/** Minimum confidence for a signal to surface in the UI. Below this, the system
- *  stays quiet rather than showing something wrong. */
-const SIGNAL_CONFIDENCE_THRESHOLD = 0.6;
-
-function filterConfidentSignals(signals: import("@/types").EmailSignal[]): import("@/types").EmailSignal[] {
-  return signals.filter((s) => (s.confidence ?? 0) >= SIGNAL_CONFIDENCE_THRESHOLD);
-}
-
-function signalColor(signalType: string): string {
-  const lower = signalType.toLowerCase();
-  if (lower.includes("risk") || lower.includes("churn") || lower.includes("escalation"))
-    return "var(--color-spice-terracotta)";
-  if (lower.includes("expansion") || lower.includes("upsell"))
-    return "var(--color-spice-turmeric)";
-  if (lower.includes("positive") || lower.includes("success") || lower.includes("win"))
-    return "var(--color-garden-sage)";
-  return "var(--color-text-tertiary)";
-}
-
-function priorityDotColor(priority: string): string {
-  if (priority === "high") return "var(--color-spice-terracotta)";
-  if (priority === "medium") return "var(--color-spice-turmeric)";
-  return "var(--color-text-tertiary)";
-}
+import { RefreshCw, X } from "lucide-react";
+import s from "@/styles/editorial-briefing.module.css";
+import type { EmailBriefingData } from "@/types";
 
 // =============================================================================
 // Page
@@ -66,15 +20,17 @@ export default function EmailsPage() {
   const [data, setData] = useState<EmailBriefingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [archivedExpanded, setArchivedExpanded] = useState(false);
-  const [archiving, setArchiving] = useState(false);
-  const [confirmArchive, setConfirmArchive] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const loadEmails = useCallback(async () => {
     try {
-      const result = await invoke<EmailBriefingData>("get_emails_enriched");
+      const [result, dismissedItems] = await Promise.all([
+        invoke<EmailBriefingData>("get_emails_enriched"),
+        invoke<string[]>("list_dismissed_email_items").catch(() => [] as string[]),
+      ]);
       setData(result);
+      setDismissed(new Set(dismissedItems));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -85,6 +41,30 @@ export default function EmailsPage() {
   useEffect(() => {
     loadEmails();
   }, [loadEmails]);
+
+  const handleDismiss = useCallback(async (
+    itemType: string,
+    emailId: string,
+    itemText: string,
+    senderDomain?: string,
+    emailType?: string,
+    entityId?: string,
+  ) => {
+    const key = `${itemType}:${itemText}`;
+    setDismissed((prev) => new Set(prev).add(key));
+    try {
+      await invoke("dismiss_email_item", {
+        itemType,
+        emailId,
+        itemText,
+        senderDomain: senderDomain ?? null,
+        emailType: emailType ?? null,
+        entityId: entityId ?? null,
+      });
+    } catch (err) {
+      console.error("Dismiss failed:", err);
+    }
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -98,66 +78,112 @@ export default function EmailsPage() {
     }
   }, [loadEmails]);
 
-  // Archive low priority — preserved exactly
-  async function handleArchiveLow() {
-    setArchiving(true);
-    try {
-      await invoke<number>("archive_low_priority_emails");
-      // Optimistic removal
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              lowPriority: [],
-              stats: { ...prev.stats, lowCount: 0, total: prev.stats.highCount + prev.stats.mediumCount },
-            }
-          : null,
-      );
-      setConfirmArchive(false);
-      setArchivedExpanded(false);
-    } catch (err) {
-      console.error("Archive failed:", err);
-    } finally {
-      setArchiving(false);
-    }
+  // Email types to exclude — operational noise, not strategic intelligence
+  const NOISE_EMAIL_TYPES = new Set([
+    "support", "support_ticket", "ticket", "notification",
+    "marketing", "newsletter", "internal_announcement", "automated",
+    "noreply", "billing", "receipt",
+  ]);
+
+  // Aggregate commitments and questions from entity-linked emails only.
+  // Filters out support tickets and other noise so only strategically
+  // relevant items surface in "The Correspondent."
+  interface ContextualItem {
+    text: string;
+    emailId: string;
+    sender: string;
+    senderDomain?: string;
+    subject: string;
+    emailType?: string;
+    entityName?: string;
+    entityId?: string;
   }
+  const { allCommitments, allQuestions } = useMemo(() => {
+    if (!data) return { allCommitments: [] as ContextualItem[], allQuestions: [] as ContextualItem[] };
 
-  // Chapters for FloatingNavIsland
-  const chapters = useMemo(() => buildChapters(data), [data]);
+    // Build email-id → entity-name lookup from entity threads
+    const emailEntityMap = new Map<string, string>();
+    for (const thread of data.entityThreads) {
+      for (const sig of thread.signals) {
+        if (sig.emailId) {
+          emailEntityMap.set(sig.emailId, thread.entityName);
+        }
+      }
+    }
 
-  // FolioBar readiness stats
-  const folioStats = useMemo((): ReadinessStat[] => {
-    if (!data) return [];
-    const stats: ReadinessStat[] = [];
-    if (data.stats.needsAction > 0)
-      stats.push({ label: `${data.stats.needsAction} need action`, color: "terracotta" });
-    return stats;
-  }, [data]);
+    const commitments: ContextualItem[] = [];
+    const questions: ContextualItem[] = [];
+    for (const email of [...data.highPriority, ...data.mediumPriority, ...data.lowPriority]) {
+      // Skip noise email types
+      if (email.emailType && NOISE_EMAIL_TYPES.has(email.emailType.toLowerCase())) continue;
+
+      // Only include emails linked to a tracked entity, OR high-priority
+      const entityName = emailEntityMap.get(email.id)
+        ?? email.signals?.find((s) => s.entityId)?.entityId;
+      const isEntityLinked = !!entityName;
+      const isHighPriority = email.priority === "high";
+      if (!isEntityLinked && !isHighPriority) continue;
+
+      const sender = email.sender || "Unknown";
+      const subject = email.subject || "";
+      const senderDomain = email.senderEmail?.split("@")[1];
+      const displayEntity = emailEntityMap.get(email.id);
+      const entityId = email.signals?.find((sig) => sig.entityId)?.entityId;
+
+      if (email.commitments) {
+        for (const c of email.commitments) {
+          if (dismissed.has(`commitment:${c}`)) continue;
+          commitments.push({ text: c, emailId: email.id, sender, senderDomain, subject, emailType: email.emailType, entityName: displayEntity, entityId });
+        }
+      }
+      if (email.questions) {
+        for (const q of email.questions) {
+          if (dismissed.has(`question:${q}`)) continue;
+          questions.push({ text: q, emailId: email.id, sender, senderDomain, subject, emailType: email.emailType, entityName: displayEntity, entityId });
+        }
+      }
+    }
+    return { allCommitments: commitments, allQuestions: questions };
+  }, [data, dismissed]);
+
+  // Count intelligence stats for hero stat line
+  const repliesNeeded = (data?.repliesNeeded ?? []).filter(
+    (r) => !dismissed.has(`reply_needed:${r.subject}`),
+  );
+  const entityThreads = data?.entityThreads ?? [];
+  const riskSignalCount = useMemo(() => {
+    if (!entityThreads.length) return 0;
+    return entityThreads.reduce((count, t) => {
+      const risks = t.signals.filter((sig) => {
+        const lower = sig.signalType.toLowerCase();
+        return lower.includes("risk") || lower.includes("churn") || lower.includes("escalation");
+      });
+      return count + risks.length;
+    }, 0);
+  }, [entityThreads]);
 
   const folioActions = useMemo(() => (
     <button
       onClick={handleRefresh}
       disabled={refreshing}
       className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-      title={refreshing ? "Refreshing emails…" : "Check for new emails"}
+      title={refreshing ? "Refreshing emails..." : "Check for new emails"}
     >
       <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
       <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em" }}>
-        {refreshing ? "Refreshing…" : "Refresh"}
+        {refreshing ? "Refreshing..." : "Refresh"}
       </span>
     </button>
   ), [handleRefresh, refreshing]);
 
   const shellConfig = useMemo(
     () => ({
-      folioLabel: "Email Intelligence",
+      folioLabel: "The Correspondent",
       atmosphereColor: "turmeric" as const,
-      activePage: "inbox" as const,
-      chapters,
-      folioReadinessStats: folioStats,
+      activePage: "emails" as const,
       folioActions,
     }),
-    [chapters, folioStats, folioActions],
+    [folioActions],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -166,52 +192,33 @@ export default function EmailsPage() {
 
   const isEmpty = !data || data.stats.total === 0;
 
-  // Hero epigraph — auto-generated from data
-  const epigraph = !data
-    ? ""
-    : data.hasEnrichment
-      ? buildEpigraph(data)
+  // Hero headline: AI narrative or fallback, capped at ~12 words for 76px readability
+  const rawNarrative = data?.emailNarrative
+    ? data.emailNarrative
+    : isEmpty
+      ? "Your inbox is quiet."
       : "Email triage from this morning's scan.";
+  const headline = (() => {
+    const words = rawNarrative.split(/\s+/);
+    if (words.length <= 12) return rawNarrative;
+    // Take first sentence if it's short enough, else hard cap
+    const firstSentence = rawNarrative.split(/\.\s/)[0];
+    if (firstSentence.split(/\s+/).length <= 12) return firstSentence + (firstSentence.endsWith(".") ? "" : ".");
+    return words.slice(0, 12).join(" ") + "…";
+  })();
+
+  const hasExtracted = allCommitments.length > 0 || allQuestions.length > 0;
+  const hasSignals = entityThreads.length > 0;
+  const hasReplies = repliesNeeded.length > 0;
+  const hasContent = hasReplies || hasExtracted || hasSignals;
 
   return (
     <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
       {/* ═══ HERO ═══ */}
-      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 36,
-            fontWeight: 400,
-            letterSpacing: "-0.02em",
-            color: "var(--color-text-primary)",
-            margin: 0,
-          }}
-        >
-          Email Intelligence
-        </h1>
+      <section className={s.hero}>
+        <h1 className={s.heroHeadline}>{headline}</h1>
 
-        {!isEmpty && epigraph && (
-          <p
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 20,
-              fontStyle: "italic",
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              marginTop: 12,
-              marginBottom: 0,
-              maxWidth: 600,
-              lineHeight: 1.5,
-            }}
-          >
-            {epigraph}
-          </p>
-        )}
-
-        {/* Heavy rule */}
-        <div style={{ height: 2, background: "var(--color-desk-charcoal)", marginTop: 16, marginBottom: 16 }} />
-
-        {/* Stat strip */}
+        {/* Intelligence stat line */}
         {data && data.stats.total > 0 && (
           <div
             style={{
@@ -223,600 +230,262 @@ export default function EmailsPage() {
               color: "var(--color-text-tertiary)",
             }}
           >
-            <span>TOTAL {data.stats.total}</span>
-            <span style={{ color: "var(--color-spice-terracotta)" }}>
-              ACTION {data.stats.needsAction}
-            </span>
-            <span>HIGH {data.stats.highCount}</span>
-            <span>MED {data.stats.mediumCount}</span>
-            <span>LOW {data.stats.lowCount}</span>
+            {repliesNeeded.length > 0 && (
+              <span style={{ color: "var(--color-spice-terracotta)" }}>
+                {repliesNeeded.length} AWAITING REPLY
+              </span>
+            )}
+            {allCommitments.length > 0 && (
+              <span>{allCommitments.length} COMMITMENT{allCommitments.length !== 1 ? "S" : ""}</span>
+            )}
+            {riskSignalCount > 0 && (
+              <span>{riskSignalCount} RISK SIGNAL{riskSignalCount !== 1 ? "S" : ""}</span>
+            )}
           </div>
         )}
       </section>
 
-      {/* ═══ EMPTY STATE ═══ */}
+      <div className={s.sectionRule} />
+
+      {/* EMPTY STATE */}
       {isEmpty && (
         <EditorialEmpty {...getPersonalityCopy("emails-empty", personality)} />
       )}
 
-      {/* ═══ CHAPTER 1: NEEDS YOUR ATTENTION ═══ */}
-      {data && data.highPriority.length > 0 && (
-        <section id="emails-attention" style={{ marginBottom: 48 }}>
-          <ChapterHeading
-            title="Needs Your Attention"
-            epigraph={
-              data.highPriority.length === 1
-                ? "One conversation requires a response today."
-                : `${data.highPriority.length} conversations require a response today.`
-            }
-          />
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {data.highPriority.map((email, i) => (
-              <HighPriorityCard
-                key={email.id}
-                email={email}
-                showBorder={i < data.highPriority.length - 1}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ═══ CHAPTER 2: WORTH A LOOK ═══ */}
-      {data && data.mediumPriority.length > 0 && (
-        <section id="emails-look" style={{ marginBottom: 48 }}>
-          <ChapterHeading
-            title="Worth a Look"
-            epigraph="These don't demand action, but staying aware pays off."
-          />
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {data.mediumPriority.map((email, i) => (
-              <MediumPriorityRow
-                key={email.id}
-                email={email}
-                showBorder={i < data.mediumPriority.length - 1}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ═══ CHAPTER 3: FILED AWAY ═══ */}
-      {data && data.lowPriority.length > 0 && (
-        <section id="emails-filed" style={{ marginBottom: 48 }}>
-          <ChapterHeading title="Filed Away" />
-
-          {/* Collapsed summary + archive actions */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 16,
-            }}
-          >
-            <button
-              onClick={() => setArchivedExpanded(!archivedExpanded)}
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              {data.lowPriority.length} email{data.lowPriority.length !== 1 ? "s" : ""} reviewed
-              and deprioritized.
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  marginLeft: 8,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                {archivedExpanded ? "COLLAPSE" : "EXPAND"}
-              </span>
-            </button>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {confirmArchive ? (
-                <>
-                  <span
+      {/* ═══ YOUR MOVE ═══ */}
+      {hasReplies && (
+        <section style={{ marginBottom: 48 }}>
+          <div className={s.marginGrid}>
+            <div className={s.marginLabel} style={{ color: "var(--color-spice-terracotta)" }}>
+              YOUR MOVE
+            </div>
+            <div className={s.marginContent}>
+              {repliesNeeded.slice(0, 3).map((reply) => (
+                <div key={reply.threadId} className="group" style={{ marginBottom: 20, position: "relative" }}>
+                  <div
                     style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 12,
-                      color: "var(--color-text-tertiary)",
+                      fontFamily: "var(--font-serif)",
+                      fontSize: 19,
+                      fontWeight: 400,
+                      lineHeight: 1.35,
+                      color: "var(--color-text-primary)",
                     }}
                   >
-                    Archive {data.lowPriority.length} in Gmail?
-                  </span>
-                  <EditorialButton
-                    label={archiving ? "Archiving..." : "Confirm"}
-                    color="var(--color-spice-terracotta)"
-                    onClick={handleArchiveLow}
-                    disabled={archiving}
-                  />
-                  <EditorialButton
-                    label="Cancel"
-                    color="var(--color-text-tertiary)"
-                    onClick={() => setConfirmArchive(false)}
-                    disabled={archiving}
-                  />
-                </>
-              ) : (
-                <EditorialButton
-                  label="Archive all in Gmail"
-                  color="var(--color-text-tertiary)"
-                  onClick={() => setConfirmArchive(true)}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Expanded low-priority rows */}
-          {archivedExpanded && (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {data.lowPriority.map((email, i) => (
-                <div
-                  key={email.id}
-                  style={{
-                    padding: "8px 0",
-                    borderBottom:
-                      i < data.lowPriority.length - 1
-                        ? "1px solid var(--color-rule-light)"
-                        : "none",
-                  }}
-                >
-                  <span
+                    {reply.subject}
+                  </div>
+                  <div
                     style={{
                       fontFamily: "var(--font-sans)",
                       fontSize: 13,
                       color: "var(--color-text-tertiary)",
+                      marginTop: 3,
                     }}
                   >
-                    {email.sender}
-                  </span>
-                  {email.subject && (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 13,
-                        color: "var(--color-text-tertiary)",
-                        opacity: 0.7,
-                        marginLeft: 8,
-                      }}
-                    >
-                      {email.subject}
-                    </span>
-                  )}
+                    {reply.from}
+                    {reply.waitDuration && (
+                      <span> — waiting {reply.waitDuration}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDismiss("reply_needed", reply.threadId, reply.subject)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--color-text-tertiary)",
+                      padding: 4,
+                    }}
+                    title="Dismiss"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               ))}
+              {repliesNeeded.length > 3 && (
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    marginTop: 4,
+                  }}
+                >
+                  {repliesNeeded.slice(3).map((r) => r.from).join(", ")}
+                  {" — also waiting on you."}
+                </div>
+              )}
             </div>
-          )}
+          </div>
+          <div className={s.sectionRule} style={{ marginTop: 24 }} />
         </section>
       )}
 
-      {/* ═══ CHAPTER 4: ENTITY SIGNALS ═══ */}
-      {data && data.entityThreads.some((t) => filterConfidentSignals(t.signals).length > 0) && (
-        <section id="emails-signals" style={{ marginBottom: 48 }}>
-          <ChapterHeading
-            title="Entity Signals"
-            epigraph="Intelligence extracted from today's email."
-          />
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            {data.entityThreads.map((thread) => (
-              <EntityThreadCard key={thread.entityId} thread={thread} />
-            ))}
+      {/* ═══ EXTRACTED ═══ */}
+      {hasExtracted && (
+        <section style={{ marginBottom: 48 }}>
+          {allCommitments.length > 0 && (
+            <div className={s.marginGrid} style={{ marginBottom: allQuestions.length > 0 ? 28 : 0 }}>
+              <div className={s.marginLabel}>COMMITMENTS</div>
+              <div className={s.marginContent}>
+                {allCommitments.map((c, i) => (
+                  <div key={i} className="group" style={{ marginBottom: i < allCommitments.length - 1 ? 12 : 0, position: "relative" }}>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 15,
+                        fontWeight: 400,
+                        lineHeight: 1.65,
+                        color: "var(--color-text-primary)",
+                        margin: 0,
+                        maxWidth: 640,
+                      }}
+                    >
+                      {c.text}{!c.text.endsWith(".") ? "." : ""}
+                    </p>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        letterSpacing: "0.04em",
+                        color: "var(--color-text-tertiary)",
+                      }}
+                    >
+                      {c.entityName ? `${c.entityName} · ` : ""}{c.sender}{c.subject ? ` · ${c.subject}` : ""}
+                    </span>
+                    <button
+                      onClick={() => handleDismiss("commitment", c.emailId, c.text, c.senderDomain, c.emailType, c.entityId)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 4 }}
+                      title="Dismiss"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {allQuestions.length > 0 && (
+            <div className={s.marginGrid}>
+              <div className={s.marginLabel}>OPEN QUESTIONS</div>
+              <div className={s.marginContent}>
+                {allQuestions.map((q, i) => (
+                  <div key={i} className="group" style={{ marginBottom: i < allQuestions.length - 1 ? 12 : 0, position: "relative" }}>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 15,
+                        fontWeight: 400,
+                        lineHeight: 1.65,
+                        color: "var(--color-text-primary)",
+                        margin: 0,
+                        maxWidth: 640,
+                      }}
+                    >
+                      {q.text}{!q.text.endsWith("?") && !q.text.endsWith(".") ? "?" : ""}
+                    </p>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        letterSpacing: "0.04em",
+                        color: "var(--color-text-tertiary)",
+                      }}
+                    >
+                      {q.entityName ? `${q.entityName} · ` : ""}{q.sender}{q.subject ? ` · ${q.subject}` : ""}
+                    </span>
+                    <button
+                      onClick={() => handleDismiss("question", q.emailId, q.text, q.senderDomain, q.emailType, q.entityId)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 4 }}
+                      title="Dismiss"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className={s.sectionRule} style={{ marginTop: 24 }} />
+        </section>
+      )}
+
+      {/* ═══ SIGNALS ═══ */}
+      {hasSignals && (
+        <section style={{ marginBottom: 48 }}>
+          <div className={s.marginGrid}>
+            <div className={s.marginLabel}>SIGNALS</div>
+            <div className={s.marginContent}>
+              {entityThreads.slice(0, 3).map((thread, i) => (
+                <div key={thread.entityId}>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-serif)",
+                      fontSize: 22,
+                      fontWeight: 400,
+                      lineHeight: 1.3,
+                      color: "var(--color-text-primary)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    {thread.entityName}
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        color: "var(--color-text-tertiary)",
+                        letterSpacing: "0.04em",
+                        marginLeft: 10,
+                      }}
+                    >
+                      {thread.emailCount} email{thread.emailCount !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  {thread.signalSummary && (
+                    <p
+                      style={{
+                        fontFamily: "var(--font-serif)",
+                        fontSize: 16,
+                        fontWeight: 300,
+                        lineHeight: 1.65,
+                        color: "var(--color-text-secondary)",
+                        margin: "0 0 16px 0",
+                        maxWidth: 640,
+                      }}
+                    >
+                      {thread.signalSummary}
+                    </p>
+                  )}
+                  {i < Math.min(entityThreads.length, 3) - 1 && (
+                    <div className={s.sectionRule} style={{ marginBottom: 16 }} />
+                  )}
+                </div>
+              ))}
+              {entityThreads.length > 3 && (
+                <div
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    marginTop: 12,
+                  }}
+                >
+                  {entityThreads.slice(3).map((t) => t.entityName).join(", ")}
+                  {" — routine correspondence."}
+                </div>
+              )}
+            </div>
           </div>
         </section>
       )}
 
-      {/* ═══ FINIS ═══ */}
-      {data && data.stats.total > 0 && <FinisMarker />}
+      {/* FINIS */}
+      {hasContent && <FinisMarker />}
     </div>
   );
-}
-
-// =============================================================================
-// High Priority Card — full-depth with AI summary as prose
-// =============================================================================
-
-function HighPriorityCard({
-  email,
-  showBorder,
-}: {
-  email: EnrichedEmail;
-  showBorder: boolean;
-}) {
-  // First confident signal entity name for context
-  const confidentSigs = filterConfidentSignals(email.signals ?? []);
-  const entitySignal = confidentSigs.length > 0 ? confidentSigs[0] : null;
-
-  return (
-    <div
-      style={{
-        padding: "20px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-      }}
-    >
-      {/* Entity context line */}
-      {entitySignal && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: signalColor(entitySignal.signalType),
-              flexShrink: 0,
-            }}
-          />
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: "var(--color-text-tertiary)",
-            }}
-          >
-            {entitySignal.signalType}
-          </span>
-        </div>
-      )}
-
-      {/* Subject as heading */}
-      <h3
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 20,
-          fontWeight: 400,
-          color: "var(--color-text-primary)",
-          margin: 0,
-          lineHeight: 1.4,
-        }}
-      >
-        {email.subject}
-      </h3>
-
-      {/* Sender */}
-      <p
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 13,
-          color: "var(--color-text-tertiary)",
-          marginTop: 4,
-          marginBottom: 0,
-        }}
-      >
-        {email.sender}
-        {email.senderEmail && (
-          <span style={{ opacity: 0.6, marginLeft: 6 }}>{email.senderEmail}</span>
-        )}
-      </p>
-
-      {/* AI summary — full editorial body prose */}
-      {email.summary && (
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            fontWeight: 400,
-            lineHeight: 1.65,
-            color: "var(--color-text-primary)",
-            marginTop: 12,
-            marginBottom: 0,
-          }}
-        >
-          {email.summary}
-        </p>
-      )}
-
-      {/* Fallback snippet when no enrichment */}
-      {!email.summary && email.snippet && (
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            color: "var(--color-text-tertiary)",
-            marginTop: 8,
-            marginBottom: 0,
-          }}
-        >
-          {email.snippet}
-        </p>
-      )}
-
-      {/* Recommended action */}
-      {email.recommendedAction && (
-        <p
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 14,
-            fontStyle: "italic",
-            color: "var(--color-spice-terracotta)",
-            marginTop: 10,
-            marginBottom: 0,
-          }}
-        >
-          → {email.recommendedAction}
-        </p>
-      )}
-
-      {/* Conversation arc */}
-      {email.conversationArc && (
-        <p
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            marginTop: 8,
-            marginBottom: 0,
-            opacity: 0.7,
-          }}
-        >
-          {email.conversationArc}
-        </p>
-      )}
-
-      {/* Signal badges — only show confident signals */}
-      {filterConfidentSignals(email.signals ?? []).length > 0 && (
-        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          {filterConfidentSignals(email.signals ?? []).map((sig, i) => (
-            <span
-              key={i}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                letterSpacing: "0.04em",
-                color: signalColor(sig.signalType),
-                border: `1px solid ${signalColor(sig.signalType)}`,
-                borderRadius: 3,
-                padding: "1px 6px",
-              }}
-            >
-              {sig.signalType}
-              {sig.urgency && (
-                <span style={{ opacity: 0.6, marginLeft: 4 }}>{sig.urgency}</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
-// Medium Priority Row — compact
-// =============================================================================
-
-function MediumPriorityRow({
-  email,
-  showBorder,
-}: {
-  email: EnrichedEmail;
-  showBorder: boolean;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        padding: "12px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-      }}
-    >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          background: priorityDotColor("medium"),
-          flexShrink: 0,
-          marginTop: 7,
-        }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-secondary)",
-            }}
-          >
-            {email.sender}
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 15,
-              color: "var(--color-text-primary)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {email.subject}
-          </span>
-        </div>
-        {(email.summary || email.snippet) && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              marginTop: 2,
-              marginBottom: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {email.summary || email.snippet}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// =============================================================================
-// Entity Thread Card — intelligence layer
-// =============================================================================
-
-function EntityThreadCard({ thread }: { thread: EntityEmailThread }) {
-  const detailLink =
-    thread.entityType === "account"
-      ? `/accounts/${thread.entityId}`
-      : `/projects/${thread.entityId}`;
-
-  const confidentSignals = filterConfidentSignals(thread.signals);
-
-  // Don't render the card at all if no signals pass the confidence threshold
-  if (confidentSignals.length === 0) return null;
-
-  return (
-    <div>
-      {/* Entity name with dot */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "var(--color-spice-turmeric)",
-            flexShrink: 0,
-          }}
-        />
-        <Link
-          to={detailLink}
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 18,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            textDecoration: "none",
-          }}
-        >
-          {thread.entityName}
-        </Link>
-      </div>
-
-      {/* Stats line */}
-      <p
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--color-text-tertiary)",
-          letterSpacing: "0.04em",
-          margin: 0,
-        }}
-      >
-        {thread.emailCount} email{thread.emailCount !== 1 ? "s" : ""}
-        {thread.signalSummary && ` · ${thread.signalSummary}`}
-      </p>
-
-      {/* Signal narrative */}
-      {confidentSignals.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          {confidentSignals.slice(0, 3).map((sig, i) => (
-            <p
-              key={i}
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 13,
-                fontWeight: 300,
-                color: "var(--color-text-secondary)",
-                marginTop: i > 0 ? 4 : 0,
-                marginBottom: 0,
-                lineHeight: 1.5,
-              }}
-            >
-              <span style={{ color: signalColor(sig.signalType), fontWeight: 500 }}>
-                {sig.signalType}:
-              </span>{" "}
-              {sig.signalText}
-            </p>
-          ))}
-          {confidentSignals.length > 3 && (
-            <p
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                marginTop: 4,
-              }}
-            >
-              + {confidentSignals.length - 3} more signal{confidentSignals.length - 3 !== 1 ? "s" : ""}
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// =============================================================================
-// Shared editorial button
-// =============================================================================
-
-function EditorialButton({
-  label,
-  color,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  color: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-        color,
-        background: "none",
-        border: `1px solid ${color}`,
-        borderRadius: 4,
-        padding: "2px 10px",
-        cursor: disabled ? "default" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function buildEpigraph(data: EmailBriefingData): string {
-  const parts: string[] = [];
-  if (data.stats.highCount > 0) {
-    parts.push(
-      `${data.stats.highCount} conversation${data.stats.highCount !== 1 ? "s" : ""} need${data.stats.highCount === 1 ? "s" : ""} your attention`,
-    );
-  }
-  const fyiCount = data.stats.mediumCount + data.stats.lowCount;
-  if (fyiCount > 0) {
-    parts.push(`${fyiCount} ${fyiCount === 1 ? "is" : "are"} FYI only`);
-  }
-  if (parts.length === 0) return "";
-  return parts.join(". ") + ".";
 }

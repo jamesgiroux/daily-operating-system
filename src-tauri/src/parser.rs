@@ -990,6 +990,9 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                     recommended_action: None,
                     conversation_arc: None,
                     email_type: None,
+                    commitments: Vec::new(),
+                    questions: Vec::new(),
+                    sentiment: None,
                 });
                 id_counter += 1;
             }
@@ -1111,6 +1114,9 @@ impl EmailBuilder {
             recommended_action: None,
             conversation_arc: None,
             email_type: None,
+            commitments: Vec::new(),
+            questions: Vec::new(),
+            sentiment: None,
         })
     }
 }

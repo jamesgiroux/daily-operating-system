@@ -24,14 +24,14 @@ const ADAPTATION = {
     sectionId: "the-dynamic",
     workingLabel: "Relationship Strengths",
     notWorkingLabel: "Relationship Gaps",
-    emptyMessage: "Build intelligence to understand this relationship.",
+    emptyMessage: "Refresh to analyze this relationship.",
   },
   internal: {
     title: "The Rhythm",
     sectionId: "the-rhythm",
     workingLabel: "Collaboration Strengths",
     notWorkingLabel: "Alignment Gaps",
-    emptyMessage: "Build intelligence to understand how you collaborate.",
+    emptyMessage: "Refresh to analyze how you collaborate.",
   },
 } as const;
 

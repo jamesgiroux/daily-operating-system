@@ -100,6 +100,7 @@ export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
                     updated[i] = { ...updated[i], request: v };
                     onUpdate?.({ ...data, requests: updated });
                   }}
+                  multiline={false}
                   style={{
                     fontFamily: "var(--font-sans)",
                     fontSize: 17,
@@ -110,6 +111,7 @@ export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
                   <EditableText
                     as="div"
                     value={req.from}
+                    multiline={false}
                     onChange={(v) => {
                       const updated = [...(data.requests ?? [])];
                       updated[i] = { ...updated[i], from: v };
@@ -199,6 +201,7 @@ export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
                   updated[i] = v;
                   onUpdate?.({ ...data, decisions: updated });
                 }}
+                multiline={false}
                 style={{
                   fontFamily: "var(--font-sans)",
                   fontSize: 17,

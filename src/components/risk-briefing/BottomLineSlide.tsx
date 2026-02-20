@@ -95,6 +95,7 @@ export function BottomLineSlide({ data, onUpdate }: BottomLineSlideProps) {
           <EditableText
             value={data.renewalWindow}
             onChange={(v) => onUpdate?.({ ...data, renewalWindow: v })}
+            multiline={false}
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 14,

@@ -1027,6 +1027,70 @@
 }
 
 /* =============================================================================
+   6. EMAIL INTELLIGENCE — Narrative + Replies Needed (I355/I356)
+   ============================================================================= */
+
+.emailNarrative {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  margin: 0 0 28px 0;
+  max-width: 640px;
+}
+
+.replyItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.replyItem:last-child {
+  border-bottom: none;
+}
+
+.replyDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+  margin-left: 5px;
+  margin-right: 4px;
+  background: var(--color-spice-terracotta);
+}
+
+.replyContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.replySubject {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}
+
+.replyMeta {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+.replyWait {
+  font-weight: 500;
+  color: var(--color-spice-terracotta);
+}
+
+/* =============================================================================
    RESPONSIVE BREAKPOINTS
    ============================================================================= */
 

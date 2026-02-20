@@ -4,28 +4,14 @@ import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AgendaDraftDialog,
-  useAgendaDraft,
-} from "@/components/ui/agenda-draft-dialog";
 
 import type {
-  ApplyPrepPrefillResult,
   LiveProactiveSuggestion,
   WeekOverview,
-  WeekAction,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import {
-  computeDeepWorkHours,
   computeShapeEpigraph,
-  countExternalMeetings,
-  countMeetingAccounts,
-  filterDeepWorkBlocks,
-  filterRelevantMeetings,
-  formatBlockRange,
-  formatDueContext,
-  formatPrepStatus,
   pickTopThree,
   resolveSuggestionLink,
   synthesizeReadiness,
@@ -34,14 +20,10 @@ import {
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { PullQuote } from "@/components/editorial/PullQuote";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import {
   Target,
-  Users,
-  Clock,
-  CheckSquare,
   BarChart,
   Play,
   AlertTriangle,
@@ -95,9 +77,6 @@ const waitingMessages = [
 const CHAPTERS = [
   { id: "the-three", label: "The Three", icon: <Target size={18} strokeWidth={1.5} /> },
   { id: "the-shape", label: "The Shape", icon: <BarChart size={18} strokeWidth={1.5} /> },
-  { id: "your-meetings", label: "Meetings", icon: <Users size={18} strokeWidth={1.5} /> },
-  { id: "open-time", label: "Open Time", icon: <Clock size={18} strokeWidth={1.5} /> },
-  { id: "commitments", label: "Commitments", icon: <CheckSquare size={18} strokeWidth={1.5} /> },
 ];
 
 // Circled number glyphs for The Three
@@ -114,10 +93,6 @@ export default function WeekPage() {
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<WorkflowPhase | null>(null);
   const [retryingEnrichment, setRetryingEnrichment] = useState(false);
-  const [prefillingMeetingId, setPrefillingMeetingId] = useState<string | null>(
-    null
-  );
-  const draft = useAgendaDraft({ onError: setError });
   const loadingRef = useRef(false);
 
   const loadWeek = useCallback(
@@ -261,26 +236,6 @@ export default function WeekPage() {
     }
   }, [loadWeek]);
 
-  const handlePrefillPrep = useCallback(
-    async (meetingId: string, suggestionText: string, reasonText?: string) => {
-      setPrefillingMeetingId(meetingId);
-      try {
-        await invoke<ApplyPrepPrefillResult>("apply_meeting_prep_prefill", {
-          meetingId,
-          agendaItems: [suggestionText],
-          notesAppend: reasonText || "",
-        });
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to prefill meeting prep"
-        );
-      } finally {
-        setPrefillingMeetingId(null);
-      }
-    },
-    []
-  );
-
   // Register magazine shell — larkspur atmosphere, chapter mode
   const folioActions = useMemo(
     () => (
@@ -361,51 +316,6 @@ export default function WeekPage() {
     [data, liveSuggestions, days]
   );
 
-  const meetingDays = useMemo(() => filterRelevantMeetings(days), [days]);
-  const externalCount = useMemo(() => countExternalMeetings(days), [days]);
-  const accountCount = useMemo(() => countMeetingAccounts(days), [days]);
-
-  const deepWorkBlocks = useMemo(
-    () => filterDeepWorkBlocks(dayShapes, liveSuggestions),
-    [dayShapes, liveSuggestions]
-  );
-  const deepWorkMinutes = useMemo(
-    () => computeDeepWorkHours(dayShapes),
-    [dayShapes]
-  );
-  const deepWorkHours = Math.round(deepWorkMinutes / 60);
-
-  // Commitments: all overdue + top 5 due-this-week (excluding The Three items)
-  const topThreeTitles = useMemo(
-    () => new Set(topThree.map((t) => t.title)),
-    [topThree]
-  );
-
-  const { visible: commitments, totalCount: commitmentsTotalCount, overdueCount: commitmentsOverdueCount } = useMemo(() => {
-    const overdue: (WeekAction & { isOverdue: boolean })[] = [];
-    const dueThisWeek: (WeekAction & { isOverdue: boolean })[] = [];
-
-    if (data?.actionSummary) {
-      for (const a of data.actionSummary.overdue ?? []) {
-        if (!topThreeTitles.has(a.title)) {
-          overdue.push({ ...a, isOverdue: true });
-        }
-      }
-      for (const a of data.actionSummary.dueThisWeekItems ?? []) {
-        if (!topThreeTitles.has(a.title)) {
-          dueThisWeek.push({ ...a, isOverdue: false });
-        }
-      }
-    }
-
-    const totalCount = overdue.length + dueThisWeek.length;
-    const overdueCount = overdue.length;
-    // Cap: max 5 overdue (by priority) + top 3 due-this-week = max 8 items
-    const cappedOverdue = overdue.slice(0, 5);
-    const visible = [...cappedOverdue, ...dueThisWeek.slice(0, 3)];
-    return { visible, totalCount, overdueCount };
-  }, [data?.actionSummary, topThreeTitles]);
-
   const shapeEpigraph = useMemo(
     () => computeShapeEpigraph(dayShapes),
     [dayShapes]
@@ -457,21 +367,7 @@ export default function WeekPage() {
           ))}
         </div>
 
-        {/* Chapter 3: Meetings skeleton */}
-        <div style={{ paddingTop: 64 }}>
-          <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
-          <Skeleton className="h-7 w-40 mb-4" style={skeletonBg} />
-          <Skeleton className="h-4 w-72 mb-8" style={skeletonBg} />
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-              <Skeleton className="h-2 w-2 rounded-full shrink-0 mt-2" style={skeletonBg} />
-              <Skeleton className="h-3 w-16 shrink-0" style={skeletonBg} />
-              <Skeleton className="h-4 w-56" style={skeletonBg} />
-            </div>
-          ))}
-        </div>
-
-        {/* Chapter 6: Shape skeleton */}
+        {/* Chapter 3: Shape skeleton */}
         <div style={{ paddingTop: 64 }}>
           <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
           <Skeleton className="h-7 w-28 mb-8" style={skeletonBg} />
@@ -670,7 +566,7 @@ export default function WeekPage() {
                 marginTop: 16,
               }}
             >
-              AI enrichment incomplete.{" "}
+              Analysis incomplete.{" "}
               <button
                 onClick={handleRetryEnrichment}
                 disabled={retryingEnrichment}
@@ -685,7 +581,7 @@ export default function WeekPage() {
                   padding: 0,
                 }}
               >
-                {retryingEnrichment ? "Retrying..." : "Retry enrichment"}
+                {retryingEnrichment ? "Retrying..." : "Retry"}
               </button>
             </p>
           )}
@@ -802,7 +698,7 @@ export default function WeekPage() {
                 color: "var(--color-text-tertiary)",
               }}
             >
-              Run enrichment to see your three priorities.
+              Refresh to see your three priorities.
             </p>
           )}
         </section>
@@ -958,525 +854,6 @@ export default function WeekPage() {
           </section>
         )}
 
-        {/* ── Chapter 4: Your Meetings ───────────────────────────────────── */}
-        <section
-          id="your-meetings"
-          className="editorial-reveal"
-          style={{ paddingTop: 64 }}
-        >
-          <ChapterHeading
-            title="Your Meetings"
-            epigraph={
-              externalCount > 0
-                ? `${externalCount} external meeting${externalCount !== 1 ? "s" : ""} across ${accountCount} account${accountCount !== 1 ? "s" : ""} this week.`
-                : undefined
-            }
-          />
-
-          {meetingDays.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-              {meetingDays.map((group, groupIdx) => (
-                <div key={group.date}>
-                  {/* Day separator (between days, not before first) */}
-                  {groupIdx > 0 && (
-                    <div
-                      style={{
-                        borderTop: "1px solid var(--color-rule-light)",
-                        margin: "24px 0 20px",
-                      }}
-                    />
-                  )}
-                  {/* Day subheading */}
-                  <p
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                      color: "var(--color-text-primary)",
-                      marginBottom: 12,
-                    }}
-                  >
-                    {group.dayName}
-                  </p>
-
-                  {/* Meeting rows */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {group.meetings.map((meeting, idx) => {
-                      const prep = formatPrepStatus(meeting.prepStatus);
-                      const dotColor = meeting.isExternal
-                        ? prep.color === "sage"
-                          ? "var(--color-garden-sage)"
-                          : "var(--color-spice-turmeric)"
-                        : "var(--color-garden-larkspur)";
-
-                      const row = (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "baseline",
-                            gap: 12,
-                            padding: "6px 0",
-                          }}
-                        >
-                          {/* Dot */}
-                          <span
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              background: dotColor,
-                              flexShrink: 0,
-                              marginTop: 6,
-                              display: "inline-block",
-                            }}
-                          />
-                          {/* Time */}
-                          <span
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 13,
-                              color: "var(--color-text-tertiary)",
-                              flexShrink: 0,
-                              minWidth: 80,
-                            }}
-                          >
-                            {meeting.time}
-                          </span>
-                          {/* Title */}
-                          <span
-                            style={{
-                              fontFamily: "var(--font-serif)",
-                              fontSize: 17,
-                              fontWeight: 400,
-                              color: "var(--color-text-primary)",
-                              flex: 1,
-                              minWidth: 0,
-                            }}
-                          >
-                            {meeting.title}
-                          </span>
-                          {/* Prep status */}
-                          {meeting.isExternal && (
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 11,
-                                color:
-                                  prep.color === "sage"
-                                    ? "var(--color-garden-sage)"
-                                    : prep.color === "terracotta"
-                                      ? "var(--color-spice-terracotta)"
-                                      : "var(--color-text-tertiary)",
-                                flexShrink: 0,
-                              }}
-                            >
-                              {prep.text}
-                            </span>
-                          )}
-                        </div>
-                      );
-
-                      // Derive entity display from linkedEntities, fall back to account string (I339)
-                      const entityLabel = meeting.linkedEntities?.length
-                        ? meeting.linkedEntities.map((e) => e.name).join(", ")
-                        : meeting.account;
-
-                      // Subtitle line
-                      const subtitle = (
-                        <p
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 13,
-                            color: "var(--color-text-tertiary)",
-                            margin: "0 0 0 32px",
-                            paddingBottom: 4,
-                          }}
-                        >
-                          {entityLabel && <span>{entityLabel}</span>}
-                          {entityLabel && meeting.type && (
-                            <span> &middot; </span>
-                          )}
-                          <span>{meeting.type.replace(/_/g, " ")}</span>
-                        </p>
-                      );
-
-                      if (meeting.meetingId) {
-                        return (
-                          <Link
-                            key={`${group.date}-${idx}`}
-                            to="/meeting/$meetingId"
-                            params={{ meetingId: meeting.meetingId }}
-                            style={{
-                              textDecoration: "none",
-                              color: "inherit",
-                              borderRadius: 6,
-                              transition: "background 0.15s ease",
-                            }}
-                            className="hover:bg-[var(--color-rule-light)]"
-                          >
-                            {row}
-                            {subtitle}
-                          </Link>
-                        );
-                      }
-                      return (
-                        <div key={`${group.date}-${idx}`}>
-                          {row}
-                          {subtitle}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 15,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              No external meetings this week.
-            </p>
-          )}
-        </section>
-
-        {/* ── Chapter 4: Open Time ───────────────────────────────────────── */}
-        <section
-          id="open-time"
-          className="editorial-reveal"
-          style={{ paddingTop: 64 }}
-        >
-          <ChapterHeading
-            title="Open Time"
-            epigraph={
-              deepWorkMinutes > 0
-                ? `${deepWorkHours} hour${deepWorkHours !== 1 ? "s" : ""} of deep work available this week.`
-                : undefined
-            }
-          />
-
-          {/* Pull quote — AI one-liner connecting best block to need */}
-          {deepWorkBlocks.length > 0 && deepWorkBlocks[0].reason && (
-            <PullQuote text={deepWorkBlocks[0].reason} />
-          )}
-
-          {deepWorkBlocks.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 36 }}>
-              {deepWorkBlocks.map((block, idx) => {
-                const linkTarget = resolveSuggestionLink(
-                  block.actionId,
-                  block.meetingId
-                );
-                const hasSuggestion = !!block.suggestedUse?.trim();
-
-                return (
-                  <div key={`${block.day}-${block.start}-${idx}`}>
-                    {/* Block header */}
-                    <p
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                        color: "var(--color-text-primary)",
-                        marginBottom: 8,
-                      }}
-                    >
-                      {block.day} &middot;{" "}
-                      {formatBlockRange(block.start, block.end)} &middot;{" "}
-                      {block.durationMinutes} min
-                    </p>
-
-                    {hasSuggestion ? (
-                      <>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 17,
-                            fontWeight: 500,
-                            color: "var(--color-text-primary)",
-                            margin: "0 0 6px",
-                          }}
-                        >
-                          Suggested: {block.suggestedUse}
-                        </p>
-                        {block.reason && (
-                          <p
-                            style={{
-                              fontFamily: "var(--font-sans)",
-                              fontSize: 14,
-                              lineHeight: 1.6,
-                              color: "var(--color-text-secondary)",
-                              margin: "0 0 8px",
-                            }}
-                          >
-                            {block.reason}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <p
-                        style={{
-                          fontFamily: "var(--font-serif)",
-                          fontSize: 15,
-                          fontStyle: "italic",
-                          color: "var(--color-text-tertiary)",
-                          margin: "0 0 8px",
-                        }}
-                      >
-                        No suggestion &mdash; use for deep work
-                      </p>
-                    )}
-
-                    {/* Action buttons + context */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {block.meetingId && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={prefillingMeetingId === block.meetingId}
-                            onClick={() =>
-                              handlePrefillPrep(
-                                block.meetingId!,
-                                block.suggestedUse ?? "",
-                                block.reason
-                              )
-                            }
-                            style={{ fontSize: 12 }}
-                          >
-                            Prefill Prep
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              draft.openDraft(
-                                block.meetingId!,
-                                block.reason ?? block.suggestedUse ?? ""
-                              )
-                            }
-                            style={{ fontSize: 12 }}
-                          >
-                            Draft agenda
-                          </Button>
-                        </>
-                      )}
-                      {linkTarget.kind !== "none" && (
-                        <Link
-                          to={
-                            linkTarget.kind === "action"
-                              ? "/actions/$actionId"
-                              : "/meeting/$meetingId"
-                          }
-                          params={
-                            linkTarget.kind === "action"
-                              ? { actionId: linkTarget.id }
-                              : { meetingId: linkTarget.id }
-                          }
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 13,
-                            color: "var(--color-text-tertiary)",
-                            textDecoration: "none",
-                          }}
-                        >
-                          &rarr; View{" "}
-                          {linkTarget.kind === "action" ? "action" : "meeting"}
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 15,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              Your week is fully booked. Consider moving a meeting to make
-              space.
-            </p>
-          )}
-        </section>
-
-        {/* ── Chapter 5: Commitments ─────────────────────────────────────── */}
-        <section
-          id="commitments"
-          className="editorial-reveal"
-          style={{ paddingTop: 64 }}
-        >
-          <ChapterHeading title="Commitments" />
-
-          {commitments.length > 0 ? (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
-                }}
-              >
-                {commitments.map((action) => {
-                  const dueContext = formatDueContext(
-                    action.dueDate,
-                    action.daysOverdue
-                  );
-                  return (
-                    <Link
-                      key={action.id}
-                      to="/actions/$actionId"
-                      params={{ actionId: action.id }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "10px 8px",
-                        textDecoration: "none",
-                        color: "inherit",
-                        borderRadius: 6,
-                        transition: "background 0.15s ease",
-                      }}
-                      className="hover:bg-[var(--color-rule-light)]"
-                    >
-                      {/* Checkbox circle */}
-                      <span
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: "50%",
-                          border: `1.5px solid ${
-                            action.isOverdue
-                              ? "var(--color-spice-terracotta)"
-                              : "var(--color-rule-heavy)"
-                          }`,
-                          background: action.isOverdue
-                            ? "var(--color-spice-terracotta)"
-                            : "transparent",
-                          flexShrink: 0,
-                        }}
-                      />
-                      {/* Title + context */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 17,
-                            fontWeight: 400,
-                            lineHeight: 1.4,
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                          }}
-                        >
-                          {action.title}
-                        </p>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 13,
-                            color: "var(--color-text-tertiary)",
-                            margin: "2px 0 0",
-                          }}
-                        >
-                          {dueContext && (
-                            <span
-                              style={{
-                                color: action.isOverdue
-                                  ? "var(--color-spice-terracotta)"
-                                  : undefined,
-                              }}
-                            >
-                              {dueContext}
-                            </span>
-                          )}
-                          {dueContext && action.account && (
-                            <span> &middot; </span>
-                          )}
-                          {action.account && <span>{action.account}</span>}
-                        </p>
-                      </div>
-                      {/* Priority badge */}
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 11,
-                          color:
-                            action.priority === "P1"
-                              ? "var(--color-spice-terracotta)"
-                              : "var(--color-text-tertiary)",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {action.priority}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-
-              {/* Summary line */}
-              <p
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 13,
-                  color: "var(--color-text-tertiary)",
-                  textAlign: "center",
-                  marginTop: 24,
-                }}
-              >
-                &mdash;&mdash;&mdash; {commitmentsTotalCount} total &middot;{" "}
-                {commitmentsOverdueCount} overdue
-                {commitmentsTotalCount > commitments.length && (
-                  <span>
-                    {" "}&middot;{" "}
-                    <Link
-                      to="/actions"
-                      search={{ search: undefined }}
-                      style={{
-                        color: "var(--color-garden-larkspur)",
-                        textDecoration: "underline",
-                      }}
-                    >
-                      {commitmentsTotalCount - commitments.length} more &rarr;
-                    </Link>
-                  </span>
-                )}
-                {" "}&mdash;&mdash;&mdash;
-              </p>
-            </>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 15,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              Nothing due this week. Rare air.
-            </p>
-          )}
-        </section>
-
         {/* ── Error display ──────────────────────────────────────────────── */}
         {error && (
           <div style={{ marginTop: 48 }}>
@@ -1502,13 +879,6 @@ export default function WeekPage() {
         </section>
       </div>
 
-      <AgendaDraftDialog
-        open={draft.open}
-        onOpenChange={draft.setOpen}
-        loading={draft.loading}
-        subject={draft.subject}
-        body={draft.body}
-      />
     </>
   );
 }
