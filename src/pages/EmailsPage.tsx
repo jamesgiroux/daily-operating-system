@@ -7,6 +7,7 @@ import { EditorialError } from "@/components/editorial/EditorialError";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { RefreshCw, X } from "lucide-react";
 import s from "@/styles/editorial-briefing.module.css";
 import type { EmailBriefingData } from "@/types";
@@ -44,6 +45,11 @@ export default function EmailsPage() {
   useEffect(() => {
     loadEmails();
   }, [loadEmails]);
+
+  // Silent refresh on backend email events
+  const silentRefresh = useCallback(() => { loadEmails(); }, [loadEmails]);
+  useTauriEvent("emails-updated", silentRefresh);
+  useTauriEvent("workflow-completed", silentRefresh);
 
   const handleDismiss = useCallback(async (
     itemType: string,

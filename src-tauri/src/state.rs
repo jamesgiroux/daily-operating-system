@@ -120,6 +120,8 @@ pub struct AppState {
     pub quill_poller_wake: Arc<tokio::sync::Notify>,
     /// Wake signal for Linear sync poller (I346).
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for email poller (reset poll cycle on manual refresh).
+    pub email_poller_wake: Arc<tokio::sync::Notify>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
 }
@@ -204,6 +206,7 @@ impl AppState {
             entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
             quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
             linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            email_poller_wake: Arc::new(tokio::sync::Notify::new()),
             active_preset: RwLock::new(active_preset),
         }
     }
