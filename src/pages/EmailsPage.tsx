@@ -8,9 +8,36 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
-import { RefreshCw, X } from "lucide-react";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { X } from "lucide-react";
 import s from "@/styles/editorial-briefing.module.css";
 import type { EmailBriefingData } from "@/types";
+
+// =============================================================================
+// Self-contained so refreshing-state renders don't bubble to the whole page.
+function EmailRefreshButton() {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await invoke<string>("refresh_emails");
+    } catch (err) {
+      console.error("Email refresh failed:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  return (
+    <FolioRefreshButton
+      onClick={handleRefresh}
+      loading={refreshing}
+      loadingLabel="Refreshing\u2026"
+      title={refreshing ? "Refreshing emails..." : "Check for new emails"}
+    />
+  );
+}
 
 // =============================================================================
 // Page
@@ -21,7 +48,6 @@ export default function EmailsPage() {
   const [data, setData] = useState<EmailBriefingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const loadEmails = useCallback(async () => {
@@ -74,18 +100,6 @@ export default function EmailsPage() {
       console.error("Dismiss failed:", err);
     }
   }, []);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await invoke<string>("refresh_emails");
-      await loadEmails();
-    } catch (err) {
-      console.error("Email refresh failed:", err);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [loadEmails]);
 
   // Email types to exclude — operational noise, not strategic intelligence
   const NOISE_EMAIL_TYPES = new Set([
@@ -171,19 +185,7 @@ export default function EmailsPage() {
     }, 0);
   }, [entityThreads]);
 
-  const folioActions = useMemo(() => (
-    <button
-      onClick={handleRefresh}
-      disabled={refreshing}
-      className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-      title={refreshing ? "Refreshing emails..." : "Check for new emails"}
-    >
-      <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em" }}>
-        {refreshing ? "Refreshing..." : "Refresh"}
-      </span>
-    </button>
-  ), [handleRefresh, refreshing]);
+  const folioActions = useMemo(() => <EmailRefreshButton />, []);
 
   const shellConfig = useMemo(
     () => ({

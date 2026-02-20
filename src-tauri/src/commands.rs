@@ -378,6 +378,29 @@ pub async fn generate_meeting_intelligence(
     Ok(result)
 }
 
+/// Trigger background enrichment for a single meeting without blocking the caller.
+/// Returns immediately; enrichment runs asynchronously in a spawned task.
+/// Emits `intelligence-updated` with the meeting_id on completion.
+#[tauri::command]
+pub async fn enrich_meeting_background(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tokio::spawn(async move {
+        match crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, false).await {
+            Ok(_) => {
+                let _ = app_handle.emit("intelligence-updated", &meeting_id);
+            }
+            Err(e) => {
+                log::warn!("enrich_meeting_background failed for {}: {}", meeting_id, e);
+            }
+        }
+    });
+    Ok(())
+}
+
 // Delegated to crate::services::meetings
 fn hydrate_attendee_context(
     db: &crate::db::ActionDb,
