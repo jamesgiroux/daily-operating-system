@@ -756,6 +756,9 @@ pub struct Meeting {
     /// Set when classification matched an archived account. Frontend shows a banner.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_unarchive_account_id: Option<String>,
+    /// Structured intelligence quality assessment for schedule rows (I329).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence_quality: Option<IntelligenceQuality>,
 }
 
 /// An entity linked to a meeting via the junction table.
@@ -1974,6 +1977,23 @@ pub struct ConcreteRequest {
     pub urgency: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+}
+
+/// Meeting data for the ±7-day week timeline (I330)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineMeeting {
+    pub id: String,
+    pub title: String,
+    pub start_time: String,
+    pub end_time: Option<String>,
+    pub meeting_type: String,
+    pub intelligence_quality: Option<IntelligenceQuality>,
+    pub has_outcomes: bool,
+    pub outcome_summary: Option<String>,
+    pub entities: Vec<LinkedEntity>,
+    pub has_new_signals: bool,
+    pub prior_meeting_id: Option<String>,
 }
 
 #[cfg(test)]
