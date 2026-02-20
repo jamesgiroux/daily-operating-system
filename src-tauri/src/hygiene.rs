@@ -307,7 +307,7 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             continue;
         }
 
-        let (extracted_at, summary) = crate::entity_intel::extract_and_summarize(path);
+        let (extracted_at, summary) = crate::intelligence::extract_and_summarize(path);
         match (extracted_at, summary) {
             (Some(ext_at), Some(summ)) => {
                 let _ = db.conn_ref().execute(
