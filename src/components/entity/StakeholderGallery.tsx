@@ -316,6 +316,7 @@ export function StakeholderGallery({
                     <EditableText
                       value={s.name}
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].name`, v)}
+                      multiline={false}
                       style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}
                     />
                   ) : (
@@ -351,6 +352,7 @@ export function StakeholderGallery({
                       value={s.role}
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].role`, v)}
                       as="p"
+                      multiline={false}
                       style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "0 0 8px 0" }}
                     />
                   ) : (

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { buildVitalsFromPreset } from "@/lib/preset-vitals";
@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ProjectHero } from "@/components/project/ProjectHero";
 import { ProjectAppendix } from "@/components/project/ProjectAppendix";
-import { ProjectFieldsDrawer } from "@/components/project/ProjectFieldsDrawer";
 import { WatchListMilestones } from "@/components/project/WatchListMilestones";
 import { TrajectoryChapter } from "@/components/project/TrajectoryChapter";
 import { HorizonChapter } from "@/components/project/HorizonChapter";
@@ -40,7 +39,6 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { EntityKeywords } from "@/components/entity/EntityKeywords";
 
 /* ── Vitals assembly ── */
 
@@ -122,11 +120,23 @@ export default function ProjectDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
-  const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("project", projectId);
+
+  // Auto-save inline field edits with debounce
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleInlineAutoSave = useCallback(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      proj.handleSave();
+    }, 600);
+  }, [proj.handleSave]);
+  useEffect(() => {
+    if (proj.dirty) handleInlineAutoSave();
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [proj.dirty, handleInlineAutoSave]);
 
   if (proj.loading) return <EditorialLoading />;
 
@@ -144,7 +154,16 @@ export default function ProjectDetailEditorial() {
         <ProjectHero
           detail={detail}
           intelligence={intelligence}
-          onEditFields={() => setFieldsDrawerOpen(true)}
+          editName={proj.editName}
+          onNameChange={(v) => { proj.setEditName(v); proj.setDirty(true); }}
+          editStatus={proj.editStatus}
+          onStatusChange={(v) => { proj.setEditStatus(v); proj.setDirty(true); }}
+          editMilestone={proj.editMilestone}
+          onMilestoneChange={(v) => { proj.setEditMilestone(v); proj.setDirty(true); }}
+          editOwner={proj.editOwner}
+          onOwnerChange={(v) => { proj.setEditOwner(v); proj.setDirty(true); }}
+          editTargetDate={proj.editTargetDate}
+          onTargetDateChange={(v) => { proj.setEditTargetDate(v); proj.setDirty(true); }}
           onEnrich={proj.handleEnrich}
           enriching={proj.enriching}
           enrichSeconds={proj.enrichSeconds}
@@ -154,7 +173,6 @@ export default function ProjectDetailEditorial() {
         <div className="editorial-reveal">
           <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.project, detail) : buildProjectVitals(detail)} />
         </div>
-        <EntityKeywords entityId={projectId} entityType="project" keywordsJson={detail.keywords} />
       </section>
 
       {/* Chapter 2: Trajectory */}
@@ -236,27 +254,6 @@ export default function ProjectDetailEditorial() {
           indexFeedback={proj.indexFeedback}
         />
       </div>
-
-      {/* Fields Drawer */}
-      <ProjectFieldsDrawer
-        open={fieldsDrawerOpen}
-        onOpenChange={setFieldsDrawerOpen}
-        editName={proj.editName}
-        setEditName={proj.setEditName}
-        editStatus={proj.editStatus}
-        setEditStatus={proj.setEditStatus}
-        editMilestone={proj.editMilestone}
-        setEditMilestone={proj.setEditMilestone}
-        editOwner={proj.editOwner}
-        setEditOwner={proj.setEditOwner}
-        editTargetDate={proj.editTargetDate}
-        setEditTargetDate={proj.setEditTargetDate}
-        setDirty={proj.setDirty}
-        onSave={proj.handleSave}
-        onCancel={proj.handleCancelEdit}
-        saving={proj.saving}
-        dirty={proj.dirty}
-      />
 
       {/* Archive Confirmation */}
       <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>

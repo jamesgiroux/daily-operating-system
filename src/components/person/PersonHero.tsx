@@ -1,11 +1,12 @@
 /**
  * PersonHero — editorial headline for a person.
  * Larkspur-tinted watermark, circular initial avatar, relationship + temperature badges.
- * Meta row: Edit Details, Build Intelligence, Merge, Archive, Delete.
+ * Meta row: Edit Details, Refresh, Merge, Archive, Delete.
  */
 import { useState } from "react";
 import type { PersonDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { Avatar } from "@/components/ui/Avatar";
 import styles from "./PersonHero.module.css";
 
@@ -86,8 +87,8 @@ export function PersonHero({
 
       {/* Hero date / intelligence timestamp */}
       <div className={styles.heroDate}>
-        Person Intelligence
-        {intelligence && ` \u00B7 Last enriched ${formatRelativeDateShort(intelligence.enrichedAt)}`}
+        <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
+        {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
         {detail.lastEnrichedAt && ` \u00B7 Clay ${formatRelativeDateShort(detail.lastEnrichedAt)}`}
       </div>
 
@@ -186,7 +187,7 @@ export function PersonHero({
             onClick={onEnrich}
             disabled={enriching}
           >
-            {enriching ? `Building intelligence… ${enrichSeconds ?? 0}s` : "Build Intelligence"}
+            {enriching ? `Refreshing… ${enrichSeconds ?? 0}s` : "Refresh"}
           </button>
         )}
         {onClayEnrich && (
