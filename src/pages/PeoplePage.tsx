@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useNavigate, useSearch, Link } from "@tanstack/react-router";
 import {
   AlertDialog,
@@ -160,16 +160,14 @@ export default function PeoplePage() {
     }
   }, [archiveTab, loadPeople, loadArchivedPeople]);
 
-  useEffect(() => {
-    const unlisten = listen("people-updated", () => {
-      if (archiveTab === "active") {
-        loadPeople();
-      } else {
-        loadArchivedPeople();
-      }
-    });
-    return () => { unlisten.then((f) => f()); };
+  const onPeopleUpdated = useCallback(() => {
+    if (archiveTab === "active") {
+      loadPeople();
+    } else {
+      loadArchivedPeople();
+    }
   }, [archiveTab, loadPeople, loadArchivedPeople]);
+  useTauriEvent("people-updated", onPeopleUpdated);
 
   // Filters
   const filtered = searchQuery

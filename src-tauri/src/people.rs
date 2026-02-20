@@ -258,8 +258,8 @@ pub fn write_person_markdown(
     }
 
     // === Intelligence sections (I136 — from intelligence.json) ===
-    if let Ok(intel) = crate::entity_intel::read_intelligence_json(&dir) {
-        let intel_md = crate::entity_intel::format_intelligence_markdown(&intel);
+    if let Ok(intel) = crate::intelligence::read_intelligence_json(&dir) {
+        let intel_md = crate::intelligence::format_intelligence_markdown(&intel);
         if !intel_md.is_empty() {
             md.push_str(&intel_md);
         }

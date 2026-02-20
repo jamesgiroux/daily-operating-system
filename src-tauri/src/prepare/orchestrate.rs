@@ -525,7 +525,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             };
 
             if needs_refresh {
-                match crate::intelligence_lifecycle::generate_meeting_intelligence(
+                match crate::intelligence::generate_meeting_intelligence(
                     state, calendar_event_id, false,
                 ).await {
                     Ok(_quality) => {
@@ -883,7 +883,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
             }
         };
 
-        match crate::intelligence_lifecycle::generate_meeting_intelligence(state, &meeting_id, false).await {
+        match crate::intelligence::generate_meeting_intelligence(state, &meeting_id, false).await {
             Ok(quality) => {
                 log::info!("prepare_week: intelligence for '{}': {:?}", title, quality.level);
             }
@@ -1201,7 +1201,7 @@ fn queue_person_intelligence(
         let entity_name = pe.get("entity_name").and_then(|v| v.as_str()).unwrap_or(&entity_id);
         let person_dir = crate::people::person_dir(workspace, entity_name);
 
-        if let Ok(intel) = crate::entity_intel::read_intelligence_json(&person_dir) {
+        if let Ok(intel) = crate::intelligence::read_intelligence_json(&person_dir) {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&intel.enriched_at) {
                 let age_secs = (Utc::now() - ts.with_timezone(&Utc)).num_seconds();
                 if age_secs < 7200 {
