@@ -14,6 +14,7 @@ import { useState, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { useProposedActions } from "@/hooks/useProposedActions";
+import { ProposedActionRow } from "@/components/shared/ProposedActionRow";
 import clsx from "clsx";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -226,7 +227,9 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   // Action completion
   const handleComplete = useCallback((id: string) => {
     setCompletedIds((prev) => new Set(prev).add(id));
-    invoke("complete_action", { id }).catch(() => {});
+    invoke("complete_action", { id }).catch((err) => {
+      console.error("complete_action failed:", err);
+    });
   }, []);
 
   // Proposed actions for triage
@@ -287,15 +290,18 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         <h1 className={s.heroHeadline}>{heroHeadline}</h1>
 
         {/* Capacity + focus directive */}
-        {data.focus && (
-          <div className={s.focusCapacity}>
-            {formatMinutes(data.focus.availableMinutes)} available
-            {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length > 0 && (
-              <> &middot; {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length} deep work block{data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length !== 1 ? "s" : ""}</>
-            )}
-            {" "}&middot; {data.focus.meetingCount} meeting{data.focus.meetingCount !== 1 ? "s" : ""}
-          </div>
-        )}
+        {data.focus && (() => {
+          const deepWorkBlocks = data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length;
+          return (
+            <div className={s.focusCapacity}>
+              {formatMinutes(data.focus.availableMinutes)} available
+              {deepWorkBlocks > 0 && (
+                <> &middot; {deepWorkBlocks} deep work block{deepWorkBlocks !== 1 ? "s" : ""}</>
+              )}
+              {" "}&middot; {data.focus.meetingCount} meeting{data.focus.meetingCount !== 1 ? "s" : ""}
+            </div>
+          );
+        })()}
 
         {data.overview.focus && (
           <div className={s.focusBlock}>
@@ -470,87 +476,14 @@ function AttentionSection({
             <>
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                 {proposedActions.slice(0, 3).map((action, i) => (
-                  <div
+                  <ProposedActionRow
                     key={action.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "8px 0",
-                      borderBottom: i < Math.min(proposedActions.length, 3) - 1
-                        ? "1px solid var(--color-rule-light)"
-                        : "none",
-                      borderLeft: "2px dashed var(--color-spice-turmeric)",
-                      paddingLeft: 12,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-serif)",
-                          fontSize: 15,
-                          color: "var(--color-text-primary)",
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {action.title}
-                      </div>
-                      {action.sourceLabel && (
-                        <div
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 11,
-                            color: "var(--color-text-tertiary)",
-                            marginTop: 1,
-                          }}
-                        >
-                          {action.sourceLabel}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                      <button
-                        onClick={() => acceptAction(action.id)}
-                        title="Accept"
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 4,
-                          border: "1px solid var(--color-garden-sage)",
-                          background: "transparent",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: 0,
-                        }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M2.5 6L5 8.5L9.5 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => rejectAction(action.id)}
-                        title="Dismiss"
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 4,
-                          border: "1px solid var(--color-spice-terracotta)",
-                          background: "transparent",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: 0,
-                        }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M3 3L9 9M9 3L3 9" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
+                    action={action}
+                    onAccept={() => acceptAction(action.id)}
+                    onReject={() => rejectAction(action.id)}
+                    showBorder={i < Math.min(proposedActions.length, 3) - 1}
+                    compact
+                  />
                 ))}
               </div>
               {proposedActions.length > 3 && (
