@@ -9,10 +9,14 @@ export function useCalendar() {
 
   // Fetch events on mount and when calendar-updated fires
   useEffect(() => {
-    invoke<CalendarEvent[]>("get_calendar_events").then(setEvents).catch(() => {});
+    invoke<CalendarEvent[]>("get_calendar_events").then(setEvents).catch((err) => {
+      console.error("get_calendar_events failed:", err);
+    });
 
     const unlisten = listen("calendar-updated", () => {
-      invoke<CalendarEvent[]>("get_calendar_events").then(setEvents).catch(() => {});
+      invoke<CalendarEvent[]>("get_calendar_events").then(setEvents).catch((err) => {
+        console.error("get_calendar_events failed:", err);
+      });
     });
 
     return () => {

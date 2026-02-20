@@ -8,8 +8,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::db::{ActionDb, DbError};
+use crate::helpers;
 
 use super::bus;
+use super::propagation::PropagationEngine;
 
 /// A correlation between a post-meeting email and its meeting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +26,14 @@ pub struct PostMeetingCorrelation {
 /// Find emails from meeting attendees sent 1-48h after meeting end time.
 /// Persists correlations and emits `post_meeting_followup` signals.
 pub fn correlate_post_meeting_emails(db: &ActionDb) -> Result<Vec<PostMeetingCorrelation>, String> {
+    correlate_post_meeting_emails_with_engine(db, None)
+}
+
+/// Like `correlate_post_meeting_emails` but optionally propagates signals via the engine.
+pub fn correlate_post_meeting_emails_with_engine(
+    db: &ActionDb,
+    engine: Option<&PropagationEngine>,
+) -> Result<Vec<PostMeetingCorrelation>, String> {
     let conn = db.conn_ref();
     let mut correlations = Vec::new();
 
@@ -38,11 +48,7 @@ pub fn correlate_post_meeting_emails(db: &ActionDb) -> Result<Vec<PostMeetingCor
 
     // For each meeting, find email signals from attendees within 24h post-meeting
     for (meeting_id, title, end_time, attendees_csv, account_id) in &meetings {
-        let attendee_emails: Vec<String> = attendees_csv
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| s.contains('@'))
-            .collect();
+        let attendee_emails = helpers::parse_attendee_emails(attendees_csv);
 
         if attendee_emails.is_empty() {
             continue;
@@ -104,15 +110,28 @@ pub fn correlate_post_meeting_emails(db: &ActionDb) -> Result<Vec<PostMeetingCor
             let entity_type = if account_id.is_some() { "account" } else { "meeting" };
             let entity_id = account_id.as_deref().unwrap_or(meeting_id);
 
-            let _ = bus::emit_signal(
-                db,
-                entity_type,
-                entity_id,
-                "post_meeting_followup",
-                "email_thread",
-                Some(&value),
-                0.70,
-            );
+            if let Some(eng) = engine {
+                let _ = bus::emit_signal_and_propagate(
+                    db,
+                    eng,
+                    entity_type,
+                    entity_id,
+                    "post_meeting_followup",
+                    "email_thread",
+                    Some(&value),
+                    0.70,
+                );
+            } else {
+                let _ = bus::emit_signal(
+                    db,
+                    entity_type,
+                    entity_id,
+                    "post_meeting_followup",
+                    "email_thread",
+                    Some(&value),
+                    0.70,
+                );
+            }
 
             correlations.push(PostMeetingCorrelation {
                 meeting_id: meeting_id.clone(),
@@ -201,13 +220,7 @@ impl ActionDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_correlate_no_meetings() {
