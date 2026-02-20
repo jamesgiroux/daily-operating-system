@@ -212,7 +212,9 @@ export function StakeholderGallery({
     updateStakeholders(updated);
     // Also link the person to this entity
     if (entityId && entityType) {
-      invoke("link_person_entity", { personId: person.id, entityId, relationshipType: "associated" }).catch(() => {});
+      invoke("link_person_entity", { personId: person.id, entityId, relationshipType: "associated" }).catch((err) => {
+        console.error("link_person_entity failed:", err);
+      });
     }
     setNewName("");
     setNewRole("");

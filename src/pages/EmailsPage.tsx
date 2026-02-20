@@ -27,7 +27,10 @@ export default function EmailsPage() {
     try {
       const [result, dismissedItems] = await Promise.all([
         invoke<EmailBriefingData>("get_emails_enriched"),
-        invoke<string[]>("list_dismissed_email_items").catch(() => [] as string[]),
+        invoke<string[]>("list_dismissed_email_items").catch((err) => {
+          console.error("list_dismissed_email_items failed:", err);
+          return [] as string[];
+        }),
       ]);
       setData(result);
       setDismissed(new Set(dismissedItems));

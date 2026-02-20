@@ -211,7 +211,7 @@ impl Scheduler {
     fn run_post_meeting_email_correlation(&self) {
         match crate::db::ActionDb::open() {
             Ok(db) => {
-                if let Err(e) = crate::signals::post_meeting::correlate_post_meeting_emails(&db) {
+                if let Err(e) = crate::signals::post_meeting::correlate_post_meeting_emails_with_engine(&db, Some(&self.state.signal_engine)) {
                     log::warn!("Post-meeting email correlation failed: {}", e);
                 }
             }

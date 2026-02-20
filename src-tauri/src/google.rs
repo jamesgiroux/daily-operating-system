@@ -666,8 +666,9 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 
                 // I353 Phase 2: Emit person_created signal for hygiene feedback loop
                 if is_new {
-                    let _ = crate::signals::bus::emit_signal(
+                    let _ = crate::signals::bus::emit_signal_and_propagate(
                         db,
+                        &state.signal_engine,
                         "person",
                         &person.id,
                         "person_created",
@@ -766,9 +767,9 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
                 meeting_id
             );
         }
-        // Emit cancellation signal (I308)
-        let _ = crate::signals::bus::emit_signal(
-            db, "meeting", meeting_id, "meeting_cancelled", "calendar",
+        // Emit cancellation signal (I308) with propagation
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, &state.signal_engine, "meeting", meeting_id, "meeting_cancelled", "calendar",
             None, 0.9,
         );
     }
@@ -787,14 +788,7 @@ fn get_workspace(state: &AppState) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{ActionDb, DbAccount};
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("google_test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open test db")
-    }
+    use crate::db::{DbAccount, test_utils::test_db};
 
     fn sample_event(
         id: &str,

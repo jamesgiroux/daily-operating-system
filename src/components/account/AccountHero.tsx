@@ -40,9 +40,9 @@ export function AccountHero({
   editName,
   setEditName,
   editHealth,
-  setEditHealth,
+  setEditHealth: _setEditHealth,
   editLifecycle,
-  setEditLifecycle,
+  setEditLifecycle: _setEditLifecycle,
   onSave,
   onEnrich,
   enriching,
@@ -123,50 +123,18 @@ export function AccountHero({
         </p>
       )}
 
-      {/* Badges row — always show when editable, with placeholders for empty fields */}
+      {/* Badges row — read-only display (editing happens via VitalsStrip) */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
-        {((editHealth ?? detail.health) || setEditHealth) && (
+        {(editHealth ?? detail.health) && (
           <span
             className={`${styles.badge} ${healthClass[editHealth ?? detail.health ?? ""] ?? ""}`}
-            onClick={() => {
-              if (!setEditHealth) return;
-              const cycle = ["green", "yellow", "red"];
-              const current = editHealth ?? detail.health ?? "";
-              const idx = cycle.indexOf(current);
-              const next = cycle[(idx + 1) % cycle.length];
-              setEditHealth(next);
-              onSave?.();
-            }}
-            style={{
-              cursor: setEditHealth ? "pointer" : "default",
-              opacity: (editHealth ?? detail.health) ? 1 : 0.4,
-              borderStyle: (editHealth ?? detail.health) ? undefined : "dashed",
-            }}
-            title={setEditHealth ? "Click to set health" : undefined}
           >
-            {editHealth ?? detail.health ?? "Health"}
+            {editHealth ?? detail.health}
           </span>
         )}
-        {((editLifecycle ?? detail.lifecycle) || setEditLifecycle) && (
-          <span
-            className={`${styles.badge} ${styles.lifecycleBadge}`}
-            onClick={() => {
-              if (!setEditLifecycle) return;
-              const stages = ["Onboarding", "Adopted", "Expanding", "Renewing", "At Risk"];
-              const current = editLifecycle ?? detail.lifecycle ?? "";
-              const idx = stages.findIndex(s => s.toLowerCase() === current.toLowerCase());
-              const next = stages[(idx + 1) % stages.length];
-              setEditLifecycle(next);
-              onSave?.();
-            }}
-            style={{
-              cursor: setEditLifecycle ? "pointer" : "default",
-              opacity: (editLifecycle ?? detail.lifecycle) ? 1 : 0.4,
-              borderStyle: (editLifecycle ?? detail.lifecycle) ? undefined : "dashed",
-            }}
-            title={setEditLifecycle ? "Click to set lifecycle" : undefined}
-          >
-            {editLifecycle ?? detail.lifecycle ?? "Lifecycle"}
+        {(editLifecycle ?? detail.lifecycle) && (
+          <span className={`${styles.badge} ${styles.lifecycleBadge}`}>
+            {editLifecycle ?? detail.lifecycle}
           </span>
         )}
         {detail.isInternal && (
