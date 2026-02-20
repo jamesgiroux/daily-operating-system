@@ -309,6 +309,8 @@ pub fn default_features_for_mode(profile: &str, entity_mode: &str) -> HashMap<St
     features.insert("accountTracking".to_string(), is_cs && accounts_on);
     features.insert("projectTracking".to_string(), projects_on);
     features.insert("impactRollup".to_string(), is_cs && accounts_on);
+    // I321: email body access for commitment extraction (opt-in)
+    features.insert("emailBodyAccess".to_string(), false);
     // I323: auto-archive low-priority emails
     features.insert("autoArchiveEnabled".to_string(), false);
     features

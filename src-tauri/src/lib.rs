@@ -526,6 +526,8 @@ pub fn run() {
             // I311: Entity Metadata
             commands::update_entity_metadata,
             commands::get_entity_metadata,
+            // I323: Email Disposition Correction
+            commands::correct_email_disposition,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
