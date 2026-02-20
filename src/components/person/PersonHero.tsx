@@ -230,7 +230,7 @@ export function PersonHero({
             onClick={onClayEnrich}
             disabled={clayEnriching}
           >
-            {clayEnriching ? "Enriching from Clay…" : "Enrich from Clay"}
+            {clayEnriching ? "Updating from Clay…" : "Update from Clay"}
           </button>
         )}
         {onMerge && !detail.archived && (
