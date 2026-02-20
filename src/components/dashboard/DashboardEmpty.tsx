@@ -1,14 +1,16 @@
 /**
  * DashboardEmpty — Editorial empty state for the daily briefing.
  * Renders inside MagazinePageLayout's page container.
- * Warm language, serif typography, prominent generate action.
+ *
+ * Uses the editorial margin grid (100px label column + content) to feel
+ * like a page ready to receive its edition, not a blank screen. Section
+ * rules, hero-scale typography, and a pull quote treatment for the footnote.
  *
  * When a briefing workflow is running, transitions to the shared
  * GeneratingProgress screen with phase steps and rotating quotes.
  */
 
 import { Mail } from "lucide-react";
-import { BrandMark } from "@/components/ui/BrandMark";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import type { GoogleAuthStatus } from "@/types";
@@ -16,15 +18,15 @@ import type { WorkflowStatus } from "@/hooks/useWorkflow";
 
 const BRIEFING_PHASES = [
   { key: "preparing", label: "Gathering your day", detail: "Pulling calendar, emails, and entity context" },
-  { key: "enriching", label: "AI processing", detail: "Building meeting prep, priorities, and action items" },
-  { key: "delivering", label: "Assembling the briefing", detail: "Composing your morning document" },
+  { key: "enriching", label: "Building context", detail: "Assembling meeting prep, priorities, and action items" },
+  { key: "delivering", label: "Composing the briefing", detail: "Writing your morning document" },
 ];
 
 const BRIEFING_QUOTES = [
   "Grab a coffee — your day will be ready soon.",
   "Combobulating your priorities…",
   `"The secret of getting ahead is getting started." — Mark Twain`,
-  "Teaching the AI about your calendar…",
+  "Teaching the system about your calendar…",
   `"By failing to prepare, you are preparing to fail." — Benjamin Franklin`,
   "Cross-referencing all the things…",
   "Turning chaos into calendar clarity…",
@@ -47,7 +49,6 @@ export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus,
   const { connect, loading: authLoading } = useGoogleAuth();
   const isUnauthed = googleAuth?.status === "notconfigured";
 
-  // Show the full generating progress screen when workflow is running
   if (isRunning && workflowStatus?.status === "running") {
     return (
       <GeneratingProgress
@@ -61,61 +62,83 @@ export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus,
   }
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
-      <div style={{ paddingTop: 120, paddingBottom: 80, textAlign: "center" }}>
-        {/* Sunrise mark */}
-        <div
-          style={{
-            color: "var(--color-spice-turmeric)",
-            marginBottom: 32,
-          }}
-        >
-          <BrandMark size={32} />
+    <div style={{ paddingTop: 72, paddingBottom: 96 }}>
+
+      {/* ── Margin grid ─────────────────────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "100px 32px 1fr" }}>
+
+        {/* Left label column */}
+        <div style={{ paddingTop: 6 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase" as const,
+              color: "var(--color-spice-turmeric)",
+            }}
+          >
+            Today
+          </span>
         </div>
 
-        {/* Heading */}
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 36,
-            fontWeight: 400,
-            letterSpacing: "-0.02em",
-            color: "var(--color-text-primary)",
-            margin: "0 0 12px 0",
-          }}
-        >
-          No briefing yet
-        </h1>
+        <div />
 
-        {/* Message */}
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 16,
-            color: "var(--color-text-secondary)",
-            maxWidth: 400,
-            marginLeft: "auto",
-            marginRight: "auto",
-            lineHeight: 1.6,
-            marginBottom: 32,
-          }}
-        >
-          {message}
-        </p>
+        {/* Content column */}
+        <div>
 
-        {/* Generate button */}
-        {onGenerate && (
-          <div style={{ textAlign: "center" }}>
+          {/* Section rule */}
+          <div style={{ borderTop: "1px solid var(--color-rule-heavy)", marginBottom: 36 }} />
+
+          {/* Hero headline */}
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 52,
+              fontWeight: 400,
+              letterSpacing: "-0.025em",
+              lineHeight: 1.06,
+              color: "var(--color-text-primary)",
+              margin: "0 0 20px",
+              maxWidth: 580,
+            }}
+          >
+            {isUnauthed ? "Connect your Google account." : "No briefing yet."}
+          </h1>
+
+          {/* Narrative subtext */}
+          <p
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 19,
+              fontStyle: "italic",
+              fontWeight: 300,
+              color: "var(--color-text-secondary)",
+              lineHeight: 1.55,
+              margin: "0 0 48px",
+              maxWidth: 500,
+            }}
+          >
+            {isUnauthed
+              ? "Link your calendar and email to receive your daily briefing."
+              : message}
+          </p>
+
+          {/* Light section rule before action */}
+          <div style={{ borderTop: "1px solid var(--color-rule-light)", marginBottom: 28 }} />
+
+          {/* Primary action */}
+          {onGenerate && (
             <button
               onClick={onGenerate}
-              title="Refresh emails, actions, and intelligence"
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 13,
                 fontWeight: 500,
                 letterSpacing: "0.04em",
-                padding: "12px 32px",
-                borderRadius: 8,
+                padding: "10px 28px",
+                borderRadius: 4,
                 border: "none",
                 background: "var(--color-desk-charcoal)",
                 color: "var(--color-paper-cream)",
@@ -127,95 +150,95 @@ export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus,
             >
               Prepare my day
             </button>
-            <p
+          )}
+
+          {/* Google connect — section rule row, not a card */}
+          {isUnauthed && (
+            <div
               style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 12,
-                color: "var(--color-text-tertiary)",
-                marginTop: 8,
+                borderTop: "1px solid var(--color-rule-light)",
+                marginTop: onGenerate ? 32 : 0,
+                paddingTop: 20,
+                paddingBottom: 4,
+                display: "flex",
+                alignItems: "center",
+                gap: 16,
               }}
             >
-              Refresh emails, actions, and intelligence
-            </p>
-          </div>
-        )}
-
-        {/* Google connect card */}
-        {isUnauthed && (
-          <div
-            style={{
-              maxWidth: 400,
-              marginLeft: "auto",
-              marginRight: "auto",
-              marginTop: 32,
-              padding: "20px 24px",
-              borderRadius: 16,
-              border: "1px dashed var(--color-rule-heavy)",
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-              textAlign: "left",
-            }}
-          >
-            <Mail size={20} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div
+              <Mail size={16} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  Connect Google
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    color: "var(--color-text-tertiary)",
+                    marginLeft: 12,
+                  }}
+                >
+                  Calendar and email for a complete briefing
+                </span>
+              </div>
+              <button
+                onClick={connect}
+                disabled={authLoading}
                 style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 14,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
                   fontWeight: 500,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase" as const,
+                  padding: "6px 14px",
+                  borderRadius: 4,
+                  border: "1px solid var(--color-rule-heavy)",
+                  background: "none",
                   color: "var(--color-text-primary)",
+                  cursor: authLoading ? "wait" : "pointer",
+                  opacity: authLoading ? 0.5 : 1,
                 }}
               >
-                Connect Google
-              </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 13,
-                  color: "var(--color-text-tertiary)",
-                  marginTop: 2,
-                }}
-              >
-                Add calendar and email for a complete briefing
-              </div>
+                Connect
+              </button>
             </div>
-            <button
-              onClick={connect}
-              disabled={authLoading}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase" as const,
-                padding: "6px 16px",
-                borderRadius: 4,
-                border: "1px solid var(--color-rule-heavy)",
-                background: "none",
-                color: "var(--color-text-primary)",
-                cursor: authLoading ? "wait" : "pointer",
-                opacity: authLoading ? 0.5 : 1,
-              }}
-            >
-              Connect
-            </button>
-          </div>
-        )}
+          )}
+        </div>
+      </div>
 
-        {/* Footnote */}
+      {/* ── Pull quote ──────────────────────────────────────────────────── */}
+      {/* Aligns to the content column, sits below the grid */}
+      <div
+        style={{
+          marginTop: 80,
+          marginLeft: 132, /* 100px label + 32px gap */
+          maxWidth: 360,
+        }}
+      >
+        <div style={{ borderTop: "1px solid var(--color-rule-light)", marginBottom: 20 }} />
         <p
           style={{
             fontFamily: "var(--font-serif)",
-            fontSize: 14,
+            fontSize: 15,
             fontStyle: "italic",
+            fontWeight: 300,
             color: "var(--color-text-tertiary)",
-            marginTop: 48,
+            lineHeight: 1.65,
+            margin: 0,
           }}
         >
           Grab a coffee — your day will be ready soon.
         </p>
+        <div style={{ borderTop: "1px solid var(--color-rule-light)", marginTop: 20 }} />
       </div>
+
     </div>
   );
 }
