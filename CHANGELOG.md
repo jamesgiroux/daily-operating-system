@@ -8,55 +8,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 The chief of staff reads your email. Signals, not summaries. Briefing, not inbox. Built on the 0.10.0 signal bus.
 
-### Added
+### Email Intelligence
 
-- **I317: Meeting-aware email intelligence** — Structured email digest organized by meeting relevance instead of raw excerpts. High-priority emails linked to upcoming meetings surface in meeting prep context.
-- **I318: Thread position tracking** — "Ball in your court" detection. Tracks which email threads await the user's reply vs. waiting on others, using thread-level sender analysis.
-- **I319: Entity-level email cadence monitoring** — Weekly email volume per entity with 30-day rolling average. Anomaly detection flags "gone quiet" (<50% of avg) and "activity spike" (>200% of avg) patterns.
-- **I320: Hybrid email classification** — Signal-context boosting (Layer 1). Medium-priority emails from senders linked to entities with active signals get promoted to high priority automatically.
-- **I321: Email commitment extraction** — Fetches full email bodies for high-priority messages, runs through Claude (Extraction tier) to identify commitments, requests, and deadlines. Creates proposed actions with `source_type=email`.
-- **I322: Email briefing narrative** — Daily briefing integrates email intelligence as a synthesized narrative section covering reply urgency, entity correlations, and cadence anomalies.
-- **I323: Zero-touch email disposition** — Auto-archive pipeline for low-priority emails during daily prep. Writes disposition manifest. Correction command for user feedback. Surfaced as a toggle in Settings > Intelligence > Features.
-- **I324: Email signals in entity enrichment** — Enhanced signal formatting with sender name/role resolution, relative timestamps, email cadence summary with trend analysis, and AI prompt interpretation guidance. Dynamic signal limit (20 for entities with upcoming meetings).
-- **I337: Calendar description steering** — Meeting calendar descriptions now steer intelligence narrative, giving the AI context about meeting purpose and agenda.
-- **I338: 1:1 relationship intelligence** — Person entity resolution for 1:1 meetings. Three-file intelligence pattern (dashboard.json, intelligence.json, context.md) generates for people.
-- **I353: Self-healing hygiene** — Phase 2 signal→hygiene feedback loop. Auto-merge duplicate entities, calendar name resolution, co-attendance linking.
-- **I351/I339/I313: Entity architecture completion** — Person actions, week entities display, vocabulary injection for role-preset-aware AI prompts.
+- Meeting-aware email digest: high-priority emails organized by meeting relevance instead of raw excerpts, surfaced in meeting prep context
+- Thread position tracking: "ball in your court" detection identifies which threads await your reply vs. waiting on others
+- Entity-level email cadence monitoring: weekly volume per entity with 30-day rolling average, anomaly detection flags "gone quiet" and "activity spike" patterns
+- Hybrid email classification: medium-priority emails from senders linked to entities with active signals get promoted to high priority automatically
+- Email commitment extraction: fetches full email bodies for high-priority messages, runs through Claude to identify commitments, requests, and deadlines — creates proposed actions automatically
+- Email briefing narrative: daily briefing integrates a synthesized narrative covering reply urgency, entity correlations, and cadence anomalies
+- Zero-touch email disposition: auto-archive pipeline for low-priority emails during daily prep, with disposition manifest and correction feedback. Surfaced as "Auto-Archive Email" toggle in Settings (off by default, since it modifies Gmail)
+- Enhanced email signals in entity enrichment: sender name/role resolution, relative timestamps, cadence summary with trend analysis, AI prompt interpretation guidance, dynamic signal limit (20 for entities with upcoming meetings)
+
+### Intelligence
+
+- Calendar description steering: meeting calendar descriptions now steer intelligence narrative, giving the AI context about meeting purpose and agenda
+- 1:1 relationship intelligence: person entity resolution for 1:1 meetings with three-file intelligence pattern (dashboard.json, intelligence.json, context.md)
+- Self-healing hygiene: signal→hygiene feedback loop with auto-merge duplicates, calendar name resolution, co-attendance linking
+- Person actions, week entities display, and vocabulary injection for role-preset-aware AI prompts
 
 ### Changed
 
-- Email signal text and AI summaries render in primary text color (was secondary/light gray) for better readability of the most valuable content.
-- `emailBodyAccess` feature enabled by default — commitment extraction works out of the box.
-- `autoArchiveEnabled` visible in Settings UI as "Auto-Archive Email" toggle (default off, since it modifies Gmail).
+- Email signal text and AI summaries render in primary text color for better readability of the most valuable content
+- Email commitment extraction enabled by default — no feature flag needed
 
 ### Fixed
 
-- Audit fixes across I318, I319, I320, I322, I353 — closed gaps in signal emission, cadence computation, and narrative generation.
-- DB mutex not held across async/PTY calls in email commitment extraction (two-phase pattern: async fetch → sync extraction).
+- Closed gaps in signal emission, cadence computation, and narrative generation across the email intelligence pipeline
+- DB mutex not held across async/PTY calls in email commitment extraction (two-phase pattern: async fetch, sync extraction)
 
 ## [0.11.0] - 2026-02-19
 
-Role presets, entity architecture, and industry-aligned terminology.
+Role presets, entity architecture, and industry-aligned terminology. The system speaks your language now.
 
-### Added
+### Role Presets
 
-- **I309–I315: Role presets** — 9 embedded presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) with role-specific vocabulary, email keywords, metadata fields, and AI prompt framing. Role selection in Settings and onboarding.
-- **I143a: Lifecycle events** — Renewal metadata, lifecycle event tracking, proactive detectors, account merge support.
-- **I353 Phase 1: Self-healing hygiene** — Auto-merge duplicate entities, calendar name resolution, co-attendance linking.
+- 9 embedded presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) with role-specific vocabulary, email keywords, metadata fields, and AI prompt framing
+- Role selection in Settings and onboarding — the system adapts its entire vocabulary to your function
+- Role-aware email classification keywords boost domain-specific signals
+
+### Entity Architecture
+
+- Lifecycle events: renewal metadata, lifecycle event tracking, proactive detectors, account merge support
+- EntityPicker supports multiselect mode with excluded-parent child visibility
+- PersonNetwork supports optimistic multi-select entity linking without page reload
+- StakeholderGallery searches existing people before creating new entries
 
 ### Changed
 
-- Meeting card key people sourced from calendar attendees instead of entity stakeholders.
-- EntityPicker supports multiselect mode with excluded-parent child visibility.
-- PersonNetwork supports optimistic multi-select entity linking without page reload.
-- Back button uses browser history on all detail pages.
-- StakeholderGallery searches existing people before creating new entries.
+- Meeting card key people sourced from calendar attendees instead of entity stakeholders
+- Back button uses browser history on all detail pages
 
 ### Fixed
 
-- Quill transcript sync hang — release DB mutex during AI pipeline to prevent deadlock.
-- Internal account propagation and recursive account tree with add-child on all accounts.
-- Email signal fan-out with confidence filtering, prep invalidation queue consumer.
+- Quill transcript sync hang — release DB mutex during AI pipeline to prevent deadlock
+- Internal account propagation and recursive account tree with add-child on all accounts
+- Email signal fan-out with confidence filtering, prep invalidation queue consumer
 
 ## [0.10.1] - 2026-02-19
 
@@ -64,37 +70,42 @@ User feedback and onboarding polish. First real user session surfaced friction �
 
 ### Added
 
-- **I344: Gmail teammate suggestions** — Onboarding "About You" chapter suggests closest teammates from Gmail frequent correspondents (scans `in:sent newer_than:90d`, filters to same domain, returns top 10 by frequency). Clickable chips above manual entry field.
-- **I346: Linear integration (data layer)** — Settings card with API key + test connection, background poller syncing assigned issues and team projects via GraphQL API, SQLite tables (`linear_issues`, `linear_projects`) with migration 024. Consumer side (signal bus integration, meeting prep enrichment) deferred to I306/I326/I332.
+- Gmail teammate suggestions: onboarding "About You" chapter suggests closest teammates from Gmail frequent correspondents (scans sent mail, filters to same domain, returns top 10 by frequency). Clickable chips above manual entry field.
+- Linear integration (data layer): Settings card with API key + test connection, background poller syncing assigned issues and team projects via GraphQL API
 
 ### Fixed
 
-- **I345: Onboarding back navigation loses entered state** — AboutYou and PopulateWorkspace form data (name, company, title, domains, focus, colleagues, accounts, projects) lifted to OnboardingFlow parent component. Back navigation no longer unmounts and loses entered data.
+- Onboarding back navigation no longer loses entered state — form data lifted to parent component so back navigation preserves everything you've typed
 
 ## [0.10.0] - 2026-02-18
 
 The intelligence release. The system that learns from you. Signals compound, corrections teach, events drive action.
 
-### Added
+### Signal Intelligence
 
-- **I305: Intelligent meeting-entity resolution** — Bayesian fusion of 5 signal producers (junction table, attendee inference, group patterns, keyword match, embedding similarity) with three-tier confidence thresholds (resolved/flagged/suggestion)
-- **I306: Signal bus foundation** — event log, weighted log-odds Bayesian fusion, temporal decay, email-calendar bridge. 13 modules in `signals/` with ~57 unit tests
-- **I307: Correction learning** — Thompson Sampling with Beta distribution for per-source reliability weights, gated behind 5-sample minimum. User corrections update alpha/beta parameters
-- **I308: Event-driven signal processing** — cross-entity propagation engine with 5 rules (job change, frequency drop, overdue actions, champion sentiment, departure+renewal risk)
-- **I334: Proposed actions triage** — accept/reject flow on Actions page and Daily Briefing. Transcript-sourced actions default to "proposed" status. Auto-archive hygiene for stale proposals
-- **I335: Entity-generic data model** — `meeting_entities` junction table replaces `meetings_history.account_id`. Migration 023 backfills existing data before column drop
-- **I336: Entity-generic classification** — entity hints from DB, 1:1 person detection, multi-type resolution (accounts, projects, people)
-- **I337: Entity-generic context building** — type-dispatched intelligence injection: accounts get dashboard/stakeholders/captures, projects get status/milestones, people get relationship signals/shared entities
-- **I338: 1:1 relationship intelligence** — three-file pattern (dashboard.json, intelligence.json, context.md) for people entities, relationship-specific enrichment prompts
-- **I339: Entity-generic frontend** — "person" as first-class entity type with User icon, larkspur color, `/people` routing. `formatEntityByline()` shows type-specific labels ("Acme - Customer", "Alice - 1:1")
-- **I260: Proactive surfacing** — 8 pure SQL+Rust detectors (renewal gap, relationship drift, email volume spike, meeting load forecast, stale champion, action cluster, prep coverage gap, no-contact accounts) with fingerprint dedup and signal bus integration
-- **I262: The Record** — content_index populated with transcripts and notes as timeline sources for entity intelligence enrichment
+- Intelligent meeting-entity resolution: Bayesian fusion of 5 signal producers (junction table, attendee inference, group patterns, keyword match, embedding similarity) with three-tier confidence thresholds
+- Signal bus foundation: event log, weighted log-odds Bayesian fusion, temporal decay, email-calendar bridge
+- Correction learning: Thompson Sampling with Beta distribution for per-source reliability weights, gated behind 5-sample minimum — your corrections make the system smarter
+- Event-driven signal processing: cross-entity propagation engine with 5 rules (job change, frequency drop, overdue actions, champion sentiment, departure+renewal risk)
+- Proactive surfacing: 8 pure SQL+Rust detectors (renewal gap, relationship drift, email volume spike, meeting load forecast, stale champion, action cluster, prep coverage gap, no-contact accounts) with fingerprint dedup
+
+### Entity Architecture
+
+- Entity-generic data model: `meeting_entities` junction table replaces account-only meeting linking — meetings can now relate to accounts, projects, and people
+- Entity-generic classification: entity hints from DB, 1:1 person detection, multi-type resolution
+- Entity-generic context building: type-dispatched intelligence injection — accounts get dashboard/stakeholders/captures, projects get status/milestones, people get relationship signals
+- 1:1 relationship intelligence: three-file pattern for people entities with relationship-specific enrichment prompts
+- Person as first-class entity type with dedicated icon, color, and `/people` routing
+- Content index populated with transcripts and notes as timeline sources for entity intelligence enrichment
+
+### Actions
+
+- Proposed actions triage: accept/reject flow on Actions page and Daily Briefing — transcript-sourced actions default to "proposed" status with auto-archive hygiene for stale proposals
 
 ### Fixed
 
-- Migration 023 blocked by foreign key constraints from captures/quill_sync_state tables — added `PRAGMA foreign_keys = OFF`
-- Migration 023 dropped unique index on `calendar_event_id` during table recreation — now recreated
-- Stale `account_id` column reference in `meeting_context.rs` inline SQL query after migration 023 dropped the column — updated to use `meeting_entities` junction table
+- Migration blocked by foreign key constraints — resolved with `PRAGMA foreign_keys = OFF`
+- Stale column reference in meeting context SQL after schema migration
 
 ## [0.9.1] - 2026-02-18
 
@@ -102,59 +113,57 @@ Hotfix for MCP integrations failing when app is launched from Finder/Application
 
 ### Fixed
 
-- Quill, Clay, and Gravatar MCP clients fail with "connection failed" when launched from Finder — macOS GUI apps don't inherit shell PATH, so nvm-installed `node`/`npx` binaries aren't found. Added intelligent binary resolution that scans nvm versions, Homebrew, and system paths with process-lifetime caching.
+- Quill, Clay, and Gravatar MCP clients fail with "connection failed" when launched from Finder — macOS GUI apps don't inherit shell PATH. Added intelligent binary resolution that scans nvm versions, Homebrew, and system paths with process-lifetime caching.
 
 ## [0.9.0] - 2026-02-18
 
 The integrations release. Four new data integrations, a plugin marketplace, and UI polish.
 
-### Added
+### Integrations
 
-- **I226: Granola integration** — background poller syncs meeting transcripts from Granola's local cache, matches to calendar events by time window and attendee overlap, writes to entity Meeting-Notes directories
-- **I229: Gravatar integration** — MCP-based avatar and profile enrichment with local image caching, background poller for stale email refresh, Avatar component with `convertFileSrc` asset loading
-- **I228: Clay integration** — MCP client (SSE primary / stdio fallback) for contact and company enrichment: title, company, LinkedIn, Twitter, phone, bio, industry, HQ, company size. Signal detection for job changes, funding rounds, and leadership transitions. Background poller with bulk enrich wake signal via `tokio::sync::Notify`
-- **I276: Plugin Marketplace** — two Claude Code plugins (`dailyos` with 9 commands + 9 skills, `dailyos-writer` with 4 commands + 11 skills) bundled as installable zips with Settings UI for export
-- Enrichment log table for tracking all enrichment events across sources with signal classification
-- Clay Settings UI section: enable/disable, API key, connection test, bulk enrich, enrichment status
-- Gravatar Settings UI section: enable/disable, API key, cache stats
-- Granola Settings UI section: enable/disable, sync status
-- Person schema extended with enrichment fields: LinkedIn URL, Twitter handle, phone, photo URL, bio, title history, company industry/size/HQ, last enrichment timestamp, enrichment sources
+- Granola integration: background poller syncs meeting transcripts from Granola's local cache, matches to calendar events by time window and attendee overlap, writes to entity Meeting-Notes directories
+- Gravatar integration: MCP-based avatar and profile enrichment with local image caching, background poller for stale email refresh
+- Clay integration: MCP client for contact and company enrichment — title, company, LinkedIn, Twitter, phone, bio, industry, HQ, company size. Signal detection for job changes, funding rounds, and leadership transitions. Background poller with bulk enrich wake signal
+- Plugin Marketplace: two Claude Code plugins (`dailyos` with 9 commands + 9 skills, `dailyos-writer` with 4 commands + 11 skills) bundled as installable zips with Settings UI for export
+- Person schema extended with enrichment fields: LinkedIn URL, Twitter handle, phone, photo URL, bio, title history, company industry/size/HQ
 - Avatar component for person images with Gravatar cache lookup and initials fallback
+- Settings UI sections for Clay, Gravatar, and Granola configuration
 
 ### Fixed
 
-- Literal `\u2026`, `\u2318`, `\u2713`, `\u2197` escape sequences rendering as text in JSX attribute strings and text content — replaced with actual Unicode characters across 16 frontend files
-- Gravatar images showing as broken blue boxes — CSP `img-src` now includes `https://asset.localhost` for Tauri's asset protocol
-- Avatar component falls back to initials on image load error instead of showing broken image icon
-- Clay "Enrich All" button queued work but poller didn't process until next 24-hour cycle — poller now wakes immediately via `tokio::select!` against `Notify` signal
+- Unicode escape sequences rendering as literal text in JSX — replaced with actual Unicode characters across 16 frontend files
+- Gravatar images showing as broken blue boxes — CSP updated for Tauri's asset protocol
+- Avatar component falls back to initials on image load error
+- Clay "Enrich All" button now wakes poller immediately instead of waiting for next 24-hour cycle
 
 ### Changed
 
 - Person detail pages show LinkedIn and Twitter external links with arrow indicators
-- Onboarding copy uses actual Unicode characters (em dash, en dash, curly quotes) instead of escape sequences
 
 ## [0.8.4] - 2026-02-17
 
 Hotfix for Claude Desktop MCP integration.
 
 ### Fixed
-- MCP server stdout pollution: native library output (ONNX Runtime, fastembed) during embedding model initialisation was leaking onto stdout before rmcp took ownership of the stdio transport, corrupting the JSON-RPC stream and causing Claude Desktop to lose terminal styling. Fixed by redirecting stdout → stderr (via `dup`/`dup2`) for the duration of embedding init.
+
+- MCP server stdout pollution: native library output during embedding model init was corrupting the JSON-RPC stream. Fixed by redirecting stdout to stderr during init.
 
 ## [0.8.3] - 2026-02-17
 
 Cleanup and hardening. Type safety, migration resilience, input validation, and AI prompt robustness.
 
 ### Fixed
-- `LinkedEntity.entityType` narrowed at source — removes band-aid cast, fixes entity picker for projects (I303)
+
+- Entity type narrowed at source — removes band-aid cast, fixes entity picker for projects
 - Transcript action extraction resolves `@Tag` to real account ID via case-insensitive lookup — fixes silent FK violations that dropped actions
-- Path traversal guard added to `resolve_prep_path`
-- Stale agenda overwrite when hiding attendees — `agenda` parameter now optional in `update_meeting_user_agenda`
+- Path traversal guard added to prep path resolution
+- Stale agenda overwrite when hiding attendees — agenda parameter now optional
 
 ### Changed
-- Migrations 006, 007, 011 hardened with `IF NOT EXISTS` for crash-recovery safety
-- Orphan migration file `007_chat_sessions.sql` removed
+
+- Migrations hardened with `IF NOT EXISTS` for crash-recovery safety
 - Input bounds on user agenda layer: max 50 items per list, 500 chars per string, UTF-8-safe truncation
-- Transcript prompt handles null title/account gracefully instead of producing malformed prompts (I304)
+- Transcript prompt handles null title/account gracefully instead of producing malformed prompts
 - Folio bar transcript button shows spinner and `not-allowed` cursor when processing
 
 ## [0.8.2] - 2026-02-17
@@ -163,12 +172,11 @@ Polish sprint. Meeting intelligence redesigned as editorial briefing, audit trai
 
 ### Added
 
-- **I297**: Audit trail module for AI-generated data — tracks provenance through the enrichment pipeline
-- **I302**: Person email aliasing and cross-domain deduplication — merges duplicate contacts across domains
+- Audit trail module for AI-generated data — tracks provenance through the enrichment pipeline
+- Person email aliasing and cross-domain deduplication — merges duplicate contacts across domains
 - Meeting Intelligence Report redesigned as a full editorial briefing with outcomes pinned to top
-- Transcript attach button added to folio bar on all meetings (not just those with existing transcripts)
+- Transcript attach button added to folio bar on all meetings
 - Print styles for clean briefing PDF output — `Cmd+P` produces a readable document
-- `export_briefing_html` command for browser-based PDF export
 - Claude Code skill templates distributed to user workspaces for slash-command workflows
 - "+ Business Unit" button on account detail folio bar
 - Attendee RSVP status carried through the full calendar pipeline
@@ -177,43 +185,46 @@ Polish sprint. Meeting intelligence redesigned as editorial briefing, audit trai
 
 - Schedule cards show QuickContext instead of PrepGrid, with internal stakeholders filtered out
 - Risk briefing Regenerate button moved to folio bar; byline is now click-to-edit
-- Featured meeting remains visible in the schedule list (no longer removed when featured)
+- Featured meeting remains visible in the schedule list
 - Prep summaries hydrated from entity intelligence fields for richer meeting context
 - Meeting entity chips use optimistic local state for instant feedback
-- `create_action` IPC switched to request object parameter (breaking IPC change)
 
 ### Fixed
 
 - MCP sidecar binary missing executable permission after build
 - Meeting card padding and prep summary hydration from prep files
-- Clippy warnings resolved for 0.8.2 release
-- TypeScript error in meeting entity chips rollback path
 
 ## [0.8.1] - 2026-02-16
 
 Hardening release. Security, database integrity, token optimization, and proposed actions workflow.
 
 ### Security
-- **I295**: Prompt injection hardening — all 7 PTY enrichment sites now wrap untrusted data (calendar titles, email subjects, file contents, entity names) in `<user_data>` XML blocks
-- **I296**: Output size limits — capped all parsed AI arrays (20 risks, 50 actions, 10 wins, 20 stakeholders, 10 value items) to prevent unbounded growth
+
+- Prompt injection hardening: all 7 PTY enrichment sites now wrap untrusted data in `<user_data>` XML blocks
+- Output size limits: capped all parsed AI arrays (20 risks, 50 actions, 10 wins, 20 stakeholders, 10 value items) to prevent unbounded growth
 
 ### Database
-- **I285**: Foreign key constraints added to `actions` (3 FKs), `account_team`, and `account_domains` via table recreation migration. FK enforcement enabled at connection level (`PRAGMA foreign_keys = ON`)
-- **I231**: Fixed `unwrap()` panic in `focus_capacity.rs` during DST spring-forward gaps — new `resolve_local_datetime` helper handles all chrono timezone edge cases
+
+- Foreign key constraints added to actions, account_team, and account_domains via table recreation migration with FK enforcement at connection level
+- Fixed panic in focus capacity during DST spring-forward gaps — new timezone-aware datetime resolver handles all chrono edge cases
 
 ### Token Optimization
-- **I286**: Entity intelligence prompts filtered by vector search relevance — context budget capped at 10KB (down from ~25KB), mandatory files always included
-- **I288**: Entity intelligence output switched from pipe-delimited to JSON format with backwards-compatible fallback parser
+
+- Entity intelligence prompts filtered by vector search relevance — context budget capped at 10KB (down from ~25KB), mandatory files always included
+- Entity intelligence output switched from pipe-delimited to JSON format with backwards-compatible fallback parser
 
 ### Actions
-- **I256**: Proposed actions workflow — AI-extracted actions now insert as `proposed` status with accept/reject UX, "AI Suggested" badge, and 7-day auto-archive via scheduler
+
+- Proposed actions workflow: AI-extracted actions now insert as "proposed" status with accept/reject UX, "AI Suggested" badge, and 7-day auto-archive via scheduler
 
 ### Performance
-- **I234**: IntelligenceQueue `last_enqueued` HashMap now pruned every 60s to prevent unbounded memory growth
-- **I235**: Dashboard DB reads consolidated into single lock acquisition (`DashboardDbSnapshot`) reducing lock contention
+
+- Intelligence queue memory pruned every 60s to prevent unbounded growth
+- Dashboard DB reads consolidated into single lock acquisition, reducing lock contention
 
 ### Stats
-- 688 tests passing (up from 684), 0 clippy warnings
+
+- 688 tests passing, 0 clippy warnings
 
 ## [0.8.0] - 2026-02-16
 
