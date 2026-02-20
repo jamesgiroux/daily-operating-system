@@ -1227,6 +1227,9 @@ async fn fetch_and_classify_today(
             "start": ev.start,
             "end": ev.end,
             "description": cm.description,
+            "attendees": raw.attendees,
+            "attendee_names": raw.attendee_names,
+            "attendee_rsvp": raw.attendee_rsvp,
         }));
     }
 
@@ -1362,6 +1365,9 @@ async fn fetch_and_classify_week(
             "start": ev.start,
             "end": ev.end,
             "description": cm.description,
+            "attendees": raw.attendees,
+            "attendee_names": raw.attendee_names,
+            "attendee_rsvp": raw.attendee_rsvp,
         }));
     }
 
