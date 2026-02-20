@@ -660,7 +660,7 @@ fn gather_meeting_context(
 /// Read intelligence.json from an entity directory and inject relevant
 /// fields into the meeting context for prep enrichment.
 fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
-    let intel = match crate::entity_intel::read_intelligence_json(entity_dir) {
+    let intel = match crate::intelligence::read_intelligence_json(entity_dir) {
         Ok(intel) => intel,
         Err(_) => return,
     };

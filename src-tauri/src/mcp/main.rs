@@ -535,7 +535,7 @@ fn read_json_file(path: &std::path::Path) -> Option<serde_json::Value> {
 fn read_entity_intelligence(workspace: &str, tracker_path: Option<&str>) -> Option<String> {
     tracker_path.and_then(|tp| {
         let dir = PathBuf::from(workspace).join(tp);
-        dailyos_lib::entity_intel::read_intelligence_json(&dir)
+        dailyos_lib::intelligence::read_intelligence_json(&dir)
             .ok()
             .and_then(|i| i.executive_assessment)
     })

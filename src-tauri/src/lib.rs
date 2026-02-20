@@ -18,7 +18,6 @@ mod db_backup;
 mod devtools;
 pub mod embeddings;
 pub mod entity;
-pub mod entity_intel;
 pub mod entity_io;
 mod error;
 mod executor;
@@ -31,7 +30,6 @@ pub mod helpers;
 mod hygiene;
 mod intel_queue;
 pub mod intelligence;
-pub mod intelligence_lifecycle;
 pub mod json_loader;
 mod latency;
 mod migrations;
@@ -49,6 +47,7 @@ pub mod quill;
 pub mod queries;
 mod risk_briefing;
 mod scheduler;
+pub mod services;
 pub mod signals;
 pub mod state;
 pub mod types;
@@ -119,8 +118,9 @@ pub fn run() {
             // Spawn scheduler
             let scheduler_state = state.clone();
             let scheduler_sender = scheduler_tx.clone();
+            let scheduler_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let scheduler = scheduler::Scheduler::new(scheduler_state, scheduler_sender);
+                let scheduler = scheduler::Scheduler::new(scheduler_state, scheduler_sender, scheduler_handle);
                 scheduler.run().await;
             });
 

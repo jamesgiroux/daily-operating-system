@@ -252,7 +252,7 @@ pub fn write_account_markdown(
 
     // Read intelligence.json once (used for Company Overview skip + intelligence sections)
     let intel_data =
-        crate::entity_intel::read_intelligence_json(&resolve_account_dir(workspace, account)).ok();
+        crate::intelligence::read_intelligence_json(&resolve_account_dir(workspace, account)).ok();
 
     // Company Overview (from JSON — skipped when intelligence.json has company_context)
     let intel_has_company = intel_data
@@ -312,7 +312,7 @@ pub fn write_account_markdown(
     // === Intelligence sections (I134 — from intelligence.json) ===
 
     if let Some(ref intel) = intel_data {
-        let intel_md = crate::entity_intel::format_intelligence_markdown(intel);
+        let intel_md = crate::intelligence::format_intelligence_markdown(intel);
         if !intel_md.is_empty() {
             md.push_str(&intel_md);
         }
@@ -994,7 +994,7 @@ pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) ->
             }
             match crate::processor::extract::extract_text(path) {
                 Ok(t) => {
-                    let summary = crate::entity_intel::mechanical_summary(&t, 500);
+                    let summary = crate::intelligence::mechanical_summary(&t, 500);
                     if summary.is_empty() {
                         continue;
                     }

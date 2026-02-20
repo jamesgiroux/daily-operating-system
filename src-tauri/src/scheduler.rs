@@ -14,6 +14,8 @@ use chrono_tz::Tz;
 use cron::Schedule;
 use tokio::sync::mpsc;
 
+use tauri::{AppHandle, Emitter};
+
 use crate::error::ExecutionError;
 use crate::state::AppState;
 use crate::types::{ExecutionTrigger, ScheduleEntry, WorkflowId};
@@ -41,11 +43,12 @@ pub struct SchedulerMessage {
 pub struct Scheduler {
     state: Arc<AppState>,
     sender: mpsc::Sender<SchedulerMessage>,
+    app_handle: AppHandle,
 }
 
 impl Scheduler {
-    pub fn new(state: Arc<AppState>, sender: mpsc::Sender<SchedulerMessage>) -> Self {
-        Self { state, sender }
+    pub fn new(state: Arc<AppState>, sender: mpsc::Sender<SchedulerMessage>, app_handle: AppHandle) -> Self {
+        Self { state, sender, app_handle }
     }
 
     /// Start the scheduler loop
@@ -187,8 +190,9 @@ impl Scheduler {
             meetings_to_refresh.len()
         );
 
+        let mut refreshed = 0usize;
         for meeting_id in meetings_to_refresh {
-            match crate::intelligence_lifecycle::generate_meeting_intelligence(
+            match crate::intelligence::generate_meeting_intelligence(
                 &self.state, &meeting_id, false,
             )
             .await
@@ -199,11 +203,16 @@ impl Scheduler {
                         meeting_id,
                         quality.level
                     );
+                    refreshed += 1;
                 }
                 Err(e) => {
                     log::warn!("Pre-meeting refresh failed for {}: {}", meeting_id, e);
                 }
             }
+        }
+
+        if refreshed > 0 {
+            let _ = self.app_handle.emit("entity-updated", ());
         }
     }
 

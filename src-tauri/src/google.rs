@@ -181,22 +181,30 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Populate people from calendar attendees (I51)
                 let sync_intel = populate_people_from_events(&events, &state, &workspace);
 
-                // Trigger intelligence lifecycle for new/changed meetings (ADR-0081)
+                // Trigger intelligence lifecycle for new/changed meetings (ADR-0081).
+                // Spawn so the calendar poll loop isn't blocked by AI enrichment.
+                // Emits `entity-updated` after all enrichment completes so the
+                // frontend re-fetches and sees the finished intelligence.
                 if !sync_intel.new_meetings.is_empty() || !sync_intel.changed_meetings.is_empty() {
                     let state_clone = state.clone();
+                    let handle_clone = app_handle.clone();
                     let new_ids = sync_intel.new_meetings;
                     let changed_ids = sync_intel.changed_meetings;
                     tokio::spawn(async move {
+                        let mut enriched = 0usize;
                         for mid in &new_ids {
-                            match crate::intelligence_lifecycle::generate_meeting_intelligence(
+                            match crate::intelligence::generate_meeting_intelligence(
                                 &state_clone, mid, false,
                             )
                             .await
                             {
-                                Ok(q) => log::info!(
-                                    "Calendar poll: generated intelligence for new meeting '{}' (quality={:?})",
-                                    mid, q.level
-                                ),
+                                Ok(q) => {
+                                    log::info!(
+                                        "Calendar poll: generated intelligence for new meeting '{}' (quality={:?})",
+                                        mid, q.level
+                                    );
+                                    enriched += 1;
+                                }
                                 Err(e) => log::warn!(
                                     "Calendar poll: intelligence generation failed for '{}': {}",
                                     mid, e
@@ -204,20 +212,26 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             }
                         }
                         for mid in &changed_ids {
-                            match crate::intelligence_lifecycle::generate_meeting_intelligence(
+                            match crate::intelligence::generate_meeting_intelligence(
                                 &state_clone, mid, true,
                             )
                             .await
                             {
-                                Ok(q) => log::info!(
-                                    "Calendar poll: refreshed intelligence for changed meeting '{}' (quality={:?})",
-                                    mid, q.level
-                                ),
+                                Ok(q) => {
+                                    log::info!(
+                                        "Calendar poll: refreshed intelligence for changed meeting '{}' (quality={:?})",
+                                        mid, q.level
+                                    );
+                                    enriched += 1;
+                                }
                                 Err(e) => log::warn!(
                                     "Calendar poll: intelligence refresh failed for '{}': {}",
                                     mid, e
                                 ),
                             }
+                        }
+                        if enriched > 0 {
+                            let _ = handle_clone.emit("entity-updated", ());
                         }
                     });
                 }

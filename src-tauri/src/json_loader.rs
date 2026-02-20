@@ -481,11 +481,11 @@ pub struct JsonPrep {
     /// Intelligence summary — executive assessment from intelligence.json (I135)
     pub intelligence_summary: Option<String>,
     /// Entity-level risks from intelligence.json (I135)
-    pub entity_risks: Option<Vec<crate::entity_intel::IntelRisk>>,
+    pub entity_risks: Option<Vec<crate::intelligence::IntelRisk>>,
     /// Entity meeting readiness items from intelligence.json (I135)
     pub entity_readiness: Option<Vec<String>>,
     /// Stakeholder insights from intelligence.json (I135)
-    pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
+    pub stakeholder_insights: Option<Vec<crate::intelligence::StakeholderInsight>>,
     /// Recent email-derived signals linked to this entity (I215)
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
 }

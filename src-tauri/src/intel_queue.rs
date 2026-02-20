@@ -14,7 +14,7 @@ use chrono::Utc;
 
 use tauri::{AppHandle, Emitter};
 
-use crate::entity_intel::{
+use crate::intelligence::{
     build_intelligence_context, build_intelligence_prompt_with_preset, parse_intelligence_response,
     read_intelligence_json, write_intelligence_json, IntelligenceJson, SourceManifestEntry,
 };
@@ -533,7 +533,7 @@ pub fn run_enrichment(
 
     // I305: Extract and persist keywords from the raw AI response
     if let Some(keywords_json) =
-        crate::entity_intel::extract_keywords_from_response(&output.stdout)
+        crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             match input.entity_type.as_str() {
@@ -774,7 +774,7 @@ pub fn write_enrichment_results(
     let mut final_intel = intel.clone();
     if let Ok(existing) = read_intelligence_json(&input.entity_dir) {
         if !existing.user_edits.is_empty() {
-            crate::entity_intel::preserve_user_edits(&mut final_intel, &existing);
+            crate::intelligence::preserve_user_edits(&mut final_intel, &existing);
             log::info!(
                 "IntelProcessor: preserved {} user edits for {}",
                 existing.user_edits.len(),
