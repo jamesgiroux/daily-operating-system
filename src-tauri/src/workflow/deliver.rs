@@ -710,6 +710,13 @@ pub fn deliver_schedule(
                 obj.insert("prepSummary".to_string(), ps.clone());
             }
 
+            // Calendar event description (mechanical context)
+            if let Some(ref desc) = event.description {
+                if !desc.is_empty() {
+                    obj.insert("calendarDescription".to_string(), json!(desc));
+                }
+            }
+
             // Embed linked entities from junction table (I52)
             if let Some(db) = db {
                 if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
