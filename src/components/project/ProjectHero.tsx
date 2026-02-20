@@ -6,12 +6,17 @@ import { useState } from "react";
 import type { ProjectDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { EditableText } from "@/components/ui/EditableText";
 import styles from "./ProjectHero.module.css";
 
 interface ProjectHeroProps {
   detail: ProjectDetail;
   intelligence: EntityIntelligence | null;
-  onEditFields?: () => void;
+  editName?: string;
+  setEditName?: (value: string) => void;
+  editStatus?: string;
+  setEditStatus?: (value: string) => void;
+  onSave?: () => void;
   onEnrich?: () => void;
   enriching?: boolean;
   enrichSeconds?: number;
@@ -32,7 +37,11 @@ function formatStatus(s: string): string {
 export function ProjectHero({
   detail,
   intelligence,
-  onEditFields,
+  editName,
+  setEditName,
+  editStatus,
+  setEditStatus,
+  onSave,
   onEnrich,
   enriching,
   enrichSeconds,
@@ -62,8 +71,21 @@ export function ProjectHero({
         {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
       </div>
 
-      {/* Project name — 76px serif */}
-      <h1 className={styles.name}>{detail.name}</h1>
+      {/* Project name — 76px serif, inline-editable */}
+      <h1 className={styles.name}>
+        {editName != null && setEditName ? (
+          <EditableText
+            as="span"
+            value={editName}
+            onChange={(v) => { setEditName(v); onSave?.(); }}
+            multiline={false}
+            placeholder="Project name"
+            fieldId="project-name"
+          />
+        ) : (
+          detail.name
+        )}
+      </h1>
 
       {/* Lede from intelligence */}
       {lede && (
@@ -90,9 +112,21 @@ export function ProjectHero({
 
       {/* Badges row */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
-        {detail.status && (
-          <span className={`${styles.badge} ${statusClass[detail.status] ?? styles.statusDefault}`}>
-            {formatStatus(detail.status)}
+        {(editStatus ?? detail.status) && (
+          <span
+            className={`${styles.badge} ${statusClass[editStatus ?? detail.status ?? ""] ?? styles.statusDefault}`}
+            onClick={() => {
+              if (!setEditStatus) return;
+              const cycle = ["active", "on_hold", "completed"];
+              const current = editStatus ?? detail.status ?? "active";
+              const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
+              setEditStatus(next);
+              onSave?.();
+            }}
+            style={{ cursor: setEditStatus ? "pointer" : "default" }}
+            title={setEditStatus ? "Click to cycle status" : undefined}
+          >
+            {formatStatus(editStatus ?? detail.status ?? "")}
           </span>
         )}
         {detail.owner && (
@@ -104,11 +138,6 @@ export function ProjectHero({
 
       {/* Meta row */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
-        {onEditFields && (
-          <button className={styles.metaButton} onClick={onEditFields}>
-            Edit Fields
-          </button>
-        )}
         {onEnrich && (
           <button
             className={enriching ? styles.metaButtonEnriching : styles.metaButton}
