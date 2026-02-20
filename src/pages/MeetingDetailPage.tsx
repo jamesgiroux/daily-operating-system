@@ -429,14 +429,6 @@ Thanks!`;
             {prefilling ? "Prefilling…" : "Prefill"}
           </button>
         )}
-        <button
-          onClick={handleRefreshIntelligence}
-          disabled={refreshingIntel}
-          className={clsx(styles.folioBtnInline, refreshingIntel && styles.folioBtnDisabled)}
-        >
-          {refreshingIntel ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconSm} />}
-          {refreshingIntel ? "Refreshing…" : "Refresh Intel"}
-        </button>
         {isFutureMeeting && (
           <button onClick={handleDraftAgendaMessage} className={styles.folioBtn}>
             Draft Agenda
@@ -459,6 +451,10 @@ Thanks!`;
         >
           {attaching ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <Paperclip className={styles.iconSm} />}
           {attaching ? "Processing…" : "Transcript"}
+        </button>
+        <button onClick={() => loadMeetingIntelligence()} className={styles.folioBtnInline}>
+          <RefreshCw className={styles.iconSm} />
+          Refresh
         </button>
       </div>
     ) : undefined,
