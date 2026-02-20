@@ -10,6 +10,7 @@
 //! account stakeholder_change).
 
 pub mod bus;
+pub mod cadence;
 pub mod callouts;
 pub mod decay;
 pub mod email_bridge;

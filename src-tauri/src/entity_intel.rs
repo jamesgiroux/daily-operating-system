@@ -820,22 +820,115 @@ pub fn build_intelligence_context(
     }
 
     // --- Recent email signals ---
-    if let Ok(signals) = db.list_recent_email_signals_for_entity(entity_id, 12) {
-        if !signals.is_empty() {
-            let lines: Vec<String> = signals
-                .iter()
-                .map(|s| {
-                    format!(
-                        "- [{}] {} (urgency: {}, confidence: {:.2}, at: {})",
-                        s.signal_type,
-                        s.signal_text,
-                        s.urgency.as_deref().unwrap_or("unknown"),
-                        s.confidence.unwrap_or(0.0),
-                        s.detected_at
-                    )
-                })
-                .collect();
-            ctx.recent_email_signals = lines.join("\n");
+    {
+        // Fetch more signals for entities with upcoming meetings
+        let signal_limit = if ctx.next_meeting.is_some() { 20 } else { 12 };
+
+        if let Ok(signals) = db.list_recent_email_signals_for_entity(entity_id, signal_limit) {
+            if !signals.is_empty() {
+                // Group signals by email_id for thread context.
+                // Signals from the same email message appear together with indentation.
+                // Uses Vec to preserve insertion order (most recent first from DB query).
+                let mut grouped: Vec<(String, Vec<&crate::db::DbEmailSignal>)> = Vec::new();
+                for s in &signals {
+                    if let Some(entry) = grouped.iter_mut().find(|(id, _)| id == &s.email_id) {
+                        entry.1.push(s);
+                    } else {
+                        grouped.push((s.email_id.clone(), vec![s]));
+                    }
+                }
+
+                let mut lines: Vec<String> = Vec::new();
+
+                for (_email_id, group) in &grouped {
+                    let is_multi = group.len() > 1;
+
+                    for s in group {
+                        // Resolve person_id to name + role if available
+                        let sender_info = if let Some(ref pid) = s.person_id {
+                            match db.get_person(pid) {
+                                Ok(Some(person)) => {
+                                    let role = person.role.as_deref().unwrap_or("");
+                                    let email =
+                                        s.sender_email.as_deref().unwrap_or(&person.email);
+                                    if role.is_empty() {
+                                        format!("{} <{}>", person.name, email)
+                                    } else {
+                                        format!("{} ({}) <{}>", person.name, role, email)
+                                    }
+                                }
+                                _ => s
+                                    .sender_email
+                                    .clone()
+                                    .unwrap_or_else(|| "unknown".to_string()),
+                            }
+                        } else {
+                            s.sender_email
+                                .clone()
+                                .unwrap_or_else(|| "unknown".to_string())
+                        };
+
+                        let age_str = compute_signal_age(&s.detected_at);
+                        let indent = if is_multi { "  " } else { "" };
+
+                        lines.push(format!(
+                            "{indent}- [{}] {} — from: {} (urgency: {}, confidence: {:.2}, {})",
+                            s.signal_type,
+                            s.signal_text,
+                            sender_info,
+                            s.urgency.as_deref().unwrap_or("unknown"),
+                            s.confidence.unwrap_or(0.0),
+                            age_str,
+                        ));
+                    }
+                }
+
+                ctx.recent_email_signals = lines.join("\n");
+            }
+        }
+    }
+
+    // --- Email cadence summary (I319 data) ---
+    {
+        let conn = db.conn_ref();
+        let cadence_result: Result<(i64, f64), _> = conn.query_row(
+            "SELECT message_count, rolling_avg \
+             FROM entity_email_cadence \
+             WHERE entity_id = ?1 AND entity_type = ?2 \
+             ORDER BY updated_at DESC LIMIT 1",
+            rusqlite::params![entity_id, entity_type],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        );
+
+        if let Ok((current_count, rolling_avg)) = cadence_result {
+            let trend = if rolling_avg > 0.0 {
+                let ratio = current_count as f64 / rolling_avg;
+                if ratio < 0.5 {
+                    "declining significantly"
+                } else if ratio < 0.8 {
+                    "declining"
+                } else if ratio > 2.0 {
+                    "spiking"
+                } else if ratio > 1.2 {
+                    "increasing"
+                } else {
+                    "normal"
+                }
+            } else {
+                "no baseline"
+            };
+
+            let cadence_line = format!(
+                "Email cadence: {}/week (rolling avg {:.0}/week — {})",
+                current_count, rolling_avg, trend
+            );
+
+            if ctx.recent_email_signals.is_empty() {
+                ctx.recent_email_signals = cadence_line;
+            } else {
+                ctx.recent_email_signals =
+                    format!("{}\n{}", cadence_line, ctx.recent_email_signals);
+            }
         }
     }
 
@@ -1098,6 +1191,30 @@ pub fn build_intelligence_prompt(
     relationship: Option<&str>,
     vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
 ) -> String {
+    build_intelligence_prompt_inner(entity_name, entity_type, ctx, relationship, vocabulary, None)
+}
+
+/// Build the intelligence prompt with full preset context including briefing_emphasis.
+pub fn build_intelligence_prompt_with_preset(
+    entity_name: &str,
+    entity_type: &str,
+    ctx: &IntelligenceContext,
+    relationship: Option<&str>,
+    preset: Option<&crate::presets::schema::RolePreset>,
+) -> String {
+    let vocabulary = preset.map(|p| &p.vocabulary);
+    let briefing_emphasis = preset.map(|p| p.briefing_emphasis.as_str());
+    build_intelligence_prompt_inner(entity_name, entity_type, ctx, relationship, vocabulary, briefing_emphasis)
+}
+
+fn build_intelligence_prompt_inner(
+    entity_name: &str,
+    entity_type: &str,
+    ctx: &IntelligenceContext,
+    relationship: Option<&str>,
+    vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
+    briefing_emphasis: Option<&str>,
+) -> String {
     let is_incremental = ctx.prior_intelligence.is_some();
     let entity_label = match entity_type {
         "account" => vocabulary
@@ -1120,6 +1237,30 @@ pub fn build_intelligence_prompt(
         label = entity_label,
         name = wrap_user_data(entity_name)
     ));
+
+    // I313: Inject full vocabulary context for domain-specific framing
+    if let Some(vocab) = vocabulary {
+        prompt.push_str(&format!(
+            "Domain vocabulary: entities are called \"{noun}\" (plural: \"{noun_plural}\"). \
+             The primary metric is \"{metric}\". Health is measured as \"{health}\". \
+             Risk is framed as \"{risk}\". Success means \"{verb}\". \
+             Regular cadence is the \"{cadence}\".\n",
+            noun = vocab.entity_noun,
+            noun_plural = vocab.entity_noun_plural,
+            metric = vocab.primary_metric,
+            health = vocab.health_label,
+            risk = vocab.risk_label,
+            verb = vocab.success_verb,
+            cadence = vocab.cadence_noun,
+        ));
+        if let Some(emphasis) = briefing_emphasis {
+            prompt.push_str(&format!(
+                "Assessment emphasis: {}\n",
+                emphasis,
+            ));
+        }
+        prompt.push('\n');
+    }
 
     if is_incremental {
         prompt.push_str(
@@ -1176,6 +1317,9 @@ pub fn build_intelligence_prompt(
 
     if !ctx.recent_email_signals.is_empty() {
         prompt.push_str("## Recent Email Signals\n");
+        prompt.push_str("Use these signals to inform risk assessment, relationship health, and recommended actions. ");
+        prompt.push_str("Weight recent high-confidence signals more heavily. ");
+        prompt.push_str("Cadence changes (declining/spiking) may indicate engagement shifts.\n\n");
         prompt.push_str(&wrap_user_data(&ctx.recent_email_signals));
         prompt.push_str("\n\n");
     }
@@ -2659,6 +2803,36 @@ pub fn extract_keywords_from_response(response: &str) -> Option<String> {
     serde_json::to_string(&kw_strings).ok()
 }
 
+/// Compute a human-readable age string from an ISO 8601 timestamp.
+fn compute_signal_age(detected_at: &str) -> String {
+    let now = chrono::Utc::now();
+    match chrono::DateTime::parse_from_rfc3339(detected_at) {
+        Ok(dt) => {
+            let duration = now.signed_duration_since(dt);
+            let days = duration.num_days();
+            if days == 0 {
+                let hours = duration.num_hours();
+                if hours == 0 {
+                    "just now".to_string()
+                } else if hours == 1 {
+                    "1 hour ago".to_string()
+                } else {
+                    format!("{} hours ago", hours)
+                }
+            } else if days == 1 {
+                "1 day ago".to_string()
+            } else if days < 7 {
+                format!("{} days ago", days)
+            } else if days < 14 {
+                "1 week ago".to_string()
+            } else {
+                format!("{} weeks ago", days / 7)
+            }
+        }
+        Err(_) => detected_at.to_string(), // fallback to raw timestamp
+    }
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -3744,5 +3918,29 @@ Hope this helps!"#;
         assert_eq!(files[0].content_type, "dashboard"); // priority 10
         assert_eq!(files[1].content_type, "notes"); // priority 7
         assert_eq!(files[2].content_type, "general"); // priority 5
+    }
+
+    #[test]
+    fn test_compute_signal_age() {
+        let now = chrono::Utc::now();
+
+        // Just now
+        let recent = now.to_rfc3339();
+        assert_eq!(compute_signal_age(&recent), "just now");
+
+        // 2 days ago
+        let two_days = (now - chrono::Duration::days(2)).to_rfc3339();
+        assert_eq!(compute_signal_age(&two_days), "2 days ago");
+
+        // 1 week ago
+        let week = (now - chrono::Duration::days(8)).to_rfc3339();
+        assert_eq!(compute_signal_age(&week), "1 week ago");
+
+        // 2 weeks ago
+        let two_weeks = (now - chrono::Duration::days(15)).to_rfc3339();
+        assert_eq!(compute_signal_age(&two_weeks), "2 weeks ago");
+
+        // Fallback for bad input
+        assert_eq!(compute_signal_age("not-a-date"), "not-a-date");
     }
 }
