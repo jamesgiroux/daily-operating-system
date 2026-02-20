@@ -100,7 +100,8 @@ export default function RiskBriefingPage() {
         setBriefing(data);
         setError(null);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("get_risk_briefing failed:", err);
         setBriefing(null);
       })
       .finally(() => setLoading(false));
