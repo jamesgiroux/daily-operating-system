@@ -427,7 +427,7 @@ export function BriefingMeetingCard({
   }
 
   // ── Schedule Row (all non-cancelled states) ──
-  const attendeeCount = meeting.prep?.stakeholders?.length;
+  const attendeeCount = meeting.calendarAttendees?.length ?? meeting.prep?.stakeholders?.length;
   const subtitleParts: string[] = [];
   subtitleParts.push(formatEntityByline(meeting.linkedEntities) ?? formatMeetingType(meeting.type));
   if (attendeeCount && attendeeCount > 0) {
