@@ -123,26 +123,31 @@ export function AccountHero({
         </p>
       )}
 
-      {/* Badges row */}
+      {/* Badges row — always show when editable, with placeholders for empty fields */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
-        {(editHealth ?? detail.health) && (
+        {((editHealth ?? detail.health) || setEditHealth) && (
           <span
             className={`${styles.badge} ${healthClass[editHealth ?? detail.health ?? ""] ?? ""}`}
             onClick={() => {
               if (!setEditHealth) return;
               const cycle = ["green", "yellow", "red"];
-              const current = editHealth ?? detail.health ?? "green";
-              const next = cycle[(cycle.indexOf(current) + 1) % cycle.length];
+              const current = editHealth ?? detail.health ?? "";
+              const idx = cycle.indexOf(current);
+              const next = cycle[(idx + 1) % cycle.length];
               setEditHealth(next);
               onSave?.();
             }}
-            style={{ cursor: setEditHealth ? "pointer" : "default" }}
-            title={setEditHealth ? "Click to cycle health" : undefined}
+            style={{
+              cursor: setEditHealth ? "pointer" : "default",
+              opacity: (editHealth ?? detail.health) ? 1 : 0.4,
+              borderStyle: (editHealth ?? detail.health) ? undefined : "dashed",
+            }}
+            title={setEditHealth ? "Click to set health" : undefined}
           >
-            {editHealth ?? detail.health}
+            {editHealth ?? detail.health ?? "Health"}
           </span>
         )}
-        {(editLifecycle ?? detail.lifecycle) && (
+        {((editLifecycle ?? detail.lifecycle) || setEditLifecycle) && (
           <span
             className={`${styles.badge} ${styles.lifecycleBadge}`}
             onClick={() => {
@@ -154,10 +159,14 @@ export function AccountHero({
               setEditLifecycle(next);
               onSave?.();
             }}
-            style={{ cursor: setEditLifecycle ? "pointer" : "default" }}
-            title={setEditLifecycle ? "Click to cycle lifecycle" : undefined}
+            style={{
+              cursor: setEditLifecycle ? "pointer" : "default",
+              opacity: (editLifecycle ?? detail.lifecycle) ? 1 : 0.4,
+              borderStyle: (editLifecycle ?? detail.lifecycle) ? undefined : "dashed",
+            }}
+            title={setEditLifecycle ? "Click to set lifecycle" : undefined}
           >
-            {editLifecycle ?? detail.lifecycle}
+            {editLifecycle ?? detail.lifecycle ?? "Lifecycle"}
           </span>
         )}
         {detail.isInternal && (
