@@ -12,8 +12,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::types::{
-    Action, DayOverview, Email, EmailSyncStatus, FullMeetingPrep, Meeting, MeetingPrep,
-    WeekOverview,
+    Action, DayOverview, Email, EmailSyncStatus, FullMeetingPrep, LinkedEntity, Meeting,
+    MeetingPrep, WeekOverview,
 };
 
 /// Check if JSON data directory exists
@@ -122,6 +122,9 @@ pub struct JsonMeeting {
     pub has_prep: bool,
     pub prep_file: Option<String>,
     pub prep_summary: Option<JsonPrepSummary>,
+    /// Entities linked via M2M junction table or entity resolution (I339)
+    #[serde(default)]
+    pub linked_entities: Option<Vec<LinkedEntity>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

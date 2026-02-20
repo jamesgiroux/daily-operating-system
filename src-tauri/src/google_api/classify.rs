@@ -418,6 +418,7 @@ impl ClassifiedMeeting {
             account,
             attendees: self.attendees.clone(),
             is_all_day: self.is_all_day,
+            linked_entities: None,
         }
     }
 }

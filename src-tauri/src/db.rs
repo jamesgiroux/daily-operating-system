@@ -183,6 +183,24 @@ pub struct DbMeeting {
     /// UTC timestamp when transcript was processed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript_processed_at: Option<String>,
+    /// Intelligence lifecycle state (ADR-0081).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence_state: Option<String>,
+    /// Intelligence quality level (ADR-0081).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence_quality: Option<String>,
+    /// UTC timestamp of last enrichment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_enriched_at: Option<String>,
+    /// Number of signals associated with this meeting.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal_count: Option<i32>,
+    /// Whether new signals have arrived since last view.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_new_signals: Option<i32>,
+    /// UTC timestamp of last user view.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_viewed_at: Option<String>,
 }
 
 pub struct EnsureMeetingHistoryInput<'a> {
@@ -1047,16 +1065,40 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Query pending and waiting actions for a specific person.
+    /// Query actions for a specific person using hybrid 1:1 heuristic (I351).
+    ///
+    /// Returns actions where this person is the primary external relationship:
+    /// 1. Actions directly assigned via `person_id`
+    /// 2. Actions from meetings where `meeting_type = 'one_on_one'` AND person attended
+    /// 3. Actions from 2-attendee meetings where person attended
     pub fn get_person_actions(&self, person_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, priority, status, created_at, due_date, completed_at,
-                    account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at, person_id
-             FROM actions
-             WHERE person_id = ?1
-               AND status IN ('pending', 'waiting')
-             ORDER BY priority, due_date",
+            "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.created_at, a.due_date,
+                    a.completed_at, a.account_id, a.project_id, a.source_type, a.source_id,
+                    a.source_label, a.context, a.waiting_on, a.updated_at, a.person_id
+             FROM actions a
+             WHERE a.status IN ('pending', 'completed')
+               AND (
+                 -- Direct person assignment
+                 a.person_id = ?1
+                 -- OR meeting-sourced where person is primary relationship
+                 OR (
+                   a.source_type IN ('post_meeting', 'transcript')
+                   AND a.source_id IN (
+                     SELECT m.id FROM meetings_history m
+                     JOIN meeting_attendees ma ON m.id = ma.meeting_id
+                     WHERE ma.person_id = ?1
+                       AND (
+                         m.meeting_type = 'one_on_one'
+                         OR (SELECT COUNT(*) FROM meeting_attendees WHERE meeting_id = m.id) = 2
+                       )
+                   )
+                 )
+               )
+             ORDER BY
+               CASE a.status WHEN 'pending' THEN 0 ELSE 1 END,
+               a.created_at DESC
+             LIMIT 20",
         )?;
 
         let rows = stmt.query_map(params![person_id], |row| {
@@ -1126,6 +1168,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1512,6 +1560,21 @@ impl ActionDb {
             params![now, id],
         )?;
         Ok(())
+    }
+
+    /// Auto-archive stale pending actions older than N days.
+    /// Returns the number of actions archived.
+    pub fn archive_stale_actions(&self, days: i64) -> Result<usize, DbError> {
+        let now = Utc::now().to_rfc3339();
+        let cutoff_param = format!("-{} days", days);
+        let changed = self.conn.execute(
+            "UPDATE actions SET status = 'archived', updated_at = ?1
+             WHERE status = 'pending'
+               AND completed_at IS NULL
+               AND created_at < datetime('now', ?2)",
+            params![now, cutoff_param],
+        )?;
+        Ok(changed)
     }
 
     /// Auto-archive proposed actions older than N days.
@@ -2038,6 +2101,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -2082,6 +2151,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -2126,6 +2201,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -2809,6 +2890,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3109,6 +3196,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3348,6 +3441,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
 
@@ -3365,7 +3464,9 @@ impl ActionDb {
                     attendees, notes_path, summary, created_at,
                     calendar_event_id, description, prep_context_json,
                     user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
-                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
+                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at,
+                    intelligence_state, intelligence_quality, last_enriched_at,
+                    signal_count, has_new_signals, last_viewed_at
              FROM meetings_history
              WHERE id = ?1",
         )?;
@@ -3392,6 +3493,12 @@ impl ActionDb {
                 prep_snapshot_hash: row.get(17)?,
                 transcript_path: row.get(18)?,
                 transcript_processed_at: row.get(19)?,
+                intelligence_state: row.get(20)?,
+                intelligence_quality: row.get(21)?,
+                last_enriched_at: row.get(22)?,
+                signal_count: row.get(23)?,
+                has_new_signals: row.get(24)?,
+                last_viewed_at: row.get(25)?,
             })
         })?;
 
@@ -3506,6 +3613,58 @@ impl ActionDb {
                  summary = COALESCE(?3, summary)
              WHERE id = ?4",
             params![transcript_path, processed_at, summary_opt, meeting_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update intelligence state for a meeting (ADR-0081).
+    pub fn update_intelligence_state(
+        &self,
+        meeting_id: &str,
+        state: &str,
+        quality: Option<&str>,
+        signal_count: Option<i32>,
+    ) -> Result<(), DbError> {
+        let mut sql = "UPDATE meetings_history SET intelligence_state = ?1".to_string();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(state.to_string())];
+        let mut idx = 2;
+
+        if let Some(q) = quality {
+            sql.push_str(&format!(", intelligence_quality = ?{idx}"));
+            params.push(Box::new(q.to_string()));
+            idx += 1;
+        }
+        if let Some(sc) = signal_count {
+            sql.push_str(&format!(", signal_count = ?{idx}"));
+            params.push(Box::new(sc));
+            idx += 1;
+        }
+
+        sql.push_str(", last_enriched_at = datetime('now')");
+        sql.push_str(&format!(" WHERE id = ?{idx}"));
+        params.push(Box::new(meeting_id.to_string()));
+
+        self.conn.execute(
+            &sql,
+            rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+        )?;
+        Ok(())
+    }
+
+    /// Mark meeting as having new signals (ADR-0081).
+    pub fn mark_meeting_new_signals(&self, meeting_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE meetings_history SET has_new_signals = 1 WHERE id = ?1",
+            params![meeting_id],
+        )?;
+        Ok(())
+    }
+
+    /// Clear new signals flag (when user views the meeting).
+    pub fn clear_meeting_new_signals(&self, meeting_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE meetings_history SET has_new_signals = 0, last_viewed_at = datetime('now') WHERE id = ?1",
+            params![meeting_id],
         )?;
         Ok(())
     }
@@ -4505,7 +4664,9 @@ impl ActionDb {
                     attendees, notes_path, summary, created_at,
                     calendar_event_id, description, prep_context_json,
                     user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
-                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
+                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at,
+                    intelligence_state, intelligence_quality, last_enriched_at,
+                    signal_count, has_new_signals, last_viewed_at
              FROM meetings_history
              WHERE calendar_event_id = ?1
              LIMIT 1",
@@ -4532,6 +4693,12 @@ impl ActionDb {
                 prep_snapshot_hash: row.get(17)?,
                 transcript_path: row.get(18)?,
                 transcript_processed_at: row.get(19)?,
+                intelligence_state: row.get(20)?,
+                intelligence_quality: row.get(21)?,
+                last_enriched_at: row.get(22)?,
+                signal_count: row.get(23)?,
+                has_new_signals: row.get(24)?,
+                last_viewed_at: row.get(25)?,
             })
         })?;
         match rows.next() {
@@ -5198,6 +5365,12 @@ impl ActionDb {
                 prep_snapshot_hash: None,
                 transcript_path: None,
                 transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)

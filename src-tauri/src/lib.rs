@@ -31,6 +31,7 @@ pub mod helpers;
 mod hygiene;
 mod intel_queue;
 pub mod intelligence;
+pub mod intelligence_lifecycle;
 pub mod json_loader;
 mod latency;
 mod migrations;
@@ -284,6 +285,7 @@ pub fn run() {
             commands::get_execution_history,
             commands::get_next_run_time,
             commands::get_meeting_intelligence,
+            commands::generate_meeting_intelligence,
             commands::get_meeting_prep,
             commands::backfill_prep_semantics,
             commands::get_all_actions,

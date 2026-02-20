@@ -643,6 +643,18 @@
   flex-shrink: 0;
 }
 
+.upNextPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: rgba(126, 170, 123, 0.15);
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
 .scheduleSubtitle {
   font-family: var(--font-sans);
   font-size: 13px;
@@ -660,6 +672,24 @@
   border-radius: 50%;
   background: var(--color-garden-sage);
   flex-shrink: 0;
+}
+
+.schedulePrepDotMuted {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-rule-heavy);
+  flex-shrink: 0;
+  opacity: 0.4;
+}
+
+.prepFlag {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-spice-terracotta);
+  padding: 6px 0;
+  margin-bottom: 8px;
 }
 
 .expandHint {
