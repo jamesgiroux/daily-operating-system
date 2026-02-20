@@ -7,29 +7,32 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import type {
   LiveProactiveSuggestion,
+  TimelineMeeting,
   WeekOverview,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import {
-  computeShapeEpigraph,
   pickTopThree,
   resolveSuggestionLink,
   synthesizeReadiness,
-  synthesizeReadinessStats,
 } from "@/pages/weekPageViewModel";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import {
   Target,
-  BarChart,
+  Clock,
   Play,
   AlertTriangle,
   Database,
   Wand2,
   Package,
+  Check,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 interface WeekResult {
@@ -76,7 +79,7 @@ const waitingMessages = [
 // Chapter definitions for the editorial layout
 const CHAPTERS = [
   { id: "the-three", label: "The Three", icon: <Target size={18} strokeWidth={1.5} /> },
-  { id: "the-shape", label: "The Shape", icon: <BarChart size={18} strokeWidth={1.5} /> },
+  { id: "the-timeline", label: "The Timeline", icon: <Clock size={18} strokeWidth={1.5} /> },
 ];
 
 // Circled number glyphs for The Three
@@ -93,6 +96,8 @@ export default function WeekPage() {
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<WorkflowPhase | null>(null);
   const [retryingEnrichment, setRetryingEnrichment] = useState(false);
+  const [timeline, setTimeline] = useState<TimelineMeeting[]>([]);
+  const [showEarlier, setShowEarlier] = useState(false);
   const loadingRef = useRef(false);
 
   const loadWeek = useCallback(
@@ -116,6 +121,16 @@ export default function WeekPage() {
                 : "Live suggestions unavailable"
             );
           }
+        }
+
+        try {
+          const timelineData = await invoke<TimelineMeeting[]>(
+            "get_meeting_timeline",
+            { daysBefore: 7, daysAfter: 7 }
+          );
+          setTimeline(timelineData);
+        } catch {
+          setTimeline([]);
         }
 
         try {
@@ -265,20 +280,34 @@ export default function WeekPage() {
     [handleRunWeek, running, phase]
   );
 
-  // Readiness stats for FolioBar
+  // Readiness stats for FolioBar — driven by timeline intelligence quality
   const folioReadinessStats = useMemo(() => {
-    if (!data?.readinessChecks?.length) return undefined;
-    const { preppedLabel, overdueLabel } = synthesizeReadinessStats(
-      data.readinessChecks
+    const now = new Date();
+    const futureMeetings = timeline.filter(
+      (m) => new Date(m.startTime) > now
     );
-    const stats: { label: string; color: "sage" | "terracotta" }[] = [
-      { label: preppedLabel, color: "sage" },
-    ];
-    if (overdueLabel) {
-      stats.push({ label: overdueLabel, color: "terracotta" });
+    if (futureMeetings.length === 0) return undefined;
+
+    const byLevel = { ready: 0, fresh: 0, developing: 0, sparse: 0 };
+    futureMeetings.forEach((m) => {
+      const level = m.intelligenceQuality?.level ?? "sparse";
+      byLevel[level]++;
+    });
+    const readyCount = byLevel.ready + byLevel.fresh;
+    const total = futureMeetings.length;
+
+    const stats: { label: string; color: "sage" | "terracotta" }[] = [];
+    if (readyCount === total) {
+      stats.push({ label: `${total}/${total} ready`, color: "sage" });
+    } else {
+      stats.push({ label: `${readyCount} ready`, color: "sage" });
+      const buildingCount = byLevel.developing + byLevel.sparse;
+      if (buildingCount > 0) {
+        stats.push({ label: `${buildingCount} building`, color: "terracotta" });
+      }
     }
     return stats;
-  }, [data?.readinessChecks]);
+  }, [timeline]);
 
   const shellConfig = useMemo(
     () => ({
@@ -299,7 +328,6 @@ export default function WeekPage() {
 
   // ─── Derived data ──────────────────────────────────────────────────────────
   const enrichmentIncomplete = data && !running && (!data.weekNarrative || !data.topPriority);
-  const dayShapes = data?.dayShapes ?? [];
   const days = data?.days ?? [];
 
   const topThree = useMemo(
@@ -316,11 +344,6 @@ export default function WeekPage() {
     [data, liveSuggestions, days]
   );
 
-  const shapeEpigraph = useMemo(
-    () => computeShapeEpigraph(dayShapes),
-    [dayShapes]
-  );
-
   const readinessLine = useMemo(
     () =>
       data?.readinessChecks?.length
@@ -333,6 +356,82 @@ export default function WeekPage() {
     () => days.reduce((sum, d) => sum + d.meetings.length, 0),
     [days]
   );
+
+  // ─── Timeline grouping ────────────────────────────────────────────────────
+  const timelineGroups = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+
+    // Group meetings by date
+    const byDate = new Map<string, TimelineMeeting[]>();
+    for (const m of timeline) {
+      const dateKey = m.startTime.slice(0, 10);
+      if (!byDate.has(dateKey)) byDate.set(dateKey, []);
+      byDate.get(dateKey)!.push(m);
+    }
+
+    // Sort dates
+    const sortedDates = [...byDate.keys()].sort();
+
+    const past: { dateKey: string; label: string; meetings: TimelineMeeting[] }[] = [];
+    const today: { dateKey: string; label: string; meetings: TimelineMeeting[] }[] = [];
+    const future: { dateKey: string; label: string; meetings: TimelineMeeting[] }[] = [];
+
+    for (const dateKey of sortedDates) {
+      const meetings = byDate.get(dateKey)!;
+      const date = new Date(dateKey + "T12:00:00");
+      const diffDays = Math.round(
+        (date.getTime() - new Date(todayStr + "T12:00:00").getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+
+      let label: string;
+      if (diffDays === 0) {
+        label = "Today";
+      } else if (diffDays === -1) {
+        label = "Yesterday";
+      } else if (diffDays === 1) {
+        label = "Tomorrow";
+      } else if (diffDays < 0) {
+        label = `${Math.abs(diffDays)} days ago \u2014 ${date.toLocaleDateString(
+          "en-US",
+          { weekday: "long", month: "short", day: "numeric" }
+        )}`;
+      } else {
+        label = date.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      const group = { dateKey, label, meetings };
+
+      if (diffDays < 0) past.push(group);
+      else if (diffDays === 0) today.push(group);
+      else future.push(group);
+    }
+
+    // Split past into "earlier" (beyond 2 days) and "recent past"
+    const earlierPast = past.filter((g) => {
+      const diffDays = Math.round(
+        (new Date(g.dateKey + "T12:00:00").getTime() -
+          new Date(todayStr + "T12:00:00").getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+      return diffDays < -2;
+    });
+    const recentPast = past.filter((g) => {
+      const diffDays = Math.round(
+        (new Date(g.dateKey + "T12:00:00").getTime() -
+          new Date(todayStr + "T12:00:00").getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+      return diffDays >= -2;
+    });
+
+    return { earlierPast, recentPast, today, future };
+  }, [timeline]);
 
   // ─── Loading skeleton — editorial shaped ────────────────────────────────────
   if (loading) {
@@ -367,32 +466,23 @@ export default function WeekPage() {
           ))}
         </div>
 
-        {/* Chapter 3: Shape skeleton */}
+        {/* Chapter 3: Timeline skeleton */}
         <div style={{ paddingTop: 64 }}>
           <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
-          <Skeleton className="h-7 w-28 mb-8" style={skeletonBg} />
-          {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => (
-            <div key={d} style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: "var(--color-rule-light)",
-                  width: 36,
-                  textTransform: "uppercase",
-                }}
-              >
-                {d}
-              </span>
-              <div
-                style={{
-                  flex: 1,
-                  height: 8,
-                  borderRadius: 4,
-                  background: "var(--color-paper-linen)",
-                }}
-              />
-              <Skeleton className="h-3 w-28" style={skeletonBg} />
+          <Skeleton className="h-7 w-36 mb-8" style={skeletonBg} />
+          {[1, 2, 3].map((d) => (
+            <div key={d} style={{ marginBottom: 20 }}>
+              <Skeleton className="h-4 w-40 mb-3" style={skeletonBg} />
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, marginLeft: 12 }}>
+                <Skeleton className="h-2 w-2 rounded-full" style={skeletonBg} />
+                <Skeleton className="h-4 w-48" style={skeletonBg} />
+                <Skeleton className="h-3 w-16" style={skeletonBg} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginLeft: 12 }}>
+                <Skeleton className="h-2 w-2 rounded-full" style={skeletonBg} />
+                <Skeleton className="h-4 w-36" style={skeletonBg} />
+                <Skeleton className="h-3 w-16" style={skeletonBg} />
+              </div>
             </div>
           ))}
         </div>
@@ -703,154 +793,144 @@ export default function WeekPage() {
           )}
         </section>
 
-        {/* ── Chapter 3: The Shape ───────────────────────────────────────── */}
-        {dayShapes.length > 0 && (
+        {/* ── Chapter 3: The Timeline ──────────────────────────────────── */}
+        {timeline.length > 0 && (
           <section
-            id="the-shape"
+            id="the-timeline"
             className="editorial-reveal"
             style={{ paddingTop: 64 }}
           >
-            <ChapterHeading title="The Shape" epigraph={shapeEpigraph} />
+            <ChapterHeading
+              title="The Timeline"
+              epigraph="Intelligence across your meetings, past and future."
+            />
 
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
-            >
-              {dayShapes.map((shape) => {
-                const maxMinutes = 480;
-                const barWidth = Math.min(
-                  100,
-                  (shape.meetingMinutes / maxMinutes) * 100
-                );
-                const densityLabel = shape.density || (
-                  shape.meetingCount === 0
-                    ? "clear"
-                    : shape.meetingCount <= 2
-                      ? "light"
-                      : shape.meetingCount <= 4
-                        ? "moderate"
-                        : shape.meetingCount <= 6
-                          ? "busy"
-                          : "packed"
-                );
+            {/* Past — Earlier (collapsed) */}
+            {timelineGroups.earlierPast.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <button
+                  onClick={() => setShowEarlier(!showEarlier)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: "var(--color-text-tertiary)",
+                    padding: "4px 0",
+                  }}
+                >
+                  {showEarlier ? (
+                    <ChevronDown size={14} />
+                  ) : (
+                    <ChevronRight size={14} />
+                  )}
+                  {showEarlier
+                    ? "Hide earlier"
+                    : `Show earlier (${timelineGroups.earlierPast.reduce(
+                        (n, g) => n + g.meetings.length,
+                        0
+                      )} meetings)`}
+                </button>
+                {showEarlier &&
+                  timelineGroups.earlierPast.map((group) => (
+                    <TimelineDayGroup
+                      key={group.dateKey}
+                      label={group.label}
+                      meetings={group.meetings}
+                      isPast
+                    />
+                  ))}
+              </div>
+            )}
 
-                return (
-                  <div key={shape.dayName}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 16,
-                      }}
-                    >
-                      {/* Day label */}
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--color-text-primary)",
-                          width: 36,
-                          flexShrink: 0,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {shape.dayName.slice(0, 3)}
-                      </span>
+            {/* Past — Recent (last 2 days) */}
+            {timelineGroups.recentPast.length > 0 && (
+              <div>
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "var(--color-text-tertiary)",
+                    marginBottom: 16,
+                    borderBottom: "1px solid var(--color-rule-heavy)",
+                    paddingBottom: 6,
+                  }}
+                >
+                  Past
+                </p>
+                {timelineGroups.recentPast.map((group) => (
+                  <TimelineDayGroup
+                    key={group.dateKey}
+                    label={group.label}
+                    meetings={group.meetings}
+                    isPast
+                  />
+                ))}
+              </div>
+            )}
 
-                      {/* Bar */}
-                      <div
-                        style={{
-                          flex: 1,
-                          height: 8,
-                          borderRadius: 4,
-                          background: "var(--color-paper-linen)",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${barWidth}%`,
-                            borderRadius: 4,
-                            background: "var(--color-spice-turmeric)",
-                            transition: "width 0.3s ease",
-                          }}
-                        />
-                      </div>
+            {/* Today */}
+            {timelineGroups.today.length > 0 && (
+              <div style={{ marginTop: 24 }}>
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "var(--color-garden-larkspur)",
+                    marginBottom: 16,
+                    borderBottom: "2px solid var(--color-garden-larkspur)",
+                    paddingBottom: 6,
+                  }}
+                >
+                  Today
+                </p>
+                {timelineGroups.today.map((group) => (
+                  <TimelineDayGroup
+                    key={group.dateKey}
+                    label={group.label}
+                    meetings={group.meetings}
+                    isToday
+                  />
+                ))}
+              </div>
+            )}
 
-                      {/* Count + density */}
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--color-text-tertiary)",
-                          flexShrink: 0,
-                          minWidth: 130,
-                          textAlign: "right",
-                        }}
-                      >
-                        {shape.meetingCount} meeting
-                        {shape.meetingCount !== 1 ? "s" : ""} &middot;{" "}
-                        {densityLabel}
-                      </span>
-
-                      {/* Achievability indicator (I279) */}
-                      {shape.focusImplications && shape.focusImplications.totalCount > 0 && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 11,
-                            color: shape.focusImplications.atRiskCount > 0
-                              ? "var(--color-spice-terracotta)"
-                              : "var(--color-garden-sage)",
-                            flexShrink: 0,
-                            minWidth: 100,
-                            textAlign: "right",
-                          }}
-                        >
-                          {shape.focusImplications.achievableCount} of{" "}
-                          {shape.focusImplications.totalCount} achievable
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Top 3 feasible actions (I279) */}
-                    {shape.prioritizedActions && shape.prioritizedActions.filter(pa => pa.feasible).length > 0 && (
-                      <div
-                        style={{
-                          marginLeft: 52,
-                          borderLeft: "2px solid var(--color-rule-light)",
-                          paddingLeft: 12,
-                          marginTop: 4,
-                          marginBottom: 8,
-                        }}
-                      >
-                        {shape.prioritizedActions
-                          .filter(pa => pa.feasible)
-                          .slice(0, 3)
-                          .map((pa, idx) => (
-                            <p
-                              key={pa.action.id || idx}
-                              style={{
-                                fontFamily: "var(--font-sans)",
-                                fontSize: 13,
-                                color: "var(--color-text-secondary)",
-                                margin: "2px 0",
-                                lineHeight: 1.4,
-                              }}
-                            >
-                              {pa.action.title}
-                            </p>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            {/* Future */}
+            {timelineGroups.future.length > 0 && (
+              <div style={{ marginTop: 24 }}>
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "var(--color-text-tertiary)",
+                    marginBottom: 16,
+                    borderBottom: "1px solid var(--color-rule-heavy)",
+                    paddingBottom: 6,
+                  }}
+                >
+                  Upcoming
+                </p>
+                {timelineGroups.future.map((group) => (
+                  <TimelineDayGroup
+                    key={group.dateKey}
+                    label={group.label}
+                    meetings={group.meetings}
+                  />
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -906,6 +986,194 @@ function ErrorCard({ error }: { error: string }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Timeline Components
+// ---------------------------------------------------------------------------
+
+function TimelineDayGroup({
+  label,
+  meetings,
+  isPast,
+  isToday,
+}: {
+  label: string;
+  meetings: TimelineMeeting[];
+  isPast?: boolean;
+  isToday?: boolean;
+}) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <p
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: isToday ? 16 : 14,
+          fontWeight: isToday ? 500 : 400,
+          color: isToday
+            ? "var(--color-text-primary)"
+            : "var(--color-text-secondary)",
+          margin: "0 0 8px",
+          ...(isToday
+            ? {
+                borderLeft: "3px solid var(--color-garden-larkspur)",
+                paddingLeft: 12,
+              }
+            : {}),
+        }}
+      >
+        {label}
+      </p>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          paddingLeft: isToday ? 15 : 0,
+        }}
+      >
+        {meetings.map((m) => (
+          <TimelineMeetingRow key={m.id} meeting={m} isPast={isPast} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TimelineMeetingRow({
+  meeting,
+  isPast,
+}: {
+  meeting: TimelineMeeting;
+  isPast?: boolean;
+}) {
+  const entityLabel =
+    meeting.entities.length > 0
+      ? meeting.entities.map((e) => e.name).join(", ")
+      : undefined;
+
+  const quality = meeting.intelligenceQuality
+    ? {
+        level: meeting.intelligenceQuality.level,
+        hasNewSignals: meeting.intelligenceQuality.hasNewSignals,
+        lastEnriched: meeting.intelligenceQuality.lastEnriched,
+      }
+    : undefined;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "4px 0",
+      }}
+    >
+      {/* Meeting title — clickable */}
+      <Link
+        to="/meeting/$meetingId"
+        params={{ meetingId: meeting.id }}
+        style={{
+          fontFamily: "var(--font-sans)",
+          fontSize: 14,
+          color: "var(--color-text-primary)",
+          textDecoration: "none",
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {meeting.title}
+      </Link>
+
+      {/* Entity name */}
+      {entityLabel && (
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            flexShrink: 0,
+          }}
+        >
+          {entityLabel}
+        </span>
+      )}
+
+      {/* Spacer */}
+      <span style={{ flex: 1 }} />
+
+      {/* Intelligence quality badge */}
+      {quality && (
+        <IntelligenceQualityBadge quality={quality} showLabel />
+      )}
+
+      {/* Past: outcome indicator */}
+      {isPast && meeting.hasOutcomes && (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--color-garden-sage)",
+            flexShrink: 0,
+          }}
+          title={meeting.outcomeSummary || "Outcomes captured"}
+        >
+          <Check size={12} />
+          {meeting.outcomeSummary ? (
+            <span
+              style={{
+                maxWidth: 180,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {meeting.outcomeSummary}
+            </span>
+          ) : (
+            "captured"
+          )}
+        </span>
+      )}
+
+      {/* Future: new signals indicator */}
+      {!isPast && meeting.hasNewSignals && (
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "var(--color-garden-larkspur)",
+            flexShrink: 0,
+          }}
+          title="New signals available"
+        />
+      )}
+
+      {/* Future: prior meeting link */}
+      {!isPast && meeting.priorMeetingId && (
+        <Link
+          to="/meeting/$meetingId"
+          params={{ meetingId: meeting.priorMeetingId }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--color-garden-larkspur)",
+            textDecoration: "none",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+          }}
+        >
+          Review last meeting &rarr;
+        </Link>
+      )}
     </div>
   );
 }
