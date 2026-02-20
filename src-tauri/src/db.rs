@@ -210,6 +210,8 @@ pub struct EnsureMeetingHistoryInput<'a> {
     pub start_time: &'a str,
     pub end_time: Option<&'a str>,
     pub calendar_event_id: Option<&'a str>,
+    pub attendees: Option<&'a str>,
+    pub description: Option<&'a str>,
 }
 
 /// Outcome of syncing a meeting into meetings_history.
@@ -4728,20 +4730,25 @@ impl ActionDb {
     ) -> Result<MeetingSyncOutcome, DbError> {
         // Check if meeting already exists and detect changes
         let mut stmt = self.conn.prepare(
-            "SELECT title, start_time FROM meetings_history WHERE id = ?1",
+            "SELECT title, start_time, attendees, description FROM meetings_history WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![input.id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
         })?;
         let existing = rows.next().transpose()?;
 
         match existing {
             None => {
-                // New meeting — insert
+                // New meeting — insert with all available fields
                 self.conn.execute(
                     "INSERT INTO meetings_history
-                        (id, title, meeting_type, start_time, end_time, created_at, calendar_event_id)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        (id, title, meeting_type, start_time, end_time, created_at, calendar_event_id, attendees, description)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                     params![
                         input.id,
                         input.title,
@@ -4750,19 +4757,31 @@ impl ActionDb {
                         input.end_time,
                         Utc::now().to_rfc3339(),
                         input.calendar_event_id,
+                        input.attendees,
+                        input.description,
                     ],
                 )?;
                 Ok(MeetingSyncOutcome::New)
             }
-            Some((old_title, old_start)) => {
-                // Existing meeting — check for meaningful changes
-                let changed =
-                    old_title != input.title || old_start != input.start_time;
+            Some((old_title, old_start, old_attendees, old_description)) => {
+                // Detect meaningful changes: title, time, attendees, or description
+                let changed = old_title != input.title
+                    || old_start != input.start_time
+                    || old_attendees.as_deref() != input.attendees
+                    || old_description.as_deref() != input.description;
                 if changed {
                     self.conn.execute(
-                        "UPDATE meetings_history SET title = ?1, start_time = ?2, end_time = ?3
-                         WHERE id = ?4",
-                        params![input.title, input.start_time, input.end_time, input.id],
+                        "UPDATE meetings_history SET title = ?1, start_time = ?2, end_time = ?3,
+                         attendees = ?4, description = ?5
+                         WHERE id = ?6",
+                        params![
+                            input.title,
+                            input.start_time,
+                            input.end_time,
+                            input.attendees,
+                            input.description,
+                            input.id,
+                        ],
                     )?;
                     Ok(MeetingSyncOutcome::Changed)
                 } else {
