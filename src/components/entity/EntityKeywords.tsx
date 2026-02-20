@@ -82,7 +82,7 @@ export function EntityKeywords({
             color: "var(--color-text-tertiary)",
           }}
         >
-          Resolution Keywords
+          Keywords
         </span>
         <span
           style={{

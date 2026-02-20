@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ProjectHero } from "@/components/project/ProjectHero";
 import { ProjectAppendix } from "@/components/project/ProjectAppendix";
-import { ProjectFieldsDrawer } from "@/components/project/ProjectFieldsDrawer";
 import { WatchListMilestones } from "@/components/project/WatchListMilestones";
 import { TrajectoryChapter } from "@/components/project/TrajectoryChapter";
 import { HorizonChapter } from "@/components/project/HorizonChapter";
@@ -121,7 +120,6 @@ export default function ProjectDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
-  const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
   // I352: Shared intelligence field update hook
@@ -143,7 +141,11 @@ export default function ProjectDetailEditorial() {
         <ProjectHero
           detail={detail}
           intelligence={intelligence}
-          onEditFields={() => setFieldsDrawerOpen(true)}
+          editName={proj.editName}
+          setEditName={(v) => { proj.setEditName(v); proj.setDirty(true); }}
+          editStatus={proj.editStatus}
+          setEditStatus={(v) => { proj.setEditStatus(v); proj.setDirty(true); }}
+          onSave={proj.handleSave}
           onEnrich={proj.handleEnrich}
           enriching={proj.enriching}
           enrichSeconds={proj.enrichSeconds}
@@ -234,27 +236,6 @@ export default function ProjectDetailEditorial() {
           indexFeedback={proj.indexFeedback}
         />
       </div>
-
-      {/* Fields Drawer */}
-      <ProjectFieldsDrawer
-        open={fieldsDrawerOpen}
-        onOpenChange={setFieldsDrawerOpen}
-        editName={proj.editName}
-        setEditName={proj.setEditName}
-        editStatus={proj.editStatus}
-        setEditStatus={proj.setEditStatus}
-        editMilestone={proj.editMilestone}
-        setEditMilestone={proj.setEditMilestone}
-        editOwner={proj.editOwner}
-        setEditOwner={proj.setEditOwner}
-        editTargetDate={proj.editTargetDate}
-        setEditTargetDate={proj.setEditTargetDate}
-        setDirty={proj.setDirty}
-        onSave={proj.handleSave}
-        onCancel={proj.handleCancelEdit}
-        saving={proj.saving}
-        dirty={proj.dirty}
-      />
 
       {/* Archive Confirmation */}
       <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
