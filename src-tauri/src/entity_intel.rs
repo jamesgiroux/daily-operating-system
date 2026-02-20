@@ -826,44 +826,61 @@ pub fn build_intelligence_context(
 
         if let Ok(signals) = db.list_recent_email_signals_for_entity(entity_id, signal_limit) {
             if !signals.is_empty() {
+                // Group signals by email_id for thread context.
+                // Signals from the same email message appear together with indentation.
+                // Uses Vec to preserve insertion order (most recent first from DB query).
+                let mut grouped: Vec<(String, Vec<&crate::db::DbEmailSignal>)> = Vec::new();
+                for s in &signals {
+                    if let Some(entry) = grouped.iter_mut().find(|(id, _)| id == &s.email_id) {
+                        entry.1.push(s);
+                    } else {
+                        grouped.push((s.email_id.clone(), vec![s]));
+                    }
+                }
+
                 let mut lines: Vec<String> = Vec::new();
 
-                for s in &signals {
-                    // Resolve person_id to name + role if available
-                    let sender_info = if let Some(ref pid) = s.person_id {
-                        match db.get_person(pid) {
-                            Ok(Some(person)) => {
-                                let role = person.role.as_deref().unwrap_or("");
-                                let email =
-                                    s.sender_email.as_deref().unwrap_or(&person.email);
-                                if role.is_empty() {
-                                    format!("{} <{}>", person.name, email)
-                                } else {
-                                    format!("{} ({}) <{}>", person.name, role, email)
+                for (_email_id, group) in &grouped {
+                    let is_multi = group.len() > 1;
+
+                    for s in group {
+                        // Resolve person_id to name + role if available
+                        let sender_info = if let Some(ref pid) = s.person_id {
+                            match db.get_person(pid) {
+                                Ok(Some(person)) => {
+                                    let role = person.role.as_deref().unwrap_or("");
+                                    let email =
+                                        s.sender_email.as_deref().unwrap_or(&person.email);
+                                    if role.is_empty() {
+                                        format!("{} <{}>", person.name, email)
+                                    } else {
+                                        format!("{} ({}) <{}>", person.name, role, email)
+                                    }
                                 }
+                                _ => s
+                                    .sender_email
+                                    .clone()
+                                    .unwrap_or_else(|| "unknown".to_string()),
                             }
-                            _ => s
-                                .sender_email
+                        } else {
+                            s.sender_email
                                 .clone()
-                                .unwrap_or_else(|| "unknown".to_string()),
-                        }
-                    } else {
-                        s.sender_email
-                            .clone()
-                            .unwrap_or_else(|| "unknown".to_string())
-                    };
+                                .unwrap_or_else(|| "unknown".to_string())
+                        };
 
-                    let age_str = compute_signal_age(&s.detected_at);
+                        let age_str = compute_signal_age(&s.detected_at);
+                        let indent = if is_multi { "  " } else { "" };
 
-                    lines.push(format!(
-                        "- [{}] {} — from: {} (urgency: {}, confidence: {:.2}, {})",
-                        s.signal_type,
-                        s.signal_text,
-                        sender_info,
-                        s.urgency.as_deref().unwrap_or("unknown"),
-                        s.confidence.unwrap_or(0.0),
-                        age_str,
-                    ));
+                        lines.push(format!(
+                            "{indent}- [{}] {} — from: {} (urgency: {}, confidence: {:.2}, {})",
+                            s.signal_type,
+                            s.signal_text,
+                            sender_info,
+                            s.urgency.as_deref().unwrap_or("unknown"),
+                            s.confidence.unwrap_or(0.0),
+                            age_str,
+                        ));
+                    }
                 }
 
                 ctx.recent_email_signals = lines.join("\n");
