@@ -47,7 +47,6 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 
@@ -188,7 +187,6 @@ export default function AccountDetailEditorial() {
   useRegisterMagazineShell(shellConfig);
 
   // Drawer/dialog open state
-  const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -302,7 +300,6 @@ export default function AccountDetailEditorial() {
           editLifecycle={acct.editLifecycle}
           setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
           onSave={acct.handleSave}
-          onManageTeam={() => setTeamDrawerOpen(true)}
           onEnrich={acct.handleEnrich}
           enriching={acct.enriching}
           enrichSeconds={acct.enrichSeconds}
@@ -447,35 +444,6 @@ export default function AccountDetailEditorial() {
           onMerge={() => setMergeDialogOpen(true)}
         />
       </div>
-
-      {/* ─── Drawers ─── */}
-
-      <TeamManagementDrawer
-        open={teamDrawerOpen}
-        onOpenChange={setTeamDrawerOpen}
-        accountTeam={detail.accountTeam}
-        accountTeamImportNotes={detail.accountTeamImportNotes}
-        teamSearchQuery={acct.teamSearchQuery}
-        setTeamSearchQuery={acct.setTeamSearchQuery}
-        teamSearchResults={acct.teamSearchResults}
-        selectedTeamPerson={acct.selectedTeamPerson}
-        setSelectedTeamPerson={acct.setSelectedTeamPerson}
-        teamRole={acct.teamRole}
-        setTeamRole={acct.setTeamRole}
-        teamInlineName={acct.teamInlineName}
-        setTeamInlineName={acct.setTeamInlineName}
-        teamInlineEmail={acct.teamInlineEmail}
-        setTeamInlineEmail={acct.setTeamInlineEmail}
-        teamInlineRole={acct.teamInlineRole}
-        setTeamInlineRole={acct.setTeamInlineRole}
-        teamWorking={acct.teamWorking}
-        resolvedImportNotes={acct.resolvedImportNotes}
-        teamError={acct.teamError}
-        handleAddExistingTeamMember={acct.handleAddExistingTeamMember}
-        handleRemoveTeamMember={acct.handleRemoveTeamMember}
-        handleCreateInlineTeamMember={acct.handleCreateInlineTeamMember}
-        handleImportNoteCreateAndAdd={acct.handleImportNoteCreateAndAdd}
-      />
 
       <LifecycleEventDrawer
         open={eventDrawerOpen}
