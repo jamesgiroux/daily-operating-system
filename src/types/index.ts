@@ -88,6 +88,12 @@ export interface Meeting {
   linkedEntities?: LinkedEntity[];
   /** Account ID suggestion when meeting matches an archived account (I161) */
   suggestedUnarchiveAccountId?: string;
+  /** Structured intelligence quality assessment for schedule meetings */
+  intelligenceQuality?: {
+    level: "sparse" | "developing" | "ready" | "fresh";
+    hasNewSignals: boolean;
+    lastEnriched?: string;
+  };
 }
 
 export interface MeetingPrep {
@@ -1560,4 +1566,31 @@ export interface LinearStatusData {
   issueCount: number;
   projectCount: number;
   lastSyncAt: string | null;
+}
+
+// =============================================================================
+// Meeting Timeline (±7 day intelligence timeline)
+// =============================================================================
+
+export interface TimelineMeeting {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime?: string;
+  meetingType: string;
+  intelligenceQuality?: {
+    level: "sparse" | "developing" | "ready" | "fresh";
+    signalCount: number;
+    lastEnriched?: string;
+    hasEntityContext: boolean;
+    hasAttendeeHistory: boolean;
+    hasRecentSignals: boolean;
+    staleness: "current" | "aging" | "stale";
+    hasNewSignals: boolean;
+  };
+  hasOutcomes: boolean;
+  outcomeSummary?: string;
+  entities: LinkedEntity[];
+  hasNewSignals: boolean;
+  priorMeetingId?: string;
 }

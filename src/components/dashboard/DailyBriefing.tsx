@@ -146,13 +146,37 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   const folioReadinessStats = useMemo(() => {
     const stats: ReadinessStat[] = [];
     if (readiness.totalExternal > 0) {
-      stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} prepped`, color: "sage" });
+      // Use intelligence quality levels when available, fall back to hasPrep count
+      const externalMeetings = meetings.filter((m) =>
+        ["customer", "qbr", "partnership", "external"].includes(m.type) &&
+        m.overlayStatus !== "cancelled"
+      );
+      const hasQualityData = externalMeetings.some((m) => m.intelligenceQuality);
+
+      if (hasQualityData) {
+        const readyCount = externalMeetings.filter(
+          (m) => m.intelligenceQuality?.level === "ready" || m.intelligenceQuality?.level === "fresh"
+        ).length;
+        const buildingCount = externalMeetings.filter(
+          (m) => m.intelligenceQuality?.level === "developing"
+        ).length;
+
+        if (readyCount === readiness.totalExternal) {
+          stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
+        } else if (buildingCount > 0) {
+          stats.push({ label: `${readyCount} ready, ${buildingCount} building`, color: "sage" });
+        } else {
+          stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
+        }
+      } else {
+        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} prepped`, color: "sage" });
+      }
     }
     if (readiness.overdueCount > 0) {
       stats.push({ label: `${readiness.overdueCount} overdue`, color: "terracotta" });
     }
     return stats;
-  }, [readiness.preppedCount, readiness.totalExternal, readiness.overdueCount]);
+  }, [meetings, readiness.preppedCount, readiness.totalExternal, readiness.overdueCount]);
 
   const folioActions = useMemo(() => {
     if (!onRunBriefing) return undefined;
@@ -164,7 +188,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         onClick={onRunBriefing}
         disabled={isRunning}
         className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-        title={isRunning ? "Briefing in progress" : "Run morning briefing"}
+        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and intelligence"}
       >
         {isRunning ? (
           <Loader2 className="h-3 w-3 animate-spin" />
