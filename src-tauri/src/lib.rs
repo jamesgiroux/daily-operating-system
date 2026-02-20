@@ -489,6 +489,7 @@ pub fn run() {
             commands::get_quill_sync_states,
             commands::set_quill_poll_interval,
             commands::start_quill_backfill,
+            commands::trigger_quill_sync_for_meeting,
             // Granola Integration (I226)
             commands::get_granola_status,
             commands::set_granola_enabled,
@@ -525,6 +526,8 @@ pub fn run() {
             // I311: Entity Metadata
             commands::update_entity_metadata,
             commands::get_entity_metadata,
+            // I323: Email Disposition Correction
+            commands::correct_email_disposition,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

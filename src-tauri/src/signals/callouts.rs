@@ -48,6 +48,7 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "proactive_action_cluster",
     "proactive_prep_gap",
     "proactive_no_contact",
+    "cadence_anomaly",
 ];
 
 // ---------------------------------------------------------------------------
@@ -286,6 +287,24 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 "Account going dark".to_string(),
                 format!("No meeting or email with {} in 30+ days", name),
             )
+        }
+        "cadence_anomaly" => {
+            // I319: value is the anomaly type string ("gone_quiet" or "activity_spike")
+            let anomaly_type = signal.value.as_deref().unwrap_or("unknown");
+            match anomaly_type {
+                "gone_quiet" => (
+                    "Email activity dropped".to_string(),
+                    format!("Significant decrease in email volume from {}", signal.entity_id),
+                ),
+                "activity_spike" => (
+                    "Email activity surge".to_string(),
+                    format!("Unusual spike in email volume from {}", signal.entity_id),
+                ),
+                _ => (
+                    "Email cadence anomaly".to_string(),
+                    format!("Unusual email pattern for {}", signal.entity_id),
+                ),
+            }
         }
         _ => (
             format!("Signal: {}", signal.signal_type),

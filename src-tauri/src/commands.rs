@@ -3719,6 +3719,12 @@ pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition
             "Roll up daily wins and risks to account files",
             true,
         ),
+        (
+            "autoArchiveEnabled",
+            "Auto-Archive Email",
+            "Automatically archive low-priority emails during daily prep",
+            false,
+        ),
     ];
 
     Ok(definitions
@@ -4433,6 +4439,8 @@ pub struct PersonDetailResult {
     pub recent_captures: Vec<crate::db::DbCapture>,
     pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
+    pub open_actions: Vec<crate::db::DbAction>,
+    pub upcoming_meetings: Vec<MeetingSummary>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -4523,6 +4531,22 @@ pub fn get_person_detail(
         }
     };
 
+    let open_actions = db
+        .get_person_actions(&person_id)
+        .map_err(|e| e.to_string())?;
+
+    let upcoming_meetings: Vec<MeetingSummary> = db
+        .get_upcoming_meetings_for_person(&person_id, 5)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| MeetingSummary {
+            id: m.id,
+            title: m.title,
+            start_time: m.start_time,
+            meeting_type: m.meeting_type,
+        })
+        .collect();
+
     Ok(PersonDetailResult {
         person,
         signals,
@@ -4531,6 +4555,8 @@ pub fn get_person_detail(
         recent_captures,
         recent_email_signals,
         intelligence,
+        open_actions,
+        upcoming_meetings,
     })
 }
 
@@ -9410,6 +9436,39 @@ pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bo
     Ok(true)
 }
 
+/// Trigger Quill transcript sync for a single meeting.
+/// Creates a sync row if none exists, or resets a failed/stale one to pending.
+#[tauri::command]
+pub fn trigger_quill_sync_for_meeting(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // Check if a sync row already exists
+    match db.get_quill_sync_state(&meeting_id).map_err(|e| e.to_string())? {
+        Some(existing) => {
+            match existing.state.as_str() {
+                "completed" => Ok("already_completed".to_string()),
+                "pending" | "polling" | "fetching" | "processing" => Ok("already_in_progress".to_string()),
+                _ => {
+                    // Failed or abandoned — reset to pending for retry
+                    crate::quill::sync::transition_state(
+                        db, &existing.id, "pending", None, None, None, Some("Manual retry"),
+                    ).map_err(|e| e.to_string())?;
+                    Ok("retrying".to_string())
+                }
+            }
+        }
+        None => {
+            crate::quill::sync::create_sync_for_meeting(db, &meeting_id)
+                .map_err(|e| e.to_string())?;
+            Ok("created".to_string())
+        }
+    }
+}
+
 /// Get Quill sync states, optionally filtered by meeting ID.
 #[tauri::command]
 pub fn get_quill_sync_states(
@@ -10339,4 +10398,55 @@ pub async fn get_entity_metadata(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     state.with_db_read(|db| db.get_entity_metadata(&entity_type, &entity_id))
+}
+
+// =============================================================================
+// I323: Email Disposition Correction
+// =============================================================================
+
+/// Correct an email disposition (I323).
+/// Records a feedback signal for Thompson Sampling priority recalibration.
+/// Does NOT un-archive the email (user can find it in Gmail "All Mail").
+#[tauri::command]
+pub async fn correct_email_disposition(
+    email_id: String,
+    corrected_priority: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let valid_priorities = ["high", "medium", "low"];
+    if !valid_priorities.contains(&corrected_priority.as_str()) {
+        return Err(format!(
+            "Invalid priority: {}. Must be high, medium, or low.",
+            corrected_priority
+        ));
+    }
+
+    state.with_db_write(|db| {
+        // Emit a feedback signal for recalibration
+        let signal_text = format!(
+            "User corrected auto-archived email to {}",
+            corrected_priority
+        );
+        db.upsert_email_signal(
+            &email_id,
+            None,           // sender_email
+            None,           // person_id
+            "system",       // entity_id (not entity-specific)
+            "account",      // entity_type
+            "feedback",     // signal_type (valid enum value)
+            &signal_text,
+            Some(1.0),      // confidence
+            None,           // sentiment
+            None,           // urgency
+            None,           // detected_at (defaults to now)
+        )
+        .map_err(|e| format!("Failed to record correction signal: {}", e))?;
+
+        log::info!(
+            "correct_email_disposition: {} corrected to {}",
+            email_id,
+            corrected_priority
+        );
+        Ok(format!("Disposition corrected to {}", corrected_priority))
+    })
 }
