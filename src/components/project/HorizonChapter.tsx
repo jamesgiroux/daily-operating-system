@@ -253,7 +253,7 @@ export function HorizonChapter({ detail, intelligence, onUpdateField }: HorizonC
             fontStyle: "italic",
           }}
         >
-          Build intelligence and set milestones to populate The Horizon.
+          Refresh and set milestones to populate The Horizon.
         </p>
       )}
     </section>
