@@ -5,6 +5,7 @@
 import { useState } from "react";
 import type { ProjectDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import styles from "./ProjectHero.module.css";
 
 interface ProjectHeroProps {
@@ -57,8 +58,8 @@ export function ProjectHero({
 
       {/* Hero date / intelligence timestamp */}
       <div className={styles.heroDate}>
-        Project Intelligence
-        {intelligence && ` · Last enriched ${formatRelativeDateShort(intelligence.enrichedAt)}`}
+        <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
+        {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
       </div>
 
       {/* Project name — 76px serif */}
@@ -114,7 +115,7 @@ export function ProjectHero({
             onClick={onEnrich}
             disabled={enriching}
           >
-            {enriching ? `Building intelligence… ${enrichSeconds ?? 0}s` : "Build Intelligence"}
+            {enriching ? `Refreshing… ${enrichSeconds ?? 0}s` : "Refresh"}
           </button>
         )}
         {detail.archived && onUnarchive && (
