@@ -1266,13 +1266,15 @@ pub fn get_meeting_intelligence(
 }
 
 /// Generate or refresh intelligence for a single meeting (ADR-0081).
-/// Idempotent mechanical assessment — AI enrichment added in Phase 2.
+/// Pass `force: true` to clear existing intelligence and regenerate from scratch.
 #[tauri::command]
 pub async fn generate_meeting_intelligence(
     state: State<'_, Arc<AppState>>,
     meeting_id: String,
+    force: Option<bool>,
 ) -> Result<crate::types::IntelligenceQuality, String> {
-    crate::intelligence_lifecycle::generate_meeting_intelligence(&state, &meeting_id, false)
+    let force_full = force.unwrap_or(false);
+    crate::intelligence_lifecycle::generate_meeting_intelligence(&state, &meeting_id, force_full)
         .await
         .map_err(|e| e.to_string())
 }
