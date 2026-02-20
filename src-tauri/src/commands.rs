@@ -424,6 +424,8 @@ fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
                 linked_entities,
                 suggested_unarchive_account_id: None,
                 intelligence_quality,
+                calendar_attendees: None,
+                calendar_description: None,
             }
         })
         .collect();
