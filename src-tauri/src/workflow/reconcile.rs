@@ -272,6 +272,12 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
 
         if let Err(e) = db.upsert_meeting(&meeting) {
