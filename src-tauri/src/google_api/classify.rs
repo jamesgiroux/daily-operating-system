@@ -13,6 +13,20 @@ use serde::{Deserialize, Serialize};
 
 use super::calendar::GoogleCalendarEvent;
 
+/// Intelligence tier determines enrichment depth (ADR-0081, I328).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntelligenceTier {
+    /// Full AI enrichment — customer meetings, QBRs, partnerships, team syncs with entity
+    Entity,
+    /// Lightweight prompt — 1:1s, internal meetings without entity association
+    Person,
+    /// Mechanical only, no AI call — training, personal
+    Minimal,
+    /// No intelligence generated — all_hands (50+ attendees)
+    Skip,
+}
+
 /// All-hands attendee threshold (per MEETING-TYPES.md).
 pub const ALL_HANDS_THRESHOLD: usize = 50;
 
@@ -69,6 +83,8 @@ pub struct ClassifiedMeeting {
     pub external_domains: Vec<String>,
     /// Calendar event description (I185).
     pub description: String,
+    /// Intelligence tier for enrichment depth (I328).
+    pub intelligence_tier: IntelligenceTier,
 }
 
 /// Classify a calendar event using the multi-signal algorithm.
@@ -116,23 +132,27 @@ pub fn classify_meeting_multi(
         resolved_entities: Vec::new(),
         external_domains: Vec::new(),
         description: event.description.clone(),
+        intelligence_tier: IntelligenceTier::Person, // default, overridden below
     };
 
     // ---- Step 1: Personal (no attendees or only organizer) ----
     if attendee_count <= 1 {
         result.meeting_type = "personal".to_string();
+        result.intelligence_tier = IntelligenceTier::Minimal;
         return result;
     }
 
     // ---- Step 2: Scale-based override (50+ attendees) ----
     if attendee_count >= ALL_HANDS_THRESHOLD {
         result.meeting_type = "all_hands".to_string();
+        result.intelligence_tier = IntelligenceTier::Skip;
         return result;
     }
 
     // ---- Step 3: Title keyword overrides (all-hands) ----
     if contains_any(&title_lower, &["all hands", "all-hands", "town hall"]) {
         result.meeting_type = "all_hands".to_string();
+        result.intelligence_tier = IntelligenceTier::Skip;
         return result;
     }
 
@@ -179,11 +199,16 @@ pub fn classify_meeting_multi(
     if !has_external {
         if title_override == Some("one_on_one") || attendee_count == 2 {
             result.meeting_type = title_override.unwrap_or("one_on_one").to_string();
+            result.intelligence_tier = IntelligenceTier::Person;
             return result;
         }
 
         if let Some(override_type) = title_override {
             result.meeting_type = override_type.to_string();
+            result.intelligence_tier = match override_type {
+                "training" => IntelligenceTier::Minimal,
+                _ => IntelligenceTier::Person,
+            };
             return result;
         }
 
@@ -191,10 +216,12 @@ pub fn classify_meeting_multi(
         let sync_signals = ["sync", "standup", "stand-up", "scrum", "daily", "weekly"];
         if contains_any(&title_lower, &sync_signals) && event.is_recurring {
             result.meeting_type = "team_sync".to_string();
+            result.intelligence_tier = IntelligenceTier::Person;
             return result;
         }
 
         result.meeting_type = "internal".to_string();
+        result.intelligence_tier = IntelligenceTier::Person;
         return result;
     }
 
@@ -206,6 +233,7 @@ pub fn classify_meeting_multi(
             .all(|d| PERSONAL_EMAIL_DOMAINS.contains(&d.as_str()))
     {
         result.meeting_type = "personal".to_string();
+        result.intelligence_tier = IntelligenceTier::Minimal;
         return result;
     }
 
@@ -224,6 +252,22 @@ pub fn classify_meeting_multi(
     } else {
         result.meeting_type = "customer".to_string();
     }
+
+    // Compute intelligence tier based on final meeting type and entity resolution
+    result.intelligence_tier = match result.meeting_type.as_str() {
+        "customer" | "qbr" | "partnership" | "external" => IntelligenceTier::Entity,
+        "team_sync" => {
+            if !result.resolved_entities.is_empty() {
+                IntelligenceTier::Entity
+            } else {
+                IntelligenceTier::Person
+            }
+        }
+        "one_on_one" | "internal" => IntelligenceTier::Person,
+        "training" | "personal" => IntelligenceTier::Minimal,
+        "all_hands" => IntelligenceTier::Skip,
+        _ => IntelligenceTier::Person,
+    };
 
     result
 }
