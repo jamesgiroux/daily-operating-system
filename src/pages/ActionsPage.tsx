@@ -1,8 +1,10 @@
 import { useState, useMemo, useCallback } from "react";
-import { useSearch, Link } from "@tanstack/react-router";
+import { useSearch } from "@tanstack/react-router";
 import { useActions } from "@/hooks/useActions";
 import { useProposedActions } from "@/hooks/useProposedActions";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { ActionRow as SharedActionRow } from "@/components/shared/ActionRow";
+import { ProposedActionRow as SharedProposedActionRow } from "@/components/shared/ProposedActionRow";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { usePersonality } from "@/hooks/usePersonality";
@@ -12,6 +14,7 @@ import type { DbAction } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { DatePicker } from "@/components/ui/date-picker";
 
 // ─── Action Group Types ──────────────────────────────────────────────────────
@@ -167,7 +170,7 @@ export default function ActionsPage() {
               height: 60,
               background: "var(--color-rule-light)",
               borderRadius: 8,
-              marginBottom: 12,
+              marginBottom: "var(--space-sm)",
               animation: "pulse 1.5s ease-in-out infinite",
             }}
           />
@@ -235,7 +238,7 @@ export default function ActionsPage() {
         <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
 
         {/* Status filter toggles */}
-        <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: "var(--space-lg)", marginBottom: "var(--space-sm)" }}>
           {statusTabs.map((tab) => (
             <button
               key={tab}
@@ -267,7 +270,7 @@ export default function ActionsPage() {
                     fontSize: 10,
                     fontWeight: 600,
                     color: "var(--color-spice-turmeric)",
-                    background: "rgba(228, 172, 60, 0.12)",
+                    background: "var(--color-spice-saffron-12)",
                     borderRadius: 8,
                     padding: "1px 6px",
                     lineHeight: "16px",
@@ -281,7 +284,7 @@ export default function ActionsPage() {
         </div>
 
         {/* Priority filter toggles */}
-        <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: "var(--space-lg)", marginBottom: "var(--space-md)" }}>
           {priorityTabs.map((tab) => (
             <button
               key={tab}
@@ -349,12 +352,13 @@ export default function ActionsPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {proposedActions.map((action, i) => (
-                <ProposedActionRow
+                <SharedProposedActionRow
                   key={action.id}
                   action={action}
                   onAccept={() => handleAccept(action.id)}
                   onReject={() => handleReject(action.id)}
                   showBorder={i < proposedActions.length - 1}
+                  stripMarkdown={stripMarkdown}
                 />
               ))}
             </div>
@@ -374,11 +378,14 @@ export default function ActionsPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
             {actions.map((action, i) => (
-              <ActionRow
+              <SharedActionRow
                 key={action.id}
+                variant="full"
                 action={action}
                 onToggle={() => toggleAction(action.id)}
                 showBorder={i < actions.length - 1}
+                stripMarkdown={stripMarkdown}
+                formatDate={formatDueDate}
               />
             ))}
           </div>
@@ -386,28 +393,7 @@ export default function ActionsPage() {
       </section>
 
       {/* ═══ END MARK ═══ */}
-      {actions.length > 0 && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-heavy)",
-            marginTop: 48,
-            paddingTop: 32,
-            paddingBottom: 120,
-            textAlign: "center",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 14,
-              fontStyle: "italic",
-              color: "var(--color-text-tertiary)",
-            }}
-          >
-            That's everything.
-          </div>
-        </div>
-      )}
+      {actions.length > 0 && <FinisMarker />}
     </div>
   );
 }
@@ -451,288 +437,19 @@ function PendingGroupedView({
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
             {group.actions.map((action, i) => (
-              <ActionRow
+              <SharedActionRow
                 key={action.id}
+                variant="full"
                 action={action}
                 onToggle={() => onToggle(action.id)}
                 showBorder={i < group.actions.length - 1}
+                stripMarkdown={stripMarkdown}
+                formatDate={formatDueDate}
               />
             ))}
           </div>
         </div>
       ))}
-      {/* Auto-archive tooltip */}
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--color-text-tertiary)",
-          opacity: 0.6,
-          textAlign: "center",
-          marginTop: 16,
-        }}
-      >
-        Actions pending for 30+ days are automatically archived
-      </div>
-    </div>
-  );
-}
-
-// ─── Action Row ─────────────────────────────────────────────────────────────
-
-function ActionRow({
-  action,
-  onToggle,
-  showBorder,
-}: {
-  action: DbAction;
-  onToggle: () => void;
-  showBorder: boolean;
-}) {
-  const isCompleted = action.status === "completed";
-  const isOverdue =
-    action.dueDate &&
-    action.status === "pending" &&
-    new Date(action.dueDate) < new Date();
-
-  // Context line parts
-  const contextParts: string[] = [];
-  if (isOverdue && action.dueDate) {
-    const days = Math.floor(
-      (new Date().getTime() - new Date(action.dueDate).getTime()) / (1000 * 60 * 60 * 24)
-    );
-    if (days > 0) contextParts.push(`${days} day${days !== 1 ? "s" : ""} overdue`);
-  } else if (action.dueDate) {
-    contextParts.push(formatDueDate(action.dueDate));
-  }
-  if (action.accountName || action.accountId) {
-    contextParts.push(action.accountName || action.accountId!);
-  }
-  if (action.sourceLabel) contextParts.push(action.sourceLabel);
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        opacity: isCompleted ? 0.4 : 1,
-        transition: "opacity 0.15s ease",
-      }}
-    >
-      {/* Checkbox */}
-      <button
-        onClick={onToggle}
-        style={{
-          width: 20,
-          height: 20,
-          borderRadius: 10,
-          border: `2px solid ${isOverdue ? "var(--color-spice-terracotta)" : "var(--color-rule-heavy)"}`,
-          background: isCompleted ? "var(--color-garden-sage)" : "transparent",
-          cursor: "pointer",
-          flexShrink: 0,
-          marginTop: 2,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "all 0.15s ease",
-        }}
-      >
-        {isCompleted && (
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
-
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <Link
-          to="/actions/$actionId"
-          params={{ actionId: action.id }}
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 17,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            textDecoration: isCompleted ? "line-through" : "none",
-            lineHeight: 1.4,
-          }}
-        >
-          {stripMarkdown(action.title)}
-        </Link>
-        {contextParts.length > 0 && (
-          <div
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: isOverdue ? 500 : 300,
-              color: isOverdue
-                ? "var(--color-spice-terracotta)"
-                : "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
-            {contextParts.join(" \u00B7 ")}
-          </div>
-        )}
-      </div>
-
-      {/* Priority badge */}
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.04em",
-          color: action.priority === "P1"
-            ? "var(--color-spice-terracotta)"
-            : action.priority === "P2"
-              ? "var(--color-spice-turmeric)"
-              : "var(--color-text-tertiary)",
-          flexShrink: 0,
-          marginTop: 4,
-        }}
-      >
-        {action.priority}
-      </span>
-    </div>
-  );
-}
-
-// ─── Proposed Action Row ────────────────────────────────────────────────────
-
-function ProposedActionRow({
-  action,
-  onAccept,
-  onReject,
-  showBorder,
-}: {
-  action: DbAction;
-  onAccept: () => void;
-  onReject: () => void;
-  showBorder: boolean;
-}) {
-  const contextParts: string[] = [];
-  if (action.sourceLabel) contextParts.push(action.sourceLabel);
-  if (action.accountName || action.accountId) {
-    contextParts.push(action.accountName || action.accountId!);
-  }
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        borderLeft: "2px dashed var(--color-spice-turmeric)",
-        paddingLeft: 16,
-      }}
-    >
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: "var(--color-spice-turmeric)",
-            }}
-          >
-            Suggested
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              color: action.priority === "P1"
-                ? "var(--color-spice-terracotta)"
-                : action.priority === "P2"
-                  ? "var(--color-spice-turmeric)"
-                  : "var(--color-text-tertiary)",
-            }}
-          >
-            {action.priority}
-          </span>
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 17,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            lineHeight: 1.4,
-          }}
-        >
-          {stripMarkdown(action.title)}
-        </div>
-        {contextParts.length > 0 && (
-          <div
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
-            {contextParts.join(" \u00B7 ")}
-          </div>
-        )}
-      </div>
-
-      {/* Accept / Reject buttons */}
-      <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: 4 }}>
-        <button
-          onClick={onAccept}
-          title="Accept"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 4,
-            border: "1px solid var(--color-garden-sage)",
-            background: "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <button
-          onClick={onReject}
-          title="Reject"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 4,
-            border: "1px solid var(--color-spice-terracotta)",
-            background: "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
     </div>
   );
 }
