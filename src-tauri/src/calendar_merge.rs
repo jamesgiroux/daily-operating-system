@@ -150,6 +150,7 @@ mod tests {
             account: Some("Acme".to_string()),
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }
     }
 

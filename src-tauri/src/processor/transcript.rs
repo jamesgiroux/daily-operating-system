@@ -591,6 +591,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }
     }
 

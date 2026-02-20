@@ -271,6 +271,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day,
+            linked_entities: None,
         }
     }
 

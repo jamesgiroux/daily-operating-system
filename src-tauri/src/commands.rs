@@ -8443,6 +8443,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("insert meeting");
 
@@ -8499,6 +8505,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
 
@@ -8562,6 +8574,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&past).expect("upsert past meeting");
 
@@ -8590,6 +8608,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&frozen).expect("upsert frozen meeting");
 
@@ -8622,6 +8646,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
 
         let prep = FullMeetingPrep {

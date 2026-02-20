@@ -392,12 +392,97 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     };
 
     // Step 5: Collect actions (workspace markdown + SQLite)
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-    let action_result = actions::collect_all_actions(workspace, db_ref);
-    let actions_dict = action_result.to_value();
+    let actions_dict = {
+        let db_guard = state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        let action_result = actions::collect_all_actions(workspace, db_ref);
+        action_result.to_value()
+    };
+
+    // Step 5b: Intelligence freshness check (I327/I331)
+    // For each classified meeting, check if intelligence exists and is fresh.
+    // Refresh stale or missing intelligence before gathering meeting contexts.
+    {
+        let intel_start = std::time::Instant::now();
+        let mut refreshed = 0u32;
+        let mut skipped = 0u32;
+        let mut already_current = 0u32;
+
+        for cm in &classified {
+            let tier_str = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+            if tier_str == "skip" || tier_str == "minimal" {
+                skipped += 1;
+                continue;
+            }
+
+            let calendar_event_id = match cm.get("id").and_then(|v| v.as_str()) {
+                Some(id) => id,
+                None => continue,
+            };
+            let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(unknown)");
+
+            // Look up the meeting row to check intelligence state
+            let needs_refresh = {
+                let guard = state.db.lock().ok();
+                let db_opt = guard.as_ref().and_then(|g| g.as_ref());
+                match db_opt {
+                    Some(db) => {
+                        match db.get_meeting_by_calendar_event_id(calendar_event_id) {
+                            Ok(Some(meeting)) => {
+                                let intel_state = meeting.intelligence_state.as_deref().unwrap_or("detected");
+                                let has_signals = meeting.has_new_signals.unwrap_or(0) > 0;
+                                let is_stale = meeting.last_enriched_at.as_deref()
+                                    .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
+                                    .map(|enriched_at| {
+                                        let age = Utc::now() - enriched_at.with_timezone(&Utc);
+                                        age > chrono::Duration::hours(12)
+                                    })
+                                    .unwrap_or(true); // No timestamp = treat as stale
+
+                                intel_state == "detected"
+                                    || (is_stale && intel_state == "enriched")
+                                    || has_signals
+                            }
+                            Ok(None) => {
+                                // No meeting row yet — nothing to refresh (reconcile creates rows)
+                                false
+                            }
+                            Err(e) => {
+                                log::warn!("prepare_today: intel check failed for {}: {}", title, e);
+                                false
+                            }
+                        }
+                    }
+                    None => false,
+                }
+            };
+
+            if needs_refresh {
+                match crate::intelligence_lifecycle::generate_meeting_intelligence(
+                    state, calendar_event_id, false,
+                ).await {
+                    Ok(_quality) => {
+                        log::info!("prepare_today: refreshed intelligence for {}", title);
+                        refreshed += 1;
+                    }
+                    Err(e) => {
+                        log::warn!("prepare_today: failed to refresh intelligence for {}: {}", title, e);
+                    }
+                }
+            } else {
+                already_current += 1;
+            }
+        }
+
+        log::info!(
+            "prepare_today: intelligence freshness check took {:?} — {} refreshed, {} already current, {} skipped",
+            intel_start.elapsed(), refreshed, already_current, skipped
+        );
+    }
 
     // Step 6: Meeting contexts (I305: thread embedding model for entity resolution)
+    let db_guard = state.db.lock().ok();
+    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
     let embedding_ref = state.embedding_model.as_ref();
     let meeting_contexts =
         meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref, Some(embedding_ref));
@@ -577,6 +662,128 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     };
     let (classified, _events, _meetings_by_type, _time_status, events_by_day) =
         fetch_and_classify_week(monday, friday, &user_domains, &entity_hints).await;
+
+    // Ensure classified meetings exist in meetings_history and generate intelligence (ADR-0081)
+    {
+        let intel_guard = state.db.lock().ok();
+        if let Some(db) = intel_guard.as_ref().and_then(|g| g.as_ref()) {
+            for cm in &classified {
+                let tier = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+                if tier == "skip" {
+                    continue;
+                }
+                let calendar_event_id = match cm.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => continue,
+                };
+                let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
+
+                // Upsert meeting into meetings_history so intelligence lifecycle can find it
+                let existing = db.get_meeting_by_calendar_event_id(calendar_event_id).ok().flatten();
+                let meeting_id = if let Some(ref existing_meeting) = existing {
+                    existing_meeting.id.clone()
+                } else {
+                    // Insert a new meeting row from classified data
+                    let new_id = calendar_event_id.to_string();
+                    let meeting_type = cm.get("type").and_then(|v| v.as_str()).unwrap_or("external");
+                    let start = cm.get("start").and_then(|v| v.as_str()).unwrap_or("");
+                    let end_time = cm.get("end").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let attendees_json = cm.get("attendees").map(|v| v.to_string());
+                    let description = cm.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                    let db_meeting = crate::db::DbMeeting {
+                        id: new_id.clone(),
+                        title: title.to_string(),
+                        meeting_type: meeting_type.to_string(),
+                        start_time: start.to_string(),
+                        end_time,
+                        attendees: attendees_json,
+                        notes_path: None,
+                        summary: None,
+                        created_at: Utc::now().to_rfc3339(),
+                        calendar_event_id: Some(calendar_event_id.to_string()),
+                        description,
+                        prep_context_json: None,
+                        user_agenda_json: None,
+                        user_notes: None,
+                        prep_frozen_json: None,
+                        prep_frozen_at: None,
+                        prep_snapshot_path: None,
+                        prep_snapshot_hash: None,
+                        transcript_path: None,
+                        transcript_processed_at: None,
+                        intelligence_state: None,
+                        intelligence_quality: None,
+                        last_enriched_at: None,
+                        signal_count: None,
+                        has_new_signals: None,
+                        last_viewed_at: None,
+                    };
+                    if let Err(e) = db.upsert_meeting(&db_meeting) {
+                        log::warn!("prepare_week: failed to upsert meeting '{}': {}", title, e);
+                        continue;
+                    }
+                    new_id
+                };
+
+                // Link meeting entities (I336)
+                if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
+                    for entity in entities {
+                        let entity_type = entity.get("entity_type").and_then(|v| v.as_str()).unwrap_or("");
+                        let entity_id = entity.get("entity_id").and_then(|v| v.as_str()).unwrap_or("");
+                        if !entity_id.is_empty() {
+                            let _ = db.link_meeting_entity(&meeting_id, entity_id, entity_type);
+                        }
+                    }
+                }
+
+                log::debug!("prepare_week: ensured meeting '{}' in DB (id={})", title, meeting_id);
+            }
+        }
+    }
+
+    // Generate individual meeting intelligence (ADR-0081, Phase 2B)
+    for cm in &classified {
+        let tier = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+        if tier == "skip" {
+            continue;
+        }
+        let calendar_event_id = match cm.get("id").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => continue,
+        };
+        let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
+
+        // Look up the DB meeting ID
+        let meeting_id = {
+            let guard = state.db.lock().ok();
+            let db = guard.as_ref().and_then(|g| g.as_ref());
+            match db {
+                Some(db) => db.get_meeting_by_calendar_event_id(calendar_event_id)
+                    .ok()
+                    .flatten()
+                    .map(|m| m.id),
+                None => None,
+            }
+        };
+
+        let meeting_id = match meeting_id {
+            Some(id) => id,
+            None => {
+                log::warn!("prepare_week: meeting '{}' not found in DB for intelligence", title);
+                continue;
+            }
+        };
+
+        match crate::intelligence_lifecycle::generate_meeting_intelligence(state, &meeting_id, false).await {
+            Ok(quality) => {
+                log::info!("prepare_week: intelligence for '{}': {:?}", title, quality.level);
+            }
+            Err(e) => {
+                log::warn!("prepare_week: failed to generate intelligence for '{}': {}", title, e);
+            }
+        }
+    }
 
     // Actions from SQLite
     let db_guard = state.db.lock().ok();
@@ -1012,6 +1219,7 @@ async fn fetch_and_classify_today(
             "account": cm.account(),
             "entities": cm.resolved_entities,
             "description": cm.description,
+            "intelligence_tier": cm.intelligence_tier,
         }));
         events.push(json!({
             "id": ev.id,
@@ -1145,6 +1353,7 @@ async fn fetch_and_classify_week(
             "account": cm.account(),
             "entities": cm.resolved_entities,
             "description": cm.description,
+            "intelligence_tier": cm.intelligence_tier,
         }));
         events.push(json!({
             "id": ev.id,
