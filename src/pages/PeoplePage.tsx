@@ -88,7 +88,10 @@ export default function PeoplePage() {
   const loadDuplicates = useCallback(() => {
     invoke<DuplicateCandidate[]>("get_duplicate_people")
       .then(setDuplicates)
-      .catch(() => setDuplicates([]));
+      .catch((err) => {
+        console.error("get_duplicate_people failed:", err);
+        setDuplicates([]);
+      });
   }, []);
 
   useEffect(() => { loadDuplicates(); }, [loadDuplicates]);

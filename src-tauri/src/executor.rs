@@ -320,6 +320,19 @@ impl Executor {
                                             display_name.as_deref(),
                                             0.8,
                                         );
+                                        // Emit negative_sentiment for propagation rules
+                                        // (e.g. rule_champion_sentiment → champion_risk)
+                                        if sentiment == Some("negative") {
+                                            let _ = crate::signals::bus::emit_signal(
+                                                db,
+                                                "person",
+                                                pid,
+                                                "negative_sentiment",
+                                                "email_signal",
+                                                Some(signal_text),
+                                                confidence.unwrap_or(0.7),
+                                            );
+                                        }
                                     }
                                 }
                             }

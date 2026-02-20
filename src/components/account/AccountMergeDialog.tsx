@@ -52,7 +52,10 @@ export function AccountMergeDialog({
     }
     invoke<PickerAccount[]>("get_accounts_for_picker")
       .then((all) => setAccounts(all.filter((a) => a.id !== sourceAccountId)))
-      .catch(() => setAccounts([]));
+      .catch((err) => {
+        console.error("get_accounts_for_picker failed:", err);
+        setAccounts([]);
+      });
   }, [open, sourceAccountId]);
 
   const handleMerge = async () => {

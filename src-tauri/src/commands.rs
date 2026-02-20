@@ -3802,6 +3802,7 @@ pub fn capture_meeting_outcome(
                 waiting_on: None,
                 updated_at: now,
                 person_id: None,
+                account_name: None,
             };
             if let Err(e) = db.upsert_action(&db_action) {
                 log::warn!("Failed to save captured action: {}", e);
@@ -4195,6 +4196,7 @@ pub fn create_action(
         waiting_on: None,
         updated_at: now,
         person_id,
+        account_name: None,
     };
 
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;

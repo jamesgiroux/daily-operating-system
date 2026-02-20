@@ -74,7 +74,7 @@ function UpdateSection() {
   const [state, setState] = useState<UpdateState>({ phase: "idle" });
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => {});
+    getVersion().then(setAppVersion).catch((err) => console.error("getVersion failed:", err));
   }, []);
 
   async function handleCheck() {
@@ -190,7 +190,7 @@ function HealthOneLiner() {
           setLastBriefing(String(schedules.dailyBriefingTime));
         }
       })
-      .catch(() => {});
+      .catch((err) => console.error("Settings load failed:", err));
 
     invoke<HygieneStatusView>("get_intelligence_hygiene_status")
       .then((status) => {
@@ -207,7 +207,7 @@ function HealthOneLiner() {
           setHealthSummary(parts.join(", "));
         }
       })
-      .catch(() => {});
+      .catch((err) => console.error("Settings load failed:", err));
   }, []);
 
   return (
@@ -257,7 +257,7 @@ function AiModelsSection() {
           config.aiModels ?? { synthesis: "sonnet", extraction: "sonnet", mechanical: "haiku" },
         );
       })
-      .catch(() => {});
+      .catch((err) => console.error("Settings load failed:", err));
   }, []);
 
   async function handleModelChange(tier: string, model: string) {
@@ -333,7 +333,7 @@ function FeaturesSection() {
   useEffect(() => {
     invoke<FeatureDefinition[]>("get_features")
       .then(setFeatures)
-      .catch(() => {});
+      .catch((err) => console.error("Settings load failed:", err));
   }, []);
 
   async function toggleFeature(key: string, currentEnabled: boolean) {
@@ -432,7 +432,7 @@ function HygieneSection() {
     }
     invoke<HygieneNarrativeView | null>("get_hygiene_narrative")
       .then(setNarrative)
-      .catch(() => {});
+      .catch((err) => console.error("Settings load failed:", err));
   }
 
   useEffect(() => {
@@ -445,7 +445,7 @@ function HygieneSection() {
           hygienePreMeetingHours: config.hygienePreMeetingHours ?? 12,
         });
       })
-      .catch(() => {});
+      .catch((err) => console.error("Settings load failed:", err));
   }, []);
 
   async function runScanNow() {
@@ -455,7 +455,7 @@ function HygieneSection() {
       setStatus(updated);
       invoke<HygieneNarrativeView | null>("get_hygiene_narrative")
         .then(setNarrative)
-        .catch(() => {});
+        .catch((err) => console.error("Settings load failed:", err));
       toast.success("Hygiene scan complete");
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to run hygiene scan");
@@ -883,7 +883,7 @@ function CaptureSection() {
   useEffect(() => {
     invoke<PostMeetingCaptureConfig>("get_capture_settings")
       .then(setCaptureConfig)
-      .catch(() => {});
+      .catch((err) => console.error("Settings load failed:", err));
   }, []);
 
   async function toggleCapture() {

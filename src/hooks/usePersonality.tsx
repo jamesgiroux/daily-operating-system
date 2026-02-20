@@ -38,7 +38,9 @@ export function PersonalityProvider({ children }: { children: React.ReactNode })
         }
         setUserName(c.userName ?? null);
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error("get_config (personality) failed:", err);
+      });
   }, []);
 
   const handleSetPersonality = useCallback((p: Personality) => {
