@@ -399,6 +399,73 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         action_result.to_value()
     };
 
+    // Step 5a: Ensure today's meetings exist in DB before intelligence check.
+    // Fixes first-run gap: calendar poller may not have run yet, so prepare_today
+    // must upsert meetings itself. Pattern ported from prepare_week (lines 707-783).
+    {
+        let ensure_guard = state.db.lock().ok();
+        if let Some(db) = ensure_guard.as_ref().and_then(|g| g.as_ref()) {
+            let mut ensured = 0u32;
+            for cm in &classified {
+                let tier = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+                if tier == "skip" {
+                    continue;
+                }
+                let calendar_event_id = match cm.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => continue,
+                };
+                // Only insert if not already present
+                if db.get_meeting_by_calendar_event_id(calendar_event_id).ok().flatten().is_some() {
+                    continue;
+                }
+                let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
+                let meeting_type = cm.get("type").and_then(|v| v.as_str()).unwrap_or("external");
+                let start = cm.get("start").and_then(|v| v.as_str()).unwrap_or("");
+                let end_time = cm.get("end").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let attendees_json = cm.get("attendees").map(|v| v.to_string());
+                let description = cm.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let db_meeting = crate::db::DbMeeting {
+                    id: calendar_event_id.to_string(),
+                    title: title.to_string(),
+                    meeting_type: meeting_type.to_string(),
+                    start_time: start.to_string(),
+                    end_time,
+                    attendees: attendees_json,
+                    notes_path: None,
+                    summary: None,
+                    created_at: Utc::now().to_rfc3339(),
+                    calendar_event_id: Some(calendar_event_id.to_string()),
+                    description,
+                    prep_context_json: None,
+                    user_agenda_json: None,
+                    user_notes: None,
+                    prep_frozen_json: None,
+                    prep_frozen_at: None,
+                    prep_snapshot_path: None,
+                    prep_snapshot_hash: None,
+                    transcript_path: None,
+                    transcript_processed_at: None,
+                    intelligence_state: None,
+                    intelligence_quality: None,
+                    last_enriched_at: None,
+                    signal_count: None,
+                    has_new_signals: None,
+                    last_viewed_at: None,
+                };
+                if let Err(e) = db.upsert_meeting(&db_meeting) {
+                    log::warn!("prepare_today: failed to upsert meeting '{}': {}", title, e);
+                    continue;
+                }
+                ensured += 1;
+            }
+            if ensured > 0 {
+                log::info!("prepare_today: ensured {} new meetings in DB before intelligence check", ensured);
+            }
+        }
+    }
+
     // Step 5b: Intelligence freshness check (I327/I331)
     // For each classified meeting, check if intelligence exists and is fresh.
     // Refresh stale or missing intelligence before gathering meeting contexts.
@@ -484,8 +551,45 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let db_guard = state.db.lock().ok();
     let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
     let embedding_ref = state.embedding_model.as_ref();
-    let meeting_contexts =
+    let mut meeting_contexts =
         meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref, Some(embedding_ref));
+
+    // I331: Assembly model — inject pre-computed AI intelligence into meeting contexts.
+    // Meetings that were enriched by generate_meeting_intelligence (Step 5b or weekly run)
+    // have AI-enriched prep_context_json. Merge that into the directive's meeting contexts
+    // so downstream surfaces (meeting detail, briefing) can render narrative, risks, etc.
+    if let Some(db) = db_ref {
+        for ctx in &mut meeting_contexts {
+            let cal_id = ctx.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            if cal_id.is_empty() {
+                continue;
+            }
+            if let Ok(Some(meeting)) = db.get_meeting_by_calendar_event_id(cal_id) {
+                if let Some(ref prep_json) = meeting.prep_context_json {
+                    if let Ok(prep_val) = serde_json::from_str::<Value>(prep_json) {
+                        if let Some(ai_intel) = prep_val.get("ai_intelligence") {
+                            if let Some(obj) = ctx.as_object_mut() {
+                                obj.insert(
+                                    "ai_intelligence".to_string(),
+                                    ai_intel.clone(),
+                                );
+                            }
+                        }
+                        // Also inject quality metadata
+                        if let Some(quality) = prep_val.get("quality") {
+                            if let Some(obj) = ctx.as_object_mut() {
+                                obj.insert(
+                                    "intelligence_quality".to_string(),
+                                    quality.clone(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Drop DB guard before any further awaits
     drop(db_guard);
 
