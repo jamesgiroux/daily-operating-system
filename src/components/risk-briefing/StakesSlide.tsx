@@ -56,6 +56,7 @@ export function StakesSlide({ data, onUpdate }: StakesSlideProps) {
           as="h2"
           value={data.financialHeadline}
           onChange={(v) => onUpdate?.({ ...data, financialHeadline: v })}
+          multiline={false}
           style={{
             fontFamily: "var(--font-serif)",
             fontSize: 32,
@@ -147,6 +148,7 @@ export function StakesSlide({ data, onUpdate }: StakesSlideProps) {
                     updated[i] = { ...updated[i], name: v };
                     onUpdate?.({ ...data, stakeholders: updated });
                   }}
+                  multiline={false}
                   style={{
                     fontFamily: "var(--font-sans)",
                     fontSize: 16,
@@ -159,6 +161,7 @@ export function StakesSlide({ data, onUpdate }: StakesSlideProps) {
                 <EditableText
                   as="div"
                   value={s.role}
+                  multiline={false}
                   onChange={(v) => {
                     const updated = [...(data.stakeholders ?? [])];
                     updated[i] = { ...updated[i], role: v };
@@ -233,6 +236,7 @@ export function StakesSlide({ data, onUpdate }: StakesSlideProps) {
             <EditableText
               value={data.decisionMaker}
               onChange={(v) => onUpdate?.({ ...data, decisionMaker: v })}
+              multiline={false}
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: 16,

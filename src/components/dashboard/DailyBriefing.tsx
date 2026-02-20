@@ -32,7 +32,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
-import type { DashboardData, DataFreshness, Meeting, MeetingType, Action, Email, PrioritizedAction } from "@/types";
+import type { DashboardData, DataFreshness, Meeting, MeetingType, Action, Email, PrioritizedAction, ReplyNeeded } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -247,9 +247,26 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 
   return (
     <div>
-      {/* ═══ HERO ═══ */}
+      {/* ═══ DAY FRAME (Hero + Focus) ═══ */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{heroHeadline}</h1>
+
+        {/* Capacity + focus directive */}
+        {data.focus && (
+          <div className={s.focusCapacity}>
+            {formatMinutes(data.focus.availableMinutes)} available
+            {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length > 0 && (
+              <> &middot; {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length} deep work block{data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length !== 1 ? "s" : ""}</>
+            )}
+            {" "}&middot; {data.focus.meetingCount} meeting{data.focus.meetingCount !== 1 ? "s" : ""}
+          </div>
+        )}
+
+        {data.overview.focus && (
+          <div className={s.focusBlock}>
+            <div className={s.focusText}>{data.overview.focus}</div>
+          </div>
+        )}
 
         {/* Staleness indicator */}
         {freshness.freshness === "stale" && (
@@ -258,29 +275,6 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           </div>
         )}
       </section>
-
-      {/* ═══ FOCUS ═══ */}
-      {data.overview.focus && (
-        <section className={s.focusSection}>
-          <div className={s.marginGrid}>
-            <div className={s.marginLabel}>Focus</div>
-            <div className={s.marginContent}>
-              <div className={s.focusBlock}>
-                <div className={s.focusText}>{data.overview.focus}</div>
-              </div>
-              {data.focus && (
-                <div className={s.focusCapacity}>
-                  {formatMinutes(data.focus.availableMinutes)} available
-                  {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length > 0 && (
-                    <> &middot; {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length} deep work block{data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length !== 1 ? "s" : ""}</>
-                  )}
-                  {" "}&middot; {data.focus.meetingCount} meeting{data.focus.meetingCount !== 1 ? "s" : ""}
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* ═══ LEAD STORY (Featured Meeting) ═══ */}
       {featured && (
@@ -527,6 +521,8 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           emailSectionLabel={emailSectionLabel}
           allEmails={emails}
           totalPendingActions={pendingActions.length}
+          emailNarrative={data.emailNarrative}
+          repliesNeeded={data.repliesNeeded}
         />
       ) : (pendingActions.length > 0 || briefingEmails.length > 0) ? (
         <LooseThreadsSection
@@ -535,6 +531,8 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           allEmails={emails}
           completedIds={completedIds}
           onComplete={handleComplete}
+          emailNarrative={data.emailNarrative}
+          repliesNeeded={data.repliesNeeded}
         />
       ) : null}
 
@@ -554,6 +552,8 @@ function PrioritiesSection({
   emailSectionLabel,
   allEmails,
   totalPendingActions,
+  emailNarrative,
+  repliesNeeded,
 }: {
   focus: NonNullable<DashboardData["focus"]>;
   completedIds: Set<string>;
@@ -562,12 +562,12 @@ function PrioritiesSection({
   emailSectionLabel: string;
   allEmails: Email[];
   totalPendingActions: number;
+  emailNarrative?: string;
+  repliesNeeded?: ReplyNeeded[];
 }) {
   // Group prioritized actions by urgency
   const overdueActions = focus.prioritizedActions.filter((pa) => pa.action.status !== "completed" && pa.atRisk);
   const todayActions = focus.prioritizedActions.filter((pa) => pa.action.status !== "completed" && !pa.atRisk && pa.feasible);
-  const upcomingActions = focus.prioritizedActions.filter((pa) => pa.action.status !== "completed" && !pa.atRisk && !pa.feasible);
-
   const hasMore = totalPendingActions > focus.prioritizedActions.length;
 
   return (
@@ -630,22 +630,14 @@ function PrioritiesSection({
             </>
           )}
 
-          {/* UPCOMING group (tapered weight) */}
-          {upcomingActions.length > 0 && (
-            <>
-              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelUpcoming)}>Later This Week</div>
-              <div className={s.priorityItems}>
-                {upcomingActions.slice(0, 3).map((pa) => (
-                  <PrioritizedActionItem
-                    key={pa.action.id}
-                    pa={pa}
-                    urgency="upcoming"
-                    isCompleted={completedIds.has(pa.action.id)}
-                    onComplete={onComplete}
-                  />
-                ))}
-              </div>
-            </>
+          {/* Email narrative (I355) */}
+          {emailNarrative && (
+            <EmailBriefingNarrative narrative={emailNarrative} />
+          )}
+
+          {/* Replies needed (I355/I356) */}
+          {repliesNeeded && repliesNeeded.length > 0 && (
+            <RepliesNeededList replies={repliesNeeded} />
           )}
 
           {/* View all links */}
@@ -675,12 +667,16 @@ function LooseThreadsSection({
   allEmails,
   completedIds,
   onComplete,
+  emailNarrative,
+  repliesNeeded,
 }: {
   pendingActions: Action[];
   briefingEmails: Email[];
   allEmails: Email[];
   completedIds: Set<string>;
   onComplete: (id: string) => void;
+  emailNarrative?: string;
+  repliesNeeded?: ReplyNeeded[];
 }) {
   const visibleActions = pendingActions.slice(0, 5);
   const hasMore = pendingActions.length > 5;
@@ -747,6 +743,16 @@ function LooseThreadsSection({
               <PriorityEmailItem key={email.id} email={email} />
             ))}
           </div>
+
+          {/* Email narrative (I355) */}
+          {emailNarrative && (
+            <EmailBriefingNarrative narrative={emailNarrative} />
+          )}
+
+          {/* Replies needed (I355/I356) */}
+          {repliesNeeded && repliesNeeded.length > 0 && (
+            <RepliesNeededList replies={repliesNeeded} />
+          )}
 
           {/* View all links */}
           <div className={s.prioritiesViewAll}>
@@ -832,6 +838,46 @@ function PrioritizedActionItem({
         )}
       </div>
     </Link>
+  );
+}
+
+// ─── Email Briefing Narrative (I355) ──────────────────────────────────────────
+
+function EmailBriefingNarrative({ narrative }: { narrative: string }) {
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>Email Intelligence</div>
+      <p className={s.emailNarrative}>{narrative}</p>
+    </div>
+  );
+}
+
+// ─── Replies Needed (I355/I356) ──────────────────────────────────────────────
+
+function RepliesNeededList({ replies }: { replies: ReplyNeeded[] }) {
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
+        Awaiting Your Reply
+        <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{replies.length}</span>
+      </div>
+      <div className={s.priorityItems}>
+        {replies.map((reply) => (
+          <div key={reply.threadId} className={s.replyItem}>
+            <div className={s.replyDot} />
+            <div className={s.replyContent}>
+              <div className={s.replySubject}>{reply.subject}</div>
+              <div className={s.replyMeta}>
+                {reply.from}
+                {reply.waitDuration && (
+                  <> &middot; <span className={s.replyWait}>{reply.waitDuration}</span></>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
