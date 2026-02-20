@@ -14,10 +14,11 @@ import { stripMarkdown } from "@/lib/utils";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { DatePicker } from "@/components/ui/date-picker";
 
-type StatusTab = "proposed" | "pending" | "completed" | "waiting" | "all";
+type StatusTab = "proposed" | "pending" | "completed";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
 
-const statusTabs: StatusTab[] = ["proposed", "pending", "completed", "waiting", "all"];
+const statusTabs: StatusTab[] = ["proposed", "pending", "completed"];
+const statusTabLabels: Record<StatusTab, string> = { proposed: "Suggested", pending: "Pending", completed: "Completed" };
 const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
 
 export default function ActionsPage() {
@@ -58,12 +59,17 @@ export default function ActionsPage() {
     await rejectAction(id);
   }, [rejectAction]);
 
-  const formattedDate = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).toUpperCase();
+  // Smart default: proposed tab when suggestions exist, else pending
+  const [hasSetDefault, setHasSetDefault] = useState(false);
+  if (!hasSetDefault && !loading && proposedCount > 0 && statusFilter !== "proposed") {
+    setStatusFilter("proposed");
+    setHasSetDefault(true);
+  } else if (!hasSetDefault && !loading && proposedCount === 0 && statusFilter !== "pending") {
+    setStatusFilter("pending");
+    setHasSetDefault(true);
+  } else if (!hasSetDefault && !loading) {
+    setHasSetDefault(true);
+  }
 
   // FolioBar readiness stats
   const folioStats = useMemo((): ReadinessStat[] => {
@@ -80,7 +86,6 @@ export default function ActionsPage() {
       folioLabel: "Actions",
       atmosphereColor: "terracotta" as const,
       activePage: "actions" as const,
-      folioDateText: formattedDate,
       folioReadinessStats: folioStats,
       folioActions: (
         <button
@@ -103,7 +108,7 @@ export default function ActionsPage() {
         </button>
       ),
     }),
-    [formattedDate, folioStats],
+    [folioStats],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -210,7 +215,7 @@ export default function ActionsPage() {
                 gap: 6,
               }}
             >
-              {tab}
+              {statusTabLabels[tab]}
               {tab === "proposed" && proposedCount > 0 && (
                 <span
                   style={{
@@ -315,9 +320,7 @@ export default function ActionsPage() {
             {...getPersonalityCopy(
               statusFilter === "completed"
                 ? "actions-completed-empty"
-                : statusFilter === "waiting"
-                  ? "actions-waiting-empty"
-                  : "actions-empty",
+                : "actions-empty",
               personality,
             )}
           />
@@ -530,7 +533,7 @@ function ProposedActionRow({
               color: "var(--color-spice-turmeric)",
             }}
           >
-            AI Suggested
+            Suggested
           </span>
           <span
             style={{
@@ -598,7 +601,7 @@ function ProposedActionRow({
         </button>
         <button
           onClick={onReject}
-          title="Reject"
+          title="Dismiss"
           style={{
             width: 28,
             height: 28,
