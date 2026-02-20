@@ -306,6 +306,19 @@ export default function MeetingDetailPage() {
     }
   }, [meetingId, canEditUserLayer, data, loadMeetingIntelligence]);
 
+  const handleRefreshIntelligence = useCallback(async () => {
+    if (!meetingId) return;
+    setRefreshingIntel(true);
+    try {
+      await invoke("generate_meeting_intelligence", { meetingId });
+      await loadMeetingIntelligence();
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Refresh failed");
+    } finally {
+      setRefreshingIntel(false);
+    }
+  }, [meetingId, loadMeetingIntelligence]);
+
   useEffect(() => {
     loadMeetingIntelligence();
   }, [loadMeetingIntelligence]);
@@ -347,18 +360,7 @@ export default function MeetingDetailPage() {
         )}
         {!isPastMeeting && (
           <button
-            onClick={async () => {
-              if (!meetingId) return;
-              setRefreshingIntel(true);
-              try {
-                await invoke("generate_meeting_intelligence", { meetingId });
-                await loadMeetingIntelligence();
-              } catch (err) {
-                toast.error(typeof err === "string" ? err : "Refresh failed");
-              } finally {
-                setRefreshingIntel(false);
-              }
-            }}
+            onClick={handleRefreshIntelligence}
             disabled={refreshingIntel}
             style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: refreshingIntel ? 0.5 : 1, cursor: refreshingIntel ? "not-allowed" : "pointer" }}
           >
@@ -369,16 +371,6 @@ export default function MeetingDetailPage() {
         <button onClick={handleDraftAgendaMessage} style={folioBtn}>
           Draft Agenda
         </button>
-        {isPastMeeting && (
-          <button
-            onClick={handleSyncTranscript}
-            disabled={syncing}
-            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: syncing ? 0.5 : 1, cursor: syncing ? "not-allowed" : "pointer" }}
-          >
-            {syncing ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <RefreshCw style={{ width: 10, height: 10 }} />}
-            {syncing ? "Syncing…" : "Sync"}
-          </button>
-        )}
         <button
           onClick={handleAttachTranscript}
           disabled={attaching}
@@ -396,7 +388,7 @@ export default function MeetingDetailPage() {
         </button>
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, refreshingIntel, isPastMeeting, meetingId, handlePrefillFromContext, handleDraftAgendaMessage, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, refreshingIntel, isPastMeeting, meetingId, handlePrefillFromContext, handleRefreshIntelligence, handleDraftAgendaMessage, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -433,7 +425,7 @@ export default function MeetingDetailPage() {
               margin: "0 0 8px",
             }}
           >
-            Prep not ready yet
+            Not ready yet
           </h2>
           <p
             style={{
@@ -565,6 +557,33 @@ export default function MeetingDetailPage() {
             >
               Meeting context will appear here once analysis completes.
             </p>
+            {isPastMeeting && (
+              <button
+                onClick={handleSyncTranscript}
+                disabled={syncing}
+                style={{
+                  marginTop: 24,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "var(--color-spice-turmeric)",
+                  background: "none",
+                  border: "1px solid var(--color-spice-turmeric)",
+                  borderRadius: 4,
+                  padding: "6px 16px",
+                  cursor: syncing ? "not-allowed" : "pointer",
+                  opacity: syncing ? 0.5 : 1,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {syncing ? <Loader2 style={{ width: 12, height: 12, animation: "spin 1s linear infinite" }} /> : <RefreshCw style={{ width: 12, height: 12 }} />}
+                {syncing ? "Syncing transcript…" : "Sync transcript"}
+              </button>
+            )}
           </div>
         )}
 
@@ -597,7 +616,7 @@ export default function MeetingDetailPage() {
 
               {/* Kicker */}
               <p style={monoOverline}>
-                Meeting Intelligence Report
+                Meeting Briefing
               </p>
 
               {/* Title — 76px editorial hero scale */}
@@ -661,6 +680,46 @@ export default function MeetingDetailPage() {
                     linkedEntities={linkedEntities}
                     onEntitiesChanged={() => loadMeetingIntelligence()}
                   />
+                </div>
+              )}
+
+              {/* New signals banner */}
+              {intelligenceQuality?.hasNewSignals && (
+                <div style={{
+                  padding: "10px 16px",
+                  background: "rgba(106, 135, 171, 0.08)",
+                  borderLeft: "3px solid var(--color-accent-larkspur)",
+                  borderRadius: 4,
+                  fontFamily: "var(--font-body)",
+                  fontSize: 13,
+                  color: "var(--color-accent-larkspur)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: 16,
+                  marginBottom: 16,
+                }}>
+                  <span>New information available since your last view</span>
+                  <button
+                    onClick={handleRefreshIntelligence}
+                    disabled={refreshingIntel}
+                    style={{
+                      background: "none",
+                      border: "1px solid var(--color-accent-larkspur)",
+                      borderRadius: 4,
+                      padding: "4px 12px",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                      color: "var(--color-accent-larkspur)",
+                      cursor: refreshingIntel ? "not-allowed" : "pointer",
+                      opacity: refreshingIntel ? 0.5 : 1,
+                    }}
+                  >
+                    {refreshingIntel ? "Refreshing…" : "Refresh"}
+                  </button>
                 </div>
               )}
 

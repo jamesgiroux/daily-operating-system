@@ -123,6 +123,7 @@ mod tests {
             prep_reviewed: None,
             linked_entities: None,
             suggested_unarchive_account_id: None,
+            intelligence_quality: None,
         }];
         let blocks = available_blocks_from_schedule_start_iso(&meetings, day);
         assert!(!blocks.is_empty());

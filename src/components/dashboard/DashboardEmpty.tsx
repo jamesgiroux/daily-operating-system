@@ -105,26 +105,39 @@ export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus,
 
         {/* Generate button */}
         {onGenerate && (
-          <button
-            onClick={onGenerate}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              padding: "12px 32px",
-              borderRadius: 8,
-              border: "none",
-              background: "var(--color-desk-charcoal)",
-              color: "var(--color-paper-cream)",
-              cursor: "pointer",
-              transition: "opacity 0.15s ease",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-          >
-            Generate Briefing
-          </button>
+          <div style={{ textAlign: "center" }}>
+            <button
+              onClick={onGenerate}
+              title="Refresh emails, actions, and intelligence"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 13,
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                padding: "12px 32px",
+                borderRadius: 8,
+                border: "none",
+                background: "var(--color-desk-charcoal)",
+                color: "var(--color-paper-cream)",
+                cursor: "pointer",
+                transition: "opacity 0.15s ease",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+            >
+              Prepare my day
+            </button>
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+                marginTop: 8,
+              }}
+            >
+              Refresh emails, actions, and intelligence
+            </p>
+          </div>
         )}
 
         {/* Google connect card */}
