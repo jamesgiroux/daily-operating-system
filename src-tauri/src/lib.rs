@@ -532,6 +532,8 @@ pub fn run() {
             commands::get_entity_metadata,
             // I323: Email Disposition Correction
             commands::correct_email_disposition,
+            // I330: Meeting Timeline
+            commands::get_meeting_timeline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
