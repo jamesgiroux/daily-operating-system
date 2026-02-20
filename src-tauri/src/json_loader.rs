@@ -788,6 +788,8 @@ pub struct DirectiveEvent {
     pub start: Option<String>,
     #[serde(default)]
     pub end: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
