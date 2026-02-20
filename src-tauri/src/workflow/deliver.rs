@@ -2288,6 +2288,12 @@ pub struct EmailEnrichment {
     pub action: Option<String>,
     pub arc: Option<String>,
     pub signals: Vec<crate::types::EmailSignal>,
+    /// Commitments extracted from the email (I354).
+    pub commitments: Vec<String>,
+    /// Questions requiring a response (I354).
+    pub questions: Vec<String>,
+    /// Overall sentiment: positive, neutral, negative, urgent (I354).
+    pub sentiment: Option<String>,
 }
 
 /// Parse Claude's email enrichment response.
@@ -2332,6 +2338,17 @@ pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment
                 current.signals =
                     serde_json::from_str::<Vec<crate::types::EmailSignal>>(val.trim())
                         .unwrap_or_default();
+            } else if let Some(val) = trimmed.strip_prefix("COMMITMENTS:") {
+                current.commitments =
+                    serde_json::from_str::<Vec<String>>(val.trim()).unwrap_or_default();
+            } else if let Some(val) = trimmed.strip_prefix("QUESTIONS:") {
+                current.questions =
+                    serde_json::from_str::<Vec<String>>(val.trim()).unwrap_or_default();
+            } else if let Some(val) = trimmed.strip_prefix("SENTIMENT:") {
+                let s = val.trim().to_lowercase();
+                if !s.is_empty() {
+                    current.sentiment = Some(s);
+                }
             }
         }
     }
@@ -2387,9 +2404,38 @@ pub fn enrich_emails(
         return Ok(());
     }
 
-    // Build context for Claude
-    let mut email_context = String::new();
+    // Group emails by thread_id for thread-level context (I354)
+    let mut thread_groups: HashMap<String, Vec<&Value>> = HashMap::new();
+    let mut no_thread: Vec<&Value> = Vec::new();
     for email in &emails_to_enrich {
+        if let Some(tid) = email.get("threadId").and_then(|v| v.as_str()) {
+            thread_groups.entry(tid.to_string()).or_default().push(email);
+        } else {
+            no_thread.push(email);
+        }
+    }
+
+    // Build context for Claude, grouped by thread
+    let mut email_context = String::new();
+    for (tid, thread_emails) in &thread_groups {
+        if thread_emails.len() > 1 {
+            email_context.push_str(&format!("--- Thread {} ({} messages) ---\n", tid, thread_emails.len()));
+        }
+        for email in thread_emails {
+            let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+            let sender = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
+            let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
+            let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+            email_context.push_str(&format!(
+                "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
+                id,
+                wrap_user_data(sender),
+                wrap_user_data(subject),
+                wrap_user_data(snippet),
+            ));
+        }
+    }
+    for email in &no_thread {
         let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
         let sender = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
         let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
@@ -2411,16 +2457,30 @@ pub fn enrich_emails(
     let user_fragment = user_ctx.prompt_fragment();
     let prompt = format!(
         "You are enriching email briefing data. {}\
+         Emails grouped by thread are shown together for context.\n\n\
          For each email below, provide a one-line summary, \
-         a recommended action, brief conversation arc context, and a JSON array \
-         of structured signals. Signal types must be one of: expansion, question, timeline, \
-         sentiment, feedback, relationship. Keep signalText concise.\n\n\
+         a recommended action, brief conversation arc context, a JSON array \
+         of structured signals, extracted commitments, open questions, and overall sentiment.\n\n\
+         Signal types must be one of: expansion, question, timeline, \
+         sentiment, feedback, relationship. Keep signalText concise.\n\
+         Commitments: promises or deliverables mentioned. Each commitment must be a \
+         complete sentence including WHO committed to WHAT and any deadline. \
+         Example: \"Sarah Chen committed to delivering the revised SOW by Friday.\" \
+         (JSON string array, empty if none).\n\
+         Questions: open questions requiring a response. Each question must include \
+         enough context to understand it standalone — mention the account/person/topic. \
+         Example: \"Acme's team asked whether the pilot timeline can shift to Q2.\" \
+         (JSON string array, empty if none).\n\
+         Sentiment: one of positive, neutral, negative, urgent.\n\n\
          Format your response as:\n\
          ENRICHMENT:email-id-here\n\
          SUMMARY: <one-line summary>\n\
          ACTION: <recommended next action>\n\
          ARC: <conversation context>\n\
          SIGNALS: <JSON array of objects with signalType, signalText, optional confidence/sentiment/urgency>\n\
+         COMMITMENTS: <JSON array of strings>\n\
+         QUESTIONS: <JSON array of strings>\n\
+         SENTIMENT: <positive|neutral|negative|urgent>\n\
          END_ENRICHMENT\n\n\
          {}",
         user_fragment, email_context
@@ -2463,6 +2523,15 @@ pub fn enrich_emails(
                         }
                         if !enrichment.signals.is_empty() {
                             obj.insert("emailSignals".to_string(), json!(enrichment.signals));
+                        }
+                        if !enrichment.commitments.is_empty() {
+                            obj.insert("commitments".to_string(), json!(enrichment.commitments));
+                        }
+                        if !enrichment.questions.is_empty() {
+                            obj.insert("questions".to_string(), json!(enrichment.questions));
+                        }
+                        if let Some(ref sent) = enrichment.sentiment {
+                            obj.insert("sentiment".to_string(), json!(sent));
                         }
                     }
                 }
@@ -4604,7 +4673,7 @@ mod tests {
                 ],
                 medium_count: 3,
                 low_count: 5,
-                sync_error: None,
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -4663,15 +4732,12 @@ mod tests {
 
         let directive = Directive {
             emails: crate::json_loader::DirectiveEmails {
-                classified: vec![],
-                high_priority: vec![],
-                medium_count: 0,
-                low_count: 0,
                 sync_error: Some(crate::json_loader::DirectiveEmailSyncError {
                     stage: Some("fetch".to_string()),
                     code: Some("gmail_fetch_failed".to_string()),
                     message: Some("Fetch failed".to_string()),
                 }),
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -4690,15 +4756,12 @@ mod tests {
 
         let directive = Directive {
             emails: crate::json_loader::DirectiveEmails {
-                classified: vec![],
-                high_priority: vec![],
-                medium_count: 0,
-                low_count: 0,
                 sync_error: Some(crate::json_loader::DirectiveEmailSyncError {
                     stage: Some("fetch".to_string()),
                     code: Some("gmail_auth_failed".to_string()),
                     message: Some("Auth failed".to_string()),
                 }),
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -4769,6 +4832,32 @@ END_ENRICHMENT
         assert_eq!(e1.summary.as_deref(), Some("Important update"));
         assert!(e1.action.is_none());
         assert!(e1.arc.is_none());
+        assert!(e1.commitments.is_empty());
+        assert!(e1.questions.is_empty());
+        assert!(e1.sentiment.is_none());
+    }
+
+    #[test]
+    fn test_parse_email_enrichment_with_commitments_questions_sentiment() {
+        let response = "\
+ENRICHMENT:e1
+SUMMARY: VP requests updated roadmap by Friday
+ACTION: Prepare roadmap document
+ARC: Follow-up from board meeting
+COMMITMENTS: [\"Deliver roadmap by Friday\", \"Schedule follow-up call\"]
+QUESTIONS: [\"What format do you prefer?\", \"Should we include Q3 projections?\"]
+SENTIMENT: urgent
+END_ENRICHMENT
+";
+        let enrichments = parse_email_enrichment(response);
+        assert_eq!(enrichments.len(), 1);
+
+        let e1 = &enrichments["e1"];
+        assert_eq!(e1.commitments.len(), 2);
+        assert_eq!(e1.commitments[0], "Deliver roadmap by Friday");
+        assert_eq!(e1.questions.len(), 2);
+        assert_eq!(e1.questions[0], "What format do you prefer?");
+        assert_eq!(e1.sentiment.as_deref(), Some("urgent"));
     }
 
     #[test]

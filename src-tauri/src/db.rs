@@ -4238,6 +4238,41 @@ impl ActionDb {
     }
 
     // ================================================================
+    // Email dismissals (I342 — The Correspondent relevance learning)
+    // ================================================================
+
+    /// Record a user dismissal of an email-extracted item for relevance learning.
+    pub fn dismiss_email_item(
+        &self,
+        item_type: &str,
+        email_id: &str,
+        item_text: &str,
+        sender_domain: Option<&str>,
+        email_type: Option<&str>,
+        entity_id: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO email_dismissals (item_type, email_id, item_text, sender_domain, email_type, entity_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![item_type, email_id, item_text, sender_domain, email_type, entity_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get all dismissed item texts for filtering (keyed by item_type + item_text).
+    pub fn list_dismissed_email_items(&self) -> Result<std::collections::HashSet<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT item_type || ':' || item_text FROM email_dismissals"
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut dismissed = std::collections::HashSet::new();
+        for row in rows {
+            dismissed.insert(row?);
+        }
+        Ok(dismissed)
+    }
+
+    // ================================================================
     // Email thread tracking (I318)
     // ================================================================
 

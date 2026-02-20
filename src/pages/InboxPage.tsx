@@ -523,9 +523,9 @@ export default function InboxPage() {
   // ---------------------------------------------------------------------------
   const shellConfig = useMemo(
     () => ({
-      folioLabel: "Inbox",
+      folioLabel: "Dropbox",
       atmosphereColor: "olive" as const,
-      activePage: "inbox" as const,
+      activePage: "dropbox" as const,
       folioActions: (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {processingAll ? (

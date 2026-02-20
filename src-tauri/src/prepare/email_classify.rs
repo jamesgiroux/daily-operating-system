@@ -312,6 +312,118 @@ pub fn boost_with_entity_context(
 }
 
 // ============================================================================
+// I357: Semantic email reclassification (opt-in AI re-scoring)
+// ============================================================================
+
+/// Result of AI reclassification for a single email.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ReclassResult {
+    pub email_id: String,
+    pub original_priority: String,
+    pub new_priority: String,
+    pub reason: String,
+}
+
+/// AI-reclassify medium-priority emails that may be mis-classified.
+///
+/// Requires feature flag `semanticEmailReclass` (default false).
+/// Uses the extraction-tier PtyManager with a 60s timeout.
+/// Returns a list of reclassification results for emails whose priority changed.
+pub fn reclassify_with_ai(
+    emails: &[serde_json::Value],
+    pty: &crate::pty::PtyManager,
+    workspace: &std::path::Path,
+) -> Vec<ReclassResult> {
+    let medium_emails: Vec<&serde_json::Value> = emails
+        .iter()
+        .filter(|e| e.get("priority").and_then(|v| v.as_str()) == Some("medium"))
+        .collect();
+
+    if medium_emails.is_empty() {
+        return Vec::new();
+    }
+
+    // Cap at 15 emails to keep prompt concise
+    let batch: Vec<&&serde_json::Value> = medium_emails.iter().take(15).collect();
+
+    let mut context = String::new();
+    for email in &batch {
+        let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+        let from = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
+        let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
+        let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+        context.push_str(&format!(
+            "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
+            id, from, subject, snippet
+        ));
+    }
+
+    let prompt = format!(
+        "You are re-classifying email priority. Each email below is currently classified as \
+         \"medium\" priority. Re-evaluate whether it should be \"high\", \"medium\", or \"low\" \
+         based on business importance, urgency signals, and sender relevance.\n\n\
+         Only output emails whose priority should CHANGE. Skip emails that should stay medium.\n\n\
+         Format:\n\
+         RECLASS:email-id\n\
+         PRIORITY: high|low\n\
+         REASON: <brief explanation>\n\
+         END_RECLASS\n\n\
+         {}",
+        context
+    );
+
+    let output = match pty.spawn_claude(workspace, &prompt) {
+        Ok(o) => o,
+        Err(e) => {
+            log::warn!("reclassify_with_ai: Claude invocation failed: {}", e);
+            return Vec::new();
+        }
+    };
+
+    parse_reclassification(&output.stdout)
+}
+
+/// Parse Claude's reclassification response.
+fn parse_reclassification(response: &str) -> Vec<ReclassResult> {
+    let mut results = Vec::new();
+    let mut current_id: Option<String> = None;
+    let mut priority: Option<String> = None;
+    let mut reason: Option<String> = None;
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+
+        if let Some(id) = trimmed.strip_prefix("RECLASS:") {
+            current_id = Some(id.trim().to_string());
+            priority = None;
+            reason = None;
+        } else if trimmed == "END_RECLASS" {
+            if let (Some(id), Some(pri)) = (current_id.take(), priority.take()) {
+                if pri == "high" || pri == "low" {
+                    results.push(ReclassResult {
+                        email_id: id,
+                        original_priority: "medium".to_string(),
+                        new_priority: pri,
+                        reason: reason.take().unwrap_or_default(),
+                    });
+                }
+            }
+            current_id = None;
+            priority = None;
+            reason = None;
+        } else if current_id.is_some() {
+            if let Some(val) = trimmed.strip_prefix("PRIORITY:") {
+                priority = Some(val.trim().to_lowercase());
+            } else if let Some(val) = trimmed.strip_prefix("REASON:") {
+                reason = Some(val.trim().to_string());
+            }
+        }
+    }
+
+    results
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -580,5 +692,45 @@ mod tests {
     #[test]
     fn test_display_name_angle_only() {
         assert_eq!(extract_display_name("<jane@co.com>"), None);
+    }
+
+    #[test]
+    fn test_parse_reclassification() {
+        let response = "\
+RECLASS:msg-1
+PRIORITY: high
+REASON: Contains urgent escalation from VP
+END_RECLASS
+
+RECLASS:msg-2
+PRIORITY: low
+REASON: Automated notification, no action needed
+END_RECLASS
+";
+        let results = super::parse_reclassification(response);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].email_id, "msg-1");
+        assert_eq!(results[0].new_priority, "high");
+        assert!(results[0].reason.contains("escalation"));
+        assert_eq!(results[1].email_id, "msg-2");
+        assert_eq!(results[1].new_priority, "low");
+    }
+
+    #[test]
+    fn test_parse_reclassification_skips_medium() {
+        let response = "\
+RECLASS:msg-1
+PRIORITY: medium
+REASON: Should stay medium
+END_RECLASS
+";
+        let results = super::parse_reclassification(response);
+        assert_eq!(results.len(), 0, "medium→medium should be filtered out");
+    }
+
+    #[test]
+    fn test_parse_reclassification_empty() {
+        let results = super::parse_reclassification("No reclassifications needed.");
+        assert!(results.is_empty());
     }
 }

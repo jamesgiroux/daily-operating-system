@@ -107,10 +107,10 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
             margin: 0,
           }}
         >
-          Claude Code generates your briefing narrative, enriches email summaries with
+          Claude Code generates your briefing narrative, analyzes email summaries with
           recommended actions, and processes inbox files with AI classification. Without it,
           DailyOS still delivers your schedule, actions, and meeting preps — but AI summaries
-          and enrichment won't be available.
+          and analysis won't be available.
         </p>
       </div>
 
