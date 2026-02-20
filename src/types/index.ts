@@ -7,13 +7,17 @@ export type ProfileType = "customer-success" | "general";
 
 export type EntityMode = "account" | "project" | "both";
 export type SettingsTabId =
+  | "you"
+  | "connections"
+  | "system"
+  | "diagnostics"
+  // Legacy tab IDs — kept for deep-link backwards compatibility
   | "profile"
   | "role"
   | "integrations"
   | "workflows"
   | "intelligence"
-  | "hygiene"
-  | "diagnostics";
+  | "hygiene";
 
 export type MeetingType =
   | "customer"
@@ -174,6 +178,12 @@ export interface Email {
   conversationArc?: string;
   /** Email category from AI classification */
   emailType?: string;
+  /** Commitments extracted from the email (I354) */
+  commitments?: string[];
+  /** Questions requiring a response (I354) */
+  questions?: string[];
+  /** Overall sentiment: positive, neutral, negative, urgent (I354) */
+  sentiment?: string;
 }
 
 export type InboxFileType =
@@ -201,6 +211,15 @@ export type DataFreshness =
   | { freshness: "stale"; dataDate: string; generatedAt: string }
   | { freshness: "unknown" };
 
+/** A thread awaiting the user's reply (I318 — "ball in your court"). */
+export interface ReplyNeeded {
+  threadId: string;
+  subject: string;
+  from: string;
+  date?: string;
+  waitDuration?: string;
+}
+
 export interface DashboardData {
   overview: {
     greeting: string;
@@ -214,6 +233,10 @@ export interface DashboardData {
   emails?: Email[];
   emailSync?: EmailSyncStatus;
   focus?: DailyFocus;
+  /** AI-synthesized email narrative (I322/I355) */
+  emailNarrative?: string;
+  /** Threads awaiting user reply (I318/I355) */
+  repliesNeeded?: ReplyNeeded[];
 }
 
 // =============================================================================
@@ -464,6 +487,10 @@ export interface EmailBriefingData {
   entityThreads: EntityEmailThread[];
   stats: EmailBriefingStats;
   hasEnrichment: boolean;
+  /** AI-synthesized narrative headline for the dispatch (I355) */
+  emailNarrative?: string;
+  /** Threads awaiting user reply — "ball in your court" (I355) */
+  repliesNeeded?: ReplyNeeded[];
 }
 
 // =============================================================================

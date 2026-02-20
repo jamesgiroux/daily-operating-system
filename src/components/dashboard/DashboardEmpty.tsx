@@ -123,7 +123,7 @@ export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus,
             onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
           >
-            Generate Briefing
+            Prepare my day
           </button>
         )}
 
