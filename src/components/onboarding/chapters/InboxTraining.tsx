@@ -349,7 +349,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
                 />
               )}
               {file.step === "enriching" && (
-                <StepIndicator label="AI enrichment running..." status="current" />
+                <StepIndicator label="AI analysis running..." status="current" />
               )}
             </div>
           </div>
@@ -361,7 +361,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {files.some((f) => f.step === "enriching") && (
             <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", textAlign: "center" }}>
-              AI enrichment continues in the background — check your Inbox page in a minute.
+              AI analysis continues in the background — check your Inbox page in a minute.
             </p>
           )}
           <Button className="w-full" onClick={() => onNext(buildState())}>
