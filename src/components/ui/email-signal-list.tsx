@@ -51,7 +51,7 @@ export function EmailSignalList({
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm leading-relaxed">{signal.signalText}</p>
+          <p className="mt-1 text-sm leading-relaxed" style={{ color: "var(--color-text-primary)" }}>{signal.signalText}</p>
           {showMetadata && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
               {signal.urgency && <span>Urgency: {signal.urgency}</span>}
