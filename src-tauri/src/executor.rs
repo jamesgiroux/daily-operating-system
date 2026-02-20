@@ -499,6 +499,17 @@ impl Executor {
             }
         }
 
+        // Step 1.6: Auto-archive stale pending actions (30+ days old)
+        {
+            if let Ok(db) = crate::db::ActionDb::open() {
+                match db.archive_stale_actions(30) {
+                    Ok(0) => {}
+                    Ok(n) => log::info!("Auto-archived {} stale pending actions (30+ days)", n),
+                    Err(e) => log::warn!("Failed to auto-archive stale actions: {}", e),
+                }
+            }
+        }
+
         // Step 2: Persist meetings + freeze prep snapshots BEFORE archive cleanup.
         if let Ok(db_guard) = self.state.db.lock() {
             if let Some(db) = db_guard.as_ref() {

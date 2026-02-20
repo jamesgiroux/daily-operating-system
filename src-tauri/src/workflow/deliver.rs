@@ -1455,7 +1455,21 @@ fn build_prep_json(
             obj.insert("attendees".to_string(), json!(attendees));
         }
 
+        // I339: Write resolved entities array from directive context
         if let Some(ctx) = ctx {
+            if let (Some(ref eid), Some(ref etype)) = (&ctx.entity_id, &ctx.entity_type) {
+                let ename = ctx
+                    .primary_entity
+                    .as_ref()
+                    .and_then(|e| e.get("name").and_then(|n| n.as_str()))
+                    .or(ctx.account.as_deref())
+                    .unwrap_or("Unknown");
+                obj.insert(
+                    "entities".to_string(),
+                    json!([{"id": eid, "name": ename, "entityType": etype}]),
+                );
+            }
+
             if let Some(ref desc) = ctx.description {
                 if !desc.is_empty() {
                     obj.insert("calendarNotes".to_string(), json!(desc));

@@ -24,6 +24,7 @@ import type {
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -122,8 +123,10 @@ export default function MeetingDetailPage() {
   const [canEditUserLayer, setCanEditUserLayer] = useState(false);
   const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
   const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
+  const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingIntel, setRefreshingIntel] = useState(false);
 
   // Transcript attach
   const [attaching, setAttaching] = useState(false);
@@ -155,6 +158,7 @@ export default function MeetingDetailPage() {
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
       setLinkedEntities(intel.linkedEntities ?? []);
+      setIntelligenceQuality(intel.intelligenceQuality);
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
         const start = parseDate(startRaw);
@@ -341,6 +345,27 @@ export default function MeetingDetailPage() {
             {prefilling ? "Prefilling…" : "Prefill"}
           </button>
         )}
+        {!isPastMeeting && (
+          <button
+            onClick={async () => {
+              if (!meetingId) return;
+              setRefreshingIntel(true);
+              try {
+                await invoke("generate_meeting_intelligence", { meetingId });
+                await loadMeetingIntelligence();
+              } catch (err) {
+                toast.error(typeof err === "string" ? err : "Refresh failed");
+              } finally {
+                setRefreshingIntel(false);
+              }
+            }}
+            disabled={refreshingIntel}
+            style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: refreshingIntel ? 0.5 : 1, cursor: refreshingIntel ? "not-allowed" : "pointer" }}
+          >
+            {refreshingIntel ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <RefreshCw style={{ width: 10, height: 10 }} />}
+            {refreshingIntel ? "Refreshing…" : "Refresh Intel"}
+          </button>
+        )}
         <button onClick={handleDraftAgendaMessage} style={folioBtn}>
           Draft Agenda
         </button>
@@ -371,7 +396,7 @@ export default function MeetingDetailPage() {
         </button>
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, isPastMeeting, handlePrefillFromContext, handleDraftAgendaMessage, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, refreshingIntel, isPastMeeting, meetingId, handlePrefillFromContext, handleDraftAgendaMessage, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -597,21 +622,33 @@ export default function MeetingDetailPage() {
               )}
 
               {/* Metadata line */}
-              <p
+              <div
                 style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  letterSpacing: "0.04em",
-                  color: "var(--color-text-tertiary)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
                   margin: "8px 0 0",
                 }}
               >
-                {data.timeRange}
-                {meetingType && <> &middot; {meetingType}</>}
-                {getPrimaryEntityName(linkedEntities) && (
-                  <> &middot; {getPrimaryEntityName(linkedEntities)}</>
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12,
+                    letterSpacing: "0.04em",
+                    color: "var(--color-text-tertiary)",
+                    margin: 0,
+                  }}
+                >
+                  {data.timeRange}
+                  {meetingType && <> &middot; {meetingType}</>}
+                  {getPrimaryEntityName(linkedEntities) && (
+                    <> &middot; {getPrimaryEntityName(linkedEntities)}</>
+                  )}
+                </p>
+                {intelligenceQuality && (
+                  <IntelligenceQualityBadge quality={intelligenceQuality} showLabel />
                 )}
-              </p>
+              </div>
 
               {/* Entity chips */}
               {meetingId && meetingMeta && (

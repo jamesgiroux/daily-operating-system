@@ -861,6 +861,10 @@ pub fn get_meeting_intelligence(
     let transcript_path = meeting.transcript_path.clone();
     let transcript_processed_at = meeting.transcript_processed_at.clone();
 
+    // Compute intelligence quality and clear new-signals flag on view
+    let intelligence_quality = Some(crate::intelligence_lifecycle::assess_intelligence_quality(db, &meeting_id));
+    let _ = db.clear_meeting_new_signals(&meeting_id);
+
     Ok(MeetingIntelligence {
         meeting,
         prep,
@@ -880,7 +884,20 @@ pub fn get_meeting_intelligence(
         prep_frozen_at,
         transcript_path,
         transcript_processed_at,
+        intelligence_quality,
     })
+}
+
+/// Generate or refresh intelligence for a single meeting (ADR-0081).
+/// Idempotent mechanical assessment — AI enrichment added in Phase 2.
+#[tauri::command]
+pub async fn generate_meeting_intelligence(
+    state: State<'_, Arc<AppState>>,
+    meeting_id: String,
+) -> Result<crate::types::IntelligenceQuality, String> {
+    crate::intelligence_lifecycle::generate_meeting_intelligence(&state, &meeting_id, false)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Build AttendeeContext by matching calendar attendee emails to person entities.

@@ -270,8 +270,6 @@ export interface WeekDay {
 export interface WeekMeeting {
   time: string;
   title: string;
-  /** @deprecated Use linkedEntities instead. Kept for backward compat. */
-  account?: string;
   meetingId?: string;
   type: MeetingType;
   prepStatus: PrepStatus;
@@ -589,6 +587,7 @@ export interface CalendarEvent {
   end: string;
   type: MeetingType;
   account?: string;
+  linkedEntities?: LinkedEntity[];
   attendees: string[];
   isAllDay: boolean;
 }
@@ -692,6 +691,17 @@ export interface MeetingIntelligence {
   prepFrozenAt?: string;
   transcriptPath?: string;
   transcriptProcessedAt?: string;
+  /** Structured intelligence quality assessment (ADR-0081) */
+  intelligenceQuality?: {
+    level: "sparse" | "developing" | "ready" | "fresh";
+    signalCount: number;
+    lastEnriched?: string;
+    hasEntityContext: boolean;
+    hasAttendeeHistory: boolean;
+    hasRecentSignals: boolean;
+    staleness: "current" | "aging" | "stale";
+    hasNewSignals: boolean;
+  };
 }
 
 export interface ApplyPrepPrefillResult {

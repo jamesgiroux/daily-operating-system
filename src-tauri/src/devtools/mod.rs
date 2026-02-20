@@ -2014,6 +2014,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
             account: account.map(|s| s.to_string()),
             attendees: attendees.into_iter().map(String::from).collect(),
             is_all_day: false,
+            linked_entities: None,
         }
     };
 
