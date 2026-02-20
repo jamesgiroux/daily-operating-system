@@ -4,6 +4,60 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.12.0] - 2026-02-19
+
+The chief of staff reads your email. Signals, not summaries. Briefing, not inbox. Built on the 0.10.0 signal bus.
+
+### Added
+
+- **I317: Meeting-aware email intelligence** — Structured email digest organized by meeting relevance instead of raw excerpts. High-priority emails linked to upcoming meetings surface in meeting prep context.
+- **I318: Thread position tracking** — "Ball in your court" detection. Tracks which email threads await the user's reply vs. waiting on others, using thread-level sender analysis.
+- **I319: Entity-level email cadence monitoring** — Weekly email volume per entity with 30-day rolling average. Anomaly detection flags "gone quiet" (<50% of avg) and "activity spike" (>200% of avg) patterns.
+- **I320: Hybrid email classification** — Signal-context boosting (Layer 1). Medium-priority emails from senders linked to entities with active signals get promoted to high priority automatically.
+- **I321: Email commitment extraction** — Fetches full email bodies for high-priority messages, runs through Claude (Extraction tier) to identify commitments, requests, and deadlines. Creates proposed actions with `source_type=email`.
+- **I322: Email briefing narrative** — Daily briefing integrates email intelligence as a synthesized narrative section covering reply urgency, entity correlations, and cadence anomalies.
+- **I323: Zero-touch email disposition** — Auto-archive pipeline for low-priority emails during daily prep. Writes disposition manifest. Correction command for user feedback. Surfaced as a toggle in Settings > Intelligence > Features.
+- **I324: Email signals in entity enrichment** — Enhanced signal formatting with sender name/role resolution, relative timestamps, email cadence summary with trend analysis, and AI prompt interpretation guidance. Dynamic signal limit (20 for entities with upcoming meetings).
+- **I337: Calendar description steering** — Meeting calendar descriptions now steer intelligence narrative, giving the AI context about meeting purpose and agenda.
+- **I338: 1:1 relationship intelligence** — Person entity resolution for 1:1 meetings. Three-file intelligence pattern (dashboard.json, intelligence.json, context.md) generates for people.
+- **I353: Self-healing hygiene** — Phase 2 signal→hygiene feedback loop. Auto-merge duplicate entities, calendar name resolution, co-attendance linking.
+- **I351/I339/I313: Entity architecture completion** — Person actions, week entities display, vocabulary injection for role-preset-aware AI prompts.
+
+### Changed
+
+- Email signal text and AI summaries render in primary text color (was secondary/light gray) for better readability of the most valuable content.
+- `emailBodyAccess` feature enabled by default — commitment extraction works out of the box.
+- `autoArchiveEnabled` visible in Settings UI as "Auto-Archive Email" toggle (default off, since it modifies Gmail).
+
+### Fixed
+
+- Audit fixes across I318, I319, I320, I322, I353 — closed gaps in signal emission, cadence computation, and narrative generation.
+- DB mutex not held across async/PTY calls in email commitment extraction (two-phase pattern: async fetch → sync extraction).
+
+## [0.11.0] - 2026-02-19
+
+Role presets, entity architecture, and industry-aligned terminology.
+
+### Added
+
+- **I309–I315: Role presets** — 9 embedded presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) with role-specific vocabulary, email keywords, metadata fields, and AI prompt framing. Role selection in Settings and onboarding.
+- **I143a: Lifecycle events** — Renewal metadata, lifecycle event tracking, proactive detectors, account merge support.
+- **I353 Phase 1: Self-healing hygiene** — Auto-merge duplicate entities, calendar name resolution, co-attendance linking.
+
+### Changed
+
+- Meeting card key people sourced from calendar attendees instead of entity stakeholders.
+- EntityPicker supports multiselect mode with excluded-parent child visibility.
+- PersonNetwork supports optimistic multi-select entity linking without page reload.
+- Back button uses browser history on all detail pages.
+- StakeholderGallery searches existing people before creating new entries.
+
+### Fixed
+
+- Quill transcript sync hang — release DB mutex during AI pipeline to prevent deadlock.
+- Internal account propagation and recursive account tree with add-child on all accounts.
+- Email signal fan-out with confidence filtering, prep invalidation queue consumer.
+
 ## [0.10.1] - 2026-02-19
 
 User feedback and onboarding polish. First real user session surfaced friction — fixed fast.

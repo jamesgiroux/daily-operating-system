@@ -504,9 +504,9 @@ function HighPriorityCard({
           style={{
             fontFamily: "var(--font-sans)",
             fontSize: 15,
-            fontWeight: 300,
+            fontWeight: 400,
             lineHeight: 1.65,
-            color: "var(--color-text-secondary)",
+            color: "var(--color-text-primary)",
             marginTop: 12,
             marginBottom: 0,
           }}

@@ -293,6 +293,35 @@ impl Executor {
                                 .map_err(|e| e.to_string())?;
                             if was_inserted {
                                 inserted += 1;
+                                // I353 Phase 2: Bridge email_signals → signal_events
+                                // Emit email_received for person entities to trigger hygiene rules
+                                if entity_type == "person" {
+                                    if let Some(ref pid) = person_id {
+                                        let display_name = sender_email
+                                            .as_deref()
+                                            .and_then(|e| {
+                                                // Extract display name from "Name <email>" format
+                                                let trimmed = e.trim();
+                                                trimmed.find('<').and_then(|pos| {
+                                                    let name = trimmed[..pos].trim().trim_matches('"').trim();
+                                                    if name.is_empty() || !name.contains(' ') {
+                                                        None
+                                                    } else {
+                                                        Some(name.to_string())
+                                                    }
+                                                })
+                                            });
+                                        let _ = crate::signals::bus::emit_signal(
+                                            db,
+                                            "person",
+                                            pid,
+                                            "email_received",
+                                            "email_signal",
+                                            display_name.as_deref(),
+                                            0.8,
+                                        );
+                                    }
+                                }
                             }
                         }
                     }

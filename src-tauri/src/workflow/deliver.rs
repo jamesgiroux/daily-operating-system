@@ -1629,6 +1629,17 @@ fn build_prep_json(
                     obj.insert("recentEmailSignals".to_string(), json!(signals));
                 }
             }
+
+            // I317: Pre-meeting email context → emailDigest
+            if let Some(ref email_ctx) = ctx.pre_meeting_email_context {
+                if !email_ctx.is_empty() {
+                    // Build structured email digest from raw email context
+                    let digest = build_email_digest(email_ctx);
+                    if !digest.is_null() {
+                        obj.insert("emailDigest".to_string(), digest);
+                    }
+                }
+            }
         }
     }
 
@@ -1642,6 +1653,56 @@ fn build_prep_json(
     }
 
     prep
+}
+
+/// I317: Build a structured email digest from pre-meeting email context.
+///
+/// Structures raw email context items into a digest with thread summary,
+/// key senders, and recent snippets. This is a mechanical structuring pass;
+/// AI enrichment (commitments, questions, sentiment) is done during enrich_preps.
+fn build_email_digest(email_ctx: &[Value]) -> Value {
+    if email_ctx.is_empty() {
+        return Value::Null;
+    }
+
+    let mut senders: Vec<String> = Vec::new();
+    let mut threads: Vec<Value> = Vec::new();
+    let mut seen_senders = std::collections::HashSet::new();
+
+    for item in email_ctx.iter().take(10) {
+        let from = item.get("from").and_then(|v| v.as_str()).unwrap_or("");
+        let snippet = item.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+        let date = item.get("date").and_then(|v| v.as_str()).unwrap_or("");
+        let source = item.get("source").and_then(|v| v.as_str()).unwrap_or("");
+
+        if !from.is_empty() && seen_senders.insert(from.to_lowercase()) {
+            senders.push(from.to_string());
+        }
+
+        threads.push(json!({
+            "from": from,
+            "snippet": snippet,
+            "date": date,
+            "source": source,
+        }));
+    }
+
+    let summary = format!(
+        "{} email thread{} from {}",
+        threads.len(),
+        if threads.len() == 1 { "" } else { "s" },
+        if senders.len() <= 3 {
+            senders.join(", ")
+        } else {
+            format!("{} and {} others", senders[..2].join(", "), senders.len() - 2)
+        }
+    );
+
+    json!({
+        "threadSummary": summary,
+        "threads": threads,
+        "senderCount": senders.len(),
+    })
 }
 
 /// Synthesize open items from raw meeting context data.
@@ -2719,9 +2780,35 @@ pub fn enrich_briefing(
 
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
+
+    // I313: Read vocabulary and briefing emphasis from active preset
+    let preset_guard = state.active_preset.read().ok();
+    let preset_ref = preset_guard.as_ref().and_then(|g| g.as_ref());
+    let vocab_context = preset_ref
+        .map(|p| {
+            format!(
+                "Domain vocabulary: entities are \"{noun_plural}\" (singular: \"{noun}\"). \
+                 Primary metric: \"{metric}\". Health: \"{health}\". Risk: \"{risk}\". \
+                 Success: \"{verb}\". Regular cadence: \"{cadence}\".\n",
+                noun = p.vocabulary.entity_noun,
+                noun_plural = p.vocabulary.entity_noun_plural,
+                metric = p.vocabulary.primary_metric,
+                health = p.vocabulary.health_label,
+                risk = p.vocabulary.risk_label,
+                verb = p.vocabulary.success_verb,
+                cadence = p.vocabulary.cadence_noun,
+            )
+        })
+        .unwrap_or_default();
+    let emphasis_context = preset_ref
+        .map(|p| format!("Briefing emphasis: {}\n", p.briefing_emphasis))
+        .unwrap_or_default();
+
     let mut prompt = format!(
         "You are writing a morning briefing narrative for {role_label}.\n\
          {user_fragment}\n\
+         {vocab_context}\
+         {emphasis_context}\
          Today's context:\n\
          - Date: {}\n\
          - Meetings: {} ({} customer) — density: {}\n\
@@ -3085,7 +3172,7 @@ pub fn enrich_preps(
         }
         if let Some(notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) {
             if !notes.trim().is_empty() {
-                prep_context.push_str("Calendar Notes:\n");
+                prep_context.push_str("Meeting Purpose (from calendar):\n");
                 prep_context.push_str(notes.trim());
                 prep_context.push('\n');
             }
@@ -3141,14 +3228,17 @@ pub fn enrich_preps(
     let prompt = format!(
         "You are refining meeting prep reports for a Customer Success Manager.\n\n\
          For each meeting below, review recent wins, risks, open items, questions, \
-         calendar notes, and current mechanical agenda. Produce:\n\
+         meeting purpose, and current mechanical agenda. Produce:\n\
          1) A refined agenda that:\n\
-         0. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
-         1. Orders items by impact (highest-stakes first)\n\
-         2. Adds a brief 'why' rationale for each item\n\
-         3. Uses source category (calendar_note, risk, talking_point, question, open_item)\n\
-         4. Avoids duplicating recent wins unless there are no other substantive topics\n\
-         5. Caps at 7 items per meeting\n\
+         0. When a 'Meeting Purpose (from calendar)' is provided, treat it as the primary framing constraint: \
+         steer agenda items, risks, and talking points toward that stated purpose. \
+         Deprioritize entity-level intelligence that does not directly relate to the meeting topic.\n\
+         1. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
+         2. Orders items by impact (highest-stakes first)\n\
+         3. Adds a brief 'why' rationale for each item\n\
+         4. Uses source category (calendar_note, risk, talking_point, question, open_item)\n\
+         5. Avoids duplicating recent wins unless there are no other substantive topics\n\
+         6. Caps at 7 items per meeting\n\
          2) A clean recent wins list (max 4) with source provenance separated.\n\n\
          Format your response as:\n\
          AGENDA:meeting-id\n\
@@ -3847,6 +3937,29 @@ pub fn enrich_week(
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
 
+    // I313: Read vocabulary and briefing emphasis from active preset
+    let week_preset_guard = state.active_preset.read().ok();
+    let week_preset_ref = week_preset_guard.as_ref().and_then(|g| g.as_ref());
+    let week_vocab_context = week_preset_ref
+        .map(|p| {
+            format!(
+                "Domain vocabulary: entities are \"{noun_plural}\" (singular: \"{noun}\"). \
+                 Primary metric: \"{metric}\". Health: \"{health}\". Risk: \"{risk}\". \
+                 Success: \"{verb}\". Regular cadence: \"{cadence}\".\n",
+                noun = p.vocabulary.entity_noun,
+                noun_plural = p.vocabulary.entity_noun_plural,
+                metric = p.vocabulary.primary_metric,
+                health = p.vocabulary.health_label,
+                risk = p.vocabulary.risk_label,
+                verb = p.vocabulary.success_verb,
+                cadence = p.vocabulary.cadence_noun,
+            )
+        })
+        .unwrap_or_default();
+    let week_emphasis_context = week_preset_ref
+        .map(|p| format!("Briefing emphasis: {}\n", p.briefing_emphasis))
+        .unwrap_or_default();
+
     let intel_section = if week_intel_context.is_empty() {
         String::new()
     } else {
@@ -3878,6 +3991,8 @@ pub fn enrich_week(
     let prompt = format!(
         "You are writing a weekly briefing for {role_label}.\n\
          {user_fragment}\n\
+         {week_vocab_context}\
+         {week_emphasis_context}\
          Week context:\n\
          - Week: {week_number} ({date_range})\n\
          - Total meetings: {total_meetings}\n\

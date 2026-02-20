@@ -218,6 +218,12 @@ pub fn run_hygiene_scan(
     report.fixes.people_linked_co_attendance = count;
     all_details.extend(details);
 
+    // --- Phase 2e: Email cadence monitoring (I319) ---
+    let cadence_anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies(db);
+    if !cadence_anomalies.is_empty() {
+        log::info!("Hygiene: {} email cadence anomalies detected", cadence_anomalies.len());
+    }
+
     // --- Phase 3: AI-budgeted gap filling ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
         report.fixes.ai_enrichments_enqueued = enqueue_ai_enrichments(db, budget, queue);
