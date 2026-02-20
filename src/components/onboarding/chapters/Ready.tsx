@@ -100,7 +100,7 @@ export function Ready({
             </p>
             {inboxProcessing.processingInProgress && (
               <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>
-                AI enrichment is still running — check your Inbox page in a few minutes.
+                AI analysis is still running — check your Inbox page in a few minutes.
               </p>
             )}
           </div>
