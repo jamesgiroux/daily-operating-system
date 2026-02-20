@@ -42,8 +42,16 @@ pub fn gather_all_meeting_contexts(
 ) -> Vec<Value> {
     let mut contexts = Vec::new();
     for meeting in classified {
-        let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        if meeting_type == "personal" || meeting_type == "all_hands" {
+        // I328: Use intelligence_tier when available, fall back to type-based skip
+        let should_skip = match meeting.get("intelligence_tier").and_then(|v| v.as_str()) {
+            Some("skip") => true,
+            Some(_) => false,
+            None => {
+                let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                meeting_type == "personal" || meeting_type == "all_hands"
+            }
+        };
+        if should_skip {
             continue;
         }
         contexts.push(gather_meeting_context(meeting, workspace, db, embedding_model));
@@ -510,8 +518,9 @@ fn gather_meeting_context(
         ctx["description"] = json!(description);
     }
 
-    // Skip meetings that don't benefit from prep
-    if meeting_type == "personal" || meeting_type == "all_hands" {
+    // Skip meetings that don't benefit from prep (I328: check tier first)
+    let tier = meeting.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("");
+    if tier == "skip" || (tier.is_empty() && (meeting_type == "personal" || meeting_type == "all_hands")) {
         return ctx;
     }
 
@@ -1983,6 +1992,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         })
         .expect("upsert meeting");
 
@@ -2160,6 +2175,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         })
         .expect("upsert meeting");
 
