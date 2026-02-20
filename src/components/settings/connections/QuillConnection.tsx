@@ -25,7 +25,7 @@ export default function QuillConnection() {
   useEffect(() => {
     invoke<QuillStatusData>("get_quill_status")
       .then(setStatus)
-      .catch(() => {});
+      .catch((err) => console.error("get_quill_status failed:", err));
   }, []);
 
   async function toggleEnabled() {

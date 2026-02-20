@@ -222,7 +222,7 @@ export default function InboxPage() {
                     refresh();
                   }
                 })
-                .catch(() => {});
+                .catch((err) => console.error("copy_to_inbox failed:", err));
             }
           } else {
             setIsDragging(false);
@@ -231,7 +231,7 @@ export default function InboxPage() {
         .then((fn) => {
           unlisten = fn;
         })
-        .catch(() => {});
+        .catch((err) => console.error("listen drag-drop failed:", err));
     } catch {
       // Drag-drop not available outside Tauri webview
     }
