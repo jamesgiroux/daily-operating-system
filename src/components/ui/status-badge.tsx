@@ -36,27 +36,27 @@ export function StatusBadge({
 
 export const healthStyles: Record<string, string> = {
   green:
-    "bg-[rgba(126,170,123,0.12)] text-[#4a6741] border-[rgba(126,170,123,0.3)]",
+    "bg-[var(--color-garden-sage-12)] text-[var(--color-garden-rosemary)] border-[var(--color-garden-sage-30)]",
   yellow:
-    "bg-[rgba(222,184,65,0.12)] text-[#3d2e27] border-[rgba(222,184,65,0.3)]",
+    "bg-[var(--color-spice-saffron-12)] text-[var(--color-desk-espresso)] border-[var(--color-spice-saffron-30)]",
   red:
-    "bg-[rgba(196,101,74,0.12)] text-[#9b3a2a] border-[rgba(196,101,74,0.3)]",
+    "bg-[var(--color-spice-terracotta-12)] text-[var(--color-spice-chili)] border-[var(--color-spice-terracotta-30)]",
 };
 
 export const projectStatusStyles: Record<string, string> = {
   active:
-    "bg-[rgba(126,170,123,0.12)] text-[#4a6741] border-[rgba(126,170,123,0.3)]",
+    "bg-[var(--color-garden-sage-12)] text-[var(--color-garden-rosemary)] border-[var(--color-garden-sage-30)]",
   on_hold:
-    "bg-[rgba(222,184,65,0.12)] text-[#3d2e27] border-[rgba(222,184,65,0.3)]",
+    "bg-[var(--color-spice-saffron-12)] text-[var(--color-desk-espresso)] border-[var(--color-spice-saffron-30)]",
   completed:
-    "bg-[rgba(143,163,196,0.12)] text-[#2a2b3d] border-[rgba(143,163,196,0.3)]",
+    "bg-[var(--color-garden-larkspur-12)] text-[var(--color-desk-ink)] border-[var(--color-garden-larkspur-30)]",
   archived: "bg-muted text-muted-foreground border-muted",
 };
 
 export const progressStyles: Record<string, string> = {
   completed:
-    "bg-[rgba(126,170,123,0.12)] text-[#4a6741]",
+    "bg-[var(--color-garden-sage-12)] text-[var(--color-garden-rosemary)]",
   in_progress:
-    "bg-[rgba(143,163,196,0.12)] text-[#2a2b3d]",
+    "bg-[var(--color-garden-larkspur-12)] text-[var(--color-desk-ink)]",
   planned: "bg-muted text-muted-foreground",
 };

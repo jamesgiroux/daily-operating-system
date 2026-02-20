@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
-import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
@@ -41,12 +40,14 @@ import {
 import { AccountHero } from "@/components/account/AccountHero";
 import { AccountAppendix } from "@/components/account/AccountAppendix";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
+import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
 import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 
@@ -200,7 +201,10 @@ export default function AccountDetailEditorial() {
       .then((json) => {
         try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
       })
-      .catch(() => setMetadataValues({}));
+      .catch((err) => {
+        console.error("get_entity_metadata (account) failed:", err);
+        setMetadataValues({});
+      });
   }, [accountId]);
 
   // I316: Fetch ancestor accounts for breadcrumb navigation
@@ -209,7 +213,10 @@ export default function AccountDetailEditorial() {
     if (!accountId) return;
     invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
       .then(setAncestors)
-      .catch(() => setAncestors([]));
+      .catch((err) => {
+        console.error("get_account_ancestors failed:", err);
+        setAncestors([]);
+      });
   }, [accountId]);
 
   // I352: Shared intelligence field update hook
@@ -308,16 +315,62 @@ export default function AccountDetailEditorial() {
         />
         <div className="editorial-reveal">
           {!detail.isInternal && (
-            <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
+            preset ? (
+              <EditableVitalsStrip
+                fields={preset.vitals.account}
+                entityData={detail}
+                metadata={metadataValues}
+                onFieldChange={(key, columnMapping, source, value) => {
+                  if (source === "metadata") {
+                    setMetadataValues((prev) => {
+                      const updated = { ...prev, [key]: value };
+                      invoke("update_entity_metadata", {
+                        entityId: accountId,
+                        entityType: "account",
+                        metadata: JSON.stringify(updated),
+                      }).catch((err) => console.error("update_entity_metadata failed:", err));
+                      return updated;
+                    });
+                  } else if (source === "column") {
+                    const field = columnMapping ?? key;
+                    invoke("update_account_field", { accountId: detail.id, field, value })
+                      .then(() => acct.load())
+                      .catch((err) => console.error("update_account_field failed:", err));
+                  }
+                }}
+              />
+            ) : (
+              <VitalsStrip vitals={buildAccountVitals(detail)} />
+            )
           )}
         </div>
+        {/* I312: Preset metadata fields */}
+        {preset && preset.metadata.account.length > 0 && (
+          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+            <PresetFieldsEditor
+              fields={preset.metadata.account}
+              values={metadataValues}
+              onChange={(key, value) => {
+                setMetadataValues((prev) => {
+                  const updated = { ...prev, [key]: value };
+                  invoke("update_entity_metadata", {
+                    entityId: accountId,
+                    entityType: "account",
+                    metadata: JSON.stringify(updated),
+                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  return updated;
+                });
+              }}
+            />
+          </div>
+        )}
         {/* Auto-rollover prompt for past renewal dates */}
         {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
           <div
             style={{
               margin: "24px 0",
               padding: "16px 20px",
-              background: "rgba(222, 184, 65, 0.08)",
+              background: "var(--color-spice-saffron-8)",
               borderLeft: "3px solid var(--color-spice-saffron)",
               fontFamily: "var(--font-sans)",
               fontSize: 14,
