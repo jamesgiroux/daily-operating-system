@@ -125,6 +125,23 @@ pub struct JsonMeeting {
     /// Entities linked via M2M junction table or entity resolution (I339)
     #[serde(default)]
     pub linked_entities: Option<Vec<LinkedEntity>>,
+    /// Raw calendar attendees from Google Calendar (not AI-enriched)
+    #[serde(default, rename = "calendarAttendees")]
+    pub calendar_attendees: Option<Vec<JsonCalendarAttendee>>,
+    /// Calendar event description from Google Calendar
+    #[serde(default, rename = "calendarDescription")]
+    pub calendar_description: Option<String>,
+}
+
+/// Raw attendee from Google Calendar event.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct JsonCalendarAttendee {
+    pub email: String,
+    pub name: String,
+    #[serde(default)]
+    pub rsvp: String,
+    #[serde(default)]
+    pub domain: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -221,6 +238,17 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
                 linked_entities: None,
                 suggested_unarchive_account_id: None,
                 intelligence_quality: None,
+                calendar_attendees: m.calendar_attendees.map(|list| {
+                    list.into_iter()
+                        .map(|a| crate::types::CalendarAttendeeEntry {
+                            email: a.email,
+                            name: a.name,
+                            rsvp: a.rsvp,
+                            domain: a.domain,
+                        })
+                        .collect()
+                }),
+                calendar_description: m.calendar_description,
             }
         })
         .collect();
