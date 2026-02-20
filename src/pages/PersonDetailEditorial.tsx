@@ -8,7 +8,7 @@ import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { smoothScrollTo } from "@/lib/smooth-scroll";
+// smoothScrollTo removed — inline editing replaces scroll-to-appendix
 import {
   AlignLeft,
   Zap,
@@ -150,7 +150,11 @@ export default function PersonDetailEditorial() {
         <PersonHero
           detail={detail}
           intelligence={intelligence}
-          onEditDetails={() => smoothScrollTo("appendix")}
+          editName={person.editName}
+          setEditName={(v) => { person.setEditName(v); person.setDirty(true); }}
+          editRole={person.editRole}
+          setEditRole={(v) => { person.setEditRole(v); person.setDirty(true); }}
+          onSave={person.handleSave}
           onEnrich={person.handleEnrich}
           enriching={person.enriching}
           enrichSeconds={person.enrichSeconds}
