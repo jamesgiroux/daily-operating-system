@@ -799,6 +799,252 @@ fn get_workspace(state: &AppState) -> Option<PathBuf> {
         .map(|cfg| std::path::PathBuf::from(cfg.workspace_path))
 }
 
+/// Get the email poll interval in minutes from config
+fn get_email_poll_interval(state: &AppState) -> u64 {
+    state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .map(|cfg| cfg.google.email_poll_interval_minutes as u64)
+        .unwrap_or(15)
+}
+
+// =============================================================================
+// Email Poller + Delivery Helper
+// =============================================================================
+
+/// Read email-refresh-directive.json, build emails.json, return set of email IDs.
+///
+/// Shared between the background email poller and manual `execute_email_refresh`.
+/// Returns the set of email IDs written so callers can diff for new arrivals.
+pub fn deliver_from_refresh_directive(
+    data_dir: &Path,
+    app_handle: &AppHandle,
+) -> Result<std::collections::HashSet<String>, String> {
+    let refresh_path = data_dir.join("email-refresh-directive.json");
+
+    if !refresh_path.exists() {
+        return Err("Email refresh did not produce directive".to_string());
+    }
+
+    let raw = std::fs::read_to_string(&refresh_path)
+        .map_err(|e| format!("Failed to read refresh directive: {}", e))?;
+    let refresh_data: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("Failed to parse refresh directive: {}", e))?;
+
+    let emails_section = refresh_data.get("emails").cloned().unwrap_or(serde_json::json!({}));
+
+    let map_email = |e: &serde_json::Value, default_priority: &str| -> serde_json::Value {
+        serde_json::json!({
+            "id": e.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "sender": e.get("from").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "senderEmail": e.get("from_email").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "subject": e.get("subject").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "snippet": e.get("snippet").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "priority": e.get("priority").and_then(serde_json::Value::as_str).unwrap_or(default_priority),
+        })
+    };
+
+    let high_priority: Vec<serde_json::Value> = emails_section
+        .get("highPriority")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(|e| map_email(e, "high")).collect())
+        .unwrap_or_default();
+
+    let classified = emails_section
+        .get("classified")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut medium_priority: Vec<serde_json::Value> = Vec::new();
+    let mut low_priority: Vec<serde_json::Value> = Vec::new();
+    for e in &classified {
+        let prio = e
+            .get("priority")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("medium");
+        let mapped = map_email(e, prio);
+        match prio {
+            "low" => low_priority.push(mapped),
+            _ => medium_priority.push(mapped),
+        }
+    }
+
+    // Collect all email IDs for diffing
+    let mut email_ids = std::collections::HashSet::new();
+    for list in [&high_priority, &medium_priority, &low_priority] {
+        for e in list {
+            if let Some(id) = e.get("id").and_then(|v| v.as_str()) {
+                if !id.is_empty() {
+                    email_ids.insert(id.to_string());
+                }
+            }
+        }
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let sync = crate::types::EmailSyncStatus {
+        state: crate::types::EmailSyncState::Ok,
+        stage: crate::types::EmailSyncStage::Refresh,
+        code: None,
+        message: None,
+        using_last_known_good: Some(false),
+        can_retry: Some(true),
+        last_attempt_at: Some(now.clone()),
+        last_success_at: Some(now),
+    };
+    let emails_json = serde_json::json!({
+        "highPriority": high_priority,
+        "mediumPriority": medium_priority,
+        "lowPriority": low_priority,
+        "stats": {
+            "highCount": high_priority.len(),
+            "mediumCount": medium_priority.len(),
+            "lowCount": low_priority.len(),
+            "total": high_priority.len() + medium_priority.len() + low_priority.len(),
+        },
+        "sync": serde_json::to_value(&sync)
+            .map_err(|e| format!("Failed to serialize email sync status: {}", e))?,
+    });
+
+    write_json(&data_dir.join("emails.json"), &emails_json)?;
+    let _ = app_handle.emit("email-sync-status", &sync);
+    log::info!(
+        "Email delivery: emails.json written ({} high, {} medium, {} low)",
+        high_priority.len(),
+        medium_priority.len(),
+        low_priority.len()
+    );
+
+    // Clean up directive
+    let _ = std::fs::remove_file(&refresh_path);
+
+    Ok(email_ids)
+}
+
+/// Snapshot email IDs from the current emails.json (for diffing after refresh).
+fn snapshot_email_ids(data_dir: &Path) -> std::collections::HashSet<String> {
+    let emails_path = data_dir.join("emails.json");
+    let raw = match std::fs::read_to_string(&emails_path) {
+        Ok(r) => r,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    let data: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(d) => d,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+
+    let mut ids = std::collections::HashSet::new();
+    for key in ["highPriority", "mediumPriority", "lowPriority"] {
+        if let Some(arr) = data.get(key).and_then(|v| v.as_array()) {
+            for e in arr {
+                if let Some(id) = e.get("id").and_then(|v| v.as_str()) {
+                    if !id.is_empty() {
+                        ids.insert(id.to_string());
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
+/// Start the email polling loop.
+///
+/// Runs as an async task — polls every N minutes during work hours.
+/// Fetches emails from Gmail, classifies, writes emails.json, and emits
+/// `emails-updated` so the frontend can silently refresh.
+pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
+    // Longer startup delay than calendar (10s vs 5s) — let auth + calendar settle
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    loop {
+        // Check if we should poll
+        if !should_poll(&state) {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            continue;
+        }
+
+        // Get workspace path
+        let workspace = match get_workspace(&state) {
+            Some(p) => p,
+            None => {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                continue;
+            }
+        };
+
+        // Guard: skip if /today workflow is currently running
+        let today_status = state.get_workflow_status(crate::types::WorkflowId::Today);
+        if matches!(today_status, crate::types::WorkflowStatus::Running { .. }) {
+            log::debug!("Email poll: skipping — /today pipeline is running");
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            continue;
+        }
+
+        let data_dir = workspace.join("_today").join("data");
+        if !data_dir.exists() {
+            // No _today/data/ means briefing hasn't run yet
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            continue;
+        }
+
+        // Snapshot existing email IDs before refresh
+        let before_ids = snapshot_email_ids(&data_dir);
+
+        // Step 1: Rust-native email fetch + classify
+        log::info!("Email poll: starting fetch + classify");
+        match crate::prepare::orchestrate::refresh_emails(&state, &workspace).await {
+            Ok(()) => {
+                // Step 2: Deliver from directive → emails.json
+                match deliver_from_refresh_directive(&data_dir, &app_handle) {
+                    Ok(after_ids) => {
+                        // Emit mechanical update immediately
+                        let _ = app_handle.emit("emails-updated", ());
+
+                        // Check for new emails (IDs in after but not in before)
+                        let new_ids: Vec<&String> = after_ids
+                            .iter()
+                            .filter(|id| !before_ids.contains(*id))
+                            .collect();
+
+                        if !new_ids.is_empty() {
+                            log::info!(
+                                "Email poll: {} new emails detected, queueing enrichment",
+                                new_ids.len()
+                            );
+                        } else {
+                            log::info!("Email poll: no new emails");
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Email poll: delivery failed: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Email poll: fetch failed: {}", e);
+            }
+        }
+
+        // Sleep between polls, interruptible by wake signal
+        let interval = get_email_poll_interval(&state);
+        let sleep = tokio::time::sleep(Duration::from_secs(interval * 60));
+        let wake = state.email_poller_wake.notified();
+        tokio::pin!(sleep);
+        tokio::pin!(wake);
+
+        tokio::select! {
+            _ = &mut sleep => {},
+            _ = &mut wake => {
+                log::debug!("Email poll: woken by manual refresh signal");
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
