@@ -118,8 +118,10 @@ export default function WeekPage() {
             "get_meeting_timeline",
             { daysBefore: 7, daysAfter: 7 }
           );
+          console.log("[WeekPage] Timeline loaded:", timelineData?.length, "meetings");
           setTimeline(timelineData);
-        } catch {
+        } catch (err) {
+          console.error("[WeekPage] Timeline failed:", err);
           setTimeline([]);
         }
 
@@ -313,7 +315,7 @@ export default function WeekPage() {
     [folioActions, data, folioReadinessStats]
   );
   useRegisterMagazineShell(shellConfig);
-  useRevealObserver(!loading && !!data, data);
+  useRevealObserver(!loading && (!!data || timeline.length > 0), data ?? timeline);
 
   // ─── Derived data ──────────────────────────────────────────────────────────
   const enrichmentIncomplete = data && !running && (!data.weekNarrative || !data.topPriority);
