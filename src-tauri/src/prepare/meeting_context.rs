@@ -80,40 +80,20 @@ fn resolve_primary_entity(
     let db = db?;
     let accounts_dir = workspace.join("Accounts");
 
-    // 1. Entity resolver signals (junction, attendee, keyword, embedding)
+    // Entity resolver handles junction-is-definitive gate internally.
+    // If junction table has entries, it returns those immediately
+    // without running attendee/keyword/embedding resolution.
     let resolver_outcomes = resolve_meeting_entities(
         db, event_id, meeting, &accounts_dir, embedding_model,
     );
 
-    // 2. I336 classification entities from meeting JSON
-    let classification_entities: Vec<(String, EntityType, f64, String)> = meeting
-        .get("entities")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|e| {
-                    let id = e.get("entity_id").and_then(|v| v.as_str())?;
-                    let etype = e
-                        .get("entity_type")
-                        .and_then(|v| v.as_str())
-                        .map(EntityType::from_str_lossy)
-                        .unwrap_or(EntityType::Other);
-                    let conf = e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let source = e
-                        .get("source")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("classification")
-                        .to_string();
-                    Some((id.to_string(), etype, conf, source))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // 3. Build merged candidates: (entity_id, entity_type) -> (confidence, source, name)
+    // Build candidates from resolver outcomes only.
+    // Classification entities are NOT merged — the resolver already
+    // incorporates junction signals which are definitive. Merging
+    // classification entities would reintroduce attendee-domain-based
+    // entities that compete with the manual link.
     let mut candidates: HashMap<(String, EntityType), (f64, String, String)> = HashMap::new();
 
-    // Insert resolver outcomes
     for outcome in &resolver_outcomes {
         let entity = match outcome {
             ResolutionOutcome::Resolved(e) | ResolutionOutcome::ResolvedWithFlag(e) => e,
@@ -151,30 +131,7 @@ fn resolve_primary_entity(
         );
     }
 
-    // Merge classification entities (take higher confidence)
-    for (id, etype, conf, source) in &classification_entities {
-        let key = (id.clone(), *etype);
-        match candidates.get(&key) {
-            Some((existing_conf, _, _)) if *existing_conf >= *conf => {}
-            _ => {
-                let name = db
-                    .get_entity(id)
-                    .ok()
-                    .flatten()
-                    .map(|e| e.name)
-                    .or_else(|| match etype {
-                        EntityType::Account => db.get_account(id).ok().flatten().map(|a| a.name),
-                        EntityType::Project => db.get_project(id).ok().flatten().map(|p| p.name),
-                        EntityType::Person => db.get_person(id).ok().flatten().map(|p| p.name),
-                        _ => None,
-                    })
-                    .unwrap_or_default();
-                candidates.insert(key, (*conf, source.clone(), name));
-            }
-        }
-    }
-
-    // 4. Select highest-confidence candidate above threshold (0.60)
+    // Select highest-confidence candidate above threshold (0.60)
     let best = candidates
         .into_iter()
         .filter(|(_, (conf, _, _))| *conf >= 0.60)
