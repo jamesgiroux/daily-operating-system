@@ -450,7 +450,7 @@ async fn enrich_meeting_with_ai(
     let output = pty_result.map_err(|e| format!("PTY error: {}", e))?;
 
     // Phase 4: Parse response
-    let json_str = crate::entity_intel::extract_json_from_response(&output.stdout)
+    let json_str = crate::intelligence::extract_json_from_response(&output.stdout)
         .ok_or_else(|| "No JSON found in AI response".to_string())?;
 
     let mut parsed: serde_json::Value =
