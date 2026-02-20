@@ -3719,6 +3719,12 @@ pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition
             "Roll up daily wins and risks to account files",
             true,
         ),
+        (
+            "autoArchiveEnabled",
+            "Auto-Archive Email",
+            "Automatically archive low-priority emails during daily prep",
+            false,
+        ),
     ];
 
     Ok(definitions
