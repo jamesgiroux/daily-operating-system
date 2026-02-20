@@ -195,8 +195,35 @@ pub fn classify_meeting_multi(
 
     let has_external = !external.is_empty();
 
+    // ---- Entity resolution for ALL meetings (not just external) ----
+    // Run entity hints against title/description/domains regardless of internal/external.
+    // This allows title-based entity matches (e.g., "Janus Henderson 1:1") to inform
+    // classification even when all attendees are internal.
+    resolve_entities(&mut result, entity_hints, user_domains, &external_domains);
+
+    // ---- Entity-aware type override ----
+    // If the title matched a known account entity with high confidence,
+    // treat this as an account meeting regardless of attendee domains.
+    let has_account_entity = result.resolved_entities.iter()
+        .any(|e| e.entity_type == "account" && e.confidence >= 0.50);
+
     // ---- Step 5: All-internal path ----
     if !has_external {
+        // Entity-aware override: if an account entity was found in the title,
+        // promote this meeting to account-level intelligence even though all
+        // attendees are internal (e.g., "Janus Henderson 1:1" with internal attendees).
+        if has_account_entity {
+            result.meeting_type = match title_override {
+                Some("one_on_one") => "one_on_one".to_string(),
+                Some("qbr") => "qbr".to_string(),
+                Some(other) => other.to_string(),
+                None if attendee_count == 2 => "one_on_one".to_string(),
+                None => "customer".to_string(),
+            };
+            result.intelligence_tier = IntelligenceTier::Entity;
+            return result;
+        }
+
         if title_override == Some("one_on_one") || attendee_count == 2 {
             result.meeting_type = title_override.unwrap_or("one_on_one").to_string();
             result.intelligence_tier = IntelligenceTier::Person;
@@ -241,8 +268,7 @@ pub fn classify_meeting_multi(
     result.external_domains = external_domains.iter().cloned().collect();
     result.external_domains.sort();
 
-    // ---- Entity resolution (I336) ----
-    resolve_entities(&mut result, entity_hints, user_domains, &external_domains);
+    // Entity resolution already ran above — no need to call again.
 
     // Apply title override if set (e.g., QBR with external attendees)
     if let Some(override_type) = title_override {
@@ -535,11 +561,19 @@ mod tests {
     }
 
     fn account_hint_with_domain(id: &str, name: &str, domains: &[&str]) -> EntityHint {
+        // Generate both full slug and individual word slugs (mirrors production DB behavior)
+        let mut slugs: Vec<String> = vec![name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()];
+        for word in name.split_whitespace() {
+            let slug: String = word.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+            if slug.len() >= 4 && !slugs.contains(&slug) {
+                slugs.push(slug);
+            }
+        }
         EntityHint {
             id: id.to_string(),
             entity_type: EntityType::Account,
             name: name.to_string(),
-            slugs: vec![name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()],
+            slugs,
             domains: domains.iter().map(|s| s.to_string()).collect(),
             keywords: vec![],
             emails: vec![],
@@ -815,5 +849,52 @@ mod tests {
         assert!(result.resolved_entities.len() >= 2);
         // Domain match (0.80) should come before keyword match (0.70)
         assert!(result.resolved_entities[0].confidence >= result.resolved_entities[1].confidence);
+    }
+
+    // ---- Entity-aware internal classification tests ----
+
+    #[test]
+    fn test_classify_internal_1on1_with_account_in_title() {
+        let hints = vec![account_hint_with_domain("janus-id", "Janus Henderson", &["janushenderson.com"])];
+        // All attendees are internal — normally would be "one_on_one" with Person tier
+        let event = make_event(
+            "Janus Henderson 1:1",
+            vec!["me@company.com", "colleague@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        // Should be promoted to Entity tier because "Janus Henderson" is a known account
+        assert_eq!(result.meeting_type, "one_on_one");
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
+        assert!(!result.resolved_entities.is_empty());
+        assert_eq!(result.resolved_entities[0].entity_type, "account");
+        assert_eq!(result.resolved_entities[0].name, "Janus Henderson");
+    }
+
+    #[test]
+    fn test_classify_internal_meeting_with_account_in_title() {
+        let hints = vec![account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"])];
+        // 3 internal attendees, "Acme" in title
+        let event = make_event(
+            "Acme Corp Planning Session",
+            vec!["me@company.com", "a@company.com", "b@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
+        assert!(!result.resolved_entities.is_empty());
+    }
+
+    #[test]
+    fn test_classify_pure_internal_without_account() {
+        // No account name in title — should remain internal with Person tier
+        let event = make_event(
+            "Sprint Planning",
+            vec!["me@company.com", "a@company.com", "b@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &empty_hints());
+        assert_eq!(result.meeting_type, "internal");
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
     }
 }
