@@ -5309,6 +5309,8 @@ pub fn update_meeting_entity(
             start_time: &start_time,
             end_time: None,
             calendar_event_id: None,
+            attendees: None,
+            description: None,
         })
         .map_err(|e| e.to_string())?;
 
@@ -5429,6 +5431,8 @@ pub fn add_meeting_entity(
             start_time: &start_time,
             end_time: None,
             calendar_event_id: None,
+            attendees: None,
+            description: None,
         })
         .map_err(|e| e.to_string())?;
 

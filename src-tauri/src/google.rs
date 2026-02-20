@@ -553,6 +553,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             &event.start.to_rfc3339(),
             event.meeting_type.as_str(),
         );
+        let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
         match db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
             id: &meeting_id,
             title: &event.title,
@@ -560,6 +561,8 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             start_time: &event.start.to_rfc3339(),
             end_time: Some(&event.end.to_rfc3339()),
             calendar_event_id: Some(&event.id),
+            attendees: Some(&attendees_json),
+            description: None, // Description flows through directive path
         }) {
             Ok(crate::db::MeetingSyncOutcome::New) => {
                 new_meetings.push(meeting_id.clone());
