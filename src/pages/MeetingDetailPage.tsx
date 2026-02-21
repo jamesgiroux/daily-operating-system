@@ -420,15 +420,6 @@ Thanks!`;
             Request Input
           </button>
         )}
-        {isEditable && (
-          <button
-            onClick={handlePrefillFromContext}
-            disabled={prefilling}
-            className={clsx(styles.folioBtn, prefilling && styles.folioBtnDisabled)}
-          >
-            {prefilling ? "Prefilling…" : "Prefill"}
-          </button>
-        )}
         {isFutureMeeting && (
           <button onClick={handleDraftAgendaMessage} className={styles.folioBtn}>
             Draft Agenda
@@ -444,21 +435,13 @@ Thanks!`;
             {syncing ? "Syncing…" : "Sync Transcript"}
           </button>
         )}
-        <button
-          onClick={handleAttachTranscript}
-          disabled={attaching}
-          className={clsx(styles.folioBtnInline, attaching && styles.folioBtnDisabled)}
-        >
-          {attaching ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <Paperclip className={styles.iconSm} />}
-          {attaching ? "Processing…" : "Transcript"}
-        </button>
         <button onClick={() => loadMeetingIntelligence()} className={styles.folioBtnInline}>
           <RefreshCw className={styles.iconSm} />
           Refresh
         </button>
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, handlePrefillFromContext, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -578,7 +561,7 @@ Thanks!`;
                 disabled={syncing}
                 className={clsx(styles.syncButton, syncing && styles.syncButtonDisabled)}
               >
-                {syncing ? <Loader2 className={styles.iconMd} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconMd} />}
+                {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
                 {syncing ? "Syncing transcript…" : "Sync transcript"}
               </button>
             )}
@@ -611,7 +594,7 @@ Thanks!`;
               </h1>
               {lifecycle && (
                 <div className={styles.lifecycleBadge}>
-                  <span className={styles.bulletDotInline} style={{ background: "var(--color-spice-turmeric)" }} />
+                  <span className={styles.bulletDotTurmeric} />
                   <span className={styles.lifecycleText}>{lifecycle}</span>
                 </div>
               )}
@@ -677,7 +660,7 @@ Thanks!`;
                   <ul className={styles.readinessList}>
                     {data.entityReadiness.slice(0, 4).map((item, i) => (
                       <li key={i} className={styles.readinessItem}>
-                        <span className={styles.bulletDot} style={{ background: "rgba(201, 162, 39, 0.6)" }} />
+                        <span className={styles.bulletDotTurmericMuted} />
                         <span>{item}</span>
                       </li>
                     ))}
@@ -751,8 +734,41 @@ Thanks!`;
                   initialDismissedTopics={dismissedTopics}
                   onSaveStatus={setSaveStatus}
                 />
+
+                {isEditable && (
+                  <button
+                    onClick={handlePrefillFromContext}
+                    disabled={prefilling}
+                    className={clsx(styles.planSecondaryAction, prefilling && styles.folioBtnDisabled)}
+                  >
+                    {prefilling ? "Prefilling from context…" : "Prefill from context"}
+                  </button>
+                )}
               </section>
             )}
+
+            {/* Transcript CTA — moved from folio bar to page body */}
+            <div className={clsx("editorial-reveal", styles.transcriptCta)}>
+              <button
+                onClick={handleSyncTranscript}
+                disabled={syncing}
+                className={clsx(styles.transcriptCtaBtn, syncing && styles.transcriptCtaBtnDisabled)}
+              >
+                {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
+                {syncing ? "Syncing…" : "Sync Transcript"}
+              </button>
+              <button
+                onClick={handleAttachTranscript}
+                disabled={attaching}
+                className={clsx(styles.transcriptCtaBtn, attaching && styles.transcriptCtaBtnDisabled)}
+              >
+                {attaching ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <Paperclip className={styles.iconMd} />}
+                {attaching ? "Processing…" : "Attach Transcript"}
+              </button>
+              <span className={styles.transcriptCtaLabel}>
+                {isPastMeeting ? "Add meeting transcript for outcome extraction" : "Attach transcript or notes"}
+              </span>
+            </div>
 
             {/* ================================================================
                 "You're Briefed" — FinisMarker
@@ -847,13 +863,13 @@ function UnifiedAttendeeList({
                   {(person.lastSeen || person.assessment) && (
                     <span className="attendee-tooltip">
                       {person.lastSeen && (
-                        <span className={styles.attendeeMetaMono} style={{ display: "block", marginBottom: person.assessment ? 6 : 0 }}>
+                        <span className={clsx(styles.attendeeMetaMono, person.assessment ? styles.tooltipMetaBlockSpaced : styles.tooltipMetaBlock)}>
                           Last met {formatRelativeDateLong(person.lastSeen)}
                           {person.meetingCount != null && person.meetingCount > 0 && ` \u00b7 ${person.meetingCount} meeting${person.meetingCount !== 1 ? "s" : ""}`}
                         </span>
                       )}
                       {person.assessment && (
-                        <span style={{ display: "block", fontFamily: "var(--font-serif)", fontSize: 13, fontStyle: "italic", lineHeight: 1.45 }}>
+                        <span className={styles.tooltipAssessment}>
                           {truncateText(sanitizeInlineText(person.assessment), 140)}
                         </span>
                       )}
@@ -1217,7 +1233,7 @@ function UnifiedPlanEditor({
       {/* Ghost input — topic + why */}
       {isEditable && meetingId && (
         <div className={styles.ghostInputRow}>
-          <span className={styles.planNumberGhost} style={{ paddingTop: 5 }}>
+          <span className={styles.planNumberGhost}>
             {allItems.length + 1}
           </span>
           <div className={styles.ghostInputBody}>
@@ -1245,7 +1261,7 @@ function UnifiedPlanEditor({
       {calendarNotes && (
         <details className={styles.calendarDetails}>
           <summary className={styles.calendarSummary}>
-            <ChevronRight className={clsx(styles.iconMd, styles.detailsChevron)} style={{ transition: "transform 0.2s" }} />
+            <ChevronRight className={clsx(styles.iconMd, styles.detailsChevron)} />
             Calendar Description
           </summary>
           <p className={styles.calendarBody}>{calendarNotes}</p>
@@ -1283,7 +1299,7 @@ function OutcomesSection({
           {outcomes.wins.length > 0 && (
             <OutcomeSection
               title="Wins"
-              icon={<Trophy style={{ width: 13, height: 13, color: "var(--color-garden-sage)" }} />}
+              icon={<Trophy className={styles.iconSage} />}
               items={outcomes.wins}
             />
           )}
@@ -1292,7 +1308,7 @@ function OutcomesSection({
           {outcomes.risks.length > 0 && (
             <OutcomeSection
               title="Risks"
-              icon={<AlertTriangle style={{ width: 13, height: 13, color: "var(--color-spice-terracotta)" }} />}
+              icon={<AlertTriangle className={styles.iconTerracotta} />}
               items={outcomes.risks}
             />
           )}
@@ -1301,7 +1317,7 @@ function OutcomesSection({
           {outcomes.decisions.length > 0 && (
             <OutcomeSection
               title="Decisions"
-              icon={<CircleDot style={{ width: 13, height: 13, color: "var(--color-spice-turmeric)" }} />}
+              icon={<CircleDot className={styles.iconTurmeric} />}
               items={outcomes.decisions}
             />
           )}
