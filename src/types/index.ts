@@ -160,6 +160,10 @@ export interface DbAction {
   waitingOn?: string;
   updatedAt: string;
   personId?: string;
+  /** Next upcoming meeting title for the action's account (I342) */
+  nextMeetingTitle?: string;
+  /** Next upcoming meeting start time for the action's account (I342) */
+  nextMeetingStart?: string;
 }
 
 export interface DayStats {
@@ -275,11 +279,6 @@ export interface WeekOverview {
   hygieneAlerts?: HygieneAlert[];
   focusAreas?: string[];
   availableTimeBlocks?: TimeBlock[];
-  /** AI-generated narrative overview of the week (I94) */
-  weekNarrative?: string;
-  /** AI-identified top priority (I94) */
-  topPriority?: TopPriority;
-  /** Proactive readiness checks surfacing prep gaps (I93) */
   readinessChecks?: ReadinessCheck[];
   /** Per-day density and meeting shape (I93) */
   dayShapes?: DayShape[];
@@ -1628,4 +1627,6 @@ export interface TimelineMeeting {
   entities: LinkedEntity[];
   hasNewSignals: boolean;
   priorMeetingId?: string;
+  /** Count of follow-up actions linked to this meeting (I342) */
+  followUpCount?: number;
 }

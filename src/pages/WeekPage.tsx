@@ -20,17 +20,11 @@ import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { MeetingCard } from "@/components/shared/MeetingCard";
 import { formatDisplayTime, formatDurationFromIso } from "@/lib/meeting-time";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
-import {
-  AlertTriangle,
-  Database,
-  Wand2,
-  Package,
-} from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 interface WeekResult {
   status: "success" | "not_found" | "error";
@@ -38,75 +32,16 @@ interface WeekResult {
   message?: string;
 }
 
-type WorkflowPhase = "preparing" | "enriching" | "delivering";
-
-const phaseSteps: {
-  key: WorkflowPhase;
-  label: string;
-  icon: typeof Database;
-}[] = [
-  { key: "preparing", label: "Prepare", icon: Database },
-  { key: "enriching", label: "Enrich", icon: Wand2 },
-  { key: "delivering", label: "Deliver", icon: Package },
-];
-
-const waitingMessages = [
-  `"You miss 100% of the shots you don't take." — Wayne Gretzky — Michael Scott`,
-  "Combobulating your priorities...",
-  "In a van, down by the river, preparing your week...",
-  `"The secret of getting ahead is getting started." — Mark Twain`,
-  "Manifesting your best week yet...",
-  "Teaching the AI about your calendar...",
-  `"It's not the load that breaks you down, it's the way you carry it." — Lou Holtz`,
-  "Consulting the schedule oracle...",
-  "Crunching context like it owes us money...",
-  `"Preparation is the key to success." — Alexander Graham Bell`,
-  "Cross-referencing all the things...",
-  "Making meetings make sense since 2025...",
-  `"By failing to prepare, you are preparing to fail." — Benjamin Franklin`,
-  "Synthesizing the week ahead...",
-  "Turning chaos into calendar clarity...",
-  `"The best time to plant a tree was 20 years ago. The second best time is now."`,
-  "Pondering your meetings with great intensity...",
-  "Almost done thinking about thinking...",
-  `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
-  "Polishing the details...",
-];
-
 export default function WeekPage() {
   const [data, setData] = useState<WeekOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [phase, setPhase] = useState<WorkflowPhase | null>(null);
   const [timeline, setTimeline] = useState<TimelineMeeting[]>([]);
   const [showEarlier, setShowEarlier] = useState(false);
   const loadingRef = useRef(false);
 
-  const triggerMeetingEnrichment = useCallback(
-    (meetings: TimelineMeeting[]) => {
-      const now = new Date();
-      const candidates = meetings
-        .filter((m) => new Date(m.startTime) > now)
-        .filter((m) => {
-          const level = m.intelligenceQuality?.level;
-          return level === "sparse" || level === "developing";
-        })
-        .slice(0, 5);
-
-      candidates.forEach((m, i) => {
-        setTimeout(() => {
-          invoke("enrich_meeting_background", { meetingId: m.id }).catch(
-            () => {}
-          );
-        }, i * 2000);
-      });
-    },
-    []
-  );
-
   const loadWeek = useCallback(
-    async ({ includeLive = true }: { includeLive?: boolean } = {}) => {
+    async () => {
       if (loadingRef.current) return;
       loadingRef.current = true;
 
@@ -118,9 +53,6 @@ export default function WeekPage() {
           );
           console.log("[WeekPage] Timeline loaded:", timelineData?.length, "meetings");
           setTimeline(timelineData);
-          if (includeLive) {
-            triggerMeetingEnrichment(timelineData);
-          }
         } catch (err) {
           console.error("[WeekPage] Timeline failed:", err);
           setTimeline([]);
@@ -145,101 +77,36 @@ export default function WeekPage() {
         loadingRef.current = false;
       }
     },
-    [triggerMeetingEnrichment]
+    []
   );
 
   useEffect(() => {
     loadWeek();
-    invoke<{ status: string; phase?: WorkflowPhase }>("get_workflow_status", {
-      workflow: "week",
-    })
-      .then((status) => {
-        if (status.status === "running") {
-          setRunning(true);
-          setPhase(status.phase ?? "preparing");
-        }
-      })
-      .catch((err) => {
-        console.error("get_workflow_status failed:", err);
-      });
   }, [loadWeek]);
 
-  useEffect(() => {
-    if (!running) return;
-    let sawRunning = false;
-
-    const interval = setInterval(async () => {
-      try {
-        const status = await invoke<{
-          status: string;
-          phase?: WorkflowPhase;
-          error?: { message: string; recoverySuggestion: string };
-        }>("get_workflow_status", { workflow: "week" });
-
-        if (status.status === "running") {
-          sawRunning = true;
-          if (status.phase) setPhase(status.phase);
-          loadWeek({ includeLive: false });
-        } else if (status.status === "completed" && sawRunning) {
-          clearInterval(interval);
-          setRunning(false);
-          setPhase(null);
-          loadWeek();
-        } else if (status.status === "failed" && sawRunning) {
-          clearInterval(interval);
-          setRunning(false);
-          setPhase(null);
-          const msg = status.error?.message || "Week workflow failed";
-          const hint = status.error?.recoverySuggestion;
-          setError(hint ? `${msg}\n${hint}` : msg);
-        } else if (status.status === "idle" && sawRunning) {
-          clearInterval(interval);
-          setRunning(false);
-          setPhase(null);
-          loadWeek({ includeLive: false });
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    }, 1000);
-
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      setRunning(false);
-      setPhase(null);
-      setError("Week workflow timed out. Check Settings for workflow status.");
-    }, 300_000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [running, loadWeek]);
-
   const handleRunWeek = useCallback(async () => {
-    setRunning(true);
     setError(null);
     try {
-      await invoke("run_workflow", { workflow: "week" });
+      await invoke("refresh_meeting_preps");
+      // Reload timeline to reflect cleared preps (badges update as prep-ready events arrive)
+      loadWeek();
     } catch (err) {
-      setRunning(false);
       setError(
-        err instanceof Error ? err.message : "Failed to queue week workflow"
+        err instanceof Error ? err.message : "Failed to refresh meeting preps"
       );
     }
-  }, []);
+  }, [loadWeek]);
 
   // Register magazine shell — larkspur atmosphere, global app nav
   const folioActions = useMemo(
     () => (
       <FolioRefreshButton
         onClick={handleRunWeek}
-        loading={running}
-        loadingLabel={phaseSteps.find((s) => s.key === phase)?.label ?? "Running\u2026"}
-        title={running ? "Forecast in progress" : "Refresh weekly forecast"}
+        loading={false}
+        title="Refresh meeting preps"
       />
     ),
-    [handleRunWeek, running, phase]
+    [handleRunWeek]
   );
 
   // Readiness stats for FolioBar — driven by timeline intelligence quality
@@ -291,7 +158,7 @@ export default function WeekPage() {
   useRevealObserver(!loading && (!!data || timeline.length > 0), data ?? timeline);
 
   // Live event listeners — keep the page current without user action
-  const silentRefresh = useCallback(() => loadWeek({ includeLive: false }), [loadWeek]);
+  const silentRefresh = useCallback(() => loadWeek(), [loadWeek]);
   useTauriEvent("calendar-updated", silentRefresh);
   useTauriEvent("workflow-completed", silentRefresh);
   useTauriEvent("intelligence-updated", silentRefresh);
@@ -510,63 +377,37 @@ export default function WeekPage() {
           padding: "80px 40px",
         }}
       >
-        {running ? (
-          <WorkflowProgress phase={phase ?? "preparing"} />
-        ) : (
-          <>
-            <div
-              style={{
-                color: "var(--color-garden-larkspur)",
-                marginBottom: 24,
-              }}
-            >
-              <BrandMark size={48} />
-            </div>
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 24,
-                fontWeight: 400,
-                color: "var(--color-text-primary)",
-                marginBottom: 8,
-              }}
-            >
-              No forecast yet
-            </p>
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 15,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-                marginBottom: 32,
-                maxWidth: 360,
-              }}
-            >
-              Connect your calendar to see your week.
-            </p>
-          </>
-        )}
-        {error && <ErrorCard error={error} />}
-      </div>
-    );
-  }
-
-  // ─── Workflow running — full-page takeover ──────────────────────────────────
-  if (running) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "70vh",
-          textAlign: "center",
-          padding: "80px 40px",
-        }}
-      >
-        <WorkflowProgress phase={phase ?? "preparing"} />
+        <div
+          style={{
+            color: "var(--color-garden-larkspur)",
+            marginBottom: 24,
+          }}
+        >
+          <BrandMark size={48} />
+        </div>
+        <p
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 24,
+            fontWeight: 400,
+            color: "var(--color-text-primary)",
+            marginBottom: 8,
+          }}
+        >
+          No forecast yet
+        </p>
+        <p
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 15,
+            fontStyle: "italic",
+            color: "var(--color-text-tertiary)",
+            marginBottom: 32,
+            maxWidth: 360,
+          }}
+        >
+          Connect your calendar to see your week.
+        </p>
         {error && <ErrorCard error={error} />}
       </div>
     );
@@ -965,14 +806,13 @@ function TimelineDayGroup({
                           fontSize: 10,
                           fontWeight: 600,
                           letterSpacing: "0.04em",
-                          color: m.enriching ? "var(--color-spice-turmeric)" : "var(--color-spice-terracotta)",
-                          background: m.enriching ? "rgba(201, 162, 39, 0.08)" : "rgba(192, 108, 80, 0.08)",
+                          color: "var(--color-spice-terracotta)",
+                          background: "rgba(192, 108, 80, 0.08)",
                           borderRadius: 4,
                           padding: "1px 6px",
-                          ...(m.enriching ? { animation: "pulse 2s ease-in-out infinite" } : {}),
                         }}
                       >
-                        {m.enriching ? "Preparing…" : "No prep"}
+                        No prep
                       </span>
                     )}
                     {daysUntil != null && daysUntil > 0 && (
@@ -1057,21 +897,3 @@ function TimelineDayGroup({
 }
 
 // Timeline meetings now use shared MeetingCard (I362/I364)
-
-const FORECAST_PHASES = [
-  { key: "preparing", label: "Reading your calendar", detail: "Fetching meetings, classifying events, gathering account context" },
-  { key: "enriching", label: "Writing the forecast", detail: "Synthesizing narrative, priorities, and time suggestions from your week" },
-  { key: "delivering", label: "Assembling the briefing", detail: "Building day shapes, readiness checks, and commitment summaries" },
-];
-
-function WorkflowProgress({ phase }: { phase: WorkflowPhase }) {
-  return (
-    <GeneratingProgress
-      title="Building Weekly Forecast"
-      accentColor="var(--color-garden-larkspur)"
-      phases={FORECAST_PHASES}
-      currentPhaseKey={phase}
-      quotes={waitingMessages}
-    />
-  );
-}
