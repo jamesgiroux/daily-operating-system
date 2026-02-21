@@ -186,6 +186,7 @@ pub struct PrepReadyPayload {
 pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
     log::info!("MeetingPrepProcessor: started");
 
+
     let mut polls_since_prune: u64 = 0;
     let prune_interval = 60 / POLL_INTERVAL_SECS;
 
@@ -329,12 +330,26 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
         entities: Vec::new(),
     };
 
-    let prep_json = crate::workflow::deliver::build_prep_json_public(
+    let mut prep_json = crate::workflow::deliver::build_prep_json_public(
         &directive_meeting,
         &meeting.meeting_type,
         meeting_id,
         Some(&directive_ctx),
     );
+
+    // Ensure required fields for FullMeetingPrep deserialization.
+    // build_prep_json produces disk-oriented JSON that lacks filePath and may lack timeRange.
+    if let Some(obj) = prep_json.as_object_mut() {
+        if !obj.contains_key("filePath") {
+            obj.insert(
+                "filePath".to_string(),
+                json!(format!("prep_frozen:{}", meeting_id)),
+            );
+        }
+        if !obj.contains_key("timeRange") {
+            obj.insert("timeRange".to_string(), json!(""));
+        }
+    }
 
     // Phase 6: Write result to prep_frozen_json in DB
     let frozen_str =
