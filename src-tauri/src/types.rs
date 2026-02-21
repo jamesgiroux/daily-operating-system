@@ -2024,6 +2024,9 @@ pub struct TimelineMeeting {
     /// Count of follow-up actions linked to this meeting (I342).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub follow_up_count: Option<i32>,
+    /// Whether a meeting briefing exists (prep_frozen_json or disk file).
+    #[serde(default)]
+    pub has_prep: bool,
 }
 
 #[cfg(test)]

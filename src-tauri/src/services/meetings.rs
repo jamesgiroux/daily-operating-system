@@ -658,7 +658,8 @@ pub fn get_meeting_timeline(
     let mut stmt = conn
         .prepare(
             "SELECT id, title, meeting_type, start_time, end_time, summary,
-                    transcript_processed_at, has_new_signals
+                    transcript_processed_at, has_new_signals,
+                    (prep_frozen_json IS NOT NULL) as has_frozen_prep
              FROM meetings_history
              WHERE start_time >= ?1 AND start_time <= ?2
                AND (intelligence_state IS NULL OR intelligence_state != 'archived')
@@ -676,6 +677,7 @@ pub fn get_meeting_timeline(
         summary: Option<String>,
         transcript_processed_at: Option<String>,
         has_new_signals: Option<i32>,
+        has_frozen_prep: bool,
     }
 
     let raw_meetings: Vec<RawMeeting> = stmt
@@ -689,6 +691,7 @@ pub fn get_meeting_timeline(
                 summary: row.get(5)?,
                 transcript_processed_at: row.get(6)?,
                 has_new_signals: row.get(7)?,
+                has_frozen_prep: row.get::<_, i32>(8).unwrap_or(0) != 0,
             })
         })
         .map_err(|e| format!("Failed to query timeline: {}", e))?
@@ -801,6 +804,7 @@ pub fn get_meeting_timeline(
             has_new_signals,
             prior_meeting_id,
             follow_up_count,
+            has_prep: m.has_frozen_prep,
         });
     }
 
