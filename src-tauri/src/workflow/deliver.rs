@@ -1415,6 +1415,19 @@ fn derive_recent_wins_and_sources(ctx: &DirectiveMeetingContext) -> (Vec<String>
     (wins, sources)
 }
 
+/// Public entry point for building prep JSON from outside the daily pipeline.
+///
+/// Used by `MeetingPrepQueue` to convert `gather_meeting_context` output into
+/// `FullMeetingPrep`-compatible JSON for `prep_frozen_json`.
+pub fn build_prep_json_public(
+    meeting: &DirectiveMeeting,
+    meeting_type: &str,
+    meeting_id: &str,
+    ctx: Option<&DirectiveMeetingContext>,
+) -> Value {
+    build_prep_json(meeting, meeting_type, meeting_id, ctx)
+}
+
 /// Build a single prep JSON object (matches JsonPrep in json_loader.rs).
 fn build_prep_json(
     meeting: &DirectiveMeeting,
