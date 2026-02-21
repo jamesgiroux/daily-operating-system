@@ -19,10 +19,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
-import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
-import { Avatar } from "@/components/ui/Avatar";
-import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
-import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
+import { MeetingCard } from "@/components/shared/MeetingCard";
+import type { Meeting, CalendarEvent, Action, Stakeholder, CalendarAttendee } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -43,6 +41,10 @@ interface BriefingMeetingCardProps {
   capturedActionCount?: number;
   /** Number of proposed actions needing review from this meeting */
   proposedActionCount?: number;
+  /** When true, this is the next upcoming meeting — renders expanded by default with richer context */
+  isUpNext?: boolean;
+  /** User's org domain for internal/external attendee grouping */
+  userDomain?: string;
 }
 
 type TemporalState = "upcoming" | "in-progress" | "past" | "cancelled";
@@ -153,26 +155,97 @@ function getExpansionTintClass(meeting: Meeting): string {
 // ─── Shared Sub-Components ───────────────────────────────────────────────────
 // Exported for use in DailyBriefing lead story section.
 
-/** Compact inline flow of stakeholders with relationship temperature dots. */
-export function KeyPeopleFlow({ stakeholders }: { stakeholders: Stakeholder[] }) {
-  if (stakeholders.length === 0) return null;
+/** "The Room" — calendar invitees grouped by side (their/our).
+ *  Uses raw Google Calendar attendee data, not AI-enriched stakeholders. */
+export function KeyPeopleFlow({
+  attendees,
+  userDomain,
+  stakeholders,
+}: {
+  attendees?: CalendarAttendee[];
+  userDomain?: string;
+  /** Fallback: AI-enriched stakeholders if calendar attendees unavailable */
+  stakeholders?: Stakeholder[];
+}) {
+  // Use calendar attendees when available, fall back to prep stakeholders
+  if (attendees && attendees.length > 0 && userDomain) {
+    const external = attendees.filter((a) => a.domain !== userDomain);
+    const internal = attendees.filter((a) => a.domain === userDomain);
+    const hasBothSides = external.length > 0 && internal.length > 0;
+
+    const renderAttendee = (a: CalendarAttendee) => (
+      <div key={a.email} className={s.theRoomPerson}>
+        <span className={s.theRoomName}>{a.name}</span>
+        {a.domain && a.domain !== userDomain && (
+          <span className={s.theRoomCompany}>{a.domain}</span>
+        )}
+        {a.rsvp === "tentative" && (
+          <span className={s.theRoomRole} style={{ fontStyle: "italic" }}>tentative</span>
+        )}
+      </div>
+    );
+
+    return (
+      <div className={s.theRoom}>
+        <div className={s.theRoomLabel}>The Room</div>
+        {hasBothSides ? (
+          <>
+            <div className={s.theRoomGroup}>
+              <div className={s.theRoomGroupLabel}>Their Side</div>
+              {external.map(renderAttendee)}
+            </div>
+            <div className={s.theRoomGroup}>
+              <div className={s.theRoomGroupLabel}>Our Side</div>
+              {internal.map(renderAttendee)}
+            </div>
+          </>
+        ) : (
+          <div className={s.theRoomGroup}>
+            {attendees.map(renderAttendee)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback: prep stakeholders (legacy)
+  if (!stakeholders || stakeholders.length === 0) return null;
+
+  const external = stakeholders.filter((p) => p.relationship === "external" || p.relationship === "unknown" || !p.relationship);
+  const internal = stakeholders.filter((p) => p.relationship === "internal");
+  const hasBothSides = external.length > 0 && internal.length > 0;
+
+  const renderPerson = (person: Stakeholder) => (
+    <div key={person.name} className={s.theRoomPerson}>
+      <span className={s.theRoomName}>{person.name}</span>
+      {person.role && (
+        <>
+          <span className={s.theRoomSep}>&middot;</span>
+          <span className={s.theRoomRole}>{person.role}</span>
+        </>
+      )}
+    </div>
+  );
 
   return (
-    <div className={s.keyPeople}>
-      <div className={s.keyPeopleLabel}>Key People</div>
-      <div className={s.keyPeopleFlow}>
-        {stakeholders.map((person, i) => (
-          <span key={person.name}>
-            {i > 0 && <span className={s.keyPeopleSep}>&middot;</span>}
-            <span className={s.keyPeoplePerson}>
-              <Avatar name={person.name} size={20} />
-              <span className={s.keyPeopleName}>{person.name}</span>
-              {person.role && <span className={s.keyPeopleRole}>{person.role}</span>}
-              <span className={clsx(s.keyPeopleTemp, s.keyPeopleTempHot)} />
-            </span>
-          </span>
-        ))}
-      </div>
+    <div className={s.theRoom}>
+      <div className={s.theRoomLabel}>The Room</div>
+      {hasBothSides ? (
+        <>
+          <div className={s.theRoomGroup}>
+            <div className={s.theRoomGroupLabel}>Their Side</div>
+            {external.map(renderPerson)}
+          </div>
+          <div className={s.theRoomGroup}>
+            <div className={s.theRoomGroupLabel}>Our Side</div>
+            {internal.map(renderPerson)}
+          </div>
+        </>
+      ) : (
+        <div className={s.theRoomGroup}>
+          {stakeholders.map(renderPerson)}
+        </div>
+      )}
     </div>
   );
 }
@@ -289,67 +362,31 @@ export function MeetingActionChecklist({
   );
 }
 
-/** Single-line signal per prep category — used in schedule expansion panels. */
-function QuickContext({ meeting }: { meeting: Meeting }) {
-  const prep = meeting.prep;
-  if (!prep) return null;
-
-  const discuss = (prep.actions ?? prep.questions ?? [])[0];
-  const watch = (prep.risks ?? [])[0];
-  const win = (prep.wins ?? [])[0];
-
-  if (!discuss && !watch && !win) return null;
-
-  return (
-    <div className={s.quickContext}>
-      {discuss && (
-        <div className={s.quickContextLine}>
-          <span className={clsx(s.quickContextDot, s.prepDotTurmeric)} />
-          <span className={s.quickContextLabel}>Discuss</span>
-          <span className={s.quickContextText}>{stripMarkdown(discuss)}</span>
-        </div>
-      )}
-      {watch && (
-        <div className={s.quickContextLine}>
-          <span className={clsx(s.quickContextDot, s.prepDotTerracotta)} />
-          <span className={s.quickContextLabel}>Watch</span>
-          <span className={s.quickContextText}>{stripMarkdown(watch)}</span>
-        </div>
-      )}
-      {win && (
-        <div className={s.quickContextLine}>
-          <span className={clsx(s.quickContextDot, s.prepDotSage)} />
-          <span className={s.quickContextLabel}>Win</span>
-          <span className={s.quickContextText}>{stripMarkdown(win)}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function BriefingMeetingCard({
   meeting,
   now,
   currentMeeting,
-  meetingActions = [],
-  onComplete,
-  completedIds,
-  onEntitiesChanged,
+  meetingActions: _meetingActions = [],
+  onComplete: _onComplete,
+  completedIds: _completedIds,
+  onEntitiesChanged: _onEntitiesChanged,
   capturedActionCount,
   proposedActionCount,
+  isUpNext = false,
+  userDomain,
 }: BriefingMeetingCardProps) {
   const navigate = useNavigate();
   const state = getTemporalState(meeting, now, currentMeeting);
-  const isInitiallyExpanded = state === "in-progress";
+  const isInitiallyExpanded = state === "in-progress" || isUpNext;
   const [isExpanded, setIsExpanded] = useState(isInitiallyExpanded);
   const innerRef = useRef<HTMLDivElement>(null);
   const [measuredHeight, setMeasuredHeight] = useState<number>(isInitiallyExpanded ? 2000 : 0);
 
   const duration = formatDuration(meeting);
   const hasPrepContent = !!(meeting.prep && Object.keys(meeting.prep).length > 0);
-  const canExpand = (state === "upcoming" || state === "in-progress") && hasPrepContent;
+  const canExpand = (state === "upcoming" || state === "in-progress") && (hasPrepContent || isUpNext);
 
   // Measure expansion panel content
   useLayoutEffect(() => {
@@ -390,7 +427,7 @@ export function BriefingMeetingCard({
   }
 
   // ── Schedule Row (all non-cancelled states) ──
-  const attendeeCount = meeting.prep?.stakeholders?.length;
+  const attendeeCount = meeting.calendarAttendees?.length ?? meeting.prep?.stakeholders?.length;
   const subtitleParts: string[] = [];
   subtitleParts.push(formatEntityByline(meeting.linkedEntities) ?? formatMeetingType(meeting.type));
   if (attendeeCount && attendeeCount > 0) {
@@ -399,57 +436,51 @@ export function BriefingMeetingCard({
 
   return (
     <>
-      {/* Collapsed row */}
-      <div
+      {/* Schedule row via shared MeetingCard */}
+      <MeetingCard
+        id={meeting.id}
+        title={meeting.title}
+        displayTime={meeting.time}
+        duration={duration ?? undefined}
+        meetingType={meeting.type}
+        entityByline={subtitleParts.join(" \u00B7 ")}
+        intelligenceQuality={meeting.intelligenceQuality ?? undefined}
+        temporalState={state}
+        onClick={(state === "past" || canExpand) ? handleRowClick : undefined}
+        showNavigationHint={state === "past"}
         className={clsx(
-          s.scheduleRow,
-          accentClass,
-          state === "in-progress" && s.scheduleRowActive,
-          state === "past" && s.scheduleRowPast,
-          state === "past" && s.scheduleRowPastNavigate,
+          s.briefingCardOverride,
+          state === "in-progress" && s.briefingCardOverrideActive,
           canExpand && s.scheduleRowExpandable,
           isExpanded && s.scheduleRowExpanded,
         )}
-        onClick={handleRowClick}
+        titleExtra={<>
+          {isUpNext && state !== "in-progress" && <span className={s.upNextPill}>UP NEXT</span>}
+          {canExpand && (
+            <span className={s.expandHint}>
+              {isExpanded ? "collapse" : "expand"}
+            </span>
+          )}
+        </>}
       >
-        <div className={s.scheduleTime}>
-          {meeting.time}
-          {duration && <span className={s.scheduleTimeDuration}>{duration}</span>}
-        </div>
-        <div className={s.scheduleContent}>
-          <div className={s.scheduleTitleRow}>
-            <span className={s.scheduleTitle}>{meeting.title}</span>
-            {state === "in-progress" && <span className={s.nowPill}>NOW</span>}
-            {state === "past" && <span className={s.pastArrow}>&rarr;</span>}
-            {canExpand && (
-              <span className={s.expandHint}>
-                {isExpanded ? "collapse" : "expand"}
+        {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              marginTop: 2,
+            }}
+          >
+            {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
+            {proposedActionCount != null && proposedActionCount > 0 && (
+              <span style={{ color: "var(--color-spice-turmeric)" }}>
+                {" \u00B7 "}{proposedActionCount} needs review
               </span>
             )}
           </div>
-          <div className={s.scheduleSubtitle}>
-            {subtitleParts.join(" \u00B7 ")}
-            {meeting.hasPrep && <IntelligenceQualityBadge enrichedAt={new Date().toISOString()} />}
-          </div>
-          {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                marginTop: 2,
-              }}
-            >
-              {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
-              {proposedActionCount != null && proposedActionCount > 0 && (
-                <span style={{ color: "var(--color-spice-turmeric)" }}>
-                  {" \u00B7 "}{proposedActionCount} needs review
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+        )}
+      </MeetingCard>
 
       {/* Expansion panel */}
       {canExpand && (
@@ -458,40 +489,52 @@ export function BriefingMeetingCard({
           style={{ maxHeight: isExpanded ? measuredHeight : 0 }}
         >
           <div ref={innerRef} className={s.expansionInner}>
-            {/* Narrative context */}
-            {meeting.prep?.context && (
-              <p className={s.expansionNarrative}>{meeting.prep.context}</p>
-            )}
+            {/* Meeting context: calendar description (organizer's words) or AI brief */}
+            {meeting.calendarDescription ? (
+              <p
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: 14,
+                  fontWeight: 400,
+                  color: "var(--color-text-primary)",
+                  margin: "0 0 20px 0",
+                  lineHeight: 1.55,
+                  maxWidth: 560,
+                }}
+              >
+                {meeting.calendarDescription.length > 400
+                  ? `${meeting.calendarDescription.slice(0, 400)}…`
+                  : meeting.calendarDescription}
+              </p>
+            ) : meeting.prep?.context ? (
+              <p
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 15,
+                  fontWeight: 300,
+                  fontStyle: "italic",
+                  color: "var(--color-text-secondary)",
+                  margin: "0 0 20px 0",
+                  lineHeight: 1.55,
+                  maxWidth: 560,
+                }}
+              >
+                {meeting.prep.context.length > 320
+                  ? `${meeting.prep.context.slice(0, 320)}…`
+                  : meeting.prep.context}
+              </p>
+            ) : null}
 
-            {/* Key people */}
-            {meeting.prep?.stakeholders && meeting.prep.stakeholders.length > 0 && (
-              <KeyPeopleFlow stakeholders={meeting.prep.stakeholders} />
-            )}
-
-            {/* Quick context (1 signal per category) */}
-            <QuickContext meeting={meeting} />
-
-            {/* Before-this-meeting actions */}
-            <MeetingActionChecklist
-              actions={meetingActions}
-              completedIds={completedIds}
-              onComplete={onComplete}
-            />
-
-            {/* Entity assignment */}
-            <div style={{ marginBottom: 20 }}>
-              <MeetingEntityChips
-                meetingId={meeting.id}
-                meetingTitle={meeting.title}
-                meetingStartTime={meeting.startIso ?? new Date().toISOString()}
-                meetingType={meeting.type}
-                linkedEntities={meeting.linkedEntities ?? []}
-                onEntitiesChanged={onEntitiesChanged}
-                compact
+            {/* The Room — calendar invitees grouped by side */}
+            {(meeting.calendarAttendees?.length || meeting.prep?.stakeholders?.length) ? (
+              <KeyPeopleFlow
+                attendees={meeting.calendarAttendees}
+                userDomain={userDomain}
+                stakeholders={meeting.prep?.stakeholders}
               />
-            </div>
+            ) : null}
 
-            {/* Bridge links */}
+            {/* Bridge link */}
             <div className={s.meetingLinks}>
               <Link
                 to="/meeting/$meetingId"

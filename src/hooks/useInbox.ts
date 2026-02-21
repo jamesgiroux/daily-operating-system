@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { useTauriEvent } from "./useTauriEvent";
 import type { InboxFile } from "@/types";
 
 interface InboxUpdate {
@@ -58,17 +58,11 @@ export function useInbox(): UseInboxReturn {
   }, [loadFiles]);
 
   // Listen for watcher events
-  useEffect(() => {
-    const unlisten = listen<InboxUpdate>("inbox-updated", (event) => {
-      setCount(event.payload.count);
-      // Refresh full file list when count changes
-      loadFiles();
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+  const onInboxUpdated = useCallback((update: InboxUpdate) => {
+    setCount(update.count);
+    loadFiles();
   }, [loadFiles]);
+  useTauriEvent("inbox-updated", onInboxUpdated);
 
   return { count, files, loading, error, refresh: loadFiles };
 }
@@ -84,19 +78,16 @@ export function useInboxCount(): number {
   useEffect(() => {
     invoke<InboxResult>("get_inbox_files")
       .then((result) => setCount(result.count))
-      .catch(() => {});
+      .catch((err) => {
+        console.error("get_inbox_files (count) failed:", err);
+      });
   }, []);
 
   // Listen for watcher events
-  useEffect(() => {
-    const unlisten = listen<InboxUpdate>("inbox-updated", (event) => {
-      setCount(event.payload.count);
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+  const onCountUpdated = useCallback((update: InboxUpdate) => {
+    setCount(update.count);
   }, []);
+  useTauriEvent("inbox-updated", onCountUpdated);
 
   return count;
 }

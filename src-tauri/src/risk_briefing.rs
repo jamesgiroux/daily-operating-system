@@ -13,7 +13,7 @@ use chrono::Utc;
 use std::path::PathBuf;
 
 use crate::db::ActionDb;
-use crate::entity_intel::{build_intelligence_context, read_intelligence_json, IntelligenceContext};
+use crate::intelligence::{build_intelligence_context, read_intelligence_json, IntelligenceContext};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::{AiModelConfig, RiskBriefing, RiskBottomLine, RiskCover};
 use crate::util::{atomic_write_str, wrap_user_data};

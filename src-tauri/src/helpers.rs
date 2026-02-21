@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use rusqlite::params;
+
 use crate::db::ActionDb;
 use crate::entity::EntityType;
 use crate::google_api::classify::EntityHint;
@@ -111,4 +113,60 @@ pub fn account_hints_from_entity_hints(entity_hints: &[EntityHint]) -> HashSet<S
 /// Build account hint set for meeting classification (legacy — delegates to entity hints).
 pub fn build_external_account_hints(db: &ActionDb) -> HashSet<String> {
     account_hints_from_entity_hints(&build_entity_hints(db))
+}
+
+// ---------------------------------------------------------------------------
+// Entity name resolution (unified from signals/callouts + proactive/detectors)
+// ---------------------------------------------------------------------------
+
+/// Resolve a display name for an entity from accounts, projects, or people tables.
+///
+/// Returns the entity name if found, or falls back to `entity_id` as a string.
+pub fn resolve_entity_name(db: &ActionDb, entity_type: &str, entity_id: &str) -> String {
+    let (table, col) = match entity_type {
+        "account" => ("accounts", "name"),
+        "project" => ("projects", "name"),
+        "person" => ("people", "name"),
+        _ => return entity_id.to_string(),
+    };
+    let sql = format!("SELECT {} FROM {} WHERE id = ?1", col, table);
+    db.conn_ref()
+        .query_row(&sql, params![entity_id], |row| row.get::<_, String>(0))
+        .unwrap_or_else(|_| entity_id.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Attendee email parsing (unified from signals/patterns, email_bridge, post_meeting)
+// ---------------------------------------------------------------------------
+
+/// Parse attendee emails from a DB-stored string (comma-separated or JSON array).
+///
+/// Normalizes to lowercase and filters to valid-looking email addresses.
+pub fn parse_attendee_emails(raw: &str) -> Vec<String> {
+    // Try JSON array first
+    if let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) {
+        return arr
+            .into_iter()
+            .map(|e| e.trim().to_lowercase())
+            .filter(|e| e.contains('@'))
+            .collect();
+    }
+    // Fall back to comma-separated
+    raw.split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| s.contains('@'))
+        .collect()
+}
+
+/// Extract attendee emails from a meeting JSON value's "attendees" array field.
+pub fn extract_attendee_emails(meeting: &serde_json::Value) -> Vec<String> {
+    if let Some(arr) = meeting.get("attendees").and_then(|v| v.as_array()) {
+        return arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| s.contains('@'))
+            .collect();
+    }
+    Vec::new()
 }

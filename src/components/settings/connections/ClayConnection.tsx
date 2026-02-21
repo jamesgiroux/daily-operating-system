@@ -17,7 +17,7 @@ export default function ClayConnection() {
         setStatus(s);
         if (s.apiKeySet) setApiKey("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
       })
-      .catch(() => {});
+      .catch((err) => console.error("get_clay_status failed:", err));
   }, []);
 
   async function toggleEnabled() {
