@@ -769,44 +769,6 @@ impl Executor {
             .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
         let _ = self.app_handle.emit("operation-delivered", "week-overview");
 
-        // --- Phase 3: AI enrichment (fault-tolerant) ---
-        self.emit_status_event(
-            WorkflowId::Week,
-            WorkflowStatus::Running {
-                started_at: Utc::now(),
-                phase: WorkflowPhase::Enriching,
-                execution_id: execution_id.to_string(),
-            },
-        );
-
-        let data_dir = workspace.join("_today").join("data");
-        let user_ctx = self
-            .state
-            .config
-            .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or(crate::types::UserContext {
-                name: None,
-                company: None,
-                title: None,
-                focus: None,
-            });
-
-        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &self.ai_model_config());
-        let mut enrichment_error: Option<String> = None;
-        if let Err(e) = crate::workflow::deliver::enrich_week(
-            &data_dir,
-            &synthesis_pty,
-            workspace,
-            &user_ctx,
-            &self.state,
-        ) {
-            log::warn!("Week enrichment failed (non-fatal): {}", e);
-            enrichment_error = Some(format!("Week enrichment incomplete: {}", e));
-        }
-        let _ = self.app_handle.emit("operation-delivered", "week-enriched");
-
         // --- Completion ---
         let finished_at = Utc::now();
         let duration_secs = (finished_at - record.started_at).num_seconds() as u64;
@@ -815,17 +777,6 @@ impl Executor {
             r.finished_at = Some(finished_at);
             r.duration_secs = Some(duration_secs);
             r.success = true;
-            r.error_message = enrichment_error.clone();
-            r.error_phase = if enrichment_error.is_some() {
-                Some(WorkflowPhase::Enriching)
-            } else {
-                None
-            };
-            r.can_retry = if enrichment_error.is_some() {
-                Some(true)
-            } else {
-                None
-            };
         });
 
         if matches!(
