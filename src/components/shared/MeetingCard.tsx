@@ -72,7 +72,7 @@ export function MeetingCard({
   const isPast = temporalState === "past";
   const isActive = temporalState === "in-progress";
   const isClickable = !!onClick;
-  const shouldNavigate = isPast && !onClick;
+  const shouldNavigate = !onClick; // All meetings link to their briefing page
 
   const cardContent = (
     <div
@@ -82,6 +82,7 @@ export function MeetingCard({
         isActive && s.active,
         isPast && s.past,
         isClickable && s.clickable,
+        shouldNavigate && s.navigable,
         isPast && showNavigationHint && s.pastNavigate,
         className,
       )}
