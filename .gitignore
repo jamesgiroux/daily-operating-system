@@ -4,6 +4,7 @@ CLAUDE.md
 
 # Internal working documents
 daybreak/
+.docs/
 
 # Credentials and secrets
 .config/
