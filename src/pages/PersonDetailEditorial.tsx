@@ -1,14 +1,13 @@
-import { useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
-import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { smoothScrollTo } from "@/lib/smooth-scroll";
 import {
   AlignLeft,
   Zap,
@@ -43,10 +42,12 @@ import { PersonNetwork } from "@/components/person/PersonNetwork";
 import { PersonAppendix } from "@/components/person/PersonAppendix";
 import { PersonInsightChapter } from "@/components/person/PersonInsightChapter";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
+import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 
 /* ── Vitals assembly ── */
 
@@ -132,6 +133,20 @@ export default function PersonDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
+  // I312: Preset metadata state
+  const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!personId) return;
+    invoke<string>("get_entity_metadata", { entityType: "person", entityId: personId })
+      .then((json) => {
+        try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
+      })
+      .catch((err) => {
+        console.error("get_entity_metadata (person) failed:", err);
+        setMetadataValues({});
+      });
+  }, [personId]);
+
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("person", personId);
 
@@ -150,7 +165,11 @@ export default function PersonDetailEditorial() {
         <PersonHero
           detail={detail}
           intelligence={intelligence}
-          onEditDetails={() => smoothScrollTo("appendix")}
+          editName={person.editName}
+          setEditName={(v) => { person.setEditName(v); person.setDirty(true); }}
+          editRole={person.editRole}
+          setEditRole={(v) => { person.setEditRole(v); person.setDirty(true); }}
+          onSave={person.handleSave}
           onEnrich={person.handleEnrich}
           enriching={person.enriching}
           enrichSeconds={person.enrichSeconds}
@@ -160,8 +179,49 @@ export default function PersonDetailEditorial() {
           onDelete={() => person.setDeleteConfirmOpen(true)}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.person, { ...detail, signals: detail.signals as Record<string, unknown> | undefined }) : buildPersonVitals(detail)} />
+          {preset ? (
+            <EditableVitalsStrip
+              fields={preset.vitals.person}
+              entityData={{ ...detail, signals: detail.signals as Record<string, unknown> | undefined }}
+              metadata={metadataValues}
+              onFieldChange={(key, _columnMapping, source, value) => {
+                if (source === "metadata") {
+                  setMetadataValues((prev) => {
+                    const updated = { ...prev, [key]: value };
+                    invoke("update_entity_metadata", {
+                      entityId: personId,
+                      entityType: "person",
+                      metadata: JSON.stringify(updated),
+                    }).catch((err) => console.error("update_entity_metadata failed:", err));
+                    return updated;
+                  });
+                }
+              }}
+            />
+          ) : (
+            <VitalsStrip vitals={buildPersonVitals(detail)} />
+          )}
         </div>
+        {/* I312: Preset metadata fields */}
+        {preset && preset.metadata.person.length > 0 && (
+          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+            <PresetFieldsEditor
+              fields={preset.metadata.person}
+              values={metadataValues}
+              onChange={(key, value) => {
+                setMetadataValues((prev) => {
+                  const updated = { ...prev, [key]: value };
+                  invoke("update_entity_metadata", {
+                    entityId: personId,
+                    entityType: "person",
+                    metadata: JSON.stringify(updated),
+                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  return updated;
+                });
+              }}
+            />
+          </div>
+        )}
       </section>
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
@@ -199,19 +259,20 @@ export default function PersonDetailEditorial() {
         }} />
       </div>
 
-      {/* Chapter 6: The Work */}
-      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <TheWork
-          data={detail}
-          intelligence={intelligence}
-          addingAction={person.addingAction}
-          setAddingAction={person.setAddingAction}
-          newActionTitle={person.newActionTitle}
-          setNewActionTitle={person.setNewActionTitle}
-          creatingAction={person.creatingAction}
-          onCreateAction={person.handleCreateAction}
-        />
-      </div>
+      {/* Chapter 6: The Work (suppressed when empty per I351) */}
+      {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0) && (
+        <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+          <TheWork
+            data={detail}
+            addingAction={person.addingAction}
+            setAddingAction={person.setAddingAction}
+            newActionTitle={person.newActionTitle}
+            setNewActionTitle={person.setNewActionTitle}
+            creatingAction={person.creatingAction}
+            onCreateAction={person.handleCreateAction}
+          />
+        </div>
+      )}
 
       {/* Finis marker */}
       <div className="editorial-reveal">
@@ -222,10 +283,6 @@ export default function PersonDetailEditorial() {
       <div className="editorial-reveal">
         <PersonAppendix
           detail={detail}
-          editName={person.editName}
-          setEditName={(v) => { person.setEditName(v); person.setDirty(true); }}
-          editRole={person.editRole}
-          setEditRole={(v) => { person.setEditRole(v); person.setDirty(true); }}
           editNotes={person.editNotes}
           setEditNotes={(v) => { person.setEditNotes(v); person.setDirty(true); }}
           onSave={person.handleSave}
@@ -269,8 +326,8 @@ export default function PersonDetailEditorial() {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 12,
-                    padding: "8px 12px",
+                    gap: "var(--space-sm)",
+                    padding: "var(--space-sm) var(--space-md)",
                     borderRadius: 6,
                     background: "none",
                     border: "none",
@@ -285,7 +342,7 @@ export default function PersonDetailEditorial() {
                       width: 32,
                       height: 32,
                       borderRadius: "50%",
-                      background: "rgba(143, 163, 196, 0.15)",
+                      background: "var(--color-garden-larkspur-15)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",

@@ -94,7 +94,7 @@ pub fn sync_content_index_for_entity(
     entity_type: &str,
     entity_directory: &Path,
 ) -> Result<(usize, usize, usize), String> {
-    crate::entity_intel::sync_content_index_for_entity(
+    crate::intelligence::sync_content_index_for_entity(
         entity_directory,
         entity_id,
         entity_type,

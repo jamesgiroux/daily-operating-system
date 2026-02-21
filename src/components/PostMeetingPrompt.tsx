@@ -90,7 +90,7 @@ export function PostMeetingPrompt() {
     const outcome: CapturedOutcome = {
       meetingId: meeting.id,
       meetingTitle: meeting.title,
-      account: meeting.account,
+      account: meeting.linkedEntities?.[0]?.name ?? meeting.account,
       capturedAt: new Date().toISOString(),
       wins: [inputValue.trim()],
       risks: [],
@@ -128,7 +128,7 @@ export function PostMeetingPrompt() {
     const outcome: CapturedOutcome = {
       meetingId: meeting.id,
       meetingTitle: meeting.title,
-      account: meeting.account,
+      account: meeting.linkedEntities?.[0]?.name ?? meeting.account,
       capturedAt: new Date().toISOString(),
       wins: items.filter((i) => i.type === "win").map((i) => i.content),
       risks: items.filter((i) => i.type === "risk").map((i) => i.content),

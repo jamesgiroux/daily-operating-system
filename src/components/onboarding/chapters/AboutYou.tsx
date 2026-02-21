@@ -88,7 +88,7 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
       { userEmail: email }
     )
       .then((result) => setSuggestions(result))
-      .catch(() => {}); // graceful fallback: hide if fails
+      .catch((err) => console.error("get_frequent_correspondents failed:", err));
   }, [email]);
 
   const filteredSuggestions = suggestions.filter(

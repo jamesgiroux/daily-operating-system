@@ -8,12 +8,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{Timelike, Utc};
+use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::db::DbPerson;
 use crate::google_api;
 use crate::people;
+use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 use crate::util::{name_from_email, org_from_email, person_id_from_email};
@@ -179,7 +180,65 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 }
 
                 // Populate people from calendar attendees (I51)
-                populate_people_from_events(&events, &state, &workspace);
+                let sync_intel = populate_people_from_events(&events, &state, &workspace);
+
+                // Trigger intelligence lifecycle for new/changed meetings (ADR-0081).
+                // Spawn so the calendar poll loop isn't blocked by AI enrichment.
+                // Emits `entity-updated` after all enrichment completes so the
+                // frontend re-fetches and sees the finished intelligence.
+                if !sync_intel.new_meetings.is_empty() || !sync_intel.changed_meetings.is_empty() {
+                    let state_clone = state.clone();
+                    let handle_clone = app_handle.clone();
+                    let new_ids = sync_intel.new_meetings;
+                    let changed_ids = sync_intel.changed_meetings;
+                    tokio::spawn(async move {
+                        let mut enriched = 0usize;
+                        for mid in &new_ids {
+                            match crate::intelligence::generate_meeting_intelligence(
+                                &state_clone, mid, false,
+                            )
+                            .await
+                            {
+                                Ok(q) => {
+                                    log::info!(
+                                        "Calendar poll: generated intelligence for new meeting '{}' (quality={:?})",
+                                        mid, q.level
+                                    );
+                                    enriched += 1;
+                                }
+                                Err(e) => log::warn!(
+                                    "Calendar poll: intelligence generation failed for '{}': {}",
+                                    mid, e
+                                ),
+                            }
+                        }
+                        for mid in &changed_ids {
+                            match crate::intelligence::generate_meeting_intelligence(
+                                &state_clone, mid, true,
+                            )
+                            .await
+                            {
+                                Ok(q) => {
+                                    log::info!(
+                                        "Calendar poll: refreshed intelligence for changed meeting '{}' (quality={:?})",
+                                        mid, q.level
+                                    );
+                                    enriched += 1;
+                                }
+                                Err(e) => log::warn!(
+                                    "Calendar poll: intelligence refresh failed for '{}': {}",
+                                    mid, e
+                                ),
+                            }
+                        }
+                        if enriched > 0 {
+                            let _ = handle_clone.emit("entity-updated", ());
+                        }
+                    });
+                }
+
+                // Detect cancelled meetings: today's DB meetings not in current poll (ADR-0081)
+                detect_cancelled_meetings(&events, &state);
 
                 if let Ok(mut guard) = state.calendar_events.write() {
                     *guard = events;
@@ -233,26 +292,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
 /// Check if we should poll now (authenticated + within work hours)
 fn should_poll(state: &AppState) -> bool {
-    // Check auth status
-    let is_authenticated = state
+    // Only gate: must be authenticated with Google
+    state
         .google_auth
         .lock()
         .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
-        .unwrap_or(false);
-
-    if !is_authenticated {
-        return false;
-    }
-
-    // Check work hours
-    let config = state.config.read().ok().and_then(|g| g.clone());
-    let (start_hour, end_hour) = match config {
-        Some(cfg) => (cfg.google.work_hours_start, cfg.google.work_hours_end),
-        None => (8, 18),
-    };
-
-    let now_hour = chrono::Local::now().hour() as u8;
-    now_hour >= start_hour && now_hour < end_hour
+        .unwrap_or(false)
 }
 
 /// Get the poll interval in minutes from config
@@ -445,6 +490,14 @@ fn enrich_prep_from_db(prep: &mut serde_json::Value, account_id: &str, db: &crat
     }
 }
 
+/// Result of syncing calendar events: meeting IDs that need intelligence triggers.
+struct CalendarSyncIntelligence {
+    /// Meeting IDs that are newly detected (need initial intelligence generation).
+    new_meetings: Vec<String>,
+    /// Meeting IDs that changed (title/time shifted — need force-full refresh).
+    changed_meetings: Vec<String>,
+}
+
 /// Populate people table from calendar event attendees (I51).
 ///
 /// For each event, for each attendee email:
@@ -454,7 +507,9 @@ fn enrich_prep_from_db(prep: &mut serde_json::Value, account_id: &str, db: &crat
 /// - Upsert into people table (idempotent)
 /// - Write People/{name}/person.json + person.md if new
 /// - Auto-link to entity if meeting has an account field
-fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) {
+///
+/// Returns sync intelligence for new/changed meetings that need intelligence triggers.
+fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) -> CalendarSyncIntelligence {
     // Acquire config/auth locks first (short-lived), then DB lock
     let self_email = state.google_auth.lock().ok().and_then(|g| match &*g {
         GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
@@ -468,16 +523,23 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
         .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
         .unwrap_or_default();
 
+    let empty_result = CalendarSyncIntelligence {
+        new_meetings: Vec::new(),
+        changed_meetings: Vec::new(),
+    };
+
     let db_guard = match state.db.lock().ok() {
         Some(g) => g,
-        None => return,
+        None => return empty_result,
     };
     let db = match db_guard.as_ref() {
         Some(db) => db,
-        None => return,
+        None => return empty_result,
     };
 
     let mut new_people = 0;
+    let mut new_meetings = Vec::new();
+    let mut changed_meetings = Vec::new();
 
     for event in events {
         // Skip all-hands (>50 attendees)
@@ -492,19 +554,33 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             &event.start.to_rfc3339(),
             event.meeting_type.as_str(),
         );
-        if let Err(e) = db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+        let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
+        match db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
             id: &meeting_id,
             title: &event.title,
             meeting_type: event.meeting_type.as_str(),
             start_time: &event.start.to_rfc3339(),
             end_time: Some(&event.end.to_rfc3339()),
             calendar_event_id: Some(&event.id),
+            attendees: Some(&attendees_json),
+            description: None, // Description flows through directive path
         }) {
-            log::warn!(
-                "Failed to ensure meeting '{}' in history: {}",
-                event.title,
-                e
-            );
+            Ok(crate::db::MeetingSyncOutcome::New) => {
+                new_meetings.push(meeting_id.clone());
+            }
+            Ok(crate::db::MeetingSyncOutcome::Changed) => {
+                // Mark as having new signals so intelligence refreshes
+                let _ = db.mark_meeting_new_signals(&meeting_id);
+                changed_meetings.push(meeting_id.clone());
+            }
+            Ok(crate::db::MeetingSyncOutcome::Unchanged) => {}
+            Err(e) => {
+                log::warn!(
+                    "Failed to ensure meeting '{}' in history: {}",
+                    event.title,
+                    e
+                );
+            }
         }
 
         for email in &event.attendees {
@@ -591,8 +667,9 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 
                 // I353 Phase 2: Emit person_created signal for hygiene feedback loop
                 if is_new {
-                    let _ = crate::signals::bus::emit_signal(
+                    let _ = crate::signals::bus::emit_signal_and_propagate(
                         db,
+                        &state.signal_engine,
                         "person",
                         &person.id,
                         "person_created",
@@ -616,6 +693,87 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
     if new_people > 0 {
         log::info!("People: discovered {} new people from calendar", new_people);
     }
+
+    if !new_meetings.is_empty() || !changed_meetings.is_empty() {
+        log::info!(
+            "Calendar sync intelligence: {} new, {} changed meetings",
+            new_meetings.len(),
+            changed_meetings.len()
+        );
+    }
+
+    CalendarSyncIntelligence {
+        new_meetings,
+        changed_meetings,
+    }
+}
+
+/// Detect meetings that were in the DB for today but disappeared from the calendar poll.
+///
+/// These are likely cancelled meetings. Updates their intelligence_state to "archived".
+fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState) {
+    let today = Utc::now().date_naive().to_string(); // "YYYY-MM-DD"
+
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return,
+    };
+
+    // Build set of current calendar event IDs from this poll
+    let current_ids: std::collections::HashSet<&str> = current_events
+        .iter()
+        .map(|e| e.id.as_str())
+        .collect();
+
+    // Query today's meetings from DB that have a calendar_event_id
+    let mut stmt = match db.conn_ref().prepare(
+        "SELECT id, calendar_event_id FROM meetings_history
+         WHERE start_time LIKE ?1 || '%'
+         AND calendar_event_id IS NOT NULL
+         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+    ) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let cancelled: Vec<String> = stmt
+        .query_map(rusqlite::params![today], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+            ))
+        })
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r.ok())
+        .filter(|(_id, cal_id)| !current_ids.contains(cal_id.as_str()))
+        .map(|(id, _)| id)
+        .collect();
+
+    for meeting_id in &cancelled {
+        if let Err(e) = db.update_intelligence_state(meeting_id, "archived", None, None) {
+            log::warn!(
+                "Failed to archive cancelled meeting '{}': {}",
+                meeting_id,
+                e
+            );
+        } else {
+            log::info!(
+                "Calendar poll: meeting '{}' cancelled, intelligence archived",
+                meeting_id
+            );
+        }
+        // Emit cancellation signal (I308) with propagation
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, &state.signal_engine, "meeting", meeting_id, "meeting_cancelled", "calendar",
+            None, 0.9,
+        );
+    }
 }
 
 /// Get workspace path from config
@@ -628,17 +786,326 @@ fn get_workspace(state: &AppState) -> Option<PathBuf> {
         .map(|cfg| std::path::PathBuf::from(cfg.workspace_path))
 }
 
+/// Get the email poll interval in minutes from config
+fn get_email_poll_interval(state: &AppState) -> u64 {
+    state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .map(|cfg| cfg.google.email_poll_interval_minutes as u64)
+        .unwrap_or(15)
+}
+
+// =============================================================================
+// Email Poller + Delivery Helper
+// =============================================================================
+
+/// Read email-refresh-directive.json, build emails.json, return set of email IDs.
+///
+/// Shared between the background email poller and manual `execute_email_refresh`.
+/// Returns the set of email IDs written so callers can diff for new arrivals.
+pub fn deliver_from_refresh_directive(
+    data_dir: &Path,
+    app_handle: &AppHandle,
+) -> Result<std::collections::HashSet<String>, String> {
+    let refresh_path = data_dir.join("email-refresh-directive.json");
+
+    if !refresh_path.exists() {
+        return Err("Email refresh did not produce directive".to_string());
+    }
+
+    let raw = std::fs::read_to_string(&refresh_path)
+        .map_err(|e| format!("Failed to read refresh directive: {}", e))?;
+    let refresh_data: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("Failed to parse refresh directive: {}", e))?;
+
+    let emails_section = refresh_data.get("emails").cloned().unwrap_or(serde_json::json!({}));
+
+    let map_email = |e: &serde_json::Value, default_priority: &str| -> serde_json::Value {
+        serde_json::json!({
+            "id": e.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "sender": e.get("from").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "senderEmail": e.get("from_email").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "subject": e.get("subject").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "snippet": e.get("snippet").and_then(serde_json::Value::as_str).unwrap_or(""),
+            "priority": e.get("priority").and_then(serde_json::Value::as_str).unwrap_or(default_priority),
+        })
+    };
+
+    let high_priority: Vec<serde_json::Value> = emails_section
+        .get("highPriority")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().map(|e| map_email(e, "high")).collect())
+        .unwrap_or_default();
+
+    let classified = emails_section
+        .get("classified")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut medium_priority: Vec<serde_json::Value> = Vec::new();
+    let mut low_priority: Vec<serde_json::Value> = Vec::new();
+    for e in &classified {
+        let prio = e
+            .get("priority")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("medium");
+        let mapped = map_email(e, prio);
+        match prio {
+            "low" => low_priority.push(mapped),
+            _ => medium_priority.push(mapped),
+        }
+    }
+
+    // Collect all email IDs for diffing
+    let mut email_ids = std::collections::HashSet::new();
+    for list in [&high_priority, &medium_priority, &low_priority] {
+        for e in list {
+            if let Some(id) = e.get("id").and_then(|v| v.as_str()) {
+                if !id.is_empty() {
+                    email_ids.insert(id.to_string());
+                }
+            }
+        }
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let sync = crate::types::EmailSyncStatus {
+        state: crate::types::EmailSyncState::Ok,
+        stage: crate::types::EmailSyncStage::Refresh,
+        code: None,
+        message: None,
+        using_last_known_good: Some(false),
+        can_retry: Some(true),
+        last_attempt_at: Some(now.clone()),
+        last_success_at: Some(now),
+    };
+    let emails_json = serde_json::json!({
+        "highPriority": high_priority,
+        "mediumPriority": medium_priority,
+        "lowPriority": low_priority,
+        "stats": {
+            "highCount": high_priority.len(),
+            "mediumCount": medium_priority.len(),
+            "lowCount": low_priority.len(),
+            "total": high_priority.len() + medium_priority.len() + low_priority.len(),
+        },
+        "sync": serde_json::to_value(&sync)
+            .map_err(|e| format!("Failed to serialize email sync status: {}", e))?,
+    });
+
+    write_json(&data_dir.join("emails.json"), &emails_json)?;
+    let _ = app_handle.emit("email-sync-status", &sync);
+    log::info!(
+        "Email delivery: emails.json written ({} high, {} medium, {} low)",
+        high_priority.len(),
+        medium_priority.len(),
+        low_priority.len()
+    );
+
+    // Clean up directive
+    let _ = std::fs::remove_file(&refresh_path);
+
+    Ok(email_ids)
+}
+
+/// Snapshot email IDs from the current emails.json (for diffing after refresh).
+fn snapshot_email_ids(data_dir: &Path) -> std::collections::HashSet<String> {
+    let emails_path = data_dir.join("emails.json");
+    let raw = match std::fs::read_to_string(&emails_path) {
+        Ok(r) => r,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    let data: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(d) => d,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+
+    let mut ids = std::collections::HashSet::new();
+    for key in ["highPriority", "mediumPriority", "lowPriority"] {
+        if let Some(arr) = data.get(key).and_then(|v| v.as_array()) {
+            for e in arr {
+                if let Some(id) = e.get("id").and_then(|v| v.as_str()) {
+                    if !id.is_empty() {
+                        ids.insert(id.to_string());
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
+/// Start the email polling loop.
+///
+/// Runs as an async task — polls every N minutes during work hours.
+/// Fetches emails from Gmail, classifies, writes emails.json, and emits
+/// `emails-updated` so the frontend can silently refresh.
+pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
+    // Longer startup delay than calendar (10s vs 5s) — let auth + calendar settle
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    loop {
+        // Check if we should poll
+        if !should_poll(&state) {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            continue;
+        }
+
+        // Get workspace path
+        let workspace = match get_workspace(&state) {
+            Some(p) => p,
+            None => {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                continue;
+            }
+        };
+
+        // Guard: skip if /today workflow is currently running
+        let today_status = state.get_workflow_status(crate::types::WorkflowId::Today);
+        if matches!(today_status, crate::types::WorkflowStatus::Running { .. }) {
+            log::debug!("Email poll: skipping — /today pipeline is running");
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            continue;
+        }
+
+        let data_dir = workspace.join("_today").join("data");
+        if !data_dir.exists() {
+            // No _today/data/ means briefing hasn't run yet
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            continue;
+        }
+
+        // Snapshot existing email IDs before refresh
+        let before_ids = snapshot_email_ids(&data_dir);
+
+        // Step 1: Rust-native email fetch + classify
+        log::info!("Email poll: starting fetch + classify");
+        match crate::prepare::orchestrate::refresh_emails(&state, &workspace).await {
+            Ok(()) => {
+                // Step 2: Deliver from directive → emails.json
+                match deliver_from_refresh_directive(&data_dir, &app_handle) {
+                    Ok(after_ids) => {
+                        // Emit mechanical update immediately
+                        let _ = app_handle.emit("emails-updated", ());
+
+                        // Check for new emails (IDs in after but not in before)
+                        let new_ids: Vec<&String> = after_ids
+                            .iter()
+                            .filter(|id| !before_ids.contains(*id))
+                            .collect();
+
+                        if !new_ids.is_empty() {
+                            log::info!(
+                                "Email poll: {} new emails detected, running AI enrichment",
+                                new_ids.len()
+                            );
+
+                            // Reuse Executor's enrichment pipeline (same as manual refresh)
+                            let executor = crate::executor::Executor::new(
+                                state.clone(), app_handle.clone()
+                            );
+                            let user_ctx = state.config.read().ok()
+                                .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+                                .unwrap_or_default();
+                            let ai_config = executor.ai_model_config();
+                            let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config);
+                            let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+
+                            // AI enrichment (fault-tolerant, same as execute_email_refresh)
+                            match executor.enrich_emails_with_fallback(
+                                &data_dir, &workspace, &user_ctx,
+                                &extraction_pty, &synthesis_pty,
+                            ) {
+                                Ok(()) => {
+                                    log::info!("Email poll: AI enrichment succeeded");
+                                    let _ = app_handle.emit("emails-updated", ());
+                                }
+                                Err(e) => {
+                                    log::warn!("Email poll: AI enrichment failed (non-fatal): {}", e);
+                                }
+                            }
+
+                            // Sync enriched signals to DB
+                            match executor.sync_email_signals_from_payload(&data_dir) {
+                                Ok(count) if count > 0 => {
+                                    log::info!("Email poll: persisted {} email signal rows", count);
+                                }
+                                Err(e) => {
+                                    log::warn!("Email poll: signal sync failed (non-fatal): {}", e);
+                                }
+                                _ => {}
+                            }
+
+                            // I357: Semantic reclassification of medium-priority emails (opt-in)
+                            let reclass_enabled = state.config.read().ok()
+                                .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "semanticEmailReclass")))
+                                .unwrap_or(false);
+                            if reclass_enabled {
+                                let emails_path = data_dir.join("emails.json");
+                                if let Ok(raw) = std::fs::read_to_string(&emails_path) {
+                                    if let Ok(emails_val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                                        let medium: Vec<serde_json::Value> = emails_val
+                                            .get("mediumPriority")
+                                            .and_then(|v| v.as_array())
+                                            .cloned()
+                                            .unwrap_or_default();
+                                        if !medium.is_empty() {
+                                            let results = crate::prepare::email_classify::reclassify_with_ai(
+                                                &medium,
+                                                &extraction_pty,
+                                                &workspace,
+                                            );
+                                            if !results.is_empty() {
+                                                log::info!(
+                                                    "Email poll: semantic reclassification changed {} emails",
+                                                    results.len()
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Final event so frontend picks up enriched data
+                            let _ = app_handle.emit("operation-delivered", "emails-enriched");
+                            let _ = app_handle.emit("emails-updated", ());
+                        } else {
+                            log::info!("Email poll: no new emails");
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Email poll: delivery failed: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Email poll: fetch failed: {}", e);
+            }
+        }
+
+        // Sleep between polls, interruptible by wake signal
+        let interval = get_email_poll_interval(&state);
+        let sleep = tokio::time::sleep(Duration::from_secs(interval * 60));
+        let wake = state.email_poller_wake.notified();
+        tokio::pin!(sleep);
+        tokio::pin!(wake);
+
+        tokio::select! {
+            _ = &mut sleep => {},
+            _ = &mut wake => {
+                log::debug!("Email poll: woken by manual refresh signal");
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{ActionDb, DbAccount};
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("google_test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open test db")
-    }
+    use crate::db::{DbAccount, test_utils::test_db};
 
     fn sample_event(
         id: &str,
@@ -655,6 +1122,7 @@ mod tests {
             account: account.map(|a| a.to_string()),
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }
     }
 
@@ -787,6 +1255,7 @@ mod tests {
             account: Some("acme".to_string()),
             attendees: vec![],
             is_all_day: true,
+            linked_entities: None,
         };
 
         assert!(event.is_all_day || !PREP_ELIGIBLE_TYPES.contains(&event.meeting_type));

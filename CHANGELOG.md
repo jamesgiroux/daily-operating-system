@@ -4,6 +4,91 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.0] - 2026-02-21
+
+Every meeting gets intelligence before you need it. One meeting, one visual identity, everywhere. The app never shows an empty state — intelligence arrives automatically, refreshes when signals change, and renders the same way whether you're looking at the daily briefing, weekly forecast, or a meeting detail page.
+
+### Meeting Intelligence Lifecycle
+
+- Every meeting gets intelligence — not just external or customer meetings. 1:1s, team syncs, all-hands, and internal meetings all receive contextual preparation
+- Background meeting prep queue processes meetings by priority: manual refresh (immediate), calendar changes (high), and background sweeps (low)
+- Intelligence regenerates automatically when entity data changes — update an account's intelligence and linked meeting briefings requeue for regeneration
+- Signal-triggered prep invalidation: email signals, entity changes, and calendar updates mark affected preps stale and requeue them
+- Advance generation: weekly pipeline and calendar polling ensure meetings have intelligence days before they happen
+
+### Unified Meeting Card
+
+- New shared MeetingCard component renders meetings identically across all surfaces
+- Meeting type accent colors: turmeric for customer/external, larkspur for 1:1s, linen for internal/team
+- Intelligence quality badges appear on every meeting card — daily briefing, weekly forecast, meeting detail
+- Entity context (account or project name) shown as a byline below every meeting title
+- Past meetings render with muted treatment, future meetings show time-to-meeting and prep status
+- All styling via CSS module — no inline style props
+
+### Weekly Forecast Redesign
+
+- Single data source architecture: timeline powered directly by get_meeting_timeline, not a separate WeekOverview pipeline
+- Compact header with density map (The Shape) showing meeting load per day
+- Meeting intelligence timeline replaces the old MeetingRow list — same visual language as the daily briefing
+- Removed workflow phase stepper, waiting messages, and unused AI enrichment fields (weekNarrative, topPriority)
+- Past meetings show outcomes and follow-up counts; future meetings show intelligence quality and days until
+- Personal events, focus blocks, and blocked time filtered from the timeline
+
+### Daily Briefing — Always Live
+
+- No empty state: briefing displays intelligence as it becomes available, without waiting for a full workflow run
+- Day Frame section merges Hero and Focus into a single opening: narrative line, capacity, focus directive
+- Schedule section shows today's meetings with inline expansion for the next upcoming meeting
+- Attention section: meeting-relevant actions, high-signal proposed actions, urgent emails, replies needed
+- Replies Needed subsection shows threads where the last message is from the other party (ball in your court)
+- Removed Lead Story, Review, Priorities, Later This Week, Key People, Prep Grid, and entity chips
+
+### Actions — Meeting-Centric
+
+- Primary view groups actions by upcoming meetings: "Acme QBR · Thursday → 3 actions"
+- Actions linked to accounts with upcoming meetings float to the top; everything else appears below
+- Correlated subqueries on the backend find the next meeting per action's account within 3 days
+- Sort by priority within each group, overdue actions pinned to top
+- Auto-expiry: proposed actions older than 7 days are automatically archived
+
+### Surface Restructure
+
+- Meeting detail: Deep Dive and Appendix removed — keeps Brief, Risks, Room, Plan, Finis only
+- Entity detail pages: removed meeting readiness callouts, resolution keywords, Value Delivered, Portfolio Summary
+- Person detail: The Work chapter suppressed when empty (no actions or upcoming meetings)
+- Account/Project detail: removed unused intelligence prop from TheWork component
+- HorizonChapter (projects): removed Meeting Readiness section — meeting detail owns readiness
+
+### Backend Infrastructure
+
+- Architectural refactoring: split monolithic files, added service layer modules (services/actions, accounts, people, meetings, entities)
+- Background email poller runs every 15 minutes during work hours with live frontend refresh via Tauri events
+- Work hours gate removed from calendar and email pollers — they run whenever the app is open
+- Keychain retry logic for OAuth token refresh on transient Keychain errors
+- Fonts bundled locally to eliminate flash of unstyled text on page reload
+- Meeting detail page CSS module migration (moved inline styles to editorial pattern)
+- Quill sync force-reset fix for in-progress transcript states
+- Fixed transcript outcomes being silently discarded (wins, risks, decisions, actions)
+
+### Changed
+
+- "Sync Transcript" button restored to meeting folio bar
+- Refresh button on week page requeues meeting prep generation instead of rerunning AI enrichment
+- Calendar description and attendees now stored in meetings_history on sync
+- Entity-aware meeting classification resolves entities for all meeting types, not just external
+- Signal bus wired to all user gestures and system events
+- Thompson Sampling connected to four previously unlinked signal plumbing paths
+
+### Fixed
+
+- First-run meeting gap where meetings appeared only after second briefing run
+- Schedule staleness: stale data on disk no longer persists across workflow runs
+- Week page blank render when reveal observer didn't trigger on timeline data
+- Attendee count using prep stakeholders instead of actual calendar invitees
+- Attendees stripped before directive write (lean_events removing data too aggressively)
+- Timestamps using bare datetime('now') instead of RFC3339 UTC
+- Email refresh button showing literal unicode escape instead of ellipsis character
+
 ## [0.12.1] - 2026-02-19
 
 The first release that subtracts. Every surface asked "does this earn its keep?" — what failed got cut, system jargon got replaced with product language, and 0.12.0 email intelligence got an editorial UI.

@@ -18,7 +18,6 @@ mod db_backup;
 mod devtools;
 pub mod embeddings;
 pub mod entity;
-pub mod entity_intel;
 pub mod entity_io;
 mod error;
 mod executor;
@@ -30,6 +29,7 @@ pub mod gravatar;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
+pub mod meeting_prep_queue;
 pub mod intelligence;
 pub mod json_loader;
 mod latency;
@@ -48,6 +48,7 @@ pub mod quill;
 pub mod queries;
 mod risk_briefing;
 mod scheduler;
+pub mod services;
 pub mod signals;
 pub mod state;
 pub mod types;
@@ -118,8 +119,9 @@ pub fn run() {
             // Spawn scheduler
             let scheduler_state = state.clone();
             let scheduler_sender = scheduler_tx.clone();
+            let scheduler_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let scheduler = scheduler::Scheduler::new(scheduler_state, scheduler_sender);
+                let scheduler = scheduler::Scheduler::new(scheduler_state, scheduler_sender, scheduler_handle);
                 scheduler.run().await;
             });
 
@@ -141,6 +143,13 @@ pub fn run() {
                 google::run_calendar_poller(poller_state, poller_handle).await;
             });
 
+            // Spawn email poller
+            let email_poller_state = state.clone();
+            let email_poller_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                google::run_email_poller(email_poller_state, email_poller_handle).await;
+            });
+
             // Spawn capture detection loop (Phase 3B)
             let capture_state = state.clone();
             let capture_handle = app.handle().clone();
@@ -153,6 +162,13 @@ pub fn run() {
             let intel_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 intel_queue::run_intel_processor(intel_state, intel_handle).await;
+            });
+
+            // Spawn meeting prep queue processor
+            let prep_state = state.clone();
+            let prep_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                meeting_prep_queue::run_meeting_prep_processor(prep_state, prep_handle).await;
             });
 
             // Spawn background embedding processor (Sprint 26)
@@ -284,6 +300,8 @@ pub fn run() {
             commands::get_execution_history,
             commands::get_next_run_time,
             commands::get_meeting_intelligence,
+            commands::generate_meeting_intelligence,
+            commands::enrich_meeting_background,
             commands::get_meeting_prep,
             commands::backfill_prep_semantics,
             commands::get_all_actions,
@@ -334,7 +352,7 @@ pub fn run() {
             // Phase 3C: Weekly Planning
             commands::get_week_data,
             commands::get_live_proactive_suggestions,
-            commands::retry_week_enrichment,
+            commands::refresh_meeting_preps,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
             commands::get_meeting_outcomes,
@@ -530,6 +548,8 @@ pub fn run() {
             commands::get_entity_metadata,
             // I323: Email Disposition Correction
             commands::correct_email_disposition,
+            // I330: Meeting Timeline
+            commands::get_meeting_timeline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

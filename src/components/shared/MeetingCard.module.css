@@ -1,0 +1,190 @@
+/* =============================================================================
+   MeetingCard.module.css — Shared meeting card component
+
+   Adapted from editorial-briefing.module.css scheduleRow family.
+   Self-contained accent bar (left: 0) works in any layout context.
+   BriefingMeetingCard overrides to left: -28px for gutter placement.
+   ============================================================================= */
+
+/* --- Card row --- */
+
+.card {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0 20px;
+  align-items: first baseline;
+  padding: 14px 16px 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  position: relative;
+}
+
+.card:last-child {
+  border-bottom: none;
+}
+
+/* Accent bar: left: 0 for self-contained positioning */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: bottom 0.35s ease;
+}
+
+/* --- Accent variants --- */
+
+.accentCustomer::before { background: var(--color-spice-turmeric); }
+.accentInternal::before { background: var(--color-paper-linen); }
+.accentPersonal::before { background: var(--color-garden-sage); }
+.accentLarkspur::before { background: var(--color-garden-larkspur); }
+
+/* --- Temporal states --- */
+
+.active {
+  background: rgba(201, 162, 39, 0.05);
+  margin: 0 -20px;
+  padding: 14px 20px;
+  border-bottom-color: transparent;
+}
+
+/* Active state: bar stays at left: 0 (element edge of glow).
+   Briefing context overrides via className for gutter placement. */
+
+.past {
+  opacity: 0.4;
+}
+
+.past .title {
+  color: var(--color-text-tertiary);
+}
+
+/* --- Interaction --- */
+
+.clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.clickable:hover {
+  background: rgba(30, 37, 48, 0.015);
+}
+
+.active.clickable:hover {
+  background: rgba(201, 162, 39, 0.07);
+}
+
+.navigable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.navigable:hover {
+  background: rgba(30, 37, 48, 0.015);
+}
+
+.pastNavigate {
+  cursor: pointer;
+}
+
+/* --- Time column --- */
+
+.time {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-align: right;
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+.past .time {
+  color: var(--color-text-tertiary);
+}
+
+.duration {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  display: block;
+  margin-top: 2px;
+}
+
+/* --- Content column --- */
+
+.content {
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+}
+
+.subtitle {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --- Pills and indicators --- */
+
+.nowPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: rgba(201, 162, 39, 0.18);
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.prepDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+.pastArrow {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  margin-left: 6px;
+}
+
+.pastNavigate:hover .pastArrow {
+  opacity: 1;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 820px) {
+  .active {
+    margin: 0 -12px;
+    padding: 14px 12px;
+  }
+}

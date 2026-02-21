@@ -57,7 +57,19 @@
         },
         "account": {
           "type": "string",
-          "description": "Account name for customer meetings"
+          "description": "Account name for customer meetings (deprecated, use linkedEntities)"
+        },
+        "linkedEntities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "entityType": { "type": "string" }
+            }
+          },
+          "description": "Entities linked to this meeting (accounts, projects, people)"
         },
         "isCurrent": {
           "type": "boolean",

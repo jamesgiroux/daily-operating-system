@@ -335,10 +335,16 @@ function RoleSection() {
   useEffect(() => {
     invoke<[string, string, string][]>("get_available_presets")
       .then(setPresets)
-      .catch(() => setPresets([]));
+      .catch((err) => {
+        console.error("get_available_presets failed:", err);
+        setPresets([]);
+      });
     invoke<{ id: string } | null>("get_active_preset")
       .then((p) => setActiveId(p?.id ?? null))
-      .catch(() => setActiveId(null));
+      .catch((err) => {
+        console.error("get_active_preset failed:", err);
+        setActiveId(null);
+      });
   }, []);
 
   async function handleSelect(presetId: string) {
@@ -756,7 +762,7 @@ export default function YouCard() {
       };
     }>("get_config")
       .then(setConfig)
-      .catch(() => {})
+      .catch((err) => console.error("get_config (you) failed:", err))
       .finally(() => setLoading(false));
   }, []);
 

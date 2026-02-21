@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::db::ActionDb;
+use crate::helpers;
 
 use super::bus;
 
@@ -92,11 +93,7 @@ pub fn run_email_meeting_bridge(db: &ActionDb) -> Result<Vec<BridgeCorrelation>,
 
     // For each meeting, check for attendee overlap with email senders
     for (meeting_id, meeting_title, attendees_csv, _event_id) in &meetings {
-        let attendee_emails: Vec<String> = attendees_csv
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| s.contains('@'))
-            .collect();
+        let attendee_emails = helpers::parse_attendee_emails(attendees_csv);
 
         if attendee_emails.is_empty() {
             continue;
@@ -167,14 +164,7 @@ pub fn run_email_meeting_bridge(db: &ActionDb) -> Result<Vec<BridgeCorrelation>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::ActionDb;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_bridge_no_meetings() {

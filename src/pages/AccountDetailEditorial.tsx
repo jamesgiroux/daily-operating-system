@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
-import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
@@ -41,13 +40,14 @@ import {
 import { AccountHero } from "@/components/account/AccountHero";
 import { AccountAppendix } from "@/components/account/AccountAppendix";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
+import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
 import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
+import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 
@@ -188,7 +188,6 @@ export default function AccountDetailEditorial() {
   useRegisterMagazineShell(shellConfig);
 
   // Drawer/dialog open state
-  const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -202,7 +201,10 @@ export default function AccountDetailEditorial() {
       .then((json) => {
         try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
       })
-      .catch(() => setMetadataValues({}));
+      .catch((err) => {
+        console.error("get_entity_metadata (account) failed:", err);
+        setMetadataValues({});
+      });
   }, [accountId]);
 
   // I316: Fetch ancestor accounts for breadcrumb navigation
@@ -211,31 +213,14 @@ export default function AccountDetailEditorial() {
     if (!accountId) return;
     invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
       .then(setAncestors)
-      .catch(() => setAncestors([]));
+      .catch((err) => {
+        console.error("get_account_ancestors failed:", err);
+        setAncestors([]);
+      });
   }, [accountId]);
 
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
-
-  // Auto-save inline field edits with debounce
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleInlineAutoSave = useCallback(() => {
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(async () => {
-      await acct.handleSave();
-      if (accountId && Object.keys(metadataValues).length > 0) {
-        await invoke("update_entity_metadata", {
-          entityType: "account",
-          entityId: accountId,
-          metadata: JSON.stringify(metadataValues),
-        }).catch((e: unknown) => console.error("Failed to save metadata:", e));
-      }
-    }, 600);
-  }, [acct.handleSave, accountId, metadataValues]);
-  useEffect(() => {
-    if (acct.dirty) handleInlineAutoSave();
-    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [acct.dirty, handleInlineAutoSave]);
 
   if (acct.loading) return <EditorialLoading />;
 
@@ -315,17 +300,13 @@ export default function AccountDetailEditorial() {
         <AccountHero
           detail={detail}
           intelligence={intelligence}
+          editName={acct.editName}
+          setEditName={(v) => { acct.setEditName(v); acct.setDirty(true); }}
           editHealth={acct.editHealth}
-          onHealthChange={(v) => { acct.setEditHealth(v); acct.setDirty(true); }}
+          setEditHealth={(v) => { acct.setEditHealth(v); acct.setDirty(true); }}
           editLifecycle={acct.editLifecycle}
-          onLifecycleChange={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
-          editArr={acct.editArr}
-          onArrChange={(v) => { acct.setEditArr(v); acct.setDirty(true); }}
-          editNps={acct.editNps}
-          onNpsChange={(v) => { acct.setEditNps(v); acct.setDirty(true); }}
-          editRenewal={acct.editRenewal}
-          onRenewalChange={(v) => { acct.setEditRenewal(v); acct.setDirty(true); }}
-          onManageTeam={() => setTeamDrawerOpen(true)}
+          setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
+          onSave={acct.handleSave}
           onEnrich={acct.handleEnrich}
           enriching={acct.enriching}
           enrichSeconds={acct.enrichSeconds}
@@ -334,16 +315,62 @@ export default function AccountDetailEditorial() {
         />
         <div className="editorial-reveal">
           {!detail.isInternal && (
-            <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
+            preset ? (
+              <EditableVitalsStrip
+                fields={preset.vitals.account}
+                entityData={detail}
+                metadata={metadataValues}
+                onFieldChange={(key, columnMapping, source, value) => {
+                  if (source === "metadata") {
+                    setMetadataValues((prev) => {
+                      const updated = { ...prev, [key]: value };
+                      invoke("update_entity_metadata", {
+                        entityId: accountId,
+                        entityType: "account",
+                        metadata: JSON.stringify(updated),
+                      }).catch((err) => console.error("update_entity_metadata failed:", err));
+                      return updated;
+                    });
+                  } else if (source === "column") {
+                    const field = columnMapping ?? key;
+                    invoke("update_account_field", { accountId: detail.id, field, value })
+                      .then(() => acct.load())
+                      .catch((err) => console.error("update_account_field failed:", err));
+                  }
+                }}
+              />
+            ) : (
+              <VitalsStrip vitals={buildAccountVitals(detail)} />
+            )
           )}
         </div>
+        {/* I312: Preset metadata fields */}
+        {preset && preset.metadata.account.length > 0 && (
+          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+            <PresetFieldsEditor
+              fields={preset.metadata.account}
+              values={metadataValues}
+              onChange={(key, value) => {
+                setMetadataValues((prev) => {
+                  const updated = { ...prev, [key]: value };
+                  invoke("update_entity_metadata", {
+                    entityId: accountId,
+                    entityType: "account",
+                    metadata: JSON.stringify(updated),
+                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  return updated;
+                });
+              }}
+            />
+          </div>
+        )}
         {/* Auto-rollover prompt for past renewal dates */}
         {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
           <div
             style={{
               margin: "24px 0",
               padding: "16px 20px",
-              background: "rgba(222, 184, 65, 0.08)",
+              background: "var(--color-spice-saffron-8)",
               borderLeft: "3px solid var(--color-spice-saffron)",
               fontFamily: "var(--font-sans)",
               fontSize: 14,
@@ -434,7 +461,6 @@ export default function AccountDetailEditorial() {
       <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <TheWork
           data={detail}
-          intelligence={intelligence}
           addingAction={acct.addingAction}
           setAddingAction={acct.setAddingAction}
           newActionTitle={acct.newActionTitle}
@@ -470,35 +496,6 @@ export default function AccountDetailEditorial() {
           onMerge={() => setMergeDialogOpen(true)}
         />
       </div>
-
-      {/* ─── Drawers ─── */}
-
-      <TeamManagementDrawer
-        open={teamDrawerOpen}
-        onOpenChange={setTeamDrawerOpen}
-        accountTeam={detail.accountTeam}
-        accountTeamImportNotes={detail.accountTeamImportNotes}
-        teamSearchQuery={acct.teamSearchQuery}
-        setTeamSearchQuery={acct.setTeamSearchQuery}
-        teamSearchResults={acct.teamSearchResults}
-        selectedTeamPerson={acct.selectedTeamPerson}
-        setSelectedTeamPerson={acct.setSelectedTeamPerson}
-        teamRole={acct.teamRole}
-        setTeamRole={acct.setTeamRole}
-        teamInlineName={acct.teamInlineName}
-        setTeamInlineName={acct.setTeamInlineName}
-        teamInlineEmail={acct.teamInlineEmail}
-        setTeamInlineEmail={acct.setTeamInlineEmail}
-        teamInlineRole={acct.teamInlineRole}
-        setTeamInlineRole={acct.setTeamInlineRole}
-        teamWorking={acct.teamWorking}
-        resolvedImportNotes={acct.resolvedImportNotes}
-        teamError={acct.teamError}
-        handleAddExistingTeamMember={acct.handleAddExistingTeamMember}
-        handleRemoveTeamMember={acct.handleRemoveTeamMember}
-        handleCreateInlineTeamMember={acct.handleCreateInlineTeamMember}
-        handleImportNoteCreateAndAdd={acct.handleImportNoteCreateAndAdd}
-      />
 
       <LifecycleEventDrawer
         open={eventDrawerOpen}

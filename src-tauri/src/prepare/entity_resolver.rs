@@ -22,6 +22,7 @@ use serde_json::Value;
 use crate::db::ActionDb;
 use crate::embeddings::EmbeddingModel;
 use crate::entity::EntityType;
+use crate::helpers;
 use crate::signals;
 
 // ---------------------------------------------------------------------------
@@ -81,11 +82,54 @@ pub fn resolve_meeting_entities(
     _accounts_dir: &Path,
     embedding_model: Option<&EmbeddingModel>,
 ) -> Vec<ResolutionOutcome> {
-    let mut all_signals: Vec<ResolutionSignal> = Vec::new();
+    // Gate 1: Junction table is DEFINITIVE. If manual links exist,
+    // they are the answer — no further resolution needed.
+    // This prevents attendee/keyword/embedding signals from introducing
+    // competing entities (e.g., a CSM linked to multiple accounts).
+    let junction_signals = signal_junction_lookup(db, event_id, meeting);
+    if !junction_signals.is_empty() {
+        log::debug!(
+            "resolve_meeting_entities: junction table definitive for event {}",
+            event_id
+        );
+        let fused = fuse_signals(&junction_signals, Some(db));
+        let mut outcomes: Vec<ResolutionOutcome> = Vec::new();
+        for ((entity_id, entity_type), (confidence, source)) in fused {
+            let entity = ResolvedEntity {
+                entity_id,
+                entity_type,
+                confidence: confidence.max(0.95), // Junction is always high confidence
+                source,
+            };
+            outcomes.push(ResolutionOutcome::Resolved(entity));
+        }
+        if !outcomes.is_empty() {
+            // Emit signals and return — skip all other resolution
+            for outcome in &outcomes {
+                if let ResolutionOutcome::Resolved(entity) = outcome {
+                    let value = serde_json::json!({
+                        "event_id": event_id,
+                        "source": entity.source,
+                        "outcome": "resolved",
+                    })
+                    .to_string();
+                    let _ = signals::bus::emit_signal(
+                        db,
+                        entity.entity_type.as_str(),
+                        &entity.entity_id,
+                        "entity_resolution",
+                        &entity.source,
+                        Some(&value),
+                        entity.confidence,
+                    );
+                }
+            }
+            return outcomes;
+        }
+    }
 
-    // Gather signals from all producers.
-    // Junction table is authoritative (user-confirmed links).
-    all_signals.extend(signal_junction_lookup(db, event_id, meeting));
+    // Gate 2: No junction links — run full signal cascade
+    let mut all_signals: Vec<ResolutionSignal> = Vec::new();
     all_signals.extend(signal_attendee_inference(db, meeting));
     all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(db, meeting));
     all_signals.extend(signal_keyword_match(db, meeting));
@@ -218,7 +262,7 @@ fn signal_junction_lookup(
 /// Signal 3: Attendee inference via person → entity links (majority vote).
 /// Confidence: 0.5 + 0.4 * (top_votes / total_attendees), capped at 0.90.
 fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal> {
-    let attendees = extract_attendee_emails(meeting);
+    let attendees = helpers::extract_attendee_emails(meeting);
     if attendees.is_empty() {
         return Vec::new();
     }
@@ -634,14 +678,8 @@ fn outcome_confidence(outcome: &ResolutionOutcome) -> f64 {
     }
 }
 
-/// Normalize a string for fuzzy matching (lowercase, alphanumeric only).
-fn normalize_key(value: &str) -> String {
-    value
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
-}
+// normalize_key moved to crate::helpers::normalize_key (DRY)
+use crate::helpers::normalize_key;
 
 /// Build multi-word tokens from text for fuzzy matching.
 /// Includes individual words (>= 3 chars) and adjacent word pairs.
@@ -674,128 +712,6 @@ fn keywords_match_text(keywords: &[String], search_text: &str) -> bool {
         }
     }
     false
-}
-
-/// Extract attendee emails from meeting JSON.
-fn extract_attendee_emails(meeting: &Value) -> Vec<String> {
-    // Try array format first (from calendar API)
-    if let Some(arr) = meeting.get("attendees").and_then(|v| v.as_array()) {
-        return arr
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| s.contains('@'))
-            .collect();
-    }
-    Vec::new()
-}
-
-/// Resolve an entity ID to (display_name, relative_path) within the Accounts directory.
-fn resolve_entity_to_account_match(
-    db: &ActionDb,
-    entity_id: &str,
-    accounts_dir: &Path,
-) -> Option<(String, String)> {
-    // Try entity table first
-    if let Ok(Some(entity)) = db.get_entity(entity_id) {
-        if entity.entity_type == EntityType::Account {
-            if let Some(matched) = find_account_dir_by_name(&entity.name, accounts_dir) {
-                return Some(matched);
-            }
-        }
-    }
-
-    // Try account table
-    if let Ok(Some(account)) = db.get_account(entity_id) {
-        if let Some(matched) = find_account_dir_by_name(&account.name, accounts_dir) {
-            return Some(matched);
-        }
-    }
-
-    // Try id-hint slug format (parent--child)
-    if let Some(matched) = find_account_dir_by_id_hint(entity_id, accounts_dir) {
-        return Some(matched);
-    }
-
-    None
-}
-
-/// Try to find an account directory by name (case-insensitive).
-/// Returns (display_name, relative_path).
-fn find_account_dir_by_name(name: &str, accounts_dir: &Path) -> Option<(String, String)> {
-    if !accounts_dir.is_dir() {
-        return None;
-    }
-
-    let key = normalize_key(name);
-    if key.is_empty() {
-        return None;
-    }
-
-    let entries = std::fs::read_dir(accounts_dir).ok()?;
-    for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let dir_name = entry.file_name().to_string_lossy().to_string();
-        if normalize_key(&dir_name) == key {
-            return Some((dir_name.clone(), dir_name));
-        }
-
-        // Check child BU directories
-        if let Ok(children) = std::fs::read_dir(entry.path()) {
-            for child in children.flatten() {
-                if !child.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                    continue;
-                }
-                let child_name = child.file_name().to_string_lossy().to_string();
-                if normalize_key(&child_name) == key {
-                    return Some((
-                        child_name.clone(),
-                        format!("{}/{}", dir_name, child_name),
-                    ));
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Try resolving from parent--child slug format.
-fn find_account_dir_by_id_hint(account_ref: &str, accounts_dir: &Path) -> Option<(String, String)> {
-    let (parent_hint, child_hint) = account_ref.split_once("--")?;
-    let parent_key = normalize_key(parent_hint);
-    let child_key = normalize_key(child_hint);
-    if parent_key.is_empty() || child_key.is_empty() {
-        return None;
-    }
-
-    let entries = std::fs::read_dir(accounts_dir).ok()?;
-    for entry in entries.flatten() {
-        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let parent_name = entry.file_name().to_string_lossy().to_string();
-        if normalize_key(&parent_name) != parent_key {
-            continue;
-        }
-        if let Ok(children) = std::fs::read_dir(entry.path()) {
-            for child in children.flatten() {
-                if !child.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
-                    continue;
-                }
-                let child_name = child.file_name().to_string_lossy().to_string();
-                if normalize_key(&child_name) == child_key {
-                    return Some((
-                        child_name.clone(),
-                        format!("{}/{}", parent_name, child_name),
-                    ));
-                }
-            }
-        }
-    }
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -904,7 +820,7 @@ mod tests {
         let meeting = serde_json::json!({
             "attendees": ["alice@acme.com", "bob@partner.com", "not-an-email"]
         });
-        let emails = extract_attendee_emails(&meeting);
+        let emails = helpers::extract_attendee_emails(&meeting);
         assert_eq!(emails.len(), 2);
         assert!(emails.contains(&"alice@acme.com".to_string()));
         assert!(emails.contains(&"bob@partner.com".to_string()));
@@ -913,7 +829,7 @@ mod tests {
     #[test]
     fn test_extract_attendee_emails_empty() {
         let meeting = serde_json::json!({ "title": "test" });
-        assert!(extract_attendee_emails(&meeting).is_empty());
+        assert!(helpers::extract_attendee_emails(&meeting).is_empty());
     }
 
     #[test]

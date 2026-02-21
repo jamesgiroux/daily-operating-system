@@ -98,6 +98,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }];
         let blocks = available_blocks_from_live(&events, day);
         assert!(!blocks.is_empty());
@@ -122,6 +123,9 @@ mod tests {
             prep_reviewed: None,
             linked_entities: None,
             suggested_unarchive_account_id: None,
+            intelligence_quality: None,
+            calendar_attendees: None,
+            calendar_description: None,
         }];
         let blocks = available_blocks_from_schedule_start_iso(&meetings, day);
         assert!(!blocks.is_empty());
@@ -139,6 +143,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }];
 
         let before = available_blocks_from_live(&events, day);
@@ -153,6 +158,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         });
         let after = available_blocks_from_live(&events, day);
         let after_total: u32 = after.iter().map(|b| b.duration_minutes).sum();

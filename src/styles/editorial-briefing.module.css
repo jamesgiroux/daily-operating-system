@@ -183,66 +183,81 @@
 }
 
 /* =============================================================================
-   KEY PEOPLE — Compact inline flow
+   THE ROOM — Grouped attendee display (their side / our side)
    ============================================================================= */
 
-.keyPeople {
-  margin-bottom: 32px;
+.theRoom {
+  margin-bottom: 24px;
 }
 
-.keyPeopleLabel {
+.theRoomLabel {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
-  margin-bottom: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-rule-light);
 }
 
-.keyPeopleFlow {
+.theRoomGroup {
+  margin-bottom: 14px;
+}
+
+.theRoomGroupLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.theRoomPerson {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  padding: 3px 0;
   font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.75;
+  font-size: 13px;
+  line-height: 1.4;
   color: var(--color-text-primary);
 }
 
-.keyPeoplePerson {
-  white-space: nowrap;
-}
-
-.keyPeopleName {
+.theRoomName {
   font-weight: 500;
 }
 
-.keyPeopleRole {
-  font-weight: 300;
-  color: var(--color-text-secondary);
-  margin-left: 4px;
-}
-
-.keyPeopleTemp {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-left: 4px;
-  vertical-align: middle;
-  position: relative;
-  top: -1px;
-}
-
-.keyPeopleTempHot { background: var(--color-garden-sage); }
-.keyPeopleTempWarm { background: var(--color-spice-saffron); }
-.keyPeopleTempNeutral { background: var(--color-paper-linen); }
-.keyPeopleTempCold { background: var(--color-spice-terracotta); }
-
-.keyPeopleSep {
+.theRoomSep {
   color: var(--color-text-tertiary);
   opacity: 0.4;
-  margin: 0 10px;
+  margin: 0 6px;
+  font-size: 11px;
 }
+
+.theRoomRole {
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.theRoomCompany {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-text-tertiary);
+  margin-left: 6px;
+}
+
+/* Legacy aliases for backward compat if any external refs exist */
+.keyPeople { margin-bottom: 24px; }
+.keyPeopleLabel { display: none; }
+.keyPeopleFlow { display: none; }
 
 /* =============================================================================
    PREP GRID — 2-column editorial layout
@@ -643,6 +658,18 @@
   flex-shrink: 0;
 }
 
+.upNextPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: rgba(126, 170, 123, 0.15);
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
 .scheduleSubtitle {
   font-family: var(--font-sans);
   font-size: 13px;
@@ -654,12 +681,15 @@
   gap: 6px;
 }
 
-.schedulePrepDot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-garden-sage);
-  flex-shrink: 0;
+/* .schedulePrepDot and .schedulePrepDotMuted removed — I329: hasPrep fallback eliminated */
+
+.prepFlag {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-spice-terracotta);
+  padding: 6px 0;
+  margin-bottom: 8px;
 }
 
 .expandHint {
@@ -1091,6 +1121,18 @@
 }
 
 /* =============================================================================
+   BRIEFING CARD OVERRIDE — Parks shared MeetingCard accent bar in margin gutter
+   ============================================================================= */
+
+.briefingCardOverride::before {
+  left: -28px;
+}
+
+.briefingCardOverrideActive::before {
+  left: -8px;
+}
+
+/* =============================================================================
    RESPONSIVE BREAKPOINTS
    ============================================================================= */
 
@@ -1138,6 +1180,14 @@
   }
 
   .scheduleRowActive::before {
+    left: -4px;
+  }
+
+  .briefingCardOverride::before {
+    left: -16px;
+  }
+
+  .briefingCardOverrideActive::before {
     left: -4px;
   }
 

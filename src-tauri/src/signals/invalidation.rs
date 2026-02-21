@@ -37,6 +37,7 @@ pub fn check_and_invalidate_preps(
         "title_change",
         "company_change",
         "person_departed",
+        "pre_meeting_context",
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {
@@ -113,13 +114,7 @@ impl ActionDb {
 mod tests {
     use super::*;
     use std::sync::Mutex;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn make_signal(signal_type: &str, confidence: f64) -> SignalEvent {
         SignalEvent {

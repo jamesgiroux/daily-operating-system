@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::Utc;
-use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
@@ -37,7 +36,7 @@ impl Executor {
     }
 
     /// Read AI model config from current config, falling back to defaults.
-    fn ai_model_config(&self) -> AiModelConfig {
+    pub(crate) fn ai_model_config(&self) -> AiModelConfig {
         self.state
             .config
             .read()
@@ -75,7 +74,7 @@ impl Executor {
     }
 
     /// Build set of known external domains from account_domains + person emails.
-    fn build_known_domains(&self) -> HashSet<String> {
+    pub(crate) fn build_known_domains(&self) -> HashSet<String> {
         let mut domains = HashSet::new();
         if let Ok(guard) = self.state.db.lock() {
             if let Some(db) = guard.as_ref() {
@@ -102,7 +101,7 @@ impl Executor {
         domains
     }
 
-    fn enrich_emails_with_fallback(
+    pub(crate) fn enrich_emails_with_fallback(
         &self,
         data_dir: &Path,
         workspace: &Path,
@@ -143,7 +142,7 @@ impl Executor {
         }
     }
 
-    fn sync_email_signals_from_payload(&self, data_dir: &Path) -> Result<usize, String> {
+    pub(crate) fn sync_email_signals_from_payload(&self, data_dir: &Path) -> Result<usize, String> {
         let emails_path = data_dir.join("emails.json");
         if !emails_path.exists() {
             return Ok(0);
@@ -320,6 +319,19 @@ impl Executor {
                                             display_name.as_deref(),
                                             0.8,
                                         );
+                                        // Emit negative_sentiment for propagation rules
+                                        // (e.g. rule_champion_sentiment → champion_risk)
+                                        if sentiment == Some("negative") {
+                                            let _ = crate::signals::bus::emit_signal(
+                                                db,
+                                                "person",
+                                                pid,
+                                                "negative_sentiment",
+                                                "email_signal",
+                                                Some(signal_text),
+                                                confidence.unwrap_or(0.7),
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -495,6 +507,17 @@ impl Executor {
                             log::warn!("Impact rollup failed (non-fatal): {}", e);
                         }
                     }
+                }
+            }
+        }
+
+        // Step 1.6: Auto-archive stale pending actions (30+ days old)
+        {
+            if let Ok(db) = crate::db::ActionDb::open() {
+                match db.archive_stale_actions(30) {
+                    Ok(0) => {}
+                    Ok(n) => log::info!("Auto-archived {} stale pending actions (30+ days)", n),
+                    Err(e) => log::warn!("Failed to auto-archive stale actions: {}", e),
                 }
             }
         }
@@ -746,44 +769,6 @@ impl Executor {
             .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
         let _ = self.app_handle.emit("operation-delivered", "week-overview");
 
-        // --- Phase 3: AI enrichment (fault-tolerant) ---
-        self.emit_status_event(
-            WorkflowId::Week,
-            WorkflowStatus::Running {
-                started_at: Utc::now(),
-                phase: WorkflowPhase::Enriching,
-                execution_id: execution_id.to_string(),
-            },
-        );
-
-        let data_dir = workspace.join("_today").join("data");
-        let user_ctx = self
-            .state
-            .config
-            .read()
-            .ok()
-            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or(crate::types::UserContext {
-                name: None,
-                company: None,
-                title: None,
-                focus: None,
-            });
-
-        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &self.ai_model_config());
-        let mut enrichment_error: Option<String> = None;
-        if let Err(e) = crate::workflow::deliver::enrich_week(
-            &data_dir,
-            &synthesis_pty,
-            workspace,
-            &user_ctx,
-            &self.state,
-        ) {
-            log::warn!("Week enrichment failed (non-fatal): {}", e);
-            enrichment_error = Some(format!("Week enrichment incomplete: {}", e));
-        }
-        let _ = self.app_handle.emit("operation-delivered", "week-enriched");
-
         // --- Completion ---
         let finished_at = Utc::now();
         let duration_secs = (finished_at - record.started_at).num_seconds() as u64;
@@ -792,17 +777,6 @@ impl Executor {
             r.finished_at = Some(finished_at);
             r.duration_secs = Some(duration_secs);
             r.success = true;
-            r.error_message = enrichment_error.clone();
-            r.error_phase = if enrichment_error.is_some() {
-                Some(WorkflowPhase::Enriching)
-            } else {
-                None
-            };
-            r.can_retry = if enrichment_error.is_some() {
-                Some(true)
-            } else {
-                None
-            };
         });
 
         if matches!(
@@ -1117,6 +1091,18 @@ impl Executor {
         }
         let _ = self.app_handle.emit("operation-delivered", "briefing");
 
+        // Re-deliver schedule.json after all enrichment so the dashboard
+        // reflects AI-enriched prep summaries, not the pre-enrichment stubs.
+        let schedule_data = {
+            let db_ref = own_db.as_ref();
+            crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)
+                .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?
+        };
+        let _ = self
+            .app_handle
+            .emit("operation-delivered", "schedule-refreshed");
+        log::info!("Today pipeline: schedule re-delivered after enrichment");
+
         // Final manifest (partial: false — all ops complete)
         crate::workflow::deliver::deliver_manifest(
             &directive,
@@ -1220,93 +1206,10 @@ impl Executor {
             return Err(format!("Email refresh failed: {}", e));
         }
 
-        // Step 2: Read refresh directive
-        let refresh_path = data_dir.join("email-refresh-directive.json");
-
-        if !refresh_path.exists() {
-            return Err("Email refresh did not produce directive".to_string());
-        }
-
-        let raw = std::fs::read_to_string(&refresh_path)
-            .map_err(|e| format!("Failed to read refresh directive: {}", e))?;
-        let refresh_data: serde_json::Value = serde_json::from_str(&raw)
-            .map_err(|e| format!("Failed to parse refresh directive: {}", e))?;
-
-        // Step 3: Build emails data matching deliver_emails output shape
-        let emails_section = refresh_data.get("emails").cloned().unwrap_or(json!({}));
-
-        let map_email = |e: &serde_json::Value, default_priority: &str| -> serde_json::Value {
-            json!({
-                "id": e.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "sender": e.get("from").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "senderEmail": e.get("from_email").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "subject": e.get("subject").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "snippet": e.get("snippet").and_then(serde_json::Value::as_str).unwrap_or(""),
-                "priority": e.get("priority").and_then(serde_json::Value::as_str).unwrap_or(default_priority),
-            })
-        };
-
-        let high_priority: Vec<serde_json::Value> = emails_section
-            .get("highPriority")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().map(|e| map_email(e, "high")).collect())
-            .unwrap_or_default();
-
-        // Classified contains medium + low emails
-        let classified = emails_section
-            .get("classified")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-
-        let mut medium_priority: Vec<serde_json::Value> = Vec::new();
-        let mut low_priority: Vec<serde_json::Value> = Vec::new();
-        for e in &classified {
-            let prio = e
-                .get("priority")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("medium");
-            let mapped = map_email(e, prio);
-            match prio {
-                "low" => low_priority.push(mapped),
-                _ => medium_priority.push(mapped),
-            }
-        }
-
-        let now = Utc::now().to_rfc3339();
-        let sync = EmailSyncStatus {
-            state: EmailSyncState::Ok,
-            stage: EmailSyncStage::Refresh,
-            code: None,
-            message: None,
-            using_last_known_good: Some(false),
-            can_retry: Some(true),
-            last_attempt_at: Some(now.clone()),
-            last_success_at: Some(now),
-        };
-        let emails_json = json!({
-            "highPriority": high_priority,
-            "mediumPriority": medium_priority,
-            "lowPriority": low_priority,
-            "stats": {
-                "highCount": high_priority.len(),
-                "mediumCount": medium_priority.len(),
-                "lowCount": low_priority.len(),
-                "total": high_priority.len() + medium_priority.len() + low_priority.len(),
-            },
-            "sync": serde_json::to_value(&sync)
-                .map_err(|e| format!("Failed to serialize email sync status: {}", e))?,
-        });
-
-        crate::workflow::deliver::write_json(&data_dir.join("emails.json"), &emails_json)?;
+        // Step 2: Read refresh directive → build and write emails.json
+        let _email_ids = crate::google::deliver_from_refresh_directive(&data_dir, &self.app_handle)?;
         let _ = self.app_handle.emit("operation-delivered", "emails");
-        self.emit_email_sync_status(&sync);
-        log::info!(
-            "Email refresh: emails.json written ({} high, {} medium, {} low)",
-            high_priority.len(),
-            medium_priority.len(),
-            low_priority.len()
-        );
+        let _ = self.app_handle.emit("emails-updated", ());
 
         // Step 4: AI enrichment (fault-tolerant)
         let user_ctx = self
@@ -1357,6 +1260,7 @@ impl Executor {
         let _ = self
             .app_handle
             .emit("operation-delivered", "emails-enriched");
+        let _ = self.app_handle.emit("emails-updated", ());
 
         // I357: Semantic reclassification (opt-in, email refresh path)
         {
@@ -1394,8 +1298,8 @@ impl Executor {
             }
         }
 
-        // Step 5: Clean up refresh directive
-        let _ = std::fs::remove_file(&refresh_path);
+        // Wake the email poller so it resets its sleep timer
+        self.state.email_poller_wake.notify_one();
 
         log::info!("Email refresh complete");
         Ok(())

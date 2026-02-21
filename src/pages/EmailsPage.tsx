@@ -7,9 +7,37 @@ import { EditorialError } from "@/components/editorial/EditorialError";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
-import { RefreshCw, X } from "lucide-react";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { X } from "lucide-react";
 import s from "@/styles/editorial-briefing.module.css";
 import type { EmailBriefingData } from "@/types";
+
+// =============================================================================
+// Self-contained so refreshing-state renders don't bubble to the whole page.
+function EmailRefreshButton() {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await invoke<string>("refresh_emails");
+    } catch (err) {
+      console.error("Email refresh failed:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  return (
+    <FolioRefreshButton
+      onClick={handleRefresh}
+      loading={refreshing}
+      loadingLabel="Refreshing…"
+      title={refreshing ? "Refreshing emails..." : "Check for new emails"}
+    />
+  );
+}
 
 // =============================================================================
 // Page
@@ -20,14 +48,16 @@ export default function EmailsPage() {
   const [data, setData] = useState<EmailBriefingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const loadEmails = useCallback(async () => {
     try {
       const [result, dismissedItems] = await Promise.all([
         invoke<EmailBriefingData>("get_emails_enriched"),
-        invoke<string[]>("list_dismissed_email_items").catch(() => [] as string[]),
+        invoke<string[]>("list_dismissed_email_items").catch((err) => {
+          console.error("list_dismissed_email_items failed:", err);
+          return [] as string[];
+        }),
       ]);
       setData(result);
       setDismissed(new Set(dismissedItems));
@@ -41,6 +71,11 @@ export default function EmailsPage() {
   useEffect(() => {
     loadEmails();
   }, [loadEmails]);
+
+  // Silent refresh on backend email events
+  const silentRefresh = useCallback(() => { loadEmails(); }, [loadEmails]);
+  useTauriEvent("emails-updated", silentRefresh);
+  useTauriEvent("workflow-completed", silentRefresh);
 
   const handleDismiss = useCallback(async (
     itemType: string,
@@ -65,18 +100,6 @@ export default function EmailsPage() {
       console.error("Dismiss failed:", err);
     }
   }, []);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await invoke<string>("refresh_emails");
-      await loadEmails();
-    } catch (err) {
-      console.error("Email refresh failed:", err);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [loadEmails]);
 
   // Email types to exclude — operational noise, not strategic intelligence
   const NOISE_EMAIL_TYPES = new Set([
@@ -162,19 +185,7 @@ export default function EmailsPage() {
     }, 0);
   }, [entityThreads]);
 
-  const folioActions = useMemo(() => (
-    <button
-      onClick={handleRefresh}
-      disabled={refreshing}
-      className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-      title={refreshing ? "Refreshing emails..." : "Check for new emails"}
-    >
-      <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em" }}>
-        {refreshing ? "Refreshing..." : "Refresh"}
-      </span>
-    </button>
-  ), [handleRefresh, refreshing]);
+  const folioActions = useMemo(() => <EmailRefreshButton />, []);
 
   const shellConfig = useMemo(
     () => ({

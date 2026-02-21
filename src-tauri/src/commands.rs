@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -11,155 +11,50 @@ use tauri::{Emitter, Manager, State};
 
 use crate::executor::request_workflow_execution;
 use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
-use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_directive, load_emails_json,
-    load_emails_json_with_sync, load_prep_json, load_schedule_json, DataFreshness,
-};
-use crate::parser::{count_inbox, list_inbox_files};
+use crate::json_loader::load_emails_json;
+use crate::parser::list_inbox_files;
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
-use crate::state::{reload_config, AppState, DbTryRead};
+use crate::state::{reload_config, AppState};
 use crate::types::{
-    Action, CalendarEvent, CapturedOutcome, Config, DailyFocus, DashboardData, DayStats,
-    EmailBriefingData, EmailBriefingStats, EmailSignal, EmailSyncStatus, EnrichedEmail,
-    EntityEmailThread, ExecutionRecord, FullMeetingPrep, GoogleAuthStatus, InboxFile,
-    LiveProactiveSuggestion, MeetingIntelligence, MeetingType, OverlayStatus,
-    PostMeetingCaptureConfig, Priority, SourceReference, WeekOverview, WorkflowId, WorkflowStatus,
+    CalendarEvent, CapturedOutcome, Config,
+    EmailBriefingData, EmailSignal,
+    ExecutionRecord, FullMeetingPrep, GoogleAuthStatus, InboxFile,
+    LiveProactiveSuggestion, MeetingIntelligence,
+    PostMeetingCaptureConfig, SourceReference, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
-/// Result type for dashboard data loading
-#[derive(Debug, serde::Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum DashboardResult {
-    Success {
-        data: DashboardData,
-        freshness: DataFreshness,
-        #[serde(rename = "googleAuth")]
-        google_auth: GoogleAuthStatus,
-    },
-    Empty {
-        message: String,
-        #[serde(rename = "googleAuth")]
-        google_auth: GoogleAuthStatus,
-    },
-    Error {
-        message: String,
-    },
-}
+// Result types now in services
+pub use crate::services::dashboard::DashboardResult;
+pub use crate::services::dashboard::WeekResult;
+pub use crate::services::actions::ActionsResult;
 
 /// p95 latency budgets for hot read commands.
 const READ_CMD_LATENCY_BUDGET_MS: u128 = 100;
-const DASHBOARD_LATENCY_BUDGET_MS: u128 = 300;
 const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
 // TODO(I197 follow-up): migrate remaining command DB call sites to AppState DB
 // helpers in passes, prioritizing frequent reads before one-off write paths.
 
-/// Build an editorial prose summary for an entity's email signals.
-/// Instead of "2 risks, 1 expansion" produces something like
-/// "Risk signals detected across 3 emails. Expansion opportunity flagged."
+// Delegated to crate::services::entities
 fn build_entity_signal_prose(signals: &[EmailSignal], email_count: usize) -> String {
-    use std::collections::HashMap;
-    let mut type_counts: HashMap<&str, usize> = HashMap::new();
-    for s in signals {
-        let key = s.signal_type.as_str();
-        *type_counts.entry(key).or_insert(0) += 1;
-    }
-
-    if type_counts.is_empty() {
-        return format!(
-            "{} email{} this period.",
-            email_count,
-            if email_count == 1 { "" } else { "s" },
-        );
-    }
-
-    let mut parts = Vec::new();
-
-    // Risks first (most newsworthy)
-    for key in &["risk", "churn", "escalation"] {
-        if let Some(&count) = type_counts.get(key) {
-            parts.push(if count == 1 {
-                format!("One {} signal detected.", key)
-            } else {
-                format!("{} {} signals detected.", count, key)
-            });
-        }
-    }
-
-    // Positive signals
-    for key in &["expansion", "positive", "success"] {
-        if let Some(&count) = type_counts.get(key) {
-            parts.push(if count == 1 {
-                format!("{} opportunity flagged.", capitalize_first(key))
-            } else {
-                format!("{} {} signals.", count, key)
-            });
-        }
-    }
-
-    // Informational
-    for key in &["question", "timeline", "sentiment", "feedback", "relationship"] {
-        if let Some(&count) = type_counts.get(key) {
-            if count == 1 {
-                parts.push(format!("{} signal noted.", capitalize_first(key)));
-            } else {
-                parts.push(format!("{} {} signals.", count, key));
-            }
-        }
-    }
-
-    // Catch any remaining types
-    for (key, &count) in &type_counts {
-        let is_handled = ["risk", "churn", "escalation", "expansion", "positive",
-            "success", "question", "timeline", "sentiment", "feedback", "relationship"]
-            .contains(key);
-        if !is_handled {
-            parts.push(format!("{} {} signal{}.", count, key, if count == 1 { "" } else { "s" }));
-        }
-    }
-
-    if parts.is_empty() {
-        format!(
-            "{} email{} this period.",
-            email_count,
-            if email_count == 1 { "" } else { "s" },
-        )
-    } else {
-        parts.join(" ")
-    }
-}
-
-fn capitalize_first(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().to_string() + c.as_str(),
-    }
+    crate::services::entities::build_entity_signal_prose(signals, email_count)
 }
 
 fn normalize_match_key(value: &str) -> String {
-    value
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
+    crate::services::entities::normalize_match_key(value)
 }
 
 fn attendee_domains(attendees: &[String]) -> HashSet<String> {
-    attendees
-        .iter()
-        .filter_map(|a| a.split('@').nth(1))
-        .map(|d| d.to_lowercase())
-        .collect()
+    crate::services::entities::attendee_domains(attendees)
 }
 
-fn build_live_event_domain_map(events: &[CalendarEvent]) -> HashMap<String, HashSet<String>> {
-    let mut map = HashMap::new();
-    for event in events {
-        map.insert(event.id.clone(), attendee_domains(&event.attendees));
-    }
-    map
+fn auto_extract_title_keywords(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    meeting_title: &str,
+) -> Result<(), String> {
+    crate::services::entities::auto_extract_title_keywords(db, entity_id, entity_type, meeting_title)
 }
 
 fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u128) {
@@ -195,374 +90,7 @@ pub fn reload_configuration(state: State<Arc<AppState>>) -> Result<Config, Strin
 /// Get dashboard data from workspace _today/data/ JSON files
 #[tauri::command]
 pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
-    let started = std::time::Instant::now();
-    let mut db_busy = false;
-
-    let result = (|| {
-        // Get Google auth status for frontend
-        let google_auth = state
-            .google_auth
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or(GoogleAuthStatus::NotConfigured);
-        // Get config
-        let config = match state.config.read() {
-            Ok(guard) => match guard.clone() {
-                Some(c) => c,
-                None => {
-                    return DashboardResult::Error {
-                        message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
-                    }
-                }
-            },
-            Err(_) => {
-                return DashboardResult::Error {
-                    message: "Internal error: config lock poisoned".to_string(),
-                }
-            }
-        };
-
-        let workspace = Path::new(&config.workspace_path);
-        let today_dir = workspace.join("_today");
-
-        // Check if _today directory exists
-        if !today_dir.exists() {
-            return DashboardResult::Empty {
-                message: "Your daily briefing will appear here once generated.".to_string(),
-                google_auth,
-            };
-        }
-
-        // Check for data directory
-        let data_dir = today_dir.join("data");
-        if !data_dir.exists() {
-            return DashboardResult::Empty {
-                message: "Your daily briefing will appear here once generated.".to_string(),
-                google_auth,
-            };
-        }
-
-        // Load from JSON
-        let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
-            Ok(data) => data,
-            Err(_) => {
-                return DashboardResult::Empty {
-                    message: "Your daily briefing will appear here once generated.".to_string(),
-                    google_auth,
-                }
-            }
-        };
-
-        // Merge briefing meetings with live calendar events (ADR-0032)
-        let live_events = state
-            .calendar_events
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tz: chrono_tz::Tz = config
-            .schedules
-            .today
-            .timezone
-            .parse()
-            .unwrap_or(chrono_tz::America::New_York);
-        let mut meetings =
-            crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
-
-        // Consolidate all dashboard DB reads into a single lock acquisition (I235).
-        // This reduces lock contention and improves dashboard load latency.
-        let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-        struct DashboardDbSnapshot {
-            reviewed: Option<HashMap<String, String>>,
-            entity_map: Option<HashMap<String, Vec<crate::types::LinkedEntity>>>,
-            accounts_with_domains: Option<Vec<(crate::db::DbAccount, Vec<String>)>>,
-            non_briefing_actions: Option<Vec<crate::db::DbAction>>,
-            focus_candidates: Option<Vec<crate::db::DbAction>>,
-        }
-
-        let db_snapshot = match state.with_db_try_read(|db| {
-            DashboardDbSnapshot {
-                reviewed: db.get_reviewed_preps().ok(),
-                entity_map: db.get_meeting_entity_map(&meeting_ids).ok(),
-                accounts_with_domains: db.get_all_accounts_with_domains(true).ok(),
-                non_briefing_actions: db.get_non_briefing_pending_actions().ok(),
-                focus_candidates: db.get_focus_candidate_actions(7).ok(),
-            }
-        }) {
-            DbTryRead::Ok(snap) => Some(snap),
-            DbTryRead::Busy => {
-                db_busy = true;
-                None
-            }
-            DbTryRead::Unavailable | DbTryRead::Poisoned => None,
-        };
-
-        // Apply DB data to meetings (outside the lock)
-        if let Some(ref snap) = db_snapshot {
-            // Annotate meetings with prep-reviewed state (ADR-0033)
-            if let Some(ref reviewed) = snap.reviewed {
-                for m in &mut meetings {
-                    if reviewed.contains_key(&m.id) {
-                        m.prep_reviewed = Some(true);
-                    }
-                }
-            }
-
-            // Annotate meetings with linked entities (I52)
-            if let Some(ref entity_map) = snap.entity_map {
-                for m in &mut meetings {
-                    if let Some(entities) = entity_map.get(&m.id) {
-                        let entities_vec: Vec<crate::types::LinkedEntity> = entities.clone();
-                        m.linked_entities = Some(entities_vec);
-                    }
-                }
-            }
-
-            // Flag meetings matching archived accounts for unarchive suggestion (I161)
-            if let Some(ref accounts_with_domains) = snap.accounts_with_domains {
-                let mut archived = Vec::new();
-                let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
-                for (account, domains) in accounts_with_domains {
-                    if account.archived {
-                        let domain_set: HashSet<String> =
-                            domains.iter().map(|d| d.to_lowercase()).collect();
-                        domains_by_account.insert(account.id.clone(), domain_set);
-                        archived.push(account);
-                    }
-                }
-
-                let archived_ids: HashSet<String> =
-                    archived.iter().map(|a| a.id.to_lowercase()).collect();
-                let live_domains = build_live_event_domain_map(&live_events);
-                for m in &mut meetings {
-                    let linked_account_id = m.linked_entities.as_ref()
-                        .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
-                        .map(|e| e.id.clone());
-                    let linked_account_name = m.linked_entities.as_ref()
-                        .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
-                        .map(|e| e.name.clone());
-
-                    if let Some(ref account_id) = linked_account_id {
-                        if !archived_ids.contains(&account_id.to_lowercase()) {
-                            continue;
-                        }
-                    }
-
-                    let account_hint_key = linked_account_name
-                        .as_deref()
-                        .map(normalize_match_key)
-                        .unwrap_or_default();
-                    let account_id_key = linked_account_id
-                        .as_deref()
-                        .map(normalize_match_key)
-                        .unwrap_or_default();
-                    let meeting_domains = m
-                        .calendar_event_id
-                        .as_ref()
-                        .and_then(|id| live_domains.get(id))
-                        .or_else(|| live_domains.get(&m.id));
-
-                    let mut best: Option<(i32, String, String)> = None;
-                    for archived_account in &archived {
-                        let mut score = 0i32;
-                        let archived_id_key = normalize_match_key(&archived_account.id);
-                        let archived_name_key = normalize_match_key(&archived_account.name);
-
-                        if !account_id_key.is_empty() && account_id_key == archived_id_key {
-                            score = score.max(100);
-                        }
-                        if !account_hint_key.is_empty()
-                            && (account_hint_key == archived_id_key
-                                || account_hint_key == archived_name_key)
-                        {
-                            score = score.max(90);
-                        }
-                        if let Some(domains) = meeting_domains {
-                            if let Some(account_domains) =
-                                domains_by_account.get(&archived_account.id)
-                            {
-                                if !account_domains.is_empty()
-                                    && domains.iter().any(|d| account_domains.contains(d))
-                                {
-                                    score = score.max(80);
-                                }
-                            }
-                        }
-
-                        if score == 0 {
-                            continue;
-                        }
-                        let tie = archived_account.id.to_lowercase();
-                        let candidate = (score, tie.clone(), archived_account.id.clone());
-                        if best
-                            .as_ref()
-                            .map(|(s, t, _)| score > *s || (score == *s && tie < *t))
-                            .unwrap_or(true)
-                        {
-                            best = Some(candidate);
-                        }
-                    }
-
-                    if let Some((score, _, account_id)) = best {
-                        if score >= 80 {
-                            m.suggested_unarchive_account_id = Some(account_id);
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut actions = load_actions_json(&today_dir).unwrap_or_default();
-
-        // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
-        if let Some(ref snap) = db_snapshot {
-            if let Some(ref db_actions) = snap.non_briefing_actions {
-                let json_titles: HashSet<String> = actions
-                    .iter()
-                    .map(|a| a.title.to_lowercase().trim().to_string())
-                    .collect();
-                for dba in db_actions {
-                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                        let priority = match dba.priority.as_str() {
-                            "P1" => Priority::P1,
-                            "P3" => Priority::P3,
-                            _ => Priority::P2,
-                        };
-                        actions.push(Action {
-                            id: dba.id.clone(),
-                            title: dba.title.clone(),
-                            account: dba.account_id.clone(),
-                            due_date: dba.due_date.clone(),
-                            priority,
-                            status: crate::types::ActionStatus::Pending,
-                            is_overdue: None,
-                            context: dba.context.clone(),
-                            source: dba.source_label.clone(),
-                            days_overdue: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) =
-            match load_emails_json_with_sync(&today_dir) {
-                Ok(payload) => {
-                    let emails = if payload.emails.is_empty() {
-                        None
-                    } else {
-                        Some(payload.emails)
-                    };
-                    (emails, payload.sync)
-                }
-                Err(_) => (
-                    load_emails_json(&today_dir).ok().filter(|e| !e.is_empty()),
-                    None,
-                ),
-            };
-
-        // Compute capacity-aware focus priorities (live, not a briefing artifact)
-        let focus: Option<DailyFocus> = (|| {
-            let today_date = chrono::Local::now().date_naive();
-            let capacity = crate::focus_capacity::compute_focus_capacity(
-                crate::focus_capacity::FocusCapacityInput {
-                    meetings: meetings.clone(),
-                    source: if live_events.is_empty() {
-                        crate::focus_capacity::FocusCapacitySource::BriefingFallback
-                    } else {
-                        crate::focus_capacity::FocusCapacitySource::Live
-                    },
-                    timezone: tz,
-                    work_hours_start: config.google.work_hours_start,
-                    work_hours_end: config.google.work_hours_end,
-                    day_date: today_date,
-                },
-            );
-            let candidates = match db_snapshot.as_ref().and_then(|s| s.focus_candidates.clone()) {
-                Some(c) => c,
-                None => return None,
-            };
-            let (prioritized, top_three, implications) =
-                crate::focus_prioritization::prioritize_actions(
-                    candidates,
-                    capacity.available_minutes,
-                );
-            Some(DailyFocus {
-                available_minutes: capacity.available_minutes,
-                deep_work_minutes: capacity.deep_work_minutes,
-                meeting_minutes: capacity.meeting_minutes,
-                meeting_count: capacity.meeting_count,
-                prioritized_actions: prioritized,
-                top_three,
-                implications,
-                available_blocks: capacity.available_blocks,
-            })
-        })();
-
-        // Calculate stats (exclude cancelled meetings)
-        let inbox_count = count_inbox(workspace);
-        let active_meetings: Vec<_> = meetings
-            .iter()
-            .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
-            .collect();
-        let stats = DayStats {
-            total_meetings: active_meetings.len(),
-            customer_meetings: active_meetings
-                .iter()
-                .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
-                .count(),
-            actions_due: actions.len(),
-            inbox_count,
-        };
-
-        let freshness = check_data_freshness(&today_dir);
-
-        // Load email narrative + replies_needed from directive (I355)
-        let (email_narrative, replies_needed) = load_directive(&today_dir)
-            .map(|d| (d.emails.narrative, d.emails.replies_needed))
-            .unwrap_or_default();
-
-        DashboardResult::Success {
-            data: DashboardData {
-                overview,
-                stats,
-                meetings,
-                actions,
-                emails,
-                email_sync,
-                focus,
-                email_narrative,
-                replies_needed,
-            },
-            freshness,
-            google_auth,
-        }
-    })();
-
-    let elapsed_ms = started.elapsed().as_millis();
-    crate::latency::record_latency(
-        "get_dashboard_data",
-        elapsed_ms,
-        DASHBOARD_LATENCY_BUDGET_MS,
-    );
-    if db_busy {
-        crate::latency::increment_degraded("get_dashboard_data");
-    }
-    if elapsed_ms > DASHBOARD_LATENCY_BUDGET_MS {
-        log::warn!(
-            "get_dashboard_data exceeded latency budget: {}ms > {}ms (db_busy={})",
-            elapsed_ms,
-            DASHBOARD_LATENCY_BUDGET_MS,
-            db_busy
-        );
-    } else {
-        log::debug!(
-            "get_dashboard_data completed in {}ms (db_busy={})",
-            elapsed_ms,
-            db_busy
-        );
-    }
-
-    result
+    crate::services::dashboard::get_dashboard_data(&state)
 }
 
 /// Trigger a workflow execution
@@ -704,69 +232,14 @@ fn load_meeting_prep_from_sources(
     today_dir: &Path,
     meeting: &crate::db::DbMeeting,
 ) -> Option<FullMeetingPrep> {
-    if let Ok(prep) = load_prep_json(today_dir, &meeting.id) {
-        return Some(prep);
-    }
-    if let Some(ref frozen) = meeting.prep_frozen_json {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(frozen) {
-            if let Some(prep_val) = value.get("prep") {
-                if let Ok(prep) = serde_json::from_value::<FullMeetingPrep>(prep_val.clone()) {
-                    return Some(prep);
-                }
-            }
-            if let Ok(prep) = serde_json::from_value::<FullMeetingPrep>(value) {
-                return Some(prep);
-            }
-        }
-    }
-    if let Some(ref prep_json) = meeting.prep_context_json {
-        if let Ok(prep) = serde_json::from_str::<FullMeetingPrep>(prep_json) {
-            return Some(prep);
-        }
-    }
-    None
+    crate::services::meetings::load_meeting_prep_from_sources(today_dir, meeting)
 }
 
 fn collect_meeting_outcomes_from_db(
     db: &crate::db::ActionDb,
     meeting: &crate::db::DbMeeting,
 ) -> Option<crate::types::MeetingOutcomeData> {
-    let captures = db.get_captures_for_meeting(&meeting.id).ok()?;
-    let actions = db.get_actions_for_meeting(&meeting.id).ok()?;
-
-    let mut wins = Vec::new();
-    let mut risks = Vec::new();
-    let mut decisions = Vec::new();
-    for cap in captures {
-        match cap.capture_type.as_str() {
-            "win" => wins.push(cap.content),
-            "risk" => risks.push(cap.content),
-            "decision" => decisions.push(cap.content),
-            _ => {}
-        }
-    }
-
-    if meeting.summary.is_none()
-        && meeting.transcript_path.is_none()
-        && meeting.transcript_processed_at.is_none()
-        && wins.is_empty()
-        && risks.is_empty()
-        && decisions.is_empty()
-        && actions.is_empty()
-    {
-        return None;
-    }
-
-    Some(crate::types::MeetingOutcomeData {
-        meeting_id: meeting.id.clone(),
-        summary: meeting.summary.clone(),
-        wins,
-        risks,
-        decisions,
-        actions,
-        transcript_path: meeting.transcript_path.clone(),
-        processed_at: meeting.transcript_processed_at.clone(),
-    })
+    crate::services::meetings::collect_meeting_outcomes_from_db(db, meeting)
 }
 
 /// Unified meeting detail payload for current + historical meetings.
@@ -861,6 +334,10 @@ pub fn get_meeting_intelligence(
     let transcript_path = meeting.transcript_path.clone();
     let transcript_processed_at = meeting.transcript_processed_at.clone();
 
+    // Compute intelligence quality and clear new-signals flag on view
+    let intelligence_quality = Some(crate::intelligence::assess_intelligence_quality(db, &meeting_id));
+    let _ = db.clear_meeting_new_signals(&meeting_id);
+
     Ok(MeetingIntelligence {
         meeting,
         prep,
@@ -880,88 +357,56 @@ pub fn get_meeting_intelligence(
         prep_frozen_at,
         transcript_path,
         transcript_processed_at,
+        intelligence_quality,
     })
 }
 
-/// Build AttendeeContext by matching calendar attendee emails to person entities.
-/// Scoped to external (non-internal) attendees who are in the people database.
+/// Generate or refresh intelligence for a single meeting (ADR-0081).
+/// Pass `force: true` to clear existing intelligence and regenerate from scratch.
+#[tauri::command]
+pub async fn generate_meeting_intelligence(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+    meeting_id: String,
+    force: Option<bool>,
+) -> Result<crate::types::IntelligenceQuality, String> {
+    let force_full = force.unwrap_or(false);
+    let result = crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, force_full)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = app_handle.emit("entity-updated", ());
+    Ok(result)
+}
+
+/// Trigger background enrichment for a single meeting without blocking the caller.
+/// Returns immediately; enrichment runs asynchronously in a spawned task.
+/// Emits `intelligence-updated` with the meeting_id on completion.
+#[tauri::command]
+pub async fn enrich_meeting_background(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    tokio::spawn(async move {
+        match crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, false).await {
+            Ok(_) => {
+                let _ = app_handle.emit("intelligence-updated", &meeting_id);
+            }
+            Err(e) => {
+                log::warn!("enrich_meeting_background failed for {}: {}", meeting_id, e);
+            }
+        }
+    });
+    Ok(())
+}
+
+// Delegated to crate::services::meetings
 fn hydrate_attendee_context(
     db: &crate::db::ActionDb,
     meeting: &crate::db::DbMeeting,
 ) -> Vec<crate::types::AttendeeContext> {
-    use std::collections::HashSet;
-
-    let mut seen_emails = HashSet::new();
-    let mut contexts = Vec::new();
-
-    // Strategy 1: Get people already linked via meeting_attendees junction table
-    if let Ok(linked_people) = db.get_meeting_attendees(&meeting.id) {
-        for person in &linked_people {
-            let email_lower = person.email.to_lowercase();
-            if seen_emails.contains(&email_lower) {
-                continue;
-            }
-            seen_emails.insert(email_lower);
-            contexts.push(person_to_attendee_context(person));
-        }
-    }
-
-    // Strategy 2: Parse emails from meeting.attendees field and look up each
-    if let Some(ref attendees_str) = meeting.attendees {
-        let emails: Vec<String> = attendees_str
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| s.contains('@'))
-            .collect();
-
-        for email in &emails {
-            if seen_emails.contains(email) {
-                continue;
-            }
-            if let Ok(Some(person)) = db.get_person_by_email_or_alias(email) {
-                seen_emails.insert(email.clone());
-                contexts.push(person_to_attendee_context(&person));
-            }
-        }
-    }
-
-    // Filter to non-internal, non-archived people
-    contexts
-        .into_iter()
-        .filter(|ctx| {
-            // Keep external and unknown relationships; exclude internal
-            ctx.relationship.as_deref() != Some("internal")
-        })
-        .collect()
-}
-
-/// Convert a DbPerson into an AttendeeContext with computed temperature.
-fn person_to_attendee_context(person: &crate::db::DbPerson) -> crate::types::AttendeeContext {
-    let temperature = person
-        .last_seen
-        .as_deref()
-        .map(|ls| {
-            let days = crate::db::days_since_iso(ls);
-            match days {
-                Some(d) if d < 7 => "hot".to_string(),
-                Some(d) if d < 30 => "warm".to_string(),
-                Some(d) if d < 60 => "cool".to_string(),
-                _ => "cold".to_string(),
-            }
-        });
-
-    crate::types::AttendeeContext {
-        name: person.name.clone(),
-        email: Some(person.email.clone()),
-        role: person.role.clone(),
-        organization: person.organization.clone(),
-        relationship: Some(person.relationship.clone()),
-        meeting_count: Some(person.meeting_count),
-        last_seen: person.last_seen.clone(),
-        temperature,
-        notes: person.notes.clone(),
-        person_id: Some(person.id.clone()),
-    }
+    crate::services::meetings::hydrate_attendee_context(db, meeting)
 }
 
 /// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
@@ -1382,73 +827,10 @@ pub fn backfill_prep_semantics(
 // Week Overview Command
 // =============================================================================
 
-/// Result type for week data
-#[derive(Debug, serde::Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum WeekResult {
-    Success { data: WeekOverview },
-    NotFound { message: String },
-    Error { message: String },
-}
-
 /// Get week overview data
 #[tauri::command]
 pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return WeekResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
-            return WeekResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
-            }
-        }
-    };
-
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    let started = std::time::Instant::now();
-
-    let mut week = match crate::json_loader::load_week_json(&today_dir) {
-        Ok(w) => w,
-        Err(e) => {
-            return WeekResult::NotFound {
-                message: format!("No week data: {}", e),
-            }
-        }
-    };
-
-    // Enrich dayShapes with live per-day action priorities (I279)
-    if let Some(ref mut shapes) = week.day_shapes {
-        if let Ok(db) = crate::db::ActionDb::open() {
-            if let Ok(candidates) = db.get_focus_candidate_actions(7) {
-                for shape in shapes.iter_mut() {
-                    let available_minutes: u32 =
-                        shape.available_blocks.iter().map(|b| b.duration_minutes).sum();
-
-                    let (prioritized, _top_three, implications) =
-                        crate::focus_prioritization::prioritize_actions(
-                            candidates.clone(),
-                            available_minutes,
-                        );
-
-                    shape.prioritized_actions = Some(prioritized);
-                    shape.focus_implications = Some(implications);
-                }
-            }
-        }
-    }
-
-    log_command_latency("get_week_data", started, READ_CMD_LATENCY_BUDGET_MS);
-    WeekResult::Success { data: week }
+    crate::services::dashboard::get_week_data(&state)
 }
 
 /// TTL thresholds for week calendar cache (W6).
@@ -1525,39 +907,63 @@ async fn refresh_week_calendar_cache(
     Ok(events)
 }
 
-/// Retry only week AI enrichment without rerunning full week prepare/deliver.
+/// Force-refresh meeting preps for all future meetings.
+///
+/// Clears existing prep_frozen_json and enqueues all future meetings into the
+/// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
 #[tauri::command]
-pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
+pub fn refresh_meeting_preps(state: State<Arc<AppState>>) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-    let workspace_path = config.workspace_path.clone();
-    let user_ctx = crate::types::UserContext::from_config(&config);
-    let ai_models = config.ai_models.clone();
-    let state = state.inner().clone();
+    let now = chrono::Utc::now().to_rfc3339();
 
-    let task = tauri::async_runtime::spawn_blocking(move || {
-        let workspace = std::path::Path::new(&workspace_path);
-        let data_dir = workspace.join("_today").join("data");
-        let week_path = data_dir.join("week-overview.json");
-        if !week_path.exists() {
-            return Err("No weekly overview found. Run the weekly workflow first.".to_string());
-        }
+    // Find all future meetings (excluding personal/focus/blocked)
+    let meeting_ids: Vec<String> = db
+        .conn_ref()
+        .prepare(
+            "SELECT id FROM meetings_history
+             WHERE start_time > ?1
+               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
+               AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map(rusqlite::params![now], |row| {
+                row.get::<_, String>(0)
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .map_err(|e| format!("Failed to query future meetings: {}", e))?;
 
-        let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_models);
-        crate::workflow::deliver::enrich_week(&data_dir, &pty, workspace, &user_ctx, &state)
-    });
-
-    match task.await {
-        Ok(result) => result?,
-        Err(e) => return Err(format!("Week enrichment task panicked: {}", e)),
+    if meeting_ids.is_empty() {
+        return Ok("No future meetings to refresh".to_string());
     }
 
-    Ok("Week enrichment retried".to_string())
+    // Clear prep_frozen_json so the queue processor regenerates them
+    for mid in &meeting_ids {
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+            rusqlite::params![mid],
+        );
+    }
+
+    // Drop DB lock before enqueuing (enqueue doesn't need DB)
+    drop(db_guard);
+
+    // Enqueue all at Manual priority (highest — user clicked refresh)
+    for mid in &meeting_ids {
+        state
+            .meeting_prep_queue
+            .enqueue(crate::meeting_prep_queue::PrepRequest {
+                meeting_id: mid.clone(),
+                priority: crate::meeting_prep_queue::PrepPriority::Manual,
+                requested_at: std::time::Instant::now(),
+            });
+    }
+
+    let count = meeting_ids.len();
+    log::info!("refresh_meeting_preps: cleared and requeued {} future meetings", count);
+    Ok(format!("Refreshing {} meeting preps", count))
 }
 
 // =============================================================================
@@ -1568,81 +974,10 @@ pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<St
 // Actions Command
 // =============================================================================
 
-/// Result type for all actions
-#[derive(Debug, serde::Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum ActionsResult {
-    Success { data: Vec<Action> },
-    Empty { message: String },
-    Error { message: String },
-}
-
 /// Get all actions with full context
 #[tauri::command]
 pub fn get_all_actions(state: State<Arc<AppState>>) -> ActionsResult {
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return ActionsResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
-            return ActionsResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
-            }
-        }
-    };
-
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    let mut actions = load_actions_json(&today_dir).unwrap_or_default();
-
-    // Merge non-briefing actions from SQLite (same logic as dashboard)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
-                let json_titles: HashSet<String> = actions
-                    .iter()
-                    .map(|a| a.title.to_lowercase().trim().to_string())
-                    .collect();
-                for dba in db_actions {
-                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                        let priority = match dba.priority.as_str() {
-                            "P1" => Priority::P1,
-                            "P3" => Priority::P3,
-                            _ => Priority::P2,
-                        };
-                        actions.push(Action {
-                            id: dba.id,
-                            title: dba.title,
-                            account: dba.account_id,
-                            due_date: dba.due_date,
-                            priority,
-                            status: crate::types::ActionStatus::Pending,
-                            is_overdue: None,
-                            context: dba.context,
-                            source: dba.source_label,
-                            days_overdue: None,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    if actions.is_empty() {
-        ActionsResult::Empty {
-            message: "No actions yet. Actions appear after your first briefing.".to_string(),
-        }
-    } else {
-        ActionsResult::Success { data: actions }
-    }
+    crate::services::actions::get_all_actions(&state)
 }
 
 // =============================================================================
@@ -2070,145 +1405,10 @@ pub fn get_all_emails(state: State<Arc<AppState>>) -> EmailsResult {
 
 /// Get emails enriched with entity signals from SQLite.
 ///
-/// Loads emails from emails.json, then batch-queries the email_signals table
-/// for all email IDs to build enriched emails and entity thread summaries.
+/// Get enriched email briefing data with signals and entity threads.
 #[tauri::command]
 pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingData, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Config lock poisoned".to_string())?
-        .clone()
-        .ok_or_else(|| "No configuration loaded".to_string())?;
-
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    let emails = load_emails_json(&today_dir).unwrap_or_default();
-
-    // Load email narrative + replies_needed from directive (I355)
-    let (email_narrative, replies_needed) = load_directive(&today_dir)
-        .map(|d| (d.emails.narrative, d.emails.replies_needed))
-        .unwrap_or_default();
-
-    // Collect email IDs for batch signal lookup
-    let email_ids: Vec<String> = emails.iter().map(|e| e.id.clone()).collect();
-
-    // Batch-query signals from DB
-    let db_signals = match state.with_db_try_read(|db| db.list_email_signals_by_email_ids(&email_ids)) {
-        crate::state::DbTryRead::Ok(Ok(sigs)) => sigs,
-        _ => Vec::new(),
-    };
-
-    let has_enrichment = !db_signals.is_empty()
-        || emails.iter().any(|e| e.summary.is_some());
-
-    // Index signals by email_id
-    let mut signals_by_email: HashMap<String, Vec<EmailSignal>> = HashMap::new();
-    for sig in &db_signals {
-        signals_by_email
-            .entry(sig.email_id.clone())
-            .or_default()
-            .push(EmailSignal {
-                signal_type: sig.signal_type.clone(),
-                signal_text: sig.signal_text.clone(),
-                confidence: sig.confidence,
-                sentiment: sig.sentiment.clone(),
-                urgency: sig.urgency.clone(),
-                detected_at: Some(sig.detected_at.clone()),
-            });
-    }
-
-    // Build enriched emails by priority
-    let mut high = Vec::new();
-    let mut medium = Vec::new();
-    let mut low = Vec::new();
-    let mut needs_action = 0usize;
-
-    for email in emails {
-        let sigs = signals_by_email.remove(&email.id).unwrap_or_default();
-        if email.recommended_action.is_some() {
-            needs_action += 1;
-        }
-        let enriched = EnrichedEmail {
-            email: email.clone(),
-            signals: sigs,
-        };
-        match email.priority {
-            crate::types::EmailPriority::High => high.push(enriched),
-            crate::types::EmailPriority::Medium => medium.push(enriched),
-            crate::types::EmailPriority::Low => low.push(enriched),
-        }
-    }
-
-    // Build entity threads from signals
-    let mut entity_map: HashMap<String, (String, Vec<EmailSignal>, HashSet<String>)> =
-        HashMap::new();
-    for sig in &db_signals {
-        let entry = entity_map
-            .entry(sig.entity_id.clone())
-            .or_insert_with(|| (sig.entity_type.clone(), Vec::new(), HashSet::new()));
-        entry.1.push(EmailSignal {
-            signal_type: sig.signal_type.clone(),
-            signal_text: sig.signal_text.clone(),
-            confidence: sig.confidence,
-            sentiment: sig.sentiment.clone(),
-            urgency: sig.urgency.clone(),
-            detected_at: Some(sig.detected_at.clone()),
-        });
-        entry.2.insert(sig.email_id.clone());
-    }
-
-    // Resolve entity names from DB
-    let entity_threads: Vec<EntityEmailThread> = entity_map
-        .into_iter()
-        .map(|(entity_id, (entity_type, signals, email_set))| {
-            let entity_name: String = {
-                let eid = entity_id.clone();
-                let etype = entity_type.clone();
-                match state.with_db_try_read(|db| -> Result<String, crate::db::DbError> {
-                    if &etype == "account" {
-                        Ok(db.get_account(&eid)?.map(|a| a.name).unwrap_or_else(|| eid.clone()))
-                    } else {
-                        Ok(db.get_project(&eid)?.map(|p| p.name).unwrap_or_else(|| eid.clone()))
-                    }
-                }) {
-                    crate::state::DbTryRead::Ok(Ok(name)) => name,
-                    _ => entity_id.clone(),
-                }
-            };
-
-            // Build editorial signal summary as a prose sentence
-            let signal_summary = build_entity_signal_prose(&signals, email_set.len());
-
-            EntityEmailThread {
-                entity_id,
-                entity_name,
-                entity_type,
-                email_count: email_set.len(),
-                signal_summary,
-                signals,
-            }
-        })
-        .collect();
-
-    let total = high.len() + medium.len() + low.len();
-    Ok(EmailBriefingData {
-        stats: EmailBriefingStats {
-            total,
-            high_count: high.len(),
-            medium_count: medium.len(),
-            low_count: low.len(),
-            needs_action,
-        },
-        high_priority: high,
-        medium_priority: medium,
-        low_priority: low,
-        entity_threads,
-        has_enrichment,
-        email_narrative,
-        replies_needed,
-    })
+    crate::services::emails::get_emails_enriched(&state)
 }
 
 /// Refresh emails independently without re-running the full /today pipeline (I20).
@@ -2709,7 +1909,7 @@ pub fn get_actions_from_db(
 pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.complete_action(&id).map_err(|e| e.to_string())
+    crate::services::actions::complete_action(db, &id)
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -2717,7 +1917,7 @@ pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), St
 pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.reopen_action(&id).map_err(|e| e.to_string())
+    crate::services::actions::reopen_action(db, &id)
 }
 
 /// Accept a proposed action, moving it to pending (I256).
@@ -2725,7 +1925,7 @@ pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), Stri
 pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.accept_proposed_action(&id).map_err(|e| e.to_string())
+    crate::services::actions::accept_proposed_action(db, &id)
 }
 
 /// Reject a proposed action by archiving it (I256).
@@ -2733,7 +1933,7 @@ pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result
 pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.reject_proposed_action(&id).map_err(|e| e.to_string())
+    crate::services::actions::reject_proposed_action(db, &id)
 }
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
@@ -2758,7 +1958,24 @@ pub fn dismiss_email_item(
         email_type.as_deref(),
         entity_id.as_deref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    let etype = entity_id.as_deref().map(|_| "account").unwrap_or("email");
+    let eid = entity_id.as_deref().unwrap_or(&email_id);
+    let _ = crate::signals::bus::emit_signal(
+        db,
+        etype,
+        eid,
+        "email_item_dismissed",
+        &item_type,
+        Some(&format!(
+            "{{\"email_id\":\"{}\",\"item_type\":\"{}\"}}",
+            email_id, item_type
+        )),
+        0.3,
+    );
+
+    Ok(())
 }
 
 /// Get all dismissed email item keys for frontend filtering.
@@ -2842,60 +2059,7 @@ pub fn get_meeting_history_detail(
     meeting_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<MeetingHistoryDetail, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let meeting = db
-        .get_meeting_by_id(&meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting not found: {meeting_id}"))?;
-
-    let captures = db
-        .get_captures_for_meeting(&meeting_id)
-        .map_err(|e| e.to_string())?;
-
-    let actions = db
-        .get_actions_for_meeting(&meeting_id)
-        .map_err(|e| e.to_string())?;
-
-    // Resolve account name from junction table
-    let (linked_account_id, account_name) = db
-        .get_meeting_entities(&meeting_id)
-        .ok()
-        .and_then(|ents| ents.into_iter().find(|e| e.entity_type == crate::entity::EntityType::Account))
-        .map(|e| (Some(e.id), Some(e.name)))
-        .unwrap_or((None, None));
-
-    // Parse attendees from comma-separated string
-    let attendees: Vec<String> = meeting
-        .attendees
-        .as_deref()
-        .unwrap_or("")
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    // Parse persisted prep context (I181)
-    let prep_context = meeting
-        .prep_context_json
-        .as_ref()
-        .and_then(|json_str| serde_json::from_str::<PrepContext>(json_str).ok());
-
-    Ok(MeetingHistoryDetail {
-        id: meeting.id,
-        title: meeting.title,
-        meeting_type: meeting.meeting_type,
-        start_time: meeting.start_time,
-        end_time: meeting.end_time,
-        account_id: linked_account_id,
-        account_name,
-        summary: meeting.summary,
-        attendees,
-        captures,
-        actions,
-        prep_context,
-    })
+    crate::services::meetings::get_meeting_history_detail(&meeting_id, &state)
 }
 
 // =============================================================================
@@ -2920,75 +2084,7 @@ pub fn search_meetings(
     query: String,
     state: State<Arc<AppState>>,
 ) -> Result<Vec<MeetingSearchResult>, String> {
-    if query.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let pattern = format!("%{}%", query.trim());
-    let mut stmt = db
-        .conn_ref()
-        .prepare(
-            "SELECT id, title, meeting_type, start_time, account_id, summary, prep_context_json
-             FROM meetings_history
-             WHERE title LIKE ?1
-                OR summary LIKE ?1
-                OR prep_context_json LIKE ?1
-             ORDER BY start_time DESC
-             LIMIT 50",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt
-        .query_map(rusqlite::params![&pattern], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
-
-    let mut results = Vec::new();
-    for row in rows {
-        let (id, title, meeting_type, start_time, account_id, summary, prep_json) =
-            row.map_err(|e| e.to_string())?;
-
-        // Extract snippet: prefer summary, fall back to intelligence summary from prep
-        let match_snippet = summary.or_else(|| {
-            prep_json.and_then(|json| {
-                serde_json::from_str::<serde_json::Value>(&json)
-                    .ok()
-                    .and_then(|v| {
-                        v.get("intelligenceSummary")
-                            .and_then(|s| s.as_str().map(|s| s.to_string()))
-                    })
-            })
-        });
-
-        // Resolve account name
-        let account_name = account_id
-            .as_ref()
-            .and_then(|aid| db.get_account(aid).ok().flatten())
-            .map(|a| a.name);
-
-        results.push(MeetingSearchResult {
-            id,
-            title,
-            meeting_type,
-            start_time,
-            account_name,
-            match_snippet,
-        });
-    }
-
-    Ok(results)
+    crate::services::meetings::search_meetings(&query, &state)
 }
 
 // =============================================================================
@@ -3221,97 +2317,7 @@ pub fn capture_meeting_outcome(
     outcome: CapturedOutcome,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let workspace = std::path::Path::new(&config.workspace_path);
-
-    // Mark as captured
-    if let Ok(mut guard) = state.capture_captured.lock() {
-        guard.insert(outcome.meeting_id.clone());
-    }
-
-    // Persist actions to SQLite
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-
-    if let Some(db) = db_ref {
-        for action in &outcome.actions {
-            let now = chrono::Utc::now().to_rfc3339();
-            let db_action = crate::db::DbAction {
-                id: uuid::Uuid::new_v4().to_string(),
-                title: action.title.clone(),
-                priority: "P2".to_string(),
-                status: "pending".to_string(),
-                created_at: now.clone(),
-                due_date: action.due_date.clone(),
-                completed_at: None,
-                account_id: outcome.account.clone(),
-                project_id: None,
-                source_type: Some("post_meeting".to_string()),
-                source_id: Some(outcome.meeting_id.clone()),
-                source_label: Some(outcome.meeting_title.clone()),
-                context: action.owner.clone(),
-                waiting_on: None,
-                updated_at: now,
-                person_id: None,
-            };
-            if let Err(e) = db.upsert_action(&db_action) {
-                log::warn!("Failed to save captured action: {}", e);
-            }
-        }
-    }
-
-    // Persist captures (wins + risks) to SQLite captures table
-    if let Some(db) = db_ref {
-        for win in &outcome.wins {
-            let _ = db.insert_capture(
-                &outcome.meeting_id,
-                &outcome.meeting_title,
-                outcome.account.as_deref(),
-                "win",
-                win,
-            );
-        }
-        for risk in &outcome.risks {
-            let _ = db.insert_capture(
-                &outcome.meeting_id,
-                &outcome.meeting_title,
-                outcome.account.as_deref(),
-                "risk",
-                risk,
-            );
-        }
-    }
-
-    // Append wins to impact log
-    let impact_log = workspace.join("_today").join("90-impact-log.md");
-    if !outcome.wins.is_empty() {
-        let mut content = String::new();
-        if !impact_log.exists() {
-            content.push_str("# Impact Log\n\n");
-        }
-        for win in &outcome.wins {
-            content.push_str(&format!(
-                "- **{}**: {} ({})\n",
-                outcome.account.as_deref().unwrap_or(&outcome.meeting_title),
-                win,
-                outcome.captured_at.format("%H:%M")
-            ));
-        }
-        if impact_log.exists() {
-            let existing = std::fs::read_to_string(&impact_log).unwrap_or_default();
-            let _ = std::fs::write(&impact_log, format!("{}{}", existing, content));
-        } else {
-            let _ = std::fs::write(&impact_log, content);
-        }
-    }
-
-    Ok(())
+    crate::services::meetings::capture_meeting_outcome(&outcome, &state)
 }
 
 /// Dismiss a post-meeting capture prompt (skip)
@@ -3540,8 +2546,7 @@ pub fn update_action_priority(
     }
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.update_action_priority(&id, &priority)
-        .map_err(|e| e.to_string())
+    crate::services::actions::update_action_priority(db, &id, &priority)
 }
 
 // =============================================================================
@@ -3569,65 +2574,7 @@ pub fn create_action(
     request: CreateActionRequest,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
-    let CreateActionRequest {
-        title,
-        priority,
-        due_date,
-        account_id,
-        project_id,
-        person_id,
-        context,
-        source_label,
-    } = request;
-
-    let title = crate::util::validate_bounded_string(&title, "title", 1, 280)?;
-    let priority = priority.unwrap_or_else(|| "P2".to_string());
-    crate::util::validate_enum_string(priority.as_str(), "priority", &["P1", "P2", "P3"])?;
-    if let Some(ref date) = due_date {
-        crate::util::validate_yyyy_mm_dd(date, "due_date")?;
-    }
-    if let Some(ref id) = account_id {
-        crate::util::validate_id_slug(id, "account_id")?;
-    }
-    if let Some(ref id) = project_id {
-        crate::util::validate_id_slug(id, "project_id")?;
-    }
-    if let Some(ref id) = person_id {
-        crate::util::validate_id_slug(id, "person_id")?;
-    }
-    if let Some(ref value) = context {
-        crate::util::validate_bounded_string(value, "context", 1, 2000)?;
-    }
-    if let Some(ref value) = source_label {
-        crate::util::validate_bounded_string(value, "source_label", 1, 200)?;
-    }
-
-    let now = chrono::Utc::now().to_rfc3339();
-    let id = uuid::Uuid::new_v4().to_string();
-
-    let action = crate::db::DbAction {
-        id: id.clone(),
-        title,
-        priority,
-        status: "pending".to_string(),
-        created_at: now.clone(),
-        due_date,
-        completed_at: None,
-        account_id,
-        project_id,
-        source_type: Some("manual".to_string()),
-        source_id: None,
-        source_label,
-        context,
-        waiting_on: None,
-        updated_at: now,
-        person_id,
-    };
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.upsert_action(&action).map_err(|e| e.to_string())?;
-    Ok(id)
+    crate::services::actions::create_action(request, &state)
 }
 
 /// Update arbitrary fields on an existing action (I128).
@@ -3659,97 +2606,7 @@ pub fn update_action(
     request: UpdateActionRequest,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let UpdateActionRequest {
-        id,
-        title,
-        due_date,
-        clear_due_date,
-        context,
-        clear_context,
-        source_label,
-        clear_source_label,
-        account_id,
-        clear_account,
-        project_id,
-        clear_project,
-        person_id,
-        clear_person,
-        priority,
-    } = request;
-
-    crate::util::validate_id_slug(&id, "id")?;
-    if let Some(ref p) = priority {
-        crate::util::validate_enum_string(p.as_str(), "priority", &["P1", "P2", "P3"])?;
-    }
-    if let Some(ref t) = title {
-        crate::util::validate_bounded_string(t, "title", 1, 280)?;
-    }
-    if let Some(ref d) = due_date {
-        crate::util::validate_yyyy_mm_dd(d, "due_date")?;
-    }
-    if let Some(ref c) = context {
-        crate::util::validate_bounded_string(c, "context", 1, 2000)?;
-    }
-    if let Some(ref s) = source_label {
-        crate::util::validate_bounded_string(s, "source_label", 1, 200)?;
-    }
-    if let Some(ref a) = account_id {
-        crate::util::validate_id_slug(a, "account_id")?;
-    }
-    if let Some(ref p) = project_id {
-        crate::util::validate_id_slug(p, "project_id")?;
-    }
-    if let Some(ref p) = person_id {
-        crate::util::validate_id_slug(p, "person_id")?;
-    }
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let mut action = db
-        .get_action_by_id(&id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Action not found: {id}"))?;
-
-    if let Some(t) = title {
-        action.title = t;
-    }
-    if let Some(p) = priority {
-        action.priority = p;
-    }
-    if clear_due_date == Some(true) {
-        action.due_date = None;
-    } else if let Some(d) = due_date {
-        action.due_date = Some(d);
-    }
-    if clear_context == Some(true) {
-        action.context = None;
-    } else if let Some(c) = context {
-        action.context = Some(c);
-    }
-    if clear_source_label == Some(true) {
-        action.source_label = None;
-    } else if let Some(s) = source_label {
-        action.source_label = Some(s);
-    }
-    if clear_account == Some(true) {
-        action.account_id = None;
-    } else if let Some(a) = account_id {
-        action.account_id = Some(a);
-    }
-    if clear_project == Some(true) {
-        action.project_id = None;
-    } else if let Some(p) = project_id {
-        action.project_id = Some(p);
-    }
-    if clear_person == Some(true) {
-        action.person_id = None;
-    } else if let Some(p) = person_id {
-        action.person_id = Some(p);
-    }
-
-    action.updated_at = chrono::Utc::now().to_rfc3339();
-    db.upsert_action(&action).map_err(|e| e.to_string())
+    crate::services::actions::update_action(request, &state)
 }
 
 // =============================================================================
@@ -4456,84 +3313,18 @@ fn build_outcome_data(
 }
 
 /// Compute executive intelligence signals (I42).
-///
-/// Cross-references SQLite data + today's schedule to surface decisions due,
-/// stale delegations, portfolio alerts, cancelable meetings, and skip-today items.
 #[tauri::command]
 pub fn get_executive_intelligence(
     state: State<Arc<AppState>>,
 ) -> Result<crate::intelligence::ExecutiveIntelligence, String> {
     let started = std::time::Instant::now();
-    let result = (|| {
-        // Load config for profile + workspace
-        let config = state
-            .config
-            .read()
-            .map_err(|_| "Lock poisoned")?
-            .clone()
-            .ok_or("No configuration loaded")?;
-
-        let workspace = std::path::Path::new(&config.workspace_path);
-        let today_dir = workspace.join("_today");
-
-        // Load schedule meetings (merged with live calendar)
-        let meetings = if today_dir.join("data").exists() {
-            let briefing_meetings = load_schedule_json(&today_dir)
-                .map(|(_overview, meetings)| meetings)
-                .unwrap_or_default();
-            let live_events = state
-                .calendar_events
-                .read()
-                .map(|g| g.clone())
-                .unwrap_or_default();
-            let tz: chrono_tz::Tz = config
-                .schedules
-                .today
-                .timezone
-                .parse()
-                .unwrap_or(chrono_tz::America::New_York);
-            crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz)
-        } else {
-            Vec::new()
-        };
-
-        // Load cached skip-today from AI enrichment (if available)
-        let skip_today = load_skip_today(&today_dir);
-
-        // Compute intelligence from DB
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-        Ok(crate::intelligence::compute_executive_intelligence(
-            db,
-            &meetings,
-            &config.profile,
-            skip_today,
-        ))
-    })();
-
+    let result = crate::services::entities::get_executive_intelligence(&state);
     log_command_latency(
         "get_executive_intelligence",
         started,
         READ_CMD_LATENCY_BUDGET_MS,
     );
     result
-}
-
-/// Load cached SKIP TODAY results from `_today/data/intelligence.json`.
-///
-/// Written by AI enrichment. Returns empty vec if file doesn't exist or is
-/// malformed — fault-tolerant per ADR-0042 principle.
-fn load_skip_today(today_dir: &std::path::Path) -> Vec<crate::intelligence::SkipSignal> {
-    let path = today_dir.join("data").join("intelligence.json");
-    if !path.exists() {
-        return Vec::new();
-    }
-
-    std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<Vec<crate::intelligence::SkipSignal>>(&s).ok())
-        .unwrap_or_default()
 }
 
 // =============================================================================
@@ -4563,7 +3354,7 @@ pub struct PersonDetailResult {
     pub recent_meetings: Vec<MeetingSummary>,
     pub recent_captures: Vec<crate::db::DbCapture>,
     pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
-    pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
+    pub intelligence: Option<crate::intelligence::IntelligenceJson>,
     pub open_actions: Vec<crate::db::DbAction>,
     pub upcoming_meetings: Vec<MeetingSummary>,
 }
@@ -4604,85 +3395,7 @@ pub fn get_person_detail(
     person_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<PersonDetailResult, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let person = db
-        .get_person(&person_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Person not found: {}", person_id))?;
-
-    let signals = db.get_person_signals(&person_id).ok();
-
-    let entities = db
-        .get_entities_for_person(&person_id)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|e| EntitySummary {
-            id: e.id,
-            name: e.name,
-            entity_type: e.entity_type.as_str().to_string(),
-        })
-        .collect();
-
-    let recent_meetings = db
-        .get_person_meetings(&person_id, 10)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|m| MeetingSummary {
-            id: m.id,
-            title: m.title,
-            start_time: m.start_time,
-            meeting_type: m.meeting_type,
-        })
-        .collect();
-
-    let recent_captures = db
-        .get_captures_for_person(&person_id, 90)
-        .unwrap_or_default();
-    let recent_email_signals = db
-        .list_recent_email_signals_for_entity(&person_id, 12)
-        .unwrap_or_default();
-
-    // Load intelligence from person dir (if exists)
-    let intelligence = {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
-        if let Some(ref config) = *config {
-            let person_dir =
-                crate::people::person_dir(Path::new(&config.workspace_path), &person.name);
-            crate::entity_intel::read_intelligence_json(&person_dir).ok()
-        } else {
-            None
-        }
-    };
-
-    let open_actions = db
-        .get_person_actions(&person_id)
-        .map_err(|e| e.to_string())?;
-
-    let upcoming_meetings: Vec<MeetingSummary> = db
-        .get_upcoming_meetings_for_person(&person_id, 5)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|m| MeetingSummary {
-            id: m.id,
-            title: m.title,
-            start_time: m.start_time,
-            meeting_type: m.meeting_type,
-        })
-        .collect();
-
-    Ok(PersonDetailResult {
-        person,
-        signals,
-        entities,
-        recent_meetings,
-        recent_captures,
-        recent_email_signals,
-        intelligence,
-        open_actions,
-        upcoming_meetings,
-    })
+    crate::services::people::get_person_detail(&person_id, &state)
 }
 
 /// Search people by name, email, or organization.
@@ -4738,6 +3451,10 @@ pub fn link_person_entity(
     db.link_person_to_entity(&person_id, &entity_id, &relationship_type)
         .map_err(|e| e.to_string())?;
 
+    // Emit person linked signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, &relationship_type, &entity_id, "person_linked", "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.9);
+
     // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
     if let Ok(Some(person)) = db.get_person(&person_id) {
         let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -4763,6 +3480,10 @@ pub fn unlink_person_entity(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.unlink_person_from_entity(&person_id, &entity_id)
         .map_err(|e| e.to_string())?;
+
+    // Emit person unlinked signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, "entity", &entity_id, "person_unlinked", "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.7);
 
     // Regenerate person.json so linked_entities reflects removal (ADR-0048)
     if let Ok(Some(person)) = db.get_person(&person_id) {
@@ -4856,104 +3577,10 @@ pub fn update_meeting_entity(
     meeting_type_str: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    // Collect old entity IDs before modifying (for intelligence queue)
-    let old_entity_ids: Vec<(String, String)>;
-
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-        old_entity_ids = db
-            .get_meeting_entities(&meeting_id)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|e| (e.id, e.entity_type.as_str().to_string()))
-            .collect();
-
-        // Ensure meeting exists without clobbering existing metadata.
-        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-            id: &meeting_id,
-            title: &meeting_title,
-            meeting_type: &meeting_type_str,
-            start_time: &start_time,
-            end_time: None,
-            calendar_event_id: None,
-        })
-        .map_err(|e| e.to_string())?;
-
-        // Clear all existing entity links
-        db.clear_meeting_entities(&meeting_id)
-            .map_err(|e| e.to_string())?;
-
-        // Determine account_id and project_id for cascade
-        let (cascade_account, cascade_project) = match entity_type.as_str() {
-            "account" => (entity_id.as_deref(), None),
-            "project" => (None, entity_id.as_deref()),
-            _ => (entity_id.as_deref(), None),
-        };
-
-        // Link new entity if provided
-        if let Some(ref eid) = entity_id {
-            db.link_meeting_entity(&meeting_id, eid, &entity_type)
-                .map_err(|e| e.to_string())?;
-        }
-
-        // Cascade to actions and captures
-        db.cascade_meeting_entity_to_actions(&meeting_id, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-        db.cascade_meeting_entity_to_captures(&meeting_id, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-
-        // Cascade to people: link external attendees to the entity (I184)
-        db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-
-        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
-        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
-            let _ = std::fs::remove_file(&old_path);
-        }
-    }
-    // DB lock released
-
-    // I307: Record correction for learning when user changes entity assignment
-    if !old_entity_ids.is_empty() {
-        if let Some(ref new_id) = entity_id {
-            let differs = old_entity_ids.iter().all(|(id, _)| id != new_id);
-            if differs {
-                if let Ok(db_guard) = state.db.lock() {
-                    if let Some(db) = db_guard.as_ref() {
-                        let _ = crate::signals::feedback::record_correction(
-                            db, &meeting_id, &old_entity_ids, new_id, &entity_type,
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    // I305: Queue prep regeneration
-    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
-        queue.push(meeting_id.clone());
-    }
-
-    // Queue intelligence refresh for old and new entities
-    let mut entities_to_refresh: Vec<(String, String)> = old_entity_ids;
-    if let Some(ref eid) = entity_id {
-        entities_to_refresh.push((eid.clone(), entity_type.clone()));
-    }
-    // Dedup
-    entities_to_refresh.sort();
-    entities_to_refresh.dedup();
-    for (eid, etype) in entities_to_refresh {
-        state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-            entity_id: eid,
-            entity_type: etype,
-            priority: crate::intel_queue::IntelPriority::CalendarChange,
-            requested_at: std::time::Instant::now(),
-        });
-    }
-
-    Ok(())
+    crate::services::meetings::update_meeting_entity(
+        &state, &meeting_id, entity_id.as_deref(), &entity_type,
+        &meeting_title, &start_time, &meeting_type_str,
+    )
 }
 
 // =========================================================================
@@ -4972,55 +3599,10 @@ pub fn add_meeting_entity(
     meeting_type_str: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-        // Ensure meeting exists without clobbering existing metadata.
-        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-            id: &meeting_id,
-            title: &meeting_title,
-            meeting_type: &meeting_type_str,
-            start_time: &start_time,
-            end_time: None,
-            calendar_event_id: None,
-        })
-        .map_err(|e| e.to_string())?;
-
-        // Add entity link (idempotent)
-        db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
-            .map_err(|e| e.to_string())?;
-
-        // Cascade people to this entity
-        let (cascade_account, cascade_project) = match entity_type.as_str() {
-            "account" => (Some(entity_id.as_str()), None),
-            "project" => (None, Some(entity_id.as_str())),
-            _ => (Some(entity_id.as_str()), None),
-        };
-        db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-
-        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
-        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
-            let _ = std::fs::remove_file(&old_path);
-        }
-    }
-    // DB lock released
-
-    // I305: Queue prep regeneration
-    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
-        queue.push(meeting_id.clone());
-    }
-
-    // Queue intelligence refresh
-    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id,
-        entity_type,
-        priority: crate::intel_queue::IntelPriority::CalendarChange,
-        requested_at: std::time::Instant::now(),
-    });
-
-    Ok(())
+    crate::services::meetings::add_meeting_entity(
+        &state, &meeting_id, &entity_id, &entity_type,
+        &meeting_title, &start_time, &meeting_type_str,
+    )
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
@@ -5031,39 +3613,9 @@ pub fn remove_meeting_entity(
     entity_type: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-        // I307: Record removal as correction for learning
-        let _ = crate::signals::feedback::record_removal(
-            db, &meeting_id, &entity_id, &entity_type,
-        );
-
-        db.unlink_meeting_entity(&meeting_id, &entity_id)
-            .map_err(|e| e.to_string())?;
-
-        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
-        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
-            let _ = std::fs::remove_file(&old_path);
-        }
-    }
-    // DB lock released
-
-    // I305: Queue prep regeneration
-    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
-        queue.push(meeting_id.clone());
-    }
-
-    // Queue intelligence refresh for removed entity
-    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id,
-        entity_type,
-        priority: crate::intel_queue::IntelPriority::CalendarChange,
-        requested_at: std::time::Instant::now(),
-    });
-
-    Ok(())
+    crate::services::meetings::remove_meeting_entity(
+        &state, &meeting_id, &entity_id, &entity_type,
+    )
 }
 
 // =========================================================================
@@ -5159,40 +3711,7 @@ pub fn merge_people(
 ) -> Result<String, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    // Get removed person's info before merge (for filesystem cleanup)
-    let removed = db
-        .get_person(&remove_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Person not found: {}", remove_id))?;
-
-    // Perform DB merge
-    db.merge_people(&keep_id, &remove_id)
-        .map_err(|e| e.to_string())?;
-
-    // Filesystem cleanup
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-
-        // Remove the merged-away person's directory
-        let remove_dir = if let Some(ref tp) = removed.tracker_path {
-            workspace.join(tp)
-        } else {
-            crate::people::person_dir(workspace, &removed.name)
-        };
-        if remove_dir.exists() {
-            let _ = std::fs::remove_dir_all(&remove_dir);
-        }
-
-        // Regenerate kept person's files
-        if let Ok(Some(kept)) = db.get_person(&keep_id) {
-            let _ = crate::people::write_person_json(workspace, &kept, db);
-            let _ = crate::people::write_person_markdown(workspace, &kept, db);
-        }
-    }
-
-    Ok(keep_id)
+    crate::services::people::merge_people(db, &state, &keep_id, &remove_id)
 }
 
 /// Delete a person and all their references. Also removes their filesystem directory.
@@ -5200,31 +3719,7 @@ pub fn merge_people(
 pub fn delete_person(person_id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    // Get person info before delete (for filesystem cleanup)
-    let person = db
-        .get_person(&person_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Person not found: {}", person_id))?;
-
-    // Perform DB delete
-    db.delete_person(&person_id).map_err(|e| e.to_string())?;
-
-    // Filesystem cleanup
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-        let person_dir = if let Some(ref tp) = person.tracker_path {
-            workspace.join(tp)
-        } else {
-            crate::people::person_dir(workspace, &person.name)
-        };
-        if person_dir.exists() {
-            let _ = std::fs::remove_dir_all(&person_dir);
-        }
-    }
-
-    Ok(())
+    crate::services::people::delete_person(db, &state, &person_id)
 }
 
 /// Enrich a person with intelligence assessment (relationship intelligence).
@@ -5233,7 +3728,7 @@ pub fn delete_person(person_id: String, state: State<Arc<AppState>>) -> Result<(
 pub async fn enrich_person(
     person_id: String,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<crate::entity_intel::IntelligenceJson, String> {
+) -> Result<crate::intelligence::IntelligenceJson, String> {
     use crate::intel_queue::{
         gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
         IntelRequest,
@@ -5324,7 +3819,7 @@ pub struct AccountDetailResult {
     pub archived: bool,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
+    pub intelligence: Option<crate::intelligence::IntelligenceJson>,
 }
 
 /// Compact child account summary for parent detail pages (I114).
@@ -5527,157 +4022,7 @@ pub fn get_account_detail(
     account_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let account = db
-        .get_account(&account_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Account not found: {}", account_id))?;
-
-    // Read narrative fields from dashboard.json + intelligence.json if they exist
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let (overview, programs, notes, intelligence) = if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-        let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-        let json_path = account_dir.join("dashboard.json");
-        let (ov, prg, nt) = if json_path.exists() {
-            match crate::accounts::read_account_json(&json_path) {
-                Ok(result) => (
-                    result.json.company_overview,
-                    result.json.strategic_programs,
-                    result.json.notes,
-                ),
-                Err(_) => (None, Vec::new(), None),
-            }
-        } else {
-            (None, Vec::new(), None)
-        };
-        // Read intelligence.json (ADR-0057), migrate from CompanyOverview if needed
-        let intel = crate::entity_intel::read_intelligence_json(&account_dir)
-            .ok()
-            .or_else(|| {
-                // Auto-migrate from legacy CompanyOverview on first access
-                ov.as_ref().and_then(|overview| {
-                    crate::entity_intel::migrate_company_overview_to_intelligence(
-                        workspace, &account, overview,
-                    )
-                })
-            });
-        (ov, prg, nt, intel)
-    } else {
-        (None, Vec::new(), None, None)
-    };
-    drop(config); // Release config lock before more DB queries
-
-    let open_actions = db
-        .get_account_actions(&account_id)
-        .map_err(|e| e.to_string())?;
-
-    let upcoming_meetings: Vec<MeetingSummary> = db
-        .get_upcoming_meetings_for_account(&account_id, 5)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|m| MeetingSummary {
-            id: m.id,
-            title: m.title,
-            start_time: m.start_time,
-            meeting_type: m.meeting_type,
-        })
-        .collect();
-
-    let recent_meetings: Vec<MeetingPreview> = db
-        .get_meetings_for_account_with_prep(&account_id, 10)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|m| {
-            let prep_context = m
-                .prep_context_json
-                .as_ref()
-                .and_then(|json_str| serde_json::from_str::<PrepContext>(json_str).ok());
-            MeetingPreview {
-                id: m.id,
-                title: m.title,
-                start_time: m.start_time,
-                meeting_type: m.meeting_type,
-                prep_context,
-            }
-        })
-        .collect();
-
-    let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
-    let account_team = db.get_account_team(&account_id).unwrap_or_default();
-    let account_team_import_notes = db
-        .get_account_team_import_notes(&account_id)
-        .unwrap_or_default();
-
-    let signals = db.get_stakeholder_signals(&account_id).ok();
-
-    let recent_captures = db
-        .get_captures_for_account(&account_id, 90)
-        .unwrap_or_default();
-    let recent_email_signals = db
-        .list_recent_email_signals_for_entity(&account_id, 12)
-        .unwrap_or_default();
-
-    // I114: Resolve parent name for child accounts, children for parent accounts
-    let parent_name = account
-        .parent_id
-        .as_ref()
-        .and_then(|pid| db.get_account(pid).ok().flatten().map(|a| a.name));
-
-    let child_accounts = db.get_child_accounts(&account.id).unwrap_or_default();
-    let parent_aggregate = if !child_accounts.is_empty() {
-        db.get_parent_aggregate(&account.id).ok()
-    } else {
-        None
-    };
-    let children: Vec<AccountChildSummary> = child_accounts
-        .iter()
-        .map(|child| {
-            let open_action_count = db
-                .get_account_actions(&child.id)
-                .map(|a| a.len())
-                .unwrap_or(0);
-            AccountChildSummary {
-                id: child.id.clone(),
-                name: child.name.clone(),
-                health: child.health.clone(),
-                arr: child.arr,
-                open_action_count,
-            }
-        })
-        .collect();
-
-    Ok(AccountDetailResult {
-        id: account.id,
-        name: account.name,
-        lifecycle: account.lifecycle,
-        arr: account.arr,
-        health: account.health,
-        nps: account.nps,
-        renewal_date: account.contract_end,
-        contract_start: account.contract_start,
-        company_overview: overview,
-        strategic_programs: programs,
-        notes,
-        open_actions,
-        upcoming_meetings,
-        recent_meetings,
-        linked_people,
-        account_team,
-        account_team_import_notes,
-        signals,
-        recent_captures,
-        recent_email_signals,
-        parent_id: account.parent_id,
-        parent_name,
-        children,
-        parent_aggregate,
-        is_internal: account.is_internal,
-        archived: account.archived,
-        intelligence,
-    })
+    crate::services::accounts::get_account_detail(&account_id, &state)
 }
 
 /// Get account-team members (I207).
@@ -5737,6 +4082,10 @@ pub fn update_account_field(
 
     db.update_account_field(&account_id, &field, &value)
         .map_err(|e| e.to_string())?;
+
+    // Emit field update signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, "account", &account_id, "field_updated", "user_edit",
+        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
 
     // Regenerate workspace files
     if let Ok(Some(account)) = db.get_account(&account_id) {
@@ -5954,14 +4303,6 @@ pub struct CreateChildAccountResult {
 
 // Domain normalization moved to crate::util::normalize_domains (DRY)
 
-fn normalize_key(value: &str) -> String {
-    value
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
-}
-
 fn create_child_account_record(
     db: &crate::db::ActionDb,
     workspace: Option<&Path>,
@@ -5970,79 +4311,7 @@ fn create_child_account_record(
     description: Option<&str>,
     owner_person_id: Option<&str>,
 ) -> Result<crate::db::DbAccount, String> {
-    let children = db
-        .get_child_accounts(&parent.id)
-        .map_err(|e| e.to_string())?;
-    if children.iter().any(|c| c.name.eq_ignore_ascii_case(name)) {
-        return Err(format!(
-            "A child named '{}' already exists under '{}'",
-            name, parent.name
-        ));
-    }
-
-    let base_slug = crate::util::slugify(name);
-    let mut id = format!("{}--{}", parent.id, base_slug);
-    let mut suffix = 2usize;
-    while db.get_account(&id).map_err(|e| e.to_string())?.is_some() {
-        id = format!("{}--{}-{}", parent.id, base_slug, suffix);
-        suffix += 1;
-    }
-
-    let parent_tracker = parent.tracker_path.clone().unwrap_or_else(|| {
-        if parent.is_internal {
-            format!("Internal/{}", parent.name)
-        } else {
-            format!("Accounts/{}", parent.name)
-        }
-    });
-    let tracker_path = format!("{}/{}", parent_tracker, name);
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let account = crate::db::DbAccount {
-        id,
-        name: name.to_string(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
-        tracker_path: Some(tracker_path),
-        parent_id: Some(parent.id.clone()),
-        is_internal: parent.is_internal,
-        updated_at: now,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-    metadata: None,
-    };
-
-    db.upsert_account(&account).map_err(|e| e.to_string())?;
-    db.copy_account_domains(&parent.id, &account.id)
-        .map_err(|e| e.to_string())?;
-
-    if let Some(owner_id) = owner_person_id {
-        db.link_person_to_entity(owner_id, &account.id, "owner")
-            .map_err(|e| e.to_string())?;
-    }
-
-    if let Some(ws) = workspace {
-        let account_dir = crate::accounts::resolve_account_dir(ws, &account);
-        let _ = std::fs::create_dir_all(&account_dir);
-        let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
-
-        let mut json = default_account_json(&account);
-        if let Some(desc) = description {
-            let trimmed = desc.trim();
-            if !trimmed.is_empty() {
-                json.notes = Some(trimmed.to_string());
-            }
-        }
-        let _ = crate::accounts::write_account_json(ws, &account, Some(&json), db);
-        let _ = crate::accounts::write_account_markdown(ws, &account, Some(&json), db);
-    }
-
-    Ok(account)
+    crate::services::accounts::create_child_account_record(db, workspace, parent, name, description, owner_person_id)
 }
 
 fn infer_internal_account_for_meeting(
@@ -6050,64 +4319,7 @@ fn infer_internal_account_for_meeting(
     title: &str,
     attendees_csv: Option<&str>,
 ) -> Option<crate::db::DbAccount> {
-    let internal_accounts = db.get_internal_accounts().ok()?;
-    if internal_accounts.is_empty() {
-        return None;
-    }
-    let root = internal_accounts
-        .iter()
-        .find(|a| a.parent_id.is_none())
-        .cloned();
-    let candidates: Vec<crate::db::DbAccount> = internal_accounts
-        .iter()
-        .filter(|a| a.parent_id.is_some())
-        .cloned()
-        .collect();
-    if candidates.is_empty() {
-        return root;
-    }
-
-    let title_key = normalize_key(title);
-    let attendee_set: HashSet<String> = attendees_csv
-        .unwrap_or("")
-        .split(',')
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| s.contains('@'))
-        .collect();
-
-    let mut best: Option<(i32, crate::db::DbAccount)> = None;
-    for candidate in candidates {
-        let mut score = 0i32;
-        let name_key = normalize_key(&candidate.name);
-        if !name_key.is_empty() && title_key.contains(&name_key) {
-            score += 2;
-        }
-
-        let overlaps = db
-            .get_people_for_entity(&candidate.id)
-            .unwrap_or_default()
-            .iter()
-            .filter(|p| attendee_set.contains(&p.email.to_lowercase()))
-            .count() as i32;
-        score += overlaps * 3;
-
-        match &best {
-            None => best = Some((score, candidate)),
-            Some((best_score, best_acc)) => {
-                if score > *best_score
-                    || (score == *best_score
-                        && candidate.name.to_lowercase() < best_acc.name.to_lowercase())
-                {
-                    best = Some((score, candidate));
-                }
-            }
-        }
-    }
-
-    match best {
-        Some((score, account)) if score > 0 => Some(account),
-        _ => root,
-    }
+    crate::services::accounts::infer_internal_account_for_meeting(db, title, attendees_csv)
 }
 
 #[tauri::command]
@@ -6170,7 +4382,7 @@ pub fn create_internal_organization(
     // Validation (before transaction)
     let company_name = crate::util::validate_entity_name(&company_name)?.to_string();
     let team_name = crate::util::validate_entity_name(&team_name)?.to_string();
-    let domains = crate::util::normalize_domains(&domains);
+    let domains = crate::helpers::normalize_domains(&domains);
     let workspace_path = state
         .config
         .read()
@@ -7002,7 +5214,7 @@ pub fn chat_list_entities(
 pub async fn enrich_account(
     account_id: String,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<crate::entity_intel::IntelligenceJson, String> {
+) -> Result<crate::intelligence::IntelligenceJson, String> {
     use crate::intel_queue::{
         gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
         IntelRequest,
@@ -7073,7 +5285,7 @@ pub struct ProjectDetailResult {
     pub archived: bool,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
+    pub intelligence: Option<crate::intelligence::IntelligenceJson>,
 }
 
 /// Get all projects with computed summary fields for the list page.
@@ -7117,86 +5329,7 @@ pub fn get_project_detail(
     project_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<ProjectDetailResult, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let project = db
-        .get_project(&project_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Project not found: {}", project_id))?;
-
-    // Read narrative fields from dashboard.json + intelligence.json if they exist
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let (description, milestones, notes, intelligence) = if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-        let project_dir = crate::projects::project_dir(workspace, &project.name);
-        let json_path = project_dir.join("dashboard.json");
-        let (desc, ms, nt) = if json_path.exists() {
-            match crate::projects::read_project_json(&json_path) {
-                Ok(result) => (
-                    result.json.description,
-                    result.json.milestones,
-                    result.json.notes,
-                ),
-                Err(_) => (None, Vec::new(), None),
-            }
-        } else {
-            (None, Vec::new(), None)
-        };
-        let intel = crate::entity_intel::read_intelligence_json(&project_dir).ok();
-        (desc, ms, nt, intel)
-    } else {
-        (None, Vec::new(), None, None)
-    };
-    drop(config);
-
-    let open_actions = db
-        .get_project_actions(&project_id)
-        .map_err(|e| e.to_string())?;
-
-    let recent_meetings = db
-        .get_meetings_for_project(&project_id, 10)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|m| MeetingSummary {
-            id: m.id,
-            title: m.title,
-            start_time: m.start_time,
-            meeting_type: m.meeting_type,
-        })
-        .collect();
-
-    let linked_people = db.get_people_for_entity(&project_id).unwrap_or_default();
-
-    let signals = db.get_project_signals(&project_id).ok();
-
-    // Get captures linked to project meetings
-    let recent_captures = db
-        .get_captures_for_project(&project_id, 90)
-        .unwrap_or_default();
-    let recent_email_signals = db
-        .list_recent_email_signals_for_entity(&project_id, 12)
-        .unwrap_or_default();
-
-    Ok(ProjectDetailResult {
-        id: project.id,
-        name: project.name,
-        status: project.status,
-        milestone: project.milestone,
-        owner: project.owner,
-        target_date: project.target_date,
-        description,
-        milestones,
-        notes,
-        open_actions,
-        recent_meetings,
-        linked_people,
-        signals,
-        recent_captures,
-        recent_email_signals,
-        archived: project.archived,
-        intelligence,
-    })
+    crate::services::projects::get_project_detail(&project_id, &state)
 }
 
 /// Create a new project.
@@ -7258,6 +5391,10 @@ pub fn update_project_field(
 
     db.update_project_field(&project_id, &field, &value)
         .map_err(|e| e.to_string())?;
+
+    // Emit field update signal (I308)
+    let _ = crate::signals::bus::emit_signal(db, "project", &project_id, "field_updated", "user_edit",
+        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
 
     // Regenerate workspace files
     if let Ok(Some(project)) = db.get_project(&project_id) {
@@ -7335,7 +5472,7 @@ pub fn update_project_notes(
 pub async fn enrich_project(
     project_id: String,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<crate::entity_intel::IntelligenceJson, String> {
+) -> Result<crate::intelligence::IntelligenceJson, String> {
     use crate::intel_queue::{
         gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
         IntelRequest,
@@ -7399,25 +5536,7 @@ pub async fn rebuild_database(
 
 /// Helper: create a default AccountJson from a DbAccount.
 fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::AccountJson {
-    crate::accounts::AccountJson {
-        version: 1,
-        entity_type: "account".to_string(),
-        structured: crate::accounts::AccountStructured {
-            arr: account.arr,
-            health: account.health.clone(),
-            lifecycle: account.lifecycle.clone(),
-            renewal_date: account.contract_end.clone(),
-            nps: account.nps,
-            account_team: Vec::new(),
-            csm: None,
-            champion: None,
-        },
-        company_overview: None,
-        strategic_programs: Vec::new(),
-        notes: None,
-        custom_sections: Vec::new(),
-        parent_id: account.parent_id.clone(),
-    }
+    crate::services::accounts::default_account_json(account)
 }
 
 /// Get the latest hygiene scan report
@@ -7566,6 +5685,11 @@ pub fn archive_account(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.archive_account(&id, archived)
         .map_err(|e| e.to_string())?;
+
+    // Emit archive/unarchive signal (I308)
+    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
+    let _ = crate::signals::bus::emit_signal(db, "account", &id, signal_type, "user_action", None, 0.9);
+
     Ok(())
 }
 
@@ -7593,6 +5717,11 @@ pub fn archive_project(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.archive_project(&id, archived)
         .map_err(|e| e.to_string())?;
+
+    // Emit archive/unarchive signal (I308)
+    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
+    let _ = crate::signals::bus::emit_signal(db, "project", &id, signal_type, "user_action", None, 0.9);
+
     Ok(())
 }
 
@@ -7607,6 +5736,11 @@ pub fn archive_person(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.archive_person(&id, archived)
         .map_err(|e| e.to_string())?;
+
+    // Emit archive/unarchive signal (I308)
+    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
+    let _ = crate::signals::bus::emit_signal(db, "person", &id, signal_type, "user_action", None, 0.9);
+
     Ok(())
 }
 
@@ -8235,6 +6369,40 @@ pub fn update_meeting_user_agenda(
         }
     }
 
+    // Emit prep quality feedback signal
+    let edit_count =
+        layer.items.len() + layer.dismissed_topics.len() + layer.hidden_attendees.len();
+    if edit_count > 0 {
+        // Try to get the meeting's linked entity for signal attribution
+        let entity_info = db
+            .get_meeting_entities(&meeting_id)
+            .ok()
+            .and_then(|entities| {
+                entities.into_iter().find(|e| {
+                    e.entity_type == crate::entity::EntityType::Account
+                        || e.entity_type == crate::entity::EntityType::Project
+                })
+            });
+        let (etype, eid) = entity_info
+            .map(|e| (e.entity_type.as_str().to_string(), e.id))
+            .unwrap_or_else(|| ("meeting".to_string(), meeting_id.clone()));
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            &etype,
+            &eid,
+            "prep_edited",
+            "user_edit",
+            Some(&format!(
+                "{{\"meeting_id\":\"{}\",\"agenda_items\":{},\"dismissed\":{},\"hidden_attendees\":{}}}",
+                meeting_id,
+                layer.items.len(),
+                layer.dismissed_topics.len(),
+                layer.hidden_attendees.len()
+            )),
+            0.6,
+        );
+    }
+
     Ok(())
 }
 
@@ -8426,6 +6594,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("insert meeting");
 
@@ -8482,6 +6656,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
 
@@ -8545,6 +6725,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&past).expect("upsert past meeting");
 
@@ -8573,6 +6759,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
         db.upsert_meeting(&frozen).expect("upsert frozen meeting");
 
@@ -8605,6 +6797,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         };
 
         let prep = FullMeetingPrep {
@@ -8783,229 +6981,20 @@ pub fn save_risk_briefing(
 // MCP: Claude Desktop Configuration (ADR-0075)
 // =============================================================================
 
-/// Result of Claude Desktop MCP configuration.
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeDesktopConfigResult {
-    pub success: bool,
-    pub message: String,
-    pub config_path: Option<String>,
-    pub binary_path: Option<String>,
-}
+pub use crate::services::integrations::ClaudeDesktopConfigResult;
 
 /// Check whether DailyOS is already registered in Claude Desktop's MCP config.
 #[tauri::command]
 pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            return ClaudeDesktopConfigResult {
-                success: false,
-                message: "Could not find home directory".to_string(),
-                config_path: None,
-                binary_path: None,
-            }
-        }
-    };
-
-    let config_path = home
-        .join("Library")
-        .join("Application Support")
-        .join("Claude")
-        .join("claude_desktop_config.json");
-
-    if !config_path.exists() {
-        return ClaudeDesktopConfigResult {
-            success: false,
-            message: "Not configured".to_string(),
-            config_path: None,
-            binary_path: None,
-        };
-    }
-
-    let content = match std::fs::read_to_string(&config_path) {
-        Ok(c) => c,
-        Err(_) => {
-            return ClaudeDesktopConfigResult {
-                success: false,
-                message: "Could not read config".to_string(),
-                config_path: Some(config_path.to_string_lossy().to_string()),
-                binary_path: None,
-            }
-        }
-    };
-
-    let config: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => {
-            return ClaudeDesktopConfigResult {
-                success: false,
-                message: "Config file is not valid JSON".to_string(),
-                config_path: Some(config_path.to_string_lossy().to_string()),
-                binary_path: None,
-            }
-        }
-    };
-
-    let entry = config
-        .get("mcpServers")
-        .and_then(|s| s.get("dailyos"));
-
-    match entry {
-        Some(server) => {
-            let binary = server
-                .get("command")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            let binary_exists = binary
-                .as_ref()
-                .map(|p| std::path::Path::new(p).exists())
-                .unwrap_or(false);
-            ClaudeDesktopConfigResult {
-                success: binary_exists,
-                message: if binary_exists {
-                    "Connected".to_string()
-                } else {
-                    "Configured but binary not found — reconfigure or reinstall".to_string()
-                },
-                config_path: Some(config_path.to_string_lossy().to_string()),
-                binary_path: binary,
-            }
-        }
-        None => ClaudeDesktopConfigResult {
-            success: false,
-            message: "Not configured".to_string(),
-            config_path: Some(config_path.to_string_lossy().to_string()),
-            binary_path: None,
-        },
-    }
+    crate::services::integrations::get_claude_desktop_status()
 }
 
 /// Configure Claude Desktop to use the DailyOS MCP server.
-///
-/// Reads (or creates) `~/Library/Application Support/Claude/claude_desktop_config.json`
-/// and adds/updates the `mcpServers.dailyos` entry pointing to the bundled binary.
 #[tauri::command]
 pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            return ClaudeDesktopConfigResult {
-                success: false,
-                message: "Could not find home directory".to_string(),
-                config_path: None,
-                binary_path: None,
-            }
-        }
-    };
-
-    // Resolve MCP binary path: check common locations
-    let binary_name = "dailyos-mcp";
-    let binary_path = resolve_mcp_binary_path(&home, binary_name);
-
-    let binary_path_str = match &binary_path {
-        Some(p) => {
-            // Ensure binary is executable (build may not set +x)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = std::fs::metadata(p) {
-                    let mut perms = meta.permissions();
-                    let mode = perms.mode();
-                    if mode & 0o111 == 0 {
-                        perms.set_mode(mode | 0o755);
-                        let _ = std::fs::set_permissions(p, perms);
-                    }
-                }
-            }
-            p.to_string_lossy().to_string()
-        }
-        None => {
-            return ClaudeDesktopConfigResult {
-                success: false,
-                message: format!(
-                    "The {binary_name} component is missing from this installation. \
-                     Please reinstall DailyOS from the latest release at https://daily-os.com"
-                ),
-                config_path: None,
-                binary_path: None,
-            }
-        }
-    };
-
-    // Claude Desktop config path
-    let config_path = home
-        .join("Library")
-        .join("Application Support")
-        .join("Claude")
-        .join("claude_desktop_config.json");
-
-    // Read existing config or start fresh
-    let mut config: serde_json::Value = if config_path.exists() {
-        match std::fs::read_to_string(&config_path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|_| {
-                serde_json::json!({})
-            }),
-            Err(_) => serde_json::json!({}),
-        }
-    } else {
-        serde_json::json!({})
-    };
-
-    // Ensure mcpServers object exists
-    if config.get("mcpServers").is_none() {
-        config["mcpServers"] = serde_json::json!({});
-    }
-
-    // Set the dailyos entry
-    config["mcpServers"]["dailyos"] = serde_json::json!({
-        "command": binary_path_str,
-        "args": [],
-        "env": {}
-    });
-
-    // Ensure parent directory exists
-    if let Some(parent) = config_path.parent() {
-        if !parent.exists() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return ClaudeDesktopConfigResult {
-                    success: false,
-                    message: format!("Failed to create config directory: {e}"),
-                    config_path: None,
-                    binary_path: Some(binary_path_str),
-                };
-            }
-        }
-    }
-
-    // Write config
-    let formatted = match serde_json::to_string_pretty(&config) {
-        Ok(s) => s,
-        Err(e) => {
-            return ClaudeDesktopConfigResult {
-                success: false,
-                message: format!("Failed to serialize config: {e}"),
-                config_path: Some(config_path.to_string_lossy().to_string()),
-                binary_path: Some(binary_path_str),
-            }
-        }
-    };
-
-    match std::fs::write(&config_path, formatted) {
-        Ok(()) => ClaudeDesktopConfigResult {
-            success: true,
-            message: "Claude Desktop configured. Restart Claude Desktop to connect.".to_string(),
-            config_path: Some(config_path.to_string_lossy().to_string()),
-            binary_path: Some(binary_path_str),
-        },
-        Err(e) => ClaudeDesktopConfigResult {
-            success: false,
-            message: format!("Failed to write config: {e}"),
-            config_path: Some(config_path.to_string_lossy().to_string()),
-            binary_path: Some(binary_path_str),
-        },
-    }
+    crate::services::integrations::configure_claude_desktop()
 }
+
 
 // =============================================================================
 // Cowork Plugin Export
@@ -9142,48 +7131,6 @@ pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPlug
         .collect()
 }
 
-/// Resolve the MCP binary path by checking common locations.
-fn resolve_mcp_binary_path(
-    home: &std::path::Path,
-    binary_name: &str,
-) -> Option<std::path::PathBuf> {
-    // 1. Check if in PATH (cargo install location)
-    let cargo_bin = home.join(".cargo").join("bin").join(binary_name);
-    if cargo_bin.exists() {
-        return Some(cargo_bin);
-    }
-
-    // 2. Check alongside the running executable (app bundle)
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let sibling = exe_dir.join(binary_name);
-            if sibling.exists() {
-                return Some(sibling);
-            }
-            // macOS .app bundle: Contents/MacOS/
-            let macos_sibling = exe_dir.join(binary_name);
-            if macos_sibling.exists() {
-                return Some(macos_sibling);
-            }
-        }
-    }
-
-    // 3. Check dev build location (target/debug)
-    let cwd = std::env::current_dir().ok()?;
-    let dev_paths = [
-        cwd.join("target/debug").join(binary_name),
-        cwd.join("src-tauri/target/debug").join(binary_name),
-        cwd.join("target/release").join(binary_name),
-        cwd.join("src-tauri/target/release").join(binary_name),
-    ];
-    for path in &dev_paths {
-        if path.exists() {
-            return Some(path.clone());
-        }
-    }
-
-    None
-}
 
 // =============================================================================
 // Intelligence Field Editing (I261)
@@ -9230,17 +7177,28 @@ pub fn update_intelligence_field(
     }
     .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
 
-    let dir = crate::entity_intel::resolve_entity_dir(
+    let dir = crate::intelligence::resolve_entity_dir(
         workspace,
         &entity_type,
         &entity_name,
         account.as_ref(),
     )?;
 
-    let intel = crate::entity_intel::apply_intelligence_field_update(&dir, &field_path, &value)?;
+    let intel = crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?;
 
     // Update SQLite cache
     let _ = db.upsert_entity_intelligence(&intel);
+
+    // Emit user_correction signal so Thompson Sampling learns from user edits (I307)
+    let _ = crate::signals::bus::emit_signal(
+        db,
+        &entity_type,
+        &entity_id,
+        "user_correction",
+        "user_edit",
+        Some(&format!("{{\"field\":\"{}\"}}", field_path)),
+        1.0,
+    );
 
     Ok(())
 }
@@ -9256,7 +7214,7 @@ pub fn update_stakeholders(
     stakeholders_json: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let stakeholders: Vec<crate::entity_intel::StakeholderInsight> =
+    let stakeholders: Vec<crate::intelligence::StakeholderInsight> =
         serde_json::from_str(&stakeholders_json)
             .map_err(|e| format!("Invalid stakeholders JSON: {}", e))?;
 
@@ -9287,14 +7245,14 @@ pub fn update_stakeholders(
     }
     .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
 
-    let dir = crate::entity_intel::resolve_entity_dir(
+    let dir = crate::intelligence::resolve_entity_dir(
         workspace,
         &entity_type,
         &entity_name,
         account.as_ref(),
     )?;
 
-    let intel = crate::entity_intel::apply_stakeholders_update(&dir, stakeholders)?;
+    let intel = crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?;
 
     // Update SQLite cache
     let _ = db.upsert_entity_intelligence(&intel);
@@ -9566,16 +7524,36 @@ pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bo
 #[tauri::command]
 pub fn trigger_quill_sync_for_meeting(
     meeting_id: String,
+    force: Option<bool>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let force = force.unwrap_or(false);
 
     // Check if a sync row already exists
     match db.get_quill_sync_state(&meeting_id).map_err(|e| e.to_string())? {
         Some(existing) => {
             match existing.state.as_str() {
-                "completed" => Ok("already_completed".to_string()),
+                "completed" if !force => Ok("already_completed".to_string()),
+                "completed" => {
+                    // Force re-sync: reset to pending so poller picks it up again.
+                    // This handles the case where captures were lost due to a bug
+                    // or when the user wants to re-process with updated AI.
+                    crate::quill::sync::transition_state(
+                        db, &existing.id, "pending", None, None, None, Some("Force re-sync"),
+                    ).map_err(|e| e.to_string())?;
+                    Ok("resyncing".to_string())
+                }
+                "pending" | "polling" | "fetching" | "processing" if force => {
+                    // Force-reset a stuck in-progress state back to pending.
+                    // Covers the case where the app crashed or the AI pipeline
+                    // failed silently mid-processing, leaving the row orphaned.
+                    crate::quill::sync::transition_state(
+                        db, &existing.id, "pending", None, None, None, Some("Force reset from stuck state"),
+                    ).map_err(|e| e.to_string())?;
+                    Ok("resyncing".to_string())
+                }
                 "pending" | "polling" | "fetching" | "processing" => Ok("already_in_progress".to_string()),
                 _ => {
                     // Failed or abandoned — reset to pending for retry
@@ -10574,4 +8552,186 @@ pub async fn correct_email_disposition(
         );
         Ok(format!("Disposition corrected to {}", corrected_priority))
     })
+}
+
+// =============================================================================
+// I330: Meeting Timeline (±7 days)
+// =============================================================================
+
+/// Return meetings for +/-N days around today with intelligence quality data.
+///
+/// Always-live: if no future meetings exist in `meetings_history`, fetches from
+/// Google Calendar and upserts stubs so the timeline populates on first load
+/// without waiting for scheduled workflows.
+#[tauri::command]
+pub async fn get_meeting_timeline(
+    state: State<'_, Arc<AppState>>,
+    days_before: Option<i64>,
+    days_after: Option<i64>,
+) -> Result<Vec<crate::types::TimelineMeeting>, String> {
+    let days_after_val = days_after.unwrap_or(7);
+    let result = crate::services::meetings::get_meeting_timeline(&state, days_before, days_after)?;
+
+    // Check if we have any meetings AFTER today (i.e., tomorrow or later)
+    let tomorrow_str = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let has_future = result.iter().any(|m| m.start_time.as_str() >= tomorrow_str.as_str());
+    if has_future || days_after_val == 0 {
+        // Enqueue future meetings that have no prep_frozen_json yet
+        let needs_prep: Vec<String> = {
+            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+            db.conn_ref()
+                .prepare(
+                    "SELECT id FROM meetings_history
+                     WHERE start_time >= ?1
+                       AND prep_frozen_json IS NULL
+                       AND meeting_type NOT IN ('personal', 'focus', 'blocked')",
+                )
+                .and_then(|mut stmt| {
+                    let rows = stmt.query_map(rusqlite::params![tomorrow_str], |row| {
+                        row.get::<_, String>(0)
+                    })?;
+                    Ok(rows.filter_map(|r| r.ok()).collect())
+                })
+                .unwrap_or_default()
+        };
+        if !needs_prep.is_empty() {
+            log::info!("get_meeting_timeline: enqueuing {} future meetings without prep", needs_prep.len());
+            for mid in needs_prep {
+                state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+                    meeting_id: mid,
+                    priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
+                    requested_at: std::time::Instant::now(),
+                });
+            }
+        }
+        return Ok(result);
+    }
+
+    // No future meetings in DB — try live fetch from Google Calendar
+    let access_token = match crate::google_api::get_valid_access_token().await {
+        Ok(t) => t,
+        Err(_) => return Ok(result), // No auth — return what we have
+    };
+
+    let today = chrono::Local::now().date_naive();
+    let range_end = today + chrono::Duration::days(days_after_val);
+    let raw_events = match crate::google_api::calendar::fetch_events(
+        &access_token,
+        today + chrono::Duration::days(1), // tomorrow onward (today already covered)
+        range_end,
+    )
+    .await
+    {
+        Ok(events) => events,
+        Err(e) => {
+            log::warn!("get_meeting_timeline: live calendar fetch failed: {}", e);
+            return Ok(result);
+        }
+    };
+
+    if raw_events.is_empty() {
+        return Ok(result);
+    }
+
+    // Classify and upsert into meetings_history (same pattern as prepare_today)
+    let user_domains = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
+        .unwrap_or_default();
+    let entity_hints = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        crate::helpers::build_entity_hints(db)
+    };
+
+    let mut upserted = 0u32;
+    let mut upserted_ids: Vec<String> = Vec::new();
+    for raw in &raw_events {
+        let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &entity_hints);
+        let event = cm.to_calendar_event();
+
+        // Skip personal (matches timeline query filter)
+        if matches!(event.meeting_type, crate::types::MeetingType::Personal) {
+            continue;
+        }
+        let meeting_type_str = event.meeting_type.as_str();
+
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        // Only insert if not already present
+        if db.get_meeting_by_calendar_event_id(&event.id).ok().flatten().is_some() {
+            continue;
+        }
+
+        let attendees_json = if event.attendees.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&event.attendees).unwrap_or_default())
+        };
+
+        let db_meeting = crate::db::DbMeeting {
+            id: event.id.clone(),
+            title: event.title.clone(),
+            meeting_type: meeting_type_str.to_string(),
+            start_time: event.start.to_rfc3339(),
+            end_time: Some(event.end.to_rfc3339()),
+            attendees: attendees_json,
+            notes_path: None,
+            summary: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            calendar_event_id: Some(event.id.clone()),
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
+        };
+        if let Err(e) = db.upsert_meeting(&db_meeting) {
+            log::warn!("get_meeting_timeline: failed to upsert '{}': {}", event.title, e);
+            continue;
+        }
+
+        // Link resolved entities (same pattern as prepare_week)
+        for re in &cm.resolved_entities {
+            let _ = db.link_meeting_entity(&event.id, &re.entity_id, &re.entity_type);
+        }
+
+        upserted_ids.push(event.id.clone());
+        upserted += 1;
+    }
+
+    if upserted > 0 {
+        log::info!("get_meeting_timeline: upserted {} future meetings from Google Calendar", upserted);
+
+        // Enqueue newly upserted meetings for prep generation
+        for mid in &upserted_ids {
+            state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+                meeting_id: mid.clone(),
+                priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
+                requested_at: std::time::Instant::now(),
+            });
+        }
+
+        // Re-query with the newly upserted meetings
+        return crate::services::meetings::get_meeting_timeline(&state, days_before, days_after);
+    }
+
+    Ok(result)
 }

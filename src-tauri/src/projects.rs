@@ -203,8 +203,8 @@ pub fn write_project_markdown(
     // === Intelligence sections (I134 — from intelligence.json) ===
 
     let intel_dir = project_dir(workspace, &project.name);
-    if let Ok(intel) = crate::entity_intel::read_intelligence_json(&intel_dir) {
-        let intel_md = crate::entity_intel::format_intelligence_markdown(&intel);
+    if let Ok(intel) = crate::intelligence::read_intelligence_json(&intel_dir) {
+        let intel_md = crate::intelligence::format_intelligence_markdown(&intel);
         if !intel_md.is_empty() {
             md.push_str(&intel_md);
         }
@@ -666,13 +666,7 @@ pub fn default_project_json(project: &DbProject) -> ProjectJson {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn sample_project(name: &str) -> DbProject {
         let now = Utc::now().to_rfc3339();

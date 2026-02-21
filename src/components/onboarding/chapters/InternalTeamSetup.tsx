@@ -98,7 +98,10 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
       try {
         const [status, people] = await Promise.all([
           invoke<SetupStatus>("get_internal_team_setup_status"),
-          invoke<PersonListItem[]>("get_people", { relationship: null }).catch(() => []),
+          invoke<PersonListItem[]>("get_people", { relationship: null }).catch((err) => {
+            console.error("get_people failed:", err);
+            return [];
+          }),
         ]);
         if (!status.required) {
           onNext();

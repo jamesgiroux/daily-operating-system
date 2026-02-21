@@ -5,6 +5,7 @@
 //! Runs cheaply via SQL aggregation during hygiene or after email fetch.
 
 use crate::db::ActionDb;
+use super::propagation::PropagationEngine;
 
 /// A cadence anomaly for a single entity.
 #[derive(Debug, Clone)]
@@ -25,6 +26,14 @@ pub struct CadenceAnomaly {
 /// 4. Flag anomalies: <50% of avg = gone_quiet, >200% of avg = activity_spike.
 /// 5. Emit cadence_anomaly signals for flagged entities.
 pub fn compute_and_emit_cadence_anomalies(db: &ActionDb) -> Vec<CadenceAnomaly> {
+    compute_and_emit_cadence_anomalies_with_engine(db, None)
+}
+
+/// Compute cadence anomalies and optionally propagate via the signal engine.
+pub fn compute_and_emit_cadence_anomalies_with_engine(
+    db: &ActionDb,
+    engine: Option<&PropagationEngine>,
+) -> Vec<CadenceAnomaly> {
     let conn = db.conn_ref();
 
     // Step 1: Aggregate this week's email signals by entity
@@ -164,17 +173,30 @@ pub fn compute_and_emit_cadence_anomalies(db: &ActionDb) -> Vec<CadenceAnomaly> 
         }
     }
 
-    // Step 5: Emit signals for anomalies
+    // Step 5: Emit signals for anomalies (with propagation when engine available)
     for anomaly in &anomalies {
-        let _ = super::bus::emit_signal(
-            db,
-            &anomaly.entity_type,
-            &anomaly.entity_id,
-            "cadence_anomaly",
-            "email_cadence",
-            Some(&anomaly.anomaly_type),
-            anomaly.confidence,
-        );
+        if let Some(eng) = engine {
+            let _ = super::bus::emit_signal_and_propagate(
+                db,
+                eng,
+                &anomaly.entity_type,
+                &anomaly.entity_id,
+                "cadence_anomaly",
+                "email_cadence",
+                Some(&anomaly.anomaly_type),
+                anomaly.confidence,
+            );
+        } else {
+            let _ = super::bus::emit_signal(
+                db,
+                &anomaly.entity_type,
+                &anomaly.entity_id,
+                "cadence_anomaly",
+                "email_cadence",
+                Some(&anomaly.anomaly_type),
+                anomaly.confidence,
+            );
+        }
         log::info!(
             "cadence: {} for {} {} (count={}, avg={:.1})",
             anomaly.anomaly_type,
@@ -191,13 +213,7 @@ pub fn compute_and_emit_cadence_anomalies(db: &ActionDb) -> Vec<CadenceAnomaly> 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_cadence_no_signals_returns_empty() {

@@ -354,15 +354,8 @@ fn format_renewal_detail(acct: &DbAccount, days_until: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::ActionDb;
+    use crate::db::test_utils::test_db;
     use crate::types::{Meeting, MeetingType, OverlayStatus};
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("intelligence_test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open test db")
-    }
 
     fn sample_meeting(id: &str, title: &str, mt: MeetingType) -> Meeting {
         Meeting {
@@ -381,6 +374,9 @@ mod tests {
             prep_reviewed: None,
             linked_entities: None,
             suggested_unarchive_account_id: None,
+            intelligence_quality: None,
+            calendar_attendees: None,
+            calendar_description: None,
         }
     }
 
@@ -518,6 +514,9 @@ mod tests {
             waiting_on: Some("Legal".to_string()),
             updated_at: now,
             person_id: None,
+            account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
         db.upsert_action(&stale_action).expect("insert");
 

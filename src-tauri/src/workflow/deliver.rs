@@ -710,6 +710,41 @@ pub fn deliver_schedule(
                 obj.insert("prepSummary".to_string(), ps.clone());
             }
 
+            // Calendar event description (mechanical context)
+            if let Some(ref desc) = event.description {
+                if !desc.is_empty() {
+                    obj.insert("calendarDescription".to_string(), json!(desc));
+                }
+            }
+
+            // Structured attendee list from Google Calendar (not AI-enriched)
+            if !event.attendees.is_empty() {
+                let attendee_arr: Vec<Value> = event
+                    .attendees
+                    .iter()
+                    .filter_map(|email| {
+                        let rsvp = event.attendee_rsvp.get(email).cloned().unwrap_or_default();
+                        // Skip declined attendees
+                        if rsvp == "declined" {
+                            return None;
+                        }
+                        let name = event
+                            .attendee_names
+                            .get(email)
+                            .cloned()
+                            .unwrap_or_else(|| email.split('@').next().unwrap_or(email).to_string());
+                        let domain = email.split('@').nth(1).unwrap_or("");
+                        Some(json!({
+                            "email": email,
+                            "name": name,
+                            "rsvp": rsvp,
+                            "domain": domain,
+                        }))
+                    })
+                    .collect();
+                obj.insert("calendarAttendees".to_string(), json!(attendee_arr));
+            }
+
             // Embed linked entities from junction table (I52)
             if let Some(db) = db {
                 if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
@@ -764,11 +799,18 @@ pub fn deliver_schedule(
         parts.join(" with ")
     });
 
+    // Resolve user domains for internal/external attendee grouping
+    let user_domains = crate::state::load_config()
+        .ok()
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
+
     let mut schedule = json!({
         "date": date,
         "greeting": greeting,
         "summary": summary,
         "meetings": meetings_json,
+        "userDomains": user_domains,
     });
 
     if let Some(ref focus) = directive.context.focus {
@@ -1373,6 +1415,19 @@ fn derive_recent_wins_and_sources(ctx: &DirectiveMeetingContext) -> (Vec<String>
     (wins, sources)
 }
 
+/// Public entry point for building prep JSON from outside the daily pipeline.
+///
+/// Used by `MeetingPrepQueue` to convert `gather_meeting_context` output into
+/// `FullMeetingPrep`-compatible JSON for `prep_frozen_json`.
+pub fn build_prep_json_public(
+    meeting: &DirectiveMeeting,
+    meeting_type: &str,
+    meeting_id: &str,
+    ctx: Option<&DirectiveMeetingContext>,
+) -> Value {
+    build_prep_json(meeting, meeting_type, meeting_id, ctx)
+}
+
 /// Build a single prep JSON object (matches JsonPrep in json_loader.rs).
 fn build_prep_json(
     meeting: &DirectiveMeeting,
@@ -1455,7 +1510,21 @@ fn build_prep_json(
             obj.insert("attendees".to_string(), json!(attendees));
         }
 
+        // I339: Write resolved entities array from directive context
         if let Some(ctx) = ctx {
+            if let (Some(ref eid), Some(ref etype)) = (&ctx.entity_id, &ctx.entity_type) {
+                let ename = ctx
+                    .primary_entity
+                    .as_ref()
+                    .and_then(|e| e.get("name").and_then(|n| n.as_str()))
+                    .or(ctx.account.as_deref())
+                    .unwrap_or("Unknown");
+                obj.insert(
+                    "entities".to_string(),
+                    json!([{"id": eid, "name": ename, "entityType": etype}]),
+                );
+            }
+
             if let Some(ref desc) = ctx.description {
                 if !desc.is_empty() {
                     obj.insert("calendarNotes".to_string(), json!(desc));
@@ -4495,6 +4564,7 @@ mod tests {
                     summary: Some("Customer Sync".to_string()),
                     start: Some("2026-02-12T14:00:00+00:00".to_string()),
                     end: Some("2026-02-12T14:30:00+00:00".to_string()),
+                    ..Default::default()
                 }],
             },
             meetings: {
@@ -4546,6 +4616,7 @@ mod tests {
                     summary: Some("Team Standup".to_string()),
                     start: Some("2025-02-07T09:00:00+00:00".to_string()),
                     end: Some("2025-02-07T09:30:00+00:00".to_string()),
+                    ..Default::default()
                 }],
             },
             meetings: {

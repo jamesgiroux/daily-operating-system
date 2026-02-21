@@ -13,6 +13,20 @@ use serde::{Deserialize, Serialize};
 
 use super::calendar::GoogleCalendarEvent;
 
+/// Intelligence tier determines enrichment depth (ADR-0081, I328).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntelligenceTier {
+    /// Full AI enrichment — customer meetings, QBRs, partnerships, team syncs with entity
+    Entity,
+    /// Lightweight prompt — 1:1s, internal meetings without entity association
+    Person,
+    /// Mechanical only, no AI call — training, personal
+    Minimal,
+    /// No intelligence generated — all_hands (50+ attendees)
+    Skip,
+}
+
 /// All-hands attendee threshold (per MEETING-TYPES.md).
 pub const ALL_HANDS_THRESHOLD: usize = 50;
 
@@ -69,6 +83,8 @@ pub struct ClassifiedMeeting {
     pub external_domains: Vec<String>,
     /// Calendar event description (I185).
     pub description: String,
+    /// Intelligence tier for enrichment depth (I328).
+    pub intelligence_tier: IntelligenceTier,
 }
 
 /// Classify a calendar event using the multi-signal algorithm.
@@ -116,23 +132,27 @@ pub fn classify_meeting_multi(
         resolved_entities: Vec::new(),
         external_domains: Vec::new(),
         description: event.description.clone(),
+        intelligence_tier: IntelligenceTier::Person, // default, overridden below
     };
 
     // ---- Step 1: Personal (no attendees or only organizer) ----
     if attendee_count <= 1 {
         result.meeting_type = "personal".to_string();
+        result.intelligence_tier = IntelligenceTier::Minimal;
         return result;
     }
 
     // ---- Step 2: Scale-based override (50+ attendees) ----
     if attendee_count >= ALL_HANDS_THRESHOLD {
         result.meeting_type = "all_hands".to_string();
+        result.intelligence_tier = IntelligenceTier::Skip;
         return result;
     }
 
     // ---- Step 3: Title keyword overrides (all-hands) ----
     if contains_any(&title_lower, &["all hands", "all-hands", "town hall"]) {
         result.meeting_type = "all_hands".to_string();
+        result.intelligence_tier = IntelligenceTier::Skip;
         return result;
     }
 
@@ -175,15 +195,47 @@ pub fn classify_meeting_multi(
 
     let has_external = !external.is_empty();
 
+    // ---- Entity resolution for ALL meetings (not just external) ----
+    // Run entity hints against title/description/domains regardless of internal/external.
+    // This allows title-based entity matches (e.g., "Janus Henderson 1:1") to inform
+    // classification even when all attendees are internal.
+    resolve_entities(&mut result, entity_hints, user_domains, &external_domains);
+
+    // ---- Entity-aware type override ----
+    // If the title matched a known account entity with high confidence,
+    // treat this as an account meeting regardless of attendee domains.
+    let has_account_entity = result.resolved_entities.iter()
+        .any(|e| e.entity_type == "account" && e.confidence >= 0.50);
+
     // ---- Step 5: All-internal path ----
     if !has_external {
+        // Entity-aware override: if an account entity was found in the title,
+        // promote this meeting to account-level intelligence even though all
+        // attendees are internal (e.g., "Janus Henderson 1:1" with internal attendees).
+        if has_account_entity {
+            result.meeting_type = match title_override {
+                Some("one_on_one") => "one_on_one".to_string(),
+                Some("qbr") => "qbr".to_string(),
+                Some(other) => other.to_string(),
+                None if attendee_count == 2 => "one_on_one".to_string(),
+                None => "customer".to_string(),
+            };
+            result.intelligence_tier = IntelligenceTier::Entity;
+            return result;
+        }
+
         if title_override == Some("one_on_one") || attendee_count == 2 {
             result.meeting_type = title_override.unwrap_or("one_on_one").to_string();
+            result.intelligence_tier = IntelligenceTier::Person;
             return result;
         }
 
         if let Some(override_type) = title_override {
             result.meeting_type = override_type.to_string();
+            result.intelligence_tier = match override_type {
+                "training" => IntelligenceTier::Minimal,
+                _ => IntelligenceTier::Person,
+            };
             return result;
         }
 
@@ -191,10 +243,12 @@ pub fn classify_meeting_multi(
         let sync_signals = ["sync", "standup", "stand-up", "scrum", "daily", "weekly"];
         if contains_any(&title_lower, &sync_signals) && event.is_recurring {
             result.meeting_type = "team_sync".to_string();
+            result.intelligence_tier = IntelligenceTier::Person;
             return result;
         }
 
         result.meeting_type = "internal".to_string();
+        result.intelligence_tier = IntelligenceTier::Person;
         return result;
     }
 
@@ -206,6 +260,7 @@ pub fn classify_meeting_multi(
             .all(|d| PERSONAL_EMAIL_DOMAINS.contains(&d.as_str()))
     {
         result.meeting_type = "personal".to_string();
+        result.intelligence_tier = IntelligenceTier::Minimal;
         return result;
     }
 
@@ -213,8 +268,7 @@ pub fn classify_meeting_multi(
     result.external_domains = external_domains.iter().cloned().collect();
     result.external_domains.sort();
 
-    // ---- Entity resolution (I336) ----
-    resolve_entities(&mut result, entity_hints, user_domains, &external_domains);
+    // Entity resolution already ran above — no need to call again.
 
     // Apply title override if set (e.g., QBR with external attendees)
     if let Some(override_type) = title_override {
@@ -224,6 +278,22 @@ pub fn classify_meeting_multi(
     } else {
         result.meeting_type = "customer".to_string();
     }
+
+    // Compute intelligence tier based on final meeting type and entity resolution
+    result.intelligence_tier = match result.meeting_type.as_str() {
+        "customer" | "qbr" | "partnership" | "external" => IntelligenceTier::Entity,
+        "team_sync" => {
+            if !result.resolved_entities.is_empty() {
+                IntelligenceTier::Entity
+            } else {
+                IntelligenceTier::Person
+            }
+        }
+        "one_on_one" | "internal" => IntelligenceTier::Person,
+        "training" | "personal" => IntelligenceTier::Minimal,
+        "all_hands" => IntelligenceTier::Skip,
+        _ => IntelligenceTier::Person,
+    };
 
     result
 }
@@ -418,6 +488,7 @@ impl ClassifiedMeeting {
             account,
             attendees: self.attendees.clone(),
             is_all_day: self.is_all_day,
+            linked_entities: None,
         }
     }
 }
@@ -490,11 +561,19 @@ mod tests {
     }
 
     fn account_hint_with_domain(id: &str, name: &str, domains: &[&str]) -> EntityHint {
+        // Generate both full slug and individual word slugs (mirrors production DB behavior)
+        let mut slugs: Vec<String> = vec![name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()];
+        for word in name.split_whitespace() {
+            let slug: String = word.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+            if slug.len() >= 4 && !slugs.contains(&slug) {
+                slugs.push(slug);
+            }
+        }
         EntityHint {
             id: id.to_string(),
             entity_type: EntityType::Account,
             name: name.to_string(),
-            slugs: vec![name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()],
+            slugs,
             domains: domains.iter().map(|s| s.to_string()).collect(),
             keywords: vec![],
             emails: vec![],
@@ -770,5 +849,52 @@ mod tests {
         assert!(result.resolved_entities.len() >= 2);
         // Domain match (0.80) should come before keyword match (0.70)
         assert!(result.resolved_entities[0].confidence >= result.resolved_entities[1].confidence);
+    }
+
+    // ---- Entity-aware internal classification tests ----
+
+    #[test]
+    fn test_classify_internal_1on1_with_account_in_title() {
+        let hints = vec![account_hint_with_domain("janus-id", "Janus Henderson", &["janushenderson.com"])];
+        // All attendees are internal — normally would be "one_on_one" with Person tier
+        let event = make_event(
+            "Janus Henderson 1:1",
+            vec!["me@company.com", "colleague@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        // Should be promoted to Entity tier because "Janus Henderson" is a known account
+        assert_eq!(result.meeting_type, "one_on_one");
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
+        assert!(!result.resolved_entities.is_empty());
+        assert_eq!(result.resolved_entities[0].entity_type, "account");
+        assert_eq!(result.resolved_entities[0].name, "Janus Henderson");
+    }
+
+    #[test]
+    fn test_classify_internal_meeting_with_account_in_title() {
+        let hints = vec![account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"])];
+        // 3 internal attendees, "Acme" in title
+        let event = make_event(
+            "Acme Corp Planning Session",
+            vec!["me@company.com", "a@company.com", "b@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &hints);
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
+        assert!(!result.resolved_entities.is_empty());
+    }
+
+    #[test]
+    fn test_classify_pure_internal_without_account() {
+        // No account name in title — should remain internal with Person tier
+        let event = make_event(
+            "Sprint Planning",
+            vec!["me@company.com", "a@company.com", "b@company.com"],
+            false,
+        );
+        let result = classify_meeting(&event, "company.com", &empty_hints());
+        assert_eq!(result.meeting_type, "internal");
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Person);
     }
 }
