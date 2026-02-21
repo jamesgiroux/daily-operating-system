@@ -278,6 +278,8 @@ pub fn create_action(
         updated_at: now,
         person_id,
         account_name: None,
+        next_meeting_title: None,
+        next_meeting_start: None,
     };
 
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
