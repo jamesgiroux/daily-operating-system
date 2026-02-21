@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{Timelike, Utc};
+use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::db::DbPerson;
@@ -292,26 +292,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
 /// Check if we should poll now (authenticated + within work hours)
 fn should_poll(state: &AppState) -> bool {
-    // Check auth status
-    let is_authenticated = state
+    // Only gate: must be authenticated with Google
+    state
         .google_auth
         .lock()
         .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
-        .unwrap_or(false);
-
-    if !is_authenticated {
-        return false;
-    }
-
-    // Check work hours
-    let config = state.config.read().ok().and_then(|g| g.clone());
-    let (start_hour, end_hour) = match config {
-        Some(cfg) => (cfg.google.work_hours_start, cfg.google.work_hours_end),
-        None => (8, 18),
-    };
-
-    let now_hour = chrono::Local::now().hour() as u8;
-    now_hour >= start_hour && now_hour < end_hour
+        .unwrap_or(false)
 }
 
 /// Get the poll interval in minutes from config
