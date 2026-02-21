@@ -15,7 +15,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 
 - [ ] `CHANGELOG.md` entry added for the new version with today's date
 - [ ] Entry follows Keep a Changelog format (sections: Added, Changed, Fixed, Removed, Security as needed)
-- [ ] Every user-facing change has a line item — no silent changes
+- [ ] Every user-facing change has a line item — no silent changes, don't include issue numbers
 - [ ] `README.md` updated if the release changes installation steps, requirements, or core features
 - [ ] `.docs/RELEASE-NOTES.md` updated with alpha/beta tester-facing summary (if applicable)
 - [ ] Architecture Decision Records created for any new architectural decisions (`.docs/decisions/`)
