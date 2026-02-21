@@ -13,10 +13,8 @@
 | [DESIGN-SYSTEM.md](./DESIGN-SYSTEM.md) | The rules. Typography, color, spacing, layout, components. | Writing any CSS or building any component |
 | [COMPONENT-INVENTORY.md](./COMPONENT-INVENTORY.md) | Every shared component, its job, its compliance status | Deciding whether to build a new component |
 | [PAGE-ARCHITECTURE.md](./PAGE-ARCHITECTURE.md) | How each page is structured, what it renders, what it should look like | Touching any page file |
-| [VIOLATIONS.md](./VIOLATIONS.md) | Known violations of the design system with severity and fix instructions | Starting any UI cleanup work |
 | [ARCHITECTURE-MAP.md](./ARCHITECTURE-MAP.md) | Backend modules, data flow, async tasks, IPC surface | Any backend structural work |
 | [SERVICE-CONTRACTS.md](./SERVICE-CONTRACTS.md) | Target service layer, extraction contracts, migration path | Refactoring commands.rs or db.rs |
-| [PLUGIN-MARKETPLACE-DESIGN.md](./PLUGIN-MARKETPLACE-DESIGN.md) | Plugin marketplace design spec (pre-existing) | Working on integrations UI |
 
 ## The Problem This Solves
 
