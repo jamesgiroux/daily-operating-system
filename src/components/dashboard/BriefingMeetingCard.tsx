@@ -19,7 +19,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
-import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { MeetingCard } from "@/components/shared/MeetingCard";
 import type { Meeting, CalendarEvent, Action, Stakeholder, CalendarAttendee } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
@@ -436,67 +436,51 @@ export function BriefingMeetingCard({
 
   return (
     <>
-      {/* Collapsed row */}
-      <div
+      {/* Schedule row via shared MeetingCard */}
+      <MeetingCard
+        id={meeting.id}
+        title={meeting.title}
+        displayTime={meeting.time}
+        duration={duration ?? undefined}
+        meetingType={meeting.type}
+        entityByline={subtitleParts.join(" \u00B7 ")}
+        intelligenceQuality={meeting.intelligenceQuality ?? undefined}
+        temporalState={state}
+        onClick={(state === "past" || canExpand) ? handleRowClick : undefined}
+        showNavigationHint={state === "past"}
         className={clsx(
-          s.scheduleRow,
-          accentClass,
-          state === "in-progress" && s.scheduleRowActive,
-          state === "past" && s.scheduleRowPast,
-          state === "past" && s.scheduleRowPastNavigate,
+          s.briefingCardOverride,
+          state === "in-progress" && s.briefingCardOverrideActive,
           canExpand && s.scheduleRowExpandable,
           isExpanded && s.scheduleRowExpanded,
         )}
-        onClick={handleRowClick}
+        titleExtra={<>
+          {isUpNext && state !== "in-progress" && <span className={s.upNextPill}>UP NEXT</span>}
+          {canExpand && (
+            <span className={s.expandHint}>
+              {isExpanded ? "collapse" : "expand"}
+            </span>
+          )}
+        </>}
       >
-        <div className={s.scheduleTime}>
-          {meeting.time}
-          {duration && <span className={s.scheduleTimeDuration}>{duration}</span>}
-        </div>
-        <div className={s.scheduleContent}>
-          <div className={s.scheduleTitleRow}>
-            <span className={s.scheduleTitle}>{meeting.title}</span>
-            {isUpNext && state !== "in-progress" && <span className={s.upNextPill}>UP NEXT</span>}
-            {state === "in-progress" && <span className={s.nowPill}>NOW</span>}
-            {state === "past" && <span className={s.pastArrow}>&rarr;</span>}
-            {canExpand && (
-              <span className={s.expandHint}>
-                {isExpanded ? "collapse" : "expand"}
+        {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              marginTop: 2,
+            }}
+          >
+            {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
+            {proposedActionCount != null && proposedActionCount > 0 && (
+              <span style={{ color: "var(--color-spice-turmeric)" }}>
+                {" \u00B7 "}{proposedActionCount} needs review
               </span>
             )}
           </div>
-          <div className={s.scheduleSubtitle}>
-            {subtitleParts.join(" \u00B7 ")}
-            {meeting.intelligenceQuality ? (
-              <IntelligenceQualityBadge
-                quality={meeting.intelligenceQuality}
-                enrichedAt={meeting.hasPrep ? meeting.intelligenceQuality.lastEnriched : undefined}
-              />
-            ) : meeting.hasPrep ? (
-              <span className={s.schedulePrepDot} title="Prep available" />
-            ) : isUpNext ? (
-              <span className={s.schedulePrepDotMuted} title="No prep yet" />
-            ) : null}
-          </div>
-          {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                marginTop: 2,
-              }}
-            >
-              {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
-              {proposedActionCount != null && proposedActionCount > 0 && (
-                <span style={{ color: "var(--color-spice-turmeric)" }}>
-                  {" \u00B7 "}{proposedActionCount} needs review
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+        )}
+      </MeetingCard>
 
       {/* Expansion panel */}
       {canExpand && (
