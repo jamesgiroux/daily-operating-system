@@ -266,7 +266,6 @@ export default function ProjectDetailEditorial() {
       <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <TheWork
           data={detail}
-          intelligence={intelligence}
           addingAction={proj.addingAction}
           setAddingAction={proj.setAddingAction}
           newActionTitle={proj.newActionTitle}
