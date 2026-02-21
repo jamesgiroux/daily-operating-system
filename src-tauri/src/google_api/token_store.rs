@@ -106,19 +106,56 @@ const KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.google-auth";
 #[cfg(target_os = "macos")]
 const KEYCHAIN_ACCOUNT: &str = "oauth-token-v1";
 
+/// Run a `security` CLI command with retry + backoff for transient Keychain
+/// contention (macOS errno 35 / EAGAIN — "Resource temporarily unavailable").
+#[cfg(target_os = "macos")]
+fn run_security_cmd(args: &[&str]) -> Result<std::process::Output, GoogleApiError> {
+    const MAX_RETRIES: u32 = 4;
+    const BASE_MS: u64 = 150;
+
+    for attempt in 0..=MAX_RETRIES {
+        let output = std::process::Command::new("security")
+            .args(args)
+            .output()
+            .map_err(|err| GoogleApiError::Keychain(err.to_string()))?;
+
+        // Success or a non-transient failure — return immediately.
+        if output.status.success() {
+            return Ok(output);
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let is_transient = stderr.contains("temporarily unavailable")
+            || stderr.contains("os error 35")
+            || stderr.contains("EAGAIN");
+
+        if !is_transient || attempt == MAX_RETRIES {
+            return Ok(output);
+        }
+
+        let delay = std::time::Duration::from_millis(BASE_MS * 2u64.pow(attempt));
+        log::warn!(
+            "Keychain busy (attempt {}/{}), retrying in {}ms",
+            attempt + 1,
+            MAX_RETRIES,
+            delay.as_millis()
+        );
+        std::thread::sleep(delay);
+    }
+
+    unreachable!()
+}
+
 #[cfg(target_os = "macos")]
 fn load_token_from_keychain() -> Result<GoogleToken, GoogleApiError> {
-    let output = std::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-a",
-            KEYCHAIN_ACCOUNT,
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-w",
-        ])
-        .output()
-        .map_err(|err| GoogleApiError::Keychain(err.to_string()))?;
+    let output = run_security_cmd(&[
+        "find-generic-password",
+        "-a",
+        KEYCHAIN_ACCOUNT,
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-w",
+    ])?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
@@ -138,19 +175,16 @@ fn load_token_from_keychain() -> Result<GoogleToken, GoogleApiError> {
 #[cfg(target_os = "macos")]
 fn save_token_to_keychain(token: &GoogleToken) -> Result<(), GoogleApiError> {
     let payload = serde_json::to_string(token)?;
-    let output = std::process::Command::new("security")
-        .args([
-            "add-generic-password",
-            "-a",
-            KEYCHAIN_ACCOUNT,
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-w",
-            &payload,
-            "-U",
-        ])
-        .output()
-        .map_err(|err| GoogleApiError::Keychain(err.to_string()))?;
+    let output = run_security_cmd(&[
+        "add-generic-password",
+        "-a",
+        KEYCHAIN_ACCOUNT,
+        "-s",
+        KEYCHAIN_SERVICE,
+        "-w",
+        &payload,
+        "-U",
+    ])?;
     if !output.status.success() {
         return Err(GoogleApiError::Keychain(
             String::from_utf8_lossy(&output.stderr).to_string(),
@@ -161,16 +195,13 @@ fn save_token_to_keychain(token: &GoogleToken) -> Result<(), GoogleApiError> {
 
 #[cfg(target_os = "macos")]
 fn delete_token_from_keychain() -> Result<(), GoogleApiError> {
-    let output = std::process::Command::new("security")
-        .args([
-            "delete-generic-password",
-            "-a",
-            KEYCHAIN_ACCOUNT,
-            "-s",
-            KEYCHAIN_SERVICE,
-        ])
-        .output()
-        .map_err(|err| GoogleApiError::Keychain(err.to_string()))?;
+    let output = run_security_cmd(&[
+        "delete-generic-password",
+        "-a",
+        KEYCHAIN_ACCOUNT,
+        "-s",
+        KEYCHAIN_SERVICE,
+    ])?;
     if output.status.success() {
         return Ok(());
     }
