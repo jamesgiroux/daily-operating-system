@@ -965,13 +965,14 @@ function TimelineDayGroup({
                           fontSize: 10,
                           fontWeight: 600,
                           letterSpacing: "0.04em",
-                          color: "var(--color-spice-terracotta)",
-                          background: "rgba(192, 108, 80, 0.08)",
+                          color: m.enriching ? "var(--color-spice-turmeric)" : "var(--color-spice-terracotta)",
+                          background: m.enriching ? "rgba(201, 162, 39, 0.08)" : "rgba(192, 108, 80, 0.08)",
                           borderRadius: 4,
                           padding: "1px 6px",
+                          ...(m.enriching ? { animation: "pulse 2s ease-in-out infinite" } : {}),
                         }}
                       >
-                        No prep
+                        {m.enriching ? "Preparing…" : "No prep"}
                       </span>
                     )}
                     {daysUntil != null && daysUntil > 0 && (

@@ -28,7 +28,7 @@ import { Loader2 } from "lucide-react";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
-import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
+import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction, ReplyNeeded } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -84,7 +84,8 @@ function findUnpreppedHighStakes(meetings: Meeting[], now: number, upNextId?: st
     const state = getTemporalState(m, now);
     if (state === "past" || state === "cancelled") return false;
     const isHighStakes = ["qbr", "customer"].includes(m.type);
-    return isHighStakes && !m.hasPrep;
+    const needsPrep = !m.intelligenceQuality || m.intelligenceQuality.level === "sparse";
+    return isHighStakes && needsPrep;
   });
 }
 
@@ -95,7 +96,9 @@ function computeReadiness(meetings: Meeting[], actions: Action[]) {
     ["customer", "qbr", "partnership", "external"].includes(m.type) &&
     m.overlayStatus !== "cancelled"
   );
-  const preppedCount = externalMeetings.filter((m) => m.hasPrep).length;
+  const preppedCount = externalMeetings.filter((m) =>
+    m.intelligenceQuality && m.intelligenceQuality.level !== "sparse"
+  ).length;
   const totalExternal = externalMeetings.length;
   const overdueActions = actions.filter((a) => a.isOverdue && a.status !== "completed");
   return { preppedCount, totalExternal, overdueCount: overdueActions.length };
@@ -115,11 +118,14 @@ function formatMinutes(minutes: number): string {
 export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  const isStale = freshness.freshness === "stale";
 
   // Data
   const meetings = data.meetings;
   const actions = data.actions;
   const emails = data.emails ?? [];
+  const repliesNeeded = isStale ? [] : (data.repliesNeeded ?? []);
+
   const highPriorityEmails = emails.filter((e) => e.priority === "high").slice(0, 4);
   const briefingEmails = highPriorityEmails.length > 0
     ? highPriorityEmails
@@ -253,8 +259,6 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     ? "A clear day. Nothing needs you."
     : "Your day is ready.");
 
-  const isStale = freshness.freshness === "stale";
-
   return (
     <div>
       {/* Stale data indicator — non-blocking, shows refresh is in progress */}
@@ -372,6 +376,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         emailSectionLabel={emailSectionLabel}
         allEmails={isStale ? [] : emails}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
+        repliesNeeded={repliesNeeded}
       />
 
       {/* ═══ FINIS ═══ */}
@@ -394,6 +399,7 @@ function AttentionSection({
   emailSectionLabel,
   allEmails,
   todayMeetingIds,
+  repliesNeeded,
 }: {
   proposedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
   acceptAction: (id: string) => void;
@@ -406,6 +412,7 @@ function AttentionSection({
   emailSectionLabel: string;
   allEmails: Email[];
   todayMeetingIds: Set<string>;
+  repliesNeeded: ReplyNeeded[];
 }) {
   const navigate = useNavigate();
 
@@ -437,8 +444,9 @@ function AttentionSection({
 
   const hasProposed = proposedActions.length > 0;
   const hasActions = attentionActions.length > 0;
+  const hasReplies = repliesNeeded.length > 0;
   const hasEmails = briefingEmails.length > 0;
-  const hasAnything = hasProposed || hasActions || hasEmails;
+  const hasAnything = hasProposed || hasActions || hasReplies || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -563,8 +571,35 @@ function AttentionSection({
             </div>
           )}
 
-          {/* Emails */}
-          {hasEmails && (
+          {/* Emails: show Replies Needed when available, generic emails as fallback */}
+          {hasReplies ? (
+            <>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
+                Replies Needed
+              </div>
+              <div className={s.priorityItems}>
+                {repliesNeeded.slice(0, 3).map((reply) => (
+                  <Link
+                    key={reply.threadId}
+                    to="/emails"
+                    className={s.priorityItem}
+                    style={{ textDecoration: "none" }}
+                  >
+                    <div className={s.replyDot} />
+                    <div className={s.replyContent}>
+                      <div className={s.replySubject}>{reply.subject}</div>
+                      <div className={s.replyMeta}>
+                        {reply.from}
+                        {reply.waitDuration && (
+                          <> &middot; <span className={s.replyWait}>waiting {reply.waitDuration}</span></>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : hasEmails ? (
             <>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>{emailSectionLabel}</div>
               <div className={s.priorityItems}>
@@ -573,7 +608,7 @@ function AttentionSection({
                 ))}
               </div>
             </>
-          )}
+          ) : null}
 
           {/* View all links */}
           <div className={s.prioritiesViewAll}>
