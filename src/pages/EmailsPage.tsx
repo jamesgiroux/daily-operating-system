@@ -33,7 +33,7 @@ function EmailRefreshButton() {
     <FolioRefreshButton
       onClick={handleRefresh}
       loading={refreshing}
-      loadingLabel="Refreshing\u2026"
+      loadingLabel="Refreshing…"
       title={refreshing ? "Refreshing emails..." : "Check for new emails"}
     />
   );
