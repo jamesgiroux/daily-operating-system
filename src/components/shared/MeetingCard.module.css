@@ -77,6 +77,15 @@
   background: rgba(201, 162, 39, 0.07);
 }
 
+.navigable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.navigable:hover {
+  background: rgba(30, 37, 48, 0.015);
+}
+
 .pastNavigate {
   cursor: pointer;
 }
