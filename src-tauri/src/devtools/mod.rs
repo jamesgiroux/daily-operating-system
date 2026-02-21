@@ -941,10 +941,11 @@ pub fn run_week_mechanical(state: &AppState) -> Result<String, String> {
     Ok("Week (mechanical): week-overview.json delivered".into())
 }
 
-/// Weekly prep — full pipeline including AI enrichment (I94).
+/// Weekly prep — full pipeline (mechanical only, AI enrichment removed).
 ///
-/// Mechanical delivery first, then AI enrichment via enrich_week().
-/// Requires Claude Code installed and authenticated.
+/// Same as `run_week_mechanical` — the AI enrichment step was removed because
+/// its outputs (weekNarrative, topPriority, suggestedUse) were never rendered
+/// by the frontend. Meeting-level AI enrichment flows through intelligence.json.
 pub fn run_week_full(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
@@ -953,48 +954,8 @@ pub fn run_week_full(state: &AppState) -> Result<String, String> {
     ensure_briefing_seeded(state)?;
 
     let workspace = get_workspace(state)?;
-    let data_dir = workspace.join("_today").join("data");
-
-    // Phase 2: Mechanical delivery
     crate::prepare::orchestrate::deliver_week(&workspace)?;
-
-    // Phase 3: AI enrichment (fault-tolerant)
-    let ai_config = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
-        .unwrap_or_default();
-    let synthesis_pty =
-        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
-    let user_ctx = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-        .unwrap_or(crate::types::UserContext {
-            name: None,
-            company: None,
-            title: None,
-            focus: None,
-        });
-
-    match crate::workflow::deliver::enrich_week(
-        &data_dir,
-        &synthesis_pty,
-        &workspace,
-        &user_ctx,
-        state,
-    ) {
-        Ok(()) => Ok("Week (full): week-overview.json + AI enrichment delivered".into()),
-        Err(e) => {
-            log::warn!("Week AI enrichment failed (non-fatal): {}", e);
-            Ok(format!(
-                "Week (full): week-overview.json delivered. AI enrichment failed: {}",
-                e
-            ))
-        }
-    }
+    Ok("Week (full): week-overview.json delivered (mechanical)".into())
 }
 
 /// Helper: get workspace path from config.
@@ -2014,6 +1975,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
             account: account.map(|s| s.to_string()),
             attendees: attendees.into_iter().map(String::from).collect(),
             is_all_day: false,
+            linked_entities: None,
         }
     };
 

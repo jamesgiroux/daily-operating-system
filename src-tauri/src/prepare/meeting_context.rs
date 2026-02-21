@@ -42,8 +42,16 @@ pub fn gather_all_meeting_contexts(
 ) -> Vec<Value> {
     let mut contexts = Vec::new();
     for meeting in classified {
-        let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        if meeting_type == "personal" || meeting_type == "all_hands" {
+        // I328: Use intelligence_tier when available, fall back to type-based skip
+        let should_skip = match meeting.get("intelligence_tier").and_then(|v| v.as_str()) {
+            Some("skip") => true,
+            Some(_) => false,
+            None => {
+                let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                meeting_type == "personal" || meeting_type == "all_hands"
+            }
+        };
+        if should_skip {
             continue;
         }
         contexts.push(gather_meeting_context(meeting, workspace, db, embedding_model));
@@ -72,40 +80,20 @@ fn resolve_primary_entity(
     let db = db?;
     let accounts_dir = workspace.join("Accounts");
 
-    // 1. Entity resolver signals (junction, attendee, keyword, embedding)
+    // Entity resolver handles junction-is-definitive gate internally.
+    // If junction table has entries, it returns those immediately
+    // without running attendee/keyword/embedding resolution.
     let resolver_outcomes = resolve_meeting_entities(
         db, event_id, meeting, &accounts_dir, embedding_model,
     );
 
-    // 2. I336 classification entities from meeting JSON
-    let classification_entities: Vec<(String, EntityType, f64, String)> = meeting
-        .get("entities")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|e| {
-                    let id = e.get("entity_id").and_then(|v| v.as_str())?;
-                    let etype = e
-                        .get("entity_type")
-                        .and_then(|v| v.as_str())
-                        .map(EntityType::from_str_lossy)
-                        .unwrap_or(EntityType::Other);
-                    let conf = e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let source = e
-                        .get("source")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("classification")
-                        .to_string();
-                    Some((id.to_string(), etype, conf, source))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // 3. Build merged candidates: (entity_id, entity_type) -> (confidence, source, name)
+    // Build candidates from resolver outcomes only.
+    // Classification entities are NOT merged — the resolver already
+    // incorporates junction signals which are definitive. Merging
+    // classification entities would reintroduce attendee-domain-based
+    // entities that compete with the manual link.
     let mut candidates: HashMap<(String, EntityType), (f64, String, String)> = HashMap::new();
 
-    // Insert resolver outcomes
     for outcome in &resolver_outcomes {
         let entity = match outcome {
             ResolutionOutcome::Resolved(e) | ResolutionOutcome::ResolvedWithFlag(e) => e,
@@ -143,30 +131,7 @@ fn resolve_primary_entity(
         );
     }
 
-    // Merge classification entities (take higher confidence)
-    for (id, etype, conf, source) in &classification_entities {
-        let key = (id.clone(), *etype);
-        match candidates.get(&key) {
-            Some((existing_conf, _, _)) if *existing_conf >= *conf => {}
-            _ => {
-                let name = db
-                    .get_entity(id)
-                    .ok()
-                    .flatten()
-                    .map(|e| e.name)
-                    .or_else(|| match etype {
-                        EntityType::Account => db.get_account(id).ok().flatten().map(|a| a.name),
-                        EntityType::Project => db.get_project(id).ok().flatten().map(|p| p.name),
-                        EntityType::Person => db.get_person(id).ok().flatten().map(|p| p.name),
-                        _ => None,
-                    })
-                    .unwrap_or_default();
-                candidates.insert(key, (*conf, source.clone(), name));
-            }
-        }
-    }
-
-    // 4. Select highest-confidence candidate above threshold (0.60)
+    // Select highest-confidence candidate above threshold (0.60)
     let best = candidates
         .into_iter()
         .filter(|(_, (conf, _, _))| *conf >= 0.60)
@@ -474,6 +439,19 @@ fn gather_person_context(
     }
 }
 
+/// Public entry point for generating context for a single meeting.
+///
+/// Used by `MeetingPrepQueue` to generate mechanical prep for future meetings
+/// outside the daily briefing pipeline. Wraps the private `gather_meeting_context`.
+pub fn gather_meeting_context_single(
+    meeting: &Value,
+    workspace: &Path,
+    db: Option<&crate::db::ActionDb>,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+) -> Value {
+    gather_meeting_context(meeting, workspace, db, embedding_model)
+}
+
 /// Build rich context for a single meeting prep.
 ///
 /// I337: Entity-first dispatch. Resolves the primary entity (account, project,
@@ -510,8 +488,9 @@ fn gather_meeting_context(
         ctx["description"] = json!(description);
     }
 
-    // Skip meetings that don't benefit from prep
-    if meeting_type == "personal" || meeting_type == "all_hands" {
+    // Skip meetings that don't benefit from prep (I328: check tier first)
+    let tier = meeting.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("");
+    if tier == "skip" || (tier.is_empty() && (meeting_type == "personal" || meeting_type == "all_hands")) {
         return ctx;
     }
 
@@ -554,30 +533,27 @@ fn gather_meeting_context(
     } else {
         // No entity resolved — type-based fallbacks
 
-        // Internal/1:1 fallback: try resolve_internal_account_for_meeting
-        let internal_types = ["internal", "team_sync", "one_on_one"];
-        if internal_types.contains(&meeting_type) {
-            if let Some(db) = db {
-                if let Some(internal_account) = resolve_internal_account_for_meeting(
-                    db,
-                    event_id,
-                    title,
-                    meeting.get("attendees"),
-                ) {
-                    ctx["account"] = json!(internal_account.name.clone());
-                    ctx["entity_id"] = json!(internal_account.id.clone());
-                    let account_path =
-                        crate::accounts::resolve_account_dir(workspace, &internal_account);
-                    if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
-                        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-                    }
-                    if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
-                        ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
-                    }
-                    ctx["open_actions"] = get_account_actions(db, &internal_account.id);
-                    ctx["meeting_history"] =
-                        get_meeting_history(db, &internal_account.id, 30, 3);
+        // Account fallback: try resolve_account_for_meeting (internal + external)
+        if let Some(db) = db {
+            if let Some(resolved_account) = resolve_account_for_meeting(
+                db,
+                event_id,
+                title,
+                meeting.get("attendees"),
+            ) {
+                ctx["account"] = json!(resolved_account.name.clone());
+                ctx["entity_id"] = json!(resolved_account.id.clone());
+                let account_path =
+                    crate::accounts::resolve_account_dir(workspace, &resolved_account);
+                if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
+                    ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
                 }
+                if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
+                    ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
+                }
+                ctx["open_actions"] = get_account_actions(db, &resolved_account.id);
+                ctx["meeting_history"] =
+                    get_meeting_history(db, &resolved_account.id, 30, 3);
             }
         }
 
@@ -645,6 +621,7 @@ fn gather_meeting_context(
         }
 
         // Fallback pending actions for internal types
+        let internal_types = ["internal", "team_sync", "one_on_one"];
         if internal_types.contains(&meeting_type) {
             if let Some(db) = db {
                 ctx["open_actions"] = get_all_pending_actions(db, 10);
@@ -674,9 +651,7 @@ fn gather_meeting_context(
                 .unwrap_or_default();
             let email_ctx = crate::signals::email_context::gather_email_context(
                 db,
-                event_id,
                 &attendees,
-                title,
                 &entity_id,
                 8,
             );
@@ -698,7 +673,7 @@ fn gather_meeting_context(
 /// Read intelligence.json from an entity directory and inject relevant
 /// fields into the meeting context for prep enrichment.
 fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
-    let intel = match crate::entity_intel::read_intelligence_json(entity_dir) {
+    let intel = match crate::intelligence::read_intelligence_json(entity_dir) {
         Ok(intel) => intel,
         Err(_) => return,
     };
@@ -755,192 +730,6 @@ fn inject_recent_email_signals(db: &crate::db::ActionDb, entity_id: &str, ctx: &
 // File search helpers
 // ---------------------------------------------------------------------------
 
-/// Resolve an account from the database when filesystem matching fails (I168).
-///
-/// Two-step resolution:
-/// 1. Direct: check `meeting_entities` junction for this meeting's primary ID
-/// 2. Attendee inference: look up meeting attendees → person → entity links, majority vote
-fn resolve_account_from_db(
-    db: &crate::db::ActionDb,
-    event_id: &str,
-    meeting: &Value,
-    accounts_dir: &Path,
-) -> Option<AccountMatch> {
-    let meeting_type = meeting
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let internal_meeting = matches!(
-        meeting_type.as_str(),
-        "internal" | "team_sync" | "one_on_one"
-    );
-    let meeting_id = crate::workflow::deliver::meeting_primary_id(Some(event_id), "", "", "");
-    let title_lower = meeting
-        .get("title")
-        .or_else(|| meeting.get("summary"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let external_domains: Vec<String> = meeting
-        .get("external_domains")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // Load meeting row by calendar_event_id when available.
-    let meeting_row = if event_id.is_empty() {
-        None
-    } else {
-        db.get_meeting_by_calendar_event_id(event_id).ok().flatten()
-    };
-
-    // Step 0: Explicit junction-table account assignment is highest-confidence.
-    if let Some(ref row) = meeting_row {
-        if let Ok(entities) = db.get_meeting_entities(&row.id) {
-            if let Some(acct_entity) = entities.iter().find(|e| e.entity_type == crate::entity::EntityType::Account) {
-                if !internal_meeting {
-                    if let Ok(Some(account)) = db.get_account(&acct_entity.id) {
-                        if account.is_internal {
-                            return None;
-                        }
-                    }
-                }
-                if let Some(matched) = resolve_account_identifier(db, &acct_entity.id, accounts_dir) {
-                    return Some(matched);
-                }
-            }
-        }
-    }
-
-    // Step 1: Direct meeting_entities junction lookup (meeting id and calendar-backed id).
-    let mut direct_candidates: Vec<AccountMatch> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    for lookup_id in [
-        (!meeting_id.is_empty()).then_some(meeting_id.as_str()),
-        meeting_row
-            .as_ref()
-            .and_then(|m| (!m.id.is_empty() && m.id != meeting_id).then_some(m.id.as_str())),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if let Ok(entities) = db.get_meeting_entities(lookup_id) {
-            for entity in entities {
-                if entity.entity_type != crate::entity::EntityType::Account {
-                    continue;
-                }
-                if !internal_meeting {
-                    if let Ok(Some(account)) = db.get_account(&entity.id) {
-                        if account.is_internal {
-                            continue;
-                        }
-                    }
-                }
-                if let Some(matched) = find_account_dir_by_id_hint(&entity.id, accounts_dir)
-                    .or_else(|| find_account_dir_by_name(&entity.name, accounts_dir))
-                {
-                    let key = normalize_account_key(&matched.name);
-                    if seen.insert(key) {
-                        direct_candidates.push(matched);
-                    }
-                }
-            }
-        }
-    }
-
-    let attendee_votes = meeting_row
-        .as_ref()
-        .and_then(|row| row.attendees.as_deref())
-        .map(|attendees| build_attendee_account_votes(db, attendees))
-        .unwrap_or_default();
-
-    if !direct_candidates.is_empty() {
-        if direct_candidates.len() == 1 {
-            return direct_candidates.into_iter().next();
-        }
-
-        // Multiple linked accounts: use deterministic scoring.
-        let mut best: Option<(i32, String, AccountMatch)> = None;
-        for candidate in direct_candidates {
-            let mut score = 0;
-            if matches_meeting(&candidate.name, &title_lower, &external_domains) {
-                score += 100;
-            }
-            if candidate.relative_path.contains('/') {
-                score += 5;
-            }
-            score += attendee_votes
-                .get(&normalize_account_key(&candidate.name))
-                .copied()
-                .unwrap_or(0) as i32
-                * 10;
-
-            let tie_name = candidate.name.to_lowercase();
-            let should_replace = match &best {
-                None => true,
-                Some((best_score, best_name, _)) => {
-                    score > *best_score || (score == *best_score && tie_name < *best_name)
-                }
-            };
-            if should_replace {
-                best = Some((score, tie_name, candidate));
-            }
-        }
-
-        if let Some((_, _, matched)) = best {
-            return Some(matched);
-        }
-    }
-
-    // Step 2: Attendee inference fallback (majority vote from person↔entity links).
-    if let Some((top_key, _)) = attendee_votes.into_iter().max_by_key(|(_, c)| *c) {
-        if let Some(matched) = find_account_dir_by_name(&top_key, accounts_dir) {
-            return Some(matched);
-        }
-    }
-
-    None
-}
-
-/// Resolve an account identifier that may be an entity/account ID or name.
-fn resolve_account_identifier(
-    db: &crate::db::ActionDb,
-    account_ref: &str,
-    accounts_dir: &Path,
-) -> Option<AccountMatch> {
-    let trimmed = account_ref.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    // Prefer path resolution from slug-like IDs (e.g., "salesforce--digital-marketing-technology")
-    // to disambiguate duplicate names across top-level and BU child folders.
-    if let Some(matched) = find_account_dir_by_id_hint(trimmed, accounts_dir) {
-        return Some(matched);
-    }
-
-    if let Ok(Some(entity)) = db.get_entity(trimmed) {
-        if entity.entity_type == crate::entity::EntityType::Account {
-            if let Some(matched) = find_account_dir_by_name(&entity.name, accounts_dir) {
-                return Some(matched);
-            }
-        }
-    }
-
-    if let Ok(Some(account)) = db.get_account(trimmed) {
-        if let Some(matched) = find_account_dir_by_name(&account.name, accounts_dir) {
-            return Some(matched);
-        }
-    }
-
-    find_account_dir_by_name(trimmed, accounts_dir)
-}
-
 /// Try resolving an account from an ID hint that encodes parent/child slugs.
 ///
 /// Example: `salesforce--digital-marketing-technology` -> `Salesforce/Digital-Marketing-Technology`.
@@ -979,36 +768,6 @@ fn find_account_dir_by_id_hint(account_ref: &str, accounts_dir: &Path) -> Option
     None
 }
 
-/// Compute attendee-based account votes keyed by normalized account name.
-fn build_attendee_account_votes(
-    db: &crate::db::ActionDb,
-    attendees_csv: &str,
-) -> HashMap<String, usize> {
-    let emails: Vec<&str> = attendees_csv
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect();
-    let mut votes: HashMap<String, usize> = HashMap::new();
-
-    for email in emails {
-        if let Ok(Some(person)) = db.get_person_by_email_or_alias(email) {
-            if let Ok(entities) = db.get_entities_for_person(&person.id) {
-                for entity in entities {
-                    if entity.entity_type == crate::entity::EntityType::Account {
-                        let key = normalize_account_key(&entity.name);
-                        if !key.is_empty() {
-                            *votes.entry(key).or_insert(0) += 1;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    votes
-}
-
 /// Normalize account-like labels for fuzzy matching.
 ///
 /// Examples:
@@ -1035,7 +794,7 @@ fn attendee_emails_from_value(attendees: Option<&Value>) -> HashSet<String> {
         .unwrap_or_default()
 }
 
-fn resolve_internal_account_for_meeting(
+fn resolve_account_for_meeting(
     db: &crate::db::ActionDb,
     event_id: &str,
     title: &str,
@@ -1049,7 +808,7 @@ fn resolve_internal_account_for_meeting(
                         continue;
                     }
                     if let Ok(Some(account)) = db.get_account(&entity.id) {
-                        if account.is_internal && !account.archived {
+                        if !account.archived {
                             return Some(account);
                         }
                     }
@@ -1102,6 +861,29 @@ fn resolve_internal_account_for_meeting(
                         && account.name.to_lowercase() < best_account.name.to_lowercase())
                 {
                     best = Some((score, account));
+                }
+            }
+        }
+    }
+
+    // If no internal account matched, check external accounts by title match
+    if best.as_ref().is_none_or(|(s, _)| *s == 0) {
+        if let Ok(all_accounts) = db.get_all_accounts() {
+            for account in all_accounts {
+                if account.is_internal || account.archived {
+                    continue;
+                }
+                let account_key = normalize_account_key(&account.name);
+                if !account_key.is_empty() && title_key.contains(&account_key) {
+                    // External account name found in title — strong signal
+                    let score = 5;
+                    match &best {
+                        None => best = Some((score, account)),
+                        Some((best_score, _)) if score > *best_score => {
+                            best = Some((score, account));
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
@@ -1932,81 +1714,6 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_account_from_db_prefers_meeting_account_id() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(
-            dir.path()
-                .join("Accounts/Salesforce/Digital-Marketing-Technology"),
-        )
-        .unwrap();
-        std::fs::create_dir_all(dir.path().join("Accounts/Slack")).unwrap();
-
-        let db = crate::db::ActionDb::open_at(dir.path().join("test.db")).expect("open test db");
-        let now = chrono::Utc::now().to_rfc3339();
-
-        db.upsert_entity(&crate::entity::DbEntity {
-            id: "dmt-entity".to_string(),
-            name: "Digital Marketing Technology".to_string(),
-            entity_type: crate::entity::EntityType::Account,
-            tracker_path: None,
-            updated_at: now.clone(),
-        })
-        .expect("upsert dmt entity");
-
-        db.upsert_entity(&crate::entity::DbEntity {
-            id: "slack-entity".to_string(),
-            name: "Slack".to_string(),
-            entity_type: crate::entity::EntityType::Account,
-            tracker_path: None,
-            updated_at: now.clone(),
-        })
-        .expect("upsert slack entity");
-
-        db.upsert_meeting(&crate::db::DbMeeting {
-            id: "evt-1".to_string(),
-            title: "Weekly Sync".to_string(),
-            meeting_type: "customer".to_string(),
-            start_time: "2026-02-12T10:00:00Z".to_string(),
-            end_time: None,
-            attendees: None,
-            notes_path: None,
-            summary: None,
-            created_at: now,
-            calendar_event_id: Some("evt-1".to_string()),
-            description: None,
-            prep_context_json: None,
-            user_agenda_json: None,
-            user_notes: None,
-            prep_frozen_json: None,
-            prep_frozen_at: None,
-            prep_snapshot_path: None,
-            prep_snapshot_hash: None,
-            transcript_path: None,
-            transcript_processed_at: None,
-        })
-        .expect("upsert meeting");
-
-        // Junction table link to the preferred account.
-        db.link_meeting_entity("evt-1", "dmt-entity", "account")
-            .expect("link dmt account");
-
-        let meeting = json!({
-            "id": "evt-1",
-            "title": "Weekly Sync",
-            "external_domains": ["slack.com"],
-        });
-
-        let matched = resolve_account_from_db(&db, "evt-1", &meeting, &dir.path().join("Accounts"))
-            .expect("should resolve account");
-
-        assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
-        );
-    }
-
-    #[test]
     fn test_find_file_in_dir_exact() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("dashboard.md"), "test").unwrap();
@@ -2160,6 +1867,12 @@ mod tests {
             prep_snapshot_hash: None,
             transcript_path: None,
             transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
         })
         .expect("upsert meeting");
 

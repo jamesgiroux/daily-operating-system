@@ -18,7 +18,7 @@ export function Avatar({ name, personId, size = 32, className }: AvatarProps) {
       .then((path) => {
         if (path) setAvatarPath(path);
       })
-      .catch(() => {});
+      .catch((err) => console.error("get_person_avatar failed:", err));
   }, [personId]);
 
   const initials = name.charAt(0).toUpperCase();

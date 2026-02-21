@@ -22,7 +22,7 @@ export default function GranolaConnection() {
   useEffect(() => {
     invoke<GranolaStatusData>("get_granola_status")
       .then(setStatus)
-      .catch(() => {});
+      .catch((err) => console.error("get_granola_status failed:", err));
   }, []);
 
   async function toggleEnabled() {

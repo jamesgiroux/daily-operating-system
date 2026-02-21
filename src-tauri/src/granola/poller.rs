@@ -7,7 +7,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Timelike;
 use tauri::{AppHandle, Emitter};
 
 use crate::state::AppState;
@@ -34,12 +33,6 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 continue;
             }
         };
-
-        // Check work hours
-        if !is_work_hours(&state) {
-            tokio::time::sleep(Duration::from_secs(300)).await;
-            continue;
-        }
 
         let poll_interval = Duration::from_secs((config.poll_interval_minutes as u64) * 60);
 
@@ -186,18 +179,6 @@ fn get_recent_meetings_for_matching(
 ) -> Result<Vec<(String, String, String)>, String> {
     db.get_meetings_for_transcript_matching(90)
         .map_err(|e| e.to_string())
-}
-
-/// Check work hours using the same logic as the Quill poller.
-fn is_work_hours(state: &AppState) -> bool {
-    let config = state.config.read().ok().and_then(|g| g.clone());
-    let (start_hour, end_hour) = match config {
-        Some(cfg) => (cfg.google.work_hours_start, cfg.google.work_hours_end),
-        None => (8, 18),
-    };
-
-    let now_hour = chrono::Local::now().hour();
-    now_hour >= start_hour as u32 && now_hour < end_hour as u32
 }
 
 /// Run a one-time backfill: match all Granola cache documents to meetings_history.
