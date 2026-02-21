@@ -8577,7 +8577,6 @@ pub async fn get_meeting_timeline(
         .format("%Y-%m-%d")
         .to_string();
     let has_future = result.iter().any(|m| m.start_time.as_str() >= tomorrow_str.as_str());
-
     if has_future || days_after_val == 0 {
         // Enqueue future meetings that have no prep_frozen_json yet
         let needs_prep: Vec<String> = {
