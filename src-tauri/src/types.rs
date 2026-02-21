@@ -2021,6 +2021,9 @@ pub struct TimelineMeeting {
     pub entities: Vec<LinkedEntity>,
     pub has_new_signals: bool,
     pub prior_meeting_id: Option<String>,
+    /// Count of follow-up actions linked to this meeting (I342).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow_up_count: Option<i32>,
 }
 
 #[cfg(test)]

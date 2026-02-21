@@ -658,7 +658,7 @@ pub fn get_meeting_timeline(
     let mut stmt = conn
         .prepare(
             "SELECT id, title, meeting_type, start_time, end_time, summary,
-                    transcript_processed_at, has_new_signals, intelligence_state
+                    transcript_processed_at, has_new_signals
              FROM meetings_history
              WHERE start_time >= ?1 AND start_time <= ?2
                AND (intelligence_state IS NULL OR intelligence_state != 'archived')
