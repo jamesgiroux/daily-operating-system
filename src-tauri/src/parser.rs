@@ -324,7 +324,7 @@ fn parse_meeting_header(line: &str) -> Option<(String, String)> {
     }
 }
 
-fn parse_meeting_type(s: &str) -> MeetingType {
+pub fn parse_meeting_type(s: &str) -> MeetingType {
     match s.to_lowercase().as_str() {
         "customer" => MeetingType::Customer,
         "qbr" => MeetingType::Qbr,
@@ -392,6 +392,9 @@ impl MeetingBuilder {
             prep_reviewed: None,
             linked_entities: None,
             suggested_unarchive_account_id: None,
+            intelligence_quality: None,
+            calendar_attendees: None,
+            calendar_description: None,
         })
     }
 }
@@ -2070,8 +2073,7 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
         day,
         WeekMeeting {
             time,
-            title: account_or_title.clone(),
-            account: Some(account_or_title),
+            title: account_or_title,
             meeting_id: None,
             meeting_type,
             prep_status,
@@ -2243,6 +2245,9 @@ pub fn parse_meetings_from_overview(
                     prep_reviewed: None,
                     linked_entities: None,
                     suggested_unarchive_account_id: None,
+                    intelligence_quality: None,
+                    calendar_attendees: None,
+                    calendar_description: None,
                 });
 
                 id_counter += 1;

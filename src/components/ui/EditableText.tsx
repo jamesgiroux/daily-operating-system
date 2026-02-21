@@ -88,7 +88,7 @@ export function EditableText({
         fieldId: fieldId ?? undefined,
         value: trimmed,
         previousValue: value,
-      }).catch(() => {});
+      }).catch((err) => console.error("editable-text:commit emit failed:", err));
     }
   }, [draft, value, onChange, fieldId]);
 

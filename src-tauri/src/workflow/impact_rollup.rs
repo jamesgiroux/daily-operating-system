@@ -231,19 +231,8 @@ fn create_template(year: i32, week: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::ActionDb;
+    use crate::db::test_utils::test_db;
     use rusqlite::params;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        let db = ActionDb::open_at(path).expect("open db");
-        db.conn_ref()
-            .execute_batch("PRAGMA foreign_keys = OFF;")
-            .expect("disable FK for tests");
-        db
-    }
 
     #[allow(clippy::too_many_arguments)]
     fn insert_capture(

@@ -59,6 +59,13 @@ export interface SourceReference {
 
 export type OverlayStatus = "enriched" | "cancelled" | "new" | "briefing_only";
 
+export interface CalendarAttendee {
+  email: string;
+  name: string;
+  rsvp: string;
+  domain: string;
+}
+
 export interface LinkedEntity {
   id: string;
   name: string;
@@ -88,6 +95,21 @@ export interface Meeting {
   linkedEntities?: LinkedEntity[];
   /** Account ID suggestion when meeting matches an archived account (I161) */
   suggestedUnarchiveAccountId?: string;
+  /** Calendar event description from Google Calendar */
+  calendarDescription?: string;
+  /** Raw calendar attendees (not AI-enriched) with RSVP status */
+  calendarAttendees?: CalendarAttendee[];
+  /** Structured intelligence quality assessment for schedule meetings */
+  intelligenceQuality?: {
+    level: "sparse" | "developing" | "ready" | "fresh";
+    signalCount: number;
+    lastEnriched?: string;
+    hasEntityContext: boolean;
+    hasAttendeeHistory: boolean;
+    hasRecentSignals: boolean;
+    staleness: "current" | "aging" | "stale";
+    hasNewSignals: boolean;
+  };
 }
 
 export interface MeetingPrep {
@@ -138,6 +160,10 @@ export interface DbAction {
   waitingOn?: string;
   updatedAt: string;
   personId?: string;
+  /** Next upcoming meeting title for the action's account (I342) */
+  nextMeetingTitle?: string;
+  /** Next upcoming meeting start time for the action's account (I342) */
+  nextMeetingStart?: string;
 }
 
 export interface DayStats {
@@ -230,6 +256,8 @@ export interface DashboardData {
   stats: DayStats;
   meetings: Meeting[];
   actions: Action[];
+  /** User org domains for internal/external attendee grouping */
+  userDomains?: string[];
   emails?: Email[];
   emailSync?: EmailSyncStatus;
   focus?: DailyFocus;
@@ -251,11 +279,6 @@ export interface WeekOverview {
   hygieneAlerts?: HygieneAlert[];
   focusAreas?: string[];
   availableTimeBlocks?: TimeBlock[];
-  /** AI-generated narrative overview of the week (I94) */
-  weekNarrative?: string;
-  /** AI-identified top priority (I94) */
-  topPriority?: TopPriority;
-  /** Proactive readiness checks surfacing prep gaps (I93) */
   readinessChecks?: ReadinessCheck[];
   /** Per-day density and meeting shape (I93) */
   dayShapes?: DayShape[];
@@ -270,8 +293,6 @@ export interface WeekDay {
 export interface WeekMeeting {
   time: string;
   title: string;
-  /** @deprecated Use linkedEntities instead. Kept for backward compat. */
-  account?: string;
   meetingId?: string;
   type: MeetingType;
   prepStatus: PrepStatus;
@@ -589,6 +610,7 @@ export interface CalendarEvent {
   end: string;
   type: MeetingType;
   account?: string;
+  linkedEntities?: LinkedEntity[];
   attendees: string[];
   isAllDay: boolean;
 }
@@ -601,6 +623,7 @@ export interface PostMeetingCaptureConfig {
   enabled: boolean;
   delayMinutes: number;
   autoDismissSecs: number;
+  transcriptWaitMinutes?: number;
 }
 
 export interface CapturedOutcome {
@@ -692,6 +715,17 @@ export interface MeetingIntelligence {
   prepFrozenAt?: string;
   transcriptPath?: string;
   transcriptProcessedAt?: string;
+  /** Structured intelligence quality assessment (ADR-0081) */
+  intelligenceQuality?: {
+    level: "sparse" | "developing" | "ready" | "fresh";
+    signalCount: number;
+    lastEnriched?: string;
+    hasEntityContext: boolean;
+    hasAttendeeHistory: boolean;
+    hasRecentSignals: boolean;
+    staleness: "current" | "aging" | "stale";
+    hasNewSignals: boolean;
+  };
 }
 
 export interface ApplyPrepPrefillResult {
@@ -1488,6 +1522,10 @@ export interface QuillStatus {
   failedSyncs: number;
   completedSyncs: number;
   lastSyncAt: string | null;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+  abandonedSyncs?: number;
+  pollIntervalMinutes?: number;
 }
 
 export interface QuillSyncState {
@@ -1512,6 +1550,18 @@ export interface GravatarStatus {
   enabled: boolean;
   cachedCount: number;
   apiKeySet: boolean;
+}
+
+export interface GranolaStatus {
+  enabled: boolean;
+  cacheExists: boolean;
+  cachePath: string;
+  documentCount: number;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+  pollIntervalMinutes: number;
 }
 
 // =============================================================================
@@ -1550,4 +1600,35 @@ export interface LinearStatusData {
   issueCount: number;
   projectCount: number;
   lastSyncAt: string | null;
+}
+
+// =============================================================================
+// Meeting Timeline (±7 day intelligence timeline)
+// =============================================================================
+
+export interface TimelineMeeting {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime?: string;
+  meetingType: string;
+  intelligenceQuality?: {
+    level: "sparse" | "developing" | "ready" | "fresh";
+    signalCount: number;
+    lastEnriched?: string;
+    hasEntityContext: boolean;
+    hasAttendeeHistory: boolean;
+    hasRecentSignals: boolean;
+    staleness: "current" | "aging" | "stale";
+    hasNewSignals: boolean;
+  };
+  hasOutcomes: boolean;
+  outcomeSummary?: string;
+  entities: LinkedEntity[];
+  hasNewSignals: boolean;
+  priorMeetingId?: string;
+  /** Count of follow-up actions linked to this meeting (I342) */
+  followUpCount?: number;
+  /** Whether a meeting briefing exists (prep_frozen_json or disk file) */
+  hasPrep?: boolean;
 }

@@ -19,7 +19,7 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   useEffect(() => {
-    homeDir().then(setHomePath).catch(() => {});
+    homeDir().then(setHomePath).catch((err) => console.error("homeDir failed:", err));
   }, []);
 
   const defaultWorkspacePath = homePath

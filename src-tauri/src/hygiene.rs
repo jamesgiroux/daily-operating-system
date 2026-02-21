@@ -307,7 +307,7 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             continue;
         }
 
-        let (extracted_at, summary) = crate::entity_intel::extract_and_summarize(path);
+        let (extracted_at, summary) = crate::intelligence::extract_and_summarize(path);
         match (extracted_at, summary) {
             (Some(ext_at), Some(summ)) => {
                 let _ = db.conn_ref().execute(
@@ -1433,6 +1433,12 @@ pub fn check_upcoming_meeting_readiness(
                     prep_snapshot_hash: None,
                     transcript_path: None,
                     transcript_processed_at: None,
+                    intelligence_state: None,
+                    intelligence_quality: None,
+                    last_enriched_at: None,
+                    signal_count: None,
+                    has_new_signals: None,
+                    last_viewed_at: None,
                 })
             })?;
             Ok(rows.filter_map(|r| r.ok()).collect())
@@ -2262,13 +2268,7 @@ fn detect_low_confidence_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn seed_person(db: &ActionDb, id: &str, email: &str, name: &str, relationship: &str) {
         let now = Utc::now().to_rfc3339();

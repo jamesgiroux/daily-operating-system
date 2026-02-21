@@ -110,7 +110,8 @@ pub struct AppState {
     /// Wake signal for the Clay enrichment poller (bulk enrich → immediate processing).
     pub clay_poller_wake: Arc<tokio::sync::Notify>,
     /// Queue of meeting IDs whose prep needs regeneration after entity correction (I305).
-    pub prep_invalidation_queue: Mutex<Vec<String>>,
+    /// Shared with the signal propagation engine for signal-driven invalidation.
+    pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
     /// Signal propagation engine with registered cross-entity rules (I308).
     pub signal_engine: Arc<crate::signals::propagation::PropagationEngine>,
     /// Wake signal for event-driven entity resolution (I308).
@@ -119,8 +120,12 @@ pub struct AppState {
     pub quill_poller_wake: Arc<tokio::sync::Notify>,
     /// Wake signal for Linear sync poller (I346).
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for email poller (reset poll cycle on manual refresh).
+    pub email_poller_wake: Arc<tokio::sync::Notify>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
+    /// Background meeting prep queue for future meetings.
+    pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -169,6 +174,12 @@ impl AppState {
             }
         });
 
+        // Build the prep invalidation queue and signal engine together so
+        // the engine can push invalidated meeting IDs into the shared queue.
+        let prep_queue = Arc::new(Mutex::new(Vec::new()));
+        let mut signal_engine = crate::signals::propagation::default_engine();
+        signal_engine.set_prep_queue(Arc::clone(&prep_queue));
+
         Self {
             config: RwLock::new(config),
             workflow_status: RwLock::new(HashMap::new()),
@@ -192,12 +203,14 @@ impl AppState {
             hygiene_full_orphan_scan_done: AtomicBool::new(false),
             pre_dev_workspace: Mutex::new(None),
             clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
-            prep_invalidation_queue: Mutex::new(Vec::new()),
-            signal_engine: Arc::new(crate::signals::propagation::default_engine()),
+            prep_invalidation_queue: prep_queue,
+            signal_engine: Arc::new(signal_engine),
             entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
             quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
             linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            email_poller_wake: Arc::new(tokio::sync::Notify::new()),
             active_preset: RwLock::new(active_preset),
+            meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
         }
     }
 
@@ -883,6 +896,9 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
             waiting_on: None,
             updated_at: now.clone(),
             person_id: None,
+            account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
 
         if db.upsert_action_if_not_completed(&action).is_ok() {

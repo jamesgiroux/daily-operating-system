@@ -2,13 +2,18 @@ import * as React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  Building2,
   CalendarDays,
   CheckSquare,
+  FolderKanban,
   Inbox,
   LayoutDashboard,
+  Mail,
   Play,
   RefreshCw,
   Search,
+  Settings,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -120,6 +125,26 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           <CommandItem onSelect={() => go("/actions")}>
             <CheckSquare className="mr-2 size-4" />
             <span>Actions</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/emails")}>
+            <Mail className="mr-2 size-4" />
+            <span>The Correspondent</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/settings")}>
+            <Settings className="mr-2 size-4" />
+            <span>Settings</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/accounts")}>
+            <Building2 className="mr-2 size-4" />
+            <span>Accounts</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/projects")}>
+            <FolderKanban className="mr-2 size-4" />
+            <span>Projects</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/people")}>
+            <Users className="mr-2 size-4" />
+            <span>People</span>
           </CommandItem>
         </CommandGroup>
 

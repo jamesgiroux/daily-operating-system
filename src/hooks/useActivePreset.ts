@@ -13,7 +13,10 @@ export function useActivePreset(): RolePreset | null {
   useEffect(() => {
     invoke<RolePreset | null>("get_active_preset")
       .then((p) => setPreset(p ?? null))
-      .catch(() => setPreset(null));
+      .catch((err) => {
+        console.error("get_active_preset failed:", err);
+        setPreset(null);
+      });
   }, []);
 
   return preset;
