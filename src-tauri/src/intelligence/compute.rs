@@ -515,6 +515,8 @@ mod tests {
             updated_at: now,
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
         db.upsert_action(&stale_action).expect("insert");
 
