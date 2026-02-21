@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.13.2 planned (structural clarity — E2E audit, service extraction, god file refactor — ADR-0086). 0.13.3 planned (entity hierarchy intelligence — partner type, portfolio surfaces, bidirectional propagation — ADR-0087). 0.13.4 planned (project hierarchy intelligence — ADR-0087 applied to projects, preset entityModeDefault wired to surface ordering). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
+**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.13.2 planned (structural clarity — E2E audit, service extraction, god file refactor — ADR-0086). 0.13.3 planned (entity hierarchy intelligence — partner type, portfolio surfaces, bidirectional propagation — ADR-0087). 0.13.4 planned (project hierarchy intelligence — ADR-0087 applied to projects, preset entityModeDefault wired to surface ordering). 0.13.5 planned (people relationship network intelligence — graph model, typed edges, network signals — ADR-0088). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
 
 ---
 
@@ -73,6 +73,9 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I387** | Multi-entity signal extraction from parent-level meetings — content-level entity resolution in transcript processor | P3 | Backend / Pipeline |
 | **I388** | Project hierarchy intelligence — two-layer intelligence.json + bidirectional propagation for project entities (ADR-0087 applied to projects, v0.13.4 candidate) | P1 | Backend / Intelligence |
 | **I389** | Entity-mode-aware surface ordering — nav and primary surface emphasis adapts to preset's entityModeDefault (project-mode users see Projects first) | P2 | Frontend / UX |
+| **I390** | Person relationship graph — `person_relationships` table, typed edges (champion/blocker/sponsor/peer etc.), confidence scores, context scoping | P1 | Backend / Entity |
+| **I391** | People network intelligence — two-layer person intelligence.json (own signals + network section), person→person signal propagation, edge detection from transcripts/emails | P1 | Backend / Intelligence |
+| **I392** | Relationship cluster view on person detail — Network chapter, typed relationship list, cluster summary, network risks/opportunities, vocabulary-shaped per preset | P1 | Frontend / UX |
 
 ---
 
@@ -203,6 +206,18 @@ Note: I387 (multi-entity signal extraction from parent-level meetings) is deferr
 |----|-------|----------|------|
 | I388 | Project hierarchy intelligence — two-layer intelligence.json + bidirectional propagation for project entities | P1 | Backend / Intelligence |
 | I389 | Entity-mode-aware surface ordering — nav/primary surface adapts to preset's entityModeDefault | P2 | Frontend / UX |
+
+---
+
+### 0.13.5 — People Relationship Network Intelligence [PLANNED]
+
+**Theme:** People are not rows — they're nodes in a relationship network. A buying committee, a product team, a marketing cluster — these are graphs of individuals with influence flows, not isolated contacts. This version makes those relationships visible, persistent, and intelligent. (ADR-0088)
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I390 | Person relationship graph — `person_relationships` table, typed edges, confidence scoring, context scoping | P1 | Backend / Entity |
+| I391 | People network intelligence — two-layer intelligence.json + network section + person→person signal propagation | P1 | Backend / Intelligence |
+| I392 | Relationship cluster view on person detail — Network chapter, cluster summary, risks/opportunities, preset vocabulary | P1 | Frontend / UX |
 
 ---
 
