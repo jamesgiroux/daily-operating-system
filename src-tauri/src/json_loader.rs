@@ -12,8 +12,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::types::{
-    Action, DayOverview, Email, EmailSyncStatus, FullMeetingPrep, Meeting, MeetingPrep,
-    WeekOverview,
+    Action, DayOverview, Email, EmailSyncStatus, FullMeetingPrep, LinkedEntity, Meeting,
+    MeetingPrep, WeekOverview,
 };
 
 /// Check if JSON data directory exists
@@ -122,6 +122,26 @@ pub struct JsonMeeting {
     pub has_prep: bool,
     pub prep_file: Option<String>,
     pub prep_summary: Option<JsonPrepSummary>,
+    /// Entities linked via M2M junction table or entity resolution (I339)
+    #[serde(default)]
+    pub linked_entities: Option<Vec<LinkedEntity>>,
+    /// Raw calendar attendees from Google Calendar (not AI-enriched)
+    #[serde(default, rename = "calendarAttendees")]
+    pub calendar_attendees: Option<Vec<JsonCalendarAttendee>>,
+    /// Calendar event description from Google Calendar
+    #[serde(default, rename = "calendarDescription")]
+    pub calendar_description: Option<String>,
+}
+
+/// Raw attendee from Google Calendar event.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct JsonCalendarAttendee {
+    pub email: String,
+    pub name: String,
+    #[serde(default)]
+    pub rsvp: String,
+    #[serde(default)]
+    pub domain: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -217,6 +237,18 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
                 prep_reviewed: None,
                 linked_entities: None,
                 suggested_unarchive_account_id: None,
+                intelligence_quality: None,
+                calendar_attendees: m.calendar_attendees.map(|list| {
+                    list.into_iter()
+                        .map(|a| crate::types::CalendarAttendeeEntry {
+                            email: a.email,
+                            name: a.name,
+                            rsvp: a.rsvp,
+                            domain: a.domain,
+                        })
+                        .collect()
+                }),
+                calendar_description: m.calendar_description,
             }
         })
         .collect();
@@ -449,11 +481,11 @@ pub struct JsonPrep {
     /// Intelligence summary — executive assessment from intelligence.json (I135)
     pub intelligence_summary: Option<String>,
     /// Entity-level risks from intelligence.json (I135)
-    pub entity_risks: Option<Vec<crate::entity_intel::IntelRisk>>,
+    pub entity_risks: Option<Vec<crate::intelligence::IntelRisk>>,
     /// Entity meeting readiness items from intelligence.json (I135)
     pub entity_readiness: Option<Vec<String>>,
     /// Stakeholder insights from intelligence.json (I135)
-    pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
+    pub stakeholder_insights: Option<Vec<crate::intelligence::StakeholderInsight>>,
     /// Recent email-derived signals linked to this entity (I215)
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
 }
@@ -784,6 +816,17 @@ pub struct DirectiveEvent {
     pub start: Option<String>,
     #[serde(default)]
     pub end: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Raw attendee email list from Google Calendar.
+    #[serde(default)]
+    pub attendees: Vec<String>,
+    /// Email → display name map from Google Calendar.
+    #[serde(default)]
+    pub attendee_names: std::collections::HashMap<String, String>,
+    /// Email → RSVP status map (accepted/tentative/declined/needsAction).
+    #[serde(default)]
+    pub attendee_rsvp: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]

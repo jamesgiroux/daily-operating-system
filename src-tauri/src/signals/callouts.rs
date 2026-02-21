@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::db::{ActionDb, DbError};
 use crate::embeddings::EmbeddingModel;
+use crate::helpers;
 
 use super::bus::SignalEvent;
 
@@ -37,6 +38,7 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "stakeholder_change",
     "champion_risk",
     "renewal_risk_escalation",
+    "renewal_at_risk",
     "engagement_warning",
     "project_health_warning",
     "post_meeting_followup",
@@ -96,7 +98,7 @@ pub fn generate_callouts(
         .map(|(signal, relevance)| {
             let severity = classify_severity(signal.confidence);
             let (headline, detail) = build_callout_text(&signal);
-            let entity_name = resolve_entity_name(db, &signal.entity_type, &signal.entity_id);
+            let entity_name = Some(helpers::resolve_entity_name(db, &signal.entity_type, &signal.entity_id));
 
             let callout = BriefingCallout {
                 id: format!("bc-{}", Uuid::new_v4()),
@@ -288,6 +290,16 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 format!("No meeting or email with {} in 30+ days", name),
             )
         }
+        "renewal_at_risk" => {
+            let days = parsed
+                .get("days_without_meeting")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(30);
+            (
+                "Renewal at risk: no recent engagement".to_string(),
+                format!("No meetings in {} days near renewal window", days),
+            )
+        }
         "cadence_anomaly" => {
             // I319: value is the anomaly type string ("gone_quiet" or "activity_spike")
             let anomaly_type = signal.value.as_deref().unwrap_or("unknown");
@@ -327,35 +339,6 @@ fn build_meeting_context_string(meetings: &[Value]) -> String {
         .join(". ")
 }
 
-fn resolve_entity_name(db: &ActionDb, entity_type: &str, entity_id: &str) -> Option<String> {
-    match entity_type {
-        "account" => db
-            .conn_ref()
-            .query_row(
-                "SELECT name FROM accounts WHERE id = ?1",
-                params![entity_id],
-                |row| row.get::<_, String>(0),
-            )
-            .ok(),
-        "project" => db
-            .conn_ref()
-            .query_row(
-                "SELECT name FROM projects WHERE id = ?1",
-                params![entity_id],
-                |row| row.get::<_, String>(0),
-            )
-            .ok(),
-        "person" => db
-            .conn_ref()
-            .query_row(
-                "SELECT name FROM people WHERE id = ?1",
-                params![entity_id],
-                |row| row.get::<_, String>(0),
-            )
-            .ok(),
-        _ => None,
-    }
-}
 
 // ---------------------------------------------------------------------------
 // ActionDb methods
@@ -379,7 +362,8 @@ impl ActionDb {
             .collect();
         let sql = format!(
             "SELECT id, entity_type, entity_id, signal_type, source, value,
-                    confidence, decay_half_life_days, created_at, superseded_by
+                    confidence, decay_half_life_days, created_at, superseded_by,
+                    source_context
              FROM signal_events
              WHERE created_at >= datetime('now', ?1)
                AND superseded_by IS NULL
@@ -398,21 +382,7 @@ impl ActionDb {
             all_params.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = self.conn_ref().prepare(&sql)?;
-        let rows = stmt.query_map(param_refs.as_slice(), |row| {
-            Ok(SignalEvent {
-                id: row.get(0)?,
-                entity_type: row.get(1)?,
-                entity_id: row.get(2)?,
-                signal_type: row.get(3)?,
-                source: row.get(4)?,
-                value: row.get(5)?,
-                confidence: row.get(6)?,
-                decay_half_life_days: row.get(7)?,
-                created_at: row.get(8)?,
-                superseded_by: row.get(9)?,
-                source_context: None,
-            })
-        })?;
+        let rows = stmt.query_map(param_refs.as_slice(), Self::map_signal_event_row)?;
 
         let mut signals = Vec::new();
         for row in rows {
@@ -451,39 +421,6 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Get callouts that haven't been surfaced or dismissed yet.
-    pub fn get_unsurfaced_callouts(&self) -> Result<Vec<BriefingCallout>, DbError> {
-        let mut stmt = self.conn_ref().prepare(
-            "SELECT id, entity_type, entity_id, entity_name, severity, headline, detail, context_json
-             FROM briefing_callouts
-             WHERE surfaced_at IS NULL AND dismissed_at IS NULL
-             ORDER BY created_at DESC",
-        )?;
-
-        let rows = stmt.query_map([], |row| {
-            let context_json: Option<String> = row.get(7)?;
-            let relevance_score = context_json
-                .and_then(|j| serde_json::from_str::<Value>(&j).ok())
-                .and_then(|v| v.get("relevance_score")?.as_f64());
-
-            Ok(BriefingCallout {
-                id: row.get(0)?,
-                severity: row.get(4)?,
-                headline: row.get(5)?,
-                detail: row.get(6)?,
-                entity_name: row.get(3)?,
-                entity_type: row.get(1)?,
-                entity_id: row.get(2)?,
-                relevance_score,
-            })
-        })?;
-
-        let mut callouts = Vec::new();
-        for row in rows {
-            callouts.push(row?);
-        }
-        Ok(callouts)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -493,13 +430,7 @@ impl ActionDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_classify_severity() {
@@ -546,25 +477,4 @@ mod tests {
         assert_eq!(callouts[0].entity_name.as_deref(), Some("Acme Corp"));
     }
 
-    #[test]
-    fn test_upsert_and_get_callouts() {
-        let db = test_db();
-
-        let callout = BriefingCallout {
-            id: "bc-test".to_string(),
-            severity: "warning".to_string(),
-            headline: "Test headline".to_string(),
-            detail: "Test detail".to_string(),
-            entity_name: Some("Acme".to_string()),
-            entity_type: "account".to_string(),
-            entity_id: "a1".to_string(),
-            relevance_score: Some(0.75),
-        };
-
-        db.upsert_briefing_callout(&callout, "sig-1").expect("upsert");
-
-        let unsurfaced = db.get_unsurfaced_callouts().expect("get");
-        assert_eq!(unsurfaced.len(), 1);
-        assert_eq!(unsurfaced[0].headline, "Test headline");
-    }
 }

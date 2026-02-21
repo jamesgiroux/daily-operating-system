@@ -16,7 +16,7 @@ export default function GravatarConnection() {
         setStatus(s);
         if (s.apiKeySet) setApiKey("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
       })
-      .catch(() => {});
+      .catch((err) => console.error("get_gravatar_status failed:", err));
   }, []);
 
   async function toggleEnabled() {
