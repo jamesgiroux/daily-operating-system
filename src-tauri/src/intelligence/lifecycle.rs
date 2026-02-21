@@ -557,6 +557,7 @@ pub async fn generate_meeting_intelligence(
     }
 
     // 4.5 AI enrichment if quality >= Developing (I326 Phase 2)
+    // Sparse meetings get mechanical prep from MeetingPrepQueue instead.
     if quality.level >= QualityLevel::Developing {
         let meeting_for_ai = {
             let guard = state.db.lock().map_err(|_| {

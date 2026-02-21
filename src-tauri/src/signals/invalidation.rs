@@ -37,6 +37,7 @@ pub fn check_and_invalidate_preps(
         "title_change",
         "company_change",
         "person_departed",
+        "pre_meeting_context",
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {
