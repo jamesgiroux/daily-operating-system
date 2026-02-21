@@ -439,6 +439,19 @@ fn gather_person_context(
     }
 }
 
+/// Public entry point for generating context for a single meeting.
+///
+/// Used by `MeetingPrepQueue` to generate mechanical prep for future meetings
+/// outside the daily briefing pipeline. Wraps the private `gather_meeting_context`.
+pub fn gather_meeting_context_single(
+    meeting: &Value,
+    workspace: &Path,
+    db: Option<&crate::db::ActionDb>,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+) -> Value {
+    gather_meeting_context(meeting, workspace, db, embedding_model)
+}
+
 /// Build rich context for a single meeting prep.
 ///
 /// I337: Entity-first dispatch. Resolves the primary entity (account, project,

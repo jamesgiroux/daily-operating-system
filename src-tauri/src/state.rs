@@ -124,6 +124,8 @@ pub struct AppState {
     pub email_poller_wake: Arc<tokio::sync::Notify>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
+    /// Background meeting prep queue for future meetings.
+    pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -208,6 +210,7 @@ impl AppState {
             linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
             email_poller_wake: Arc::new(tokio::sync::Notify::new()),
             active_preset: RwLock::new(active_preset),
+            meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
         }
     }
 
@@ -894,6 +897,8 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
             updated_at: now.clone(),
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
 
         if db.upsert_action_if_not_completed(&action).is_ok() {

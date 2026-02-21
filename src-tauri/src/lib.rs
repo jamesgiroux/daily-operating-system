@@ -29,6 +29,7 @@ pub mod gravatar;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
+pub mod meeting_prep_queue;
 pub mod intelligence;
 pub mod json_loader;
 mod latency;
@@ -161,6 +162,13 @@ pub fn run() {
             let intel_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 intel_queue::run_intel_processor(intel_state, intel_handle).await;
+            });
+
+            // Spawn meeting prep queue processor
+            let prep_state = state.clone();
+            let prep_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                meeting_prep_queue::run_meeting_prep_processor(prep_state, prep_handle).await;
             });
 
             // Spawn background embedding processor (Sprint 26)
@@ -344,7 +352,7 @@ pub fn run() {
             // Phase 3C: Weekly Planning
             commands::get_week_data,
             commands::get_live_proactive_suggestions,
-            commands::retry_week_enrichment,
+            commands::refresh_meeting_preps,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
             commands::get_meeting_outcomes,
