@@ -186,11 +186,16 @@ export function useActions(initialSearch?: string): UseActionsReturn {
       return false;
     }
 
+    // 30-day auto-expiry: hide stale pending actions from the pending view
+    if (statusFilter === "pending" && isPending30DaysStale(action)) {
+      return false;
+    }
+
     // Search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const matchesTitle = action.title.toLowerCase().includes(q);
-      const matchesAccount = action.accountId?.toLowerCase().includes(q);
+      const matchesAccount = action.accountName?.toLowerCase().includes(q);
       const matchesContext = action.context?.toLowerCase().includes(q);
       if (!matchesTitle && !matchesAccount && !matchesContext) {
         return false;
@@ -216,4 +221,26 @@ export function useActions(initialSearch?: string): UseActionsReturn {
     searchQuery,
     setSearchQuery,
   };
+}
+
+/**
+ * Returns true when a pending action is stale: created more than 30 days ago
+ * with no recent updates. These are hidden from the pending view but remain
+ * in the database.
+ */
+function isPending30DaysStale(action: DbAction): boolean {
+  if (action.status !== "pending") return false;
+
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+  const createdAt = new Date(action.createdAt).getTime();
+  if (isNaN(createdAt) || createdAt > thirtyDaysAgo) return false;
+
+  // If updatedAt exists and is recent, the action is not stale
+  if (action.updatedAt) {
+    const updatedAt = new Date(action.updatedAt).getTime();
+    if (!isNaN(updatedAt) && updatedAt > thirtyDaysAgo) return false;
+  }
+
+  return true;
 }

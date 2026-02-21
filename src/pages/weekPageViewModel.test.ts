@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  classifyWeekShapeState,
+  computeWeekMeta,
+  deriveShapeFromTimeline,
   formatBlockRange,
   formatDueContext,
-  resolveSuggestionLink,
-  synthesizeReadiness,
 } from "./weekPageViewModel";
+
+import type { TimelineMeeting } from "@/types";
 
 /** Format a Date as YYYY-MM-DD in local time (matching formatDueContext's parsing). */
 function toLocalIso(date: Date): string {
@@ -16,78 +17,113 @@ function toLocalIso(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-describe("resolveSuggestionLink", () => {
-  it("prefers action links over meeting links", () => {
-    expect(resolveSuggestionLink("a-123", "m-123")).toEqual({
-      kind: "action",
-      id: "a-123",
-    });
+/** Create a minimal TimelineMeeting for testing. */
+function makeMeeting(
+  startTime: string,
+  endTime?: string
+): TimelineMeeting {
+  return {
+    id: `m-${startTime}`,
+    title: "Test Meeting",
+    startTime,
+    endTime,
+    meetingType: "internal",
+    hasOutcomes: false,
+    entities: [],
+    hasNewSignals: false,
+  };
+}
+
+describe("computeWeekMeta", () => {
+  it("returns a week number and date range", () => {
+    const meta = computeWeekMeta();
+    expect(meta.weekNumber).toMatch(/^\d+$/);
+    expect(meta.dateRange).toMatch(/\w+ \d+ – \w+ \d+/);
   });
 
-  it("falls back to meeting link when no action id exists", () => {
-    expect(resolveSuggestionLink(undefined, "m-123")).toEqual({
-      kind: "meeting",
-      id: "m-123",
-    });
-  });
-
-  it("returns none when both are undefined", () => {
-    expect(resolveSuggestionLink(undefined, undefined)).toEqual({
-      kind: "none",
-    });
-  });
-
-  it("returns none when both are null", () => {
-    expect(resolveSuggestionLink(null, null)).toEqual({ kind: "none" });
-  });
-
-  it("ignores null action and uses meeting", () => {
-    expect(resolveSuggestionLink(null, "m-456")).toEqual({
-      kind: "meeting",
-      id: "m-456",
-    });
+  it("week number is a reasonable value (1–53)", () => {
+    const num = Number(computeWeekMeta().weekNumber);
+    expect(num).toBeGreaterThanOrEqual(1);
+    expect(num).toBeLessThanOrEqual(53);
   });
 });
 
-describe("classifyWeekShapeState", () => {
-  it("classifies week shape empty states", () => {
-    expect(classifyWeekShapeState([])).toBe("no_blocks");
-    expect(
-      classifyWeekShapeState([
-        {
-          day: "Monday",
-          start: "09:00",
-          end: "10:00",
-          durationMinutes: 60,
-          suggestedUse: "",
-        },
-      ])
-    ).toBe("no_suggestions");
-    expect(
-      classifyWeekShapeState([
-        {
-          day: "Monday",
-          start: "09:00",
-          end: "10:00",
-          durationMinutes: 60,
-          suggestedUse: "Prep roadmap update",
-        },
-      ])
-    ).toBe("suggestions");
+describe("deriveShapeFromTimeline", () => {
+  it("always returns exactly 5 entries (Mon–Fri)", () => {
+    const result = deriveShapeFromTimeline([]);
+    expect(result).toHaveLength(5);
+    expect(result.map((d) => d.dayName)).toEqual([
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+    ]);
   });
 
-  it("treats whitespace-only suggestedUse as no suggestion", () => {
-    expect(
-      classifyWeekShapeState([
-        {
-          day: "Monday",
-          start: "09:00",
-          end: "10:00",
-          durationMinutes: 60,
-          suggestedUse: "   ",
-        },
-      ])
-    ).toBe("no_suggestions");
+  it("zero-meeting days have light density and 0 minutes", () => {
+    const result = deriveShapeFromTimeline([]);
+    for (const day of result) {
+      expect(day.meetingCount).toBe(0);
+      expect(day.meetingMinutes).toBe(0);
+      expect(day.density).toBe("light");
+    }
+  });
+
+  it("groups meetings by date and classifies density", () => {
+    // Find Monday of the current week
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMon);
+    monday.setHours(9, 0, 0, 0);
+    const monStr = toLocalIso(monday);
+
+    // 3 meetings on Monday → moderate
+    const meetings: TimelineMeeting[] = [
+      makeMeeting(`${monStr}T09:00:00`, `${monStr}T10:00:00`),
+      makeMeeting(`${monStr}T11:00:00`, `${monStr}T12:00:00`),
+      makeMeeting(`${monStr}T14:00:00`, `${monStr}T15:00:00`),
+    ];
+
+    const result = deriveShapeFromTimeline(meetings);
+    const mondayShape = result[0];
+    expect(mondayShape.meetingCount).toBe(3);
+    expect(mondayShape.meetingMinutes).toBe(180); // 3 × 60min
+    expect(mondayShape.density).toBe("moderate");
+  });
+
+  it("falls back to 45min estimate when endTime is missing", () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMon);
+    const monStr = toLocalIso(monday);
+
+    const meetings: TimelineMeeting[] = [
+      makeMeeting(`${monStr}T09:00:00`), // no endTime
+    ];
+
+    const result = deriveShapeFromTimeline(meetings);
+    expect(result[0].meetingMinutes).toBe(45);
+  });
+
+  it("classifies 5+ meetings as packed", () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMon);
+    const monStr = toLocalIso(monday);
+
+    const meetings: TimelineMeeting[] = Array.from({ length: 5 }, (_, i) =>
+      makeMeeting(`${monStr}T${String(9 + i).padStart(2, "0")}:00:00`)
+    );
+
+    const result = deriveShapeFromTimeline(meetings);
+    expect(result[0].density).toBe("packed");
   });
 });
 
@@ -196,56 +232,5 @@ describe("formatDueContext", () => {
     const today = new Date();
     today.setHours(12, 0, 0, 0);
     expect(formatDueContext(toLocalIso(today), 0)).toBe("due today");
-  });
-});
-
-describe("synthesizeReadiness", () => {
-  it("synthesizes readiness summary text", () => {
-    const summary = synthesizeReadiness([
-      {
-        checkType: "no_prep",
-        severity: "action_needed",
-        message: "Needs prep",
-      },
-      {
-        checkType: "overdue_action",
-        severity: "action_needed",
-        message: "3 overdue actions",
-      },
-      {
-        checkType: "stale_contact",
-        severity: "heads_up",
-        message: "No contact in 30 days",
-      },
-    ]);
-
-    expect(summary).toContain("1 meeting need prep");
-    expect(summary).toContain("3 overdue actions");
-    expect(summary).toContain("1 stale contact");
-  });
-
-  it("returns empty string for no checks", () => {
-    expect(synthesizeReadiness([])).toBe("");
-  });
-
-  it("pluralizes meetings correctly", () => {
-    const summary = synthesizeReadiness([
-      { checkType: "no_prep", severity: "action_needed", message: "" },
-      { checkType: "prep_needed", severity: "action_needed", message: "" },
-      { checkType: "agenda_needed", severity: "action_needed", message: "" },
-    ]);
-    expect(summary).toContain("3 meetings need prep");
-  });
-
-  it("handles missing overdue count in message gracefully", () => {
-    const summary = synthesizeReadiness([
-      {
-        checkType: "overdue_action",
-        severity: "action_needed",
-        message: "Some actions are overdue",
-      },
-    ]);
-    // Falls back to check count (1) when message doesn't start with a number
-    expect(summary).toContain("1 overdue action");
   });
 });

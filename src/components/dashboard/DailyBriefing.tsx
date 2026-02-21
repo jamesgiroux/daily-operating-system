@@ -4,7 +4,7 @@
  * A morning document, not a dashboard. You read it top to bottom.
  * When you reach the end, you're briefed.
  *
- * Sections: Hero > Focus > Lead Story > Schedule > Priorities > Finis
+ * Sections: Day Frame > Schedule (Up Next) > Attention > Finis
  *
  * Design reference: design/mockups/daily-briefing-reimagined-v2.html
  * Layout: margin grid (100px label | content), section rules, no cards.
@@ -14,25 +14,21 @@ import { useState, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { useProposedActions } from "@/hooks/useProposedActions";
+import { ProposedActionRow } from "@/components/shared/ProposedActionRow";
 import clsx from "clsx";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import {
   BriefingMeetingCard,
-  KeyPeopleFlow,
-  PrepGrid,
-  MeetingActionChecklist,
   getTemporalState,
-  formatDuration,
 } from "./BriefingMeetingCard";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { Loader2 } from "lucide-react";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
-import { formatEntityByline } from "@/lib/entity-helpers";
-import type { DashboardData, DataFreshness, Meeting, MeetingType, Action, Email, PrioritizedAction, ReplyNeeded } from "@/types";
+import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction, ReplyNeeded } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -46,15 +42,7 @@ interface DailyBriefingProps {
   onRefresh?: () => void;
 }
 
-// ─── Featured Meeting Selection ──────────────────────────────────────────────
-
-const MEETING_TYPE_WEIGHTS: Partial<Record<MeetingType, number>> = {
-  qbr: 100,
-  customer: 80,
-  partnership: 60,
-  external: 40,
-  training: 20,
-};
+// ─── Up Next Selection ──────────────────────────────────────────────────────
 
 function parseDisplayTimeMs(timeStr: string | undefined): number | null {
   if (!timeStr) return null;
@@ -74,24 +62,31 @@ function getMeetingStartMs(meeting: Meeting): number | null {
   return parseDisplayTimeMs(meeting.time);
 }
 
-export function selectFeaturedMeeting(meetings: Meeting[], now: number): Meeting | null {
-  const candidates = meetings.filter((m) => {
+/** Find the first upcoming (not past, not cancelled) meeting. */
+function findUpNextMeeting(meetings: Meeting[], now: number): Meeting | null {
+  const upcoming = meetings.filter((m) => {
     const state = getTemporalState(m, now);
-    if (state === "past" || state === "cancelled") return false;
-    const isExternal = ["customer", "qbr", "partnership", "external"].includes(m.type);
-    return isExternal && m.hasPrep;
+    return state !== "past" && state !== "cancelled";
   });
-
-  if (candidates.length === 0) return null;
-
-  return candidates.sort((a, b) => {
-    const wa = MEETING_TYPE_WEIGHTS[a.type] ?? 0;
-    const wb = MEETING_TYPE_WEIGHTS[b.type] ?? 0;
-    if (wa !== wb) return wb - wa;
+  if (upcoming.length === 0) return null;
+  // Sort by start time, return earliest
+  return upcoming.sort((a, b) => {
     const ta = getMeetingStartMs(a) ?? Infinity;
     const tb = getMeetingStartMs(b) ?? Infinity;
     return ta - tb;
   })[0];
+}
+
+/** Find high-stakes meetings (QBR/customer) that lack prep — for prep flags. */
+function findUnpreppedHighStakes(meetings: Meeting[], now: number, upNextId?: string): Meeting[] {
+  return meetings.filter((m) => {
+    if (m.id === upNextId) return false;
+    const state = getTemporalState(m, now);
+    if (state === "past" || state === "cancelled") return false;
+    const isHighStakes = ["qbr", "customer"].includes(m.type);
+    const needsPrep = !m.intelligenceQuality || m.intelligenceQuality.level === "sparse";
+    return isHighStakes && needsPrep;
+  });
 }
 
 // ─── Readiness Computation ───────────────────────────────────────────────────
@@ -101,7 +96,9 @@ function computeReadiness(meetings: Meeting[], actions: Action[]) {
     ["customer", "qbr", "partnership", "external"].includes(m.type) &&
     m.overlayStatus !== "cancelled"
   );
-  const preppedCount = externalMeetings.filter((m) => m.hasPrep).length;
+  const preppedCount = externalMeetings.filter((m) =>
+    m.intelligenceQuality && m.intelligenceQuality.level !== "sparse"
+  ).length;
   const totalExternal = externalMeetings.length;
   const overdueActions = actions.filter((a) => a.isOverdue && a.status !== "completed");
   return { preppedCount, totalExternal, overdueCount: overdueActions.length };
@@ -121,11 +118,14 @@ function formatMinutes(minutes: number): string {
 export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  const isStale = freshness.freshness === "stale";
 
   // Data
   const meetings = data.meetings;
   const actions = data.actions;
   const emails = data.emails ?? [];
+  const repliesNeeded = isStale ? [] : (data.repliesNeeded ?? []);
+
   const highPriorityEmails = emails.filter((e) => e.priority === "high").slice(0, 4);
   const briefingEmails = highPriorityEmails.length > 0
     ? highPriorityEmails
@@ -134,8 +134,9 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     ? "Emails Needing Response"
     : "Emails Worth Noting";
 
-  // Featured meeting (still appears in schedule — lead story is a highlight, not a removal)
-  const featured = selectFeaturedMeeting(meetings, now);
+  // Up Next meeting (first upcoming, not past/cancelled)
+  const upNext = findUpNextMeeting(meetings, now);
+  const unpreppedHighStakes = findUnpreppedHighStakes(meetings, now, upNext?.id);
   const scheduleMeetings = meetings;
 
   // Readiness
@@ -153,13 +154,37 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   const folioReadinessStats = useMemo(() => {
     const stats: ReadinessStat[] = [];
     if (readiness.totalExternal > 0) {
-      stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} prepped`, color: "sage" });
+      // Use intelligence quality levels when available, fall back to hasPrep count
+      const externalMeetings = meetings.filter((m) =>
+        ["customer", "qbr", "partnership", "external"].includes(m.type) &&
+        m.overlayStatus !== "cancelled"
+      );
+      const hasQualityData = externalMeetings.some((m) => m.intelligenceQuality);
+
+      if (hasQualityData) {
+        const readyCount = externalMeetings.filter(
+          (m) => m.intelligenceQuality?.level === "ready" || m.intelligenceQuality?.level === "fresh"
+        ).length;
+        const buildingCount = externalMeetings.filter(
+          (m) => m.intelligenceQuality?.level === "developing"
+        ).length;
+
+        if (readyCount === readiness.totalExternal) {
+          stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
+        } else if (buildingCount > 0) {
+          stats.push({ label: `${readyCount} ready, ${buildingCount} building`, color: "sage" });
+        } else {
+          stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
+        }
+      } else {
+        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} prepped`, color: "sage" });
+      }
     }
     if (readiness.overdueCount > 0) {
       stats.push({ label: `${readiness.overdueCount} overdue`, color: "terracotta" });
     }
     return stats;
-  }, [readiness.preppedCount, readiness.totalExternal, readiness.overdueCount]);
+  }, [meetings, readiness.preppedCount, readiness.totalExternal, readiness.overdueCount]);
 
   const folioActions = useMemo(() => {
     if (!onRunBriefing) return undefined;
@@ -167,19 +192,12 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
       ? { preparing: "Preparing…", enriching: "AI Processing…", delivering: "Delivering…" }[workflowStatus.phase]
       : null;
     return (
-      <button
+      <FolioRefreshButton
         onClick={onRunBriefing}
-        disabled={isRunning}
-        className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-        title={isRunning ? "Briefing in progress" : "Run morning briefing"}
-      >
-        {isRunning ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <RefreshCw className="h-3 w-3" />
-        )}
-        <span>{phaseLabel ?? "Refresh"}</span>
-      </button>
+        loading={!!isRunning}
+        loadingLabel={phaseLabel ?? "Running\u2026"}
+        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and intelligence"}
+      />
     );
   }, [onRunBriefing, isRunning, workflowStatus]);
 
@@ -209,12 +227,13 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   // Action completion
   const handleComplete = useCallback((id: string) => {
     setCompletedIds((prev) => new Set(prev).add(id));
-    invoke("complete_action", { id }).catch(() => {});
+    invoke("complete_action", { id }).catch((err) => {
+      console.error("complete_action failed:", err);
+    });
   }, []);
 
   // Proposed actions for triage
   const { proposedActions, acceptAction, rejectAction } = useProposedActions();
-  const navigate = useNavigate();
 
   // Meeting actions helper: find actions related to a specific meeting
   const getActionsForMeeting = useCallback((meetingId: string) => {
@@ -230,11 +249,6 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     return proposedActions.filter((a) => a.sourceId === meetingId).length;
   }, [proposedActions]);
 
-  // Featured meeting actions
-  const featuredActions = featured ? getActionsForMeeting(featured.id) : [];
-  const featuredState = featured ? getTemporalState(featured, now) : "upcoming";
-  const featuredDuration = featured ? formatDuration(featured) : null;
-
   // Schedule stats
   const activeMeetings = meetings.filter((m) => m.overlayStatus !== "cancelled");
   const hasSchedule = scheduleMeetings.some((m) => m.overlayStatus !== "cancelled");
@@ -247,17 +261,45 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 
   return (
     <div>
+      {/* Stale data indicator — non-blocking, shows refresh is in progress */}
+      {isStale && (
+        <div
+          style={{
+            padding: "8px 16px",
+            borderBottom: "1px solid var(--color-rule-light)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--color-text-tertiary)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Loader2 className="h-3 w-3 animate-spin" style={{ width: 12, height: 12 }} />
+          Morning refresh in progress
+        </div>
+      )}
+
       {/* ═══ DAY FRAME (Hero + Focus) ═══ */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{heroHeadline}</h1>
 
         {/* Capacity + focus directive */}
-        {data.focus && (
-          <div className={s.focusCapacity}>
-            {formatMinutes(data.focus.availableMinutes)} available
-            {" "}&middot; {data.focus.meetingCount} meeting{data.focus.meetingCount !== 1 ? "s" : ""}
-          </div>
-        )}
+        {data.focus && (() => {
+          const deepWorkBlocks = data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length;
+          return (
+            <div className={s.focusCapacity}>
+              {formatMinutes(data.focus.availableMinutes)} available
+              {deepWorkBlocks > 0 && (
+                <> &middot; {deepWorkBlocks} deep work block{deepWorkBlocks !== 1 ? "s" : ""}</>
+              )}
+              {" "}&middot; {data.focus.meetingCount} meeting{data.focus.meetingCount !== 1 ? "s" : ""}
+            </div>
+          );
+        })()}
 
         {data.overview.focus && (
           <div className={s.focusBlock}>
@@ -273,93 +315,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         )}
       </section>
 
-      {/* ═══ LEAD STORY (Featured Meeting) ═══ */}
-      {featured && (
-        <section className={s.leadStory}>
-          <div className={s.marginGrid}>
-            <div className={s.marginLabel}>The Meeting</div>
-            <div className={s.marginContent}>
-              <div className={s.sectionRule} />
-
-              {/* Title */}
-              <h2 className={s.leadTitle}>
-                {featured.title}
-                {featuredState === "in-progress" && (
-                  <span className={s.nowPillInline}>NOW</span>
-                )}
-              </h2>
-
-              {/* Meta line: time / duration / account / attendees */}
-              <div className={s.leadMeta}>
-                <span>{featured.time}{featured.endTime ? ` \u2013 ${featured.endTime}` : ""}</span>
-                {featuredDuration && (
-                  <>
-                    <span className={s.leadMetaSep}>/</span>
-                    <span>{featuredDuration}</span>
-                  </>
-                )}
-                {formatEntityByline(featured.linkedEntities) && (
-                  <>
-                    <span className={s.leadMetaSep}>/</span>
-                    <span>{formatEntityByline(featured.linkedEntities)}</span>
-                  </>
-                )}
-                {featured.prep?.stakeholders && featured.prep.stakeholders.length > 0 && (
-                  <>
-                    <span className={s.leadMetaSep}>/</span>
-                    <span>{featured.prep.stakeholders.length} attendee{featured.prep.stakeholders.length !== 1 ? "s" : ""}</span>
-                  </>
-                )}
-              </div>
-
-              {/* Narrative context — conclusions before evidence */}
-              {featured.prep?.context && (
-                <p className={s.leadNarrative}>{featured.prep.context}</p>
-              )}
-
-              {/* Key people */}
-              {featured.prep?.stakeholders && featured.prep.stakeholders.length > 0 && (
-                <KeyPeopleFlow stakeholders={featured.prep.stakeholders} />
-              )}
-
-              {/* Prep grid */}
-              <PrepGrid meeting={featured} />
-
-              {/* Before this meeting — related actions */}
-              <MeetingActionChecklist
-                actions={featuredActions}
-                completedIds={completedIds}
-                onComplete={handleComplete}
-              />
-
-              {/* Entity assignment */}
-              <div style={{ marginBottom: 24 }}>
-                <MeetingEntityChips
-                  meetingId={featured.id}
-                  meetingTitle={featured.title}
-                  meetingStartTime={featured.startIso ?? new Date().toISOString()}
-                  meetingType={featured.type}
-                  linkedEntities={featured.linkedEntities ?? []}
-                  onEntitiesChanged={onRefresh}
-                />
-              </div>
-
-              {/* Bridge links */}
-              <div className={s.meetingLinks}>
-                <Link
-                  to="/meeting/$meetingId"
-                  params={{ meetingId: featured.id }}
-                  className={s.meetingLinkPrimary}
-                >
-                  Read full briefing &rarr;
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ SCHEDULE ═══ */}
+      {/* ═══ SCHEDULE (with Up Next) ═══ */}
       {hasSchedule && (
         <section className={s.scheduleSection}>
           <div className={s.marginGrid}>
@@ -369,6 +325,20 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
             </div>
             <div className={s.marginContent}>
               <div className={s.sectionRule} />
+
+              {/* Prep flags for high-stakes meetings without prep */}
+              {unpreppedHighStakes.map((m) => (
+                <div key={m.id} className={s.prepFlag}>
+                  <Link
+                    to="/meeting/$meetingId"
+                    params={{ meetingId: m.id }}
+                    style={{ textDecoration: "none", color: "inherit" }}
+                  >
+                    &#9888; {m.title} at {m.time} — no prep yet
+                  </Link>
+                </div>
+              ))}
+
               <div className={s.scheduleRows}>
                 {scheduleMeetings.map((meeting) => (
                   <BriefingMeetingCard
@@ -382,6 +352,8 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     onEntitiesChanged={onRefresh}
                     capturedActionCount={getCapturedActionCount(meeting.id)}
                     proposedActionCount={getProposedActionCount(meeting.id)}
+                    isUpNext={upNext?.id === meeting.id}
+                    userDomain={data.userDomains?.[0]}
                   />
                 ))}
               </div>
@@ -390,102 +362,121 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         </section>
       )}
 
-      {/* ═══ REVIEW (Proposed Actions) ═══ */}
-      {proposedActions.length > 0 && (
-        <section className={s.scheduleSection}>
-          <div className={s.marginGrid}>
-            <div className={s.marginLabel} style={{ color: "var(--color-spice-turmeric)" }}>
-              Review
-              <span className={s.marginLabelCount}>{proposedActions.length} suggested</span>
-            </div>
-            <div className={s.marginContent}>
-              <div className={s.sectionRule} />
+      {/* ═══ ATTENTION ═══ */}
+      {/* When stale, only show attention section if we have actions (emails/narrative won't exist yet) */}
+      <AttentionSection
+        proposedActions={proposedActions}
+        acceptAction={acceptAction}
+        rejectAction={rejectAction}
+        focus={data.focus}
+        pendingActions={pendingActions}
+        completedIds={completedIds}
+        onComplete={handleComplete}
+        briefingEmails={isStale ? [] : briefingEmails}
+        emailSectionLabel={emailSectionLabel}
+        allEmails={isStale ? [] : emails}
+        todayMeetingIds={new Set(meetings.map((m) => m.id))}
+        repliesNeeded={repliesNeeded}
+      />
+
+      {/* ═══ FINIS ═══ */}
+      <FinisMarker />
+    </div>
+  );
+}
+
+// ─── Attention Section (unified: proposed + actions + emails) ─────────────────
+
+function AttentionSection({
+  proposedActions,
+  acceptAction,
+  rejectAction,
+  focus,
+  pendingActions,
+  completedIds,
+  onComplete,
+  briefingEmails,
+  emailSectionLabel,
+  allEmails,
+  todayMeetingIds,
+  repliesNeeded,
+}: {
+  proposedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
+  acceptAction: (id: string) => void;
+  rejectAction: (id: string) => void;
+  focus: DashboardData["focus"];
+  pendingActions: Action[];
+  completedIds: Set<string>;
+  onComplete: (id: string) => void;
+  briefingEmails: Email[];
+  emailSectionLabel: string;
+  allEmails: Email[];
+  todayMeetingIds: Set<string>;
+  repliesNeeded: ReplyNeeded[];
+}) {
+  const navigate = useNavigate();
+
+  // Filter attention-worthy actions: meeting-relevant for today OR overdue (max 3)
+  const attentionActions = useMemo(() => {
+    const prioritized = focus?.prioritizedActions ?? [];
+
+    // Meeting-relevant: actions whose sourceId matches a today meeting
+    const meetingRelevant = prioritized.filter(
+      (pa) => pa.action.status !== "completed" && pa.action.sourceId && todayMeetingIds.has(pa.action.sourceId)
+    );
+    // Overdue/at-risk
+    const atRisk = prioritized.filter(
+      (pa) => pa.action.status !== "completed" && pa.atRisk && !meetingRelevant.includes(pa)
+    );
+
+    // If we have prioritized actions, use them
+    if (meetingRelevant.length > 0 || atRisk.length > 0) {
+      return [...meetingRelevant, ...atRisk].slice(0, 3);
+    }
+
+    // Fallback: use raw pending actions (overdue first, then meeting-relevant)
+    const overdueRaw = pendingActions.filter((a) => a.isOverdue);
+    const meetingRaw = pendingActions.filter(
+      (a) => !a.isOverdue && a.source && todayMeetingIds.has(a.source)
+    );
+    return [...overdueRaw, ...meetingRaw].slice(0, 3);
+  }, [focus, pendingActions, todayMeetingIds]);
+
+  const hasProposed = proposedActions.length > 0;
+  const hasActions = attentionActions.length > 0;
+  const hasReplies = repliesNeeded.length > 0;
+  const hasEmails = briefingEmails.length > 0;
+  const hasAnything = hasProposed || hasActions || hasReplies || hasEmails;
+
+  if (!hasAnything) return null;
+
+  // Determine if attentionActions are PrioritizedAction or raw Action
+  const hasPrioritizedActions = focus?.prioritizedActions && focus.prioritizedActions.length > 0;
+
+  return (
+    <section className={s.prioritiesSection}>
+      <div className={s.marginGrid}>
+        <div className={s.marginLabel}>Attention</div>
+        <div className={s.marginContent}>
+          <div className={s.sectionRule} />
+
+
+          {/* Proposed action triage (max 3) */}
+          {hasProposed && (
+            <>
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                {proposedActions.slice(0, 5).map((action, i) => (
-                  <div
+                {proposedActions.slice(0, 3).map((action, i) => (
+                  <ProposedActionRow
                     key={action.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "8px 0",
-                      borderBottom: i < Math.min(proposedActions.length, 5) - 1
-                        ? "1px solid var(--color-rule-light)"
-                        : "none",
-                      borderLeft: "2px dashed var(--color-spice-turmeric)",
-                      paddingLeft: 12,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontFamily: "var(--font-serif)",
-                          fontSize: 15,
-                          color: "var(--color-text-primary)",
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {action.title}
-                      </div>
-                      {action.sourceLabel && (
-                        <div
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 11,
-                            color: "var(--color-text-tertiary)",
-                            marginTop: 1,
-                          }}
-                        >
-                          {action.sourceLabel}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                      <button
-                        onClick={() => acceptAction(action.id)}
-                        title="Accept"
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 4,
-                          border: "1px solid var(--color-garden-sage)",
-                          background: "transparent",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: 0,
-                        }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M2.5 6L5 8.5L9.5 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => rejectAction(action.id)}
-                        title="Dismiss"
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: 4,
-                          border: "1px solid var(--color-spice-terracotta)",
-                          background: "transparent",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: 0,
-                        }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M3 3L9 9M9 3L3 9" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
+                    action={action}
+                    onAccept={() => acceptAction(action.id)}
+                    onReject={() => rejectAction(action.id)}
+                    showBorder={i < Math.min(proposedActions.length, 3) - 1}
+                    compact
+                  />
                 ))}
               </div>
-              {proposedActions.length > 5 && (
+              {proposedActions.length > 3 && (
                 <button
                   onClick={() => navigate({ to: "/actions", search: { search: undefined } })}
                   style={{
@@ -503,120 +494,112 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                   See all {proposedActions.length} suggestions &rarr;
                 </button>
               )}
+            </>
+          )}
+
+          {/* Actions: meeting-relevant + overdue (max 3) */}
+          {hasActions && (
+            <div style={{ marginTop: hasProposed ? 28 : 0 }}>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
+                Actions
+              </div>
+              <div className={s.priorityItems}>
+                {hasPrioritizedActions ? (
+                  // Render as PrioritizedActionItem
+                  (attentionActions as PrioritizedAction[]).map((pa) => (
+                    <PrioritizedActionItem
+                      key={pa.action.id}
+                      pa={pa}
+                      urgency={pa.atRisk ? "overdue" : "today"}
+                      isCompleted={completedIds.has(pa.action.id)}
+                      onComplete={onComplete}
+                    />
+                  ))
+                ) : (
+                  // Render raw actions
+                  (attentionActions as Action[]).map((action) => {
+                    const done = action.status === "completed" || completedIds.has(action.id);
+                    const isOverdue = action.isOverdue;
+                    return (
+                      <div
+                        key={action.id}
+                        className={clsx(
+                          s.priorityItem,
+                          done && s.priorityItemCompleted,
+                          isOverdue ? s.priorityItemOverdue : s.priorityItemToday,
+                          action.account && s.priorityItemAccount,
+                        )}
+                      >
+                        <button
+                          className={clsx(
+                            s.priorityCheck,
+                            done && s.priorityCheckChecked,
+                            isOverdue && !done && s.priorityCheckOverdue,
+                          )}
+                          onClick={() => !done && onComplete(action.id)}
+                          disabled={done}
+                        >
+                          {done && (
+                            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                              <path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </button>
+                        <div className={s.priorityContent}>
+                          <Link
+                            to="/actions/$actionId"
+                            params={{ actionId: action.id }}
+                            className={s.priorityTitle}
+                            style={{ textDecoration: done ? "line-through" : "none" }}
+                          >
+                            {stripMarkdown(action.title)}
+                          </Link>
+                          {(isOverdue || action.dueDate || action.account) && (
+                            <div className={s.priorityContext}>
+                              {isOverdue && action.daysOverdue
+                                ? `${action.daysOverdue} day${action.daysOverdue !== 1 ? "s" : ""} overdue`
+                                : action.dueDate ?? ""}
+                              {action.account && ` \u00B7 ${action.account}`}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ PRIORITIES ═══ */}
-      {data.focus && data.focus.prioritizedActions.length > 0 ? (
-        <PrioritiesSection
-          focus={data.focus}
-          completedIds={completedIds}
-          onComplete={handleComplete}
-          briefingEmails={briefingEmails}
-          emailSectionLabel={emailSectionLabel}
-          allEmails={emails}
-          totalPendingActions={pendingActions.length}
-          emailNarrative={data.emailNarrative}
-          repliesNeeded={data.repliesNeeded}
-        />
-      ) : (pendingActions.length > 0 || briefingEmails.length > 0) ? (
-        <LooseThreadsSection
-          pendingActions={pendingActions}
-          briefingEmails={briefingEmails}
-          allEmails={emails}
-          completedIds={completedIds}
-          onComplete={handleComplete}
-          emailNarrative={data.emailNarrative}
-          repliesNeeded={data.repliesNeeded}
-        />
-      ) : null}
-
-      {/* ═══ FINIS ═══ */}
-      <FinisMarker />
-    </div>
-  );
-}
-
-// ─── Priorities Section (capacity-aware, tapering density) ───────────────────
-
-function PrioritiesSection({
-  focus,
-  completedIds,
-  onComplete,
-  briefingEmails,
-  emailSectionLabel,
-  allEmails,
-  totalPendingActions,
-  emailNarrative,
-  repliesNeeded,
-}: {
-  focus: NonNullable<DashboardData["focus"]>;
-  completedIds: Set<string>;
-  onComplete: (id: string) => void;
-  briefingEmails: Email[];
-  emailSectionLabel: string;
-  allEmails: Email[];
-  totalPendingActions: number;
-  emailNarrative?: string;
-  repliesNeeded?: ReplyNeeded[];
-}) {
-  // Group prioritized actions by urgency
-  const overdueActions = focus.prioritizedActions.filter((pa) => pa.action.status !== "completed" && pa.atRisk);
-  const todayActions = focus.prioritizedActions.filter((pa) => pa.action.status !== "completed" && !pa.atRisk && pa.feasible);
-  const hasMore = totalPendingActions > focus.prioritizedActions.length;
-
-  return (
-    <section className={s.prioritiesSection}>
-      <div className={s.marginGrid}>
-        <div className={s.marginLabel}>Priorities</div>
-        <div className={s.marginContent}>
-          <div className={s.sectionRule} />
-
-          {/* Prose intro — AI-synthesized capacity context */}
-          {focus.implications.summary && (
-            <p className={s.prioritiesIntro}>{focus.implications.summary}</p>
           )}
 
-          {/* OVERDUE group */}
-          {overdueActions.length > 0 && (
+          {/* Emails: show Replies Needed when available, generic emails as fallback */}
+          {hasReplies ? (
             <>
-              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>Overdue</div>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
+                Replies Needed
+              </div>
               <div className={s.priorityItems}>
-                {overdueActions.map((pa) => (
-                  <PrioritizedActionItem
-                    key={pa.action.id}
-                    pa={pa}
-                    urgency="overdue"
-                    isCompleted={completedIds.has(pa.action.id)}
-                    onComplete={onComplete}
-                  />
+                {repliesNeeded.slice(0, 3).map((reply) => (
+                  <Link
+                    key={reply.threadId}
+                    to="/emails"
+                    className={s.priorityItem}
+                    style={{ textDecoration: "none" }}
+                  >
+                    <div className={s.replyDot} />
+                    <div className={s.replyContent}>
+                      <div className={s.replySubject}>{reply.subject}</div>
+                      <div className={s.replyMeta}>
+                        {reply.from}
+                        {reply.waitDuration && (
+                          <> &middot; <span className={s.replyWait}>waiting {reply.waitDuration}</span></>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
                 ))}
               </div>
             </>
-          )}
-
-          {/* DUE TODAY group */}
-          {todayActions.length > 0 && (
-            <>
-              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>Due Today</div>
-              <div className={s.priorityItems}>
-                {todayActions.slice(0, 5).map((pa) => (
-                  <PrioritizedActionItem
-                    key={pa.action.id}
-                    pa={pa}
-                    urgency="today"
-                    isCompleted={completedIds.has(pa.action.id)}
-                    onComplete={onComplete}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* EMAILS group (woven between action groups) */}
-          {briefingEmails.length > 0 && (
+          ) : hasEmails ? (
             <>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>{emailSectionLabel}</div>
               <div className={s.priorityItems}>
@@ -625,135 +608,11 @@ function PrioritiesSection({
                 ))}
               </div>
             </>
-          )}
-
-          {/* Email narrative (I355) */}
-          {emailNarrative && (
-            <EmailBriefingNarrative narrative={emailNarrative} />
-          )}
-
-          {/* Replies needed (I355/I356) */}
-          {repliesNeeded && repliesNeeded.length > 0 && (
-            <RepliesNeededList replies={repliesNeeded} />
-          )}
+          ) : null}
 
           {/* View all links */}
           <div className={s.prioritiesViewAll}>
-            {hasMore && (
-              <Link to="/actions" search={{ search: undefined }} className={s.viewAllLink}>
-                View all {totalPendingActions} actions &rarr;
-              </Link>
-            )}
-            {allEmails.length > briefingEmails.length && (
-              <Link to="/emails" className={s.viewAllLink}>
-                View all emails &rarr;
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ─── Loose Threads Fallback (when no prioritized actions available) ──────────
-
-function LooseThreadsSection({
-  pendingActions,
-  briefingEmails,
-  allEmails,
-  completedIds,
-  onComplete,
-  emailNarrative,
-  repliesNeeded,
-}: {
-  pendingActions: Action[];
-  briefingEmails: Email[];
-  allEmails: Email[];
-  completedIds: Set<string>;
-  onComplete: (id: string) => void;
-  emailNarrative?: string;
-  repliesNeeded?: ReplyNeeded[];
-}) {
-  const visibleActions = pendingActions.slice(0, 5);
-  const hasMore = pendingActions.length > 5;
-
-  return (
-    <section className={s.prioritiesSection}>
-      <div className={s.marginGrid}>
-        <div className={s.marginLabel}>Loose Threads</div>
-        <div className={s.marginContent}>
-          <div className={s.sectionRule} />
-
-          <div className={s.priorityItems}>
-            {visibleActions.map((action) => {
-              const done = action.status === "completed" || completedIds.has(action.id);
-              const isOverdue = action.isOverdue;
-              return (
-                <div
-                  key={action.id}
-                  className={clsx(
-                    s.priorityItem,
-                    done && s.priorityItemCompleted,
-                    isOverdue ? s.priorityItemOverdue : s.priorityItemToday,
-                    action.account && s.priorityItemAccount,
-                  )}
-                >
-                  <button
-                    className={clsx(
-                      s.priorityCheck,
-                      done && s.priorityCheckChecked,
-                      isOverdue && !done && s.priorityCheckOverdue,
-                    )}
-                    onClick={() => !done && onComplete(action.id)}
-                    disabled={done}
-                  >
-                    {done && (
-                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                        <path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    )}
-                  </button>
-                  <div className={s.priorityContent}>
-                    <Link
-                      to="/actions/$actionId"
-                      params={{ actionId: action.id }}
-                      className={s.priorityTitle}
-                      style={{ textDecoration: done ? "line-through" : "none" }}
-                    >
-                      {stripMarkdown(action.title)}
-                    </Link>
-                    {(isOverdue || action.dueDate || action.account) && (
-                      <div className={s.priorityContext}>
-                        {isOverdue && action.daysOverdue
-                          ? `${action.daysOverdue} day${action.daysOverdue !== 1 ? "s" : ""} overdue`
-                          : action.dueDate ?? ""}
-                        {action.account && ` \u00B7 ${action.account}`}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {briefingEmails.map((email) => (
-              <PriorityEmailItem key={email.id} email={email} />
-            ))}
-          </div>
-
-          {/* Email narrative (I355) */}
-          {emailNarrative && (
-            <EmailBriefingNarrative narrative={emailNarrative} />
-          )}
-
-          {/* Replies needed (I355/I356) */}
-          {repliesNeeded && repliesNeeded.length > 0 && (
-            <RepliesNeededList replies={repliesNeeded} />
-          )}
-
-          {/* View all links */}
-          <div className={s.prioritiesViewAll}>
-            {hasMore && (
+            {pendingActions.length > 3 && (
               <Link to="/actions" search={{ search: undefined }} className={s.viewAllLink}>
                 View all {pendingActions.length} actions &rarr;
               </Link>
@@ -835,46 +694,6 @@ function PrioritizedActionItem({
         )}
       </div>
     </Link>
-  );
-}
-
-// ─── Email Briefing Narrative (I355) ──────────────────────────────────────────
-
-function EmailBriefingNarrative({ narrative }: { narrative: string }) {
-  return (
-    <div style={{ marginTop: 24 }}>
-      <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>Email Intelligence</div>
-      <p className={s.emailNarrative}>{narrative}</p>
-    </div>
-  );
-}
-
-// ─── Replies Needed (I355/I356) ──────────────────────────────────────────────
-
-function RepliesNeededList({ replies }: { replies: ReplyNeeded[] }) {
-  return (
-    <div style={{ marginTop: 24 }}>
-      <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
-        Awaiting Your Reply
-        <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{replies.length}</span>
-      </div>
-      <div className={s.priorityItems}>
-        {replies.map((reply) => (
-          <div key={reply.threadId} className={s.replyItem}>
-            <div className={s.replyDot} />
-            <div className={s.replyContent}>
-              <div className={s.replySubject}>{reply.subject}</div>
-              <div className={s.replyMeta}>
-                {reply.from}
-                {reply.waitDuration && (
-                  <> &middot; <span className={s.replyWait}>{reply.waitDuration}</span></>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

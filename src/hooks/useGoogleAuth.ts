@@ -30,7 +30,9 @@ export function useGoogleAuth() {
   const [justConnected, setJustConnected] = useState(false);
 
   useEffect(() => {
-    invoke<GoogleAuthStatus>("get_google_auth_status").then(setStatus).catch(() => {});
+    invoke<GoogleAuthStatus>("get_google_auth_status").then(setStatus).catch((err) => {
+      console.error("get_google_auth_status failed:", err);
+    });
 
     const unlistenChanged = listen<GoogleAuthStatus>("google-auth-changed", (event) => {
       setStatus(event.payload);

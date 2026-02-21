@@ -17,7 +17,10 @@ export function EntityMode({ onNext }: EntityModeProps) {
   useEffect(() => {
     invoke<[string, string, string][]>("get_available_presets")
       .then(setPresets)
-      .catch(() => setPresets([]));
+      .catch((err) => {
+        console.error("get_available_presets failed:", err);
+        setPresets([]);
+      });
   }, []);
 
   async function handleSelect(presetId: string) {

@@ -1,8 +1,10 @@
 import { useState, useMemo, useCallback } from "react";
-import { useSearch, Link } from "@tanstack/react-router";
+import { useSearch } from "@tanstack/react-router";
 import { useActions } from "@/hooks/useActions";
 import { useProposedActions } from "@/hooks/useProposedActions";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { ActionRow as SharedActionRow } from "@/components/shared/ActionRow";
+import { ProposedActionRow as SharedProposedActionRow } from "@/components/shared/ProposedActionRow";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { usePersonality } from "@/hooks/usePersonality";
@@ -12,7 +14,134 @@ import type { DbAction } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { DatePicker } from "@/components/ui/date-picker";
+
+// ─── Action Group Types ──────────────────────────────────────────────────────
+
+interface ActionGroup {
+  label: string;
+  /** "meeting" groups sort by meeting start; "time-band" groups are the fallback */
+  kind: "meeting" | "time-band";
+  actions: DbAction[];
+}
+
+/** Priority sort weight: P1 first */
+const PRIORITY_WEIGHT: Record<string, number> = { P1: 0, P2: 1, P3: 2 };
+
+function sortByPriorityThenDue(a: DbAction, b: DbAction): number {
+  const pw = (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9);
+  if (pw !== 0) return pw;
+  if (!a.dueDate && !b.dueDate) return 0;
+  if (!a.dueDate) return 1;
+  if (!b.dueDate) return -1;
+  return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+}
+
+/**
+ * Format a meeting-group label: "Meeting Title . Day"
+ * Uses relative day names for this week, date for further out.
+ */
+function formatMeetingGroupLabel(title: string, startIso: string): string {
+  try {
+    const date = new Date(startIso);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round(
+      (new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() - todayStart.getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+
+    let dayLabel: string;
+    if (diffDays === 0) dayLabel = "Today";
+    else if (diffDays === 1) dayLabel = "Tomorrow";
+    else if (diffDays === -1) dayLabel = "Yesterday";
+    else if (diffDays > 1 && diffDays <= 6) {
+      dayLabel = date.toLocaleDateString(undefined, { weekday: "long" });
+    } else {
+      dayLabel = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    return `${title} \u00b7 ${dayLabel}`;
+  } catch {
+    return title;
+  }
+}
+
+/**
+ * Group actions by meeting context (meeting-centric), with an
+ * "Everything Else" fallback for actions not linked to a meeting.
+ * The Everything Else section uses the old time-band sub-grouping.
+ */
+function groupByMeeting(actions: DbAction[]): ActionGroup[] {
+  const meetingMap = new Map<string, { title: string; start: string; actions: DbAction[] }>();
+  const everythingElse: DbAction[] = [];
+
+  for (const a of actions) {
+    if (a.nextMeetingTitle && a.nextMeetingStart) {
+      const key = `${a.nextMeetingTitle}::${a.nextMeetingStart}`;
+      if (!meetingMap.has(key)) {
+        meetingMap.set(key, { title: a.nextMeetingTitle, start: a.nextMeetingStart, actions: [] });
+      }
+      meetingMap.get(key)!.actions.push(a);
+    } else {
+      everythingElse.push(a);
+    }
+  }
+
+  // Sort meeting groups by start time ascending (soonest first)
+  const meetingEntries = [...meetingMap.values()].sort(
+    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+  );
+
+  const groups: ActionGroup[] = [];
+
+  for (const entry of meetingEntries) {
+    entry.actions.sort(sortByPriorityThenDue);
+    groups.push({
+      label: formatMeetingGroupLabel(entry.title, entry.start),
+      kind: "meeting",
+      actions: entry.actions,
+    });
+  }
+
+  // "Everything Else" — sub-grouped by time-band
+  if (everythingElse.length > 0) {
+    const now = new Date();
+    const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const overdue: DbAction[] = [];
+    const thisWeek: DbAction[] = [];
+    const later: DbAction[] = [];
+
+    for (const a of everythingElse) {
+      if (a.dueDate && new Date(a.dueDate) < now) {
+        overdue.push(a);
+      } else if (a.dueDate && new Date(a.dueDate) <= sevenDaysOut) {
+        thisWeek.push(a);
+      } else {
+        later.push(a);
+      }
+    }
+
+    const sortByDue = (x: DbAction, y: DbAction) => {
+      if (!x.dueDate && !y.dueDate) return 0;
+      if (!x.dueDate) return 1;
+      if (!y.dueDate) return -1;
+      return new Date(x.dueDate).getTime() - new Date(y.dueDate).getTime();
+    };
+
+    overdue.sort(sortByDue);
+    thisWeek.sort(sortByDue);
+    later.sort(sortByDue);
+
+    if (overdue.length > 0) groups.push({ label: "Overdue", kind: "time-band", actions: overdue });
+    if (thisWeek.length > 0) groups.push({ label: "This Week", kind: "time-band", actions: thisWeek });
+    if (later.length > 0) groups.push({ label: "Later", kind: "time-band", actions: later });
+  }
+
+  return groups;
+}
 
 type StatusTab = "proposed" | "pending" | "completed";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
@@ -123,7 +252,7 @@ export default function ActionsPage() {
               height: 60,
               background: "var(--color-rule-light)",
               borderRadius: 8,
-              marginBottom: 12,
+              marginBottom: "var(--space-sm)",
               animation: "pulse 1.5s ease-in-out infinite",
             }}
           />
@@ -191,7 +320,7 @@ export default function ActionsPage() {
         <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
 
         {/* Status filter toggles */}
-        <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: "var(--space-lg)", marginBottom: "var(--space-sm)" }}>
           {statusTabs.map((tab) => (
             <button
               key={tab}
@@ -223,7 +352,7 @@ export default function ActionsPage() {
                     fontSize: 10,
                     fontWeight: 600,
                     color: "var(--color-spice-turmeric)",
-                    background: "rgba(228, 172, 60, 0.12)",
+                    background: "var(--color-spice-saffron-12)",
                     borderRadius: 8,
                     padding: "1px 6px",
                     lineHeight: "16px",
@@ -237,7 +366,7 @@ export default function ActionsPage() {
         </div>
 
         {/* Priority filter toggles */}
-        <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: "var(--space-lg)", marginBottom: "var(--space-md)" }}>
           {priorityTabs.map((tab) => (
             <button
               key={tab}
@@ -305,12 +434,13 @@ export default function ActionsPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {proposedActions.map((action, i) => (
-                <ProposedActionRow
+                <SharedProposedActionRow
                   key={action.id}
                   action={action}
                   onAccept={() => handleAccept(action.id)}
                   onReject={() => handleReject(action.id)}
                   showBorder={i < proposedActions.length - 1}
+                  stripMarkdown={stripMarkdown}
                 />
               ))}
             </div>
@@ -324,14 +454,20 @@ export default function ActionsPage() {
               personality,
             )}
           />
+        ) : statusFilter === "pending" ? (
+          // Grouped view for pending tab
+          <PendingGroupedView actions={actions} onToggle={toggleAction} />
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
             {actions.map((action, i) => (
-              <ActionRow
+              <SharedActionRow
                 key={action.id}
+                variant="full"
                 action={action}
                 onToggle={() => toggleAction(action.id)}
                 showBorder={i < actions.length - 1}
+                stripMarkdown={stripMarkdown}
+                formatDate={formatDueDate}
               />
             ))}
           </div>
@@ -339,287 +475,91 @@ export default function ActionsPage() {
       </section>
 
       {/* ═══ END MARK ═══ */}
-      {actions.length > 0 && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-heavy)",
-            marginTop: 48,
-            paddingTop: 32,
-            paddingBottom: 120,
-            textAlign: "center",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 14,
-              fontStyle: "italic",
-              color: "var(--color-text-tertiary)",
-            }}
-          >
-            That's everything.
-          </div>
-        </div>
-      )}
+      {actions.length > 0 && <FinisMarker />}
     </div>
   );
 }
 
-// ─── Action Row ─────────────────────────────────────────────────────────────
+// ─── Pending Grouped View ───────────────────────────────────────────────────
 
-function ActionRow({
-  action,
+function PendingGroupedView({
+  actions,
   onToggle,
-  showBorder,
 }: {
-  action: DbAction;
-  onToggle: () => void;
-  showBorder: boolean;
+  actions: DbAction[];
+  onToggle: (id: string) => void;
 }) {
-  const isCompleted = action.status === "completed";
-  const isOverdue =
-    action.dueDate &&
-    action.status === "pending" &&
-    new Date(action.dueDate) < new Date();
+  const groups = useMemo(() => groupByMeeting(actions), [actions]);
 
-  // Context line parts
-  const contextParts: string[] = [];
-  if (isOverdue && action.dueDate) {
-    const days = Math.floor(
-      (new Date().getTime() - new Date(action.dueDate).getTime()) / (1000 * 60 * 60 * 24)
-    );
-    if (days > 0) contextParts.push(`${days} day${days !== 1 ? "s" : ""} overdue`);
-  } else if (action.dueDate) {
-    contextParts.push(formatDueDate(action.dueDate));
-  }
-  if (action.accountName || action.accountId) {
-    contextParts.push(action.accountName || action.accountId!);
-  }
-  if (action.sourceLabel) contextParts.push(action.sourceLabel);
+  const timeBandColors: Record<string, string> = {
+    Overdue: "var(--color-spice-terracotta)",
+    "This Week": "var(--color-spice-turmeric)",
+    Later: "var(--color-text-tertiary)",
+  };
+
+  // Track when we transition from meeting groups to time-band (Everything Else)
+  const firstTimeBandIdx = groups.findIndex((g) => g.kind === "time-band");
+  const hasTimeBands = firstTimeBandIdx !== -1;
+  const hasMeetingGroups = groups.some((g) => g.kind === "meeting");
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        opacity: isCompleted ? 0.4 : 1,
-        transition: "opacity 0.15s ease",
-      }}
-    >
-      {/* Checkbox */}
-      <button
-        onClick={onToggle}
-        style={{
-          width: 20,
-          height: 20,
-          borderRadius: 10,
-          border: `2px solid ${isOverdue ? "var(--color-spice-terracotta)" : "var(--color-rule-heavy)"}`,
-          background: isCompleted ? "var(--color-garden-sage)" : "transparent",
-          cursor: "pointer",
-          flexShrink: 0,
-          marginTop: 2,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "all 0.15s ease",
-        }}
-      >
-        {isCompleted && (
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
-
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <Link
-          to="/actions/$actionId"
-          params={{ actionId: action.id }}
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 17,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            textDecoration: isCompleted ? "line-through" : "none",
-            lineHeight: 1.4,
-          }}
-        >
-          {stripMarkdown(action.title)}
-        </Link>
-        {contextParts.length > 0 && (
-          <div
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: isOverdue ? 500 : 300,
-              color: isOverdue
-                ? "var(--color-spice-terracotta)"
-                : "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
-            {contextParts.join(" \u00B7 ")}
+    <div>
+      {/* "Everything Else" section header — only if we have both meeting and time-band groups */}
+      {groups.map((group, idx) => (
+        <div key={group.label}>
+          {hasTimeBands && hasMeetingGroups && idx === firstTimeBandIdx && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 500,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                color: "var(--color-text-tertiary)",
+                paddingBottom: 8,
+                borderBottom: "2px solid var(--color-rule-heavy)",
+                marginBottom: 16,
+                marginTop: 32,
+              }}
+            >
+              Everything Else
+            </div>
+          )}
+          <div style={{ marginBottom: 32 }}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: group.kind === "meeting"
+                  ? "var(--color-garden-larkspur)"
+                  : timeBandColors[group.label] ?? "var(--color-text-tertiary)",
+                paddingBottom: 8,
+                borderBottom: "1px solid var(--color-rule-light)",
+                marginBottom: 0,
+              }}
+            >
+              {group.label}
+              <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{group.actions.length}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {group.actions.map((action, i) => (
+                <SharedActionRow
+                  key={action.id}
+                  variant="full"
+                  action={action}
+                  onToggle={() => onToggle(action.id)}
+                  showBorder={i < group.actions.length - 1}
+                  stripMarkdown={stripMarkdown}
+                  formatDate={formatDueDate}
+                />
+              ))}
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* Priority badge */}
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.04em",
-          color: action.priority === "P1"
-            ? "var(--color-spice-terracotta)"
-            : action.priority === "P2"
-              ? "var(--color-spice-turmeric)"
-              : "var(--color-text-tertiary)",
-          flexShrink: 0,
-          marginTop: 4,
-        }}
-      >
-        {action.priority}
-      </span>
-    </div>
-  );
-}
-
-// ─── Proposed Action Row ────────────────────────────────────────────────────
-
-function ProposedActionRow({
-  action,
-  onAccept,
-  onReject,
-  showBorder,
-}: {
-  action: DbAction;
-  onAccept: () => void;
-  onReject: () => void;
-  showBorder: boolean;
-}) {
-  const contextParts: string[] = [];
-  if (action.sourceLabel) contextParts.push(action.sourceLabel);
-  if (action.accountName || action.accountId) {
-    contextParts.push(action.accountName || action.accountId!);
-  }
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        borderLeft: "2px dashed var(--color-spice-turmeric)",
-        paddingLeft: 16,
-      }}
-    >
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: "var(--color-spice-turmeric)",
-            }}
-          >
-            Suggested
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.04em",
-              color: action.priority === "P1"
-                ? "var(--color-spice-terracotta)"
-                : action.priority === "P2"
-                  ? "var(--color-spice-turmeric)"
-                  : "var(--color-text-tertiary)",
-            }}
-          >
-            {action.priority}
-          </span>
         </div>
-        <div
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 17,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            lineHeight: 1.4,
-          }}
-        >
-          {stripMarkdown(action.title)}
-        </div>
-        {contextParts.length > 0 && (
-          <div
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
-            {contextParts.join(" \u00B7 ")}
-          </div>
-        )}
-      </div>
-
-      {/* Accept / Reject buttons */}
-      <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: 4 }}>
-        <button
-          onClick={onAccept}
-          title="Accept"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 4,
-            border: "1px solid var(--color-garden-sage)",
-            background: "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <button
-          onClick={onReject}
-          title="Dismiss"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 4,
-            border: "1px solid var(--color-spice-terracotta)",
-            background: "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
+      ))}
     </div>
   );
 }

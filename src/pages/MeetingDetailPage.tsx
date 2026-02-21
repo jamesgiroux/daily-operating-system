@@ -18,12 +18,13 @@ import type {
   CalendarEvent,
   StakeholderInsight,
   ApplyPrepPrefillResult,
-  DbAction,
   LinkedEntity,
 } from "@/types";
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
+import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { ActionRow } from "@/components/shared/ActionRow";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -38,57 +39,17 @@ import {
   ChevronRight,
   CircleDot,
   Clock,
+  Copy,
   Loader2,
+  Mail,
   Paperclip,
   RefreshCw,
   Target,
   Trophy,
   Users,
 } from "lucide-react";
+import clsx from "clsx";
 import styles from "./meeting-intel.module.css";
-
-// ── Shared style fragments ──
-
-const monoOverline: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.2em",
-  color: "var(--color-text-tertiary)",
-};
-
-const chapterHeadingStyle: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: "0.12em",
-  color: "var(--color-text-tertiary)",
-};
-
-const folioBtn: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: "0.06em",
-  textTransform: "uppercase",
-  color: "var(--color-text-secondary)",
-  background: "none",
-  border: "1px solid var(--color-rule-light)",
-  borderRadius: 4,
-  padding: "2px 10px",
-  cursor: "pointer",
-};
-
-const bulletDot = (color: string): React.CSSProperties => ({
-  width: 6,
-  height: 6,
-  borderRadius: "50%",
-  background: color,
-  flexShrink: 0,
-  marginTop: 7,
-});
 
 // ── Chapter Nav definitions ──
 
@@ -122,8 +83,10 @@ export default function MeetingDetailPage() {
   const [canEditUserLayer, setCanEditUserLayer] = useState(false);
   const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
   const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
+  const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingIntel, setRefreshingIntel] = useState(false);
 
   // Transcript attach
   const [attaching, setAttaching] = useState(false);
@@ -134,6 +97,9 @@ export default function MeetingDetailPage() {
 
   // Save status for folio bar
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  // Clipboard copy indicator for collaboration actions
+  const [copiedAction, setCopiedAction] = useState<string | null>(null);
 
   // Persisted user overrides
   const [dismissedTopics, setDismissedTopics] = useState<string[]>([]);
@@ -155,6 +121,7 @@ export default function MeetingDetailPage() {
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
       setLinkedEntities(intel.linkedEntities ?? []);
+      setIntelligenceQuality(intel.intelligenceQuality);
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
         const start = parseDate(startRaw);
@@ -190,11 +157,14 @@ export default function MeetingDetailPage() {
     if (!meetingId) return;
     setSyncing(true);
     try {
-      const result = await invoke<string>("trigger_quill_sync_for_meeting", { meetingId });
-      if (result === "already_completed") {
-        toast.success("Transcript already synced");
-      } else if (result === "already_in_progress") {
+      const result = await invoke<string>("trigger_quill_sync_for_meeting", {
+        meetingId,
+        force: true,
+      });
+      if (result === "already_in_progress") {
         toast.success("Sync already in progress");
+      } else if (result === "resyncing") {
+        toast.success("Re-syncing transcript");
       } else {
         toast.success("Transcript sync started");
       }
@@ -302,6 +272,97 @@ export default function MeetingDetailPage() {
     }
   }, [meetingId, canEditUserLayer, data, loadMeetingIntelligence]);
 
+  const handleRefreshIntelligence = useCallback(async () => {
+    if (!meetingId) return;
+    setRefreshingIntel(true);
+    try {
+      await invoke("generate_meeting_intelligence", { meetingId, force: true });
+      await loadMeetingIntelligence();
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Refresh failed");
+    } finally {
+      setRefreshingIntel(false);
+    }
+  }, [meetingId, loadMeetingIntelligence]);
+
+  const copyToClipboard = useCallback(async (text: string, action: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedAction(action);
+    setTimeout(() => setCopiedAction(null), 2000);
+  }, []);
+
+  const handleShareIntelligence = useCallback(async () => {
+    if (!data) return;
+
+    const lines: string[] = [];
+    lines.push(`Meeting Briefing: ${data.title}`);
+    if (data.timeRange) lines.push(data.timeRange);
+    lines.push("");
+
+    const summary = data.intelligenceSummary || data.meetingContext;
+    if (summary) {
+      lines.push("Summary");
+      lines.push(sanitizeInlineText(summary));
+      lines.push("");
+    }
+
+    const risks = [
+      ...((data.entityRisks ?? []).map((r) => sanitizeInlineText(r.text))),
+      ...(data.risks ?? []).map((r) => sanitizeInlineText(r)),
+    ].filter((r) => r.length > 0).slice(0, 3);
+    if (risks.length > 0) {
+      lines.push("Key Risks");
+      risks.forEach((r) => lines.push(`\u2022 ${r}`));
+      lines.push("");
+    }
+
+    const points = (data.talkingPoints ?? [])
+      .map((p) => sanitizeInlineText(p))
+      .filter((p) => p.length > 0)
+      .slice(0, 5);
+    if (points.length > 0) {
+      lines.push("Discussion Points");
+      points.forEach((p) => lines.push(`\u2022 ${p}`));
+      lines.push("");
+    }
+
+    const context = (data.currentState ?? [])
+      .map((c) => sanitizeInlineText(c))
+      .filter((c) => c.length > 0)
+      .slice(0, 3);
+    if (context.length > 0) {
+      lines.push("Context");
+      context.forEach((c) => lines.push(`\u2022 ${c}`));
+    }
+
+    await copyToClipboard(lines.join("\n").trim(), "share");
+  }, [data, copyToClipboard]);
+
+  const handleRequestInput = useCallback(async () => {
+    if (!data) return;
+
+    const userAgendaItems = data.userAgenda && data.userAgenda.length > 0
+      ? data.userAgenda.map((item) => `- ${item}`).join("\n")
+      : (data.proposedAgenda && data.proposedAgenda.length > 0
+        ? data.proposedAgenda.slice(0, 5).map((item) => `- ${cleanPrepLine(item.topic)}`).join("\n")
+        : "No agenda items yet");
+
+    const meetingDate = data.timeRange || "upcoming";
+
+    const message = `Hi team,
+
+We have ${data.title} coming up on ${meetingDate}. I'd like to make sure we cover everything important.
+
+Current agenda:
+${userAgendaItems}
+
+Please reply with any topics, questions, or materials you'd like to discuss.
+
+Thanks!`;
+
+    await copyToClipboard(message, "request");
+  }, [data, copyToClipboard]);
+
   useEffect(() => {
     loadMeetingIntelligence();
   }, [loadMeetingIntelligence]);
@@ -322,6 +383,16 @@ export default function MeetingDetailPage() {
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
+  // Collaboration action visibility
+  const isFutureMeeting = !isPastMeeting;
+  const isReadyOrFresh = intelligenceQuality?.level === "ready" || intelligenceQuality?.level === "fresh";
+  const isThreeDaysOut = useMemo(() => {
+    if (!meetingMeta?.startTime) return false;
+    const start = parseDate(meetingMeta.startTime);
+    if (!start) return false;
+    return start.getTime() > Date.now() + 3 * 24 * 60 * 60 * 1000;
+  }, [meetingMeta?.startTime]);
+
   // Register magazine shell with chapter nav + folio actions
   const shellConfig = useMemo(() => ({
     folioLabel: "Meeting Briefing",
@@ -331,38 +402,46 @@ export default function MeetingDetailPage() {
     chapters: CHAPTERS,
     folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     folioActions: data ? (
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        {isEditable && (
-          <button
-            onClick={handlePrefillFromContext}
-            disabled={prefilling}
-            style={{ ...folioBtn, opacity: prefilling ? 0.5 : 1, cursor: prefilling ? "not-allowed" : "pointer" }}
-          >
-            {prefilling ? "Prefilling…" : "Prefill"}
+      <div className={styles.folioActions}>
+        {copiedAction && (
+          <span className={styles.folioCopied}>
+            <Check className={styles.iconSm} /> Copied
+          </span>
+        )}
+        {isFutureMeeting && isReadyOrFresh && (
+          <button onClick={handleShareIntelligence} title="Share Intelligence" className={styles.folioBtnInline}>
+            <Copy className={styles.iconSm} />
+            Share
           </button>
         )}
-        <button onClick={handleDraftAgendaMessage} style={folioBtn}>
-          Draft Agenda
-        </button>
-
-        <button
-          onClick={handleAttachTranscript}
-          disabled={attaching}
-          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: attaching ? 0.5 : 1, cursor: attaching ? "not-allowed" : "pointer" }}
-        >
-          {attaching ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <Paperclip style={{ width: 10, height: 10 }} />}
-          {attaching ? "Processing…" : "Transcript"}
-        </button>
-        <button
-          onClick={() => loadMeetingIntelligence()}
-          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
-        >
-          <RefreshCw style={{ width: 10, height: 10 }} />
+        {isFutureMeeting && isThreeDaysOut && (
+          <button onClick={handleRequestInput} title="Request Input" className={styles.folioBtnInline}>
+            <Mail className={styles.iconSm} />
+            Request Input
+          </button>
+        )}
+        {isFutureMeeting && (
+          <button onClick={handleDraftAgendaMessage} className={styles.folioBtn}>
+            Draft Agenda
+          </button>
+        )}
+        {isPastMeeting && (
+          <button
+            onClick={handleSyncTranscript}
+            disabled={syncing}
+            className={clsx(styles.folioBtnInline, syncing && styles.folioBtnDisabled)}
+          >
+            {syncing ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconSm} />}
+            {syncing ? "Syncing…" : "Sync Transcript"}
+          </button>
+        )}
+        <button onClick={() => loadMeetingIntelligence()} className={styles.folioBtnInline}>
+          <RefreshCw className={styles.iconSm} />
           Refresh
         </button>
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, syncing, isPastMeeting, handlePrefillFromContext, handleDraftAgendaMessage, handleSyncTranscript, handleAttachTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -378,39 +457,11 @@ export default function MeetingDetailPage() {
   // ── Empty / not-ready state ──
   if (!data) {
     return (
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 0 80px" }}>
-        <div style={{ textAlign: "center", padding: "60px 0" }}>
-          <Clock
-            style={{
-              width: 32,
-              height: 32,
-              color: "var(--color-text-tertiary)",
-              opacity: 0.5,
-              margin: "0 auto 16px",
-              display: "block",
-            }}
-          />
-          <h2
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 20,
-              fontWeight: 600,
-              color: "var(--color-text-primary)",
-              margin: "0 0 8px",
-            }}
-          >
-            Not ready yet
-          </h2>
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-tertiary)",
-              margin: 0,
-            }}
-          >
-            Meeting context will appear here after the daily briefing runs.
-          </p>
+      <div className={styles.pageContainerPadded}>
+        <div className={styles.emptyState}>
+          <Clock className={styles.emptyIcon} />
+          <h2 className={styles.emptyTitle}>Not ready yet</h2>
+          <p className={styles.emptyText}>Meeting context will appear here after the daily briefing runs.</p>
         </div>
       </div>
     );
@@ -485,84 +536,55 @@ export default function MeetingDetailPage() {
   const hasPlan = agendaDisplayItems.length > 0 || (meetingId && isEditable);
   return (
     <>
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 0 80px" }}>
+      <div className={styles.pageContainer}>
         {/* Outcomes always at top when present */}
         {outcomes && (
           <>
-            <div style={{ paddingTop: 80 }}>
+            <div className={styles.outcomesWrap}>
               <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
             </div>
-            <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", margin: "48px 0" }} />
-            <p style={{ ...chapterHeadingStyle, marginBottom: 20 }}>
+            <div className={styles.outcomesDivider} />
+            <p className={styles.preMeetingLabel}>
               {isPastMeeting ? "Pre-Meeting Context" : "Meeting Prep"}
             </p>
           </>
         )}
 
         {!hasAnyContent && !outcomes && (
-          <div style={{ textAlign: "center", padding: "60px 0" }}>
-            <Clock
-              style={{
-                width: 32,
-                height: 32,
-                color: "var(--color-text-tertiary)",
-                opacity: 0.5,
-                margin: "0 auto 16px",
-                display: "block",
-              }}
-            />
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 18,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-                margin: "0 0 8px",
-              }}
-            >
-              Briefing is being generated
-            </p>
-            <p
-              style={{
-                fontSize: 14,
-                color: "var(--color-text-tertiary)",
-                margin: 0,
-              }}
-            >
-              Meeting context will appear here once analysis completes.
-            </p>
+          <div className={styles.emptyState}>
+            <Clock className={styles.emptyIcon} />
+            <p className={styles.emptyGenerating}>Prep is being generated</p>
+            <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
+            {isPastMeeting && (
+              <button
+                onClick={handleSyncTranscript}
+                disabled={syncing}
+                className={clsx(styles.syncButton, syncing && styles.syncButtonDisabled)}
+              >
+                {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
+                {syncing ? "Syncing transcript…" : "Sync transcript"}
+              </button>
+            )}
           </div>
         )}
 
         {(hasAnyContent || outcomes) && (
-          <div style={isPastMeeting && outcomes ? { opacity: 0.7 } : undefined}>
+          <div className={isPastMeeting && outcomes ? styles.pastMeetingOpacity : undefined}>
 
             {/* ================================================================
                 ACT I: "Ground Me" — visible immediately, NO editorial-reveal
                ================================================================ */}
-            <section id="headline" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+            <section id="headline" className={styles.heroSection}>
               {/* Time-aware urgency banner */}
               {minutesUntilMeeting != null && (
-                <div
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: "0.06em",
-                    color: minutesUntilMeeting <= 15 ? "var(--color-spice-terracotta)" : "var(--color-spice-turmeric)",
-                    marginBottom: 16,
-                  }}
-                >
-                  <Clock style={{ width: 13, height: 13 }} />
+                <div className={clsx(styles.urgencyBanner, minutesUntilMeeting <= 15 ? styles.urgencyUrgent : styles.urgencySoon)}>
+                  <Clock className={styles.iconLg} />
                   Meeting starts in {minutesUntilMeeting} minute{minutesUntilMeeting !== 1 ? "s" : ""}
                 </div>
               )}
 
               {/* Kicker */}
-              <p style={monoOverline}>
+              <p className={styles.monoOverline}>
                 Meeting Briefing
               </p>
 
@@ -571,42 +593,29 @@ export default function MeetingDetailPage() {
                 {data.title}
               </h1>
               {lifecycle && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12 }}>
-                  <span style={{ ...bulletDot("var(--color-spice-turmeric)"), marginTop: 0 }} />
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      fontWeight: 500,
-                      letterSpacing: "0.06em",
-                      color: "var(--color-spice-turmeric)",
-                    }}
-                  >
-                    {lifecycle}
-                  </span>
+                <div className={styles.lifecycleBadge}>
+                  <span className={styles.bulletDotTurmeric} />
+                  <span className={styles.lifecycleText}>{lifecycle}</span>
                 </div>
               )}
 
               {/* Metadata line */}
-              <p
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  letterSpacing: "0.04em",
-                  color: "var(--color-text-tertiary)",
-                  margin: "8px 0 0",
-                }}
-              >
-                {data.timeRange}
-                {meetingType && <> &middot; {meetingType}</>}
-                {getPrimaryEntityName(linkedEntities) && (
-                  <> &middot; {getPrimaryEntityName(linkedEntities)}</>
+              <div className={styles.metadataLine}>
+                <p className={styles.metadataText}>
+                  {data.timeRange}
+                  {meetingType && <> &middot; {meetingType}</>}
+                  {getPrimaryEntityName(linkedEntities) && (
+                    <> &middot; {getPrimaryEntityName(linkedEntities)}</>
+                  )}
+                </p>
+                {intelligenceQuality && (
+                  <IntelligenceQualityBadge quality={intelligenceQuality} showLabel />
                 )}
-              </p>
+              </div>
 
               {/* Entity chips */}
               {meetingId && meetingMeta && (
-                <div style={{ marginTop: 10 }}>
+                <div className={styles.entityChipsWrap}>
                   <MeetingEntityChips
                     meetingId={meetingId}
                     meetingTitle={meetingMeta.title}
@@ -618,72 +627,40 @@ export default function MeetingDetailPage() {
                 </div>
               )}
 
+              {/* New signals banner */}
+              {intelligenceQuality?.hasNewSignals && (
+                <div className={styles.newSignalsBanner}>
+                  <span>New information available since your last view</span>
+                  <button
+                    onClick={handleRefreshIntelligence}
+                    disabled={refreshingIntel}
+                    className={clsx(styles.newSignalsRefreshBtn, refreshingIntel && styles.newSignalsRefreshBtnDisabled)}
+                  >
+                    {refreshingIntel ? "Refreshing…" : "Refresh"}
+                  </button>
+                </div>
+              )}
+
               {/* The Key Insight — pull quote style */}
               {keyInsight && (
-                <blockquote
-                  style={{
-                    marginTop: 28,
-                    marginBottom: 0,
-                    marginLeft: 0,
-                    marginRight: 0,
-                    borderLeft: "3px solid var(--color-spice-turmeric)",
-                    paddingLeft: 24,
-                    paddingTop: 16,
-                    paddingBottom: 16,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontFamily: "var(--font-serif)",
-                      fontSize: 28,
-                      fontStyle: "italic",
-                      fontWeight: 300,
-                      lineHeight: 1.45,
-                      color: "var(--color-text-primary)",
-                      margin: 0,
-                      maxWidth: 620,
-                    }}
-                  >
-                    {keyInsight}
-                  </p>
+                <blockquote className={styles.keyInsight}>
+                  <p className={styles.keyInsightText}>{keyInsight}</p>
                 </blockquote>
               )}
               {!keyInsight && (
-                <p
-                  style={{
-                    marginTop: 28,
-                    fontSize: 14,
-                    color: "var(--color-text-tertiary)",
-                  }}
-                >
+                <p className={styles.keyInsightEmpty}>
                   Intelligence builds as you meet with this account.
                 </p>
               )}
 
               {/* Entity Readiness — "Before This Meeting" checklist */}
               {data.entityReadiness && data.entityReadiness.length > 0 && (
-                <div
-                  style={{
-                    marginTop: 32,
-                    borderLeft: "3px solid var(--color-spice-turmeric)",
-                    paddingLeft: 20,
-                    paddingTop: 12,
-                    paddingBottom: 12,
-                  }}
-                >
-                  <p
-                    style={{
-                      ...chapterHeadingStyle,
-                      color: "var(--color-spice-turmeric)",
-                      marginBottom: 12,
-                    }}
-                  >
-                    Before This Meeting
-                  </p>
-                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+                <div className={styles.readinessWrap}>
+                  <p className={styles.readinessHeading}>Before This Meeting</p>
+                  <ul className={styles.readinessList}>
                     {data.entityReadiness.slice(0, 4).map((item, i) => (
-                      <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, color: "var(--color-text-primary)" }}>
-                        <span style={bulletDot("rgba(201, 162, 39, 0.6)")} />
+                      <li key={i} className={styles.readinessItem}>
+                        <span className={styles.bulletDotTurmericMuted} />
                         <span>{item}</span>
                       </li>
                     ))}
@@ -698,60 +675,24 @@ export default function MeetingDetailPage() {
 
             {/* Chapter: The Risks */}
             {hasRisks && (
-              <section id="risks" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+              <section id="risks" className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="The Risks" />
-                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                <div className={styles.risksContainer}>
                   {topRisks.map((risk, i) => {
                     const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
                     return i === 0 ? (
-                      /* Featured risk — serif italic, terracotta border, pulse if high urgency */
                       <blockquote
                         key={i}
-                        className={isHighUrgency ? "risk-pulse-once" : undefined}
-                        style={{
-                          borderLeft: "3px solid var(--color-spice-terracotta)",
-                          paddingLeft: 24,
-                          paddingTop: 16,
-                          paddingBottom: 16,
-                          margin: 0,
-                        }}
+                        className={clsx(styles.featuredRisk, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 20,
-                            fontStyle: "italic",
-                            fontWeight: 400,
-                            lineHeight: 1.5,
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                          }}
-                        >
-                          {risk}
-                        </p>
+                        <p className={styles.featuredRiskText}>{risk}</p>
                       </blockquote>
                     ) : (
-                      /* Subordinate risks — body scale, light rules, generous spacing */
                       <div
                         key={i}
-                        className={isHighUrgency ? "risk-pulse-once" : undefined}
-                        style={{
-                          borderTop: "1px solid rgba(30, 37, 48, 0.04)",
-                          borderLeft: isHighUrgency ? "3px solid var(--color-spice-terracotta)" : "none",
-                          paddingTop: 16,
-                          paddingLeft: isHighUrgency ? 16 : 0,
-                        }}
+                        className={clsx(styles.subordinateRisk, isHighUrgency && styles.subordinateRiskHighUrgency, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p
-                          style={{
-                            fontSize: 14,
-                            lineHeight: 1.65,
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                          }}
-                        >
-                          {risk}
-                        </p>
+                        <p className={styles.subordinateRiskText}>{risk}</p>
                       </div>
                     );
                   })}
@@ -761,7 +702,7 @@ export default function MeetingDetailPage() {
 
             {/* Chapter: The Room */}
             {hasRoom && (
-              <section id="the-room" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+              <section id="the-room" className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="The Room" />
                 <UnifiedAttendeeList
                   attendees={unifiedAttendees}
@@ -775,22 +716,11 @@ export default function MeetingDetailPage() {
 
             {/* Chapter: Your Plan */}
             {hasPlan && (
-              <section id="your-plan" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+              <section id="your-plan" className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="Your Plan" />
 
                 {meetingId && prefillNotice && (
-                  <div
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      color: "var(--color-spice-turmeric)",
-                      borderLeft: "3px solid var(--color-spice-turmeric)",
-                      paddingLeft: 12,
-                      paddingTop: 6,
-                      paddingBottom: 6,
-                      marginBottom: 16,
-                    }}
-                  >
+                  <div className={styles.prefillNotice}>
                     Prefill appended new agenda/notes content.
                   </div>
                 )}
@@ -804,13 +734,46 @@ export default function MeetingDetailPage() {
                   initialDismissedTopics={dismissedTopics}
                   onSaveStatus={setSaveStatus}
                 />
+
+                {isEditable && (
+                  <button
+                    onClick={handlePrefillFromContext}
+                    disabled={prefilling}
+                    className={clsx(styles.planSecondaryAction, prefilling && styles.folioBtnDisabled)}
+                  >
+                    {prefilling ? "Prefilling from context…" : "Prefill from context"}
+                  </button>
+                )}
               </section>
             )}
+
+            {/* Transcript CTA — moved from folio bar to page body */}
+            <div className={clsx("editorial-reveal", styles.transcriptCta)}>
+              <button
+                onClick={handleSyncTranscript}
+                disabled={syncing}
+                className={clsx(styles.transcriptCtaBtn, syncing && styles.transcriptCtaBtnDisabled)}
+              >
+                {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
+                {syncing ? "Syncing…" : "Sync Transcript"}
+              </button>
+              <button
+                onClick={handleAttachTranscript}
+                disabled={attaching}
+                className={clsx(styles.transcriptCtaBtn, attaching && styles.transcriptCtaBtnDisabled)}
+              >
+                {attaching ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <Paperclip className={styles.iconMd} />}
+                {attaching ? "Processing…" : "Attach Transcript"}
+              </button>
+              <span className={styles.transcriptCtaLabel}>
+                {isPastMeeting ? "Add meeting transcript for outcome extraction" : "Attach transcript or notes"}
+              </span>
+            </div>
 
             {/* ================================================================
                 "You're Briefed" — FinisMarker
                ================================================================ */}
-            <div style={{ paddingTop: 80 }}>
+            <div className={styles.finisWrap}>
               <FinisMarker />
             </div>
 
@@ -868,7 +831,7 @@ function UnifiedAttendeeList({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+    <div className={styles.attendeeList}>
       {visible.map((person, i) => {
         const tempColor = tempColorMap[person.temperature ?? ""] ?? "var(--color-text-tertiary)";
         const isNew = person.meetingCount === 0;
@@ -880,52 +843,33 @@ function UnifiedAttendeeList({
           : { bg: "rgba(201, 162, 39, 0.1)", fg: "var(--color-spice-turmeric)" };
 
         const inner = (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 12,
-              padding: "12px 0",
-              borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-            }}
-          >
+          <div className={styles.attendeeRow}>
             {/* Avatar */}
             <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                background: circleColor.bg,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 14,
-                fontWeight: 500,
-                color: circleColor.fg,
-                flexShrink: 0,
-              }}
+              className={styles.attendeeAvatar}
+              style={{ background: circleColor.bg, color: circleColor.fg }}
             >
               {person.name.charAt(0)}
             </div>
 
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className={styles.attendeeBody}>
               {/* Name + role + temperature dot + engagement badge */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div className={styles.attendeeNameRow}>
                 <span className="attendee-tooltip-wrap">
-                  <p style={{ fontWeight: 500, color: "var(--color-text-primary)", margin: 0, fontSize: 14, cursor: "default" }}>
+                  <p className={styles.attendeeName}>
                     {person.name}
                   </p>
                   {/* Hover tooltip — last meeting + assessment */}
                   {(person.lastSeen || person.assessment) && (
                     <span className="attendee-tooltip">
                       {person.lastSeen && (
-                        <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: person.assessment ? 6 : 0 }}>
+                        <span className={clsx(styles.attendeeMetaMono, person.assessment ? styles.tooltipMetaBlockSpaced : styles.tooltipMetaBlock)}>
                           Last met {formatRelativeDateLong(person.lastSeen)}
                           {person.meetingCount != null && person.meetingCount > 0 && ` \u00b7 ${person.meetingCount} meeting${person.meetingCount !== 1 ? "s" : ""}`}
                         </span>
                       )}
                       {person.assessment && (
-                        <span style={{ display: "block", fontFamily: "var(--font-serif)", fontSize: 13, fontStyle: "italic", lineHeight: 1.45, color: "var(--color-text-primary)" }}>
+                        <span className={styles.tooltipAssessment}>
                           {truncateText(sanitizeInlineText(person.assessment), 140)}
                         </span>
                       )}
@@ -933,109 +877,57 @@ function UnifiedAttendeeList({
                   )}
                 </span>
                 {person.role && (
-                  <span style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
+                  <span className={styles.attendeeRole}>
                     {sanitizeInlineText(person.role)}
                   </span>
                 )}
                 {person.temperature && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: tempColor, flexShrink: 0 }} />
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 11,
-                        fontWeight: 500,
-                        textTransform: "capitalize",
-                        color: tempColor,
-                      }}
-                    >
+                  <span className={styles.attendeeTempDot}>
+                    <span className={styles.attendeeTempIndicator} style={{ background: tempColor }} />
+                    <span className={styles.attendeeTempLabel} style={{ color: tempColor }}>
                       {person.temperature}
                     </span>
                   </span>
                 )}
                 {person.engagement && (
                   <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "capitalize",
-                      color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)",
-                      border: "1px solid var(--color-rule-light)",
-                      borderRadius: 3,
-                      padding: "1px 6px",
-                    }}
+                    className={styles.attendeeEngagement}
+                    style={{ color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)" }}
                   >
                     {person.engagement}
                   </span>
                 )}
                 {isNew && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: "var(--color-garden-sage)",
-                    }}
-                  >
-                    New contact
-                  </span>
+                  <span className={styles.attendeeNewContact}>New contact</span>
                 )}
               </div>
 
               {/* Assessment — the killer insight, serif italic, prominent */}
               {person.assessment && (
-                <p
-                  style={{
-                    marginTop: 6,
-                    marginBottom: 0,
-                    fontFamily: "var(--font-serif)",
-                    fontSize: 14,
-                    fontStyle: "italic",
-                    fontWeight: 400,
-                    lineHeight: 1.55,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
+                <p className={styles.attendeeAssessment}>
                   {truncateText(sanitizeInlineText(person.assessment), 200)}
                 </p>
               )}
 
               {/* Metadata line */}
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 4 }}>
+              <div className={styles.attendeeMeta}>
                 {person.organization && (
-                  <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-                    {person.organization}
-                  </span>
+                  <span className={styles.attendeeOrg}>{person.organization}</span>
                 )}
                 {person.meetingCount != null && person.meetingCount > 0 && (
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                  <span className={styles.attendeeMetaMono}>
                     {person.meetingCount} meeting{person.meetingCount !== 1 ? "s" : ""}
                   </span>
                 )}
                 {person.lastSeen && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      color: isCold ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-                    }}
-                  >
+                  <span className={isCold ? styles.attendeeMetaCold : styles.attendeeMetaMono}>
                     Last seen {formatRelativeDateLong(person.lastSeen)}
                   </span>
                 )}
               </div>
 
               {person.notes && (
-                <p
-                  style={{
-                    marginTop: 4,
-                    marginBottom: 0,
-                    fontSize: 12,
-                    color: "var(--color-text-tertiary)",
-                    fontStyle: "italic",
-                  }}
-                >
+                <p className={styles.attendeeNotes}>
                   {person.notes}
                 </p>
               )}
@@ -1047,16 +939,16 @@ function UnifiedAttendeeList({
           <Link
             to="/people/$personId"
             params={{ personId: person.personId }}
-            style={{ textDecoration: "none", color: "inherit", flex: 1, minWidth: 0 }}
+            className={styles.attendeeLink}
           >
             {inner}
           </Link>
         ) : (
-          <div style={{ flex: 1, minWidth: 0 }}>{inner}</div>
+          <div className={styles.attendeeNonLink}>{inner}</div>
         );
 
         return (
-          <div key={i} style={{ display: "flex", alignItems: "flex-start" }}>
+          <div key={i} className={styles.attendeeRowOuter}>
             {row}
             {isEditable && (
               <button
@@ -1079,17 +971,7 @@ function UnifiedAttendeeList({
                     }
                   }
                 }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 16,
-                  lineHeight: 1,
-                  color: "var(--color-text-tertiary)",
-                  padding: "12px 4px 0",
-                  opacity: 0.35,
-                  flexShrink: 0,
-                }}
+                className={styles.attendeeHideBtn}
               >
                 &times;
               </button>
@@ -1099,19 +981,7 @@ function UnifiedAttendeeList({
       })}
 
       {!showAll && remaining > 0 && (
-        <button
-          onClick={() => setShowAll(true)}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "12px 0",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            textAlign: "left",
-          }}
-        >
+        <button onClick={() => setShowAll(true)} className={styles.attendeeShowMore}>
           + {remaining} more
         </button>
       )}
@@ -1257,46 +1127,27 @@ function UnifiedPlanEditor({
 
   if (allItems.length === 0 && !isEditable && !calendarNotes) {
     return (
-      <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-        No agenda prepared yet.
-      </p>
+      <p className={styles.planEmptyText}>No agenda prepared yet.</p>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+    <div className={styles.planContainer}>
       {/* Unified numbered list */}
       {allItems.length > 0 && (
-        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 0 }}>
+        <ol className={styles.planList}>
           {allItems.map((item, i) => (
             <li
               key={`${item.isUser ? "u" : "p"}-${i}`}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 12,
-                borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                padding: "12px 0",
-              }}
+              className={styles.planItem}
             >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "var(--color-spice-turmeric)",
-                  width: 24,
-                  textAlign: "right",
-                  flexShrink: 0,
-                  paddingTop: 1,
-                }}
-              >
+              <span className={styles.planNumber}>
                 {i + 1}
               </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className={styles.planItemBody}>
                 {editingIndex === i && isEditable ? (
                   <div
-                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                    className={styles.planEditWrap}
                     onBlur={(e) => {
                       // Only commit if focus leaves both inputs (not moving between them)
                       if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -1312,18 +1163,7 @@ function UnifiedPlanEditor({
                         if (e.key === "Enter") commitEdit();
                         if (e.key === "Escape") setEditingIndex(null);
                       }}
-                      style={{
-                        width: "100%",
-                        border: "none",
-                        borderBottom: "1px solid var(--color-spice-turmeric)",
-                        background: "transparent",
-                        padding: "2px 0",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-text-primary)",
-                        fontFamily: "var(--font-sans)",
-                        outline: "none",
-                      }}
+                      className={styles.planEditInput}
                     />
                     <input
                       id={`plan-why-${i}`}
@@ -1334,45 +1174,21 @@ function UnifiedPlanEditor({
                         if (e.key === "Escape") setEditingIndex(null);
                       }}
                       placeholder="Why this matters..."
-                      style={{
-                        width: "100%",
-                        border: "none",
-                        borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                        background: "transparent",
-                        padding: "2px 0",
-                        fontSize: 13,
-                        color: "var(--color-text-tertiary)",
-                        fontFamily: "var(--font-sans)",
-                        outline: "none",
-                      }}
+                      className={styles.planEditInputWhy}
                     />
                   </div>
                 ) : (
                   <>
                     <p
                       onClick={() => startEditing(i)}
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 500,
-                        lineHeight: 1.4,
-                        margin: 0,
-                        color: "var(--color-text-primary)",
-                        cursor: isEditable ? "text" : "default",
-                      }}
+                      className={isEditable ? styles.planTopicEditable : styles.planTopic}
                     >
                       {item.topic}
                     </p>
                     {item.why && (
                       <p
                         onClick={() => startEditing(i, "why")}
-                        style={{
-                          fontSize: 13,
-                          color: "var(--color-text-tertiary)",
-                          marginTop: 4,
-                          marginBottom: 0,
-                          lineHeight: 1.5,
-                          cursor: isEditable ? "text" : "default",
-                        }}
+                        className={isEditable ? styles.planWhyEditable : styles.planWhy}
                       >
                         {item.why}
                       </p>
@@ -1380,7 +1196,7 @@ function UnifiedPlanEditor({
                   </>
                 )}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <div className={styles.planItemActions}>
                 {isEditable && (
                   <button
                     onClick={() => {
@@ -1403,16 +1219,7 @@ function UnifiedPlanEditor({
                         saveLayer(cleaned, newDismissed);
                       }
                     }}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 16,
-                      lineHeight: 1,
-                      color: "var(--color-text-tertiary)",
-                      padding: "0 4px",
-                      opacity: 0.5,
-                    }}
+                    className={styles.planDismissBtn}
                   >
                     &times;
                   </button>
@@ -1425,39 +1232,17 @@ function UnifiedPlanEditor({
 
       {/* Ghost input — topic + why */}
       {isEditable && meetingId && (
-        <div style={{ display: "flex", gap: 12, paddingTop: 12, alignItems: "flex-start" }}>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              fontWeight: 600,
-              color: "rgba(201, 162, 39, 0.3)",
-              width: 24,
-              textAlign: "right",
-              flexShrink: 0,
-              paddingTop: 5,
-            }}
-          >
+        <div className={styles.ghostInputRow}>
+          <span className={styles.planNumberGhost}>
             {allItems.length + 1}
           </span>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className={styles.ghostInputBody}>
             <input
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addItem()}
               placeholder="Add agenda item..."
-              style={{
-                width: "100%",
-                border: "none",
-                borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                background: "transparent",
-                padding: "4px 0",
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-                fontFamily: "var(--font-sans)",
-                outline: "none",
-              }}
+              className={styles.ghostInput}
             />
             {newItem.trim() && (
               <input
@@ -1465,17 +1250,7 @@ function UnifiedPlanEditor({
                 onChange={(e) => setNewItemWhy(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addItem()}
                 placeholder="Why this matters..."
-                style={{
-                  width: "100%",
-                  border: "none",
-                  borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
-                  background: "transparent",
-                  padding: "4px 0",
-                  fontSize: 13,
-                  color: "var(--color-text-tertiary)",
-                  fontFamily: "var(--font-sans)",
-                  outline: "none",
-                }}
+                className={styles.ghostInputWhy}
               />
             )}
           </div>
@@ -1484,41 +1259,12 @@ function UnifiedPlanEditor({
 
       {/* Calendar description — collapsed toggle */}
       {calendarNotes && (
-        <details style={{ marginTop: 24 }}>
-          <summary
-            style={{
-              ...chapterHeadingStyle,
-              cursor: "pointer",
-              userSelect: "none",
-              listStyle: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <ChevronRight
-              style={{
-                width: 12,
-                height: 12,
-                transition: "transform 0.2s",
-              }}
-              className={styles.detailsChevron}
-            />
+        <details className={styles.calendarDetails}>
+          <summary className={styles.calendarSummary}>
+            <ChevronRight className={clsx(styles.iconMd, styles.detailsChevron)} />
             Calendar Description
           </summary>
-          <p
-            style={{
-              marginTop: 12,
-              marginBottom: 0,
-              whiteSpace: "pre-wrap",
-              fontSize: 14,
-              color: "var(--color-text-tertiary)",
-              lineHeight: 1.65,
-              paddingLeft: 18,
-            }}
-          >
-            {calendarNotes}
-          </p>
+          <p className={styles.calendarBody}>{calendarNotes}</p>
         </details>
       )}
     </div>
@@ -1539,31 +1285,21 @@ function OutcomesSection({
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <h2
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 22,
-          fontWeight: 600,
-          color: "var(--color-text-primary)",
-          margin: 0,
-        }}
-      >
-        Meeting Outcomes
-      </h2>
+    <div className={styles.outcomesContainer}>
+      <h2 className={styles.outcomesTitle}>Meeting Outcomes</h2>
       {/* Inlined MeetingOutcomes */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: 14 }}>
+      <div className={styles.outcomesBody}>
         {/* Summary */}
         {outcomes.summary && (
-          <p style={{ color: "var(--color-text-tertiary)", margin: 0, lineHeight: 1.65 }}>{outcomes.summary}</p>
+          <p className={styles.outcomesSummary}>{outcomes.summary}</p>
         )}
 
-        <div style={{ display: "grid", gap: 20, gridTemplateColumns: "repeat(2, 1fr)" }}>
+        <div className={styles.outcomesGrid}>
           {/* Wins */}
           {outcomes.wins.length > 0 && (
             <OutcomeSection
               title="Wins"
-              icon={<Trophy style={{ width: 13, height: 13, color: "var(--color-garden-sage)" }} />}
+              icon={<Trophy className={styles.iconSage} />}
               items={outcomes.wins}
             />
           )}
@@ -1572,7 +1308,7 @@ function OutcomesSection({
           {outcomes.risks.length > 0 && (
             <OutcomeSection
               title="Risks"
-              icon={<AlertTriangle style={{ width: 13, height: 13, color: "var(--color-spice-terracotta)" }} />}
+              icon={<AlertTriangle className={styles.iconTerracotta} />}
               items={outcomes.risks}
             />
           )}
@@ -1581,7 +1317,7 @@ function OutcomesSection({
           {outcomes.decisions.length > 0 && (
             <OutcomeSection
               title="Decisions"
-              icon={<CircleDot style={{ width: 13, height: 13, color: "var(--color-spice-turmeric)" }} />}
+              icon={<CircleDot className={styles.iconTurmeric} />}
               items={outcomes.decisions}
             />
           )}
@@ -1589,24 +1325,37 @@ function OutcomesSection({
 
         {/* Actions */}
         {outcomes.actions.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <h4
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-                margin: 0,
-              }}
-            >
-              Actions
-            </h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className={styles.outcomeActionsWrap}>
+            <h4 className={styles.outcomeActionsTitle}>Actions</h4>
+            <div className={styles.outcomeActionsList}>
               {outcomes.actions.map((action) => (
-                <OutcomeActionRow
+                <ActionRow
                   key={action.id}
+                  variant="outcome"
                   action={action}
-                  onRefresh={onRefresh}
+                  onComplete={async () => {
+                    try {
+                      if (action.status === "completed") {
+                        await invoke("reopen_action", { id: action.id });
+                      } else {
+                        await invoke("complete_action", { id: action.id });
+                      }
+                      onRefresh();
+                    } catch (err) { console.error("Failed to toggle action:", err); }
+                  }}
+                  onAccept={async () => {
+                    try { await invoke("accept_proposed_action", { id: action.id }); onRefresh(); }
+                    catch (err) { console.error("Failed to accept action:", err); }
+                  }}
+                  onReject={async () => {
+                    try { await invoke("reject_proposed_action", { id: action.id }); onRefresh(); }
+                    catch (err) { console.error("Failed to reject action:", err); }
+                  }}
+                  onCyclePriority={async () => {
+                    const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
+                    try { await invoke("update_action_priority", { id: action.id, priority: cycle[action.priority] || "P2" }); onRefresh(); }
+                    catch (err) { console.error("Failed to update priority:", err); }
+                  }}
                 />
               ))}
             </div>
@@ -1627,42 +1376,15 @@ function OutcomeSection({
   items: string[];
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <h4
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          fontWeight: 500,
-          color: "var(--color-text-primary)",
-          margin: 0,
-        }}
-      >
+    <div className={styles.outcomeSectionWrap}>
+      <h4 className={styles.outcomeSectionTitle}>
         {icon}
         {title}
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 400,
-            color: "var(--color-text-tertiary)",
-          }}
-        >
-          ({items.length})
-        </span>
+        <span className={styles.outcomeSectionCount}>({items.length})</span>
       </h4>
-      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+      <ul className={styles.outcomeSectionItems}>
         {items.map((item, i) => (
-          <li
-            key={i}
-            style={{
-              fontSize: 14,
-              color: "var(--color-text-tertiary)",
-              lineHeight: 1.55,
-            }}
-          >
+          <li key={i} className={styles.outcomeSectionItem}>
             {item}
           </li>
         ))}
@@ -1671,203 +1393,7 @@ function OutcomeSection({
   );
 }
 
-function OutcomeActionRow({
-  action,
-  onRefresh,
-}: {
-  action: DbAction;
-  onRefresh: () => void;
-}) {
-  const isCompleted = action.status === "completed";
-  const isProposed = action.status === "proposed";
-
-  const handleComplete = useCallback(async () => {
-    try {
-      if (isCompleted) {
-        await invoke("reopen_action", { id: action.id });
-      } else {
-        await invoke("complete_action", { id: action.id });
-      }
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to toggle action:", err);
-    }
-  }, [action.id, isCompleted, onRefresh]);
-
-  const handleAccept = useCallback(async () => {
-    try {
-      await invoke("accept_proposed_action", { id: action.id });
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to accept action:", err);
-    }
-  }, [action.id, onRefresh]);
-
-  const handleReject = useCallback(async () => {
-    try {
-      await invoke("reject_proposed_action", { id: action.id });
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to reject action:", err);
-    }
-  }, [action.id, onRefresh]);
-
-  const handleCyclePriority = useCallback(async () => {
-    const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
-    const next = cycle[action.priority] || "P2";
-    try {
-      await invoke("update_action_priority", {
-        id: action.id,
-        priority: next,
-      });
-      onRefresh();
-    } catch (err) {
-      console.error("Failed to update priority:", err);
-    }
-  }, [action.id, action.priority, onRefresh]);
-
-  const priorityColor: Record<string, string> = {
-    P1: "var(--color-spice-terracotta)",
-    P3: "var(--color-text-tertiary)",
-  };
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "3px 4px",
-        borderLeft: isProposed ? "2px dashed var(--color-spice-turmeric)" : "none",
-        paddingLeft: isProposed ? 8 : 4,
-      }}
-    >
-      {isProposed ? (
-        /* Accept / Reject buttons for proposed actions */
-        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-          <button
-            onClick={handleAccept}
-            title="Accept"
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 3,
-              border: "1px solid var(--color-garden-sage)",
-              background: "transparent",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-              <path d="M2.5 6L5 8.5L9.5 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          <button
-            onClick={handleReject}
-            title="Dismiss"
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 3,
-              border: "1px solid var(--color-spice-terracotta)",
-              background: "transparent",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-              <path d="M3 3L9 9M9 3L3 9" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-      ) : (
-        /* Checkbox for accepted actions */
-        <button
-          onClick={handleComplete}
-          style={{
-            width: 16,
-            height: 16,
-            borderRadius: 3,
-            border: isCompleted
-              ? "1px solid var(--color-garden-sage)"
-              : "1px solid var(--color-text-tertiary)",
-            background: isCompleted ? "rgba(126, 170, 123, 0.2)" : "transparent",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            padding: 0,
-          }}
-        >
-          {isCompleted && <Check style={{ width: 12, height: 12, color: "var(--color-garden-sage)" }} />}
-        </button>
-      )}
-
-      {isProposed ? (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "var(--color-spice-turmeric)",
-          }}
-        >
-          Suggested
-        </span>
-      ) : (
-        <button
-          onClick={handleCyclePriority}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            letterSpacing: "0.04em",
-            padding: "1px 6px",
-            border: "1px solid var(--color-rule-light)",
-            borderRadius: 3,
-            background: "transparent",
-            color: priorityColor[action.priority] ?? "var(--color-text-secondary)",
-            cursor: "pointer",
-          }}
-        >
-          {action.priority}
-        </button>
-      )}
-
-      <span
-        style={{
-          flex: 1,
-          fontSize: 13,
-          color: isCompleted ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
-          textDecoration: isCompleted ? "line-through" : "none",
-        }}
-      >
-        {action.title}
-      </span>
-
-      {action.dueDate && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            color: "var(--color-text-tertiary)",
-          }}
-        >
-          {action.dueDate}
-        </span>
-      )}
-    </div>
-  );
-}
+// OutcomeActionRow consolidated into shared/ActionRow.tsx variant="outcome" (ADR-0084 C1)
 
 // =============================================================================
 // Helpers
