@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.13.2 planned (structural clarity — E2E audit, service extraction, god file refactor — ADR-0086). 0.13.3 planned (entity hierarchy intelligence — partner type, portfolio surfaces, bidirectional propagation — ADR-0087). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
+**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.13.2 planned (structural clarity — E2E audit, service extraction, god file refactor — ADR-0086). 0.13.3 planned (entity hierarchy intelligence — partner type, portfolio surfaces, bidirectional propagation — ADR-0087). 0.13.4 planned (project hierarchy intelligence — ADR-0087 applied to projects, preset entityModeDefault wired to surface ordering). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
 
 ---
 
@@ -71,6 +71,8 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I385** | Bidirectional entity hierarchy signal propagation — upward accumulation, downward fan-out | P1 | Backend / Signals |
 | **I386** | Parent account detail page — portfolio surface (hotspots, cross-BU patterns, portfolio narrative) | P1 | Frontend / UX |
 | **I387** | Multi-entity signal extraction from parent-level meetings — content-level entity resolution in transcript processor | P3 | Backend / Pipeline |
+| **I388** | Project hierarchy intelligence — two-layer intelligence.json + bidirectional propagation for project entities (ADR-0087 applied to projects, v0.13.4 candidate) | P1 | Backend / Intelligence |
+| **I389** | Entity-mode-aware surface ordering — nav and primary surface emphasis adapts to preset's entityModeDefault (project-mode users see Projects first) | P2 | Frontend / UX |
 
 ---
 
@@ -190,6 +192,17 @@ Note: I357 (semantic email reclassification) is absorbed by I367 — enrichment 
 | I386 | Parent account detail page — portfolio surface (hotspots, cross-BU patterns, portfolio narrative) | P1 | Frontend / UX |
 
 Note: I387 (multi-entity signal extraction from parent-level meetings) is deferred — P3, not version-locked. User behavior is to tag meetings at the parent level; bidirectional propagation (I385) covers the majority of the use case.
+
+---
+
+### 0.13.4 — Project Hierarchy Intelligence [PLANNED]
+
+**Theme:** ADR-0087 applied to project entities. Parent projects become portfolio surfaces for Marketing, Product, and Agency users — same two-layer intelligence model, same bidirectional propagation, project-appropriate vocabulary. The ADR-0079 `entityModeDefault: "project"` preset users get the same portfolio capability account-mode users get in v0.13.3.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I388 | Project hierarchy intelligence — two-layer intelligence.json + bidirectional propagation for project entities | P1 | Backend / Intelligence |
+| I389 | Entity-mode-aware surface ordering — nav/primary surface adapts to preset's entityModeDefault | P2 | Frontend / UX |
 
 ---
 
