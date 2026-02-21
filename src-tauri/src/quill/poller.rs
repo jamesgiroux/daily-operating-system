@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{Timelike, Utc};
+use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::db::DbQuillSyncState;
@@ -53,15 +53,6 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 continue;
             }
         };
-
-        // Check work hours (reuse same pattern as google.rs)
-        if !is_work_hours(&state) {
-            tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(300)) => {}
-                _ = state.quill_poller_wake.notified() => {}
-            }
-            continue;
-        }
 
         // Get pending sync rows from DB
         let pending = match get_pending_syncs(&state) {
@@ -383,6 +374,8 @@ async fn process_sync_row(
                             updated_at: now.clone(),
                             person_id: None,
                             account_name: None,
+                            next_meeting_title: None,
+                            next_meeting_start: None,
                         };
                         let _ = db.upsert_action_if_not_completed(&db_action);
                     }
@@ -433,18 +426,6 @@ async fn process_sync_row(
             None,
         );
     }
-}
-
-/// Check work hours using the same logic as google.rs.
-fn is_work_hours(state: &AppState) -> bool {
-    let config = state.config.read().ok().and_then(|g| g.clone());
-    let (start_hour, end_hour) = match config {
-        Some(cfg) => (cfg.google.work_hours_start, cfg.google.work_hours_end),
-        None => (8, 18),
-    };
-
-    let now_hour = chrono::Local::now().hour();
-    now_hour >= start_hour as u32 && now_hour < end_hour as u32
 }
 
 /// Get pending quill sync rows from DB.
