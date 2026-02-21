@@ -348,6 +348,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 },
             );
 
+            // Invalidate + requeue meeting preps for future meetings linked to this entity.
+            // intelligence.json changed → meeting briefings that consume it need regeneration.
+            invalidate_and_requeue_meeting_preps(
+                &state,
+                &request.entity_id,
+            );
+
             log::info!(
                 "IntelProcessor: completed {} ({} risks, {} wins)",
                 request.entity_id,
@@ -804,6 +811,74 @@ pub fn write_enrichment_results(
     );
 
     Ok(())
+}
+
+/// After entity intelligence is refreshed, invalidate and requeue meeting preps
+/// for future meetings linked to that entity.
+///
+/// intelligence.json is the shared enrichment source — meeting briefings consume it
+/// mechanically. When it changes, affected briefings must regenerate to pull the
+/// latest intelligence data.
+fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: &str) {
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            log::warn!(
+                "IntelProcessor: failed to open DB for prep invalidation: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let now = Utc::now().to_rfc3339();
+
+    // Find future meetings linked to this entity and clear their frozen prep
+    let meeting_ids: Vec<String> = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.id FROM meetings_history m
+             JOIN meeting_entities me ON me.meeting_id = m.id
+             WHERE me.entity_id = ?1
+               AND m.start_time > ?2
+               AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map(rusqlite::params![entity_id, now], |row| {
+                row.get::<_, String>(0)
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    if meeting_ids.is_empty() {
+        return;
+    }
+
+    // Clear prep_frozen_json so the queue processor regenerates them
+    for mid in &meeting_ids {
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+            rusqlite::params![mid],
+        );
+    }
+
+    // Enqueue for regeneration at Background priority
+    for mid in &meeting_ids {
+        state
+            .meeting_prep_queue
+            .enqueue(crate::meeting_prep_queue::PrepRequest {
+                meeting_id: mid.clone(),
+                priority: crate::meeting_prep_queue::PrepPriority::Background,
+                requested_at: std::time::Instant::now(),
+            });
+    }
+
+    log::info!(
+        "IntelProcessor: invalidated + requeued {} meeting preps for entity {}",
+        meeting_ids.len(),
+        entity_id,
+    );
 }
 
 // =============================================================================
