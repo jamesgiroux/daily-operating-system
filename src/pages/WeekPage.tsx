@@ -1,23 +1,20 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { BrandMark } from "@/components/ui/BrandMark";
-import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type {
   DayShape,
-  LiveProactiveSuggestion,
   TimelineMeeting,
   WeekOverview,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   computeShapeEpigraph,
-  pickTopThree,
-  pickTopThreeFromTimeline,
-  resolveSuggestionLink,
-  synthesizeReadiness,
+  computeWeekMeta,
+  deriveShapeFromTimeline,
 } from "@/pages/weekPageViewModel";
+import w from "./WeekPage.module.css";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
@@ -76,19 +73,12 @@ const waitingMessages = [
   "Polishing the details...",
 ];
 
-// Circled number glyphs for The Three
-const CIRCLED_NUMBERS = ["\u2460", "\u2461", "\u2462"];
-
 export default function WeekPage() {
   const [data, setData] = useState<WeekOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [liveSuggestions, setLiveSuggestions] = useState<
-    LiveProactiveSuggestion[]
-  >([]);
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<WorkflowPhase | null>(null);
-  const [retryingEnrichment, setRetryingEnrichment] = useState(false);
   const [timeline, setTimeline] = useState<TimelineMeeting[]>([]);
   const [showEarlier, setShowEarlier] = useState(false);
   const loadingRef = useRef(false);
@@ -121,18 +111,6 @@ export default function WeekPage() {
       loadingRef.current = true;
 
       try {
-        if (includeLive) {
-          try {
-            const live = await invoke<LiveProactiveSuggestion[]>(
-              "get_live_proactive_suggestions"
-            );
-            setLiveSuggestions(live);
-          } catch (err) {
-            console.error("get_live_proactive_suggestions failed:", err);
-            setLiveSuggestions([]);
-          }
-        }
-
         try {
           const timelineData = await invoke<TimelineMeeting[]>(
             "get_meeting_timeline",
@@ -251,23 +229,6 @@ export default function WeekPage() {
     }
   }, []);
 
-  const handleRetryEnrichment = useCallback(async () => {
-    setRetryingEnrichment(true);
-    setError(null);
-    try {
-      await invoke("retry_week_enrichment");
-      await loadWeek();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to retry week enrichment",
-      );
-    } finally {
-      setRetryingEnrichment(false);
-    }
-  }, [loadWeek]);
-
   // Register magazine shell — larkspur atmosphere, global app nav
   const folioActions = useMemo(
     () => (
@@ -311,17 +272,20 @@ export default function WeekPage() {
   }, [timeline]);
 
   const shellConfig = useMemo(
-    () => ({
-      folioLabel: "Weekly Forecast",
-      atmosphereColor: "larkspur" as const,
-      activePage: "week" as const,
-      folioActions,
-      folioDateText: data
-        ? `WEEK ${data.weekNumber} \u00b7 ${data.dateRange.toUpperCase()}`
-        : undefined,
-      folioReadinessStats,
-    }),
-    [folioActions, data, folioReadinessStats]
+    () => {
+      const meta = computeWeekMeta();
+      const wn = data?.weekNumber ?? meta.weekNumber;
+      const dr = data?.dateRange ?? meta.dateRange;
+      return {
+        folioLabel: "Weekly Forecast",
+        atmosphereColor: "larkspur" as const,
+        activePage: "week" as const,
+        folioActions,
+        folioDateText: `WEEK ${wn} \u00b7 ${dr.toUpperCase()}`,
+        folioReadinessStats,
+      };
+    },
+    [folioActions, data?.weekNumber, data?.dateRange, folioReadinessStats]
   );
   useRegisterMagazineShell(shellConfig);
   useRevealObserver(!loading && (!!data || timeline.length > 0), data ?? timeline);
@@ -334,25 +298,17 @@ export default function WeekPage() {
   useTauriEvent("prep-ready", silentRefresh);
 
   // ─── Derived data ──────────────────────────────────────────────────────────
-  const enrichmentIncomplete = data && !running && (!data.weekNarrative || !data.topPriority);
-  const days = data?.days ?? [];
 
-  const topThree = useMemo(
-    () =>
-      data
-        ? pickTopThree(
-            data.topPriority,
-            data.actionSummary?.overdue ?? [],
-            data.actionSummary?.dueThisWeekItems ?? [],
-            liveSuggestions,
-            days
-          )
-        : pickTopThreeFromTimeline(timeline, liveSuggestions),
-    [data, liveSuggestions, days, timeline]
-  );
+  // Week meta: prefer AI data, fall back to date math
+  const weekMeta = useMemo(() => {
+    const computed = computeWeekMeta();
+    return {
+      weekNumber: data?.weekNumber ?? computed.weekNumber,
+      dateRange: data?.dateRange ?? computed.dateRange,
+    };
+  }, [data?.weekNumber, data?.dateRange]);
 
-  // Derive shape days from AI data (dayShapes) or mechanical fallback from data.days.
-  // The Shape does not require AI enrichment — it can render from meeting counts alone.
+  // Shape: AI dayShapes > mechanical from data.days > derived from timeline
   const shapeDays = useMemo((): DayShape[] => {
     if (data?.dayShapes?.length) return data.dayShapes;
     if (data?.days?.length) {
@@ -374,26 +330,42 @@ export default function WeekPage() {
         };
       });
     }
-    return [];
-  }, [data?.dayShapes, data?.days]);
+    return deriveShapeFromTimeline(timeline);
+  }, [data?.dayShapes, data?.days, timeline]);
 
   const shapeEpigraph = useMemo(
     () => (shapeDays.length ? computeShapeEpigraph(shapeDays) : ""),
     [shapeDays]
   );
 
-  const readinessLine = useMemo(
-    () =>
-      data?.readinessChecks?.length
-        ? synthesizeReadiness(data.readinessChecks)
-        : null,
-    [data?.readinessChecks]
-  );
+  // Readiness stats for header vitals — driven by timeline intelligence quality
+  const readinessStats = useMemo(() => {
+    const now = new Date();
+    const futureMeetings = timeline.filter(
+      (m) => new Date(m.startTime) > now
+    );
+    if (futureMeetings.length === 0) return [];
 
-  const totalMeetings = useMemo(
-    () => days.reduce((sum, d) => sum + d.meetings.length, 0),
-    [days]
-  );
+    const byLevel = { ready: 0, fresh: 0, developing: 0, sparse: 0 };
+    futureMeetings.forEach((m) => {
+      const level = m.intelligenceQuality?.level ?? "sparse";
+      byLevel[level]++;
+    });
+    const readyCount = byLevel.ready + byLevel.fresh;
+    const buildingCount = byLevel.developing + byLevel.sparse;
+
+    const stats: { label: string; color: "sage" | "terracotta" }[] = [];
+    stats.push({ label: `${readyCount} ready`, color: "sage" });
+    if (buildingCount > 0) {
+      stats.push({ label: `${buildingCount} building`, color: "terracotta" });
+    }
+    return stats;
+  }, [timeline]);
+
+  const totalMeetings = useMemo(() => {
+    const now = new Date();
+    return timeline.filter((m) => new Date(m.startTime) > now).length;
+  }, [timeline]);
 
   // ─── Timeline grouping ────────────────────────────────────────────────────
   const timelineGroups = useMemo(() => {
@@ -471,40 +443,31 @@ export default function WeekPage() {
     return { earlierPast, recentPast, today, future };
   }, [timeline]);
 
-  // ─── Loading skeleton — editorial shaped ────────────────────────────────────
+  // ─── Loading skeleton — matches new compact layout ──────────────────────────
   if (loading) {
     const skeletonBg = { background: "var(--color-rule-light)" };
     return (
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 40px" }}>
-        {/* Hero skeleton */}
-        <div style={{ paddingTop: 80, textAlign: "center" }}>
-          {/* Week number */}
-          <Skeleton className="mx-auto h-3 w-44 mb-8" style={skeletonBg} />
-          {/* Narrative lines */}
-          <Skeleton className="mx-auto h-8 w-[520px] mb-3" style={skeletonBg} />
-          <Skeleton className="mx-auto h-8 w-[440px] mb-3" style={skeletonBg} />
-          <Skeleton className="mx-auto h-8 w-[280px] mb-10" style={skeletonBg} />
-          {/* Vitals */}
-          <Skeleton className="mx-auto h-3 w-52" style={skeletonBg} />
+        {/* Header skeleton */}
+        <div style={{ paddingTop: 80 }}>
+          <Skeleton className="h-3 w-20 mb-2" style={skeletonBg} />
+          <Skeleton className="h-7 w-44 mb-6" style={skeletonBg} />
+          <Skeleton className="h-3 w-52" style={skeletonBg} />
         </div>
 
-        {/* Chapter 2: The Three skeleton */}
-        <div style={{ paddingTop: 64 }}>
-          <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
-          <Skeleton className="h-7 w-32 mb-8" style={skeletonBg} />
-          {[1, 2, 3].map((i) => (
-            <div key={i} style={{ display: "flex", gap: 16, marginBottom: 36 }}>
-              <Skeleton className="h-5 w-5 rounded-full shrink-0" style={skeletonBg} />
-              <div style={{ flex: 1 }}>
-                <Skeleton className="h-5 w-64 mb-2" style={skeletonBg} />
-                <Skeleton className="h-4 w-full mb-1" style={skeletonBg} />
-                <Skeleton className="h-3 w-40" style={skeletonBg} />
-              </div>
+        {/* Shape skeleton — 5 bars */}
+        <div style={{ paddingTop: 56 }}>
+          <Skeleton className="h-2.5 w-20 mb-4" style={skeletonBg} />
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+              <Skeleton className="h-3 w-9" style={skeletonBg} />
+              <Skeleton className="h-2 flex-1 rounded-full" style={skeletonBg} />
+              <Skeleton className="h-3 w-20" style={skeletonBg} />
             </div>
           ))}
         </div>
 
-        {/* Chapter 3: Timeline skeleton */}
+        {/* Timeline skeleton */}
         <div style={{ paddingTop: 64 }}>
           <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
           <Skeleton className="h-7 w-36 mb-8" style={skeletonBg} />
@@ -613,243 +576,41 @@ export default function WeekPage() {
   return (
     <>
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 40px" }}>
-        {/* ── Chapter 1: Hero ────────────────────────────────────────────── */}
-        <section style={{ paddingTop: 80, textAlign: "center" }}>
-          {/* Week number + date range */}
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--color-text-tertiary)",
-              marginBottom: 32,
-            }}
-          >
-            {data ? (
-              <>WEEK {data.weekNumber} &middot; {data.dateRange.toUpperCase()}</>
-            ) : (
-              <>WEEKLY FORECAST</>
-            )}
-          </p>
-
-          {/* Narrative headline */}
-          {data?.weekNarrative ? (
-            <p
-              className="editorial-reveal"
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 56,
-                fontWeight: 400,
-                lineHeight: 1.15,
-                letterSpacing: "-0.025em",
-                color: "var(--color-text-primary)",
-                maxWidth: 680,
-                margin: "0 auto 32px",
-              }}
-            >
-              {data.weekNarrative}
-            </p>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 24,
-                fontWeight: 400,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-                margin: "0 auto 32px",
-                maxWidth: 480,
-              }}
-            >
-              {data ? "Preparing your forecast." : "Your meetings this week"}
-            </p>
-          )}
-
-          {/* Vitals line */}
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              marginBottom: 8,
-            }}
-          >
-            {readinessLine && <span>{readinessLine}</span>}
-            {readinessLine && totalMeetings > 0 && <span> &middot; </span>}
-            {totalMeetings > 0 && (
-              <span>
-                {totalMeetings} meeting{totalMeetings !== 1 ? "s" : ""}
-              </span>
-            )}
-          </p>
-
-          {/* Enrichment incomplete notice */}
-          {enrichmentIncomplete && (
-            <p
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                marginTop: 16,
-              }}
-            >
-              Still building.{" "}
-              <button
-                onClick={handleRetryEnrichment}
-                disabled={retryingEnrichment}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--color-garden-larkspur)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: "inherit",
-                  textDecoration: "underline",
-                  padding: 0,
-                }}
-              >
-                {retryingEnrichment ? "Retrying..." : "Check back shortly."}
-              </button>
-            </p>
-          )}
-
-        </section>
-
-        {/* ── Chapter 2: The Three ───────────────────────────────────────── */}
-        <section
-          id="the-three"
-          className="editorial-reveal"
-          style={{ paddingTop: 64 }}
-        >
-          <ChapterHeading
-            title="The Three"
-            epigraph="If everything is important, nothing is."
-          />
-
-          {topThree.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 36 }}>
-              {topThree.map((item) => {
-                const linkTarget = resolveSuggestionLink(
-                  item.actionId,
-                  item.meetingId
-                );
-                const content = (
-                  <>
-                    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 20,
-                          lineHeight: 1,
-                          color: "var(--color-garden-larkspur)",
-                          flexShrink: 0,
-                          marginTop: 2,
-                        }}
-                      >
-                        {CIRCLED_NUMBERS[item.number - 1]}
-                      </span>
-                      <div style={{ minWidth: 0 }}>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 17,
-                            fontWeight: 500,
-                            lineHeight: 1.4,
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                          }}
-                        >
-                          {item.title}
-                        </p>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 14,
-                            lineHeight: 1.6,
-                            color: "var(--color-text-secondary)",
-                            margin: "6px 0 0",
-                          }}
-                        >
-                          {item.reason}
-                        </p>
-                        {item.contextLine && (
-                          <p
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 13,
-                              color: "var(--color-text-tertiary)",
-                              margin: "8px 0 0",
-                            }}
-                          >
-                            &rarr; {item.contextLine}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                );
-
-                if (linkTarget.kind === "action") {
-                  return (
-                    <Link
-                      key={item.number}
-                      to="/actions/$actionId"
-                      params={{ actionId: linkTarget.id }}
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      {content}
-                    </Link>
-                  );
-                }
-                if (linkTarget.kind === "meeting") {
-                  return (
-                    <Link
-                      key={item.number}
-                      to="/meeting/$meetingId"
-                      params={{ meetingId: linkTarget.id }}
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      {content}
-                    </Link>
-                  );
-                }
-                return <div key={item.number}>{content}</div>;
-              })}
-            </div>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 15,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              Analyzing your week — context builds automatically.
+        {/* ── Week Header (compact, left-aligned) ───────────────────── */}
+        <section className={w.weekHeader}>
+          <p className={w.weekLabel}>Week {weekMeta.weekNumber}</p>
+          <p className={w.weekDate}>{weekMeta.dateRange}</p>
+          {(readinessStats.length > 0 || totalMeetings > 0) && (
+            <p className={w.weekVitals}>
+              {readinessStats.map((stat) => (
+                <span
+                  key={stat.label}
+                  className={stat.color === "sage" ? w.vitalsReady : w.vitalsAlert}
+                >
+                  {stat.label}
+                </span>
+              ))}
+              {totalMeetings > 0 && (
+                <span>
+                  {totalMeetings} meeting{totalMeetings !== 1 ? "s" : ""}
+                </span>
+              )}
             </p>
           )}
         </section>
 
-        {/* ── Chapter 2.5: The Shape ──────────────────────────────────── */}
+        {/* ── This Week — The Shape ────────────────────────────────────── */}
         {shapeDays.length > 0 && (
-          <section
-            id="the-shape"
-            className="editorial-reveal"
-            style={{ paddingTop: 64 }}
-          >
-            <ChapterHeading
-              title="The Shape"
-              epigraph={shapeEpigraph}
-            />
+          <section className={cn("editorial-reveal", w.shapeSection)}>
+            <p className={w.shapeLabel}>This Week</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               {shapeDays.map((day) => {
                 const barPct = Math.min(100, (day.meetingMinutes / 480) * 100);
                 const isHeavy =
                   day.meetingCount >= 5 || day.meetingMinutes >= 360;
-                const fillColor = isHeavy
-                  ? "var(--color-garden-terracotta)"
-                  : "var(--color-garden-larkspur)";
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const isToday = day.date === todayStr;
+                const isPast = day.date < todayStr;
 
                 const feasible =
                   day.focusImplications?.achievableCount ?? 0;
@@ -857,110 +618,60 @@ export default function WeekPage() {
                 const achievabilityGood =
                   total === 0 || feasible / total >= 0.5;
 
-                const topActions = (day.prioritizedActions ?? [])
-                  .filter((pa) => pa.feasible)
-                  .slice(0, 3);
-
                 return (
-                  <div key={day.date}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        marginBottom: topActions.length > 0 ? 8 : 0,
-                      }}
-                    >
-                      {/* Day label */}
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          letterSpacing: "0.06em",
-                          textTransform: "uppercase",
-                          color: "var(--color-text-tertiary)",
-                          width: 36,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {day.dayName.slice(0, 3)}
-                      </span>
-
-                      {/* Density bar */}
-                      <div
-                        style={{
-                          flex: 1,
-                          height: 8,
-                          borderRadius: 4,
-                          background: "var(--color-surface-linen)",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${barPct}%`,
-                            height: "100%",
-                            background: fillColor,
-                            borderRadius: 4,
-                          }}
-                        />
-                      </div>
-
-                      {/* Count + density label */}
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 11,
-                          color: "var(--color-text-tertiary)",
-                          width: 88,
-                          flexShrink: 0,
-                          textAlign: "right",
-                        }}
-                      >
-                        {day.meetingCount}m &middot; {day.density}
-                      </span>
-
-                      {/* Achievability indicator */}
-                      {total > 0 && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 11,
-                            color: achievabilityGood
-                              ? "var(--color-garden-sage)"
-                              : "var(--color-garden-terracotta)",
-                            width: 40,
-                            flexShrink: 0,
-                            textAlign: "right",
-                          }}
-                        >
-                          {feasible}/{total}
-                        </span>
+                  <div
+                    key={day.date}
+                    className={cn(
+                      w.shapeRow,
+                      isPast && w.shapeRowPast,
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        w.shapeDayLabel,
+                        isToday && w.shapeDayLabelToday,
                       )}
+                    >
+                      {day.dayName.slice(0, 3)}
+                    </span>
+
+                    <div className={w.shapeBar}>
+                      <div
+                        className={cn(
+                          w.shapeBarFill,
+                          isToday
+                            ? w.shapeBarFillToday
+                            : isHeavy
+                              ? w.shapeBarFillHeavy
+                              : undefined,
+                        )}
+                        style={{ width: `${barPct}%` }}
+                      />
                     </div>
 
-                    {/* Top 3 feasible actions */}
-                    {topActions.length > 0 && (
-                      <div style={{ paddingLeft: 48 }}>
-                        {topActions.map((pa) => (
-                          <p
-                            key={pa.action.id}
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 11,
-                              color: "var(--color-text-tertiary)",
-                              margin: "2px 0",
-                            }}
-                          >
-                            &rarr; {pa.action.title}
-                          </p>
-                        ))}
-                      </div>
+                    <span className={w.shapeCount}>
+                      {day.meetingCount}m &middot; {day.density}
+                    </span>
+
+                    {total > 0 && (
+                      <span
+                        className={cn(
+                          w.shapeAchievability,
+                          achievabilityGood
+                            ? w.shapeAchievabilityGood
+                            : w.shapeAchievabilityAlert,
+                        )}
+                      >
+                        {feasible}/{total}
+                      </span>
                     )}
                   </div>
                 );
               })}
             </div>
+            {shapeEpigraph && (
+              <p className={w.shapeEpigraph}>{shapeEpigraph}</p>
+            )}
           </section>
         )}
 
@@ -973,7 +684,7 @@ export default function WeekPage() {
           >
             <ChapterHeading
               title="The Timeline"
-              epigraph="Context across your meetings, \u00b17 days."
+              epigraph="Context across your meetings, ±7 days."
             />
 
             {/* Past — Earlier (collapsed) */}
@@ -1135,7 +846,7 @@ export default function WeekPage() {
               paddingBottom: 48,
             }}
           >
-            Your week is forecasted.
+            Your week at a glance.
           </p>
         </section>
       </div>
