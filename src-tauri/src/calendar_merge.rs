@@ -79,6 +79,9 @@ pub fn merge_meetings(briefing: Vec<Meeting>, live: &[CalendarEvent], tz: &Tz) -
                 prep_reviewed: None,
                 linked_entities: None,
                 suggested_unarchive_account_id: None,
+                intelligence_quality: None,
+                calendar_attendees: None,
+                calendar_description: None,
             });
         }
     }
@@ -150,6 +153,7 @@ mod tests {
             account: Some("Acme".to_string()),
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }
     }
 
@@ -170,6 +174,9 @@ mod tests {
             prep_reviewed: None,
             linked_entities: None,
             suggested_unarchive_account_id: None,
+            intelligence_quality: None,
+            calendar_attendees: None,
+            calendar_description: None,
         }
     }
 

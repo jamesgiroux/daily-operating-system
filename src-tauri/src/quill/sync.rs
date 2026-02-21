@@ -128,6 +128,7 @@ pub fn db_meeting_to_calendar_event(meeting: &crate::db::DbMeeting) -> CalendarE
         account: None,
         attendees: vec![],
         is_all_day: false,
+        linked_entities: None,
     }
 }
 
@@ -139,7 +140,8 @@ pub fn has_meeting_ended(event: &CalendarEvent) -> bool {
 /// Process a fetched transcript through the existing AI pipeline.
 /// Run the transcript pipeline WITHOUT holding the DB mutex.
 ///
-/// Returns `Ok((destination_path, optional_summary))` or `Err(message)`.
+/// Returns the full `TranscriptResult` so the caller can write captures
+/// (wins, risks, decisions, actions) back to the DB after re-acquiring the lock.
 /// The caller is responsible for DB state transitions before and after.
 pub fn process_fetched_transcript_without_db(
     sync_id: &str,
@@ -148,7 +150,7 @@ pub fn process_fetched_transcript_without_db(
     workspace: &Path,
     profile: &str,
     ai_config: Option<&crate::types::AiModelConfig>,
-) -> Result<(String, Option<String>), String> {
+) -> Result<crate::types::TranscriptResult, String> {
     let temp_dir = workspace.join("_temp");
     let _ = std::fs::create_dir_all(&temp_dir);
     let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
@@ -163,7 +165,7 @@ pub fn process_fetched_transcript_without_db(
         workspace,
         &temp_path_str,
         meeting,
-        None, // No DB reference — caller handles DB writes
+        None, // No DB reference — caller writes captures after re-acquiring lock
         profile,
         ai_config,
     );
@@ -171,10 +173,9 @@ pub fn process_fetched_transcript_without_db(
     let _ = std::fs::remove_file(&temp_path);
 
     if result.status == "success" {
-        let dest = result.destination.clone().unwrap_or_default();
-        Ok((dest, result.summary))
+        Ok(result)
     } else {
-        Err(result.message.unwrap_or_else(|| "Transcript processing failed".to_string()))
+        Err(result.message.clone().unwrap_or_else(|| "Transcript processing failed".to_string()))
     }
 }
 
@@ -270,6 +271,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day,
+            linked_entities: None,
         }
     }
 

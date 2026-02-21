@@ -601,6 +601,75 @@ impl MeetingType {
     }
 }
 
+/// Intelligence lifecycle state machine (ADR-0081)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntelligenceState {
+    Detected,
+    Enriching,
+    Enriched,
+    Refreshing,
+    Captured,
+    Archived,
+}
+
+impl std::fmt::Display for IntelligenceState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Detected => write!(f, "detected"),
+            Self::Enriching => write!(f, "enriching"),
+            Self::Enriched => write!(f, "enriched"),
+            Self::Refreshing => write!(f, "refreshing"),
+            Self::Captured => write!(f, "captured"),
+            Self::Archived => write!(f, "archived"),
+        }
+    }
+}
+
+/// Intelligence quality level (ADR-0081, mechanical assessment)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QualityLevel {
+    Sparse,
+    Developing,
+    Ready,
+    Fresh,
+}
+
+impl std::fmt::Display for QualityLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sparse => write!(f, "sparse"),
+            Self::Developing => write!(f, "developing"),
+            Self::Ready => write!(f, "ready"),
+            Self::Fresh => write!(f, "fresh"),
+        }
+    }
+}
+
+/// Intelligence staleness (time since last enrichment)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Staleness {
+    Current,   // < 12 hours
+    Aging,     // 12-48 hours
+    Stale,     // 48+ hours
+}
+
+/// Structured intelligence quality assessment for a meeting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntelligenceQuality {
+    pub level: QualityLevel,
+    pub signal_count: u32,
+    pub last_enriched: Option<String>,
+    pub has_entity_context: bool,
+    pub has_attendee_history: bool,
+    pub has_recent_signals: bool,
+    pub staleness: Staleness,
+    pub has_new_signals: bool,
+}
+
 /// Stakeholder information for meeting prep
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -687,6 +756,27 @@ pub struct Meeting {
     /// Set when classification matched an archived account. Frontend shows a banner.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_unarchive_account_id: Option<String>,
+    /// Structured intelligence quality assessment for schedule rows (I329).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence_quality: Option<IntelligenceQuality>,
+    /// Raw calendar attendees from Google Calendar (not AI-enriched).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_attendees: Option<Vec<CalendarAttendeeEntry>>,
+    /// Calendar event description from Google Calendar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_description: Option<String>,
+}
+
+/// Raw attendee from Google Calendar event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarAttendeeEntry {
+    pub email: String,
+    pub name: String,
+    #[serde(default)]
+    pub rsvp: String,
+    #[serde(default)]
+    pub domain: String,
 }
 
 /// An entity linked to a meeting via the junction table.
@@ -855,6 +945,9 @@ pub struct DashboardData {
     /// Threads awaiting user reply (I318/I355)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
+    /// User org domains for internal/external attendee grouping.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_domains: Option<Vec<String>>,
 }
 
 // =============================================================================
@@ -905,9 +998,6 @@ pub struct WeekDay {
 pub struct WeekMeeting {
     pub time: String,
     pub title: String,
-    /// Deprecated: use linked_entities instead. Kept for backward compat.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub account: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_id: Option<String>,
     #[serde(rename = "type")]
@@ -1098,6 +1188,9 @@ pub struct FocusMeeting {
     pub account: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_file: Option<String>,
+    /// Entities linked via M2M junction table or entity resolution (I339)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_entities: Option<Vec<LinkedEntity>>,
 }
 
 /// Detailed availability diagnostics and capacity metrics for Focus (I178).
@@ -1349,13 +1442,13 @@ pub struct FullMeetingPrep {
     pub intelligence_summary: Option<String>,
     /// Entity-level risks from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub entity_risks: Option<Vec<crate::entity_intel::IntelRisk>>,
+    pub entity_risks: Option<Vec<crate::intelligence::IntelRisk>>,
     /// Entity meeting readiness items from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_readiness: Option<Vec<String>>,
     /// Stakeholder insights from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
+    pub stakeholder_insights: Option<Vec<crate::intelligence::StakeholderInsight>>,
     /// Recent email signals linked to this meeting's entity context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
@@ -1396,6 +1489,9 @@ pub struct MeetingIntelligence {
     pub transcript_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript_processed_at: Option<String>,
+    /// Structured intelligence quality assessment (ADR-0081)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence_quality: Option<IntelligenceQuality>,
 }
 
 /// Attendee context for meeting prep enrichment (I51).
@@ -1472,6 +1568,8 @@ pub struct GoogleConfig {
     pub token_path: Option<String>,
     #[serde(default = "default_poll_interval")]
     pub calendar_poll_interval_minutes: u32,
+    #[serde(default = "default_email_poll_interval")]
+    pub email_poll_interval_minutes: u32,
     #[serde(default = "default_work_hours_start")]
     pub work_hours_start: u8,
     #[serde(default = "default_work_hours_end")]
@@ -1480,6 +1578,9 @@ pub struct GoogleConfig {
 
 fn default_poll_interval() -> u32 {
     5
+}
+fn default_email_poll_interval() -> u32 {
+    15
 }
 fn default_work_hours_start() -> u8 {
     9
@@ -1494,6 +1595,7 @@ impl Default for GoogleConfig {
             enabled: false,
             token_path: None,
             calendar_poll_interval_minutes: default_poll_interval(),
+            email_poll_interval_minutes: default_email_poll_interval(),
             work_hours_start: default_work_hours_start(),
             work_hours_end: default_work_hours_end(),
         }
@@ -1529,6 +1631,9 @@ pub struct CalendarEvent {
     pub attendees: Vec<String>,
     #[serde(default)]
     pub is_all_day: bool,
+    /// Entities linked via M2M junction table or entity resolution (I339)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_entities: Option<Vec<LinkedEntity>>,
 }
 
 // =============================================================================
@@ -1899,6 +2004,29 @@ pub struct ConcreteRequest {
     pub urgency: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+}
+
+/// Meeting data for the ±7-day week timeline (I330)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineMeeting {
+    pub id: String,
+    pub title: String,
+    pub start_time: String,
+    pub end_time: Option<String>,
+    pub meeting_type: String,
+    pub intelligence_quality: Option<IntelligenceQuality>,
+    pub has_outcomes: bool,
+    pub outcome_summary: Option<String>,
+    pub entities: Vec<LinkedEntity>,
+    pub has_new_signals: bool,
+    pub prior_meeting_id: Option<String>,
+    /// Count of follow-up actions linked to this meeting (I342).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub follow_up_count: Option<i32>,
+    /// Whether a meeting briefing exists (prep_frozen_json or disk file).
+    #[serde(default)]
+    pub has_prep: bool,
 }
 
 #[cfg(test)]

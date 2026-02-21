@@ -14,7 +14,7 @@ use chrono::Utc;
 
 use tauri::{AppHandle, Emitter};
 
-use crate::entity_intel::{
+use crate::intelligence::{
     build_intelligence_context, build_intelligence_prompt_with_preset, parse_intelligence_response,
     read_intelligence_json, write_intelligence_json, IntelligenceJson, SourceManifestEntry,
 };
@@ -348,6 +348,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 },
             );
 
+            // Invalidate + requeue meeting preps for future meetings linked to this entity.
+            // intelligence.json changed → meeting briefings that consume it need regeneration.
+            invalidate_and_requeue_meeting_preps(
+                &state,
+                &request.entity_id,
+            );
+
             log::info!(
                 "IntelProcessor: completed {} ({} risks, {} wins)",
                 request.entity_id,
@@ -533,7 +540,7 @@ pub fn run_enrichment(
 
     // I305: Extract and persist keywords from the raw AI response
     if let Some(keywords_json) =
-        crate::entity_intel::extract_keywords_from_response(&output.stdout)
+        crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             match input.entity_type.as_str() {
@@ -774,7 +781,7 @@ pub fn write_enrichment_results(
     let mut final_intel = intel.clone();
     if let Ok(existing) = read_intelligence_json(&input.entity_dir) {
         if !existing.user_edits.is_empty() {
-            crate::entity_intel::preserve_user_edits(&mut final_intel, &existing);
+            crate::intelligence::preserve_user_edits(&mut final_intel, &existing);
             log::info!(
                 "IntelProcessor: preserved {} user edits for {}",
                 existing.user_edits.len(),
@@ -804,6 +811,74 @@ pub fn write_enrichment_results(
     );
 
     Ok(())
+}
+
+/// After entity intelligence is refreshed, invalidate and requeue meeting preps
+/// for future meetings linked to that entity.
+///
+/// intelligence.json is the shared enrichment source — meeting briefings consume it
+/// mechanically. When it changes, affected briefings must regenerate to pull the
+/// latest intelligence data.
+fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: &str) {
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            log::warn!(
+                "IntelProcessor: failed to open DB for prep invalidation: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let now = Utc::now().to_rfc3339();
+
+    // Find future meetings linked to this entity and clear their frozen prep
+    let meeting_ids: Vec<String> = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.id FROM meetings_history m
+             JOIN meeting_entities me ON me.meeting_id = m.id
+             WHERE me.entity_id = ?1
+               AND m.start_time > ?2
+               AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map(rusqlite::params![entity_id, now], |row| {
+                row.get::<_, String>(0)
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    if meeting_ids.is_empty() {
+        return;
+    }
+
+    // Clear prep_frozen_json so the queue processor regenerates them
+    for mid in &meeting_ids {
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+            rusqlite::params![mid],
+        );
+    }
+
+    // Enqueue for regeneration at Background priority
+    for mid in &meeting_ids {
+        state
+            .meeting_prep_queue
+            .enqueue(crate::meeting_prep_queue::PrepRequest {
+                meeting_id: mid.clone(),
+                priority: crate::meeting_prep_queue::PrepPriority::Background,
+                requested_at: std::time::Instant::now(),
+            });
+    }
+
+    log::info!(
+        "IntelProcessor: invalidated + requeued {} meeting preps for entity {}",
+        meeting_ids.len(),
+        entity_id,
+    );
 }
 
 // =============================================================================
