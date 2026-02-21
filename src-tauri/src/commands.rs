@@ -907,39 +907,63 @@ async fn refresh_week_calendar_cache(
     Ok(events)
 }
 
-/// Retry only week AI enrichment without rerunning full week prepare/deliver.
+/// Force-refresh meeting preps for all future meetings.
+///
+/// Clears existing prep_frozen_json and enqueues all future meetings into the
+/// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
 #[tauri::command]
-pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
+pub fn refresh_meeting_preps(state: State<Arc<AppState>>) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-    let workspace_path = config.workspace_path.clone();
-    let user_ctx = crate::types::UserContext::from_config(&config);
-    let ai_models = config.ai_models.clone();
-    let state = state.inner().clone();
+    let now = chrono::Utc::now().to_rfc3339();
 
-    let task = tauri::async_runtime::spawn_blocking(move || {
-        let workspace = std::path::Path::new(&workspace_path);
-        let data_dir = workspace.join("_today").join("data");
-        let week_path = data_dir.join("week-overview.json");
-        if !week_path.exists() {
-            return Err("No weekly overview found. Run the weekly workflow first.".to_string());
-        }
+    // Find all future meetings (excluding personal/focus/blocked)
+    let meeting_ids: Vec<String> = db
+        .conn_ref()
+        .prepare(
+            "SELECT id FROM meetings_history
+             WHERE start_time > ?1
+               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
+               AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map(rusqlite::params![now], |row| {
+                row.get::<_, String>(0)
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .map_err(|e| format!("Failed to query future meetings: {}", e))?;
 
-        let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_models);
-        crate::workflow::deliver::enrich_week(&data_dir, &pty, workspace, &user_ctx, &state)
-    });
-
-    match task.await {
-        Ok(result) => result?,
-        Err(e) => return Err(format!("Week enrichment task panicked: {}", e)),
+    if meeting_ids.is_empty() {
+        return Ok("No future meetings to refresh".to_string());
     }
 
-    Ok("Week enrichment retried".to_string())
+    // Clear prep_frozen_json so the queue processor regenerates them
+    for mid in &meeting_ids {
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+            rusqlite::params![mid],
+        );
+    }
+
+    // Drop DB lock before enqueuing (enqueue doesn't need DB)
+    drop(db_guard);
+
+    // Enqueue all at Manual priority (highest — user clicked refresh)
+    for mid in &meeting_ids {
+        state
+            .meeting_prep_queue
+            .enqueue(crate::meeting_prep_queue::PrepRequest {
+                meeting_id: mid.clone(),
+                priority: crate::meeting_prep_queue::PrepPriority::Manual,
+                requested_at: std::time::Instant::now(),
+            });
+    }
+
+    let count = meeting_ids.len();
+    log::info!("refresh_meeting_preps: cleared and requeued {} future meetings", count);
+    Ok(format!("Refreshing {} meeting preps", count))
 }
 
 // =============================================================================
@@ -8535,11 +8559,180 @@ pub async fn correct_email_disposition(
 // =============================================================================
 
 /// Return meetings for +/-N days around today with intelligence quality data.
+///
+/// Always-live: if no future meetings exist in `meetings_history`, fetches from
+/// Google Calendar and upserts stubs so the timeline populates on first load
+/// without waiting for scheduled workflows.
 #[tauri::command]
-pub fn get_meeting_timeline(
-    state: State<Arc<AppState>>,
+pub async fn get_meeting_timeline(
+    state: State<'_, Arc<AppState>>,
     days_before: Option<i64>,
     days_after: Option<i64>,
 ) -> Result<Vec<crate::types::TimelineMeeting>, String> {
-    crate::services::meetings::get_meeting_timeline(&state, days_before, days_after)
+    let days_after_val = days_after.unwrap_or(7);
+    let result = crate::services::meetings::get_meeting_timeline(&state, days_before, days_after)?;
+
+    // Check if we have any meetings AFTER today (i.e., tomorrow or later)
+    let tomorrow_str = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+    let has_future = result.iter().any(|m| m.start_time.as_str() >= tomorrow_str.as_str());
+
+    if has_future || days_after_val == 0 {
+        // Enqueue future meetings that have no prep_frozen_json yet
+        let needs_prep: Vec<String> = {
+            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+            db.conn_ref()
+                .prepare(
+                    "SELECT id FROM meetings_history
+                     WHERE start_time >= ?1
+                       AND prep_frozen_json IS NULL
+                       AND meeting_type NOT IN ('personal', 'focus', 'blocked')",
+                )
+                .and_then(|mut stmt| {
+                    let rows = stmt.query_map(rusqlite::params![tomorrow_str], |row| {
+                        row.get::<_, String>(0)
+                    })?;
+                    Ok(rows.filter_map(|r| r.ok()).collect())
+                })
+                .unwrap_or_default()
+        };
+        if !needs_prep.is_empty() {
+            log::info!("get_meeting_timeline: enqueuing {} future meetings without prep", needs_prep.len());
+            for mid in needs_prep {
+                state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+                    meeting_id: mid,
+                    priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
+                    requested_at: std::time::Instant::now(),
+                });
+            }
+        }
+        return Ok(result);
+    }
+
+    // No future meetings in DB — try live fetch from Google Calendar
+    let access_token = match crate::google_api::get_valid_access_token().await {
+        Ok(t) => t,
+        Err(_) => return Ok(result), // No auth — return what we have
+    };
+
+    let today = chrono::Local::now().date_naive();
+    let range_end = today + chrono::Duration::days(days_after_val);
+    let raw_events = match crate::google_api::calendar::fetch_events(
+        &access_token,
+        today + chrono::Duration::days(1), // tomorrow onward (today already covered)
+        range_end,
+    )
+    .await
+    {
+        Ok(events) => events,
+        Err(e) => {
+            log::warn!("get_meeting_timeline: live calendar fetch failed: {}", e);
+            return Ok(result);
+        }
+    };
+
+    if raw_events.is_empty() {
+        return Ok(result);
+    }
+
+    // Classify and upsert into meetings_history (same pattern as prepare_today)
+    let user_domains = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
+        .unwrap_or_default();
+    let entity_hints = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        crate::helpers::build_entity_hints(db)
+    };
+
+    let mut upserted = 0u32;
+    let mut upserted_ids: Vec<String> = Vec::new();
+    for raw in &raw_events {
+        let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &entity_hints);
+        let event = cm.to_calendar_event();
+
+        // Skip personal (matches timeline query filter)
+        if matches!(event.meeting_type, crate::types::MeetingType::Personal) {
+            continue;
+        }
+        let meeting_type_str = event.meeting_type.as_str();
+
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        // Only insert if not already present
+        if db.get_meeting_by_calendar_event_id(&event.id).ok().flatten().is_some() {
+            continue;
+        }
+
+        let attendees_json = if event.attendees.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&event.attendees).unwrap_or_default())
+        };
+
+        let db_meeting = crate::db::DbMeeting {
+            id: event.id.clone(),
+            title: event.title.clone(),
+            meeting_type: meeting_type_str.to_string(),
+            start_time: event.start.to_rfc3339(),
+            end_time: Some(event.end.to_rfc3339()),
+            attendees: attendees_json,
+            notes_path: None,
+            summary: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            calendar_event_id: Some(event.id.clone()),
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+            intelligence_state: None,
+            intelligence_quality: None,
+            last_enriched_at: None,
+            signal_count: None,
+            has_new_signals: None,
+            last_viewed_at: None,
+        };
+        if let Err(e) = db.upsert_meeting(&db_meeting) {
+            log::warn!("get_meeting_timeline: failed to upsert '{}': {}", event.title, e);
+            continue;
+        }
+
+        // Link resolved entities (same pattern as prepare_week)
+        for re in &cm.resolved_entities {
+            let _ = db.link_meeting_entity(&event.id, &re.entity_id, &re.entity_type);
+        }
+
+        upserted_ids.push(event.id.clone());
+        upserted += 1;
+    }
+
+    if upserted > 0 {
+        log::info!("get_meeting_timeline: upserted {} future meetings from Google Calendar", upserted);
+
+        // Enqueue newly upserted meetings for prep generation
+        for mid in &upserted_ids {
+            state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+                meeting_id: mid.clone(),
+                priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
+                requested_at: std::time::Instant::now(),
+            });
+        }
+
+        // Re-query with the newly upserted meetings
+        return crate::services::meetings::get_meeting_timeline(&state, days_before, days_after);
+    }
+
+    Ok(result)
 }
