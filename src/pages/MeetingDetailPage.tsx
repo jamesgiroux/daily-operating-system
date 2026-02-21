@@ -395,7 +395,7 @@ Thanks!`;
 
   // Register magazine shell with chapter nav + folio actions
   const shellConfig = useMemo(() => ({
-    folioLabel: "Intelligence Report",
+    folioLabel: "Meeting Briefing",
     atmosphereColor: "turmeric" as const,
     activePage: "today" as const,
     backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/" }) },
