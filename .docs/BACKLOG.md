@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
+**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.13.2 planned (structural clarity — E2E audit, service extraction, god file refactor — ADR-0086). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
 
 ---
 
@@ -58,6 +58,12 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I373** | Email sync status indicator — show last fetch time, stage, error state | P2 | Frontend / UX |
 | **I374** | Email dismissal learning — dismissed senders/types adjust future classification | P2 | Backend / Intelligence |
 | **I375** | Refresh button audit — design continuity with add buttons + action/surface alignment | P2 | UX / Code Quality |
+| **I376** | AI enrichment site audit — map every PTY/AI call site, verify ADR-0086 compliance | P1 | Code Quality / Architecture |
+| **I377** | Signal system completeness — emitter/propagation/consumer map, remove dead rules | P1 | Code Quality / Signals |
+| **I378** | Intelligence schema alignment — intelligence.json ↔ entity_intel ↔ frontend types | P1 | Code Quality / Architecture |
+| **I379** | Vector DB audit — map embedding writes vs. queries, disable orphaned paths | P2 | Code Quality / Architecture |
+| **I380** | commands.rs service extraction Phase 1 — complete services/ per SERVICE-CONTRACTS.md | P1 | Code Quality / Refactor |
+| **I381** | db/mod.rs domain migration — move queries into domain modules per SERVICE-CONTRACTS.md | P2 | Code Quality / Refactor |
 
 ---
 
@@ -145,6 +151,21 @@ All issues (I341 partial, I342 Phases 1–3, I343 partial, I349, I355, I356 part
 | I375 | Refresh button audit — design continuity with add buttons + action/surface alignment | P2 | UX / Code Quality |
 
 Note: I357 (semantic email reclassification) is absorbed by I367 — enrichment is mandatory, not opt-in.
+
+---
+
+### 0.13.2 — Structural Clarity [PLANNED]
+
+**Theme:** Know what you built before you build the next layer. ADR-0086 defines the intended architecture. This version audits whether reality matches it, documents the full E2E intelligence chain, and does the structural refactoring that makes the system maintainable heading into v0.14.0.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I376 | AI enrichment site audit — map every PTY/AI call site, verify ADR-0086 compliance | P1 | Code Quality / Architecture |
+| I377 | Signal system completeness — emitter/propagation/consumer map, remove dead rules | P1 | Code Quality / Signals |
+| I378 | Intelligence schema alignment — intelligence.json ↔ entity_intel ↔ frontend types | P1 | Code Quality / Architecture |
+| I379 | Vector DB audit — map embedding writes vs. queries, disable orphaned paths | P2 | Code Quality / Architecture |
+| I380 | commands.rs service extraction Phase 1 — complete services/ per SERVICE-CONTRACTS.md | P1 | Code Quality / Refactor |
+| I381 | db/mod.rs domain migration — move queries into domain modules per SERVICE-CONTRACTS.md | P2 | Code Quality / Refactor |
 
 ---
 
