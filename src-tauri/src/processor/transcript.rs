@@ -210,6 +210,42 @@ pub fn process_transcript(
         }
     }
 
+    // 4b. Emit transcript signals for entity intelligence (I307 learning)
+    if let Some(db) = db {
+        let entity_type = meeting
+            .linked_entities
+            .as_ref()
+            .and_then(|e| e.first())
+            .map(|e| e.entity_type.as_str())
+            .unwrap_or("account");
+        let entity_id = meeting
+            .linked_entities
+            .as_ref()
+            .and_then(|e| e.first())
+            .map(|e| e.id.as_str())
+            .or(meeting.account.as_deref())
+            .unwrap_or(&meeting.id);
+
+        let capture_count = wins.len() + risks.len() + decisions.len();
+        if capture_count > 0 {
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                entity_type,
+                entity_id,
+                "transcript_outcomes",
+                "transcript",
+                Some(&format!(
+                    "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
+                    meeting.id,
+                    wins.len(),
+                    risks.len(),
+                    decisions.len()
+                )),
+                0.75,
+            );
+        }
+    }
+
     // 5. Run post-enrichment hooks
     if let Some(db) = db {
         let ctx = hooks::EnrichmentContext {
@@ -352,6 +388,9 @@ fn extract_transcript_actions(
             },
             updated_at: now.clone(),
             person_id: None,
+            account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {
@@ -591,6 +630,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
+            linked_entities: None,
         }
     }
 

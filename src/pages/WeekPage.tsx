@@ -1,403 +1,286 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { BrandMark } from "@/components/ui/BrandMark";
-import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import type {
-  LiveProactiveSuggestion,
-  WeekOverview,
-} from "@/types";
+import type { DayShape, TimelineMeeting } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   computeShapeEpigraph,
-  pickTopThree,
-  resolveSuggestionLink,
-  synthesizeReadiness,
-  synthesizeReadinessStats,
+  computeWeekMeta,
+  deriveShapeFromTimeline,
 } from "@/pages/weekPageViewModel";
+import w from "./WeekPage.module.css";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
-import {
-  Target,
-  BarChart,
-  Play,
-  AlertTriangle,
-  Database,
-  Wand2,
-  Package,
-} from "lucide-react";
+import { MeetingCard } from "@/components/shared/MeetingCard";
+import { formatDisplayTime, formatDurationFromIso } from "@/lib/meeting-time";
+import { formatEntityByline } from "@/lib/entity-helpers";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { AlertTriangle } from "lucide-react";
 
-interface WeekResult {
-  status: "success" | "not_found" | "error";
-  data?: WeekOverview;
-  message?: string;
-}
-
-type WorkflowPhase = "preparing" | "enriching" | "delivering";
-
-const phaseSteps: {
-  key: WorkflowPhase;
-  label: string;
-  icon: typeof Database;
-}[] = [
-  { key: "preparing", label: "Prepare", icon: Database },
-  { key: "enriching", label: "Enrich", icon: Wand2 },
-  { key: "delivering", label: "Deliver", icon: Package },
-];
-
-const waitingMessages = [
-  `"You miss 100% of the shots you don't take." — Wayne Gretzky — Michael Scott`,
-  "Combobulating your priorities...",
-  "In a van, down by the river, preparing your week...",
-  `"The secret of getting ahead is getting started." — Mark Twain`,
-  "Manifesting your best week yet...",
-  "Teaching the AI about your calendar...",
-  `"It's not the load that breaks you down, it's the way you carry it." — Lou Holtz`,
-  "Consulting the schedule oracle...",
-  "Crunching context like it owes us money...",
-  `"Preparation is the key to success." — Alexander Graham Bell`,
-  "Cross-referencing all the things...",
-  "Making meetings make sense since 2025...",
-  `"By failing to prepare, you are preparing to fail." — Benjamin Franklin`,
-  "Synthesizing the week ahead...",
-  "Turning chaos into calendar clarity...",
-  `"The best time to plant a tree was 20 years ago. The second best time is now."`,
-  "Pondering your meetings with great intensity...",
-  "Almost done thinking about thinking...",
-  `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
-  "Polishing the details...",
-];
-
-// Chapter definitions for the editorial layout
-const CHAPTERS = [
-  { id: "the-three", label: "The Three", icon: <Target size={18} strokeWidth={1.5} /> },
-  { id: "the-shape", label: "The Shape", icon: <BarChart size={18} strokeWidth={1.5} /> },
-];
-
-// Circled number glyphs for The Three
-const CIRCLED_NUMBERS = ["\u2460", "\u2461", "\u2462"];
+// =============================================================================
+// WeekPage — Single data source: get_meeting_timeline
+//
+// ADR-0086: Intelligence is a shared service. Meeting briefings consume
+// entity intelligence mechanically. The refresh button requeues prep
+// generation, not AI enrichment.
+// =============================================================================
 
 export default function WeekPage() {
-  const [data, setData] = useState<WeekOverview | null>(null);
+  const [timeline, setTimeline] = useState<TimelineMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [_liveError, setLiveError] = useState<string | null>(null);
-  const [liveSuggestions, setLiveSuggestions] = useState<
-    LiveProactiveSuggestion[]
-  >([]);
-  const [running, setRunning] = useState(false);
-  const [phase, setPhase] = useState<WorkflowPhase | null>(null);
-  const [retryingEnrichment, setRetryingEnrichment] = useState(false);
-  const loadingRef = useRef(false);
+  const [showEarlier, setShowEarlier] = useState(false);
 
-  const loadWeek = useCallback(
-    async ({ includeLive = true }: { includeLive?: boolean } = {}) => {
-      if (loadingRef.current) return;
-      loadingRef.current = true;
+  // ─── Data loading ─────────────────────────────────────────────────────────
 
-      try {
-        if (includeLive) {
-          try {
-            const live = await invoke<LiveProactiveSuggestion[]>(
-              "get_live_proactive_suggestions"
-            );
-            setLiveSuggestions(live);
-            setLiveError(null);
-          } catch (err) {
-            setLiveSuggestions([]);
-            setLiveError(
-              err instanceof Error
-                ? err.message
-                : "Live suggestions unavailable"
-            );
-          }
-        }
-
-        try {
-          const result = await invoke<WeekResult>("get_week_data");
-          if (result.status === "success" && result.data) {
-            setData(result.data);
-            setError(null);
-          } else if (result.status === "not_found") {
-            setData(null);
-          } else if (result.status === "error") {
-            setError(result.message || "Failed to load week data");
-          }
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Unknown error");
-        } finally {
-          setLoading(false);
-        }
-      } finally {
-        loadingRef.current = false;
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    loadWeek();
-    invoke<{ status: string; phase?: WorkflowPhase }>("get_workflow_status", {
-      workflow: "week",
-    })
-      .then((status) => {
-        if (status.status === "running") {
-          setRunning(true);
-          setPhase(status.phase ?? "preparing");
-        }
-      })
-      .catch(() => {});
-  }, [loadWeek]);
-
-  useEffect(() => {
-    if (!running) return;
-    let sawRunning = false;
-
-    const interval = setInterval(async () => {
-      try {
-        const status = await invoke<{
-          status: string;
-          phase?: WorkflowPhase;
-          error?: { message: string; recoverySuggestion: string };
-        }>("get_workflow_status", { workflow: "week" });
-
-        if (status.status === "running") {
-          sawRunning = true;
-          if (status.phase) setPhase(status.phase);
-          loadWeek({ includeLive: false });
-        } else if (status.status === "completed" && sawRunning) {
-          clearInterval(interval);
-          setRunning(false);
-          setPhase(null);
-          loadWeek();
-        } else if (status.status === "failed" && sawRunning) {
-          clearInterval(interval);
-          setRunning(false);
-          setPhase(null);
-          const msg = status.error?.message || "Week workflow failed";
-          const hint = status.error?.recoverySuggestion;
-          setError(hint ? `${msg}\n${hint}` : msg);
-        } else if (status.status === "idle" && sawRunning) {
-          clearInterval(interval);
-          setRunning(false);
-          setPhase(null);
-          loadWeek({ includeLive: false });
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    }, 1000);
-
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      setRunning(false);
-      setPhase(null);
-      setError("Week workflow timed out. Check Settings for workflow status.");
-    }, 300_000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [running, loadWeek]);
-
-  const handleRunWeek = useCallback(async () => {
-    setRunning(true);
-    setError(null);
+  const loadTimeline = useCallback(async () => {
     try {
-      await invoke("run_workflow", { workflow: "week" });
+      const data = await invoke<TimelineMeeting[]>("get_meeting_timeline", {
+        daysBefore: 7,
+        daysAfter: 7,
+      });
+      setTimeline(data);
+      setError(null);
     } catch (err) {
-      setRunning(false);
-      setError(
-        err instanceof Error ? err.message : "Failed to queue week workflow"
-      );
+      console.error("[WeekPage] Timeline failed:", err);
+      setError(err instanceof Error ? err.message : "Failed to load timeline");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  const handleRetryEnrichment = useCallback(async () => {
-    setRetryingEnrichment(true);
-    setError(null);
+  useEffect(() => {
+    loadTimeline();
+  }, [loadTimeline]);
+
+  // ─── Refresh: clear + requeue meeting preps ───────────────────────────────
+
+  const handleRefresh = useCallback(async () => {
     try {
-      await invoke("retry_week_enrichment");
-      await loadWeek();
+      await invoke("refresh_meeting_preps");
+      loadTimeline();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to retry week enrichment",
+        err instanceof Error ? err.message : "Failed to refresh meeting preps"
       );
-    } finally {
-      setRetryingEnrichment(false);
     }
-  }, [loadWeek]);
+  }, [loadTimeline]);
 
-  // Register magazine shell — larkspur atmosphere, chapter mode
-  const folioActions = useMemo(
-    () => (
-      <button
-        onClick={handleRunWeek}
-        disabled={running}
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase" as const,
-          color: "var(--color-garden-larkspur)",
-          background: "none",
-          border: "1px solid var(--color-garden-larkspur)",
-          borderRadius: 4,
-          padding: "2px 10px",
-          cursor: running ? "wait" : "pointer",
-          opacity: running ? 0.6 : 1,
-        }}
-      >
-        {running
-          ? (phaseSteps.find((s) => s.key === phase)?.label ?? "Running...")
-          : "Refresh"}
-      </button>
-    ),
-    [handleRunWeek, running, phase]
+  // ─── Live events — keep the page current without user action ──────────────
+
+  useTauriEvent("calendar-updated", loadTimeline);
+  useTauriEvent("intelligence-updated", loadTimeline);
+  useTauriEvent("prep-ready", loadTimeline);
+
+  // ─── Derived data ─────────────────────────────────────────────────────────
+
+  const weekMeta = useMemo(() => computeWeekMeta(), []);
+
+  const shapeDays = useMemo(
+    (): DayShape[] => deriveShapeFromTimeline(timeline),
+    [timeline]
   );
 
-  // Readiness stats for FolioBar
-  const folioReadinessStats = useMemo(() => {
-    if (!data?.readinessChecks?.length) return undefined;
-    const { preppedLabel, overdueLabel } = synthesizeReadinessStats(
-      data.readinessChecks
-    );
-    const stats: { label: string; color: "sage" | "terracotta" }[] = [
-      { label: preppedLabel, color: "sage" },
-    ];
-    if (overdueLabel) {
-      stats.push({ label: overdueLabel, color: "terracotta" });
+  const shapeEpigraph = useMemo(
+    () => (shapeDays.length ? computeShapeEpigraph(shapeDays) : ""),
+    [shapeDays]
+  );
+
+  const futureMeetings = useMemo(() => {
+    const now = new Date();
+    return timeline.filter((m) => new Date(m.startTime) > now);
+  }, [timeline]);
+
+  const readinessStats = useMemo(() => {
+    if (futureMeetings.length === 0) return [];
+
+    const readyCount = futureMeetings.filter((m) => m.hasPrep).length;
+    const needsPrepCount = futureMeetings.length - readyCount;
+
+    const stats: { label: string; color: "sage" | "terracotta" }[] = [];
+    stats.push({ label: `${readyCount} ready`, color: "sage" });
+    if (needsPrepCount > 0) {
+      stats.push({ label: `${needsPrepCount} needs prep`, color: "terracotta" });
     }
     return stats;
-  }, [data?.readinessChecks]);
+  }, [futureMeetings]);
+
+  // ─── Magazine shell ───────────────────────────────────────────────────────
+
+  const folioActions = useMemo(
+    () => (
+      <FolioRefreshButton
+        onClick={handleRefresh}
+        loading={false}
+        title="Refresh meeting preps"
+      />
+    ),
+    [handleRefresh]
+  );
+
+  const folioReadinessStats = useMemo(() => {
+    if (futureMeetings.length === 0) return undefined;
+
+    const readyCount = futureMeetings.filter((m) => m.hasPrep).length;
+    const total = futureMeetings.length;
+
+    const stats: { label: string; color: "sage" | "terracotta" }[] = [];
+    if (readyCount === total) {
+      stats.push({ label: `${total}/${total} ready`, color: "sage" });
+    } else {
+      stats.push({ label: `${readyCount} ready`, color: "sage" });
+      const needsPrepCount = total - readyCount;
+      if (needsPrepCount > 0) {
+        stats.push({ label: `${needsPrepCount} needs prep`, color: "terracotta" });
+      }
+    }
+    return stats;
+  }, [futureMeetings]);
 
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Weekly Forecast",
       atmosphereColor: "larkspur" as const,
       activePage: "week" as const,
-      chapters: CHAPTERS,
       folioActions,
-      folioDateText: data
-        ? `WEEK ${data.weekNumber} \u00b7 ${data.dateRange.toUpperCase()}`
-        : undefined,
+      folioDateText: `WEEK ${weekMeta.weekNumber} \u00b7 ${weekMeta.dateRange.toUpperCase()}`,
       folioReadinessStats,
     }),
-    [folioActions, data, folioReadinessStats]
+    [folioActions, weekMeta.weekNumber, weekMeta.dateRange, folioReadinessStats]
   );
   useRegisterMagazineShell(shellConfig);
-  useRevealObserver(!loading && !!data, data);
+  useRevealObserver(!loading && timeline.length > 0, timeline);
 
-  // ─── Derived data ──────────────────────────────────────────────────────────
-  const enrichmentIncomplete = data && !running && (!data.weekNarrative || !data.topPriority);
-  const dayShapes = data?.dayShapes ?? [];
-  const days = data?.days ?? [];
+  // ─── Timeline grouping ────────────────────────────────────────────────────
 
-  const topThree = useMemo(
-    () =>
-      data
-        ? pickTopThree(
-            data.topPriority,
-            data.actionSummary?.overdue ?? [],
-            data.actionSummary?.dueThisWeekItems ?? [],
-            liveSuggestions,
-            days
-          )
-        : [],
-    [data, liveSuggestions, days]
-  );
+  const timelineGroups = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
 
-  const shapeEpigraph = useMemo(
-    () => computeShapeEpigraph(dayShapes),
-    [dayShapes]
-  );
+    const byDate = new Map<string, TimelineMeeting[]>();
+    for (const m of timeline) {
+      const dateKey = m.startTime.slice(0, 10);
+      if (!byDate.has(dateKey)) byDate.set(dateKey, []);
+      byDate.get(dateKey)!.push(m);
+    }
 
-  const readinessLine = useMemo(
-    () =>
-      data?.readinessChecks?.length
-        ? synthesizeReadiness(data.readinessChecks)
-        : null,
-    [data?.readinessChecks]
-  );
+    const sortedDates = [...byDate.keys()].sort();
 
-  const totalMeetings = useMemo(
-    () => days.reduce((sum, d) => sum + d.meetings.length, 0),
-    [days]
-  );
+    const past: DateGroup[] = [];
+    const today: DateGroup[] = [];
+    const future: DateGroup[] = [];
 
-  // ─── Loading skeleton — editorial shaped ────────────────────────────────────
+    for (const dateKey of sortedDates) {
+      const meetings = byDate.get(dateKey)!;
+      const date = new Date(dateKey + "T12:00:00");
+      const diffDays = Math.round(
+        (date.getTime() - new Date(todayStr + "T12:00:00").getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+
+      let label: string;
+      if (diffDays === 0) label = "Today";
+      else if (diffDays === -1) label = "Yesterday";
+      else if (diffDays === 1) label = "Tomorrow";
+      else if (diffDays < 0)
+        label = `${Math.abs(diffDays)} days ago \u2014 ${date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}`;
+      else
+        label = date.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+        });
+
+      const group = { dateKey, label, meetings };
+      if (diffDays < 0) past.push(group);
+      else if (diffDays === 0) today.push(group);
+      else future.push(group);
+    }
+
+    const earlierPast = past.filter((g) => {
+      const diff = Math.round(
+        (new Date(g.dateKey + "T12:00:00").getTime() -
+          new Date(todayStr + "T12:00:00").getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+      return diff < -2;
+    });
+    const recentPast = past.filter((g) => {
+      const diff = Math.round(
+        (new Date(g.dateKey + "T12:00:00").getTime() -
+          new Date(todayStr + "T12:00:00").getTime()) /
+          (1000 * 60 * 60 * 24)
+      );
+      return diff >= -2;
+    });
+
+    return { earlierPast, recentPast, today, future };
+  }, [timeline]);
+
+  // ─── Loading skeleton ─────────────────────────────────────────────────────
+
   if (loading) {
     const skeletonBg = { background: "var(--color-rule-light)" };
     return (
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 40px" }}>
-        {/* Hero skeleton */}
-        <div style={{ paddingTop: 80, textAlign: "center" }}>
-          {/* Week number */}
-          <Skeleton className="mx-auto h-3 w-44 mb-8" style={skeletonBg} />
-          {/* Narrative lines */}
-          <Skeleton className="mx-auto h-8 w-[520px] mb-3" style={skeletonBg} />
-          <Skeleton className="mx-auto h-8 w-[440px] mb-3" style={skeletonBg} />
-          <Skeleton className="mx-auto h-8 w-[280px] mb-10" style={skeletonBg} />
-          {/* Vitals */}
-          <Skeleton className="mx-auto h-3 w-52" style={skeletonBg} />
+        <div style={{ paddingTop: 80 }}>
+          <Skeleton className="h-3 w-20 mb-2" style={skeletonBg} />
+          <Skeleton className="h-7 w-44 mb-6" style={skeletonBg} />
+          <Skeleton className="h-3 w-52" style={skeletonBg} />
         </div>
-
-        {/* Chapter 2: The Three skeleton */}
+        <div style={{ paddingTop: 56 }}>
+          <Skeleton className="h-2.5 w-20 mb-4" style={skeletonBg} />
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                marginBottom: 24,
+              }}
+            >
+              <Skeleton className="h-3 w-9" style={skeletonBg} />
+              <Skeleton className="h-2 flex-1 rounded-full" style={skeletonBg} />
+              <Skeleton className="h-3 w-20" style={skeletonBg} />
+            </div>
+          ))}
+        </div>
         <div style={{ paddingTop: 64 }}>
-          <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
-          <Skeleton className="h-7 w-32 mb-8" style={skeletonBg} />
-          {[1, 2, 3].map((i) => (
-            <div key={i} style={{ display: "flex", gap: 16, marginBottom: 36 }}>
-              <Skeleton className="h-5 w-5 rounded-full shrink-0" style={skeletonBg} />
-              <div style={{ flex: 1 }}>
-                <Skeleton className="h-5 w-64 mb-2" style={skeletonBg} />
-                <Skeleton className="h-4 w-full mb-1" style={skeletonBg} />
-                <Skeleton className="h-3 w-40" style={skeletonBg} />
+          <div
+            style={{
+              borderTop: "2px solid var(--color-rule-light)",
+              marginBottom: 16,
+            }}
+          />
+          <Skeleton className="h-7 w-36 mb-8" style={skeletonBg} />
+          {[1, 2, 3].map((d) => (
+            <div key={d} style={{ marginBottom: 20 }}>
+              <Skeleton className="h-4 w-40 mb-3" style={skeletonBg} />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  marginBottom: 8,
+                  marginLeft: 12,
+                }}
+              >
+                <Skeleton
+                  className="h-2 w-2 rounded-full"
+                  style={skeletonBg}
+                />
+                <Skeleton className="h-4 w-48" style={skeletonBg} />
+                <Skeleton className="h-3 w-16" style={skeletonBg} />
               </div>
             </div>
           ))}
         </div>
-
-        {/* Chapter 3: Shape skeleton */}
-        <div style={{ paddingTop: 64 }}>
-          <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
-          <Skeleton className="h-7 w-28 mb-8" style={skeletonBg} />
-          {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => (
-            <div key={d} style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  color: "var(--color-rule-light)",
-                  width: 36,
-                  textTransform: "uppercase",
-                }}
-              >
-                {d}
-              </span>
-              <div
-                style={{
-                  flex: 1,
-                  height: 8,
-                  borderRadius: 4,
-                  background: "var(--color-paper-linen)",
-                }}
-              />
-              <Skeleton className="h-3 w-28" style={skeletonBg} />
-            </div>
-          ))}
-        </div>
-
-        {/* Finis skeleton */}
         <div style={{ textAlign: "center", padding: "72px 0 48px" }}>
           <Skeleton className="mx-auto h-4 w-16" style={skeletonBg} />
         </div>
@@ -405,8 +288,9 @@ export default function WeekPage() {
     );
   }
 
-  // ─── Empty state ───────────────────────────────────────────────────────────
-  if (!data) {
+  // ─── Empty state ──────────────────────────────────────────────────────────
+
+  if (timeline.length === 0) {
     return (
       <div
         style={{
@@ -419,449 +303,284 @@ export default function WeekPage() {
           padding: "80px 40px",
         }}
       >
-        {running ? (
-          <WorkflowProgress phase={phase ?? "preparing"} />
-        ) : (
-          <>
-            <div
-              style={{
-                color: "var(--color-garden-larkspur)",
-                marginBottom: 24,
-              }}
-            >
-              <BrandMark size={48} />
-            </div>
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 24,
-                fontWeight: 400,
-                color: "var(--color-text-primary)",
-                marginBottom: 8,
-              }}
-            >
-              No forecast yet
-            </p>
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 15,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-                marginBottom: 32,
-                maxWidth: 360,
-              }}
-            >
-              Generate your weekly forecast to see what your week actually means.
-            </p>
-            <Button className="gap-1.5" onClick={handleRunWeek}>
-              <Play className="size-3.5" />
-              Run Weekly Forecast
-            </Button>
-          </>
-        )}
+        <div
+          style={{ color: "var(--color-garden-larkspur)", marginBottom: 24 }}
+        >
+          <BrandMark size={48} />
+        </div>
+        <p
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 24,
+            fontWeight: 400,
+            color: "var(--color-text-primary)",
+            marginBottom: 8,
+          }}
+        >
+          No forecast yet
+        </p>
+        <p
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 15,
+            fontStyle: "italic",
+            color: "var(--color-text-tertiary)",
+            marginBottom: 32,
+            maxWidth: 360,
+          }}
+        >
+          Connect your calendar to see your week.
+        </p>
         {error && <ErrorCard error={error} />}
       </div>
     );
   }
 
-  // ─── Workflow running — full-page takeover ──────────────────────────────────
-  if (running) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "70vh",
-          textAlign: "center",
-          padding: "80px 40px",
-        }}
-      >
-        <WorkflowProgress phase={phase ?? "preparing"} />
-        {error && <ErrorCard error={error} />}
-      </div>
-    );
-  }
+  // ─── Full editorial render ────────────────────────────────────────────────
 
-  // ─── Full editorial render ─────────────────────────────────────────────────
   return (
     <>
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 40px" }}>
-        {/* ── Chapter 1: Hero ────────────────────────────────────────────── */}
-        <section style={{ paddingTop: 80, textAlign: "center" }}>
-          {/* Week number + date range */}
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--color-text-tertiary)",
-              marginBottom: 32,
-            }}
-          >
-            WEEK {data.weekNumber} &middot; {data.dateRange.toUpperCase()}
-          </p>
-
-          {/* Narrative headline */}
-          {data.weekNarrative ? (
-            <p
-              className="editorial-reveal"
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 32,
-                fontWeight: 400,
-                lineHeight: 1.4,
-                letterSpacing: "-0.02em",
-                color: "var(--color-text-primary)",
-                maxWidth: 680,
-                margin: "0 auto 32px",
-              }}
-            >
-              {data.weekNarrative}
-            </p>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 24,
-                fontWeight: 400,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-                margin: "0 auto 32px",
-                maxWidth: 480,
-              }}
-            >
-              Enrichment pending. Mechanical data available below.
-            </p>
-          )}
-
-          {/* Vitals line */}
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              marginBottom: 8,
-            }}
-          >
-            {readinessLine && <span>{readinessLine}</span>}
-            {readinessLine && totalMeetings > 0 && <span> &middot; </span>}
-            {totalMeetings > 0 && (
-              <span>
-                {totalMeetings} meeting{totalMeetings !== 1 ? "s" : ""}
-              </span>
-            )}
-          </p>
-
-          {/* Enrichment incomplete notice */}
-          {enrichmentIncomplete && (
-            <p
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                marginTop: 16,
-              }}
-            >
-              Analysis incomplete.{" "}
-              <button
-                onClick={handleRetryEnrichment}
-                disabled={retryingEnrichment}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--color-garden-larkspur)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: "inherit",
-                  textDecoration: "underline",
-                  padding: 0,
-                }}
-              >
-                {retryingEnrichment ? "Retrying..." : "Retry"}
-              </button>
-            </p>
-          )}
-
-        </section>
-
-        {/* ── Chapter 2: The Three ───────────────────────────────────────── */}
-        <section
-          id="the-three"
-          className="editorial-reveal"
-          style={{ paddingTop: 64 }}
-        >
-          <ChapterHeading
-            title="The Three"
-            epigraph="If everything is important, nothing is."
-          />
-
-          {topThree.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 36 }}>
-              {topThree.map((item) => {
-                const linkTarget = resolveSuggestionLink(
-                  item.actionId,
-                  item.meetingId
-                );
-                const content = (
-                  <>
-                    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 20,
-                          lineHeight: 1,
-                          color: "var(--color-garden-larkspur)",
-                          flexShrink: 0,
-                          marginTop: 2,
-                        }}
-                      >
-                        {CIRCLED_NUMBERS[item.number - 1]}
-                      </span>
-                      <div style={{ minWidth: 0 }}>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 17,
-                            fontWeight: 500,
-                            lineHeight: 1.4,
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                          }}
-                        >
-                          {item.title}
-                        </p>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 14,
-                            lineHeight: 1.6,
-                            color: "var(--color-text-secondary)",
-                            margin: "6px 0 0",
-                          }}
-                        >
-                          {item.reason}
-                        </p>
-                        {item.contextLine && (
-                          <p
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 13,
-                              color: "var(--color-text-tertiary)",
-                              margin: "8px 0 0",
-                            }}
-                          >
-                            &rarr; {item.contextLine}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                );
-
-                if (linkTarget.kind === "action") {
-                  return (
-                    <Link
-                      key={item.number}
-                      to="/actions/$actionId"
-                      params={{ actionId: linkTarget.id }}
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      {content}
-                    </Link>
-                  );
-                }
-                if (linkTarget.kind === "meeting") {
-                  return (
-                    <Link
-                      key={item.number}
-                      to="/meeting/$meetingId"
-                      params={{ meetingId: linkTarget.id }}
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      {content}
-                    </Link>
-                  );
-                }
-                return <div key={item.number}>{content}</div>;
-              })}
-            </div>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 15,
-                fontStyle: "italic",
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              Refresh to see your three priorities.
+        {/* ── Week Header ───────────────────────────────────────────── */}
+        <section className={w.weekHeader}>
+          <p className={w.weekLabel}>Week {weekMeta.weekNumber}</p>
+          <p className={w.weekDate}>{weekMeta.dateRange}</p>
+          {(readinessStats.length > 0 || futureMeetings.length > 0) && (
+            <p className={w.weekVitals}>
+              {readinessStats.map((stat) => (
+                <span
+                  key={stat.label}
+                  className={
+                    stat.color === "sage" ? w.vitalsReady : w.vitalsAlert
+                  }
+                >
+                  {stat.label}
+                </span>
+              ))}
+              {futureMeetings.length > 0 && (
+                <span>
+                  {futureMeetings.length} meeting
+                  {futureMeetings.length !== 1 ? "s" : ""}
+                </span>
+              )}
             </p>
           )}
         </section>
 
-        {/* ── Chapter 3: The Shape ───────────────────────────────────────── */}
-        {dayShapes.length > 0 && (
-          <section
-            id="the-shape"
-            className="editorial-reveal"
-            style={{ paddingTop: 64 }}
-          >
-            <ChapterHeading title="The Shape" epigraph={shapeEpigraph} />
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
-            >
-              {dayShapes.map((shape) => {
-                const maxMinutes = 480;
-                const barWidth = Math.min(
+        {/* ── This Week — The Shape ──────────────────────────────────── */}
+        {shapeDays.length > 0 && (
+          <section className={cn("editorial-reveal", w.shapeSection)}>
+            <p className={w.shapeLabel}>This Week</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              {shapeDays.map((day) => {
+                const barPct = Math.min(
                   100,
-                  (shape.meetingMinutes / maxMinutes) * 100
+                  (day.meetingMinutes / 480) * 100
                 );
-                const densityLabel = shape.density || (
-                  shape.meetingCount === 0
-                    ? "clear"
-                    : shape.meetingCount <= 2
-                      ? "light"
-                      : shape.meetingCount <= 4
-                        ? "moderate"
-                        : shape.meetingCount <= 6
-                          ? "busy"
-                          : "packed"
-                );
+                const isHeavy =
+                  day.meetingCount >= 5 || day.meetingMinutes >= 360;
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const isToday = day.date === todayStr;
+                const isPast = day.date < todayStr;
 
                 return (
-                  <div key={shape.dayName}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 16,
-                      }}
-                    >
-                      {/* Day label */}
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--color-text-primary)",
-                          width: 36,
-                          flexShrink: 0,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {shape.dayName.slice(0, 3)}
-                      </span>
-
-                      {/* Bar */}
-                      <div
-                        style={{
-                          flex: 1,
-                          height: 8,
-                          borderRadius: 4,
-                          background: "var(--color-paper-linen)",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${barWidth}%`,
-                            borderRadius: 4,
-                            background: "var(--color-spice-turmeric)",
-                            transition: "width 0.3s ease",
-                          }}
-                        />
-                      </div>
-
-                      {/* Count + density */}
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          color: "var(--color-text-tertiary)",
-                          flexShrink: 0,
-                          minWidth: 130,
-                          textAlign: "right",
-                        }}
-                      >
-                        {shape.meetingCount} meeting
-                        {shape.meetingCount !== 1 ? "s" : ""} &middot;{" "}
-                        {densityLabel}
-                      </span>
-
-                      {/* Achievability indicator (I279) */}
-                      {shape.focusImplications && shape.focusImplications.totalCount > 0 && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 11,
-                            color: shape.focusImplications.atRiskCount > 0
-                              ? "var(--color-spice-terracotta)"
-                              : "var(--color-garden-sage)",
-                            flexShrink: 0,
-                            minWidth: 100,
-                            textAlign: "right",
-                          }}
-                        >
-                          {shape.focusImplications.achievableCount} of{" "}
-                          {shape.focusImplications.totalCount} achievable
-                        </span>
+                  <div
+                    key={day.date}
+                    className={cn(w.shapeRow, isPast && w.shapeRowPast)}
+                  >
+                    <span
+                      className={cn(
+                        w.shapeDayLabel,
+                        isToday && w.shapeDayLabelToday
                       )}
-                    </div>
-
-                    {/* Top 3 feasible actions (I279) */}
-                    {shape.prioritizedActions && shape.prioritizedActions.filter(pa => pa.feasible).length > 0 && (
+                    >
+                      {day.dayName.slice(0, 3)}
+                    </span>
+                    <div className={w.shapeBar}>
                       <div
-                        style={{
-                          marginLeft: 52,
-                          borderLeft: "2px solid var(--color-rule-light)",
-                          paddingLeft: 12,
-                          marginTop: 4,
-                          marginBottom: 8,
-                        }}
-                      >
-                        {shape.prioritizedActions
-                          .filter(pa => pa.feasible)
-                          .slice(0, 3)
-                          .map((pa, idx) => (
-                            <p
-                              key={pa.action.id || idx}
-                              style={{
-                                fontFamily: "var(--font-sans)",
-                                fontSize: 13,
-                                color: "var(--color-text-secondary)",
-                                margin: "2px 0",
-                                lineHeight: 1.4,
-                              }}
-                            >
-                              {pa.action.title}
-                            </p>
-                          ))}
-                      </div>
-                    )}
+                        className={cn(
+                          w.shapeBarFill,
+                          isToday
+                            ? w.shapeBarFillToday
+                            : isHeavy
+                              ? w.shapeBarFillHeavy
+                              : undefined
+                        )}
+                        style={{ width: `${barPct}%` }}
+                      />
+                    </div>
+                    <span className={w.shapeCount}>
+                      {day.meetingCount}m &middot; {day.density}
+                    </span>
                   </div>
                 );
               })}
             </div>
+            {shapeEpigraph && (
+              <p className={w.shapeEpigraph}>{shapeEpigraph}</p>
+            )}
           </section>
         )}
 
-        {/* ── Error display ──────────────────────────────────────────────── */}
+        {/* ── The Timeline ───────────────────────────────────────────── */}
+        <section
+          id="the-timeline"
+          className="editorial-reveal"
+          style={{ paddingTop: 64 }}
+        >
+          <ChapterHeading
+            title="The Timeline"
+            epigraph="Context across your meetings, \u00b17 days."
+          />
+
+          {/* Past — Earlier (collapsed) */}
+          {timelineGroups.earlierPast.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowEarlier(!showEarlier)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && setShowEarlier(!showEarlier)
+                }
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  borderBottom: "1px solid var(--color-rule-heavy)",
+                  paddingBottom: 6,
+                  marginBottom: showEarlier ? 16 : 0,
+                  cursor: "pointer",
+                }}
+              >
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "var(--color-text-tertiary)",
+                    margin: 0,
+                  }}
+                >
+                  Earlier
+                </p>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                  }}
+                >
+                  {showEarlier
+                    ? "hide"
+                    : `${timelineGroups.earlierPast.reduce((n, g) => n + g.meetings.length, 0)} meetings`}
+                </span>
+              </div>
+              {showEarlier &&
+                timelineGroups.earlierPast.map((group) => (
+                  <TimelineDayGroup
+                    key={group.dateKey}
+                    label={group.label}
+                    meetings={group.meetings}
+                    isPast
+                  />
+                ))}
+            </div>
+          )}
+
+          {/* Past — Recent */}
+          {timelineGroups.recentPast.length > 0 && (
+            <div>
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--color-text-tertiary)",
+                  marginBottom: 16,
+                  borderBottom: "1px solid var(--color-rule-heavy)",
+                  paddingBottom: 6,
+                }}
+              >
+                Earlier
+              </p>
+              {timelineGroups.recentPast.map((group) => (
+                <TimelineDayGroup
+                  key={group.dateKey}
+                  label={group.label}
+                  meetings={group.meetings}
+                  isPast
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Today */}
+          {timelineGroups.today.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--color-garden-larkspur)",
+                  marginBottom: 16,
+                  borderBottom: "2px solid var(--color-garden-larkspur)",
+                  paddingBottom: 6,
+                }}
+              >
+                Today
+              </p>
+              {timelineGroups.today.map((group) => (
+                <TimelineDayGroup
+                  key={group.dateKey}
+                  label={group.label}
+                  meetings={group.meetings}
+                  isToday
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Future */}
+          {timelineGroups.future.length > 0 && (
+            <div style={{ marginTop: 24 }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--color-text-tertiary)",
+                  marginBottom: 16,
+                  borderBottom: "1px solid var(--color-rule-heavy)",
+                  paddingBottom: 6,
+                }}
+              >
+                Ahead
+              </p>
+              {timelineGroups.future.map((group) => (
+                <TimelineDayGroup
+                  key={group.dateKey}
+                  label={group.label}
+                  meetings={group.meetings}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Error ──────────────────────────────────────────────────── */}
         {error && (
           <div style={{ marginTop: 48 }}>
             <ErrorCard error={error} />
           </div>
         )}
 
-        {/* ── Finis ──────────────────────────────────────────────────────── */}
+        {/* ── Finis ──────────────────────────────────────────────────── */}
         <section className="editorial-reveal">
           <FinisMarker enrichedAt={undefined} />
           <p
@@ -874,18 +593,23 @@ export default function WeekPage() {
               paddingBottom: 48,
             }}
           >
-            Your week is forecasted.
+            Your week at a glance.
           </p>
         </section>
       </div>
-
     </>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Chrome
-// ---------------------------------------------------------------------------
+// =============================================================================
+// Supporting components
+// =============================================================================
+
+interface DateGroup {
+  dateKey: string;
+  label: string;
+  meetings: TimelineMeeting[];
+}
 
 function ErrorCard({ error }: { error: string }) {
   return (
@@ -910,20 +634,198 @@ function ErrorCard({ error }: { error: string }) {
   );
 }
 
-const FORECAST_PHASES = [
-  { key: "preparing", label: "Reading your calendar", detail: "Fetching meetings, classifying events, gathering account context" },
-  { key: "enriching", label: "Writing the forecast", detail: "Synthesizing narrative, priorities, and time suggestions from your week" },
-  { key: "delivering", label: "Assembling the briefing", detail: "Building day shapes, readiness checks, and commitment summaries" },
-];
+function computeDaysUntil(startTime: string): number | null {
+  try {
+    const now = new Date();
+    const start = new Date(startTime);
+    const diffMs = start.getTime() - now.getTime();
+    if (diffMs < 0) return null;
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
 
-function WorkflowProgress({ phase }: { phase: WorkflowPhase }) {
+function TimelineDayGroup({
+  label,
+  meetings,
+  isPast,
+  isToday,
+}: {
+  label: string;
+  meetings: TimelineMeeting[];
+  isPast?: boolean;
+  isToday?: boolean;
+}) {
   return (
-    <GeneratingProgress
-      title="Building Weekly Forecast"
-      accentColor="var(--color-garden-larkspur)"
-      phases={FORECAST_PHASES}
-      currentPhaseKey={phase}
-      quotes={waitingMessages}
-    />
+    <div style={{ marginBottom: 20 }}>
+      <p
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: isToday ? 16 : 14,
+          fontWeight: isToday ? 500 : 400,
+          color: isToday
+            ? "var(--color-text-primary)"
+            : "var(--color-text-secondary)",
+          margin: "0 0 8px",
+          ...(isToday
+            ? {
+                borderLeft: "3px solid var(--color-garden-larkspur)",
+                paddingLeft: 12,
+              }
+            : {}),
+        }}
+      >
+        {label}
+      </p>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 0,
+          paddingLeft: isToday ? 15 : 0,
+        }}
+      >
+        {meetings.map((m) => {
+          const daysUntil = !isPast ? computeDaysUntil(m.startTime) : null;
+          const needsPrep = !m.hasPrep;
+
+          return (
+            <MeetingCard
+              key={m.id}
+              id={m.id}
+              title={m.title}
+              displayTime={formatDisplayTime(m.startTime)}
+              duration={
+                formatDurationFromIso(m.startTime, m.endTime) ?? undefined
+              }
+              meetingType={m.meetingType}
+              entityByline={
+                m.entities.length > 0
+                  ? (formatEntityByline(m.entities) ?? undefined)
+                  : undefined
+              }
+              intelligenceQuality={
+                !isPast ? (m.intelligenceQuality ?? undefined) : undefined
+              }
+              temporalState={isPast ? "past" : undefined}
+              showNavigationHint={isPast}
+              subtitleExtra={
+                !isPast ? (
+                  <>
+                    {needsPrep && (
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: "0.04em",
+                          color: "var(--color-spice-terracotta)",
+                          background: "rgba(192, 108, 80, 0.08)",
+                          borderRadius: 4,
+                          padding: "1px 6px",
+                        }}
+                      >
+                        No prep
+                      </span>
+                    )}
+                    {daysUntil != null && daysUntil > 0 && (
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 10,
+                          fontWeight: 500,
+                          color: "var(--color-text-tertiary)",
+                        }}
+                      >
+                        {daysUntil === 1 ? "1 day" : `${daysUntil} days`}
+                      </span>
+                    )}
+                  </>
+                ) : undefined
+              }
+            >
+              {/* Past meetings: outcome summary + follow-up count */}
+              {isPast && m.hasOutcomes && m.outcomeSummary && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-garden-sage)",
+                    marginTop: 4,
+                  }}
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span
+                    style={{
+                      maxWidth: 240,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {m.outcomeSummary}
+                  </span>
+                  {m.followUpCount != null && m.followUpCount > 0 && (
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "var(--color-garden-sage)",
+                        background: "rgba(122, 151, 122, 0.10)",
+                        borderRadius: 4,
+                        padding: "1px 6px",
+                        marginLeft: 4,
+                      }}
+                    >
+                      {m.followUpCount} follow-up
+                      {m.followUpCount !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </span>
+              )}
+              {isPast &&
+                !(m.hasOutcomes && m.outcomeSummary) &&
+                m.followUpCount != null &&
+                m.followUpCount > 0 && (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "var(--color-garden-sage)",
+                      background: "rgba(122, 151, 122, 0.10)",
+                      borderRadius: 4,
+                      padding: "1px 6px",
+                      marginTop: 4,
+                    }}
+                  >
+                    {m.followUpCount} follow-up
+                    {m.followUpCount !== 1 ? "s" : ""}
+                  </span>
+                )}
+            </MeetingCard>
+          );
+        })}
+      </div>
+    </div>
   );
 }
