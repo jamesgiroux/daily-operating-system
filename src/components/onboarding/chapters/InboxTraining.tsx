@@ -65,7 +65,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
         .then((fn) => {
           unlisten = fn;
         })
-        .catch(() => {});
+        .catch((err) => console.error("listen drag-drop failed:", err));
     } catch {
       // Drag-drop not available outside Tauri
     }
@@ -152,7 +152,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
                 : f
             )
           );
-          invoke("enrich_inbox_file", { filename }).catch(() => {});
+          invoke("enrich_inbox_file", { filename }).catch((err) => console.error("enrich_inbox_file failed:", err));
         } else if (result.status === "error") {
           setFiles((prev) =>
             prev.map((f, idx) =>

@@ -8,6 +8,7 @@ use chrono::{Datelike, Duration};
 use rusqlite::params;
 
 use crate::db::ActionDb;
+use crate::helpers;
 use super::engine::{DetectorContext, RawInsight, fingerprint};
 
 // ---------------------------------------------------------------------------
@@ -205,7 +206,7 @@ pub fn detect_email_volume_spike(db: &ActionDb, _ctx: &DetectorContext) -> Vec<R
             Err(_) => continue,
         };
 
-        let entity_name = resolve_entity_name(db, &entity_id, &entity_type);
+        let entity_name = helpers::resolve_entity_name(db, &entity_type, &entity_id);
         let baseline = total_30d - recent_7d;
         let avg_weekly = baseline as f64 / 3.3;
 
@@ -235,19 +236,6 @@ pub fn detect_email_volume_spike(db: &ActionDb, _ctx: &DetectorContext) -> Vec<R
     insights
 }
 
-/// Resolve a display name for an entity from accounts, projects, or people tables.
-fn resolve_entity_name(db: &ActionDb, entity_id: &str, entity_type: &str) -> String {
-    let (table, col) = match entity_type {
-        "account" => ("accounts", "name"),
-        "project" => ("projects", "name"),
-        "person" => ("people", "name"),
-        _ => return entity_id.to_string(),
-    };
-    let sql = format!("SELECT {} FROM {} WHERE id = ?1", col, table);
-    db.conn_ref()
-        .query_row(&sql, params![entity_id], |row| row.get::<_, String>(0))
-        .unwrap_or_else(|_| entity_id.to_string())
-}
 
 // ---------------------------------------------------------------------------
 // Detector 4: Meeting load forecast
@@ -741,13 +729,7 @@ pub fn detect_renewal_proximity(db: &ActionDb, ctx: &DetectorContext) -> Vec<Raw
 mod tests {
     use super::*;
     use chrono::NaiveDate;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     fn test_ctx(today: NaiveDate) -> DetectorContext {
         DetectorContext {

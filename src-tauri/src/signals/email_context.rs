@@ -17,9 +17,7 @@ use crate::db::ActionDb;
 /// Returns a JSON array of `{from, snippet, date, relevance, source}`.
 pub fn gather_email_context(
     db: &ActionDb,
-    _event_id: &str,
     attendees: &[String],
-    _title: &str,
     entity_id: &str,
     limit: usize,
 ) -> Value {
@@ -109,19 +107,12 @@ pub fn gather_email_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::ActionDb;
-
-    fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open")
-    }
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_empty_context() {
         let db = test_db();
-        let result = gather_email_context(&db, "evt-1", &[], "Test Meeting", "", 10);
+        let result = gather_email_context(&db, &[], "", 10);
         assert!(result.as_array().unwrap().is_empty());
     }
 }
