@@ -7521,6 +7521,15 @@ pub fn trigger_quill_sync_for_meeting(
                     ).map_err(|e| e.to_string())?;
                     Ok("resyncing".to_string())
                 }
+                "pending" | "polling" | "fetching" | "processing" if force => {
+                    // Force-reset a stuck in-progress state back to pending.
+                    // Covers the case where the app crashed or the AI pipeline
+                    // failed silently mid-processing, leaving the row orphaned.
+                    crate::quill::sync::transition_state(
+                        db, &existing.id, "pending", None, None, None, Some("Force reset from stuck state"),
+                    ).map_err(|e| e.to_string())?;
+                    Ok("resyncing".to_string())
+                }
                 "pending" | "polling" | "fetching" | "processing" => Ok("already_in_progress".to_string()),
                 _ => {
                     // Failed or abandoned — reset to pending for retry
