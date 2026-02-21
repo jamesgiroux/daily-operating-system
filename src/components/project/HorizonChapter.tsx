@@ -1,6 +1,6 @@
 /**
  * HorizonChapter — Forward-looking editorial chapter for projects.
- * Next milestone, target date reality, decisions pending, meeting readiness.
+ * Next milestone, target date reality, decisions pending.
  * No account equivalent — project-specific.
  */
 import type { ProjectDetail, EntityIntelligence } from "@/types";
@@ -39,14 +39,12 @@ export function HorizonChapter({ detail, intelligence, onUpdateField }: HorizonC
   );
   const daysToTarget = detail.signals?.daysUntilTarget;
   const unknowns = intelligence?.currentState?.unknowns ?? [];
-  const readiness = intelligence?.nextMeetingReadiness;
   const timelineRisk = findTimelineRisk(intelligence);
 
   const hasContent =
     nextMilestone != null ||
     daysToTarget != null ||
-    unknowns.length > 0 ||
-    (readiness && readiness.prepItems.length > 0);
+    unknowns.length > 0;
 
   return (
     <section id="the-horizon" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
@@ -171,78 +169,6 @@ export function HorizonChapter({ detail, intelligence, onUpdateField }: HorizonC
             }
           />
 
-          {/* Meeting Readiness */}
-          {readiness && readiness.prepItems.length > 0 && (
-            <div
-              style={{
-                background: "var(--color-paper-linen)",
-                borderLeft: "3px solid var(--color-garden-olive)",
-                borderRadius: "0 8px 8px 0",
-                padding: "24px 28px",
-                marginTop: 32,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-garden-olive)",
-                  marginBottom: 10,
-                }}
-              >
-                Meeting Readiness
-                {readiness.meetingTitle && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "none",
-                      letterSpacing: "normal",
-                      color: "var(--color-text-primary)",
-                      marginLeft: 8,
-                    }}
-                  >
-                    {readiness.meetingTitle}
-                  </span>
-                )}
-                {readiness.meetingDate && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.1em",
-                      color: "var(--color-text-tertiary)",
-                      marginLeft: 8,
-                    }}
-                  >
-                    {formatShortDate(readiness.meetingDate)}
-                  </span>
-                )}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {readiness.prepItems.map((item, i) => (
-                  <p
-                    key={i}
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 15,
-                      lineHeight: 1.65,
-                      color: "var(--color-text-primary)",
-                      margin: 0,
-                    }}
-                  >
-                    {item}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
         </>
       ) : (
         <p
