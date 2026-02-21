@@ -31,6 +31,10 @@
 }
 
 /* Details chevron rotation for calendar notes toggle */
+.detailsChevron {
+  transition: transform 0.2s ease;
+}
+
 details[open] .detailsChevron {
   transform: rotate(90deg);
 }
@@ -96,6 +100,17 @@ details[open] .detailsChevron {
   margin-top: 0;
 }
 
+.bulletDotTurmeric {
+  composes: bulletDotInline;
+  background: var(--color-spice-turmeric);
+}
+
+.bulletDotTurmericMuted {
+  composes: bulletDot;
+  /* Turmeric at 60% opacity — from --color-spice-turmeric #c9a227 */
+  background: rgba(201, 162, 39, 0.6);
+}
+
 .sectionRule {
   height: 1px;
   background: var(--color-rule-heavy);
@@ -119,6 +134,51 @@ details[open] .detailsChevron {
 .iconXl {
   width: 32px;
   height: 32px;
+}
+
+/* Icon color variants for outcome section icons */
+.iconSage {
+  composes: iconLg;
+  color: var(--color-garden-sage);
+}
+
+.iconTerracotta {
+  composes: iconLg;
+  color: var(--color-spice-terracotta);
+}
+
+.iconTurmeric {
+  composes: iconLg;
+  color: var(--color-spice-turmeric);
+}
+
+/* Spinner animation for loader icons */
+.spinAnimation {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Tooltip assessment text in attendee hover */
+.tooltipAssessment {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.45;
+}
+
+/* Tooltip meta block display */
+.tooltipMetaBlock {
+  display: block;
+}
+
+.tooltipMetaBlockSpaced {
+  composes: tooltipMetaBlock;
+  margin-bottom: 6px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -777,6 +837,7 @@ details[open] .detailsChevron {
 .planNumberGhost {
   composes: planNumber;
   color: var(--color-spice-turmeric-30);
+  padding-top: var(--space-xs);
 }
 
 .planItemBody {
@@ -945,4 +1006,75 @@ details[open] .detailsChevron {
 .preMeetingLabel {
   composes: chapterHeading;
   margin-bottom: 20px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PLAN SECONDARY ACTION — "Prefill from context" button in Your Plan chapter
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.planSecondaryAction {
+  margin-top: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.planSecondaryAction:hover {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TRANSCRIPT CTA — "Attach Transcript" / "Sync Transcript" in page body
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.transcriptCta {
+  margin-top: var(--space-2xl);
+  padding: var(--space-md) var(--space-lg);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.transcriptCtaBtn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.transcriptCtaBtn:hover {
+  opacity: 0.75;
+}
+
+.transcriptCtaBtnDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.transcriptCtaLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
 }
