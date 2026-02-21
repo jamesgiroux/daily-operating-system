@@ -681,22 +681,7 @@
   gap: 6px;
 }
 
-.schedulePrepDot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-garden-sage);
-  flex-shrink: 0;
-}
-
-.schedulePrepDotMuted {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-rule-heavy);
-  flex-shrink: 0;
-  opacity: 0.4;
-}
+/* .schedulePrepDot and .schedulePrepDotMuted removed — I329: hasPrep fallback eliminated */
 
 .prepFlag {
   font-family: var(--font-mono);
@@ -1136,6 +1121,18 @@
 }
 
 /* =============================================================================
+   BRIEFING CARD OVERRIDE — Parks shared MeetingCard accent bar in margin gutter
+   ============================================================================= */
+
+.briefingCardOverride::before {
+  left: -28px;
+}
+
+.briefingCardOverrideActive::before {
+  left: -8px;
+}
+
+/* =============================================================================
    RESPONSIVE BREAKPOINTS
    ============================================================================= */
 
@@ -1183,6 +1180,14 @@
   }
 
   .scheduleRowActive::before {
+    left: -4px;
+  }
+
+  .briefingCardOverride::before {
+    left: -16px;
+  }
+
+  .briefingCardOverrideActive::before {
     left: -4px;
   }
 
