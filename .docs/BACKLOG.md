@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.13.2 planned (structural clarity — E2E audit, service extraction, god file refactor — ADR-0086). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
+**Current state:** 915 Rust tests. v0.12.1 shipped (email intelligence, product language, UX polish). 0.13.0 ready to tag (meeting intelligence lifecycle, unified surfaces, surface restructure — 18 issues). 0.13.1 planned (email as intelligence input — ADR-0085). 0.13.2 planned (structural clarity — E2E audit, service extraction, god file refactor — ADR-0086). 0.13.3 planned (entity hierarchy intelligence — partner type, portfolio surfaces, bidirectional propagation — ADR-0087). 0.14.0 planned (reports + distribution). 1.0.0 = beta gate.
 
 ---
 
@@ -44,6 +44,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I359** | Vocabulary-driven prompts — inject all 7 role fields into enrichment + briefing prompts | P2 | Intelligence |
 | **I360** | Community preset import UI — frontend caller for existing import backend | P2 | UX |
 | **I361** | Timeline meeting filtering — skip personal/focus/blocked types to match daily briefing | P1 | Backend |
+| **I386** | Calendar lifecycle gaps — future meeting cancellation detection, rescheduling sync, continuous future polling | P1 | Backend / Calendar |
 | **I362** | Shared meeting card — extract core rendering from BriefingMeetingCard for cross-surface reuse | P1 | UX / Component |
 | **I363** | Timeline data enrichment — display time + duration on TimelineMeeting | P1 | Backend / Types |
 | **I364** | Weekly forecast timeline adoption — replace MeetingRow with shared meeting card | P1 | UX |
@@ -64,6 +65,12 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I379** | Vector DB audit — map embedding writes vs. queries, disable orphaned paths | P2 | Code Quality / Architecture |
 | **I380** | commands.rs service extraction Phase 1 — complete services/ per SERVICE-CONTRACTS.md | P1 | Code Quality / Refactor |
 | **I381** | db/mod.rs domain migration — move queries into domain modules per SERVICE-CONTRACTS.md | P2 | Code Quality / Refactor |
+| **I382** | Partner entity type — `partner` account type, badge, partner-appropriate prompt shape | P1 | Backend / Entity |
+| **I383** | AccountsPage three-group layout — Your Book / Your Team / Your Partners | P1 | Frontend / UX |
+| **I384** | Parent account portfolio intelligence — two-layer intelligence.json (portfolio synthesis + own signals) | P1 | Backend / Intelligence |
+| **I385** | Bidirectional entity hierarchy signal propagation — upward accumulation, downward fan-out | P1 | Backend / Signals |
+| **I386** | Parent account detail page — portfolio surface (hotspots, cross-BU patterns, portfolio narrative) | P1 | Frontend / UX |
+| **I387** | Multi-entity signal extraction from parent-level meetings — content-level entity resolution in transcript processor | P3 | Backend / Pipeline |
 
 ---
 
@@ -149,6 +156,7 @@ All issues (I341 partial, I342 Phases 1–3, I343 partial, I349, I355, I356 part
 | I373 | Email sync status indicator — show last fetch time, stage, error state | P2 | Frontend / UX |
 | I374 | Email dismissal learning — dismissed senders/types adjust future classification | P2 | Backend / Intelligence |
 | I375 | Refresh button audit — design continuity with add buttons + action/surface alignment | P2 | UX / Code Quality |
+| I386 | Calendar lifecycle gaps — future meeting cancellation detection, rescheduling sync, continuous future polling | P1 | Backend / Calendar |
 
 Note: I357 (semantic email reclassification) is absorbed by I367 — enrichment is mandatory, not opt-in.
 
@@ -166,6 +174,22 @@ Note: I357 (semantic email reclassification) is absorbed by I367 — enrichment 
 | I379 | Vector DB audit — map embedding writes vs. queries, disable orphaned paths | P2 | Code Quality / Architecture |
 | I380 | commands.rs service extraction Phase 1 — complete services/ per SERVICE-CONTRACTS.md | P1 | Code Quality / Refactor |
 | I381 | db/mod.rs domain migration — move queries into domain modules per SERVICE-CONTRACTS.md | P2 | Code Quality / Refactor |
+
+---
+
+### 0.13.3 — Entity Hierarchy Intelligence [PLANNED]
+
+**Theme:** Parent accounts are portfolio surfaces, not folders. Partners are a distinct entity type. Signals flow up from BUs and down from the parent. The AccountsPage reflects how users actually think about their work. (ADR-0087)
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I382 | Partner entity type — `partner` account type, badge, partner-appropriate prompt shape | P1 | Backend / Entity |
+| I383 | AccountsPage three-group layout — Your Book / Your Team / Your Partners | P1 | Frontend / UX |
+| I384 | Parent account portfolio intelligence — two-layer intelligence.json | P1 | Backend / Intelligence |
+| I385 | Bidirectional entity hierarchy signal propagation — upward accumulation, downward fan-out | P1 | Backend / Signals |
+| I386 | Parent account detail page — portfolio surface (hotspots, cross-BU patterns, portfolio narrative) | P1 | Frontend / UX |
+
+Note: I387 (multi-entity signal extraction from parent-level meetings) is deferred — P3, not version-locked. User behavior is to tag meetings at the parent level; bidirectional propagation (I385) covers the majority of the use case.
 
 ---
 
