@@ -461,7 +461,6 @@ export default function AccountDetailEditorial() {
       <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <TheWork
           data={detail}
-          intelligence={intelligence}
           addingAction={acct.addingAction}
           setAddingAction={acct.setAddingAction}
           newActionTitle={acct.newActionTitle}
