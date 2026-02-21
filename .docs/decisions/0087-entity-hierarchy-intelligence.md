@@ -4,6 +4,8 @@
 **Status:** Accepted
 **Extends:** ADR-0086 (Intelligence as Shared Service)
 
+**Extends:** ADR-0079 (Role Presets) — the `entityModeDefault` field in each preset determines which entity type receives the portfolio surface as primary. This ADR implements the intelligence architecture; ADR-0079 governs which entity type it applies to for a given role.
+
 ---
 
 ## Context
@@ -71,7 +73,19 @@ Downward propagation stops at direct children by default (does not cascade to gr
 
 Propagation loops are prevented by the existing mechanism: derived signals are not re-propagated in the same cycle.
 
-### 5. Multi-entity signal extraction is a future concern
+### 5. The portfolio model generalizes across entity types via ADR-0079
+
+The two-layer parent intelligence model (own signals + portfolio synthesis) and bidirectional propagation apply to **any entity type with a parent/child relationship**, not only accounts. The active role preset's `entityModeDefault` determines which entity type receives the portfolio surface as primary:
+
+| Entity mode | Primary portfolio surface | Example preset |
+|-------------|--------------------------|---------------|
+| `account` | Parent account → BU hierarchy | Customer Success, Sales |
+| `project` | Parent project → campaign/workstream hierarchy | Marketing, Product |
+| `both` | Both account and project hierarchies | Partnerships, Leadership, Agency |
+
+The v0.13.3 implementation focuses on accounts (the dominant current use case). Project hierarchy intelligence follows in v0.13.4 using the identical architecture with project-appropriate vocabulary and prompt shape. People are explicitly excluded from this model — people don't have a tree hierarchy in DailyOS, they have a relationship network, which requires a different architectural approach not covered by this ADR.
+
+### 6. Multi-entity signal extraction is a future concern
 
 When a parent-level meeting contains signals for multiple BUs ("for Cox B2B we're doing X, for Cox Retail we're doing Y"), the correct behavior is to extract and route signals to the appropriate child entities. This requires content-level entity resolution in the transcript processor — a meaningful pipeline addition.
 
