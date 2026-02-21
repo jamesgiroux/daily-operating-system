@@ -577,6 +577,8 @@ pub fn capture_meeting_outcome(
                 updated_at: now,
                 person_id: None,
                 account_name: None,
+                next_meeting_title: None,
+                next_meeting_start: None,
             };
             if let Err(e) = db.upsert_action(&db_action) {
                 log::warn!("Failed to save captured action: {}", e);
@@ -660,6 +662,7 @@ pub fn get_meeting_timeline(
              FROM meetings_history
              WHERE start_time >= ?1 AND start_time <= ?2
                AND (intelligence_state IS NULL OR intelligence_state != 'archived')
+               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
              ORDER BY start_time ASC",
         )
         .map_err(|e| format!("Failed to prepare timeline query: {}", e))?;
@@ -726,6 +729,26 @@ pub fn get_meeting_timeline(
         .filter_map(|r| r.ok())
         .collect();
 
+    // Count follow-up actions per meeting (I342)
+    let action_count_sql = format!(
+        "SELECT source_id, COUNT(*) FROM actions WHERE source_id IN ({}) GROUP BY source_id",
+        capture_placeholders.join(", ")
+    );
+    let mut action_count_stmt = conn
+        .prepare(&action_count_sql)
+        .map_err(|e| format!("Failed to prepare action count query: {}", e))?;
+    let action_count_params: Vec<&dyn rusqlite::types::ToSql> = meeting_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
+    let action_counts: HashMap<String, i32> = action_count_stmt
+        .query_map(action_count_params.as_slice(), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+        })
+        .map_err(|e| format!("Failed to query action counts: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
     // Build timeline meetings
     let mut result: Vec<crate::types::TimelineMeeting> = Vec::with_capacity(raw_meetings.len());
     for m in &raw_meetings {
@@ -763,6 +786,8 @@ pub fn get_meeting_timeline(
             None
         };
 
+        let follow_up_count = action_counts.get(&m.id).copied();
+
         result.push(crate::types::TimelineMeeting {
             id: m.id.clone(),
             title: m.title.clone(),
@@ -775,6 +800,7 @@ pub fn get_meeting_timeline(
             entities,
             has_new_signals,
             prior_meeting_id,
+            follow_up_count,
         });
     }
 

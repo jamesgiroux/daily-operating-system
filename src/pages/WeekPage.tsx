@@ -24,8 +24,9 @@ import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
-import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
-import { MeetingRow } from "@/components/shared/MeetingRow";
+import { MeetingCard } from "@/components/shared/MeetingCard";
+import { formatDisplayTime, formatDurationFromIso } from "@/lib/meeting-time";
+import { formatEntityByline } from "@/lib/entity-helpers";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import {
   AlertTriangle,
@@ -1174,6 +1175,19 @@ function ErrorCard({ error }: { error: string }) {
 // Timeline Components
 // ---------------------------------------------------------------------------
 
+/** Compute days until a meeting from now. */
+function computeDaysUntil(startTime: string): number | null {
+  try {
+    const now = new Date();
+    const start = new Date(startTime);
+    const diffMs = start.getTime() - now.getTime();
+    if (diffMs < 0) return null;
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  } catch {
+    return null;
+  }
+}
+
 function TimelineDayGroup({
   label,
   meetings,
@@ -1210,25 +1224,127 @@ function TimelineDayGroup({
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: 6,
+          gap: 0,
           paddingLeft: isToday ? 15 : 0,
         }}
       >
-        {meetings.map((m) => (
-          <MeetingRow
-            key={m.id}
-            variant="timeline"
-            meeting={m}
-            isPast={isPast}
-            QualityBadge={IntelligenceQualityBadge}
-          />
-        ))}
+        {meetings.map((m) => {
+          const daysUntil = !isPast ? computeDaysUntil(m.startTime) : null;
+          const isSparse = m.intelligenceQuality?.level === "sparse";
+
+          return (
+            <MeetingCard
+              key={m.id}
+              id={m.id}
+              title={m.title}
+              displayTime={formatDisplayTime(m.startTime)}
+              duration={formatDurationFromIso(m.startTime, m.endTime) ?? undefined}
+              meetingType={m.meetingType}
+              entityByline={m.entities.length > 0 ? formatEntityByline(m.entities) ?? undefined : undefined}
+              intelligenceQuality={!isPast ? (m.intelligenceQuality ?? undefined) : undefined}
+              temporalState={isPast ? "past" : undefined}
+              showNavigationHint={isPast}
+              subtitleExtra={
+                !isPast ? (
+                  <>
+                    {isSparse && (
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: "0.04em",
+                          color: "var(--color-spice-terracotta)",
+                          background: "rgba(192, 108, 80, 0.08)",
+                          borderRadius: 4,
+                          padding: "1px 6px",
+                        }}
+                      >
+                        No prep
+                      </span>
+                    )}
+                    {daysUntil != null && daysUntil > 0 && (
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 10,
+                          fontWeight: 500,
+                          color: "var(--color-text-tertiary)",
+                        }}
+                      >
+                        {daysUntil === 1 ? "1 day" : `${daysUntil} days`}
+                      </span>
+                    )}
+                  </>
+                ) : undefined
+              }
+            >
+              {/* Past meetings: outcome summary + follow-up count */}
+              {isPast && m.hasOutcomes && m.outcomeSummary && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-garden-sage)",
+                    marginTop: 4,
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {m.outcomeSummary}
+                  </span>
+                  {m.followUpCount != null && m.followUpCount > 0 && (
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "var(--color-garden-sage)",
+                        background: "rgba(122, 151, 122, 0.10)",
+                        borderRadius: 4,
+                        padding: "1px 6px",
+                        marginLeft: 4,
+                      }}
+                    >
+                      {m.followUpCount} follow-up{m.followUpCount !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </span>
+              )}
+              {/* Past meetings: show follow-up count even without outcome summary */}
+              {isPast && !(m.hasOutcomes && m.outcomeSummary) && m.followUpCount != null && m.followUpCount > 0 && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: "var(--color-garden-sage)",
+                    background: "rgba(122, 151, 122, 0.10)",
+                    borderRadius: 4,
+                    padding: "1px 6px",
+                    marginTop: 4,
+                  }}
+                >
+                  {m.followUpCount} follow-up{m.followUpCount !== 1 ? "s" : ""}
+                </span>
+              )}
+            </MeetingCard>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// TimelineMeetingRow consolidated into shared/MeetingRow.tsx (ADR-0084 C3)
+// Timeline meetings now use shared MeetingCard (I362/I364)
 
 const FORECAST_PHASES = [
   { key: "preparing", label: "Reading your calendar", detail: "Fetching meetings, classifying events, gathering account context" },
