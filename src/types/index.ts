@@ -1629,4 +1629,6 @@ export interface TimelineMeeting {
   priorMeetingId?: string;
   /** Count of follow-up actions linked to this meeting (I342) */
   followUpCount?: number;
+  /** Whether a meeting briefing exists (prep_frozen_json or disk file) */
+  hasPrep?: boolean;
 }
