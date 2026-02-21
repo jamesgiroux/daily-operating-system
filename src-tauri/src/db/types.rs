@@ -41,6 +41,12 @@ pub struct DbAction {
     pub updated_at: String,
     pub person_id: Option<String>,
     pub account_name: Option<String>,
+    /// Next upcoming meeting title for the action's account (I342).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_meeting_title: Option<String>,
+    /// Next upcoming meeting start time for the action's account (I342).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_meeting_start: Option<String>,
 }
 
 /// A row from the `accounts` table.

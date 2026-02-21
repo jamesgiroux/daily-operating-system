@@ -21,43 +21,125 @@ import { DatePicker } from "@/components/ui/date-picker";
 
 interface ActionGroup {
   label: string;
+  /** "meeting" groups sort by meeting start; "time-band" groups are the fallback */
+  kind: "meeting" | "time-band";
   actions: DbAction[];
 }
 
-function groupPendingActions(actions: DbAction[]): ActionGroup[] {
-  const now = new Date();
-  const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+/** Priority sort weight: P1 first */
+const PRIORITY_WEIGHT: Record<string, number> = { P1: 0, P2: 1, P3: 2 };
 
-  const overdue: DbAction[] = [];
-  const thisWeek: DbAction[] = [];
-  const later: DbAction[] = [];
+function sortByPriorityThenDue(a: DbAction, b: DbAction): number {
+  const pw = (PRIORITY_WEIGHT[a.priority] ?? 9) - (PRIORITY_WEIGHT[b.priority] ?? 9);
+  if (pw !== 0) return pw;
+  if (!a.dueDate && !b.dueDate) return 0;
+  if (!a.dueDate) return 1;
+  if (!b.dueDate) return -1;
+  return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+}
+
+/**
+ * Format a meeting-group label: "Meeting Title . Day"
+ * Uses relative day names for this week, date for further out.
+ */
+function formatMeetingGroupLabel(title: string, startIso: string): string {
+  try {
+    const date = new Date(startIso);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round(
+      (new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() - todayStart.getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+
+    let dayLabel: string;
+    if (diffDays === 0) dayLabel = "Today";
+    else if (diffDays === 1) dayLabel = "Tomorrow";
+    else if (diffDays === -1) dayLabel = "Yesterday";
+    else if (diffDays > 1 && diffDays <= 6) {
+      dayLabel = date.toLocaleDateString(undefined, { weekday: "long" });
+    } else {
+      dayLabel = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    return `${title} \u00b7 ${dayLabel}`;
+  } catch {
+    return title;
+  }
+}
+
+/**
+ * Group actions by meeting context (meeting-centric), with an
+ * "Everything Else" fallback for actions not linked to a meeting.
+ * The Everything Else section uses the old time-band sub-grouping.
+ */
+function groupByMeeting(actions: DbAction[]): ActionGroup[] {
+  const meetingMap = new Map<string, { title: string; start: string; actions: DbAction[] }>();
+  const everythingElse: DbAction[] = [];
 
   for (const a of actions) {
-    if (a.dueDate && new Date(a.dueDate) < now) {
-      overdue.push(a);
-    } else if (a.dueDate && new Date(a.dueDate) <= sevenDaysOut) {
-      thisWeek.push(a);
+    if (a.nextMeetingTitle && a.nextMeetingStart) {
+      const key = `${a.nextMeetingTitle}::${a.nextMeetingStart}`;
+      if (!meetingMap.has(key)) {
+        meetingMap.set(key, { title: a.nextMeetingTitle, start: a.nextMeetingStart, actions: [] });
+      }
+      meetingMap.get(key)!.actions.push(a);
     } else {
-      later.push(a);
+      everythingElse.push(a);
     }
   }
 
-  // Sort within groups by due date (nulls last)
-  const sortByDue = (x: DbAction, y: DbAction) => {
-    if (!x.dueDate && !y.dueDate) return 0;
-    if (!x.dueDate) return 1;
-    if (!y.dueDate) return -1;
-    return new Date(x.dueDate).getTime() - new Date(y.dueDate).getTime();
-  };
-
-  overdue.sort(sortByDue);
-  thisWeek.sort(sortByDue);
-  later.sort(sortByDue);
+  // Sort meeting groups by start time ascending (soonest first)
+  const meetingEntries = [...meetingMap.values()].sort(
+    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+  );
 
   const groups: ActionGroup[] = [];
-  if (overdue.length > 0) groups.push({ label: "Overdue", actions: overdue });
-  if (thisWeek.length > 0) groups.push({ label: "This Week", actions: thisWeek });
-  if (later.length > 0) groups.push({ label: "Later", actions: later });
+
+  for (const entry of meetingEntries) {
+    entry.actions.sort(sortByPriorityThenDue);
+    groups.push({
+      label: formatMeetingGroupLabel(entry.title, entry.start),
+      kind: "meeting",
+      actions: entry.actions,
+    });
+  }
+
+  // "Everything Else" — sub-grouped by time-band
+  if (everythingElse.length > 0) {
+    const now = new Date();
+    const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const overdue: DbAction[] = [];
+    const thisWeek: DbAction[] = [];
+    const later: DbAction[] = [];
+
+    for (const a of everythingElse) {
+      if (a.dueDate && new Date(a.dueDate) < now) {
+        overdue.push(a);
+      } else if (a.dueDate && new Date(a.dueDate) <= sevenDaysOut) {
+        thisWeek.push(a);
+      } else {
+        later.push(a);
+      }
+    }
+
+    const sortByDue = (x: DbAction, y: DbAction) => {
+      if (!x.dueDate && !y.dueDate) return 0;
+      if (!x.dueDate) return 1;
+      if (!y.dueDate) return -1;
+      return new Date(x.dueDate).getTime() - new Date(y.dueDate).getTime();
+    };
+
+    overdue.sort(sortByDue);
+    thisWeek.sort(sortByDue);
+    later.sort(sortByDue);
+
+    if (overdue.length > 0) groups.push({ label: "Overdue", kind: "time-band", actions: overdue });
+    if (thisWeek.length > 0) groups.push({ label: "This Week", kind: "time-band", actions: thisWeek });
+    if (later.length > 0) groups.push({ label: "Later", kind: "time-band", actions: later });
+  }
+
   return groups;
 }
 
@@ -407,46 +489,74 @@ function PendingGroupedView({
   actions: DbAction[];
   onToggle: (id: string) => void;
 }) {
-  const groups = useMemo(() => groupPendingActions(actions), [actions]);
+  const groups = useMemo(() => groupByMeeting(actions), [actions]);
 
-  const groupLabelColors: Record<string, string> = {
+  const timeBandColors: Record<string, string> = {
     Overdue: "var(--color-spice-terracotta)",
     "This Week": "var(--color-spice-turmeric)",
     Later: "var(--color-text-tertiary)",
   };
 
+  // Track when we transition from meeting groups to time-band (Everything Else)
+  const firstTimeBandIdx = groups.findIndex((g) => g.kind === "time-band");
+  const hasTimeBands = firstTimeBandIdx !== -1;
+  const hasMeetingGroups = groups.some((g) => g.kind === "meeting");
+
   return (
     <div>
-      {groups.map((group) => (
-        <div key={group.label} style={{ marginBottom: 32 }}>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: groupLabelColors[group.label] ?? "var(--color-text-tertiary)",
-              paddingBottom: 8,
-              borderBottom: "1px solid var(--color-rule-light)",
-              marginBottom: 0,
-            }}
-          >
-            {group.label}
-            <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{group.actions.length}</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {group.actions.map((action, i) => (
-              <SharedActionRow
-                key={action.id}
-                variant="full"
-                action={action}
-                onToggle={() => onToggle(action.id)}
-                showBorder={i < group.actions.length - 1}
-                stripMarkdown={stripMarkdown}
-                formatDate={formatDueDate}
-              />
-            ))}
+      {/* "Everything Else" section header — only if we have both meeting and time-band groups */}
+      {groups.map((group, idx) => (
+        <div key={group.label}>
+          {hasTimeBands && hasMeetingGroups && idx === firstTimeBandIdx && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 500,
+                letterSpacing: "0.10em",
+                textTransform: "uppercase",
+                color: "var(--color-text-tertiary)",
+                paddingBottom: 8,
+                borderBottom: "2px solid var(--color-rule-heavy)",
+                marginBottom: 16,
+                marginTop: 32,
+              }}
+            >
+              Everything Else
+            </div>
+          )}
+          <div style={{ marginBottom: 32 }}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: group.kind === "meeting"
+                  ? "var(--color-garden-larkspur)"
+                  : timeBandColors[group.label] ?? "var(--color-text-tertiary)",
+                paddingBottom: 8,
+                borderBottom: "1px solid var(--color-rule-light)",
+                marginBottom: 0,
+              }}
+            >
+              {group.label}
+              <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{group.actions.length}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {group.actions.map((action, i) => (
+                <SharedActionRow
+                  key={action.id}
+                  variant="full"
+                  action={action}
+                  onToggle={() => onToggle(action.id)}
+                  showBorder={i < group.actions.length - 1}
+                  stripMarkdown={stripMarkdown}
+                  formatDate={formatDueDate}
+                />
+              ))}
+            </div>
           </div>
         </div>
       ))}
