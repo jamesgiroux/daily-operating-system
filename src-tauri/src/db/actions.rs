@@ -8,11 +8,24 @@ impl ActionDb {
     /// Query pending actions where `due_date` is within `days_ahead` days or is NULL.
     ///
     /// Results are ordered: overdue first, then by priority, then by due date.
+    /// Includes correlated subqueries for the next upcoming meeting per action's account (I342).
     pub fn get_due_actions(&self, days_ahead: i32) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    (SELECT m.title FROM meeting_entities me
+                     JOIN meetings_history m ON me.meeting_id = m.id
+                     WHERE me.entity_id = actions.account_id
+                       AND m.start_time >= date('now')
+                       AND m.start_time < date('now', '+3 days')
+                     ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_title,
+                    (SELECT m.start_time FROM meeting_entities me
+                     JOIN meetings_history m ON me.meeting_id = m.id
+                     WHERE me.entity_id = actions.account_id
+                       AND m.start_time >= date('now')
+                       AND m.start_time < date('now', '+3 days')
+                     ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_start
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'pending'
@@ -24,7 +37,12 @@ impl ActionDb {
         )?;
 
         let days_param = format!("+{days_ahead}");
-        let rows = stmt.query_map(params![days_param], Self::map_action_row)?;
+        let rows = stmt.query_map(params![days_param], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.next_meeting_title = row.get(17)?;
+            action.next_meeting_start = row.get(18)?;
+            Ok(action)
+        })?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -661,6 +679,10 @@ impl ActionDb {
 
 
     /// Helper: map a row to `DbAction`. Reduces repetition across queries.
+    ///
+    /// Maps the standard 17-column action SELECT. The `next_meeting_title` and
+    /// `next_meeting_start` fields default to `None` — callers that include
+    /// the correlated subqueries should overwrite them after calling this.
     pub(crate) fn map_action_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbAction> {
         Ok(DbAction {
             id: row.get(0)?,
@@ -680,6 +702,8 @@ impl ActionDb {
             updated_at: row.get(14)?,
             person_id: row.get(15)?,
             account_name: row.get(16)?,
+            next_meeting_title: None,
+            next_meeting_start: None,
         })
     }
 

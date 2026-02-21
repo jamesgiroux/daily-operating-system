@@ -110,6 +110,8 @@ pub fn extract_email_commitments(
             updated_at: now.clone(),
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {
