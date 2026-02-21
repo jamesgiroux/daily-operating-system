@@ -465,6 +465,8 @@ mod tests {
             updated_at: now,
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         }
     }
 
@@ -2611,6 +2613,8 @@ mod tests {
             updated_at: now,
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
         db.upsert_action(&action).expect("upsert action");
 
@@ -3103,6 +3107,8 @@ mod tests {
             updated_at: now.clone(),
             person_id: Some("person-jane".to_string()),
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
         db.upsert_action(&action).unwrap();
 
@@ -3146,6 +3152,8 @@ mod tests {
             updated_at: now,
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
         db.upsert_action(&action).unwrap();
 
@@ -3213,6 +3221,8 @@ mod tests {
             updated_at: now,
             person_id: Some("person-alice".to_string()),
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
         db.upsert_action(&action).unwrap();
 
@@ -3295,6 +3305,8 @@ mod tests {
             updated_at: now,
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         };
         db.upsert_action(&action).unwrap();
 

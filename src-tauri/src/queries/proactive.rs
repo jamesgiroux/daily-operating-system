@@ -358,6 +358,8 @@ mod tests {
             updated_at: "2026-02-10T08:00:00Z".to_string(),
             person_id: None,
             account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
         }
     }
 
