@@ -1,8 +1,7 @@
 /**
- * TheWork — Meeting readiness, upcoming meetings, and commitments.
+ * TheWork — Upcoming meetings and commitments.
  * Generalized: accepts WorkSource instead of AccountDetail.
  */
-import type { EntityIntelligence } from "@/types";
 import type { WorkSource } from "@/lib/entity-types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { ActionRow } from "@/components/shared/ActionRow";
@@ -12,7 +11,6 @@ import { classifyAction, meetingTypeBadgeStyle, formatMeetingRowDate } from "@/l
 
 interface TheWorkProps {
   data: WorkSource;
-  intelligence: EntityIntelligence | null;
   sectionId?: string;
   chapterTitle?: string;
   addingAction?: boolean;
@@ -74,7 +72,6 @@ function ActionGroup({ label, labelColor, actions, accentColor, dateColor, bold 
 
 export function TheWork({
   data,
-  intelligence,
   sectionId = "the-work",
   chapterTitle = "The Work",
   addingAction,
@@ -84,7 +81,6 @@ export function TheWork({
   creatingAction,
   onCreateAction,
 }: TheWorkProps) {
-  const readiness = intelligence?.nextMeetingReadiness;
   const now = new Date();
 
   const overdue = data.openActions.filter((a) => classifyAction(a, now) === "overdue");
@@ -94,82 +90,13 @@ export function TheWork({
 
   const upcomingMeetings = data.upcomingMeetings ?? [];
 
+  // Suppress the entire chapter when there's nothing to show
+  const hasContent = data.openActions.length > 0 || upcomingMeetings.length > 0;
+  if (!hasContent) return null;
+
   return (
     <section id={sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
       <ChapterHeading title={chapterTitle} />
-
-      {/* Readiness Callout */}
-      {readiness && readiness.prepItems.length > 0 && (
-        <div
-          style={{
-            background: "var(--color-paper-linen)",
-            borderLeft: "3px solid var(--color-spice-turmeric)",
-            borderRadius: "0 8px 8px 0",
-            padding: "24px 28px",
-            marginBottom: 48,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              color: "var(--color-spice-turmeric)",
-              marginBottom: 10,
-            }}
-          >
-            Next Meeting
-            {readiness.meetingTitle && (
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 10,
-                  fontWeight: 500,
-                  textTransform: "none",
-                  letterSpacing: "normal",
-                  color: "var(--color-text-primary)",
-                  marginLeft: 8,
-                }}
-              >
-                {readiness.meetingTitle}
-              </span>
-            )}
-            {readiness.meetingDate && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-text-tertiary)",
-                  marginLeft: 8,
-                }}
-              >
-                {formatShortDate(readiness.meetingDate)}
-              </span>
-            )}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {readiness.prepItems.map((item, i) => (
-              <p
-                key={i}
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 15,
-                  lineHeight: 1.65,
-                  color: "var(--color-text-primary)",
-                  margin: 0,
-                }}
-              >
-                {item}
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Upcoming Meetings */}
       {upcomingMeetings.length > 0 && (
@@ -179,7 +106,6 @@ export function TheWork({
             {upcomingMeetings.map((m) => (
               <MeetingRow
                 key={m.id}
-                variant="entity"
                 meeting={m}
                 formatDate={formatMeetingRowDate}
                 formatType={formatMeetingType}
