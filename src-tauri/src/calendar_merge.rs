@@ -46,10 +46,20 @@ pub fn merge_meetings(briefing: Vec<Meeting>, live: &[CalendarEvent], tz: &Tz) -
 
     let mut result: Vec<Meeting> = Vec::new();
 
+    // Today's date in the given timezone — only merge events for today.
+    // live events now span ±7 days (I386); without this gate every future
+    // meeting would appear on the daily briefing as OverlayStatus::New.
+    let today_date = chrono::Utc::now().with_timezone(tz).date_naive();
+
     // Pass 1: Walk live events
     for event in live {
         // Skip all-day and personal events
         if event.is_all_day || matches!(event.meeting_type, MeetingType::Personal) {
+            continue;
+        }
+
+        // Skip events that aren't today in the user's timezone
+        if event.start.with_timezone(tz).date_naive() != today_date {
             continue;
         }
 
@@ -142,8 +152,10 @@ mod tests {
     }
 
     fn make_live_event(id: &str, title: &str, start_hour: u32, end_hour: u32) -> CalendarEvent {
-        let start = Utc.with_ymd_and_hms(2026, 2, 6, start_hour, 0, 0).unwrap();
-        let end = Utc.with_ymd_and_hms(2026, 2, 6, end_hour, 0, 0).unwrap();
+        // Use today's date so events pass the today-filter in merge_meetings (I386)
+        let today = Utc::now().date_naive();
+        let start = today.and_hms_opt(start_hour, 0, 0).unwrap().and_utc();
+        let end = today.and_hms_opt(end_hour, 0, 0).unwrap().and_utc();
         CalendarEvent {
             id: id.to_string(),
             title: title.to_string(),
