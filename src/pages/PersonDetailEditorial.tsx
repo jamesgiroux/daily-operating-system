@@ -259,19 +259,20 @@ export default function PersonDetailEditorial() {
         }} />
       </div>
 
-      {/* Chapter 6: The Work */}
-      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <TheWork
-          data={detail}
-          intelligence={intelligence}
-          addingAction={person.addingAction}
-          setAddingAction={person.setAddingAction}
-          newActionTitle={person.newActionTitle}
-          setNewActionTitle={person.setNewActionTitle}
-          creatingAction={person.creatingAction}
-          onCreateAction={person.handleCreateAction}
-        />
-      </div>
+      {/* Chapter 6: The Work (suppressed when empty per I351) */}
+      {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0) && (
+        <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+          <TheWork
+            data={detail}
+            addingAction={person.addingAction}
+            setAddingAction={person.setAddingAction}
+            newActionTitle={person.newActionTitle}
+            setNewActionTitle={person.setNewActionTitle}
+            creatingAction={person.creatingAction}
+            onCreateAction={person.handleCreateAction}
+          />
+        </div>
+      )}
 
       {/* Finis marker */}
       <div className="editorial-reveal">
