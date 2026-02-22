@@ -709,7 +709,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 
                 // I353 Phase 2: Emit person_created signal for hygiene feedback loop
                 if is_new {
-                    let _ = crate::signals::bus::emit_signal_and_propagate(
+                    let _ = crate::services::signals::emit_and_propagate(
                         db,
                         &state.signal_engine,
                         "person",
@@ -813,7 +813,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
             );
         }
         // Emit cancellation signal (I308) with propagation
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, &state.signal_engine, "meeting", meeting_id, "meeting_cancelled", "calendar",
             None, 0.9,
         );
