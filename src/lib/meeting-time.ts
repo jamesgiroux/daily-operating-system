@@ -21,6 +21,7 @@ export function formatDurationFromIso(
   try {
     const startMs = new Date(startIso).getTime();
     const endMs = new Date(endIso).getTime();
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) return null;
     if (endMs <= startMs) return null;
     const mins = Math.round((endMs - startMs) / 60000);
     if (mins < 60) return `${mins}m`;

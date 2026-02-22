@@ -52,9 +52,11 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
             other => PollError::ApiError(other.to_string()),
         })?;
 
-    // Fetch today's events (same day range as the Python calendar_poll.py)
+    // Fetch a week of events so the timeline, cancellation detection,
+    // and prep generation cover upcoming meetings (I386).
     let today = Utc::now().date_naive();
-    let raw_events = google_api::calendar::fetch_events(&access_token, today, today)
+    let end_date = today + chrono::Duration::days(7);
+    let raw_events = google_api::calendar::fetch_events(&access_token, today, end_date)
         .await
         .map_err(|e| match e {
             google_api::GoogleApiError::AuthExpired => PollError::AuthExpired,
@@ -554,6 +556,17 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             &event.start.to_rfc3339(),
             event.meeting_type.as_str(),
         );
+
+        // Snapshot old title before ensure_meeting_in_history updates it (I386)
+        let old_title: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT title FROM meetings_history WHERE id = ?1",
+                rusqlite::params![meeting_id],
+                |row| row.get(0),
+            )
+            .ok();
+
         let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
         match db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
             id: &meeting_id,
@@ -572,6 +585,35 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 // Mark as having new signals so intelligence refreshes
                 let _ = db.mark_meeting_new_signals(&meeting_id);
                 changed_meetings.push(meeting_id.clone());
+
+                // I386: If title changed, check if entity links need reclassification.
+                // Compare the event's current account (from classification) with existing
+                // entity links in DB. If different, invalidate prep for regeneration.
+                if old_title.as_deref() != Some(&event.title) {
+                    let old_entities = db.get_meeting_entities(&meeting_id).unwrap_or_default();
+                    let old_account_ids: std::collections::HashSet<&str> = old_entities
+                        .iter()
+                        .filter(|e| matches!(e.entity_type, crate::entity::EntityType::Account))
+                        .map(|e| e.id.as_str())
+                        .collect();
+
+                    let new_account = event.account.as_deref().unwrap_or("");
+                    let entity_changed = if new_account.is_empty() {
+                        !old_account_ids.is_empty()
+                    } else {
+                        !old_account_ids.contains(new_account)
+                    };
+
+                    if entity_changed {
+                        log::info!(
+                            "Calendar sync: title change for '{}' caused entity reclassification, invalidating prep",
+                            meeting_id
+                        );
+                        if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+                            queue.push(meeting_id.clone());
+                        }
+                    }
+                }
             }
             Ok(crate::db::MeetingSyncOutcome::Unchanged) => {}
             Err(e) => {
@@ -712,7 +754,9 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 ///
 /// These are likely cancelled meetings. Updates their intelligence_state to "archived".
 fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState) {
-    let today = Utc::now().date_naive().to_string(); // "YYYY-MM-DD"
+    let today = Utc::now().date_naive();
+    let range_start = today.to_string(); // "YYYY-MM-DD"
+    let range_end = (today + chrono::Duration::days(8)).to_string();
 
     let db_guard = match state.db.lock().ok() {
         Some(g) => g,
@@ -729,10 +773,10 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
         .map(|e| e.id.as_str())
         .collect();
 
-    // Query today's meetings from DB that have a calendar_event_id
+    // Query meetings in the polled range from DB that have a calendar_event_id (I386)
     let mut stmt = match db.conn_ref().prepare(
         "SELECT id, calendar_event_id FROM meetings_history
-         WHERE start_time LIKE ?1 || '%'
+         WHERE start_time >= ?1 AND start_time < ?2
          AND calendar_event_id IS NOT NULL
          AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
     ) {
@@ -741,7 +785,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
     };
 
     let cancelled: Vec<String> = stmt
-        .query_map(rusqlite::params![today], |row| {
+        .query_map(rusqlite::params![range_start, range_end], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -881,6 +925,10 @@ pub fn deliver_from_refresh_directive(
         can_retry: Some(true),
         last_attempt_at: Some(now.clone()),
         last_success_at: Some(now),
+        enrichment_pending: None,
+        enrichment_enriched: None,
+        enrichment_failed: None,
+        total_active: None,
     };
     let emails_json = serde_json::json!({
         "highPriority": high_priority,
@@ -1039,32 +1087,19 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 _ => {}
                             }
 
-                            // I357: Semantic reclassification of medium-priority emails (opt-in)
-                            let reclass_enabled = state.config.read().ok()
-                                .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "semanticEmailReclass")))
-                                .unwrap_or(false);
-                            if reclass_enabled {
-                                let emails_path = data_dir.join("emails.json");
-                                if let Ok(raw) = std::fs::read_to_string(&emails_path) {
-                                    if let Ok(emails_val) = serde_json::from_str::<serde_json::Value>(&raw) {
-                                        let medium: Vec<serde_json::Value> = emails_val
-                                            .get("mediumPriority")
-                                            .and_then(|v| v.as_array())
-                                            .cloned()
-                                            .unwrap_or_default();
-                                        if !medium.is_empty() {
-                                            let results = crate::prepare::email_classify::reclassify_with_ai(
-                                                &medium,
-                                                &extraction_pty,
-                                                &workspace,
-                                            );
-                                            if !results.is_empty() {
-                                                log::info!(
-                                                    "Email poll: semantic reclassification changed {} emails",
-                                                    results.len()
-                                                );
-                                            }
-                                        }
+                            // I395: Re-score after enrichment so new intelligence is reflected
+                            if let Ok(guard) = state.db.lock() {
+                                if let Some(db) = guard.as_ref() {
+                                    let model = state.embedding_model.clone();
+                                    let active = db.get_all_active_emails().unwrap_or_default();
+                                    let scores = crate::signals::email_scoring::score_emails(
+                                        db, Some(&model), &active,
+                                    );
+                                    for (email_id, score, reason) in &scores {
+                                        let _ = db.set_relevance_score(email_id, *score, reason);
+                                    }
+                                    if !scores.is_empty() {
+                                        log::info!("Email poll: scored {} emails", scores.len());
                                     }
                                 }
                             }

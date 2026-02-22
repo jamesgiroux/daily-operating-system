@@ -26,6 +26,7 @@ import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { ActionRow } from "@/components/shared/ActionRow";
 
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -275,11 +276,13 @@ export default function MeetingDetailPage() {
   const handleRefreshIntelligence = useCallback(async () => {
     if (!meetingId) return;
     setRefreshingIntel(true);
+    toast("Checking for updates…", { duration: 10000, id: "intel-refresh" });
     try {
       await invoke("generate_meeting_intelligence", { meetingId, force: true });
       await loadMeetingIntelligence();
+      toast.success("Briefing updated", { id: "intel-refresh" });
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Refresh failed");
+      toast.error(typeof err === "string" ? err : "Update failed", { id: "intel-refresh" });
     } finally {
       setRefreshingIntel(false);
     }
@@ -435,10 +438,11 @@ Thanks!`;
             {syncing ? "Syncing…" : "Sync Transcript"}
           </button>
         )}
-        <button onClick={() => loadMeetingIntelligence()} className={styles.folioBtnInline}>
-          <RefreshCw className={styles.iconSm} />
-          Refresh
-        </button>
+        <FolioRefreshButton
+          onClick={() => loadMeetingIntelligence()}
+          loading={refreshingIntel}
+          title="Check for updates"
+        />
       </div>
     ) : undefined,
   }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
@@ -553,17 +557,16 @@ Thanks!`;
         {!hasAnyContent && !outcomes && (
           <div className={styles.emptyState}>
             <Clock className={styles.emptyIcon} />
-            <p className={styles.emptyGenerating}>Prep is being generated</p>
-            <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
-            {isPastMeeting && (
-              <button
-                onClick={handleSyncTranscript}
-                disabled={syncing}
-                className={clsx(styles.syncButton, syncing && styles.syncButtonDisabled)}
-              >
-                {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
-                {syncing ? "Syncing transcript…" : "Sync transcript"}
-              </button>
+            {isPastMeeting ? (
+              <>
+                <p className={styles.emptyGenerating}>No briefing available</p>
+                <p className={styles.emptyText}>This meeting&apos;s context wasn&apos;t captured before it started.</p>
+              </>
+            ) : (
+              <>
+                <p className={styles.emptyGenerating}>Building context</p>
+                <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
+              </>
             )}
           </div>
         )}
@@ -711,6 +714,30 @@ Thanks!`;
                   meetingId={meetingId ?? undefined}
                   onSaveStatus={setSaveStatus}
                 />
+              </section>
+            )}
+
+            {/* Recent Correspondence — email signals for meeting attendees */}
+            {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Recent Correspondence" />
+                <div className={styles.risksContainer}>
+                  {data.recentEmailSignals.map((signal, i) => (
+                    <Link key={i} to="/emails" className={styles.subordinateRisk} style={{ textDecoration: "none", display: "block" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em", color: "var(--color-text-tertiary)" }}>
+                          {signal.senderEmail}
+                        </span>
+                        {signal.detectedAt && (
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)" }}>
+                            {new Date(signal.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                      <p className={styles.subordinateRiskText}>{signal.signalText}</p>
+                    </Link>
+                  ))}
+                </div>
               </section>
             )}
 

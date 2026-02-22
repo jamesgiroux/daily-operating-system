@@ -188,6 +188,15 @@ export interface EmailSyncStatus {
   lastSuccessAt?: string;
 }
 
+/** Email sync stats from DB enrichment state counts (I373). */
+export interface EmailSyncStats {
+  lastFetchAt: string | null;
+  total: number;
+  enriched: number;
+  pending: number;
+  failed: number;
+}
+
 export interface Email {
   id: string;
   sender: string;
@@ -210,6 +219,18 @@ export interface Email {
   questions?: string[];
   /** Overall sentiment: positive, neutral, negative, urgent (I354) */
   sentiment?: string;
+  /** Urgency from AI enrichment (I369) */
+  urgency?: string;
+  /** Resolved entity ID from enrichment (I368) */
+  entityId?: string;
+  /** Resolved entity type (account, person, project) */
+  entityType?: string;
+  /** Human-readable entity name */
+  entityName?: string;
+  /** Relevance score from scoring pipeline (I395) — 0.0 to 1.0 */
+  relevanceScore?: number;
+  /** Human-readable score reason (I395) */
+  scoreReason?: string;
 }
 
 export type InboxFileType =

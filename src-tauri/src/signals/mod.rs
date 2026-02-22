@@ -25,3 +25,5 @@ pub mod propagation;
 pub mod relevance;
 pub mod rules;
 pub mod sampling;
+pub mod scoring;
+pub mod email_scoring;
