@@ -1302,6 +1302,7 @@ pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingD
 }
 
 /// Update the entity assignment for an email (I395 — user correction).
+/// Cascades to email_signals and emits a signal bus event for relevance learning.
 #[tauri::command]
 pub fn update_email_entity(
     state: State<Arc<AppState>>,
@@ -1309,17 +1310,60 @@ pub fn update_email_entity(
     entity_id: Option<String>,
     entity_type: Option<String>,
 ) -> Result<(), String> {
-    match state.with_db_try_read(|db| {
-        db.update_email_entity(
-            &email_id,
-            entity_id.as_deref(),
-            entity_type.as_deref(),
-        )
-    }) {
-        crate::state::DbTryRead::Ok(Ok(())) => Ok(()),
-        crate::state::DbTryRead::Ok(Err(e)) => Err(e),
-        _ => Err("Database unavailable".to_string()),
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.update_email_entity(
+        &email_id,
+        entity_id.as_deref(),
+        entity_type.as_deref(),
+    )?;
+
+    // Emit signal for the entity being assigned to (or the email itself if cleared)
+    let etype = entity_type.as_deref().unwrap_or("email");
+    let eid = entity_id.as_deref().unwrap_or(&email_id);
+    let _ = crate::signals::bus::emit_signal(
+        db,
+        etype,
+        eid,
+        "email_entity_reassigned",
+        "user_correction",
+        Some(&format!("{{\"email_id\":\"{}\"}}", email_id)),
+        0.9,
+    );
+
+    Ok(())
+}
+
+/// Dismiss a single email signal by ID. Sets `deactivated_at` to now.
+/// Emits a signal bus event for relevance learning.
+#[tauri::command]
+pub fn dismiss_email_signal(
+    state: State<Arc<AppState>>,
+    signal_id: i64,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let context = db
+        .dismiss_email_signal(signal_id)
+        .map_err(|e| e.to_string())?;
+
+    // Emit signal for relevance learning (same pattern as dismiss_email_item)
+    if let Some((entity_id, entity_type, signal_type, email_id)) = context {
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            &entity_type,
+            &entity_id,
+            "email_signal_dismissed",
+            "user_correction",
+            Some(&format!(
+                "{{\"signal_id\":{},\"signal_type\":\"{}\",\"email_id\":\"{}\"}}",
+                signal_id, signal_type, email_id
+            )),
+            0.3,
+        );
     }
+
+    Ok(())
 }
 
 /// Get email sync status: last fetch time, enrichment progress, failure count (I373).
@@ -8226,4 +8270,120 @@ pub async fn get_meeting_timeline(
     }
 
     Ok(result)
+}
+
+// =============================================================================
+// I390: Person Relationships (ADR-0088)
+// =============================================================================
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipPayload {
+    /// Pass an existing ID to update; omit for a new relationship.
+    pub id: Option<String>,
+    pub from_person_id: String,
+    pub to_person_id: String,
+    pub relationship_type: String,
+    #[serde(default = "default_rel_direction")]
+    pub direction: String,
+    #[serde(default = "default_rel_confidence")]
+    pub confidence: f64,
+    pub context_entity_id: Option<String>,
+    pub context_entity_type: Option<String>,
+    #[serde(default = "default_rel_source")]
+    pub source: String,
+}
+
+fn default_rel_direction() -> String { "directed".to_string() }
+fn default_rel_confidence() -> f64 { 0.8 }
+fn default_rel_source() -> String { "user_confirmed".to_string() }
+
+#[tauri::command]
+pub fn upsert_person_relationship(
+    state: State<Arc<AppState>>,
+    payload: RelationshipPayload,
+) -> Result<String, String> {
+    // Validate relationship type parses
+    payload.relationship_type.parse::<crate::db::person_relationships::RelationshipType>()
+        .map_err(|e| format!("Invalid relationship type: {}", e))?;
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let id = payload.id.unwrap_or_else(|| format!("rel-{}", uuid::Uuid::new_v4()));
+    db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+        id: &id,
+        from_person_id: &payload.from_person_id,
+        to_person_id: &payload.to_person_id,
+        relationship_type: &payload.relationship_type,
+        direction: &payload.direction,
+        confidence: payload.confidence,
+        context_entity_id: payload.context_entity_id.as_deref(),
+        context_entity_type: payload.context_entity_type.as_deref(),
+        source: &payload.source,
+    }).map_err(|e| format!("Failed to upsert relationship: {}", e))?;
+
+    // Emit signal to re-enqueue both persons in intel_queue
+    let _ = crate::signals::bus::emit_signal_and_propagate(
+        db, &state.signal_engine,
+        "person", &payload.from_person_id,
+        "relationship_graph_changed", "user_action",
+        Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.to_person_id)),
+        0.9,
+    );
+    let _ = crate::signals::bus::emit_signal_and_propagate(
+        db, &state.signal_engine,
+        "person", &payload.to_person_id,
+        "relationship_graph_changed", "user_action",
+        Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.from_person_id)),
+        0.9,
+    );
+
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn delete_person_relationship(
+    state: State<Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // Capture person IDs before deleting for signal emission
+    let person_ids = db.get_person_relationship_by_id(&id)
+        .map_err(|e| format!("Failed to look up relationship: {}", e))?;
+
+    db.delete_person_relationship(&id)
+        .map_err(|e| format!("Failed to delete relationship: {}", e))?;
+
+    // Emit signals on both persons to re-enqueue for intel enrichment
+    if let Some((from_id, to_id)) = person_ids {
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, &state.signal_engine,
+            "person", &from_id,
+            "relationship_graph_changed", "user_action",
+            Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
+            0.7,
+        );
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, &state.signal_engine,
+            "person", &to_id,
+            "relationship_graph_changed", "user_action",
+            Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
+            0.7,
+        );
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_person_relationships(
+    state: State<Arc<AppState>>,
+    person_id: String,
+) -> Result<Vec<crate::db::person_relationships::PersonRelationship>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_relationships_for_person(&person_id)
+        .map_err(|e| format!("Failed to get relationships: {}", e))
 }
