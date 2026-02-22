@@ -184,9 +184,14 @@ pub fn update_person_field(
     db.update_person_field(person_id, field, value)
         .map_err(|e| e.to_string())?;
 
-    // Emit field update signal (I377)
-    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, "person", person_id, "field_updated", "user_edit",
-        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
+    // Emit field update signal + self-healing evaluation (I377, I410)
+    let _ = crate::signals::bus::emit_signal_propagate_and_evaluate(db, &state.signal_engine, "person", person_id, "field_updated", "user_edit",
+        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8, &state.intel_queue);
+
+    // Self-healing: record user correction for Clay-enrichable fields (I409)
+    if matches!(field, "linkedin_url" | "title" | "company" | "name") {
+        crate::self_healing::feedback::record_enrichment_correction(db, person_id, "person", "clay");
+    }
 
     // Regenerate workspace files
     if let Ok(Some(person)) = db.get_person(person_id) {
@@ -296,6 +301,10 @@ pub fn create_person(
     };
 
     db.upsert_person(&person).map_err(|e| e.to_string())?;
+
+    // Self-healing: initialize quality row for new entity (I406)
+    crate::self_healing::quality::ensure_quality_row(db, &id, "person");
+
     Ok(id)
 }
 
