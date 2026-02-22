@@ -564,6 +564,11 @@ pub fn run_enrichment(
         }
     }
 
+    // NOTE: I391 inferred edge extraction deferred — requires name→ID resolution
+    // to produce valid person_relationships rows (FK constraint on to_person_id).
+    // The AI prompt still requests inferredRelationships for future use once
+    // co-attendee person rosters are included in the prompt context.
+
     parse_intelligence_response(
         &output.stdout,
         &input.entity_id,
