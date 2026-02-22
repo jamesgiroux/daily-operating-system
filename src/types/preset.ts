@@ -67,4 +67,5 @@ export interface RolePreset {
   lifecycleEvents: string[];
   prioritization: PresetPrioritization;
   briefingEmphasis: string;
+  relationshipVocabulary?: Record<string, string>;
 }
