@@ -540,24 +540,14 @@ pub async fn generate_meeting_intelligence(
         assess_intelligence_quality(db, meeting_id)
     };
 
-    // 4. If quality >= Developing, write quality assessment to prep_context_json
-    if quality.level >= QualityLevel::Developing {
-        let quality_json = serde_json::to_string(&quality).unwrap_or_default();
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-        let _ = db.conn_ref().execute(
-            "UPDATE meetings_history SET prep_context_json = ?1 WHERE id = ?2
-             AND (prep_context_json IS NULL OR prep_context_json = '')",
-            rusqlite::params![quality_json, meeting_id],
-        );
-    }
+    // 4. Quality assessment is stored via update_intelligence_state in step 5.
+    // Do NOT write bare quality JSON to prep_context_json — that column is
+    // reserved for FullMeetingPrep data. Writing quality there corrupts
+    // deserialization and shows empty briefings.
 
     // 4.5 AI enrichment if quality >= Developing (I326 Phase 2)
     // Sparse meetings get mechanical prep from MeetingPrepQueue instead.
+    let mut ai_enrichment_succeeded = false;
     if quality.level >= QualityLevel::Developing {
         let meeting_for_ai = {
             let guard = state.db.lock().map_err(|_| {
@@ -624,6 +614,7 @@ pub async fn generate_meeting_intelligence(
                     "UPDATE meetings_history SET prep_context_json = ?1, last_enriched_at = ?2 WHERE id = ?3",
                     rusqlite::params![merged_str, now, meeting_id],
                 );
+                ai_enrichment_succeeded = true;
                 log::info!(
                     "AI enrichment complete for meeting {}",
                     meeting_id
@@ -631,17 +622,17 @@ pub async fn generate_meeting_intelligence(
             }
             Err(e) => {
                 log::warn!(
-                    "AI enrichment failed for meeting {}: {} — using mechanical quality only",
+                    "AI enrichment failed for meeting {}: {} — will retry on next refresh",
                     meeting_id,
                     e
                 );
-                // Graceful degradation: mechanical quality still written in step 4
             }
         }
     }
 
-    // 5. Update DB: state = enriched, quality level, signal_count, has_new_signals = 0
+    // 5. Update DB: state depends on whether AI enrichment succeeded
     {
+        let new_state = if ai_enrichment_succeeded { "enriched" } else { "detected" };
         let guard = state.db.lock().map_err(|_| {
             ExecutionError::ConfigurationError("DB lock poisoned".to_string())
         })?;
@@ -650,13 +641,15 @@ pub async fn generate_meeting_intelligence(
         })?;
         db.update_intelligence_state(
             meeting_id,
-            "enriched",
+            new_state,
             Some(&quality.level.to_string()),
             Some(quality.signal_count as i32),
         )
         .map_err(|e| ExecutionError::ConfigurationError(e.to_string()))?;
 
-        let _ = db.clear_meeting_new_signals(meeting_id);
+        if ai_enrichment_succeeded {
+            let _ = db.clear_meeting_new_signals(meeting_id);
+        }
     }
 
     Ok(quality)
