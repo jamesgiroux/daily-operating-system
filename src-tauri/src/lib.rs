@@ -48,6 +48,7 @@ pub mod quill;
 pub mod queries;
 mod risk_briefing;
 mod scheduler;
+pub mod self_healing;
 pub mod services;
 pub mod signals;
 pub mod state;
