@@ -601,7 +601,7 @@ pub fn capture_meeting_outcome(
     let workspace = std::path::Path::new(&config.workspace_path);
 
     // Mark as captured
-    if let Ok(mut guard) = state.capture_captured.lock() {
+    if let Ok(mut guard) = state.capture.captured.lock() {
         guard.insert(outcome.meeting_id.clone());
     }
 
@@ -1406,7 +1406,7 @@ pub async fn attach_meeting_transcript(
 ) -> Result<crate::types::TranscriptResult, String> {
     {
         let mut guard = state
-            .transcript_processed
+            .capture.transcript_processed
             .lock()
             .map_err(|_| "Lock poisoned")?;
         if guard.contains_key(&meeting.id) {
@@ -1459,7 +1459,7 @@ pub async fn attach_meeting_transcript(
     {
         Ok(r) => r,
         Err(e) => {
-            if let Ok(mut guard) = state.transcript_processed.lock() {
+            if let Ok(mut guard) = state.capture.transcript_processed.lock() {
                 guard.remove(&meeting_id);
             }
             return Err(format!("Transcript processing task failed: {}", e));
@@ -1484,12 +1484,12 @@ pub async fn attach_meeting_transcript(
             processed_at: processed_at.clone(),
         };
 
-        if let Ok(mut guard) = state.transcript_processed.lock() {
+        if let Ok(mut guard) = state.capture.transcript_processed.lock() {
             guard.insert(meeting_id.clone(), record);
             let _ = crate::state::save_transcript_records(&guard);
         }
 
-        if let Ok(mut guard) = state.capture_captured.lock() {
+        if let Ok(mut guard) = state.capture.captured.lock() {
             guard.insert(meeting_id.clone());
         }
 
@@ -1508,7 +1508,7 @@ pub async fn attach_meeting_transcript(
 
         let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);
         let _ = app_handle.emit("transcript-processed", &outcome_data);
-    } else if let Ok(mut guard) = state.transcript_processed.lock() {
+    } else if let Ok(mut guard) = state.capture.transcript_processed.lock() {
         guard.remove(&meeting_id);
         let _ = crate::state::save_transcript_records(&guard);
     }
