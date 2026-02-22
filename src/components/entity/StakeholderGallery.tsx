@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Plus, UserPlus, Search } from "lucide-react";
+import { X, Plus, UserPlus, Search, LinkIcon, Check } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
@@ -256,6 +256,13 @@ export function StakeholderGallery({
     }
   }
 
+  // ── Confirm a suggested person link (I420) ──
+  async function confirmSuggestion(idx: number, personId: string, canonicalName: string) {
+    await updateField(`stakeholderInsights[${idx}].personId`, personId);
+    await updateField(`stakeholderInsights[${idx}].name`, canonicalName);
+    // suggestedPersonId will be cleared on next enrichment cycle
+  }
+
   // ── Find actual index in allStakeholders for a filtered stakeholder ──
   function actualIndex(filteredIdx: number): number {
     const name = stakeholders[filteredIdx].name.toLowerCase();
@@ -270,9 +277,13 @@ export function StakeholderGallery({
         <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px 48px" }}>
           {visibleStakeholders.map((s, i) => {
-            const matched = linkedPeople.find(
-              (p) => p.name.toLowerCase() === s.name.toLowerCase()
-            );
+            // I420: personId-first matching, then name fallback
+            const matched = s.personId
+              ? linkedPeople.find((p) => p.id === s.personId)
+              : linkedPeople.find((p) => p.name.toLowerCase() === s.name.toLowerCase());
+            const suggested = !matched && s.suggestedPersonId
+              ? linkedPeople.find((p) => p.id === s.suggestedPersonId)
+              : null;
             const idx = actualIndex(i);
             const isHovered = hoveredCard === i;
 
@@ -313,7 +324,15 @@ export function StakeholderGallery({
                 )}
 
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                  <Avatar name={s.name} size={24} />
+                  {/* Avatar with larkspur ring for linked person entities */}
+                  <div style={{
+                    borderRadius: "50%",
+                    padding: matched ? 2 : 0,
+                    border: matched ? "2px solid var(--color-garden-larkspur)" : "2px solid transparent",
+                    flexShrink: 0,
+                  }}>
+                    <Avatar name={s.name} personId={matched?.id} size={24} />
+                  </div>
                   {canEdit ? (
                     <EditableText
                       value={s.name}
@@ -325,6 +344,9 @@ export function StakeholderGallery({
                     <span style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}>
                       {s.name}
                     </span>
+                  )}
+                  {matched && (
+                    <LinkIcon size={12} strokeWidth={1.5} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} title={`Linked to ${matched.name}`} />
                   )}
                   {s.engagement && canEdit ? (
                     <EngagementSelector
@@ -376,8 +398,35 @@ export function StakeholderGallery({
                     <TruncatedAssessment text={s.assessment} />
                   )
                 )}
+                {/* I420: Suggestion confirmation prompt */}
+                {canEdit && suggested && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      confirmSuggestion(idx, suggested.id, suggested.name);
+                    }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      marginTop: 8,
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      color: "var(--color-garden-larkspur)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                    title={`Link to ${suggested.name}`}
+                  >
+                    <Check size={12} strokeWidth={1.5} />
+                    Link to {suggested.name}?
+                  </button>
+                )}
                 {/* Create contact action for unlinked stakeholders */}
-                {canEdit && !matched && isHovered && (
+                {canEdit && !matched && !suggested && isHovered && (
                   <button
                     onClick={(e) => {
                       e.preventDefault();
