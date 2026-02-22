@@ -38,6 +38,9 @@ pub fn check_and_invalidate_preps(
         "company_change",
         "person_departed",
         "pre_meeting_context",
+        "stakeholders_updated",
+        "team_member_added",
+        "team_member_removed",
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {
