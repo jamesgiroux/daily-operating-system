@@ -624,7 +624,7 @@ impl ActionDb {
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE contract_end IS NOT NULL
@@ -645,7 +645,7 @@ impl ActionDb {
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
