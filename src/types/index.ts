@@ -993,6 +993,9 @@ export interface AttendeeContext {
 
 export type AccountHealth = "green" | "yellow" | "red";
 
+/** Account classification: customer, internal org, or partner (I382). */
+export type AccountType = "customer" | "internal" | "partner";
+
 /** Summary item for the accounts list page. */
 export interface AccountListItem {
   id: string;
@@ -1010,7 +1013,7 @@ export interface AccountListItem {
   parentName?: string;
   childCount: number;
   isParent: boolean;
-  isInternal: boolean;
+  accountType: AccountType;
   archived: boolean;
 }
 
@@ -1124,7 +1127,7 @@ export interface PickerAccount {
   id: string;
   name: string;
   parentName?: string;
-  isInternal: boolean;
+  accountType: AccountType;
 }
 
 export interface OnboardingPrimingCard {
@@ -1174,6 +1177,21 @@ export interface UserEdit {
   editedAt: string;
 }
 
+/** A child account flagged as a hotspot in a parent's portfolio assessment (I384). */
+export interface PortfolioHotspot {
+  childId: string;
+  childName: string;
+  reason: string;
+}
+
+/** Portfolio-level intelligence for parent accounts (I384). */
+export interface PortfolioIntelligence {
+  healthSummary?: string;
+  hotspots: PortfolioHotspot[];
+  crossBuPatterns: string[];
+  portfolioNarrative?: string;
+}
+
 /** Synthesized intelligence for an entity (account, project, or person). */
 export interface EntityIntelligence {
   version: number;
@@ -1189,6 +1207,8 @@ export interface EntityIntelligence {
   stakeholderInsights: StakeholderInsight[];
   nextMeetingReadiness?: IntelMeetingReadiness;
   companyContext?: IntelCompanyContext;
+  /** Portfolio intelligence for parent accounts (I384) */
+  portfolio?: PortfolioIntelligence;
   userEdits?: UserEdit[];
 }
 
@@ -1222,6 +1242,10 @@ export interface StakeholderInsight {
   assessment?: string;
   engagement?: string;
   source?: string;
+  /** Deterministic link to a Person entity (I420: reconciliation). */
+  personId?: string;
+  /** Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420). */
+  suggestedPersonId?: string;
 }
 
 export interface IntelMeetingReadiness {
