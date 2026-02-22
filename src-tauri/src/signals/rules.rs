@@ -311,10 +311,169 @@ pub fn rule_renewal_engagement_compound(signal: &SignalEvent, db: &ActionDb) -> 
 }
 
 // ---------------------------------------------------------------------------
+// Rule: Account signal → Parent account (hierarchy up)
+// ---------------------------------------------------------------------------
+
+/// When any account emits a signal, propagate it upward to the parent account
+/// (if one exists) with attenuated confidence. Loop prevention: signals that
+/// originated from hierarchy propagation are not re-propagated.
+///
+/// I385: 48-hour sibling signal accumulation — if the parent already received
+/// signals of the same type from other children in the last 48 hours, fuse
+/// them using weighted log-odds combination for a stronger derived confidence.
+pub fn rule_hierarchy_up(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.entity_type != "account" {
+        return Vec::new();
+    }
+
+    // Loop prevention: don't re-propagate hierarchy-derived signals
+    if signal.source.contains("propagation:hierarchy") {
+        return Vec::new();
+    }
+
+    let account = match db.get_account(&signal.entity_id) {
+        Ok(Some(a)) => a,
+        _ => return Vec::new(),
+    };
+
+    let parent_id = match account.parent_id {
+        Some(pid) => pid,
+        None => return Vec::new(),
+    };
+
+    // B1: 48-hour sibling signal accumulation
+    let existing_siblings = db.get_recent_signals_by_type(&parent_id, &signal.signal_type, 48);
+
+    let fused_confidence = if !existing_siblings.is_empty() {
+        // Build (confidence, weight) pairs for fusion
+        let mut pairs: Vec<(f64, f64)> = existing_siblings
+            .iter()
+            .map(|s| (s.confidence, super::fusion::compute_signal_weight(db, s)))
+            .collect();
+        // Add current signal's contribution (attenuated by 0.6)
+        let current_weight = super::fusion::compute_signal_weight(db, signal);
+        pairs.push((signal.confidence * 0.6, current_weight));
+        super::fusion::fuse_confidence(&pairs)
+    } else {
+        signal.confidence * 0.6
+    };
+
+    let value = serde_json::json!({
+        "source_signal": signal.id,
+        "child_account_id": signal.entity_id,
+        "original_signal_type": signal.signal_type,
+        "detail": signal.value,
+    })
+    .to_string();
+
+    vec![DerivedSignal {
+        entity_type: "account".to_string(),
+        entity_id: parent_id,
+        signal_type: signal.signal_type.clone(),
+        source: "propagation:hierarchy_up".to_string(),
+        value: Some(value),
+        confidence: fused_confidence,
+    }]
+}
+
+// ---------------------------------------------------------------------------
+// Rule: Account signal → Child accounts (hierarchy down)
+// ---------------------------------------------------------------------------
+
+/// When an account emits a high-confidence signal (>= 0.7), propagate it
+/// downward to all direct child accounts with attenuated confidence.
+/// Direct children only — no recursion to grandchildren.
+/// Loop prevention: signals from hierarchy propagation are not re-propagated.
+pub fn rule_hierarchy_down(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.entity_type != "account" {
+        return Vec::new();
+    }
+
+    // Loop prevention: don't re-propagate hierarchy-derived signals
+    if signal.source.contains("propagation:hierarchy") {
+        return Vec::new();
+    }
+
+    // Confidence gate: only fan out for high-confidence signals
+    if signal.confidence < 0.7 {
+        return Vec::new();
+    }
+
+    let children = match db.get_child_accounts(&signal.entity_id) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    children
+        .into_iter()
+        .map(|child| {
+            let value = serde_json::json!({
+                "source_signal": signal.id,
+                "parent_account_id": signal.entity_id,
+                "original_signal_type": signal.signal_type,
+                "detail": signal.value,
+            })
+            .to_string();
+
+            DerivedSignal {
+                entity_type: "account".to_string(),
+                entity_id: child.id,
+                signal_type: signal.signal_type.clone(),
+                source: "propagation:hierarchy_down".to_string(),
+                value: Some(value),
+                confidence: signal.confidence * 0.5,
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // ActionDb helper methods for rules
 // ---------------------------------------------------------------------------
 
 impl ActionDb {
+    /// Get recent signal events for an entity by type within a given time window.
+    /// Excludes signals originating from hierarchy propagation (loop prevention).
+    pub fn get_recent_signals_by_type(
+        &self,
+        entity_id: &str,
+        signal_type: &str,
+        hours: i64,
+    ) -> Vec<super::bus::SignalEvent> {
+        let sql = "SELECT id, entity_type, entity_id, signal_type, source, value, confidence,
+                   decay_half_life_days, created_at, superseded_by, source_context
+                   FROM signal_events
+                   WHERE entity_id = ?1 AND signal_type = ?2
+                   AND created_at > datetime('now', ?3 || ' hours')
+                   AND source NOT LIKE '%propagation:hierarchy%'
+                   ORDER BY created_at DESC";
+        let hours_str = format!("-{}", hours);
+        let conn = self.conn_ref();
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(rusqlite::params![entity_id, signal_type, hours_str], |row| {
+            Ok(super::bus::SignalEvent {
+                id: row.get(0)?,
+                entity_type: row.get(1)?,
+                entity_id: row.get(2)?,
+                signal_type: row.get(3)?,
+                source: row.get(4)?,
+                value: row.get(5)?,
+                confidence: row.get(6)?,
+                decay_half_life_days: row.get(7)?,
+                created_at: row.get(8)?,
+                superseded_by: row.get(9)?,
+                source_context: row.get(10)?,
+            })
+        });
+        match rows {
+            Ok(r) => r.filter_map(|r| r.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     /// Count meetings for an account in a date range.
     pub fn get_meeting_count_for_account(
         &self,
@@ -755,5 +914,266 @@ mod tests {
         let signal = make_signal("account", "a1", "renewal_proximity", None);
         let derived = rule_renewal_engagement_compound(&signal, &db);
         assert!(derived.is_empty(), "Should not fire when recent meeting exists");
+    }
+
+    // -----------------------------------------------------------------------
+    // Hierarchy Up
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_rule_hierarchy_up_propagates_to_parent() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('parent1', 'ParentCo', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'ChildCo', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        let signal = make_signal("account", "child1", "health_change", Some("{\"new\": \"red\"}"));
+        let derived = rule_hierarchy_up(&signal, &db);
+
+        assert_eq!(derived.len(), 1);
+        assert_eq!(derived[0].entity_id, "parent1");
+        assert_eq!(derived[0].signal_type, "health_change");
+        assert_eq!(derived[0].source, "propagation:hierarchy_up");
+        assert!((derived[0].confidence - 0.85 * 0.6).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rule_hierarchy_up_no_parent() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('top1', 'TopCo', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        let signal = make_signal("account", "top1", "health_change", None);
+        let derived = rule_hierarchy_up(&signal, &db);
+        assert!(derived.is_empty(), "Top-level account should not propagate up");
+    }
+
+    #[test]
+    fn test_rule_hierarchy_up_loop_prevention() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('parent1', 'ParentCo', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'ChildCo', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        // Signal that already came from hierarchy propagation
+        let mut signal = make_signal("account", "child1", "health_change", None);
+        signal.source = "propagation:hierarchy_down".to_string();
+        let derived = rule_hierarchy_up(&signal, &db);
+        assert!(derived.is_empty(), "Hierarchy-derived signals must not re-propagate");
+    }
+
+    #[test]
+    fn test_rule_hierarchy_up_skips_non_account() {
+        let db = test_db();
+        let signal = make_signal("person", "p1", "title_change", None);
+        let derived = rule_hierarchy_up(&signal, &db);
+        assert!(derived.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Hierarchy Down
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_rule_hierarchy_down_propagates_to_children() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('parent1', 'ParentCo', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'Child1', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child2', 'Child2', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        let signal = make_signal("account", "parent1", "strategy_shift", Some("{\"detail\": \"pivot\"}"));
+        let derived = rule_hierarchy_down(&signal, &db);
+
+        assert_eq!(derived.len(), 2);
+        let ids: Vec<&str> = derived.iter().map(|d| d.entity_id.as_str()).collect();
+        assert!(ids.contains(&"child1"));
+        assert!(ids.contains(&"child2"));
+        assert_eq!(derived[0].signal_type, "strategy_shift");
+        assert_eq!(derived[0].source, "propagation:hierarchy_down");
+        assert!((derived[0].confidence - 0.85 * 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rule_hierarchy_down_no_children() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('leaf1', 'LeafCo', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        let signal = make_signal("account", "leaf1", "health_change", None);
+        let derived = rule_hierarchy_down(&signal, &db);
+        assert!(derived.is_empty(), "Leaf account should not propagate down");
+    }
+
+    #[test]
+    fn test_rule_hierarchy_down_confidence_gate() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('parent1', 'ParentCo', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'ChildCo', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        // Low confidence signal (0.5 < 0.7 threshold)
+        let mut signal = make_signal("account", "parent1", "health_change", None);
+        signal.confidence = 0.5;
+        let derived = rule_hierarchy_down(&signal, &db);
+        assert!(derived.is_empty(), "Low-confidence signals should not fan out downward");
+    }
+
+    #[test]
+    fn test_rule_hierarchy_down_loop_prevention() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('parent1', 'ParentCo', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'ChildCo', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        let mut signal = make_signal("account", "parent1", "health_change", None);
+        signal.source = "propagation:hierarchy_up".to_string();
+        let derived = rule_hierarchy_down(&signal, &db);
+        assert!(derived.is_empty(), "Hierarchy-derived signals must not re-propagate");
+    }
+
+    #[test]
+    fn test_rule_hierarchy_down_direct_children_only() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('grandparent', 'GrandParent', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('parent1', 'Parent', 'grandparent', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'Child', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        // Signal on grandparent — should only reach parent1, not child1
+        let signal = make_signal("account", "grandparent", "strategy_shift", None);
+        let derived = rule_hierarchy_down(&signal, &db);
+
+        assert_eq!(derived.len(), 1);
+        assert_eq!(derived[0].entity_id, "parent1");
+    }
+
+    // -----------------------------------------------------------------------
+    // B1: 48-hour sibling accumulation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_rule_hierarchy_up_accumulation_with_siblings() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('parent1', 'ParentCo', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'Child1', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child2', 'Child2', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        // Insert a recent sibling signal on the parent (from child2, within 48 hours)
+        conn.execute(
+            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, decay_half_life_days, created_at)
+             VALUES ('sib1', 'account', 'parent1', 'health_change', 'clay', 0.75, 90, datetime('now', '-1 hours'))",
+            [],
+        ).unwrap();
+
+        // Now fire rule_hierarchy_up from child1
+        let signal = make_signal("account", "child1", "health_change", Some("{\"new\": \"red\"}"));
+        let derived_with_sibling = rule_hierarchy_up(&signal, &db);
+
+        // With a sibling, the accumulated confidence should be higher than solo (0.85 * 0.6 = 0.51)
+        assert_eq!(derived_with_sibling.len(), 1);
+        let solo_confidence = 0.85 * 0.6;
+        assert!(
+            derived_with_sibling[0].confidence > solo_confidence,
+            "Accumulated confidence ({}) should exceed solo confidence ({})",
+            derived_with_sibling[0].confidence,
+            solo_confidence
+        );
+    }
+
+    #[test]
+    fn test_rule_hierarchy_up_accumulation_excludes_hierarchy_signals() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('parent1', 'ParentCo', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO accounts (id, name, parent_id, updated_at) VALUES ('child1', 'Child1', 'parent1', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        // Insert a signal on the parent that came from hierarchy propagation — should be excluded
+        conn.execute(
+            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, decay_half_life_days, created_at)
+             VALUES ('hier1', 'account', 'parent1', 'health_change', 'propagation:hierarchy_up', 0.75, 90, datetime('now', '-1 hours'))",
+            [],
+        ).unwrap();
+
+        let signal = make_signal("account", "child1", "health_change", None);
+        let derived = rule_hierarchy_up(&signal, &db);
+
+        assert_eq!(derived.len(), 1);
+        // Should use solo path since hierarchy signals are filtered out
+        assert!((derived[0].confidence - 0.85 * 0.6).abs() < 0.01);
     }
 }

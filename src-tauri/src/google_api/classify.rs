@@ -41,6 +41,7 @@ pub struct EntityHint {
     pub domains: Vec<String>,
     pub keywords: Vec<String>,
     pub emails: Vec<String>,
+    pub account_type: Option<String>,
 }
 
 /// Resolved entity from classification. I336.
@@ -210,6 +211,14 @@ pub fn classify_meeting_multi(
     let has_account_entity = result.resolved_entities.iter()
         .any(|e| e.entity_type == "account" && e.confidence >= 0.50);
 
+    // Check if best-matched account entity is a partner (I382)
+    let best_account_is_partner = result.resolved_entities.iter()
+        .filter(|e| e.entity_type == "account")
+        .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
+        .and_then(|best| entity_hints.iter().find(|h| h.id == best.entity_id))
+        .and_then(|hint| hint.account_type.as_deref())
+        == Some("partner");
+
     // ---- Step 5: All-internal path ----
     if !has_external {
         // Entity-aware override: if an account entity was found in the title,
@@ -220,6 +229,7 @@ pub fn classify_meeting_multi(
                 Some("one_on_one") => "one_on_one".to_string(),
                 Some("qbr") => "qbr".to_string(),
                 Some(other) => other.to_string(),
+                None if best_account_is_partner => "partnership".to_string(),
                 None if attendee_count == 2 => "one_on_one".to_string(),
                 None => "customer".to_string(),
             };
@@ -279,7 +289,11 @@ pub fn classify_meeting_multi(
     } else if attendee_count == 2 {
         result.meeting_type = "one_on_one".to_string();
     } else {
-        result.meeting_type = "customer".to_string();
+        result.meeting_type = if best_account_is_partner {
+            "partnership".to_string()
+        } else {
+            "customer".to_string()
+        };
     }
 
     // Compute intelligence tier based on final meeting type and entity resolution
@@ -536,6 +550,7 @@ mod tests {
             domains: vec![],
             keywords: vec![],
             emails: vec![],
+            account_type: None,
         }).collect()
     }
 
@@ -548,6 +563,7 @@ mod tests {
             domains: vec![],
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
             emails: vec![],
+            account_type: None,
         }
     }
 
@@ -560,6 +576,7 @@ mod tests {
             domains: vec![],
             keywords: vec![],
             emails: emails.iter().map(|s| s.to_string()).collect(),
+            account_type: None,
         }
     }
 
@@ -580,6 +597,7 @@ mod tests {
             domains: domains.iter().map(|s| s.to_string()).collect(),
             keywords: vec![],
             emails: vec![],
+            account_type: None,
         }
     }
 
