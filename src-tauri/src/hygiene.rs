@@ -475,18 +475,18 @@ fn retry_abandoned_quill_syncs(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) 
 
 /// Archive phantom accounts — structural folders (like "Internal") that were
 /// incorrectly bootstrapped as standalone accounts during workspace sync.
-/// A phantom account is: named "Internal", not flagged as is_internal, and has
+/// A phantom account is: named "Internal", not flagged as internal, and has
 /// no meetings, actions, or people linked.
 fn archive_phantom_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let conn = db.conn_ref();
 
     // Find accounts named "Internal" (case-insensitive) that are NOT the real
-    // internal org root (is_internal = 0) and have zero activity.
+    // internal org root (account_type != 'internal') and have zero activity.
     let phantoms: Vec<(String, String)> = conn
         .prepare(
             "SELECT a.id, a.name FROM accounts a
              WHERE LOWER(a.name) = 'internal'
-               AND a.is_internal = 0
+               AND a.account_type != 'internal'
                AND a.archived = 0
                AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
@@ -525,7 +525,7 @@ fn archive_phantom_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
 }
 
 /// Re-link orphan internal accounts to the internal root.
-/// An orphan internal account has is_internal = 1 but parent_id IS NULL and
+/// An orphan internal account has account_type = 'internal' but parent_id IS NULL and
 /// is not the root account itself (i.e., there's another internal account that IS the root).
 fn relink_orphan_internal_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let root = match db.get_internal_root_account() {
@@ -539,7 +539,7 @@ fn relink_orphan_internal_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetai
     let orphans: Vec<(String, String)> = conn
         .prepare(
             "SELECT id, name FROM accounts
-             WHERE is_internal = 1 AND parent_id IS NULL AND archived = 0 AND id != ?1",
+             WHERE account_type = 'internal' AND parent_id IS NULL AND archived = 0 AND id != ?1",
         )
         .and_then(|mut stmt| {
             stmt.query_map(rusqlite::params![root.id], |row| {
@@ -2314,7 +2314,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: now,
             archived: false,
             keywords: None,
@@ -3023,7 +3023,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: now,
             archived: false,
             keywords: None,

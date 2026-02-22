@@ -94,6 +94,16 @@ export function useProjectDetail(projectId: string | undefined) {
     };
   }, [projectId, load]);
 
+  async function saveField(field: string, value: string) {
+    if (!detail) return;
+    try {
+      await invoke("update_project_field", { projectId: detail.id, field, value });
+      await load();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function handleSave() {
     if (!detail) return;
     setSaving(true);
@@ -231,6 +241,7 @@ export function useProjectDetail(projectId: string | undefined) {
     dirty, setDirty,
     saving,
     handleSave,
+    saveField,
     handleCancelEdit,
     // Enrichment
     enriching,
