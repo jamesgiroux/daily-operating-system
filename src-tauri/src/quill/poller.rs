@@ -46,7 +46,7 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Wait for enable — but wake signal can interrupt
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(60)) => {}
-                    _ = state.quill_poller_wake.notified() => {
+                    _ = state.integrations.quill_poller_wake.notified() => {
                         log::info!("Quill poller: woken by signal (checking config)");
                     }
                 }
@@ -60,7 +60,7 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
             None => {
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(IDLE_CHECK_SECS)) => {}
-                    _ = state.quill_poller_wake.notified() => {
+                    _ = state.integrations.quill_poller_wake.notified() => {
                         log::info!("Quill poller: woken by signal");
                     }
                 }
@@ -72,7 +72,7 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
             // Nothing to do — wait for wake signal or short idle check
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(IDLE_CHECK_SECS)) => {}
-                _ = state.quill_poller_wake.notified() => {
+                _ = state.integrations.quill_poller_wake.notified() => {
                     log::info!("Quill poller: woken by signal (new sync row)");
                 }
             }
@@ -501,6 +501,6 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
             created
         );
         // Wake the poller immediately so it picks up new rows without waiting
-        state.quill_poller_wake.notify_one();
+        state.integrations.quill_poller_wake.notify_one();
     }
 }

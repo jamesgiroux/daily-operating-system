@@ -416,7 +416,7 @@ pub async fn enrich_person_from_clay_with_client(
         .to_string();
         let _ = crate::services::signals::emit_and_propagate(
             db,
-            &state.signal_engine,
+            &state.signals.engine,
             "person",
             person_id,
             &signal.signal_type,

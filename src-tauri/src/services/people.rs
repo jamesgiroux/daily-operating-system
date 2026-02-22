@@ -67,7 +67,7 @@ pub fn delete_person(
     db.delete_person(person_id).map_err(|e| e.to_string())?;
 
     // Emit deletion signal (I308)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "person", person_id, "entity_deleted", "user_action",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "person", person_id, "entity_deleted", "user_action",
         Some(&format!("{{\"name\":\"{}\"}}", person.name.replace('"', "\\\""))), 1.0);
 
     // Filesystem cleanup
@@ -185,7 +185,7 @@ pub fn update_person_field(
         .map_err(|e| e.to_string())?;
 
     // Emit field update signal + self-healing evaluation (I377, I410)
-    let _ = crate::services::signals::emit_propagate_and_evaluate(db, &state.signal_engine, "person", person_id, "field_updated", "user_edit",
+    let _ = crate::services::signals::emit_propagate_and_evaluate(db, &state.signals.engine, "person", person_id, "field_updated", "user_edit",
         Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8, &state.intel_queue);
 
     // Self-healing: record user correction for Clay-enrichable fields (I409)
@@ -218,7 +218,7 @@ pub fn link_person_entity(
         .map_err(|e| e.to_string())?;
 
     // Emit person linked signal (I308)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, relationship_type, entity_id, "person_linked", "user_action",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, relationship_type, entity_id, "person_linked", "user_action",
         Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.9);
 
     // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
@@ -245,7 +245,7 @@ pub fn unlink_person_entity(
         .map_err(|e| e.to_string())?;
 
     // Emit person unlinked signal (I308)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "entity", entity_id, "person_unlinked", "user_action",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "entity", entity_id, "person_unlinked", "user_action",
         Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.7);
 
     // Regenerate person.json so linked_entities reflects removal (ADR-0048)
@@ -319,7 +319,7 @@ pub fn archive_person(
         .map_err(|e| e.to_string())?;
 
     let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "person", id, signal_type, "user_action", None, 0.9);
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "person", id, signal_type, "user_action", None, 0.9);
 
     Ok(())
 }
