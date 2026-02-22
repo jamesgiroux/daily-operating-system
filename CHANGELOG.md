@@ -4,6 +4,39 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.1] - 2026-02-21
+
+Email is an intelligence input, not a display surface. Every email in your inbox is AI-processed, resolved to an entity, and synthesised with existing intelligence to produce contextual understanding you can act on. The email page shows you what your emails mean. The daily briefing's "Worth Your Attention" section surfaces the emails that actually matter, scored by entity relevance, signal activity, meeting proximity, and urgency — not by mechanical priority tier. Calendar polling now covers the full week so cancellations, rescheduling, and new events appear without a page visit.
+
+### Added
+
+- **Email relevance scoring** — every enriched email receives a 0.0–1.0 relevance score combining entity linkage, active signal weight, Bayesian urgency fusion, keyword matching, and temporal decay. Score reason is stored alongside the score for transparency
+- **"Worth Your Attention" on the daily briefing** — replaces the mechanical "Replies Needed" email section. Top scored emails (threshold 0.15) surface with contextual summaries and entity names; calendar notifications, noreply senders, and newsletters score near zero and never appear here
+- **Email page scored layout** — emails sorted by relevance score into bands (Priority / Monitoring / Other), replacing the old high/medium/low tier display
+- **Entity badges on emails** — each email shows which account, person, or project it is linked to, with an editable picker for corrections
+- **Contextual email synthesis** — AI enrichment produces summaries that reference the entity's current intelligence and recent meeting history, not just the email content in isolation. "Jack is confirming the Acme EBR agenda for Thursday — this relates to the renewal discussion from Tuesday" rather than "Email from Jack about EBR"
+- **Emails persisted to SQLite** — `emails` table is the source of truth; the daily JSON file is generated from DB, not the other way around. Email history survives across days and is queryable by entity
+- **Inbox-anchored fetch** — Gmail query changed from `is:unread newer_than:1d` to `in:inbox` with no date window. Read emails that are still in the inbox remain visible; archived emails are reconciled out on the next poll
+- **Inbox reconciliation** — emails removed from the Gmail inbox are marked resolved in the DB on each poll cycle; their historical signals are retained but they no longer appear in the UI
+- **Thread position refresh** — a separate `in:sent` query detects user replies between polls so "Replies Needed" clears when you reply from Gmail without waiting for the other party
+- **Recent Correspondence on meeting detail** — meetings show contextual email summaries from attendees, drawn from `recentEmailSignals` on the meeting prep object
+- **Email sync status indicator** — email page shows last successful fetch time, enrichment progress, and stale-fallback state
+- **Email dismissal learning** — repeatedly dismissing emails from a domain lowers future classification for that domain; learning is additive, not a hard override; reset available in Settings
+- **Email-entity signal compounding** — enriched emails emit sentiment, urgency, and commitment signals to their linked entities. Person email signals propagate to linked accounts via `entity_people`, so account-level intelligence reflects email activity
+- **Calendar polling expanded to ±7 days** — poller fetches today through the next 7 days on every cycle; new meetings, cancellations, and reschedules appear within one poll interval without requiring a page visit
+- **Toast feedback on meeting briefing refresh** — clicking refresh now shows a confirmation toast so the action is never silent
+
+### Fixed
+
+- Future meetings no longer leak into the daily briefing — the calendar merge date filter was missing a timezone-aware guard; any live event not occurring today in the user's timezone is now excluded
+- Meeting prep queue no longer locks out AI-generated content — mechanical stubs were setting `prep_frozen_at`, which blocked the AI workflow from updating via `freeze_meeting_prep_snapshot`. The prep queue now writes mechanical context without claiming the frozen-at timestamp
+- `generate_meeting_intelligence` no longer destroys `prep_context_json` — a missing field initialisation was overwriting the context column with null on force-refresh
+- Intelligence enrichment no longer produces a false "enriched" state from a mechanical row count — enrichment state is only set to enriched after AI output is confirmed
+- "No prep" badge shown incorrectly when intelligence existed — badge logic now checks the correct quality field
+- Week page date grouping used UTC instead of local timezone — meetings near midnight could appear under the wrong day heading
+- Past meeting duration showing NaN on the weekly forecast — `formatDurationFromIso` now guards against invalid or missing timestamps before computing duration
+- Quill transcript sync stuck in "already in progress" — force-resync now correctly resets stuck in-progress states back to pending
+
 ## [0.13.0] - 2026-02-21
 
 Every meeting gets intelligence before you need it. One meeting, one visual identity, everywhere. The app never shows an empty state — intelligence arrives automatically, refreshes when signals change, and renders the same way whether you're looking at the daily briefing, weekly forecast, or a meeting detail page.
