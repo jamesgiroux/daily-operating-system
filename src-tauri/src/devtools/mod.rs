@@ -225,12 +225,12 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
     match crate::google_api::token_store::load_token() {
         Ok(token) => {
             let email = token.account.unwrap_or_else(|| "unknown".to_string());
-            if let Ok(mut guard) = state.google_auth.lock() {
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
                 *guard = GoogleAuthStatus::Authenticated { email: email.clone() };
             }
         }
         Err(_) => {
-            if let Ok(mut guard) = state.google_auth.lock() {
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
                 *guard = GoogleAuthStatus::NotConfigured;
             }
         }
@@ -510,7 +510,7 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         };
 
     let google_auth_status = state
-        .google_auth
+        .calendar.google_auth
         .lock()
         .map(|g| match &*g {
             GoogleAuthStatus::NotConfigured => "not_configured".to_string(),
@@ -616,28 +616,28 @@ fn reset_all(state: &AppState) -> Result<(), String> {
         // Reopen a fresh DB
         *guard = ActionDb::open().ok();
     }
-    if let Ok(mut guard) = state.google_auth.lock() {
+    if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = GoogleAuthStatus::NotConfigured;
     }
-    if let Ok(mut guard) = state.workflow_status.write() {
+    if let Ok(mut guard) = state.workflow.status.write() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.execution_history.lock() {
+    if let Ok(mut guard) = state.workflow.history.lock() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.last_scheduled_run.write() {
+    if let Ok(mut guard) = state.workflow.last_scheduled_run.write() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.calendar_events.write() {
+    if let Ok(mut guard) = state.calendar.events.write() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.capture_dismissed.lock() {
+    if let Ok(mut guard) = state.capture.dismissed.lock() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.capture_captured.lock() {
+    if let Ok(mut guard) = state.capture.captured.lock() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.transcript_processed.lock() {
+    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
         guard.clear();
     }
 
@@ -676,7 +676,7 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     // Seed transcript record for today's past Acme meeting (#1)
     let today_str = Local::now().format("%Y-%m-%d").to_string();
     let acme_meeting_id = format!("mtg-acme-weekly-{}", today_str);
-    if let Ok(mut guard) = state.transcript_processed.lock() {
+    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
         guard.insert(
             acme_meeting_id.clone(),
             TranscriptRecord {
@@ -696,7 +696,7 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
 
     // Google auth — set in-memory only, NEVER write to Keychain (I298 fix)
     if with_auth {
-        if let Ok(mut guard) = state.google_auth.lock() {
+        if let Ok(mut guard) = state.calendar.google_auth.lock() {
             *guard = GoogleAuthStatus::Authenticated {
                 email: "dev@dailyos.test".to_string(),
             };
@@ -721,7 +721,7 @@ fn install_mock_empty(state: &AppState) -> Result<(), String> {
     crate::state::initialize_workspace(&workspace, "both")?;
 
     // Set in-memory Google auth only — NEVER write to Keychain (I298 fix)
-    if let Ok(mut guard) = state.google_auth.lock() {
+    if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = GoogleAuthStatus::Authenticated {
             email: "dev@dailyos.test".to_string(),
         };
@@ -2082,7 +2082,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
         ),
     ];
 
-    if let Ok(mut guard) = state.calendar_events.write() {
+    if let Ok(mut guard) = state.calendar.events.write() {
         *guard = events;
     }
 
