@@ -12,7 +12,7 @@ use crate::parser::count_inbox;
 use crate::state::{AppState, DbTryRead};
 use crate::types::{
     Action, CalendarEvent, DailyFocus, DashboardData, DayOverview, DayStats,
-    EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus, Priority,
+    EmailSyncStage, EmailSyncState, EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus, Priority,
     WeekOverview,
 };
 
@@ -608,21 +608,99 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
             }
         }
 
-        let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) =
-            match load_emails_json_with_sync(&today_dir) {
-                Ok(payload) => {
-                    let emails = if payload.emails.is_empty() {
-                        None
-                    } else {
-                        Some(payload.emails)
-                    };
-                    (emails, payload.sync)
+        // I368: Try DB first for enriched emails, fall back to JSON
+        let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
+            let mut db_emails: Vec<crate::types::Email> =
+                match state.with_db_try_read(|db| {
+                    let rows = db.get_all_active_emails()?;
+                    // Batch-resolve entity names (same approach as emails service)
+                    let entity_ids: std::collections::HashSet<String> = rows
+                        .iter()
+                        .filter_map(|e| e.entity_id.clone())
+                        .collect();
+                    let mut entity_names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+                    for eid in &entity_ids {
+                        if let Ok(Some(a)) = db.get_account(eid) {
+                            entity_names.insert(eid.clone(), a.name);
+                        } else if let Ok(Some(p)) = db.get_person(eid) {
+                            // Find the most relevant linked account using email context
+                            let email_context: String = rows.iter()
+                                .filter(|e| e.entity_id.as_deref() == Some(eid.as_str()))
+                                .filter_map(|e| e.contextual_summary.as_deref()
+                                    .or(e.subject.as_deref()))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .to_lowercase();
+                            let display = crate::services::emails::best_account_for_person(db, eid, &email_context)
+                                .unwrap_or(p.name);
+                            entity_names.insert(eid.clone(), display);
+                        } else if let Ok(Some(p)) = db.get_project(eid) {
+                            entity_names.insert(eid.clone(), p.name);
+                        }
+                    }
+                    Ok::<_, String>((rows, entity_names))
+                }) {
+                    DbTryRead::Ok(Ok((rows, entity_names))) if !rows.is_empty() => rows
+                        .iter()
+                        .map(|dbe| {
+                            let entity_name = dbe.entity_id.as_ref()
+                                .and_then(|eid| entity_names.get(eid).cloned());
+                            crate::types::Email {
+                            id: dbe.email_id.clone(),
+                            sender: dbe.sender_name.clone().unwrap_or_default(),
+                            sender_email: dbe.sender_email.clone().unwrap_or_default(),
+                            subject: dbe.subject.clone().unwrap_or_default(),
+                            snippet: dbe.snippet.clone(),
+                            priority: match dbe.priority.as_deref() {
+                                Some("high") => crate::types::EmailPriority::High,
+                                Some("low") => crate::types::EmailPriority::Low,
+                                _ => crate::types::EmailPriority::Medium,
+                            },
+                            avatar_url: None,
+                            summary: dbe.contextual_summary.clone(),
+                            recommended_action: None,
+                            conversation_arc: None,
+                            email_type: None,
+                            commitments: Vec::new(),
+                            questions: Vec::new(),
+                            sentiment: dbe.sentiment.clone(),
+                            urgency: dbe.urgency.clone(),
+                            entity_id: dbe.entity_id.clone(),
+                            entity_type: dbe.entity_type.clone(),
+                            entity_name,
+                            relevance_score: dbe.relevance_score,
+                            score_reason: dbe.score_reason.clone(),
+                        }})
+                        .collect(),
+                    _ => Vec::new(),
+                };
+
+            // I395: Sort by relevance score for briefing
+            db_emails.sort_by(|a, b| {
+                let sa = a.relevance_score.unwrap_or(-1.0);
+                let sb = b.relevance_score.unwrap_or(-1.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            if !db_emails.is_empty() {
+                (Some(db_emails), None)
+            } else {
+                match load_emails_json_with_sync(&today_dir) {
+                    Ok(payload) => {
+                        let emails = if payload.emails.is_empty() {
+                            None
+                        } else {
+                            Some(payload.emails)
+                        };
+                        (emails, payload.sync)
+                    }
+                    Err(_) => (
+                        load_emails_json(&today_dir).ok().filter(|e| !e.is_empty()),
+                        None,
+                    ),
                 }
-                Err(_) => (
-                    load_emails_json(&today_dir).ok().filter(|e| !e.is_empty()),
-                    None,
-                ),
-            };
+            }
+        };
 
         // Compute capacity-aware focus priorities (live, not a briefing artifact)
         let focus: Option<DailyFocus> = (|| {
@@ -692,7 +770,30 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
                 meetings,
                 actions,
                 emails,
-                email_sync,
+                email_sync: email_sync.or_else(|| {
+                    // Fall back to DB enrichment stats when JSON sync status absent (I373)
+                    if let crate::state::DbTryRead::Ok(Ok(stats)) =
+                        state.with_db_try_read(|db| db.get_email_sync_stats())
+                    {
+                        let last = stats.last_fetch_at?;
+                        Some(EmailSyncStatus {
+                            state: if stats.failed > 0 { EmailSyncState::Warning } else { EmailSyncState::Ok },
+                            stage: EmailSyncStage::Enrich,
+                            code: None,
+                            message: Some(format!("{}/{} ready", stats.enriched, stats.total)),
+                            using_last_known_good: None,
+                            can_retry: if stats.failed > 0 { Some(true) } else { None },
+                            last_attempt_at: Some(last.clone()),
+                            last_success_at: Some(last),
+                            enrichment_pending: Some(stats.pending as i64),
+                            enrichment_enriched: Some(stats.enriched as i64),
+                            enrichment_failed: Some(stats.failed as i64),
+                            total_active: Some(stats.total as i64),
+                        })
+                    } else {
+                        None
+                    }
+                }),
                 focus,
                 email_narrative,
                 replies_needed,

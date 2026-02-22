@@ -313,8 +313,6 @@ pub fn default_features_for_mode(profile: &str, entity_mode: &str) -> HashMap<St
     features.insert("emailBodyAccess".to_string(), true);
     // I323: auto-archive low-priority emails
     features.insert("autoArchiveEnabled".to_string(), false);
-    // I357: semantic AI reclassification of medium-priority emails
-    features.insert("semanticEmailReclass".to_string(), false);
     features
 }
 
@@ -887,6 +885,15 @@ pub struct EmailSyncStatus {
     pub last_attempt_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_success_at: Option<String>,
+    /// I373: Enrichment progress counts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enrichment_pending: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enrichment_enriched: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enrichment_failed: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_active: Option<i64>,
 }
 
 /// A single email needing attention
@@ -923,6 +930,24 @@ pub struct Email {
     /// Sentiment from AI enrichment (I354)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentiment: Option<String>,
+    /// Urgency from AI enrichment (I369)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub urgency: Option<String>,
+    /// Resolved entity ID from enrichment (I368)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+    /// Resolved entity type (account, person, project) from enrichment (I368)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_type: Option<String>,
+    /// Human-readable resolved entity name from enrichment (I369)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_name: Option<String>,
+    /// Relevance score from scoring pipeline (I395)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relevance_score: Option<f64>,
+    /// Human-readable score reason (I395)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_reason: Option<String>,
 }
 
 /// Complete dashboard data payload
