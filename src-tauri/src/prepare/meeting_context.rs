@@ -1807,11 +1807,12 @@ mod tests {
                 owner: Some("Alice".to_string()),
                 target_date: Some("2026-03-15".to_string()),
                 tracker_path: None,
+                parent_id: None,
                 updated_at: now.clone(),
                 archived: false,
                 keywords: None,
                 keywords_extracted_at: None,
-            metadata: None,
+                metadata: None,
             })
             .expect("upsert project");
         }

@@ -3,13 +3,14 @@
 
 use std::path::Path;
 
-use crate::commands::{MeetingSummary, ProjectDetailResult};
+use crate::commands::{MeetingSummary, ProjectChildSummary, ProjectDetailResult};
 use crate::state::AppState;
 
 /// Get full detail for a project by ID.
 ///
 /// Loads project from DB, reads dashboard.json + intelligence.json,
 /// fetches actions, meetings, people, signals, captures, and email signals.
+/// I388: Also resolves parent/child hierarchy.
 pub fn get_project_detail(
     project_id: &str,
     state: &AppState,
@@ -75,6 +76,35 @@ pub fn get_project_detail(
         .list_recent_email_signals_for_entity(project_id, 12)
         .unwrap_or_default();
 
+    // I388: Resolve parent name for child projects, children for parent projects
+    let parent_name = project
+        .parent_id
+        .as_ref()
+        .and_then(|pid| db.get_project(pid).ok().flatten().map(|p| p.name));
+
+    let child_projects = db.get_child_projects(&project.id).unwrap_or_default();
+    let parent_aggregate = if !child_projects.is_empty() {
+        db.get_project_parent_aggregate(&project.id).ok()
+    } else {
+        None
+    };
+    let children: Vec<ProjectChildSummary> = child_projects
+        .iter()
+        .map(|child| {
+            let open_action_count = db
+                .get_project_actions(&child.id)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            ProjectChildSummary {
+                id: child.id.clone(),
+                name: child.name.clone(),
+                status: child.status.clone(),
+                milestone: child.milestone.clone(),
+                open_action_count,
+            }
+        })
+        .collect();
+
     Ok(ProjectDetailResult {
         id: project.id,
         name: project.name,
@@ -93,5 +123,9 @@ pub fn get_project_detail(
         recent_email_signals,
         archived: project.archived,
         intelligence,
+        parent_id: project.parent_id,
+        parent_name,
+        children,
+        parent_aggregate,
     })
 }
