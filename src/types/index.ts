@@ -1280,6 +1280,11 @@ export interface ProjectListItem {
   openActionCount: number;
   daysSinceLastMeeting?: number;
   archived: boolean;
+  /** I388: Parent-child hierarchy fields */
+  parentId?: string;
+  parentName?: string;
+  childCount: number;
+  isParent: boolean;
 }
 
 export interface ProjectMilestone {
@@ -1287,6 +1292,24 @@ export interface ProjectMilestone {
   status: string;
   targetDate?: string;
   notes?: string;
+}
+
+/** Compact child project summary for parent detail pages (I388). */
+export interface ProjectChildSummary {
+  id: string;
+  name: string;
+  status: string;
+  milestone?: string;
+  openActionCount: number;
+}
+
+/** Aggregated signals for parent project's children (I388). */
+export interface ProjectParentAggregate {
+  childCount: number;
+  activeCount: number;
+  onHoldCount: number;
+  completedCount: number;
+  nearestTargetDate?: string;
 }
 
 /** Full detail for the project detail page. */
@@ -1319,6 +1342,9 @@ export interface ProjectDetail extends ProjectListItem {
   recentEmailSignals?: EmailSignal[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
+  /** I388: Parent-child hierarchy */
+  children: ProjectChildSummary[];
+  parentAggregate?: ProjectParentAggregate;
 }
 
 // =============================================================================

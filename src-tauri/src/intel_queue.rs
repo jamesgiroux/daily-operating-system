@@ -825,7 +825,7 @@ pub fn write_enrichment_results(
         }
     }
 
-    // I384: After writing a child account's enrichment, enqueue the parent for
+    // I384/I388: After writing a child entity's enrichment, enqueue the parent for
     // portfolio intelligence refresh. This ensures parent portfolio views stay
     // current when any child's intelligence updates.
     if input.entity_type == "account" {
@@ -839,6 +839,23 @@ pub fn write_enrichment_results(
                 });
                 log::info!(
                     "IntelProcessor: enqueued parent {} for portfolio refresh after child {} update",
+                    parent_id,
+                    input.entity_id,
+                );
+            }
+        }
+    }
+    if input.entity_type == "project" {
+        if let Ok(Some(project)) = db.get_project(&input.entity_id) {
+            if let Some(ref parent_id) = project.parent_id {
+                _state.intel_queue.enqueue(IntelRequest {
+                    entity_id: parent_id.clone(),
+                    entity_type: "project".to_string(),
+                    priority: IntelPriority::ContentChange,
+                    requested_at: std::time::Instant::now(),
+                });
+                log::info!(
+                    "IntelProcessor: enqueued parent project {} for portfolio refresh after child {} update",
                     parent_id,
                     input.entity_id,
                 );

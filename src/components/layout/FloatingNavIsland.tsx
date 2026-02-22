@@ -52,6 +52,13 @@ export interface FloatingNavIslandProps {
   activeColor?: 'turmeric' | 'terracotta' | 'larkspur' | 'olive';
 
   /**
+   * Entity mode from active role preset.
+   * Controls whether 'accounts' or 'projects' appears first in entity nav.
+   * 'account' = accounts first, 'project' = projects first, 'both' = default order
+   */
+  entityMode?: 'account' | 'project' | 'both';
+
+  /**
    * Callback when nav item is clicked (app mode)
    */
   onNavigate?: (page: string) => void;
@@ -88,6 +95,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   mode = 'app',
   activePage = 'today',
   activeColor = 'turmeric',
+  entityMode,
   onNavigate,
   onHome,
   chapters,
@@ -135,14 +143,18 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   }
 
   // App mode — icon-based page navigation
+  // Entity group ordering depends on entityMode: 'project' puts projects before accounts
+  const accountsItem: NavItem = { id: 'accounts', label: 'Accounts', icon: <Building2 size={18} strokeWidth={1.8} />, group: 'entity' };
+  const projectsItem: NavItem = { id: 'projects', label: 'Projects', icon: <FolderKanban size={18} strokeWidth={1.8} />, group: 'entity' };
+  const entityPair = entityMode === 'project' ? [projectsItem, accountsItem] : [accountsItem, projectsItem];
+
   const items: NavItem[] = [
     { id: 'week', label: 'This Week', icon: <Calendar size={18} strokeWidth={1.8} />, group: 'main' },
     { id: 'emails', label: 'Mail', icon: <Mail size={18} strokeWidth={1.8} />, group: 'main' },
     { id: 'dropbox', label: 'Dropbox', icon: <Inbox size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'people', label: 'People', icon: <Users size={18} strokeWidth={1.8} />, group: 'entity' },
-    { id: 'accounts', label: 'Accounts', icon: <Building2 size={18} strokeWidth={1.8} />, group: 'entity' },
-    { id: 'projects', label: 'Projects', icon: <FolderKanban size={18} strokeWidth={1.8} />, group: 'entity' },
+    ...entityPair,
     { id: 'settings', label: 'Settings', icon: <Settings size={18} strokeWidth={1.8} />, group: 'admin' },
   ];
 
