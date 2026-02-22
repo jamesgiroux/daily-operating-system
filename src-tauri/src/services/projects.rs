@@ -1,10 +1,109 @@
-// Projects service — extracted from commands.rs
-// Business logic for project detail assembly.
+// Projects service — extracted from commands.rs (I450)
+// Business logic for project CRUD, list assembly, and workspace file management.
 
 use std::path::Path;
 
-use crate::commands::{MeetingSummary, ProjectChildSummary, ProjectDetailResult};
+use crate::commands::{MeetingSummary, ProjectChildSummary, ProjectDetailResult, ProjectListItem};
+use crate::db::ActionDb;
 use crate::state::AppState;
+
+/// Get all projects with computed summary fields for the list page.
+pub fn get_projects_list(state: &AppState) -> Result<Vec<ProjectListItem>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let projects = db.get_all_projects().map_err(|e| e.to_string())?;
+
+    // Pre-compute parent names for all projects with a parent_id
+    let parent_names: std::collections::HashMap<String, String> = projects
+        .iter()
+        .map(|p| (p.id.clone(), p.name.clone()))
+        .collect();
+
+    let items: Vec<ProjectListItem> = projects
+        .into_iter()
+        .map(|p| {
+            let open_action_count = db.get_project_actions(&p.id).map(|a| a.len()).unwrap_or(0);
+            let days_since_last_meeting = db.get_project_signals(&p.id).ok().and_then(|s| {
+                s.last_meeting.as_ref().and_then(|lm| {
+                    chrono::DateTime::parse_from_rfc3339(lm)
+                        .ok()
+                        .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
+                })
+            });
+            let child_count = db.get_child_projects(&p.id).map(|c| c.len()).unwrap_or(0);
+            let parent_name = p
+                .parent_id
+                .as_ref()
+                .and_then(|pid| parent_names.get(pid).cloned());
+            ProjectListItem {
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                milestone: p.milestone,
+                owner: p.owner,
+                target_date: p.target_date,
+                open_action_count,
+                days_since_last_meeting,
+                is_parent: child_count > 0,
+                child_count,
+                parent_name,
+                parent_id: p.parent_id,
+            }
+        })
+        .collect();
+
+    Ok(items)
+}
+
+/// Get child projects for a parent project (I388).
+pub fn get_child_projects_list(
+    parent_id: &str,
+    state: &AppState,
+) -> Result<Vec<ProjectListItem>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let children = db
+        .get_child_projects(parent_id)
+        .map_err(|e| e.to_string())?;
+    let parent_name = db
+        .get_project(parent_id)
+        .ok()
+        .flatten()
+        .map(|p| p.name);
+
+    let items: Vec<ProjectListItem> = children
+        .into_iter()
+        .map(|p| {
+            let open_action_count = db.get_project_actions(&p.id).map(|a| a.len()).unwrap_or(0);
+            let days_since_last_meeting = db.get_project_signals(&p.id).ok().and_then(|s| {
+                s.last_meeting.as_ref().and_then(|lm| {
+                    chrono::DateTime::parse_from_rfc3339(lm)
+                        .ok()
+                        .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
+                })
+            });
+            let child_count = db.get_child_projects(&p.id).map(|c| c.len()).unwrap_or(0);
+            ProjectListItem {
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                milestone: p.milestone,
+                owner: p.owner,
+                target_date: p.target_date,
+                open_action_count,
+                days_since_last_meeting,
+                parent_id: p.parent_id,
+                parent_name: parent_name.clone(),
+                child_count,
+                is_parent: child_count > 0,
+            }
+        })
+        .collect();
+
+    Ok(items)
+}
 
 /// Get full detail for a project by ID.
 ///
@@ -128,4 +227,235 @@ pub fn get_project_detail(
         children,
         parent_aggregate,
     })
+}
+
+/// Create a new project with workspace files.
+pub fn create_project(
+    name: &str,
+    parent_id: Option<String>,
+    state: &AppState,
+) -> Result<String, String> {
+    let validated_name = crate::util::validate_entity_name(name)?;
+    let id = crate::util::slugify(validated_name);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    if let Ok(Some(_)) = db.get_project(&id) {
+        return Err(format!("Project '{}' already exists", validated_name));
+    }
+
+    let project = crate::db::DbProject {
+        id: id.clone(),
+        name: validated_name.to_string(),
+        status: "active".to_string(),
+        milestone: None,
+        owner: None,
+        target_date: None,
+        tracker_path: Some(format!("Projects/{}", validated_name)),
+        parent_id,
+        updated_at: now,
+        archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
+        metadata: None,
+    };
+
+    db.upsert_project(&project).map_err(|e| e.to_string())?;
+
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let project_dir = crate::projects::project_dir(workspace, validated_name);
+        let _ = std::fs::create_dir_all(&project_dir);
+        let _ = crate::util::bootstrap_entity_directory(&project_dir, validated_name, "project");
+        let _ = crate::projects::write_project_json(workspace, &project, None, db);
+        let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
+    }
+
+    Ok(id)
+}
+
+/// Update a single structured field on a project.
+pub fn update_project_field(
+    project_id: &str,
+    field: &str,
+    value: &str,
+    state: &AppState,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.update_project_field(project_id, field, value)
+        .map_err(|e| e.to_string())?;
+
+    let _ = crate::signals::bus::emit_signal(
+        db,
+        "project",
+        project_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"{}\",\"value\":\"{}\"}}",
+            field,
+            value.replace('"', "\\\"")
+        )),
+        0.8,
+    );
+
+    // Regenerate workspace files
+    if let Ok(Some(project)) = db.get_project(project_id) {
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let json_path =
+                crate::projects::project_dir(workspace, &project.name).join("dashboard.json");
+            let existing_json = if json_path.exists() {
+                crate::projects::read_project_json(&json_path)
+                    .ok()
+                    .map(|r| r.json)
+            } else {
+                None
+            };
+            let _ = crate::projects::write_project_json(
+                workspace,
+                &project,
+                existing_json.as_ref(),
+                db,
+            );
+            let _ = crate::projects::write_project_markdown(
+                workspace,
+                &project,
+                existing_json.as_ref(),
+                db,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Update the notes field on a project.
+pub fn update_project_notes(
+    project_id: &str,
+    notes: &str,
+    state: &AppState,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let project = db
+        .get_project(project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Project not found: {}", project_id))?;
+
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let json_path =
+            crate::projects::project_dir(workspace, &project.name).join("dashboard.json");
+
+        let mut json = if json_path.exists() {
+            crate::projects::read_project_json(&json_path)
+                .map(|r| r.json)
+                .unwrap_or_else(|_| crate::projects::default_project_json(&project))
+        } else {
+            crate::projects::default_project_json(&project)
+        };
+
+        json.notes = if notes.is_empty() {
+            None
+        } else {
+            Some(notes.to_string())
+        };
+
+        crate::projects::write_project_json(workspace, &project, Some(&json), db)?;
+        crate::projects::write_project_markdown(workspace, &project, Some(&json), db)?;
+
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            "project",
+            project_id,
+            "field_updated",
+            "user_edit",
+            Some(&format!(
+                "{{\"field\":\"notes\",\"value\":\"{}\"}}",
+                notes
+                    .chars()
+                    .take(100)
+                    .collect::<String>()
+                    .replace('"', "\\\"")
+            )),
+            0.8,
+        );
+    }
+
+    Ok(())
+}
+
+/// Bulk-create projects from a list of names.
+pub fn bulk_create_projects(
+    db: &ActionDb,
+    workspace: &Path,
+    names: &[String],
+) -> Result<Vec<String>, String> {
+    let mut created_ids = Vec::with_capacity(names.len());
+
+    for raw_name in names {
+        let name = crate::util::validate_entity_name(raw_name)?;
+        let id = crate::util::slugify(name);
+
+        if let Ok(Some(_)) = db.get_project(&id) {
+            continue;
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let project = crate::db::DbProject {
+            id: id.clone(),
+            name: name.to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: Some(format!("Projects/{}", name)),
+            parent_id: None,
+            updated_at: now,
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+        };
+
+        db.upsert_project(&project).map_err(|e| e.to_string())?;
+
+        let project_dir = crate::projects::project_dir(workspace, name);
+        let _ = std::fs::create_dir_all(&project_dir);
+        let _ = crate::util::bootstrap_entity_directory(&project_dir, name, "project");
+        let _ = crate::projects::write_project_json(workspace, &project, None, db);
+        let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
+
+        created_ids.push(id);
+    }
+
+    Ok(created_ids)
+}
+
+/// Archive or restore a project with signal emission.
+pub fn archive_project(
+    db: &ActionDb,
+    id: &str,
+    archived: bool,
+) -> Result<(), String> {
+    db.archive_project(id, archived)
+        .map_err(|e| e.to_string())?;
+
+    let signal_type = if archived {
+        "entity_archived"
+    } else {
+        "entity_unarchived"
+    };
+    let _ = crate::signals::bus::emit_signal(db, "project", id, signal_type, "user_action", None, 0.9);
+
+    Ok(())
 }
