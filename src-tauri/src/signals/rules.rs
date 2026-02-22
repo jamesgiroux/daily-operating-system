@@ -322,7 +322,7 @@ pub fn rule_renewal_engagement_compound(signal: &SignalEvent, db: &ActionDb) -> 
 /// signals of the same type from other children in the last 48 hours, fuse
 /// them using weighted log-odds combination for a stronger derived confidence.
 pub fn rule_hierarchy_up(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
-    if signal.entity_type != "account" {
+    if signal.entity_type != "account" && signal.entity_type != "project" {
         return Vec::new();
     }
 
@@ -331,12 +331,20 @@ pub fn rule_hierarchy_up(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSign
         return Vec::new();
     }
 
-    let account = match db.get_account(&signal.entity_id) {
-        Ok(Some(a)) => a,
-        _ => return Vec::new(),
+    // Resolve parent_id based on entity type
+    let parent_id = if signal.entity_type == "account" {
+        match db.get_account(&signal.entity_id) {
+            Ok(Some(a)) => a.parent_id,
+            _ => return Vec::new(),
+        }
+    } else {
+        match db.get_project(&signal.entity_id) {
+            Ok(Some(p)) => p.parent_id,
+            _ => return Vec::new(),
+        }
     };
 
-    let parent_id = match account.parent_id {
+    let parent_id = match parent_id {
         Some(pid) => pid,
         None => return Vec::new(),
     };
@@ -358,16 +366,22 @@ pub fn rule_hierarchy_up(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSign
         signal.confidence * 0.6
     };
 
+    let child_key = if signal.entity_type == "account" {
+        "child_account_id"
+    } else {
+        "child_project_id"
+    };
+
     let value = serde_json::json!({
         "source_signal": signal.id,
-        "child_account_id": signal.entity_id,
+        child_key: signal.entity_id,
         "original_signal_type": signal.signal_type,
         "detail": signal.value,
     })
     .to_string();
 
     vec![DerivedSignal {
-        entity_type: "account".to_string(),
+        entity_type: signal.entity_type.clone(),
         entity_id: parent_id,
         signal_type: signal.signal_type.clone(),
         source: "propagation:hierarchy_up".to_string(),
@@ -385,7 +399,7 @@ pub fn rule_hierarchy_up(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSign
 /// Direct children only — no recursion to grandchildren.
 /// Loop prevention: signals from hierarchy propagation are not re-propagated.
 pub fn rule_hierarchy_down(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
-    if signal.entity_type != "account" {
+    if signal.entity_type != "account" && signal.entity_type != "project" {
         return Vec::new();
     }
 
@@ -399,25 +413,39 @@ pub fn rule_hierarchy_down(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSi
         return Vec::new();
     }
 
-    let children = match db.get_child_accounts(&signal.entity_id) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
+    let parent_key = if signal.entity_type == "account" {
+        "parent_account_id"
+    } else {
+        "parent_project_id"
     };
 
-    children
+    // Get children based on entity type
+    let child_ids_and_types: Vec<(String, String)> = if signal.entity_type == "account" {
+        match db.get_child_accounts(&signal.entity_id) {
+            Ok(c) => c.into_iter().map(|a| (a.id, "account".to_string())).collect(),
+            Err(_) => return Vec::new(),
+        }
+    } else {
+        match db.get_child_projects(&signal.entity_id) {
+            Ok(c) => c.into_iter().map(|p| (p.id, "project".to_string())).collect(),
+            Err(_) => return Vec::new(),
+        }
+    };
+
+    child_ids_and_types
         .into_iter()
-        .map(|child| {
+        .map(|(child_id, entity_type)| {
             let value = serde_json::json!({
                 "source_signal": signal.id,
-                "parent_account_id": signal.entity_id,
+                parent_key: signal.entity_id,
                 "original_signal_type": signal.signal_type,
                 "detail": signal.value,
             })
             .to_string();
 
             DerivedSignal {
-                entity_type: "account".to_string(),
-                entity_id: child.id,
+                entity_type,
+                entity_id: child_id,
                 signal_type: signal.signal_type.clone(),
                 source: "propagation:hierarchy_down".to_string(),
                 value: Some(value),

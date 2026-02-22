@@ -2837,11 +2837,12 @@ pub fn populate_workspace(
             owner: None,
             target_date: None,
             tracker_path: Some(format!("Projects/{}", name)),
+            parent_id: None,
             updated_at: now.clone(),
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
 
         // Create folder + directory template (ADR-0059, idempotent)
@@ -4895,6 +4896,10 @@ pub struct ProjectListItem {
     pub target_date: Option<String>,
     pub open_action_count: usize,
     pub days_since_last_meeting: Option<i64>,
+    pub parent_id: Option<String>,
+    pub parent_name: Option<String>,
+    pub child_count: usize,
+    pub is_parent: bool,
 }
 
 /// Full project detail for the detail page.
@@ -4920,6 +4925,25 @@ pub struct ProjectDetailResult {
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::intelligence::IntelligenceJson>,
+    /// I388: Parent project ID (if this is a child project).
+    pub parent_id: Option<String>,
+    /// I388: Parent project name (resolved from parent_id).
+    pub parent_name: Option<String>,
+    /// I388: Child project summaries (if this is a parent project).
+    pub children: Vec<ProjectChildSummary>,
+    /// I388: Aggregate stats for parent projects.
+    pub parent_aggregate: Option<crate::db::ProjectParentAggregate>,
+}
+
+/// Compact child project summary for parent detail pages (I388).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectChildSummary {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub milestone: Option<String>,
+    pub open_action_count: usize,
 }
 
 /// Get all projects with computed summary fields for the list page.
@@ -4929,6 +4953,12 @@ pub fn get_projects_list(state: State<Arc<AppState>>) -> Result<Vec<ProjectListI
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
     let projects = db.get_all_projects().map_err(|e| e.to_string())?;
+
+    // Pre-compute parent names for all projects with a parent_id
+    let parent_names: std::collections::HashMap<String, String> = projects
+        .iter()
+        .map(|p| (p.id.clone(), p.name.clone()))
+        .collect();
 
     let items: Vec<ProjectListItem> = projects
         .into_iter()
@@ -4941,6 +4971,11 @@ pub fn get_projects_list(state: State<Arc<AppState>>) -> Result<Vec<ProjectListI
                         .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
                 })
             });
+            let child_count = db.get_child_projects(&p.id).map(|c| c.len()).unwrap_or(0);
+            let parent_name = p
+                .parent_id
+                .as_ref()
+                .and_then(|pid| parent_names.get(pid).cloned());
             ProjectListItem {
                 id: p.id,
                 name: p.name,
@@ -4950,6 +4985,10 @@ pub fn get_projects_list(state: State<Arc<AppState>>) -> Result<Vec<ProjectListI
                 target_date: p.target_date,
                 open_action_count,
                 days_since_last_meeting,
+                is_parent: child_count > 0,
+                child_count,
+                parent_name,
+                parent_id: p.parent_id,
             }
         })
         .collect();
@@ -4966,9 +5005,71 @@ pub fn get_project_detail(
     crate::services::projects::get_project_detail(&project_id, &state)
 }
 
+/// Get child projects for a parent project (I388).
+#[tauri::command]
+pub fn get_child_projects_list(
+    parent_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<ProjectListItem>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let children = db.get_child_projects(&parent_id).map_err(|e| e.to_string())?;
+    let parent_name = db.get_project(&parent_id).ok().flatten().map(|p| p.name);
+
+    let items: Vec<ProjectListItem> = children
+        .into_iter()
+        .map(|p| {
+            let open_action_count = db.get_project_actions(&p.id).map(|a| a.len()).unwrap_or(0);
+            let days_since_last_meeting = db.get_project_signals(&p.id).ok().and_then(|s| {
+                s.last_meeting.as_ref().and_then(|lm| {
+                    chrono::DateTime::parse_from_rfc3339(lm)
+                        .ok()
+                        .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
+                })
+            });
+            let child_count = db.get_child_projects(&p.id).map(|c| c.len()).unwrap_or(0);
+            let mut item = ProjectListItem {
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                milestone: p.milestone,
+                owner: p.owner,
+                target_date: p.target_date,
+                open_action_count,
+                days_since_last_meeting,
+                parent_id: p.parent_id,
+                parent_name: None,
+                child_count,
+                is_parent: child_count > 0,
+            };
+            item.parent_name = parent_name.clone();
+            item
+        })
+        .collect();
+
+    Ok(items)
+}
+
+/// I388: Get ancestor projects for breadcrumb navigation.
+#[tauri::command]
+pub fn get_project_ancestors(
+    project_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbProject>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_project_ancestors(&project_id)
+        .map_err(|e| e.to_string())
+}
+
 /// Create a new project.
 #[tauri::command]
-pub fn create_project(name: String, state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn create_project(
+    name: String,
+    parent_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
     let validated_name = crate::util::validate_entity_name(&name)?;
     let id = crate::util::slugify(validated_name);
     let now = chrono::Utc::now().to_rfc3339();
@@ -4989,11 +5090,12 @@ pub fn create_project(name: String, state: State<Arc<AppState>>) -> Result<Strin
         owner: None,
         target_date: None,
         tracker_path: Some(format!("Projects/{}", validated_name)),
+        parent_id,
         updated_at: now,
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
-    metadata: None,
+        metadata: None,
     };
 
     db.upsert_project(&project).map_err(|e| e.to_string())?;
@@ -5519,11 +5621,12 @@ pub fn bulk_create_projects(
             owner: None,
             target_date: None,
             tracker_path: Some(format!("Projects/{}", name)),
+            parent_id: None,
             updated_at: now,
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
 
         db.upsert_project(&project).map_err(|e| e.to_string())?;

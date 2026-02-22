@@ -359,11 +359,12 @@ pub fn read_project_json(path: &Path) -> Result<ReadProjectResult, String> {
             owner: json.structured.owner.clone(),
             target_date: json.structured.target_date.clone(),
             tracker_path,
+            parent_id: None,
             updated_at,
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         },
         json,
     })
@@ -432,11 +433,12 @@ pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     owner: None,
                     target_date: None,
                     tracker_path: Some(format!("Projects/{}", name)),
+                    parent_id: None,
                     updated_at: now,
                     archived: false,
                     keywords: None,
                     keywords_extracted_at: None,
-                metadata: None,
+                    metadata: None,
                 };
                 if db.upsert_project(&new_project).is_ok() {
                     let _ = write_project_json(workspace, &new_project, None, db);
@@ -621,11 +623,12 @@ mod tests {
             owner: Some("Alice".to_string()),
             target_date: Some("2026-06-01".to_string()),
             tracker_path: Some(format!("Projects/{}", name)),
+            parent_id: None,
             updated_at: now,
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         }
     }
 

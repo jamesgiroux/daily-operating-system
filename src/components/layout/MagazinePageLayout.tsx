@@ -12,7 +12,8 @@
  * the dependency so the router doesn't need to import page internals.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import styles from './MagazinePageLayout.module.css';
 import AtmosphereLayer from './AtmosphereLayer';
 import FolioBar from './FolioBar';
@@ -43,8 +44,23 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   // Page-specific config registered via useRegisterMagazineShell()
   const pageConfig = useMagazineShellConfig();
 
-  const atmosphereColor = pageConfig?.atmosphereColor ?? 'turmeric';
+  // Entity mode from app config — controls nav ordering (accounts vs projects first).
+  // Re-fetched on every page navigation so preset changes in Settings take effect
+  // immediately without a full app restart (I389 acceptance criterion 4).
+  const [entityMode, setEntityMode] = useState<'account' | 'project' | 'both'>('account');
   const activePage = pageConfig?.activePage ?? 'today';
+  useEffect(() => {
+    invoke<{ entityMode?: string }>('get_config')
+      .then((c) => {
+        const mode = c.entityMode;
+        if (mode === 'account' || mode === 'project' || mode === 'both') {
+          setEntityMode(mode);
+        }
+      })
+      .catch(() => { /* fallback to default 'account' */ });
+  }, [activePage]);
+
+  const atmosphereColor = pageConfig?.atmosphereColor ?? 'turmeric';
   const folioLabel = pageConfig?.folioLabel ?? 'Daily Briefing';
   const backLink = pageConfig?.backLink;
   const chapters = pageConfig?.chapters;
@@ -76,6 +92,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
         mode={chapters && chapters.length > 0 ? 'chapters' : 'app'}
         activePage={activePage}
         activeColor={atmosphereColor}
+        entityMode={entityMode}
         onNavigate={onNavigate}
         onHome={onNavHome}
         chapters={chapters}
