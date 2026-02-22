@@ -309,6 +309,7 @@ pub fn run() {
             commands::get_emails_enriched,
             commands::get_email_sync_status,
             commands::update_email_entity,
+            commands::dismiss_email_signal,
             commands::get_entity_emails,
             commands::get_inbox_files,
             commands::get_inbox_file_content,
@@ -556,6 +557,10 @@ pub fn run() {
             commands::correct_email_disposition,
             // I330: Meeting Timeline
             commands::get_meeting_timeline,
+            // I390: Person Relationships (ADR-0088)
+            commands::upsert_person_relationship,
+            commands::delete_person_relationship,
+            commands::get_person_relationships,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
