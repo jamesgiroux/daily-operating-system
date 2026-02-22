@@ -170,6 +170,7 @@ export default function PersonDetailEditorial() {
           editRole={person.editRole}
           setEditRole={(v) => { person.setEditRole(v); person.setDirty(true); }}
           onSave={person.handleSave}
+          onSaveField={person.saveField}
           onEnrich={person.handleEnrich}
           enriching={person.enriching}
           enrichSeconds={person.enrichSeconds}
