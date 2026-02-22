@@ -1399,10 +1399,13 @@ pub struct EmailBriefingData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FullMeetingPrep {
+    #[serde(default)]
     pub file_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub calendar_event_id: Option<String>,
+    #[serde(default)]
     pub title: String,
+    #[serde(default)]
     pub time_range: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_context: Option<String>,

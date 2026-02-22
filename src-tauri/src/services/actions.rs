@@ -1,9 +1,9 @@
 // Actions service — extracted from commands.rs
 // Business logic for action status transitions with signal emission.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use crate::commands::{CreateActionRequest, UpdateActionRequest};
+use crate::commands::{ActionDetail, ActionListItem, CreateActionRequest, UpdateActionRequest};
 use crate::db::ActionDb;
 use crate::state::AppState;
 use crate::types::{Action, Priority};
@@ -27,14 +27,14 @@ fn action_entity_info(action: &crate::db::DbAction, fallback_id: &str) -> (&'sta
 }
 
 /// Complete an action and emit the completion signal.
-pub fn complete_action(db: &ActionDb, id: &str) -> Result<(), String> {
+pub fn complete_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.complete_action(id).map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal(
-            db,
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, engine,
             entity_type,
             &entity_id,
             "action_completed",
@@ -48,14 +48,14 @@ pub fn complete_action(db: &ActionDb, id: &str) -> Result<(), String> {
 }
 
 /// Reopen a completed action, setting it back to pending.
-pub fn reopen_action(db: &ActionDb, id: &str) -> Result<(), String> {
+pub fn reopen_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.reopen_action(id).map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal(
-            db,
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, engine,
             entity_type,
             &entity_id,
             "action_reopened",
@@ -69,14 +69,14 @@ pub fn reopen_action(db: &ActionDb, id: &str) -> Result<(), String> {
 }
 
 /// Accept a proposed action, moving it to pending (I256).
-pub fn accept_proposed_action(db: &ActionDb, id: &str) -> Result<(), String> {
+pub fn accept_proposed_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.accept_proposed_action(id).map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal(
-            db,
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, engine,
             entity_type,
             &entity_id,
             "action_accepted",
@@ -94,15 +94,15 @@ pub fn accept_proposed_action(db: &ActionDb, id: &str) -> Result<(), String> {
 }
 
 /// Reject a proposed action by archiving it (I256).
-pub fn reject_proposed_action(db: &ActionDb, id: &str) -> Result<(), String> {
+pub fn reject_proposed_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.reject_proposed_action(id).map_err(|e| e.to_string())?;
 
     // Emit rejection signal for correction learning (I307)
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal(
-            db,
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, engine,
             entity_type,
             &entity_id,
             "action_rejected",
@@ -120,15 +120,15 @@ pub fn reject_proposed_action(db: &ActionDb, id: &str) -> Result<(), String> {
 }
 
 /// Cycle an action's priority with signal emission.
-pub fn update_action_priority(db: &ActionDb, id: &str, priority: &str) -> Result<(), String> {
+pub fn update_action_priority(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str, priority: &str) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.update_action_priority(id, priority)
         .map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal(
-            db,
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, engine,
             entity_type,
             &entity_id,
             "priority_corrected",
@@ -384,4 +384,83 @@ pub fn update_action(
 
     action.updated_at = chrono::Utc::now().to_rfc3339();
     db.upsert_action(&action).map_err(|e| e.to_string())
+}
+
+/// Get full detail for a single action, with resolved relationships.
+pub fn get_action_detail(
+    db: &ActionDb,
+    action_id: &str,
+) -> Result<ActionDetail, String> {
+    let action = db
+        .get_action_by_id(action_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {action_id}"))?;
+
+    // Resolve account name
+    let account_name = if let Some(ref aid) = action.account_id {
+        db.get_account(aid).ok().flatten().map(|a| a.name)
+    } else {
+        None
+    };
+
+    // Resolve source meeting title
+    let source_meeting_title = if let Some(ref sid) = action.source_id {
+        db.get_meeting_by_id(sid).ok().flatten().map(|m| m.title)
+    } else {
+        None
+    };
+
+    Ok(ActionDetail {
+        action,
+        account_name,
+        source_meeting_title,
+    })
+}
+
+/// Get actions from the SQLite database for display.
+///
+/// Returns pending actions (within `days_ahead` window) combined with recently
+/// completed actions (last 48 hours). Account names are batch-resolved.
+pub fn get_actions_from_db(
+    db: &ActionDb,
+    days_ahead: i32,
+) -> Result<Vec<ActionListItem>, String> {
+    let mut actions = db
+        .get_due_actions(days_ahead)
+        .map_err(|e| e.to_string())?;
+    let completed = db.get_completed_actions(48).map_err(|e| e.to_string())?;
+    actions.extend(completed);
+
+    // Batch-resolve account names: collect unique IDs, single query each
+    let mut name_cache: HashMap<String, String> = HashMap::new();
+    for a in &actions {
+        if let Some(ref aid) = a.account_id {
+            if !name_cache.contains_key(aid) {
+                if let Ok(Some(account)) = db.get_account(aid) {
+                    name_cache.insert(aid.clone(), account.name);
+                }
+            }
+        }
+    }
+
+    let items = actions
+        .into_iter()
+        .map(|a| {
+            let account_name = a
+                .account_id
+                .as_ref()
+                .and_then(|aid| name_cache.get(aid).cloned());
+            ActionListItem {
+                action: a,
+                account_name,
+            }
+        })
+        .collect();
+
+    Ok(items)
+}
+
+/// Get all proposed (AI-suggested) actions (I256).
+pub fn get_proposed_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
+    db.get_proposed_actions().map_err(|e| e.to_string())
 }

@@ -58,6 +58,11 @@ pub fn rule_person_job_change(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
 
 /// When an account's meeting frequency signal indicates a >50% drop,
 /// emit `engagement_warning`.
+///
+/// NOTE (I377): This rule is currently dead — no code emits "meeting_frequency"
+/// signals. The meeting frequency data is computed as SQL aggregates
+/// (`meeting_frequency_30d`, `meeting_frequency_90d`) but never emitted as
+/// signal_events. Unregistered from PropagationEngine in I377.
 pub fn rule_meeting_frequency_drop(signal: &SignalEvent, _db: &ActionDb) -> Vec<DerivedSignal> {
     if signal.entity_type != "account" || signal.signal_type != "meeting_frequency" {
         return Vec::new();
@@ -194,7 +199,9 @@ pub fn rule_departure_renewal(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
     if signal.entity_type != "person" {
         return Vec::new();
     }
-    if signal.signal_type != "person_departed" && signal.signal_type != "company_change" {
+    // person_departed has no emitter yet (no UI path to mark departure).
+    // company_change from the Clay integration covers the real-world departure case.
+    if signal.signal_type != "company_change" {
         return Vec::new();
     }
 

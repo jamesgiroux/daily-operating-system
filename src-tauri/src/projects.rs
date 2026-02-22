@@ -581,65 +581,8 @@ pub fn parse_project_enrichment_response(response: &str) -> Option<String> {
     description
 }
 
-/// Build the Claude Code prompt for project enrichment.
-pub fn enrichment_prompt(project_name: &str) -> String {
-    format!(
-        "Research the project or product \"{name}\". Use web search to find current information. \
-         Return ONLY the structured block below \u{2014} no other text.\n\n\
-         ENRICHMENT\n\
-         DESCRIPTION: <one paragraph describing what this project/product is about>\n\
-         END_ENRICHMENT",
-        name = project_name
-    )
-}
-
-/// Enrich a project via Claude Code websearch.
-///
-/// Calls Claude Code with a research prompt, parses the structured response,
-/// updates dashboard.json, SQLite, and dashboard.md.
-///
-/// Returns the enriched description on success.
-pub fn enrich_project(
-    workspace: &Path,
-    db: &ActionDb,
-    project_id: &str,
-    pty: &crate::pty::PtyManager,
-) -> Result<String, String> {
-    let project = db
-        .get_project(project_id)
-        .map_err(|e| format!("DB error: {}", e))?
-        .ok_or_else(|| format!("Project {} not found", project_id))?;
-
-    let prompt = enrichment_prompt(&project.name);
-    let output = pty
-        .spawn_claude(workspace, &prompt)
-        .map_err(|e| format!("Claude Code error: {}", e))?;
-
-    let description = parse_project_enrichment_response(&output.stdout)
-        .ok_or("Could not parse enrichment response \u{2014} no ENRICHMENT block found")?;
-
-    // Read existing JSON to preserve other narrative fields
-    let json_path = project_dir(workspace, &project.name).join("dashboard.json");
-    let mut json = if json_path.exists() {
-        read_project_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_project_json(&project))
-    } else {
-        default_project_json(&project)
-    };
-
-    json.description = Some(description.clone());
-
-    // Write JSON + markdown
-    write_project_json(workspace, &project, Some(&json), db)?;
-    write_project_markdown(workspace, &project, Some(&json), db)?;
-
-    log::info!(
-        "Enriched project '{}' via Claude Code websearch",
-        project.name
-    );
-    Ok(description)
-}
+// Project enrichment via PTY removed per ADR-0086 (I376).
+// Entity intelligence is now enriched solely via intel_queue.
 
 /// Create a minimal ProjectJson from a DbProject (no narrative fields).
 pub fn default_project_json(project: &DbProject) -> ProjectJson {
