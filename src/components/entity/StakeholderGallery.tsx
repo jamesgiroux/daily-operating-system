@@ -346,7 +346,7 @@ export function StakeholderGallery({
                     </span>
                   )}
                   {matched && (
-                    <LinkIcon size={12} strokeWidth={1.5} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} title={`Linked to ${matched.name}`} />
+                    <LinkIcon size={12} strokeWidth={1.5} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} aria-label={`Linked to ${matched.name}`} />
                   )}
                   {s.engagement && canEdit ? (
                     <EngagementSelector

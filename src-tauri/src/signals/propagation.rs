@@ -38,6 +38,8 @@ pub struct PropagationEngine {
     /// Shared prep invalidation queue — signals that affect meeting prep content
     /// push meeting IDs here for regeneration by the scheduler.
     prep_queue: Option<Arc<Mutex<Vec<String>>>>,
+    /// I385: Intelligence enrichment queue for cross-entity propagation targets.
+    intel_queue: Option<Arc<crate::intel_queue::IntelligenceQueue>>,
 }
 
 impl Default for PropagationEngine {
@@ -51,12 +53,18 @@ impl PropagationEngine {
         Self {
             rules: Vec::new(),
             prep_queue: None,
+            intel_queue: None,
         }
     }
 
     /// Set the shared prep invalidation queue for signal-driven prep invalidation.
     pub fn set_prep_queue(&mut self, queue: Arc<Mutex<Vec<String>>>) {
         self.prep_queue = Some(queue);
+    }
+
+    /// I385: Set the intelligence enrichment queue for cross-entity propagation targets.
+    pub fn set_intel_queue(&mut self, queue: Arc<crate::intel_queue::IntelligenceQueue>) {
+        self.intel_queue = Some(queue);
     }
 
     /// Register a named propagation rule.
@@ -72,6 +80,7 @@ impl PropagationEngine {
         source_signal: &SignalEvent,
     ) -> Result<Vec<String>, DbError> {
         let mut derived_ids = Vec::new();
+        let mut cross_entity_targets: Vec<(String, String)> = Vec::new();
 
         for (rule_name, rule_fn) in &self.rules {
             let derived_signals = rule_fn(source_signal, db);
@@ -97,7 +106,24 @@ impl PropagationEngine {
                     rule_name,
                 )?;
 
+                // I385: Track cross-entity targets for intel enrichment
+                if ds.entity_id != source_signal.entity_id {
+                    cross_entity_targets.push((ds.entity_id.clone(), ds.entity_type.clone()));
+                }
+
                 derived_ids.push(id);
+            }
+        }
+
+        // I385: Propagated signals trigger intel enrichment for cross-entity targets
+        if let Some(ref intel_q) = self.intel_queue {
+            for (eid, etype) in &cross_entity_targets {
+                intel_q.enqueue(crate::intel_queue::IntelRequest {
+                    entity_id: eid.clone(),
+                    entity_type: etype.clone(),
+                    priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
+                    requested_at: std::time::Instant::now(),
+                });
             }
         }
 
@@ -123,6 +149,8 @@ pub fn default_engine() -> PropagationEngine {
     engine.register("rule_champion_sentiment", super::rules::rule_champion_sentiment);
     engine.register("rule_departure_renewal", super::rules::rule_departure_renewal);
     engine.register("rule_renewal_engagement_compound", super::rules::rule_renewal_engagement_compound);
+    engine.register("rule_hierarchy_up", super::rules::rule_hierarchy_up);
+    engine.register("rule_hierarchy_down", super::rules::rule_hierarchy_down);
 
     engine
 }

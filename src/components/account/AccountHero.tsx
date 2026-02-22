@@ -3,12 +3,13 @@
  * Mockup: h1 76px serif, 2-3 sentence italic lede from intelligence,
  * hero-date line, watermark asterisk, health/lifecycle badges, and meta row.
  */
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { EditableText } from "@/components/ui/EditableText";
+import { ChevronDown } from "lucide-react";
 import styles from "./AccountHero.module.css";
 
 interface AccountHeroProps {
@@ -21,6 +22,7 @@ interface AccountHeroProps {
   editLifecycle?: string;
   setEditLifecycle?: (value: string) => void;
   onSave?: () => void;
+  onSaveField?: (field: string, value: string) => void;
   onEnrich?: () => void;
   enriching?: boolean;
   enrichSeconds?: number;
@@ -43,7 +45,8 @@ export function AccountHero({
   setEditHealth: _setEditHealth,
   editLifecycle,
   setEditLifecycle: _setEditLifecycle,
-  onSave,
+  onSave: _onSave,
+  onSaveField,
   onEnrich,
   enriching,
   enrichSeconds,
@@ -90,7 +93,7 @@ export function AccountHero({
           <EditableText
             as="span"
             value={editName}
-            onChange={(v) => { setEditName(v); onSave?.(); }}
+            onChange={(v) => { setEditName(v); onSaveField?.("name", v); }}
             multiline={false}
             placeholder="Account name"
             fieldId="account-name"
@@ -137,9 +140,20 @@ export function AccountHero({
             {editLifecycle ?? detail.lifecycle}
           </span>
         )}
-        {detail.isInternal && (
-          <span className={`${styles.badge} ${styles.internalBadge}`}>
-            Internal
+        {onSaveField ? (
+          <AccountTypeBadge
+            value={detail.accountType as "customer" | "internal" | "partner"}
+            onChange={(v) => onSaveField("account_type", v)}
+          />
+        ) : (
+          <span className={`${styles.badge} ${
+            detail.accountType === "internal" ? styles.internalBadge
+            : detail.accountType === "partner" ? styles.partnerBadge
+            : styles.lifecycleBadge
+          }`}>
+            {detail.accountType === "internal" ? "Internal"
+             : detail.accountType === "partner" ? "Partner"
+             : "Customer"}
           </span>
         )}
       </div>
@@ -166,6 +180,95 @@ export function AccountHero({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Account Type Badge (inline dropdown) ──────────────────────────────────
+
+const ACCOUNT_TYPES: { value: "customer" | "internal" | "partner"; label: string; badgeClass: string; color: string }[] = [
+  { value: "customer", label: "Customer", badgeClass: "lifecycleBadge", color: "var(--color-text-secondary)" },
+  { value: "internal", label: "Internal", badgeClass: "internalBadge", color: "var(--color-spice-turmeric)" },
+  { value: "partner", label: "Partner", badgeClass: "partnerBadge", color: "var(--color-garden-rosemary)" },
+];
+
+function AccountTypeBadge({
+  value,
+  onChange,
+}: {
+  value: "customer" | "internal" | "partner";
+  onChange: (v: "customer" | "internal" | "partner") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const current = ACCOUNT_TYPES.find((t) => t.value === value) ?? ACCOUNT_TYPES[0];
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        className={`${styles.badge} ${styles[current.badgeClass]}`}
+        style={{
+          cursor: "pointer",
+          border: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 3,
+        }}
+        onClick={() => setOpen(!open)}
+      >
+        {current.label}
+        <ChevronDown size={10} strokeWidth={2} style={{ opacity: 0.5 }} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            background: "var(--color-paper-cream)",
+            border: "1px solid var(--color-rule-light)",
+            borderRadius: 4,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            zIndex: 50,
+            minWidth: 120,
+            padding: "4px 0",
+          }}
+        >
+          {ACCOUNT_TYPES.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "6px 12px",
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: opt.value === value ? 600 : 400,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: opt.value === value ? opt.color : "var(--color-text-tertiary)",
+                background: opt.value === value ? "rgba(30,37,48,0.04)" : "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
