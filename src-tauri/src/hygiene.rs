@@ -63,6 +63,10 @@ pub struct HygieneReport {
     pub low_confidence_entity_matches: usize,
     /// Empty shell accounts (no meetings, no actions, no people after 30d).
     pub empty_shell_accounts: usize,
+    /// Entities with quality_score below 0.45 (I406).
+    pub low_quality_entities: usize,
+    /// Entities blocked by coherence circuit breaker (I410).
+    pub coherence_blocked_entities: usize,
     pub fixes: MechanicalFixes,
     pub fix_details: Vec<HygieneFixDetail>,
     pub scanned_at: String,
@@ -224,9 +228,10 @@ pub fn run_hygiene_scan(
         log::info!("Hygiene: {} email cadence anomalies detected", cadence_anomalies.len());
     }
 
-    // --- Phase 3: AI-budgeted gap filling ---
+    // --- Phase 3: AI-budgeted gap filling (self-healing portfolio evaluation) ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
-        report.fixes.ai_enrichments_enqueued = enqueue_ai_enrichments(db, budget, queue);
+        report.fixes.ai_enrichments_enqueued =
+            crate::self_healing::evaluate_portfolio(db, budget, queue, embedding_model);
     }
 
     // Truncate details to max and store on report
@@ -246,6 +251,8 @@ pub fn run_hygiene_scan(
     report.duplicate_people = detect_duplicate_people(db).map(|v| v.len()).unwrap_or(0);
     report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
     report.empty_shell_accounts = count_empty_shell_accounts(db);
+    report.low_quality_entities = crate::self_healing::quality::get_low_quality_count(db);
+    report.coherence_blocked_entities = crate::self_healing::quality::get_coherence_blocked_count(db);
 
     report.scan_duration_ms = scan_start.elapsed().as_millis() as u64;
     report
@@ -1395,8 +1402,6 @@ pub fn check_upcoming_meeting_readiness(
         .map(|c| c.hygiene_pre_meeting_hours as i64)
         .unwrap_or(PRE_MEETING_WINDOW_HOURS);
     let window_end = Utc::now() + chrono::Duration::hours(window_hours);
-    let stale_threshold = Utc::now() - chrono::Duration::days(PRE_MEETING_STALE_DAYS);
-    let stale_str = stale_threshold.to_rfc3339();
 
     // Find meetings in the next window
     let upcoming: Vec<crate::db::DbMeeting> = db
@@ -1455,15 +1460,18 @@ pub fn check_upcoming_meeting_readiness(
         };
 
         for entity in &entities {
-            // Check if intelligence is stale
-            let is_stale = match db.get_entity_intelligence(&entity.id) {
-                Ok(Some(intel)) => intel.enriched_at < stale_str,
-                Ok(None) => true, // Never enriched
-                Err(_) => continue,
-            };
-
-            if is_stale {
-                let entity_type = format!("{:?}", entity.entity_type).to_lowercase();
+            let entity_type = format!("{:?}", entity.entity_type).to_lowercase();
+            // Use the continuous trigger score (I408) — meeting_imminence will be high
+            // since these meetings are within the pre-meeting window. Combined with
+            // staleness, this replaces the binary PRE_MEETING_STALE_DAYS check.
+            let trigger_score = crate::self_healing::remediation::compute_enrichment_trigger_score(
+                db,
+                &entity.id,
+                &entity_type,
+            );
+            // Pre-meeting window: enqueue if trigger score >= 0.4 (lower than the
+            // signal-driven 0.7 threshold because we're in a time-critical window)
+            if trigger_score >= 0.4 {
                 queue.enqueue(IntelRequest {
                     entity_id: entity.id.clone(),
                     entity_type,
@@ -1471,6 +1479,11 @@ pub fn check_upcoming_meeting_readiness(
                     requested_at: Instant::now(),
                 });
                 enqueued_ids.push(entity.id.clone());
+                log::debug!(
+                    "PreMeeting: enqueued {} (trigger_score={:.2})",
+                    entity.id,
+                    trigger_score,
+                );
             }
         }
     }
@@ -2684,11 +2697,15 @@ mod tests {
     }
 
     #[test]
-    fn test_pre_meeting_check_skips_fresh_entity() {
+    fn test_pre_meeting_check_enqueues_fresh_entity_with_imminent_meeting() {
         let db = test_db();
         let queue = crate::intel_queue::IntelligenceQueue::new();
 
-        // Entity with fresh intelligence (1 day ago)
+        // Entity with fresh intelligence (1 day ago) — but meeting in 1 hour.
+        // The trigger score (I408) correctly prioritizes this because meeting
+        // imminence (1.0 × 0.4) pushes the score above threshold even though
+        // staleness is low. This is the intended behavior: imminent meetings
+        // always trigger refresh.
         seed_entity(&db, "acme", "Acme Corp", "account");
         let fresh_time = (Utc::now() - chrono::Duration::days(1)).to_rfc3339();
         seed_entity_intelligence(&db, "acme", &fresh_time);
@@ -2698,7 +2715,7 @@ mod tests {
         link_meeting_entity(&db, "m1", "acme");
 
         let enqueued = check_upcoming_meeting_readiness(&db, &queue, None);
-        assert!(enqueued.is_empty());
+        assert_eq!(enqueued.len(), 1, "fresh entity with imminent meeting should be enqueued (trigger score driven)");
     }
 
     #[test]

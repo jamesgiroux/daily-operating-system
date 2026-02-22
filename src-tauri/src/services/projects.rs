@@ -274,6 +274,9 @@ pub fn create_project(
         let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
     }
 
+    // Self-healing: initialize quality row for new entity (I406)
+    crate::self_healing::quality::ensure_quality_row(db, &id, "project");
+
     Ok(id)
 }
 
@@ -303,6 +306,14 @@ pub fn update_project_field(
         )),
         0.8,
     );
+
+    // Self-healing: event-driven trigger evaluation (I410)
+    let _ = crate::self_healing::scheduler::evaluate_on_signal(db, project_id, "project", &state.intel_queue);
+
+    // Self-healing: record user correction for enrichable fields (I409)
+    if matches!(field, "status" | "milestone" | "owner" | "target_date") {
+        crate::self_healing::feedback::record_enrichment_correction(db, project_id, "project", "clay");
+    }
 
     // Regenerate workspace files
     if let Ok(Some(project)) = db.get_project(project_id) {
