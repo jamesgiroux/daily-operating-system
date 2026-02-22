@@ -4,6 +4,23 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.6] - 2026-02-22
+
+Maximum commands.rs extraction. Moved 1,405 lines of business logic from command handlers into the service layer, creating two new service files (settings, intelligence) and expanding four existing ones. commands.rs is now a thin IPC dispatch layer at ~7,000 lines. One UX fix ensures internal meetings show their attendees instead of an empty room.
+
+### Added
+
+- **SettingsService** (`services/settings.rs`, 303 lines) — 7 config mutation methods extracted: entity mode, workspace path, AI model tier, hygiene config, workflow schedules, user profile, multi-domain management with people/meeting reclassification
+- **IntelligenceService** (`services/intelligence.rs`, 242 lines) — unified `enrich_entity` method replacing 3 identical enrich handlers, plus intelligence field edits, stakeholder bulk-replace with propagating signals, and risk briefing CRUD
+
+### Changed
+
+- **Internal meeting attendees visible (I401)** — `hydrate_attendee_context` no longer filters out internal people for `team_sync`, `internal`, and `one_on_one` meetings. External meetings still show only external attendees.
+- **ProjectService expanded** (`services/projects.rs`, 131 → 461 lines) — 7 handlers extracted: list, child list, create, update field, update notes, bulk create, archive
+- **EmailService expanded** (`services/emails.rs`, 310 → 624 lines) — 6 handlers extracted: entity email lookup (3-strategy: direct → person sender → account people), entity reassignment, signal/item dismissal, Gmail archive, async refresh
+- **AccountService expanded** (`services/accounts.rs`, 819 → 1,083 lines) — 3 handlers extracted: internal organization creation (transactional with filesystem best-effort), child account creation with intel queue enqueue, internal meeting backfill
+- **MeetingService expanded** (`services/meetings.rs`, 1,331 → 1,517 lines) — 2 handlers extracted: refresh all future meeting preps (clear + re-enqueue), attach transcript with TOCTOU guard and async processing
+
 ## [0.13.5] - 2026-02-22
 
 People are the most under-represented entities in DailyOS. A user managing a buying committee sees five individuals by name but has no way to express that Rachel manages Amy, that two engineers are peers who collaborate on the same project, or that a mentor introduced them to a key contact. This version adds typed person-to-person relationship edges with manual CRUD, directional label resolution, signal propagation across the network, and AI enrichment that synthesizes network intelligence from relationship context.

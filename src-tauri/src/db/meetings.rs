@@ -701,14 +701,15 @@ impl ActionDb {
                 if changed {
                     self.conn.execute(
                         "UPDATE meetings_history SET title = ?1, start_time = ?2, end_time = ?3,
-                         attendees = ?4, description = ?5
-                         WHERE id = ?6",
+                         attendees = ?4, description = ?5, meeting_type = ?6
+                         WHERE id = ?7",
                         params![
                             input.title,
                             input.start_time,
                             input.end_time,
                             input.attendees,
                             input.description,
+                            input.meeting_type,
                             input.id,
                         ],
                     )?;

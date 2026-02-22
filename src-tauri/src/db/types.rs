@@ -431,6 +431,8 @@ pub struct PersonListItem {
     pub trend: String,
     /// Comma-separated names of linked account entities (from entity_people).
     pub account_names: Option<String>,
+    /// Days since last past meeting (None if never met).
+    pub days_since_last_meeting: Option<i64>,
 }
 
 /// A row from the `projects` table (I50).

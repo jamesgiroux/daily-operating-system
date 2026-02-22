@@ -817,3 +817,267 @@ pub fn get_accounts_for_picker(db: &ActionDb) -> Result<Vec<PickerAccount>, Stri
 
     Ok(items)
 }
+
+// ── I452: Account mutation handlers extracted from commands.rs ──────────
+
+/// Create the internal organization (root account + initial team + colleagues).
+///
+/// Wraps all DB writes in a transaction. Filesystem writes are best-effort after commit.
+pub fn create_internal_organization(
+    state: &AppState,
+    company_name: &str,
+    domains: &[String],
+    team_name: &str,
+    colleagues: &[crate::commands::TeamColleagueInput],
+    existing_person_ids: &[String],
+) -> Result<crate::commands::CreateInternalOrganizationResult, String> {
+    let company_name = crate::util::validate_entity_name(company_name)?.to_string();
+    let team_name = crate::util::validate_entity_name(team_name)?.to_string();
+    let domains = crate::helpers::normalize_domains(domains);
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
+        .ok_or("Config not loaded")?;
+    let workspace = std::path::Path::new(&workspace_path);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let (root_account, initial_team, created_people, updated_people) =
+        db.with_transaction(|db| {
+            if db
+                .get_internal_root_account()
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                return Err("Internal organization already exists".to_string());
+            }
+
+            let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
+            let mut suffix = 2usize;
+            while db
+                .get_account(&root_id)
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                root_id = format!(
+                    "internal-{}-{}",
+                    crate::util::slugify(&company_name),
+                    suffix
+                );
+                suffix += 1;
+            }
+
+            let now = chrono::Utc::now().to_rfc3339();
+            let root_account = crate::db::DbAccount {
+                id: root_id.clone(),
+                name: company_name.clone(),
+                lifecycle: Some("active".to_string()),
+                arr: None,
+                health: Some("green".to_string()),
+                contract_start: None,
+                contract_end: None,
+                nps: None,
+                tracker_path: Some(format!("Internal/{}", company_name)),
+                parent_id: None,
+                account_type: crate::db::AccountType::Internal,
+                updated_at: now,
+                archived: false,
+                keywords: None,
+                keywords_extracted_at: None,
+                metadata: None,
+            };
+            db.upsert_account(&root_account)
+                .map_err(|e| e.to_string())?;
+            db.set_account_domains(&root_account.id, &domains)
+                .map_err(|e| e.to_string())?;
+
+            let initial_team =
+                create_child_account_record(db, None, &root_account, &team_name, None, None)?;
+            db.copy_account_domains(&root_account.id, &initial_team.id)
+                .map_err(|e| e.to_string())?;
+
+            let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
+            for colleague in colleagues {
+                let email = match crate::util::validate_email(&colleague.email) {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let person_id = crate::util::slugify(&email);
+                let now = chrono::Utc::now().to_rfc3339();
+                let person = crate::db::DbPerson {
+                    id: person_id.clone(),
+                    email: email.clone(),
+                    name: colleague.name.trim().to_string(),
+                    organization: Some(company_name.clone()),
+                    role: colleague.title.clone(),
+                    relationship: "internal".to_string(),
+                    notes: None,
+                    tracker_path: None,
+                    last_seen: None,
+                    first_seen: Some(now.clone()),
+                    meeting_count: 0,
+                    updated_at: now,
+                    archived: false,
+                    linkedin_url: None,
+                    twitter_handle: None,
+                    phone: None,
+                    photo_url: None,
+                    bio: None,
+                    title_history: None,
+                    company_industry: None,
+                    company_size: None,
+                    company_hq: None,
+                    last_enriched_at: None,
+                    enrichment_sources: None,
+                };
+                db.upsert_person(&person).map_err(|e| e.to_string())?;
+                db.link_person_to_entity(&person_id, &root_account.id, "member")
+                    .map_err(|e| e.to_string())?;
+                db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                    .map_err(|e| e.to_string())?;
+                created_people.push(person);
+            }
+
+            let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
+            for person_id in existing_person_ids {
+                if let Ok(Some(mut person)) = db.get_person(person_id) {
+                    if person.relationship != "internal" {
+                        person.relationship = "internal".to_string();
+                        person.organization = Some(company_name.clone());
+                        db.upsert_person(&person).map_err(|e| e.to_string())?;
+                        updated_people.push(person);
+                    }
+                    db.link_person_to_entity(person_id, &root_account.id, "member")
+                        .map_err(|e| e.to_string())?;
+                    db.link_person_to_entity(person_id, &initial_team.id, "member")
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+
+            Ok((root_account, initial_team, created_people, updated_people))
+        })?;
+
+    // Filesystem writes (best-effort, outside transaction)
+    let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
+    let _ = std::fs::create_dir_all(&root_dir);
+    let _ = crate::util::bootstrap_entity_directory(&root_dir, &company_name, "account");
+    let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
+
+    let team_dir = crate::accounts::resolve_account_dir(workspace, &initial_team);
+    let _ = std::fs::create_dir_all(&team_dir);
+    let _ = crate::util::bootstrap_entity_directory(&team_dir, &team_name, "account");
+    let _ = crate::accounts::write_account_json(workspace, &initial_team, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &initial_team, None, db);
+
+    for person in &created_people {
+        let _ = crate::people::write_person_json(workspace, person, db);
+        let _ = crate::people::write_person_markdown(workspace, person, db);
+    }
+    for person in &updated_people {
+        let _ = crate::people::write_person_json(workspace, person, db);
+        let _ = crate::people::write_person_markdown(workspace, person, db);
+    }
+
+    drop(db_guard);
+
+    crate::state::create_or_update_config(state, |config| {
+        config.internal_team_setup_completed = true;
+        config.internal_team_setup_version = 1;
+        config.internal_org_account_id = Some(root_account.id.clone());
+        if config.user_company.is_none() {
+            config.user_company = Some(company_name.clone());
+        }
+        if !domains.is_empty() {
+            config.user_domain = domains.first().cloned();
+            config.user_domains = Some(domains.clone());
+        }
+    })?;
+
+    Ok(crate::commands::CreateInternalOrganizationResult {
+        root_account_id: root_account.id,
+        initial_team_id: initial_team.id,
+    })
+}
+
+/// Create a child account under a parent with intel queue enqueue.
+pub fn create_child_account_cmd(
+    state: &AppState,
+    parent_id: &str,
+    name: &str,
+    description: Option<&str>,
+    owner_person_id: Option<&str>,
+) -> Result<crate::commands::CreateChildAccountResult, String> {
+    let name = crate::util::validate_entity_name(name)?.to_string();
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone());
+    let workspace = workspace_path.as_deref().map(std::path::Path::new);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let parent = db
+        .get_account(parent_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Parent account not found: {}", parent_id))?;
+    let child = create_child_account_record(
+        db,
+        workspace,
+        &parent,
+        &name,
+        description,
+        owner_person_id,
+    )?;
+    drop(db_guard);
+
+    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+        entity_id: child.id.clone(),
+        entity_type: "account".to_string(),
+        priority: crate::intel_queue::IntelPriority::ContentChange,
+        requested_at: std::time::Instant::now(),
+    });
+
+    Ok(crate::commands::CreateChildAccountResult { id: child.id })
+}
+
+/// Backfill internal meeting → account associations for meetings missing entity links.
+pub fn backfill_internal_meeting_associations(
+    db: &ActionDb,
+) -> Result<usize, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.id, m.title, m.attendees
+             FROM meetings_history m
+             LEFT JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_type = 'account'
+             WHERE m.meeting_type IN ('internal', 'team_sync', 'one_on_one')
+               AND me.meeting_id IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let meetings: Vec<(String, String, Option<String>)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let mut updated = 0usize;
+    for (meeting_id, title, attendees) in meetings {
+        let Some(account) =
+            infer_internal_account_for_meeting(db, &title, attendees.as_deref())
+        else {
+            continue;
+        };
+        let _ = db.link_meeting_entity(&meeting_id, &account.id, "account");
+        let _ = db.cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None);
+        updated += 1;
+    }
+
+    Ok(updated)
+}

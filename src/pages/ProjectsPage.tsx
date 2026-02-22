@@ -466,9 +466,6 @@ function ProjectRow({
   onToggleExpand?: () => void;
   showBorder: boolean;
 }) {
-  const daysSince = project.daysSinceLastMeeting;
-  const isStale = daysSince != null && daysSince > 30;
-
   const subtitle = [
     project.owner,
     project.milestone,
@@ -534,17 +531,6 @@ function ProjectRow({
       {project.openActionCount > 0 && (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
           {project.openActionCount} action{project.openActionCount !== 1 ? "s" : ""}
-        </span>
-      )}
-      {daysSince != null && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            color: isStale ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-          }}
-        >
-          {daysSince === 0 ? "Today" : `${daysSince}d`}
         </span>
       )}
     </EntityRow>
