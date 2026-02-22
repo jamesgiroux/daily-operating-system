@@ -9,6 +9,7 @@ import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import {
   AlignLeft,
+  Briefcase,
   TrendingUp,
   Compass,
   Users,
@@ -16,6 +17,8 @@ import {
   Activity,
   CheckSquare2,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import {
@@ -28,6 +31,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ProjectHero } from "@/components/project/ProjectHero";
 import { ProjectAppendix } from "@/components/project/ProjectAppendix";
 import { WatchListMilestones } from "@/components/project/WatchListMilestones";
@@ -39,6 +49,7 @@ import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 
@@ -93,7 +104,7 @@ function buildProjectVitals(detail: {
 
 /* ── Chapters ── */
 
-const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
+const BASE_CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "headline", label: "The Mission", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
   { id: "trajectory", label: "Trajectory", icon: <TrendingUp size={18} strokeWidth={1.5} /> },
   { id: "the-horizon", label: "The Horizon", icon: <Compass size={18} strokeWidth={1.5} /> },
@@ -102,6 +113,18 @@ const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
   { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
 ];
+
+const PORTFOLIO_CHAPTER = {
+  id: "portfolio",
+  label: "Portfolio",
+  icon: <Briefcase size={18} strokeWidth={1.5} />,
+};
+
+function buildChapters(isParent: boolean) {
+  if (!isParent) return BASE_CHAPTERS;
+  // Portfolio appears after headline, before Trajectory
+  return [BASE_CHAPTERS[0], PORTFOLIO_CHAPTER, ...BASE_CHAPTERS.slice(1)];
+}
 
 export default function ProjectDetailEditorial() {
   const { projectId } = useParams({ strict: false });
@@ -116,9 +139,29 @@ export default function ProjectDetailEditorial() {
       atmosphereColor: "olive" as const,
       activePage: "projects" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/projects" }) },
-      chapters: CHAPTERS,
+      chapters: buildChapters(proj.detail?.isParent ?? false),
+      folioActions: proj.detail?.isParent ? (
+        <button
+          onClick={() => proj.setCreateChildOpen(true)}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase" as const,
+            color: "var(--color-garden-olive)",
+            background: "none",
+            border: "1px solid var(--color-garden-olive)",
+            borderRadius: 4,
+            padding: "2px 10px",
+            cursor: "pointer",
+          }}
+        >
+          + Sub-Project
+        </button>
+      ) : undefined,
     }),
-    [navigate],
+    [navigate, proj.detail, proj.setCreateChildOpen],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -138,6 +181,18 @@ export default function ProjectDetailEditorial() {
       });
   }, [projectId]);
 
+  // I388: Fetch ancestor projects for breadcrumb navigation
+  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!projectId) return;
+    invoke<{ id: string; name: string }[]>("get_project_ancestors", { projectId })
+      .then(setAncestors)
+      .catch((err) => {
+        console.error("get_project_ancestors failed:", err);
+        setAncestors([]);
+      });
+  }, [projectId]);
+
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("project", projectId);
 
@@ -152,6 +207,66 @@ export default function ProjectDetailEditorial() {
 
   return (
     <>
+      {/* I388: Ancestor breadcrumbs for nested projects */}
+      {ancestors.length > 0 && (
+        <nav
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            color: "var(--color-text-tertiary)",
+            padding: "8px 0 4px",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => navigate({ to: "/projects" })}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              color: "var(--color-text-tertiary)",
+              fontFamily: "inherit",
+              fontSize: "inherit",
+              letterSpacing: "inherit",
+            }}
+          >
+            Projects
+          </button>
+          {ancestors.map((anc) => (
+            <React.Fragment key={anc.id}>
+              <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+              <button
+                onClick={() =>
+                  navigate({
+                    to: "/projects/$projectId",
+                    params: { projectId: anc.id },
+                  })
+                }
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  color: "var(--color-garden-olive)",
+                  fontFamily: "inherit",
+                  fontSize: "inherit",
+                  letterSpacing: "inherit",
+                }}
+              >
+                {anc.name}
+              </button>
+            </React.Fragment>
+          ))}
+          <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+          <span style={{ color: "var(--color-text-primary)" }}>{detail?.name ?? ""}</span>
+        </nav>
+      )}
+
       {/* Chapter 1: The Mission (Hero) */}
       <section id="headline" style={{ scrollMarginTop: 60 }}>
         <ProjectHero
@@ -219,6 +334,261 @@ export default function ProjectDetailEditorial() {
           </div>
         )}
       </section>
+
+      {/* I388: Portfolio chapter — only for parent projects */}
+      {detail.isParent && detail.children.length > 0 && (
+        <section id="portfolio" className="editorial-reveal" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+          <ChapterHeading title="Portfolio" />
+
+          {/* Portfolio narrative */}
+          {intelligence?.portfolio?.portfolioNarrative && (
+            <div style={{ marginBottom: 48 }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 21,
+                  fontStyle: "italic",
+                  fontWeight: 300,
+                  lineHeight: 1.65,
+                  color: "var(--color-text-primary)",
+                  maxWidth: 640,
+                  margin: 0,
+                }}
+              >
+                {intelligence.portfolio.portfolioNarrative}
+              </p>
+            </div>
+          )}
+
+          {/* Hotspots — child projects needing attention */}
+          {intelligence?.portfolio?.hotspots && intelligence.portfolio.hotspots.length > 0 && (
+            <div style={{ marginBottom: 48 }}>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "var(--color-spice-terracotta)",
+                  marginBottom: 20,
+                }}
+              >
+                Needs Attention
+              </div>
+              {intelligence.portfolio.hotspots.map((hotspot, i) => (
+                <div
+                  key={hotspot.childId}
+                  style={{
+                    display: "flex",
+                    gap: 14,
+                    padding: "16px 0",
+                    borderBottom:
+                      i === intelligence.portfolio!.hotspots.length - 1
+                        ? "none"
+                        : "1px solid rgba(30,37,48,0.06)",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "var(--color-spice-terracotta)",
+                      flexShrink: 0,
+                      marginTop: 6,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <button
+                      onClick={() =>
+                        navigate({
+                          to: "/projects/$projectId",
+                          params: { projectId: hotspot.childId },
+                        })
+                      }
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: "var(--color-garden-olive)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 0,
+                        textAlign: "left",
+                      }}
+                    >
+                      {hotspot.childName}
+                    </button>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        color: "var(--color-text-secondary)",
+                        margin: "4px 0 0",
+                      }}
+                    >
+                      {hotspot.reason}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Cross-project patterns — only shown when non-empty */}
+          {intelligence?.portfolio?.crossBuPatterns && intelligence.portfolio.crossBuPatterns.length > 0 && (
+            <div
+              style={{
+                background: "rgba(30,37,48,0.04)",
+                borderLeft: "3px solid var(--color-garden-larkspur)",
+                borderRadius: "0 6px 6px 0",
+                padding: "16px 20px",
+                marginBottom: 48,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "var(--color-garden-larkspur)",
+                  marginBottom: 12,
+                }}
+              >
+                Cross-Project Patterns
+              </div>
+              {intelligence.portfolio.crossBuPatterns.map((pattern, i) => (
+                <p
+                  key={i}
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    color: "var(--color-text-primary)",
+                    margin: i === 0 ? 0 : "8px 0 0",
+                  }}
+                >
+                  {pattern}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Condensed child list */}
+          <div style={{ marginBottom: 24 }}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 500,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                color: "var(--color-text-tertiary)",
+                marginBottom: 16,
+              }}
+            >
+              Sub-Projects
+            </div>
+            {detail.children.map((child, i) => (
+              <div
+                key={child.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 0",
+                  borderBottom:
+                    i === detail.children.length - 1
+                      ? "none"
+                      : "1px solid rgba(30,37,48,0.06)",
+                }}
+              >
+                <button
+                  onClick={() =>
+                    navigate({
+                      to: "/projects/$projectId",
+                      params: { projectId: child.id },
+                    })
+                  }
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 400,
+                    color: "var(--color-text-primary)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    textAlign: "left",
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {child.name}
+                </button>
+                {/* Status indicator */}
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    fontWeight: 500,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color:
+                      child.status === "active"
+                        ? "var(--color-garden-sage)"
+                        : child.status === "on_hold"
+                          ? "var(--color-spice-turmeric)"
+                          : "var(--color-garden-larkspur)",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background:
+                        child.status === "active"
+                          ? "var(--color-garden-sage)"
+                          : child.status === "on_hold"
+                            ? "var(--color-spice-turmeric)"
+                            : "var(--color-garden-larkspur)",
+                    }}
+                  />
+                  {child.status === "active"
+                    ? "Active"
+                    : child.status === "on_hold"
+                      ? "On Hold"
+                      : "Completed"}
+                </span>
+                {/* Open actions count */}
+                {child.openActionCount > 0 && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      fontWeight: 500,
+                      letterSpacing: "0.04em",
+                      color: "var(--color-text-tertiary)",
+                    }}
+                  >
+                    {child.openActionCount} action{child.openActionCount !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Chapter 2: Trajectory */}
       <div id="trajectory" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
@@ -315,6 +685,46 @@ export default function ProjectDetailEditorial() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* I388: Sub-Project Creation Dialog */}
+      <Dialog open={proj.createChildOpen} onOpenChange={proj.setCreateChildOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Sub-Project</DialogTitle>
+            <DialogDescription>
+              Create a new sub-project under {detail.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+            <Input
+              value={proj.childName}
+              onChange={(e) => proj.setChildName(e.target.value)}
+              placeholder="Name"
+            />
+            <Input
+              value={proj.childDescription}
+              onChange={(e) => proj.setChildDescription(e.target.value)}
+              placeholder="Description (optional)"
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+              <Button
+                variant="ghost"
+                onClick={() => proj.setCreateChildOpen(false)}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={proj.handleCreateChild}
+                disabled={proj.creatingChild || !proj.childName.trim()}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+              >
+                {proj.creatingChild ? "Creating..." : "Create"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
