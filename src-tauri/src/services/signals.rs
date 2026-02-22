@@ -1,0 +1,73 @@
+//! Signal service facade (I403).
+//!
+//! Service-layer callers use these functions instead of reaching into
+//! `crate::signals::bus` directly.  Infrastructure callers that only have
+//! a raw `db` handle (prepare/, processor/, gravatar/) stay direct.
+
+use crate::db::ActionDb;
+use crate::signals::bus::{self, SignalEvent};
+use crate::signals::propagation::PropagationEngine;
+
+/// Emit a signal event (no propagation). Convenience wrapper around bus::emit_signal.
+#[allow(clippy::too_many_arguments)]
+pub fn emit(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<String, crate::db::DbError> {
+    bus::emit_signal(db, entity_type, entity_id, signal_type, source, value, confidence)
+}
+
+/// Emit a signal and run cross-entity propagation rules.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_and_propagate(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<(String, Vec<String>), crate::db::DbError> {
+    bus::emit_signal_and_propagate(db, engine, entity_type, entity_id, signal_type, source, value, confidence)
+}
+
+/// Emit a signal, propagate, and evaluate for self-healing re-enrichment.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_propagate_and_evaluate(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+    queue: &crate::intel_queue::IntelligenceQueue,
+) -> Result<(String, Vec<String>), crate::db::DbError> {
+    bus::emit_signal_propagate_and_evaluate(db, engine, entity_type, entity_id, signal_type, source, value, confidence, queue)
+}
+
+/// Get all active (non-superseded) signals for an entity.
+pub fn get_for_entity(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<Vec<SignalEvent>, crate::db::DbError> {
+    bus::get_active_signals(db, entity_type, entity_id)
+}
+
+/// Get active signals filtered by type.
+pub fn get_by_type(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+) -> Result<Vec<SignalEvent>, crate::db::DbError> {
+    bus::get_active_signals_by_type(db, entity_type, entity_id, signal_type)
+}
