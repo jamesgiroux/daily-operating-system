@@ -996,6 +996,7 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                     commitments: Vec::new(),
                     questions: Vec::new(),
                     sentiment: None,
+                    urgency: None, entity_id: None, entity_type: None, entity_name: None, relevance_score: None, score_reason: None,
                 });
                 id_counter += 1;
             }
@@ -1120,6 +1121,7 @@ impl EmailBuilder {
             commitments: Vec::new(),
             questions: Vec::new(),
             sentiment: None,
+            urgency: None, entity_id: None, entity_type: None, entity_name: None, relevance_score: None, score_reason: None,
         })
     }
 }

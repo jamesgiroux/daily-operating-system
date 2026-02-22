@@ -110,8 +110,19 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         .ok()
         .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
         .unwrap_or_default();
+    // I374: Load dismissed domains for relevance learning penalty
+    let dismissed_domains: HashSet<String> = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|db| db.get_dismissed_domains(5).unwrap_or_default()))
+        .unwrap_or_default();
+    if !dismissed_domains.is_empty() {
+        log::info!("prepare_today: {} dismissed domains loaded for classification penalty", dismissed_domains.len());
+    }
+
     let mut email_result =
-        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords).await;
+        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords, &dismissed_domains).await;
     if let Some(ref sync_error) = email_result.sync_error {
         log::warn!(
             "prepare_today: email sync degraded [{}] {}",
@@ -162,6 +173,123 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 email_result.high = new_high;
                 email_result.medium_count = email_result.medium_count.saturating_sub(boosted_count as u64);
                 log::info!("prepare_today: boosted {} medium emails to high via entity signals", boosted_count);
+            }
+        }
+    }
+
+    // I365: Persist fetched emails to DB (after classification + boosting)
+    {
+        if let Ok(guard) = state.db.lock() {
+            if let Some(db) = guard.as_ref() {
+                let mut persisted = 0usize;
+                for raw in &email_result.raw_emails {
+                    let sender_email = email_classify::extract_email_address(&raw.from);
+                    let sender_name = extract_display_name(&raw.from);
+                    // Use boosted priority from all array if available
+                    let priority = email_result.all.iter()
+                        .find(|v| v.get("id").and_then(|i| i.as_str()) == Some(&raw.id))
+                        .and_then(|v| v.get("priority").and_then(|p| p.as_str()))
+                        .unwrap_or(
+                            email_result.priorities.get(&raw.id).map(|s| s.as_str()).unwrap_or("medium")
+                        );
+                    let db_email = crate::db::DbEmail {
+                        email_id: raw.id.clone(),
+                        thread_id: Some(raw.thread_id.clone()),
+                        sender_email: Some(sender_email),
+                        sender_name: Some(sender_name),
+                        subject: Some(raw.subject.clone()),
+                        snippet: Some(raw.snippet.clone()),
+                        priority: Some(priority.to_string()),
+                        is_unread: raw.is_unread,
+                        received_at: Some(raw.date.clone()),
+                        enrichment_state: "pending".to_string(),
+                        enrichment_attempts: 0,
+                        last_enrichment_at: None,
+                        last_seen_at: None,
+                        resolved_at: None,
+                        entity_id: None,
+                        entity_type: None,
+                        contextual_summary: None,
+                        sentiment: None,
+                        urgency: None,
+                        user_is_last_sender: false,
+                        last_sender_email: Some(sender_name_fallback(&raw.from)),
+                        message_count: 1,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                        updated_at: chrono::Utc::now().to_rfc3339(),
+                        relevance_score: None,
+                        score_reason: None,
+                    };
+                    if let Err(e) = db.upsert_email(&db_email) {
+                        log::warn!("Failed to persist email {}: {}", raw.id, e);
+                    } else {
+                        persisted += 1;
+                    }
+                }
+                if persisted > 0 {
+                    log::info!("prepare_today: persisted {} emails to DB", persisted);
+                }
+
+                // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
+                reconcile_inbox_emails(&email_result.raw_emails, db);
+            }
+        }
+    }
+
+    // I370: Refresh thread positions from sent messages
+    {
+        let sent_thread_ids = google_api::gmail::fetch_recent_sent_thread_ids(
+            &google_api::get_valid_access_token().await.unwrap_or_default(),
+        ).await.unwrap_or_default();
+        if !sent_thread_ids.is_empty() {
+            if let Ok(guard) = state.db.lock() {
+                if let Some(db) = guard.as_ref() {
+                    update_thread_positions_from_sent(&sent_thread_ids, db);
+                }
+            }
+        }
+    }
+
+    // I367: Mandatory email enrichment (entity resolution + AI analysis)
+    // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
+    {
+        let ai_config = {
+            let cfg = state.config.read().ok();
+            cfg.as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|c| c.ai_models.clone())
+                .unwrap_or_default()
+        };
+        let enriched = super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+        if enriched > 0 {
+            log::info!("prepare_today: enriched {} emails", enriched);
+        }
+        // I372: Emit entity signals from enriched emails
+        let signal_guard = state.db.lock().ok();
+        if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
+            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db);
+            if emitted > 0 {
+                log::info!("prepare_today: emitted {} email-entity signals", emitted);
+            }
+        }
+    }
+
+    // I395: Score enriched emails after enrichment + signal emission
+    {
+        let score_guard = state.db.lock().ok();
+        if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
+            let model = state.embedding_model.clone();
+            let active = db.get_all_active_emails().unwrap_or_default();
+            let scores = crate::signals::email_scoring::score_emails(
+                db,
+                Some(&model),
+                &active,
+            );
+            for (email_id, score, reason) in &scores {
+                let _ = db.set_relevance_score(email_id, *score, reason);
+            }
+            if !scores.is_empty() {
+                log::info!("prepare_today: scored {} emails", scores.len());
             }
         }
     }
@@ -1050,10 +1178,131 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         .ok()
         .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
         .unwrap_or_default();
+    // I374: Load dismissed domains for relevance learning penalty
+    let dismissed_domains: HashSet<String> = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|db| db.get_dismissed_domains(5).unwrap_or_default()))
+        .unwrap_or_default();
+
     let email_result =
-        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords).await;
+        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords, &dismissed_domains).await;
     if let Some(sync_error) = email_result.sync_error {
         return Err(ExecutionError::NetworkError(sync_error.message));
+    }
+
+    // I365: Persist fetched emails to DB
+    if let Ok(guard) = state.db.lock() {
+        if let Some(db) = guard.as_ref() {
+            let mut persisted = 0usize;
+            for raw in &email_result.raw_emails {
+                let sender_email = email_classify::extract_email_address(&raw.from);
+                let sender_name = extract_display_name(&raw.from);
+                let priority = email_result
+                    .priorities
+                    .get(&raw.id)
+                    .map(|s| s.as_str())
+                    .unwrap_or("medium");
+                let db_email = crate::db::DbEmail {
+                    email_id: raw.id.clone(),
+                    thread_id: Some(raw.thread_id.clone()),
+                    sender_email: Some(sender_email),
+                    sender_name: Some(sender_name),
+                    subject: Some(raw.subject.clone()),
+                    snippet: Some(raw.snippet.clone()),
+                    priority: Some(priority.to_string()),
+                    is_unread: raw.is_unread,
+                    received_at: Some(raw.date.clone()),
+                    enrichment_state: "pending".to_string(),
+                    enrichment_attempts: 0,
+                    last_enrichment_at: None,
+                    last_seen_at: None,
+                    resolved_at: None,
+                    entity_id: None,
+                    entity_type: None,
+                    contextual_summary: None,
+                    sentiment: None,
+                    urgency: None,
+                    user_is_last_sender: false,
+                    last_sender_email: Some(sender_name_fallback(&raw.from)),
+                    message_count: 1,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                    relevance_score: None,
+                    score_reason: None,
+                };
+                if let Err(e) = db.upsert_email(&db_email) {
+                    log::warn!("Failed to persist email {}: {}", raw.id, e);
+                } else {
+                    persisted += 1;
+                }
+            }
+            if persisted > 0 {
+                log::info!("I365: Persisted {} emails to DB", persisted);
+            }
+
+            // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
+            reconcile_inbox_emails(&email_result.raw_emails, db);
+        }
+    }
+
+    // I370: Refresh thread positions from sent messages
+    {
+        let sent_thread_ids = google_api::gmail::fetch_recent_sent_thread_ids(
+            &google_api::get_valid_access_token().await.unwrap_or_default(),
+        ).await.unwrap_or_default();
+        if !sent_thread_ids.is_empty() {
+            if let Ok(guard) = state.db.lock() {
+                if let Some(db) = guard.as_ref() {
+                    update_thread_positions_from_sent(&sent_thread_ids, db);
+                }
+            }
+        }
+    }
+
+    // I367: Mandatory email enrichment (entity resolution + AI analysis)
+    // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
+    {
+        let ai_config = {
+            let cfg = state.config.read().ok();
+            cfg.as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|c| c.ai_models.clone())
+                .unwrap_or_default()
+        };
+        let enriched = super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+        if enriched > 0 {
+            log::info!("refresh_emails: enriched {} emails", enriched);
+        }
+        // I372: Emit entity signals from enriched emails
+        let signal_guard = state.db.lock().ok();
+        if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
+            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db);
+            if emitted > 0 {
+                log::info!("refresh_emails: emitted {} email-entity signals", emitted);
+            }
+        }
+    }
+
+    // I395: Score enriched emails after enrichment + signal emission
+    {
+        let score_guard = state.db.lock().ok();
+        if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
+            let model = state.embedding_model.clone();
+            let active = db.get_all_active_emails().unwrap_or_default();
+            let scores = crate::signals::email_scoring::score_emails(
+                db,
+                Some(&model),
+                &active,
+            );
+            for (email_id, score, reason) in &scores {
+                let _ = db.set_relevance_score(email_id, *score, reason);
+            }
+            if !scores.is_empty() {
+                log::info!("refresh_emails: scored {} emails", scores.len());
+            }
+        }
     }
 
     // Build refresh directive matching the shape Rust expects
@@ -1537,6 +1786,10 @@ struct EmailResult {
     medium_count: u64,
     low_count: u64,
     sync_error: Option<EmailSyncFailure>,
+    /// Raw emails from Gmail for DB persistence (I365).
+    raw_emails: Vec<google_api::gmail::RawEmail>,
+    /// Classified priorities keyed by email ID, for DB upsert.
+    priorities: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1561,6 +1814,7 @@ async fn fetch_and_classify_emails(
     customer_domains: &HashSet<String>,
     account_hints: &HashSet<String>,
     extra_high_keywords: &[String],
+    dismissed_domains: &HashSet<String>,
 ) -> EmailResult {
     let access_token = match google_api::get_valid_access_token().await {
         Ok(t) => t,
@@ -1577,11 +1831,13 @@ async fn fetch_and_classify_emails(
                     code: "gmail_auth_failed",
                     message: format!("Email fetch authentication failed: {}", e),
                 }),
+                raw_emails: Vec::new(),
+                priorities: std::collections::HashMap::new(),
             };
         }
     };
 
-    let raw_emails = match google_api::gmail::fetch_unread_emails(&access_token, 30).await {
+    let raw_emails = match google_api::gmail::fetch_inbox_emails(&access_token, 50).await {
         Ok(e) => e,
         Err(e) => {
             log::warn!("Email fetch failed ({}), emails will be empty", e);
@@ -1596,6 +1852,8 @@ async fn fetch_and_classify_emails(
                     code: "gmail_fetch_failed",
                     message: format!("Email fetch failed: {}", e),
                 }),
+                raw_emails: Vec::new(),
+                priorities: std::collections::HashMap::new(),
             };
         }
     };
@@ -1605,9 +1863,11 @@ async fn fetch_and_classify_emails(
     let mut low = Vec::new();
     let mut medium_count: u64 = 0;
     let mut low_count: u64 = 0;
+    let mut priorities: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for email in &raw_emails {
-        let priority = email_classify::classify_email_priority_with_extras(
+        let priority = email_classify::classify_email_priority_full(
             &email.from,
             &email.subject,
             &email.list_unsubscribe,
@@ -1616,7 +1876,10 @@ async fn fetch_and_classify_emails(
             user_domain,
             account_hints,
             extra_high_keywords,
+            dismissed_domains,
         );
+
+        priorities.insert(email.id.clone(), priority.to_string());
 
         let from_email = email_classify::extract_email_address(&email.from);
 
@@ -1649,7 +1912,132 @@ async fn fetch_and_classify_emails(
         medium_count,
         low_count,
         sync_error: None,
+        raw_emails,
+        priorities,
     }
+}
+
+/// I370: Update thread positions using pre-fetched sent thread IDs.
+///
+/// Compares sent thread IDs against active emails in the DB and updates
+/// `user_is_last_sender` accordingly.
+fn update_thread_positions_from_sent(
+    sent_thread_ids: &std::collections::HashSet<String>,
+    db: &crate::db::ActionDb,
+) {
+    let active_emails = match db.get_all_active_emails() {
+        Ok(emails) => emails,
+        Err(e) => {
+            log::warn!("I370: Failed to get active emails: {}", e);
+            return;
+        }
+    };
+
+    let mut updated = 0usize;
+    for email in &active_emails {
+        if let Some(ref thread_id) = email.thread_id {
+            let is_last = sent_thread_ids.contains(thread_id);
+            if is_last != email.user_is_last_sender {
+                if let Err(e) = db.update_thread_position(thread_id, is_last) {
+                    log::warn!("I370: Failed to update thread position for {}: {}", thread_id, e);
+                } else {
+                    updated += 1;
+                }
+            }
+        }
+    }
+
+    if updated > 0 {
+        log::info!("I370: Updated thread position for {} threads", updated);
+    }
+}
+
+/// I366: Reconcile inbox state — mark vanished emails as resolved, reappear resolved ones.
+///
+/// Compares the current inbox email IDs against active (non-resolved) emails in the DB.
+/// Emails in DB but not in inbox are marked resolved. Emails in inbox but previously
+/// resolved are unmarked. Also deactivates signals for vanished emails.
+fn reconcile_inbox_emails(
+    raw_emails: &[google_api::gmail::RawEmail],
+    db: &crate::db::ActionDb,
+) {
+    let inbox_ids: std::collections::HashSet<String> =
+        raw_emails.iter().map(|e| e.id.clone()).collect();
+
+    // Get all active (non-resolved) email IDs from DB
+    let active_db_emails = match db.get_all_active_emails() {
+        Ok(emails) => emails,
+        Err(e) => {
+            log::warn!("I366: Failed to get active emails for reconciliation: {}", e);
+            return;
+        }
+    };
+
+    let db_ids: std::collections::HashSet<String> =
+        active_db_emails.iter().map(|e| e.email_id.clone()).collect();
+
+    // Vanished: in DB but not in inbox
+    let vanished: Vec<String> = db_ids
+        .difference(&inbox_ids)
+        .cloned()
+        .collect();
+
+    // Reappeared: in inbox but resolved in DB (need a separate query)
+    // We check against all emails with resolved_at set
+    let reappeared: Vec<String> = inbox_ids
+        .difference(&db_ids)
+        .cloned()
+        .collect();
+
+    if !vanished.is_empty() {
+        match db.mark_emails_resolved(&vanished) {
+            Ok(count) if count > 0 => {
+                log::info!("I366: Marked {} vanished emails as resolved", count);
+            }
+            Err(e) => {
+                log::warn!("I366: Failed to mark resolved: {}", e);
+            }
+            _ => {}
+        }
+        // Deactivate signals for vanished emails
+        match db.deactivate_signals_for_emails(&vanished) {
+            Ok(count) if count > 0 => {
+                log::info!("I366: Deactivated {} signals for vanished emails", count);
+            }
+            Err(e) => {
+                log::warn!("I366: Failed to deactivate signals: {}", e);
+            }
+            _ => {}
+        }
+    }
+
+    if !reappeared.is_empty() {
+        match db.unmark_resolved(&reappeared) {
+            Ok(count) if count > 0 => {
+                log::info!("I366: Unmarked {} reappeared emails", count);
+            }
+            Err(e) => {
+                log::warn!("I366: Failed to unmark resolved: {}", e);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Extract display name from a From header like "Jane Doe <jane@example.com>".
+fn extract_display_name(from_field: &str) -> String {
+    if let Some(start) = from_field.find('<') {
+        let name = from_field[..start].trim().trim_matches('"').trim();
+        if !name.is_empty() {
+            return name.to_string();
+        }
+    }
+    from_field.trim().to_string()
+}
+
+/// Extract the email address from From field, falling back to the full string.
+fn sender_name_fallback(from_field: &str) -> String {
+    email_classify::extract_email_address(from_field)
 }
 
 /// I318: Track thread positions from fetched high-priority emails.

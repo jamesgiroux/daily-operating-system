@@ -2228,6 +2228,10 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
             can_retry: Some(true),
             last_attempt_at: Some(now),
             last_success_at,
+            enrichment_pending: None,
+            enrichment_enriched: None,
+            enrichment_failed: None,
+            total_active: None,
         };
 
         if let Some(mut payload) = existing {
@@ -2320,6 +2324,10 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
         can_retry: Some(true),
         last_attempt_at: Some(now.clone()),
         last_success_at: Some(now),
+        enrichment_pending: None,
+        enrichment_enriched: None,
+        enrichment_failed: None,
+        total_active: None,
     };
 
     let emails_data = json!({

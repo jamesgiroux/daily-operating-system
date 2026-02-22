@@ -506,6 +506,29 @@ impl ActionDb {
         Ok(dismissed)
     }
 
+    /// Get sender domains with dismissal count >= threshold (I374).
+    /// Returns a set of domains that the user has repeatedly dismissed items from.
+    pub fn get_dismissed_domains(&self, threshold: u32) -> Result<std::collections::HashSet<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT sender_domain FROM email_dismissals
+             WHERE sender_domain IS NOT NULL
+             GROUP BY sender_domain
+             HAVING COUNT(*) >= ?1"
+        )?;
+        let rows = stmt.query_map(params![threshold], |row| row.get::<_, String>(0))?;
+        let mut domains = std::collections::HashSet::new();
+        for row in rows {
+            domains.insert(row?);
+        }
+        Ok(domains)
+    }
+
+    /// Truncate all email dismissal records (I374 reset).
+    pub fn reset_email_dismissals(&self) -> Result<u64, DbError> {
+        let count = self.conn.execute("DELETE FROM email_dismissals", [])?;
+        Ok(count as u64)
+    }
+
     // ================================================================
     // Email thread tracking (I318)
     // ================================================================
@@ -619,6 +642,29 @@ impl ActionDb {
             params![content, id],
         )?;
         Ok(())
+    }
+
+    /// Deactivate email signals for resolved emails (I366).
+    /// Sets `deactivated_at` to now for all signals linked to the given email IDs.
+    /// Returns the number of signals deactivated.
+    pub fn deactivate_signals_for_emails(&self, email_ids: &[String]) -> Result<usize, String> {
+        if email_ids.is_empty() {
+            return Ok(0);
+        }
+        let now = chrono::Utc::now().to_rfc3339();
+        let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "UPDATE email_signals SET deactivated_at = '{}' WHERE email_id IN ({}) AND deactivated_at IS NULL",
+            now,
+            placeholders.join(", ")
+        );
+        let param_values: Vec<&dyn rusqlite::types::ToSql> =
+            email_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+        let rows = self
+            .conn
+            .execute(&sql, param_values.as_slice())
+            .map_err(|e| format!("Failed to deactivate email signals: {e}"))?;
+        Ok(rows)
     }
 
 }
