@@ -311,6 +311,76 @@ pub fn rule_renewal_engagement_compound(signal: &SignalEvent, db: &ActionDb) -> 
 }
 
 // ---------------------------------------------------------------------------
+// Rule: Person signal → Connected persons (network graph, I391)
+// ---------------------------------------------------------------------------
+
+/// When a person emits a signal, propagate attenuated copies to connected
+/// persons via `person_relationships` edges. Loop prevention: signals that
+/// already originated from network propagation are not re-propagated.
+pub fn rule_person_network(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.entity_type != "person" {
+        return Vec::new();
+    }
+    // Loop prevention
+    if signal.source.contains("propagation:network") {
+        return Vec::new();
+    }
+    // Confidence gate
+    if signal.confidence < 0.65 {
+        return Vec::new();
+    }
+
+    let edges = match db.get_relationships_for_person(&signal.entity_id) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+
+    let base_multiplier = 0.4_f64;
+    edges
+        .iter()
+        .filter_map(|edge| {
+            use crate::db::person_relationships::RelationshipType;
+            let type_multiplier: f64 = match edge.relationship_type {
+                RelationshipType::Manager | RelationshipType::Partner => 1.0,
+                RelationshipType::Mentor => 0.8,
+                RelationshipType::Peer | RelationshipType::Ally => 0.7,
+                RelationshipType::Collaborator => {
+                    if edge.effective_confidence < 0.7 {
+                        return None;
+                    }
+                    0.8
+                }
+                RelationshipType::IntroducedBy => 0.5,
+            };
+            let derived_confidence = signal.confidence
+                * edge.effective_confidence
+                * base_multiplier
+                * type_multiplier;
+            let target_id = if edge.from_person_id == signal.entity_id {
+                edge.to_person_id.clone()
+            } else {
+                edge.from_person_id.clone()
+            };
+            let value = serde_json::json!({
+                "source_signal": signal.id,
+                "source_person_id": signal.entity_id,
+                "relationship_type": edge.relationship_type.to_string(),
+                "edge_confidence": edge.effective_confidence,
+            })
+            .to_string();
+            Some(DerivedSignal {
+                entity_type: "person".to_string(),
+                entity_id: target_id,
+                signal_type: signal.signal_type.clone(),
+                source: "propagation:network".to_string(),
+                value: Some(value),
+                confidence: derived_confidence,
+            })
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Rule: Account signal → Parent account (hierarchy up)
 // ---------------------------------------------------------------------------
 
@@ -1203,5 +1273,120 @@ mod tests {
         assert_eq!(derived.len(), 1);
         // Should use solo path since hierarchy signals are filtered out
         assert!((derived[0].confidence - 0.85 * 0.6).abs() < 0.01);
+    }
+
+    // -----------------------------------------------------------------------
+    // Person Network (I391)
+    // -----------------------------------------------------------------------
+
+    fn setup_person_pair(db: &crate::db::ActionDb) {
+        let conn = db.conn_ref();
+        conn.execute(
+            "INSERT INTO people (id, email, name, updated_at) VALUES ('p1', 'a@test.com', 'Alice', '2026-01-01')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO people (id, email, name, updated_at) VALUES ('p2', 'b@test.com', 'Bob', '2026-01-01')",
+            [],
+        ).unwrap();
+    }
+
+    #[test]
+    fn test_rule_person_network_basic_propagation() {
+        let db = test_db();
+        setup_person_pair(&db);
+        db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
+            relationship_type: "manager", direction: "directed", confidence: 0.8,
+            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
+        }).unwrap();
+
+        let signal = make_signal("person", "p1", "sentiment_shift", None);
+        let derived = rule_person_network(&signal, &db);
+
+        assert_eq!(derived.len(), 1);
+        assert_eq!(derived[0].entity_id, "p2");
+        assert_eq!(derived[0].entity_type, "person");
+        assert_eq!(derived[0].source, "propagation:network");
+        // manager: 0.85 * 0.8 * 0.4 * 1.0 = 0.272
+        assert!((derived[0].confidence - 0.85 * 0.8 * 0.4).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rule_person_network_loop_prevention() {
+        let db = test_db();
+        setup_person_pair(&db);
+        db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
+            relationship_type: "peer", direction: "symmetric", confidence: 0.8,
+            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
+        }).unwrap();
+
+        let mut signal = make_signal("person", "p1", "sentiment_shift", None);
+        signal.source = "propagation:network".to_string();
+        let derived = rule_person_network(&signal, &db);
+        assert!(derived.is_empty(), "Network-derived signals must not re-propagate");
+    }
+
+    #[test]
+    fn test_rule_person_network_confidence_gate() {
+        let db = test_db();
+        setup_person_pair(&db);
+        db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
+            relationship_type: "manager", direction: "directed", confidence: 0.9,
+            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
+        }).unwrap();
+
+        let mut signal = make_signal("person", "p1", "sentiment_shift", None);
+        signal.confidence = 0.5; // Below 0.65 threshold
+        let derived = rule_person_network(&signal, &db);
+        assert!(derived.is_empty(), "Low-confidence signals should not propagate via network");
+    }
+
+    #[test]
+    fn test_rule_person_network_mentor_multiplier() {
+        let db = test_db();
+        setup_person_pair(&db);
+        db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
+            relationship_type: "mentor", direction: "directed", confidence: 0.8,
+            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
+        }).unwrap();
+
+        let signal = make_signal("person", "p1", "sentiment_shift", None);
+        let derived = rule_person_network(&signal, &db);
+
+        assert_eq!(derived.len(), 1);
+        // mentor: 0.85 * 0.8 * 0.4 * 0.8 = 0.2176
+        let expected = 0.85 * 0.8 * 0.4 * 0.8;
+        assert!((derived[0].confidence - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rule_person_network_introduced_by_low_multiplier() {
+        let db = test_db();
+        setup_person_pair(&db);
+        db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
+            relationship_type: "introduced_by", direction: "directed", confidence: 0.9,
+            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
+        }).unwrap();
+
+        let signal = make_signal("person", "p1", "status_change", None);
+        let derived = rule_person_network(&signal, &db);
+
+        assert_eq!(derived.len(), 1);
+        // introduced_by: 0.85 * 0.9 * 0.4 * 0.5 = 0.153
+        let expected = 0.85 * 0.9 * 0.4 * 0.5;
+        assert!((derived[0].confidence - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rule_person_network_skips_non_person() {
+        let db = test_db();
+        let signal = make_signal("account", "a1", "health_change", None);
+        let derived = rule_person_network(&signal, &db);
+        assert!(derived.is_empty());
     }
 }
