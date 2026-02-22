@@ -150,6 +150,17 @@ pub struct ParentAggregate {
     pub nearest_renewal: Option<String>,
 }
 
+/// Aggregated signals for a parent project's children (I388).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectParentAggregate {
+    pub child_count: usize,
+    pub active_count: usize,
+    pub on_hold_count: usize,
+    pub completed_count: usize,
+    pub nearest_target_date: Option<String>,
+}
+
 /// A row from the `meetings_history` table.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -433,6 +444,7 @@ pub struct DbProject {
     pub owner: Option<String>,
     pub target_date: Option<String>,
     pub tracker_path: Option<String>,
+    pub parent_id: Option<String>,
     pub updated_at: String,
     pub archived: bool,
     /// JSON array of auto-extracted keywords for entity resolution (I305).
