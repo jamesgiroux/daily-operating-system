@@ -4,6 +4,29 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.3] - 2026-02-22
+
+Parent accounts are portfolio surfaces, not folders. A user managing Salesforce's 10 BUs under one parent needs a surface that shows the whole picture: which BUs are healthy, which need attention, what patterns emerge across the portfolio. This version makes parent accounts into that surface, adds partner as a first-class entity type, regroups the accounts page to match, and wires bidirectional signal propagation so BU signals accumulate at the parent without the user specifying which children are affected.
+
+### Added
+
+- **Partner entity type** — `account_type` column (customer/internal/partner), migration 036, clickable type badge on account detail with inline dropdown selector, type badges in entity picker, AccountsPage three-group layout (Your Book / Your Team / Your Partners)
+- **Partner meeting classification** — meetings with partner-account attendees classify as `partnership` type with Entity intelligence tier, distinct from customer meetings
+- **Portfolio chapter on parent accounts** — health summary (bold serif epigraph), portfolio narrative, hotspots (child accounts needing attention), cross-BU patterns, condensed child list with health indicators and type badges
+- **Bidirectional signal propagation** — `rule_hierarchy_up` propagates child signals to parent with 48-hour sibling accumulation via weighted log-odds fusion; `rule_hierarchy_down` fans out high-confidence (≥ 0.7) parent signals to direct children at 0.5× attenuation
+- **Signal-driven intel enrichment** — propagated signals targeting a different entity than the source automatically enqueue the target at ProactiveHygiene priority in the intelligence queue
+- **Child account search** — searching on the accounts page now matches against child account names in the cache; parent rows auto-expand when a child matches
+- **`accountType` on `AccountChildSummary`** — child accounts in the portfolio chapter display a type badge for non-customer types (Partner/Internal)
+- **`account_type` on `EntityHint`** — meeting classification entity resolution now carries account type for partner detection
+- **`healthSummary` in portfolio rendering** — parent account portfolio chapter renders the health summary field above the narrative when present
+- **`get_recent_signals_by_type` DB helper** — queries signal_events within a time window by entity and type, excluding hierarchy-propagated signals, used by accumulation logic
+
+### Fixed
+
+- **Watcher clobbering account_type** — `read_account_json` hardcoded `AccountType::Customer`; every field update regenerated `dashboard.json`, triggering the watcher to upsert the account with `Customer` type, immediately overwriting user-set partner/internal types. Watcher now preserves `account_type`, `archived`, and `name` from the existing DB record
+- **Sync paths clobbering DB-only fields** — `sync_accounts_from_workspace` merge (both parent and child) and `populate_workspace` now preserve `account_type`, `archived`, and `name` from existing DB records instead of overwriting with hardcoded defaults
+- **StakeholderGallery TypeScript error** — `title` prop on Lucide `LinkIcon` replaced with `aria-label` for Lucide React compatibility
+
 ## [0.13.2] - 2026-02-21
 
 Know what you built before you build the next layer. Every AI enrichment call site audited and classified against ADR-0086. Every signal propagation rule confirmed to have a live emitter. Every `intelligence.json` field mapped as live, write-only, or dead — dead fields removed. The vector DB confirmed useful with four live consumers. `commands.rs` reduced by service extraction to 8,121 lines. `db/mod.rs` reduced to 441 lines via domain module migration. No user-visible changes.
