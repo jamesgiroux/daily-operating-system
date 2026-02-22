@@ -1187,7 +1187,6 @@ export interface EntityIntelligence {
   recentWins: IntelWin[];
   currentState?: IntelCurrentState;
   stakeholderInsights: StakeholderInsight[];
-  valueDelivered: ValueItem[];
   nextMeetingReadiness?: IntelMeetingReadiness;
   companyContext?: IntelCompanyContext;
   userEdits?: UserEdit[];
@@ -1223,13 +1222,6 @@ export interface StakeholderInsight {
   assessment?: string;
   engagement?: string;
   source?: string;
-}
-
-export interface ValueItem {
-  date?: string;
-  statement: string;
-  source?: string;
-  impact?: string;
 }
 
 export interface IntelMeetingReadiness {
