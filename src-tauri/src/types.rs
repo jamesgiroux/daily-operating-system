@@ -1302,6 +1302,8 @@ pub struct EmailDetail {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailSignal {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
     pub signal_type: String,
     pub signal_text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
