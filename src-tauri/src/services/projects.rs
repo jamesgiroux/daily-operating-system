@@ -49,6 +49,7 @@ pub fn get_projects_list(state: &AppState) -> Result<Vec<ProjectListItem>, Strin
                 child_count,
                 parent_name,
                 parent_id: p.parent_id,
+                archived: p.archived,
             }
         })
         .collect();
@@ -98,6 +99,7 @@ pub fn get_child_projects_list(
                 parent_name: parent_name.clone(),
                 child_count,
                 is_parent: child_count > 0,
+                archived: p.archived,
             }
         })
         .collect();
