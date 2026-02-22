@@ -39,7 +39,8 @@ impl ActionDb {
             .query_row(
                 "SELECT MAX(m.start_time) FROM meetings_history m
                  INNER JOIN meeting_entities me ON m.id = me.meeting_id
-                 WHERE me.entity_id = ?1",
+                 WHERE me.entity_id = ?1
+                   AND m.start_time <= datetime('now')",
                 params![account_id],
                 |row| row.get(0),
             )
