@@ -16,7 +16,6 @@ import {
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
-import { formatRelativeDate } from "@/lib/utils";
 import {
   EntityListSkeleton,
   EntityListError,
@@ -35,13 +34,6 @@ type RelationshipTab = "all" | "external" | "internal" | "unknown";
 type HygieneFilter = "unnamed" | "duplicates";
 
 const relationshipTabs: readonly RelationshipTab[] = ["all", "external", "internal", "unknown"];
-
-const tempDotColor: Record<string, string> = {
-  hot: "var(--color-garden-sage)",
-  warm: "var(--color-spice-turmeric)",
-  cool: "var(--color-paper-linen)",
-  cold: "var(--color-spice-terracotta)",
-};
 
 const tempOrder: Record<string, number> = {
   hot: 0,
@@ -556,18 +548,8 @@ function PersonRow({
   showRelationship: boolean;
   showBorder: boolean;
 }) {
-  const trendArrow =
-    person.trend === "increasing" ? (
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-garden-sage)" }}>{"\u25B2"}</span>
-    ) : person.trend === "decreasing" ? (
-      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-spice-terracotta)" }}>{"\u25BC"}</span>
-    ) : null;
-
-  const lastSeen = person.lastSeen ? formatRelativeDate(person.lastSeen) : null;
-
   const nameSuffix = (
     <>
-      {trendArrow}
       {showRelationship && person.relationship !== "unknown" && (
         <span
           style={{
@@ -599,17 +581,12 @@ function PersonRow({
     <EntityRow
       to="/people/$personId"
       params={{ personId: person.id }}
-      dotColor={tempDotColor[person.temperature] ?? "var(--color-paper-linen)"}
+      dotColor="var(--color-garden-larkspur)"
       name={person.name}
       showBorder={showBorder}
       nameSuffix={nameSuffix}
       subtitle={subtitle}
     >
-      {lastSeen && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
-          {lastSeen}
-        </span>
-      )}
     </EntityRow>
   );
 }

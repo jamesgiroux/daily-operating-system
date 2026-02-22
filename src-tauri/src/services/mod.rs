@@ -7,3 +7,5 @@ pub mod dashboard;
 pub mod projects;
 pub mod emails;
 pub mod integrations;
+pub mod settings;
+pub mod intelligence;
