@@ -30,7 +30,7 @@ pub struct BridgeCorrelation {
 /// - `meetings_history` table for upcoming meetings + attendee CSV
 /// - `email_signals` table for sender_email matching
 /// - `emit_signal()` to write correlations to signal_events
-pub fn run_email_meeting_bridge(db: &ActionDb) -> Result<Vec<BridgeCorrelation>, String> {
+pub fn run_email_meeting_bridge(db: &ActionDb, engine: &super::propagation::PropagationEngine) -> Result<Vec<BridgeCorrelation>, String> {
     let conn = db.conn_ref();
     let mut correlations = Vec::new();
 
@@ -114,8 +114,9 @@ pub fn run_email_meeting_bridge(db: &ActionDb) -> Result<Vec<BridgeCorrelation>,
                 })
                 .to_string();
 
-                let signal_id = bus::emit_signal(
+                let (signal_id, _) = bus::emit_signal_and_propagate(
                     db,
+                    engine,
                     "meeting",
                     meeting_id,
                     "pre_meeting_context",
@@ -136,8 +137,9 @@ pub fn run_email_meeting_bridge(db: &ActionDb) -> Result<Vec<BridgeCorrelation>,
 
                 // Also emit to the entity for cross-reference
                 if !entity_id.is_empty() {
-                    let _ = bus::emit_signal(
+                    let _ = bus::emit_signal_and_propagate(
                         db,
+                        engine,
                         "account",
                         entity_id,
                         "pre_meeting_context",
@@ -169,7 +171,7 @@ pub fn run_email_meeting_bridge(db: &ActionDb) -> Result<Vec<BridgeCorrelation>,
 ///
 /// Source: `email_enrichment`. Signals compound with existing entity signals
 /// via the propagation engine.
-pub fn emit_enriched_email_signals(db: &ActionDb) -> usize {
+pub fn emit_enriched_email_signals(db: &ActionDb, engine: &super::propagation::PropagationEngine) -> usize {
     // Get enriched emails with resolved entities
     let mut stmt = match db.conn_ref().prepare(
         "SELECT email_id, entity_id, entity_type, sentiment, urgency, subject, sender_email
@@ -261,8 +263,9 @@ pub fn emit_enriched_email_signals(db: &ActionDb) -> usize {
                     })
                     .to_string();
 
-                    if bus::emit_signal(
+                    if bus::emit_signal_and_propagate(
                         db,
+                        engine,
                         entity_type,
                         entity_id,
                         "email_sentiment",
@@ -303,8 +306,8 @@ pub fn emit_enriched_email_signals(db: &ActionDb) -> usize {
                             "source_context": ctx,
                         })
                         .to_string();
-                        if bus::emit_signal(
-                            db, entity_type, entity_id,
+                        if bus::emit_signal_and_propagate(
+                            db, engine, entity_type, entity_id,
                             "email_commitment", "email_enrichment",
                             Some(&value), 0.65,
                         ).is_ok() {
@@ -322,8 +325,9 @@ pub fn emit_enriched_email_signals(db: &ActionDb) -> usize {
                 })
                 .to_string();
 
-                if bus::emit_signal(
+                if bus::emit_signal_and_propagate(
                     db,
+                    engine,
                     entity_type,
                     entity_id,
                     "email_urgency_high",
@@ -376,8 +380,9 @@ pub fn emit_enriched_email_signals(db: &ActionDb) -> usize {
                 // Emit at 60% of the person-signal confidence (attenuated propagation)
                 if let Some(ref s) = sentiment {
                     if s != "neutral" {
-                        let _ = bus::emit_signal(
+                        let _ = bus::emit_signal_and_propagate(
                             db,
+                            engine,
                             "account",
                             account_id,
                             "email_sentiment",
@@ -389,8 +394,9 @@ pub fn emit_enriched_email_signals(db: &ActionDb) -> usize {
                     }
                 }
                 if urgency.as_deref() == Some("high") {
-                    let _ = bus::emit_signal(
+                    let _ = bus::emit_signal_and_propagate(
                         db,
+                        engine,
                         "account",
                         account_id,
                         "email_urgency_high",
@@ -423,13 +429,15 @@ mod tests {
     #[test]
     fn test_bridge_no_meetings() {
         let db = test_db();
-        let result = run_email_meeting_bridge(&db).expect("bridge");
+        let engine = crate::signals::propagation::PropagationEngine::new();
+        let result = run_email_meeting_bridge(&db, &engine).expect("bridge");
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_bridge_with_overlap() {
         let db = test_db();
+        let engine = crate::signals::propagation::PropagationEngine::new();
         let conn = db.conn_ref();
 
         // Insert a meeting starting in 1 hour with attendees
@@ -446,7 +454,7 @@ mod tests {
             [],
         ).expect("insert email signal");
 
-        let correlations = run_email_meeting_bridge(&db).expect("bridge");
+        let correlations = run_email_meeting_bridge(&db, &engine).expect("bridge");
         assert_eq!(correlations.len(), 1);
         assert_eq!(correlations[0].meeting_id, "m1");
         assert_eq!(correlations[0].sender_email, "alice@acme.com");
