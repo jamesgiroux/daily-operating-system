@@ -26,6 +26,7 @@ import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { ActionRow } from "@/components/shared/ActionRow";
 
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -435,10 +436,11 @@ Thanks!`;
             {syncing ? "Syncing…" : "Sync Transcript"}
           </button>
         )}
-        <button onClick={() => loadMeetingIntelligence()} className={styles.folioBtnInline}>
-          <RefreshCw className={styles.iconSm} />
-          Refresh
-        </button>
+        <FolioRefreshButton
+          onClick={() => loadMeetingIntelligence()}
+          loading={refreshingIntel}
+          title="Refresh intelligence"
+        />
       </div>
     ) : undefined,
   }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
@@ -711,6 +713,30 @@ Thanks!`;
                   meetingId={meetingId ?? undefined}
                   onSaveStatus={setSaveStatus}
                 />
+              </section>
+            )}
+
+            {/* Recent Correspondence — email signals for meeting attendees */}
+            {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Recent Correspondence" />
+                <div className={styles.risksContainer}>
+                  {data.recentEmailSignals.map((signal, i) => (
+                    <Link key={i} to="/emails" className={styles.subordinateRisk} style={{ textDecoration: "none", display: "block" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em", color: "var(--color-text-tertiary)" }}>
+                          {signal.senderEmail}
+                        </span>
+                        {signal.detectedAt && (
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)" }}>
+                            {new Date(signal.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                      <p className={styles.subordinateRiskText}>{signal.signalText}</p>
+                    </Link>
+                  ))}
+                </div>
               </section>
             )}
 
