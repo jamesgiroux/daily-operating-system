@@ -11,7 +11,7 @@ use std::path::Path;
 use chrono::Utc;
 use serde::Deserialize;
 
-use crate::db::{ActionDb, DbAccount};
+use crate::db::{ActionDb, DbAccount, DbProject};
 use crate::util::wrap_user_data;
 
 use super::io::*;
@@ -576,6 +576,18 @@ pub fn build_intelligence_context(
         }
     }
 
+    // --- Portfolio context for parent projects (I388) ---
+    // Mirror of account hierarchy: if this project has children, gather their
+    // intelligence summaries and signals for portfolio-level synthesis.
+    if entity_type == "project" {
+        if let Ok(children) = db.get_child_projects(entity_id) {
+            if !children.is_empty() {
+                ctx.portfolio_children_context =
+                    Some(build_project_portfolio_children_context(db, &children));
+            }
+        }
+    }
+
     ctx
 }
 
@@ -694,6 +706,115 @@ fn build_portfolio_children_context(
             // Exceeded budget, switch to summary for remaining
             parts.push(format!("- {} [{}]: health={}", name, id, health_str));
             total_bytes += name.len() + id.len() + health_str.len() + 30;
+            continue;
+        }
+
+        parts.push(block);
+        total_bytes += block_bytes;
+        full_detail_count += 1;
+    }
+
+    parts.join("\n")
+}
+
+/// Build portfolio context from children's intelligence for a parent project (I388).
+///
+/// Mirrors `build_portfolio_children_context` but uses project-appropriate vocabulary
+/// (status instead of health, no ARR).
+fn build_project_portfolio_children_context(
+    db: &ActionDb,
+    children: &[DbProject],
+) -> String {
+    // Collect child data: (name, id, status, intel, signals)
+    let mut child_data: Vec<(
+        &str,           // name
+        &str,           // id
+        &str,           // status
+        Option<IntelligenceJson>,
+        Vec<crate::signals::bus::SignalEvent>,
+    )> = Vec::new();
+
+    for child in children {
+        let intel = db.get_entity_intelligence(&child.id).ok().flatten();
+        let signals = crate::signals::bus::get_active_signals(db, "project", &child.id)
+            .unwrap_or_default();
+        child_data.push((
+            &child.name,
+            &child.id,
+            &child.status,
+            intel,
+            signals,
+        ));
+    }
+
+    // Sort by signal recency (most recent first), then by name
+    child_data.sort_by(|a, b| {
+        let a_latest = a.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
+        let b_latest = b.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
+        b_latest.cmp(a_latest).then(a.0.cmp(b.0))
+    });
+
+    let mut parts: Vec<String> = Vec::new();
+    let mut total_bytes = 0usize;
+    let mut full_detail_count = 0usize;
+
+    for (name, id, status, intel, signals) in &child_data {
+        // After 8 children with full detail, switch to summary-only
+        if full_detail_count >= 8 || total_bytes >= MAX_PORTFOLIO_CONTEXT_BYTES {
+            let summary = format!("- {} [{}]: status={}", name, id, status);
+            let summary_bytes = summary.len();
+            if total_bytes + summary_bytes > MAX_PORTFOLIO_CONTEXT_BYTES {
+                parts.push(format!(
+                    "... and {} more sub-projects (truncated for context budget)",
+                    child_data.len() - full_detail_count
+                ));
+                break;
+            }
+            parts.push(summary);
+            total_bytes += summary_bytes;
+            continue;
+        }
+
+        let mut block = format!("### {} [{}]\nStatus: {}\n", name, id, status);
+
+        // Executive assessment excerpt (first 300 chars)
+        if let Some(ref intel_json) = intel {
+            if let Some(ref assessment) = intel_json.executive_assessment {
+                let excerpt = if assessment.len() > 300 {
+                    format!("{}...", &assessment[..300])
+                } else {
+                    assessment.clone()
+                };
+                block.push_str(&format!("Assessment: {}\n", excerpt));
+            }
+
+            // Risks summary
+            if !intel_json.risks.is_empty() {
+                let risk_lines: Vec<String> = intel_json.risks.iter()
+                    .take(3)
+                    .map(|r| format!("  - [{}] {}", r.urgency, r.text))
+                    .collect();
+                block.push_str("Risks:\n");
+                block.push_str(&risk_lines.join("\n"));
+                block.push('\n');
+            }
+        }
+
+        // Active signals (up to 5)
+        if !signals.is_empty() {
+            let signal_lines: Vec<String> = signals.iter()
+                .take(5)
+                .map(|s| format!("  - [{}] {} ({})", s.signal_type, s.value.as_deref().unwrap_or(""), s.created_at))
+                .collect();
+            block.push_str("Signals:\n");
+            block.push_str(&signal_lines.join("\n"));
+            block.push('\n');
+        }
+
+        let block_bytes = block.len();
+        if total_bytes + block_bytes > MAX_PORTFOLIO_CONTEXT_BYTES {
+            parts.push(format!("- {} [{}]: status={}", name, id, status));
+            total_bytes += name.len() + id.len() + status.len() + 30;
             continue;
         }
 

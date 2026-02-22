@@ -6,6 +6,9 @@ impl ActionDb {
     // =========================================================================
 
     /// Helper: map a row to `DbProject`.
+    ///
+    /// Column order: id, name, status, milestone, owner, target_date, tracker_path,
+    /// parent_id, updated_at, archived, keywords, keywords_extracted_at, metadata
     pub(crate) fn map_project_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbProject> {
         Ok(DbProject {
             id: row.get(0)?,
@@ -17,11 +20,12 @@ impl ActionDb {
             owner: row.get(4)?,
             target_date: row.get(5)?,
             tracker_path: row.get(6)?,
-            updated_at: row.get(7)?,
-            archived: row.get::<_, i32>(8).unwrap_or(0) != 0,
-            keywords: row.get(9).unwrap_or(None),
-            keywords_extracted_at: row.get(10).unwrap_or(None),
-            metadata: row.get(11).unwrap_or(None),
+            parent_id: row.get(7)?,
+            updated_at: row.get(8)?,
+            archived: row.get::<_, i32>(9).unwrap_or(0) != 0,
+            keywords: row.get(10).unwrap_or(None),
+            keywords_extracted_at: row.get(11).unwrap_or(None),
+            metadata: row.get(12).unwrap_or(None),
         })
     }
 
@@ -30,8 +34,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO projects (
                 id, name, status, milestone, owner, target_date,
-                tracker_path, updated_at, archived, keywords, keywords_extracted_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                tracker_path, parent_id, updated_at, archived, keywords, keywords_extracted_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 status = excluded.status,
@@ -39,6 +43,7 @@ impl ActionDb {
                 owner = excluded.owner,
                 target_date = excluded.target_date,
                 tracker_path = excluded.tracker_path,
+                parent_id = excluded.parent_id,
                 updated_at = excluded.updated_at",
             params![
                 project.id,
@@ -48,6 +53,7 @@ impl ActionDb {
                 project.owner,
                 project.target_date,
                 project.tracker_path,
+                project.parent_id,
                 project.updated_at,
                 project.archived as i32,
                 project.keywords,
@@ -74,7 +80,7 @@ impl ActionDb {
     pub fn get_project(&self, id: &str) -> Result<Option<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
-                    tracker_path, updated_at, archived,
+                    tracker_path, parent_id, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM projects WHERE id = ?1",
         )?;
@@ -89,7 +95,7 @@ impl ActionDb {
     pub fn get_project_by_name(&self, name: &str) -> Result<Option<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
-                    tracker_path, updated_at, archived,
+                    tracker_path, parent_id, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM projects WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -104,7 +110,7 @@ impl ActionDb {
     pub fn get_all_projects(&self) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
-                    tracker_path, updated_at, archived,
+                    tracker_path, parent_id, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM projects WHERE archived = 0 ORDER BY name",
         )?;
@@ -115,6 +121,34 @@ impl ActionDb {
     /// Update a single whitelisted field on a project.
     pub fn update_project_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
+        // parent_id uses NULL for empty values (top-level projects)
+        if field == "parent_id" {
+            if value.is_empty() {
+                self.conn.execute(
+                    "UPDATE projects SET parent_id = NULL, updated_at = ?2 WHERE id = ?1",
+                    params![id, now],
+                )?;
+            } else {
+                // Prevent self-reference
+                if value == id {
+                    return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                        "Cannot set a project as its own parent".to_string(),
+                    )));
+                }
+                // Prevent circular reference: check that value is not a descendant of id
+                let descendants = self.get_descendant_projects(id).unwrap_or_default();
+                if descendants.iter().any(|d| d.id == value) {
+                    return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                        "Cannot set a descendant as parent (circular reference)".to_string(),
+                    )));
+                }
+                self.conn.execute(
+                    "UPDATE projects SET parent_id = ?1, updated_at = ?3 WHERE id = ?2",
+                    params![value, id, now],
+                )?;
+            }
+            return Ok(());
+        }
         let sql = match field {
             "name" => "UPDATE projects SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "status" => "UPDATE projects SET status = ?1, updated_at = ?3 WHERE id = ?2",
@@ -129,6 +163,98 @@ impl ActionDb {
         };
         self.conn.execute(sql, params![value, id, now])?;
         Ok(())
+    }
+
+    /// Get top-level projects (no parent), ordered by name (I388).
+    pub fn get_top_level_projects(&self) -> Result<Vec<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, status, milestone, owner, target_date,
+                    tracker_path, parent_id, updated_at, archived,
+                    keywords, keywords_extracted_at, metadata
+             FROM projects WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], Self::map_project_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get child projects for a parent, ordered by name (I388).
+    pub fn get_child_projects(&self, parent_id: &str) -> Result<Vec<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, status, milestone, owner, target_date,
+                    tracker_path, parent_id, updated_at, archived,
+                    keywords, keywords_extracted_at, metadata
+             FROM projects WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
+        )?;
+        let rows = stmt.query_map(params![parent_id], Self::map_project_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Walk the parent_id chain to get all ancestors (I388).
+    pub fn get_project_ancestors(&self, project_id: &str) -> Result<Vec<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE ancestors(id) AS (
+                SELECT parent_id FROM projects WHERE id = ?1
+                UNION ALL
+                SELECT p.parent_id FROM projects p JOIN ancestors anc ON p.id = anc.id
+                WHERE p.parent_id IS NOT NULL
+            )
+            SELECT id, name, status, milestone, owner, target_date,
+                   tracker_path, parent_id, updated_at, archived,
+                   keywords, keywords_extracted_at, metadata
+            FROM projects
+            WHERE id IN (SELECT id FROM ancestors WHERE id IS NOT NULL)
+            ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![project_id], Self::map_project_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get all descendants using recursive CTE with depth limit (I388).
+    pub fn get_descendant_projects(&self, ancestor_id: &str) -> Result<Vec<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE descendants(id, depth) AS (
+                SELECT id, 1 FROM projects WHERE parent_id = ?1
+                UNION ALL
+                SELECT p.id, d.depth + 1 FROM projects p
+                JOIN descendants d ON p.parent_id = d.id
+                WHERE d.depth < 10
+            )
+            SELECT proj.id, proj.name, proj.status, proj.milestone, proj.owner,
+                   proj.target_date, proj.tracker_path, proj.parent_id,
+                   proj.updated_at, proj.archived,
+                   proj.keywords, proj.keywords_extracted_at, proj.metadata
+            FROM projects proj
+            JOIN descendants d ON proj.id = d.id
+            WHERE proj.archived = 0
+            ORDER BY proj.name",
+        )?;
+        let rows = stmt.query_map(params![ancestor_id], Self::map_project_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Aggregate child project signals for a parent project (I388).
+    pub fn get_project_parent_aggregate(
+        &self,
+        parent_id: &str,
+    ) -> Result<ProjectParentAggregate, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT COUNT(*),
+                    SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN status = 'on_hold' OR status = 'on-hold' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END),
+                    MIN(target_date)
+             FROM projects WHERE parent_id = ?1 AND archived = 0",
+        )?;
+        let row = stmt.query_row(params![parent_id], |row| {
+            Ok(ProjectParentAggregate {
+                child_count: row.get::<_, usize>(0)?,
+                active_count: row.get::<_, usize>(1).unwrap_or(0),
+                on_hold_count: row.get::<_, usize>(2).unwrap_or(0),
+                completed_count: row.get::<_, usize>(3).unwrap_or(0),
+                nearest_target_date: row.get(4)?,
+            })
+        })?;
+        Ok(row)
     }
 
     /// Update keywords for a project (I305).
