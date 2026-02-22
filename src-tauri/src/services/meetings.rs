@@ -797,6 +797,10 @@ pub fn get_meeting_timeline(
             start_time: m.start_time.clone(),
             end_time: m.end_time.clone(),
             meeting_type: m.meeting_type.clone(),
+            // has_prep: true if frozen prep exists OR intelligence quality is above sparse
+            has_prep: m.has_frozen_prep || quality.as_ref().is_some_and(|q| {
+                !matches!(q.level, crate::types::QualityLevel::Sparse)
+            }),
             intelligence_quality: quality,
             has_outcomes,
             outcome_summary,
@@ -804,7 +808,6 @@ pub fn get_meeting_timeline(
             has_new_signals,
             prior_meeting_id,
             follow_up_count,
-            has_prep: m.has_frozen_prep,
         });
     }
 

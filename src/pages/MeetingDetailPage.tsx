@@ -555,17 +555,16 @@ Thanks!`;
         {!hasAnyContent && !outcomes && (
           <div className={styles.emptyState}>
             <Clock className={styles.emptyIcon} />
-            <p className={styles.emptyGenerating}>Prep is being generated</p>
-            <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
-            {isPastMeeting && (
-              <button
-                onClick={handleSyncTranscript}
-                disabled={syncing}
-                className={clsx(styles.syncButton, syncing && styles.syncButtonDisabled)}
-              >
-                {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
-                {syncing ? "Syncing transcript…" : "Sync transcript"}
-              </button>
+            {isPastMeeting ? (
+              <>
+                <p className={styles.emptyGenerating}>No briefing available</p>
+                <p className={styles.emptyText}>This meeting&apos;s context wasn&apos;t captured before it started.</p>
+              </>
+            ) : (
+              <>
+                <p className={styles.emptyGenerating}>Building context</p>
+                <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
+              </>
             )}
           </div>
         )}
