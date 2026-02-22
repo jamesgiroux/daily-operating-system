@@ -28,7 +28,8 @@ import { Loader2 } from "lucide-react";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
-import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction, ReplyNeeded } from "@/types";
+import { EmailEntityChip } from "@/components/ui/email-entity-chip";
+import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -124,15 +125,19 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   const meetings = data.meetings;
   const actions = data.actions;
   const emails = data.emails ?? [];
-  const repliesNeeded = isStale ? [] : (data.repliesNeeded ?? []);
 
-  const highPriorityEmails = emails.filter((e) => e.priority === "high").slice(0, 4);
-  const briefingEmails = highPriorityEmails.length > 0
-    ? highPriorityEmails
-    : emails.filter((e) => e.priority === "medium").slice(0, 3);
-  const emailSectionLabel = highPriorityEmails.length > 0
-    ? "Emails Needing Response"
-    : "Emails Worth Noting";
+  // I395: Score-based email selection — prefer scored emails, fall back to priority-based
+  const scoredEmails = isStale ? [] : emails
+    .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
+    .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
+    .slice(0, 3);
+  // Fallback: if no scores computed yet, use emails with summaries (intelligence format)
+  // Strict check: summary must be a non-empty string to count as intelligence
+  const fallbackEmails = scoredEmails.length > 0 ? [] : (isStale ? [] : emails
+    .filter((e) => e.summary && e.summary.trim().length > 0)
+    .slice(0, 3));
+  const briefingEmails = scoredEmails.length > 0 ? scoredEmails : fallbackEmails;
+  const emailSectionLabel = briefingEmails.length > 0 ? "WORTH YOUR ATTENTION" : "";
 
   // Up Next meeting (first upcoming, not past/cancelled)
   const upNext = findUpNextMeeting(meetings, now);
@@ -376,7 +381,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         emailSectionLabel={emailSectionLabel}
         allEmails={isStale ? [] : emails}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
-        repliesNeeded={repliesNeeded}
+        emailSyncTimestamp={data.emailSync?.lastSuccessAt}
       />
 
       {/* ═══ FINIS ═══ */}
@@ -399,7 +404,7 @@ function AttentionSection({
   emailSectionLabel,
   allEmails,
   todayMeetingIds,
-  repliesNeeded,
+  emailSyncTimestamp,
 }: {
   proposedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
   acceptAction: (id: string) => void;
@@ -412,7 +417,7 @@ function AttentionSection({
   emailSectionLabel: string;
   allEmails: Email[];
   todayMeetingIds: Set<string>;
-  repliesNeeded: ReplyNeeded[];
+  emailSyncTimestamp?: string;
 }) {
   const navigate = useNavigate();
 
@@ -444,9 +449,8 @@ function AttentionSection({
 
   const hasProposed = proposedActions.length > 0;
   const hasActions = attentionActions.length > 0;
-  const hasReplies = repliesNeeded.length > 0;
   const hasEmails = briefingEmails.length > 0;
-  const hasAnything = hasProposed || hasActions || hasReplies || hasEmails;
+  const hasAnything = hasProposed || hasActions || hasEmails;
 
   if (!hasAnything) return null;
 
@@ -571,37 +575,17 @@ function AttentionSection({
             </div>
           )}
 
-          {/* Emails: show Replies Needed when available, generic emails as fallback */}
-          {hasReplies ? (
+          {/* Emails: show scored/intelligence emails first, never raw repliesNeeded */}
+          {hasEmails ? (
             <>
-              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelOverdue)}>
-                Replies Needed
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>
+                {emailSectionLabel}
+                {emailSyncTimestamp && (
+                  <span style={{ fontWeight: 400, opacity: 0.5, marginLeft: 8 }}>
+                    as of {formatAsOfTime(emailSyncTimestamp)}
+                  </span>
+                )}
               </div>
-              <div className={s.priorityItems}>
-                {repliesNeeded.slice(0, 3).map((reply) => (
-                  <Link
-                    key={reply.threadId}
-                    to="/emails"
-                    className={s.priorityItem}
-                    style={{ textDecoration: "none" }}
-                  >
-                    <div className={s.replyDot} />
-                    <div className={s.replyContent}>
-                      <div className={s.replySubject}>{reply.subject}</div>
-                      <div className={s.replyMeta}>
-                        {reply.from}
-                        {reply.waitDuration && (
-                          <> &middot; <span className={s.replyWait}>waiting {reply.waitDuration}</span></>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </>
-          ) : hasEmails ? (
-            <>
-              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>{emailSectionLabel}</div>
               <div className={s.priorityItems}>
                 {briefingEmails.map((email) => (
                   <PriorityEmailItem key={email.id} email={email} />
@@ -697,6 +681,22 @@ function PrioritizedActionItem({
   );
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Format ISO timestamp as "X:XX AM" for the "as of" label. */
+function formatAsOfTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return "";
+  }
+}
+
 // ─── Priority Email Item ─────────────────────────────────────────────────────
 
 function PriorityEmailItem({ email }: { email: Email }) {
@@ -713,13 +713,35 @@ function PriorityEmailItem({ email }: { email: Email }) {
         )}
       />
       <div className={s.priorityContent}>
-        <div className={s.priorityTitle}>
-          <span className={s.prioritySender}>{email.sender}</span>
-          <span className={s.prioritySubjectSep}>&mdash;</span>
-          <span>{email.subject}</span>
-        </div>
-        {email.recommendedAction && (
-          <div className={s.priorityAction}>{email.recommendedAction}</div>
+        {email.summary ? (
+          <>
+            <div className={s.priorityTitle}>{email.summary}</div>
+            <div className={s.replyMeta} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {email.entityName && (
+                <EmailEntityChip
+                  entityType={email.entityType}
+                  entityName={email.entityName}
+                />
+              )}
+              {/* Only show sender when it adds info beyond entity name */}
+              {(!email.entityName || !email.sender.includes(email.entityName)) && (
+                <span>{email.sender}</span>
+              )}
+              {email.scoreReason && (() => {
+                // Strip entity name from reason when chip already shows it
+                const reason = email.entityName
+                  ? email.scoreReason.replace(email.entityName, "").replace(/^[\s·]+|[\s·]+$/g, "")
+                  : email.scoreReason;
+                return reason ? <span className={s.emailScoreReason}>{reason}</span> : null;
+              })()}
+            </div>
+          </>
+        ) : (
+          <div className={s.priorityTitle}>
+            <span className={s.prioritySender}>{email.sender}</span>
+            <span className={s.prioritySubjectSep}>&mdash;</span>
+            <span>{email.subject}</span>
+          </div>
         )}
       </div>
     </Link>

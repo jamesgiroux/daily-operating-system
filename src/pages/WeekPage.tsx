@@ -35,6 +35,7 @@ export default function WeekPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ─── Data loading ─────────────────────────────────────────────────────────
 
@@ -61,13 +62,16 @@ export default function WeekPage() {
   // ─── Refresh: clear + requeue meeting preps ───────────────────────────────
 
   const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
     try {
       await invoke("refresh_meeting_preps");
-      loadTimeline();
+      await loadTimeline();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to refresh meeting preps"
       );
+    } finally {
+      setRefreshing(false);
     }
   }, [loadTimeline]);
 
@@ -116,7 +120,7 @@ export default function WeekPage() {
     () => (
       <FolioRefreshButton
         onClick={handleRefresh}
-        loading={false}
+        loading={refreshing}
         title="Refresh meeting preps"
       />
     ),

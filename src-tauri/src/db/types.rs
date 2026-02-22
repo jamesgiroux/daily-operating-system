@@ -244,6 +244,51 @@ pub struct DbEmailSignal {
     pub detected_at: String,
 }
 
+/// A row from the `emails` table (I368).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbEmail {
+    pub email_id: String,
+    pub thread_id: Option<String>,
+    pub sender_email: Option<String>,
+    pub sender_name: Option<String>,
+    pub subject: Option<String>,
+    pub snippet: Option<String>,
+    pub priority: Option<String>,
+    pub is_unread: bool,
+    pub received_at: Option<String>,
+    pub enrichment_state: String,
+    pub enrichment_attempts: i32,
+    pub last_enrichment_at: Option<String>,
+    pub last_seen_at: Option<String>,
+    pub resolved_at: Option<String>,
+    pub entity_id: Option<String>,
+    pub entity_type: Option<String>,
+    pub contextual_summary: Option<String>,
+    pub sentiment: Option<String>,
+    pub urgency: Option<String>,
+    pub user_is_last_sender: bool,
+    pub last_sender_email: Option<String>,
+    pub message_count: i32,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Relevance score from scoring pipeline (I395).
+    pub relevance_score: Option<f64>,
+    /// Human-readable score reason (I395).
+    pub score_reason: Option<String>,
+}
+
+/// Email sync statistics for the frontend sync status indicator (I373).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailSyncStats {
+    pub last_fetch_at: Option<String>,
+    pub total: i32,
+    pub enriched: i32,
+    pub pending: i32,
+    pub failed: i32,
+}
+
 /// Stakeholder relationship signals computed from meeting history and account data (I43).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
