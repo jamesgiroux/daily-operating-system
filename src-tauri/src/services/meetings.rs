@@ -4,6 +4,7 @@
 use chrono::TimeZone;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use tauri::Emitter;
 
 use crate::commands::{MeetingHistoryDetail, MeetingSearchResult, PrepContext};
 use crate::db::ActionDb;
@@ -11,7 +12,10 @@ use crate::state::AppState;
 use crate::types::{CapturedOutcome, MeetingIntelligence};
 
 /// Hydrate attendee context by matching calendar attendee emails to person entities.
-/// Scoped to external (non-internal) attendees who are in the people database.
+///
+/// For external meetings: scoped to non-internal attendees (customers, prospects, etc.).
+/// For internal meetings (team_sync, internal, one_on_one): includes all attendees,
+/// since the room IS internal colleagues (I401).
 pub fn hydrate_attendee_context(
     db: &ActionDb,
     meeting: &crate::db::DbMeeting,
@@ -50,14 +54,21 @@ pub fn hydrate_attendee_context(
         }
     }
 
-    // Filter to non-internal, non-archived people
-    contexts
-        .into_iter()
-        .filter(|ctx| {
-            // Keep external and unknown relationships; exclude internal
-            ctx.relationship.as_deref() != Some("internal")
-        })
-        .collect()
+    // I401: Internal meetings show internal attendees — the room IS your team.
+    // External meetings filter out internal colleagues to focus on the customer.
+    let is_internal_meeting = matches!(
+        meeting.meeting_type.as_str(),
+        "team_sync" | "internal" | "one_on_one"
+    );
+
+    if is_internal_meeting {
+        contexts
+    } else {
+        contexts
+            .into_iter()
+            .filter(|ctx| ctx.relationship.as_deref() != Some("internal"))
+            .collect()
+    }
 }
 
 /// Convert a DbPerson into an AttendeeContext with computed temperature.
@@ -1328,4 +1339,179 @@ pub fn update_meeting_user_notes(
     }
 
     Ok(())
+}
+
+// ── I453: Meeting handlers extracted from commands.rs ──────────
+
+/// Refresh all future meeting preps: clear frozen JSON and re-enqueue.
+pub fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let meeting_ids: Vec<String> = db
+        .conn_ref()
+        .prepare(
+            "SELECT id FROM meetings_history
+             WHERE start_time > ?1
+               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
+               AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map(rusqlite::params![now], |row| {
+                row.get::<_, String>(0)
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .map_err(|e| format!("Failed to query future meetings: {}", e))?;
+
+    if meeting_ids.is_empty() {
+        return Ok("No future meetings to refresh".to_string());
+    }
+
+    for mid in &meeting_ids {
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+            rusqlite::params![mid],
+        );
+    }
+
+    drop(db_guard);
+
+    for mid in &meeting_ids {
+        state
+            .meeting_prep_queue
+            .enqueue(crate::meeting_prep_queue::PrepRequest {
+                meeting_id: mid.clone(),
+                priority: crate::meeting_prep_queue::PrepPriority::Manual,
+                requested_at: std::time::Instant::now(),
+            });
+    }
+
+    let count = meeting_ids.len();
+    log::info!(
+        "refresh_meeting_preps: cleared and requeued {} future meetings",
+        count
+    );
+    Ok(format!("Refreshing {} meeting preps", count))
+}
+
+/// Attach a meeting transcript with TOCTOU guard, async processing, and event emission.
+pub async fn attach_meeting_transcript(
+    file_path: String,
+    meeting: crate::types::CalendarEvent,
+    state: &std::sync::Arc<AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    {
+        let mut guard = state
+            .transcript_processed
+            .lock()
+            .map_err(|_| "Lock poisoned")?;
+        if guard.contains_key(&meeting.id) {
+            return Err(format!(
+                "Meeting '{}' already has a processed transcript",
+                meeting.title
+            ));
+        }
+        guard.insert(
+            meeting.id.clone(),
+            crate::types::TranscriptRecord {
+                meeting_id: meeting.id.clone(),
+                file_path: String::new(),
+                destination: String::new(),
+                summary: None,
+                processed_at: "processing".to_string(),
+            },
+        );
+    }
+
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let state_clone = state.clone();
+    let workspace_path = config.workspace_path.clone();
+    let profile = config.profile.clone();
+    let ai_config = config.ai_models.clone();
+    let meeting_id = meeting.id.clone();
+    let meeting_clone = meeting.clone();
+    let file_path_for_record = file_path.clone();
+
+    let result = match tauri::async_runtime::spawn_blocking(move || {
+        let workspace = std::path::Path::new(&workspace_path);
+        let db_guard = state_clone.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        crate::processor::transcript::process_transcript(
+            workspace,
+            &file_path,
+            &meeting_clone,
+            db_ref,
+            &profile,
+            Some(&ai_config),
+        )
+    })
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            if let Ok(mut guard) = state.transcript_processed.lock() {
+                guard.remove(&meeting_id);
+            }
+            return Err(format!("Transcript processing task failed: {}", e));
+        }
+    };
+
+    let has_outcomes = result.status == "success"
+        && (result.summary.as_ref().is_some_and(|s| !s.is_empty())
+            || !result.wins.is_empty()
+            || !result.risks.is_empty()
+            || !result.decisions.is_empty()
+            || !result.actions.is_empty());
+
+    if result.status == "success" && has_outcomes {
+        let processed_at = chrono::Utc::now().to_rfc3339();
+        let transcript_destination = result.destination.clone().unwrap_or_default();
+        let record = crate::types::TranscriptRecord {
+            meeting_id: meeting_id.clone(),
+            file_path: file_path_for_record,
+            destination: transcript_destination.clone(),
+            summary: result.summary.clone(),
+            processed_at: processed_at.clone(),
+        };
+
+        if let Ok(mut guard) = state.transcript_processed.lock() {
+            guard.insert(meeting_id.clone(), record);
+            let _ = crate::state::save_transcript_records(&guard);
+        }
+
+        if let Ok(mut guard) = state.capture_captured.lock() {
+            guard.insert(meeting_id.clone());
+        }
+
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Err(e) = db.update_meeting_transcript_metadata(
+                    &meeting_id,
+                    &transcript_destination,
+                    &processed_at,
+                    result.summary.as_deref(),
+                ) {
+                    log::warn!("Failed to persist transcript metadata: {}", e);
+                }
+            }
+        }
+
+        let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);
+        let _ = app_handle.emit("transcript-processed", &outcome_data);
+    } else if let Ok(mut guard) = state.transcript_processed.lock() {
+        guard.remove(&meeting_id);
+        let _ = crate::state::save_transcript_records(&guard);
+    }
+
+    Ok(result)
 }
