@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { formatShortDate } from "@/lib/utils";
@@ -13,6 +13,7 @@ import {
   Zap,
   RefreshCw,
   Network,
+  Users,
   Eye,
   Activity,
   CheckSquare2,
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PersonHero } from "@/components/person/PersonHero";
 import { PersonNetwork } from "@/components/person/PersonNetwork";
+import { PersonRelationships } from "@/components/person/PersonRelationships";
 import { PersonAppendix } from "@/components/person/PersonAppendix";
 import { PersonInsightChapter } from "@/components/person/PersonInsightChapter";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
@@ -106,7 +108,8 @@ function buildChapters(relationship: string) {
         ? <RefreshCw size={18} strokeWidth={1.5} />
         : <Zap size={18} strokeWidth={1.5} />,
     },
-    { id: "the-network", label: "The Network", icon: <Network size={18} strokeWidth={1.5} /> },
+    { id: "their-orbit", label: "Their Orbit", icon: <Network size={18} strokeWidth={1.5} /> },
+    { id: "their-network", label: "Their Network", icon: <Users size={18} strokeWidth={1.5} /> },
     { id: "the-landscape", label: "The Landscape", icon: <Eye size={18} strokeWidth={1.5} /> },
     { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
     { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
@@ -132,6 +135,16 @@ export default function PersonDetailEditorial() {
     [navigate, relationship],
   );
   useRegisterMagazineShell(shellConfig);
+
+  // I390: Person relationships
+  const [relationships, setRelationships] = useState<import("@/types").PersonRelationshipEdge[]>([]);
+  const loadRelationships = useCallback(() => {
+    if (!personId) return;
+    invoke<import("@/types").PersonRelationshipEdge[]>("get_person_relationships", { personId })
+      .then(setRelationships)
+      .catch(() => setRelationships([]));
+  }, [personId]);
+  useEffect(() => { loadRelationships(); }, [loadRelationships]);
 
   // I312: Preset metadata state
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
@@ -230,18 +243,29 @@ export default function PersonDetailEditorial() {
         <PersonInsightChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
-      {/* Chapter 3: The Network */}
-      <div id="the-network" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      {/* Chapter 3: Their Orbit */}
+      <div id="their-orbit" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <PersonNetwork
           entities={detail.entities}
           onLink={person.handleLinkEntity}
           onUnlink={person.handleUnlinkEntity}
-          sectionId="the-network"
-          chapterTitle="The Network"
+          chapterTitle="Their Orbit"
         />
       </div>
 
-      {/* Chapter 4: The Landscape */}
+      {/* Chapter 4: Their Network */}
+      <div id="their-network" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+        <PersonRelationships
+          personId={personId ?? ""}
+          network={intelligence?.network}
+          relationships={relationships}
+          preset={preset ?? undefined}
+          chapterTitle="Their Network"
+          onRelationshipsChanged={loadRelationships}
+        />
+      </div>
+
+      {/* Chapter 5: The Landscape */}
       <div id="the-landscape" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <WatchList
           intelligence={intelligence}
