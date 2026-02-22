@@ -383,6 +383,25 @@ impl ActionDb {
         Ok(self.conn.changes() > 0)
     }
 
+    /// Dismiss a single email signal by setting `deactivated_at`.
+    /// Returns (entity_id, entity_type, signal_type, email_id) for signal bus emission.
+    pub fn dismiss_email_signal(&self, signal_id: i64) -> Result<Option<(String, String, String, String)>, DbError> {
+        // Look up signal context before deactivating
+        let context: Option<(String, String, String, String)> = self.conn.query_row(
+            "SELECT entity_id, entity_type, signal_type, email_id FROM email_signals
+             WHERE id = ?1 AND deactivated_at IS NULL",
+            params![signal_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).ok();
+
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE email_signals SET deactivated_at = ?1 WHERE id = ?2 AND deactivated_at IS NULL",
+            params![now, signal_id],
+        )?;
+        Ok(context)
+    }
+
     /// List recent email signals for an entity.
     pub fn list_recent_email_signals_for_entity(
         &self,
@@ -393,7 +412,7 @@ impl ActionDb {
             "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
                     signal_type, signal_text, confidence, sentiment, urgency, detected_at
              FROM email_signals
-             WHERE entity_id = ?1
+             WHERE entity_id = ?1 AND deactivated_at IS NULL
              ORDER BY detected_at DESC, id DESC
              LIMIT ?2",
         )?;
@@ -436,7 +455,7 @@ impl ActionDb {
             "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
                     signal_type, signal_text, confidence, sentiment, urgency, detected_at
              FROM email_signals
-             WHERE email_id IN ({})
+             WHERE email_id IN ({}) AND deactivated_at IS NULL
              ORDER BY detected_at DESC, id DESC",
             placeholders.join(", ")
         );
