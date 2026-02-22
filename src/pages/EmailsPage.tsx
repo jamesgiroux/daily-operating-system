@@ -9,9 +9,11 @@ import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import { X } from "lucide-react";
+import clsx from "clsx";
 import s from "@/styles/editorial-briefing.module.css";
-import type { EmailBriefingData } from "@/types";
+import type { EmailBriefingData, EmailSyncStats, EnrichedEmail } from "@/types";
 
 // =============================================================================
 // Self-contained so refreshing-state renders don't bubble to the whole page.
@@ -46,21 +48,24 @@ function EmailRefreshButton() {
 export default function EmailsPage() {
   const { personality } = usePersonality();
   const [data, setData] = useState<EmailBriefingData | null>(null);
+  const [syncStats, setSyncStats] = useState<EmailSyncStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const loadEmails = useCallback(async () => {
     try {
-      const [result, dismissedItems] = await Promise.all([
+      const [result, dismissedItems, stats] = await Promise.all([
         invoke<EmailBriefingData>("get_emails_enriched"),
         invoke<string[]>("list_dismissed_email_items").catch((err) => {
           console.error("list_dismissed_email_items failed:", err);
           return [] as string[];
         }),
+        invoke<EmailSyncStats>("get_email_sync_status").catch(() => null),
       ]);
       setData(result);
       setDismissed(new Set(dismissedItems));
+      setSyncStats(stats);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -169,10 +174,16 @@ export default function EmailsPage() {
     return { allCommitments: commitments, allQuestions: questions };
   }, [data, dismissed]);
 
-  // Count intelligence stats for hero stat line
-  const repliesNeeded = (data?.repliesNeeded ?? []).filter(
-    (r) => !dismissed.has(`reply_needed:${r.subject}`),
-  );
+  // I395: "Your Move" derived from scored emails, not stale directive data.
+  // Top scored emails with summaries are the ones worth the user's attention.
+  const yourMoveEmails = useMemo(() => {
+    if (!data) return [];
+    return [...data.highPriority, ...data.mediumPriority, ...data.lowPriority]
+      .filter((e) => e.summary && e.summary.trim().length > 0)
+      .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
+      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
+      .slice(0, 5);
+  }, [data]);
   const entityThreads = data?.entityThreads ?? [];
   const riskSignalCount = useMemo(() => {
     if (!entityThreads.length) return 0;
@@ -184,6 +195,40 @@ export default function EmailsPage() {
       return count + risks.length;
     }, 0);
   }, [entityThreads]);
+
+  // All emails with intelligence for the correspondence section (I395: sorted by relevance score)
+  const allEnrichedEmails = useMemo(() => {
+    if (!data) return [];
+    return [...data.highPriority, ...data.mediumPriority, ...data.lowPriority]
+      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+  }, [data]);
+
+  // I395: Group by score bands (only when scores have been computed)
+  const hasScores = useMemo(() =>
+    allEnrichedEmails.some(e => e.relevanceScore != null),
+    [allEnrichedEmails]
+  );
+  const priorityEmails = useMemo(() =>
+    hasScores ? allEnrichedEmails.filter(e => (e.relevanceScore ?? 0) > 0.40) : [],
+    [allEnrichedEmails, hasScores]
+  );
+  const monitoringEmails = useMemo(() =>
+    hasScores ? allEnrichedEmails.filter(e => {
+      const score = e.relevanceScore ?? 0;
+      return score >= 0.15 && score <= 0.40;
+    }) : [],
+    [allEnrichedEmails, hasScores]
+  );
+  const otherEmails = useMemo(() =>
+    hasScores ? allEnrichedEmails.filter(e => (e.relevanceScore ?? 0) < 0.15) : [],
+    [allEnrichedEmails, hasScores]
+  );
+
+  const sentimentColor = (s: string | undefined) => {
+    if (s === "positive") return "var(--color-garden-sage)";
+    if (s === "negative") return "var(--color-spice-terracotta)";
+    return "var(--color-text-tertiary)";
+  };
 
   const folioActions = useMemo(() => <EmailRefreshButton />, []);
 
@@ -220,8 +265,8 @@ export default function EmailsPage() {
 
   const hasExtracted = allCommitments.length > 0 || allQuestions.length > 0;
   const hasSignals = entityThreads.length > 0;
-  const hasReplies = repliesNeeded.length > 0;
-  const hasContent = hasReplies || hasExtracted || hasSignals;
+  const hasYourMove = yourMoveEmails.length > 0;
+  const hasContent = hasYourMove || hasExtracted || hasSignals;
 
   return (
     <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
@@ -241,9 +286,14 @@ export default function EmailsPage() {
               color: "var(--color-text-tertiary)",
             }}
           >
-            {repliesNeeded.length > 0 && (
+            {priorityEmails.length > 0 && (
               <span style={{ color: "var(--color-spice-terracotta)" }}>
-                {repliesNeeded.length} AWAITING REPLY
+                {priorityEmails.length} PRIORITY
+              </span>
+            )}
+            {monitoringEmails.length > 0 && (
+              <span>
+                {monitoringEmails.length} MONITORING
               </span>
             )}
             {allCommitments.length > 0 && (
@@ -251,6 +301,42 @@ export default function EmailsPage() {
             )}
             {riskSignalCount > 0 && (
               <span>{riskSignalCount} RISK SIGNAL{riskSignalCount !== 1 ? "S" : ""}</span>
+            )}
+          </div>
+        )}
+
+        {/* Sync status (I373) */}
+        {syncStats && (
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              letterSpacing: "0.04em",
+              color: "var(--color-text-tertiary)",
+              marginTop: 8,
+            }}
+          >
+            {syncStats.lastFetchAt && (
+              <span>
+                Updated {formatRelativeTime(syncStats.lastFetchAt)}
+              </span>
+            )}
+            {syncStats.total > 0 && (
+              <span>
+                {syncStats.enriched}/{syncStats.total} ready
+              </span>
+            )}
+            {syncStats.failed > 0 && (
+              <span style={{ color: "var(--color-spice-terracotta)" }}>
+                {syncStats.failed} failed
+              </span>
+            )}
+            {syncStats.total === 0 && syncStats.lastFetchAt === null && (
+              <span style={{ color: "var(--color-spice-terracotta)" }}>
+                using cached data
+              </span>
             )}
           </div>
         )}
@@ -263,72 +349,17 @@ export default function EmailsPage() {
         <EditorialEmpty {...getPersonalityCopy("emails-empty", personality)} />
       )}
 
-      {/* ═══ YOUR MOVE ═══ */}
-      {hasReplies && (
+      {/* ═══ YOUR MOVE — Top scored emails with intelligence ═══ */}
+      {hasYourMove && (
         <section style={{ marginBottom: 48 }}>
           <div className={s.marginGrid}>
             <div className={s.marginLabel} style={{ color: "var(--color-spice-terracotta)" }}>
               YOUR MOVE
             </div>
             <div className={s.marginContent}>
-              {repliesNeeded.slice(0, 3).map((reply) => (
-                <div key={reply.threadId} className="group" style={{ marginBottom: 20, position: "relative" }}>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-serif)",
-                      fontSize: 19,
-                      fontWeight: 400,
-                      lineHeight: 1.35,
-                      color: "var(--color-text-primary)",
-                    }}
-                  >
-                    {reply.subject}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 13,
-                      color: "var(--color-text-tertiary)",
-                      marginTop: 3,
-                    }}
-                  >
-                    {reply.from}
-                    {reply.waitDuration && (
-                      <span> — waiting {reply.waitDuration}</span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleDismiss("reply_needed", reply.threadId, reply.subject)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      right: 0,
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "var(--color-text-tertiary)",
-                      padding: 4,
-                    }}
-                    title="Dismiss"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
+              {yourMoveEmails.map((email) => (
+                <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
               ))}
-              {repliesNeeded.length > 3 && (
-                <div
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    color: "var(--color-text-tertiary)",
-                    marginTop: 4,
-                  }}
-                >
-                  {repliesNeeded.slice(3).map((r) => r.from).join(", ")}
-                  {" — also waiting on you."}
-                </div>
-              )}
             </div>
           </div>
           <div className={s.sectionRule} style={{ marginTop: 24 }} />
@@ -495,8 +526,135 @@ export default function EmailsPage() {
         </section>
       )}
 
+      {/* ═══ ALL CORRESPONDENCE — Intelligence-first email list ═══ */}
+      {allEnrichedEmails.length > 0 && (
+        <section style={{ marginBottom: 48 }}>
+          <div className={s.marginGrid}>
+            <div className={s.marginLabel}>
+              INBOX
+              <span className={s.marginLabelCount}>{allEnrichedEmails.length}</span>
+            </div>
+            <div className={s.marginContent}>
+              {hasScores ? (
+                <>
+                  {priorityEmails.length > 0 && (
+                    <>
+                      <div className={s.emailScoreBandLabel}>PRIORITY</div>
+                      {priorityEmails.map((email) => (
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                      ))}
+                    </>
+                  )}
+                  {monitoringEmails.length > 0 && (
+                    <>
+                      <div className={s.emailScoreBandLabel}>MONITORING</div>
+                      {monitoringEmails.map((email) => (
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                      ))}
+                    </>
+                  )}
+                  {otherEmails.length > 0 && (
+                    <>
+                      <div className={s.emailScoreBandLabel}>OTHER</div>
+                      {otherEmails.map((email) => (
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                      ))}
+                    </>
+                  )}
+                </>
+              ) : (
+                /* No scores yet — flat list */
+                allEnrichedEmails.map((email) => (
+                  <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* FINIS */}
       {hasContent && <FinisMarker />}
     </div>
   );
+}
+
+// =============================================================================
+// Email Intel Item — Extracted component for grouped INBOX rendering (I395)
+// =============================================================================
+
+function EmailIntelItem({
+  email,
+  dismissed: _dismissed,
+  onDismiss: _onDismiss,
+  sentimentColor,
+  onEntityChanged,
+}: {
+  email: EnrichedEmail;
+  dismissed: Set<string>;
+  onDismiss: (itemType: string, emailId: string, itemText: string, senderDomain?: string, emailType?: string, entityId?: string) => void;
+  sentimentColor: (s: string | undefined) => string;
+  onEntityChanged?: () => void;
+}) {
+  return (
+    <div className={s.emailIntelItem}>
+      {email.urgency === "high" && (
+        <span className={s.emailIntelUrgencyBadge}>urgent</span>
+      )}
+      {email.summary ? (
+        <p className={clsx(s.emailIntelSummary, email.urgency === "high" && s.emailIntelSummaryHighUrgency)}>
+          {email.summary}
+        </p>
+      ) : (
+        <p className={s.emailIntelBuilding}>Building context...</p>
+      )}
+      <div className={s.emailIntelMeta}>
+        <EmailEntityChip
+          entityType={email.entityType}
+          entityName={email.entityName}
+          editable
+          emailId={email.id}
+          onEntityChanged={onEntityChanged}
+        />
+        {email.sentiment && email.sentiment !== "neutral" && (
+          <span className={s.emailIntelSentiment}>
+            <span
+              className={s.emailIntelSentimentDot}
+              style={{ background: sentimentColor(email.sentiment) }}
+            />
+            {email.sentiment}
+          </span>
+        )}
+        {/* Only show sender when it adds info beyond entity name */}
+        {(!email.entityName || email.sender !== email.entityName) && (
+          <span>{email.sender || email.senderEmail}</span>
+        )}
+        {email.subject && <span>{email.subject.length > 40 ? email.subject.slice(0, 40) + "…" : email.subject}</span>}
+      </div>
+      {email.scoreReason && (() => {
+        const reason = email.entityName
+          ? email.scoreReason.replace(email.entityName, "").replace(/^[\s·]+|[\s·]+$/g, "")
+          : email.scoreReason;
+        return reason ? <div className={s.emailScoreReason}>{reason}</div> : null;
+      })()}
+    </div>
+  );
+}
+
+/** Format an ISO timestamp as relative time: "2 min ago", "1h ago", etc. */
+function formatRelativeTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 0) return "just now";
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.round(hrs / 24);
+    return `${days}d ago`;
+  } catch {
+    return "";
+  }
 }
