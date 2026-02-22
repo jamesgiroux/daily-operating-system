@@ -35,9 +35,11 @@ pub fn check_and_invalidate_preps(
         "engagement_warning",
         "project_health_warning",
         "title_change",
-        "company_change",
-        "person_departed",
+        "company_change",   // person_departed removed — no emitter exists
         "pre_meeting_context",
+        "stakeholders_updated",
+        "team_member_added",
+        "team_member_removed",
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {
