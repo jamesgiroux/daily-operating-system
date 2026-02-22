@@ -578,12 +578,6 @@ pub async fn generate_meeting_intelligence(
 
         match enrich_meeting_with_ai(state, meeting_id, &meeting_for_ai).await {
             Ok(ai_json) => {
-                // Merge AI intelligence with quality assessment
-                let combined = json!({
-                    "quality": &quality,
-                    "ai_intelligence": ai_json,
-                });
-                let combined_str = serde_json::to_string(&combined).unwrap_or_default();
                 let now = Utc::now().to_rfc3339();
 
                 let guard = state.db.lock().map_err(|_| {
@@ -592,9 +586,43 @@ pub async fn generate_meeting_intelligence(
                 let db = guard.as_ref().ok_or_else(|| {
                     ExecutionError::ConfigurationError("Database not initialized".to_string())
                 })?;
+
+                // Read existing prep_context_json and merge AI fields into it
+                // instead of replacing — preserves FullMeetingPrep structure
+                let existing: Option<String> = db.conn_ref()
+                    .query_row(
+                        "SELECT prep_context_json FROM meetings_history WHERE id = ?1",
+                        rusqlite::params![meeting_id],
+                        |row| row.get(0),
+                    )
+                    .ok();
+
+                let merged_str = if let Some(ref existing_str) = existing {
+                    if let Ok(mut existing_json) = serde_json::from_str::<serde_json::Value>(existing_str) {
+                        // Overlay AI fields onto existing prep data
+                        if let Some(obj) = existing_json.as_object_mut() {
+                            obj.insert("quality".to_string(), json!(&quality));
+                            obj.insert("ai_intelligence".to_string(), ai_json.clone());
+                        }
+                        serde_json::to_string(&existing_json).unwrap_or_default()
+                    } else {
+                        // Existing data is unparseable — write AI-only
+                        serde_json::to_string(&json!({
+                            "quality": &quality,
+                            "ai_intelligence": ai_json,
+                        })).unwrap_or_default()
+                    }
+                } else {
+                    // No existing data — write AI-only
+                    serde_json::to_string(&json!({
+                        "quality": &quality,
+                        "ai_intelligence": ai_json,
+                    })).unwrap_or_default()
+                };
+
                 let _ = db.conn_ref().execute(
                     "UPDATE meetings_history SET prep_context_json = ?1, last_enriched_at = ?2 WHERE id = ?3",
-                    rusqlite::params![combined_str, now, meeting_id],
+                    rusqlite::params![merged_str, now, meeting_id],
                 );
                 log::info!(
                     "AI enrichment complete for meeting {}",
