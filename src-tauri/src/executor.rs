@@ -314,7 +314,7 @@ impl Executor {
                                                     }
                                                 })
                                             });
-                                        let _ = crate::signals::bus::emit_signal(
+                                        let _ = crate::services::signals::emit(
                                             db,
                                             "person",
                                             pid,
@@ -326,7 +326,7 @@ impl Executor {
                                         // Emit negative_sentiment for propagation rules
                                         // (e.g. rule_champion_sentiment → champion_risk)
                                         if sentiment == Some("negative") {
-                                            let _ = crate::signals::bus::emit_signal(
+                                            let _ = crate::services::signals::emit(
                                                 db,
                                                 "person",
                                                 pid,
