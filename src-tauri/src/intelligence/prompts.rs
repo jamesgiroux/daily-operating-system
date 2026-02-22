@@ -839,9 +839,6 @@ fn build_intelligence_prompt_inner(
            \"stakeholderInsights\": [\n\
              {{\"name\": \"...\", \"role\": \"...\", \"assessment\": \"1-2 sentences\", \"engagement\": \"high|medium|low|unknown\"}}\n\
            ],\n\
-           \"valueDelivered\": [\n\
-             {{\"date\": \"YYYY-MM-DD\", \"statement\": \"...\", \"impact\": \"...\"}}\n\
-           ],\n\
            \"nextMeetingReadiness\": {{\n\
              \"prepItems\": [\"forward-looking prep item (max 3)\"]\n\
            }}"
@@ -1454,141 +1451,9 @@ fn find_pipe_field(parts: &[&str], field: &str) -> Option<String> {
     None
 }
 
-// =============================================================================
-// Enrichment Orchestrator (I131)
-// =============================================================================
+// enrich_entity_intelligence removed per ADR-0086 (I376).
+// Entity intelligence is now enriched solely via intel_queue::run_enrichment.
 
-/// Enrich an entity's intelligence via Claude Code.
-///
-/// Flow:
-/// 1. Read prior intelligence.json (if exists) → determines initial vs incremental
-/// 2. Build IntelligenceContext from SQLite + files
-/// 3. Build prompt (entity-type parameterized)
-/// 4. Spawn Claude Code via PTY (120s timeout)
-/// 5. Parse response → IntelligenceJson
-/// 6. Write intelligence.json (atomic)
-/// 7. Update DB cache
-/// 8. Return IntelligenceJson
-pub struct EntityEnrichmentTarget<'a> {
-    pub entity_id: &'a str,
-    pub entity_name: &'a str,
-    pub entity_type: &'a str,
-    pub account: Option<&'a DbAccount>,
-    pub project: Option<&'a crate::db::DbProject>,
-}
-
-pub fn enrich_entity_intelligence(
-    workspace: &Path,
-    db: &ActionDb,
-    target: EntityEnrichmentTarget<'_>,
-    pty: &crate::pty::PtyManager,
-) -> Result<IntelligenceJson, String> {
-    let EntityEnrichmentTarget {
-        entity_id,
-        entity_name,
-        entity_type,
-        account,
-        project,
-    } = target;
-
-    // Resolve entity directory
-    let entity_dir = match entity_type {
-        "account" => {
-            if let Some(acct) = account {
-                crate::accounts::resolve_account_dir(workspace, acct)
-            } else {
-                crate::accounts::account_dir(workspace, entity_name)
-            }
-        }
-        "project" => crate::projects::project_dir(workspace, entity_name),
-        "person" => crate::people::person_dir(workspace, entity_name),
-        _ => return Err(format!("Unsupported entity type: {}", entity_type)),
-    };
-
-    // Step 1: Read prior intelligence
-    let prior = read_intelligence_json(&entity_dir).ok();
-
-    // Step 2: Build context
-    let ctx = build_intelligence_context(
-        workspace,
-        db,
-        entity_id,
-        entity_type,
-        account,
-        project,
-        prior.as_ref(),
-        None,
-    );
-
-    // Step 3: Build prompt
-    // For person entities, we'd need the relationship from the DB but this code path
-    // doesn't have the person record. The intel_queue path (which is the primary path)
-    // handles this correctly. Pass None here for the legacy direct-enrichment path.
-    let prompt = build_intelligence_prompt(entity_name, entity_type, &ctx, None, None);
-
-    // Step 4: Spawn Claude Code
-    let output = pty
-        .spawn_claude(workspace, &prompt)
-        .map_err(|e| format!("Claude Code error: {}", e))?;
-
-    // Audit trail (I297)
-    let _ = crate::audit::write_audit_entry(workspace, entity_type, entity_id, &output.stdout);
-
-    // Step 5: Parse response
-    let mut intel = parse_intelligence_response(
-        &output.stdout,
-        entity_id,
-        entity_type,
-        ctx.file_manifest.len(),
-        ctx.file_manifest,
-    )?;
-
-    // Step 5.5: Preserve user-edited fields (I261)
-    if let Some(ref existing) = prior {
-        if !existing.user_edits.is_empty() {
-            preserve_user_edits(&mut intel, existing);
-            log::info!(
-                "Preserved {} user edits for {} '{}'",
-                existing.user_edits.len(),
-                entity_type,
-                entity_name,
-            );
-        }
-    }
-
-    // Step 6: Write intelligence.json
-    write_intelligence_json(&entity_dir, &intel)?;
-
-    // Step 7: Update DB cache
-    let _ = db.upsert_entity_intelligence(&intel);
-
-    // Step 8: Extract and persist keywords for entity resolution (I305)
-    // The keywords are parsed from the AI response during parse_intelligence_response
-    // and need to be persisted separately to the entity tables.
-    // We re-parse the raw output to get keywords since IntelligenceJson doesn't carry them.
-    if let Some(keywords_json) = extract_keywords_from_response(&output.stdout) {
-        match entity_type {
-            "account" => {
-                let _ = db.update_account_keywords(entity_id, &keywords_json);
-            }
-            "project" => {
-                let _ = db.update_project_keywords(entity_id, &keywords_json);
-            }
-            _ => {} // No keyword storage for person entities
-        }
-    }
-
-    log::info!(
-        "Enriched intelligence for {} '{}' ({} risks, {} wins, {} stakeholders)",
-        entity_type,
-        entity_name,
-        intel.risks.len(),
-        intel.recent_wins.len(),
-        intel.stakeholder_insights.len(),
-    );
-
-    Ok(intel)
-}
 fn compute_signal_age(detected_at: &str) -> String {
     let now = chrono::Utc::now();
     match chrono::DateTime::parse_from_rfc3339(detected_at) {
