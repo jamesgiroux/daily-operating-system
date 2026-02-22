@@ -17,7 +17,7 @@ use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
     CalendarEvent, CapturedOutcome, Config,
-    EmailBriefingData, EmailSignal,
+    EmailBriefingData,
     ExecutionRecord, FullMeetingPrep, GoogleAuthStatus, InboxFile,
     LiveProactiveSuggestion, MeetingIntelligence,
     PostMeetingCaptureConfig, SourceReference, WorkflowId, WorkflowStatus,
@@ -34,28 +34,6 @@ const READ_CMD_LATENCY_BUDGET_MS: u128 = 100;
 const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
 // TODO(I197 follow-up): migrate remaining command DB call sites to AppState DB
 // helpers in passes, prioritizing frequent reads before one-off write paths.
-
-// Delegated to crate::services::entities
-fn build_entity_signal_prose(signals: &[EmailSignal], email_count: usize) -> String {
-    crate::services::entities::build_entity_signal_prose(signals, email_count)
-}
-
-fn normalize_match_key(value: &str) -> String {
-    crate::services::entities::normalize_match_key(value)
-}
-
-fn attendee_domains(attendees: &[String]) -> HashSet<String> {
-    crate::services::entities::attendee_domains(attendees)
-}
-
-fn auto_extract_title_keywords(
-    db: &crate::db::ActionDb,
-    entity_id: &str,
-    entity_type: &str,
-    meeting_title: &str,
-) -> Result<(), String> {
-    crate::services::entities::auto_extract_title_keywords(db, entity_id, entity_type, meeting_title)
-}
 
 fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u128) {
     let elapsed_ms = started.elapsed().as_millis();
@@ -289,14 +267,6 @@ pub async fn enrich_meeting_background(
         }
     });
     Ok(())
-}
-
-// Delegated to crate::services::meetings
-fn hydrate_attendee_context(
-    db: &crate::db::ActionDb,
-    meeting: &crate::db::DbMeeting,
-) -> Vec<crate::types::AttendeeContext> {
-    crate::services::meetings::hydrate_attendee_context(db, meeting)
 }
 
 /// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
@@ -803,57 +773,7 @@ async fn refresh_week_calendar_cache(
 /// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
 #[tauri::command]
 pub fn refresh_meeting_preps(state: State<Arc<AppState>>) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-
-    // Find all future meetings (excluding personal/focus/blocked)
-    let meeting_ids: Vec<String> = db
-        .conn_ref()
-        .prepare(
-            "SELECT id FROM meetings_history
-             WHERE start_time > ?1
-               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
-               AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
-        )
-        .and_then(|mut stmt| {
-            let rows = stmt.query_map(rusqlite::params![now], |row| {
-                row.get::<_, String>(0)
-            })?;
-            Ok(rows.filter_map(|r| r.ok()).collect())
-        })
-        .map_err(|e| format!("Failed to query future meetings: {}", e))?;
-
-    if meeting_ids.is_empty() {
-        return Ok("No future meetings to refresh".to_string());
-    }
-
-    // Clear prep_frozen_json so the queue processor regenerates them
-    for mid in &meeting_ids {
-        let _ = db.conn_ref().execute(
-            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
-            rusqlite::params![mid],
-        );
-    }
-
-    // Drop DB lock before enqueuing (enqueue doesn't need DB)
-    drop(db_guard);
-
-    // Enqueue all at Manual priority (highest — user clicked refresh)
-    for mid in &meeting_ids {
-        state
-            .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: mid.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::Manual,
-                requested_at: std::time::Instant::now(),
-            });
-    }
-
-    let count = meeting_ids.len();
-    log::info!("refresh_meeting_preps: cleared and requeued {} future meetings", count);
-    Ok(format!("Refreshing {} meeting preps", count))
+    crate::services::meetings::refresh_meeting_preps(&state)
 }
 
 // =============================================================================
@@ -1312,26 +1232,7 @@ pub fn update_email_entity(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.update_email_entity(
-        &email_id,
-        entity_id.as_deref(),
-        entity_type.as_deref(),
-    )?;
-
-    // Emit signal for the entity being assigned to (or the email itself if cleared)
-    let etype = entity_type.as_deref().unwrap_or("email");
-    let eid = entity_id.as_deref().unwrap_or(&email_id);
-    let _ = crate::signals::bus::emit_signal(
-        db,
-        etype,
-        eid,
-        "email_entity_reassigned",
-        "user_correction",
-        Some(&format!("{{\"email_id\":\"{}\"}}", email_id)),
-        0.9,
-    );
-
-    Ok(())
+    crate::services::emails::update_email_entity(db, &email_id, entity_id.as_deref(), entity_type.as_deref())
 }
 
 /// Dismiss a single email signal by ID. Sets `deactivated_at` to now.
@@ -1343,27 +1244,7 @@ pub fn dismiss_email_signal(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let context = db
-        .dismiss_email_signal(signal_id)
-        .map_err(|e| e.to_string())?;
-
-    // Emit signal for relevance learning (same pattern as dismiss_email_item)
-    if let Some((entity_id, entity_type, signal_type, email_id)) = context {
-        let _ = crate::signals::bus::emit_signal(
-            db,
-            &entity_type,
-            &entity_id,
-            "email_signal_dismissed",
-            "user_correction",
-            Some(&format!(
-                "{{\"signal_id\":{},\"signal_type\":\"{}\",\"email_id\":\"{}\"}}",
-                signal_id, signal_type, email_id
-            )),
-            0.3,
-        );
-    }
-
-    Ok(())
+    crate::services::emails::dismiss_email_signal(db, signal_id)
 }
 
 /// Get email sync status: last fetch time, enrichment progress, failure count (I373).
@@ -1381,7 +1262,6 @@ pub fn get_email_sync_status(
 }
 
 /// Get emails linked to a specific entity for entity detail pages (I368 AC5).
-/// Queries by entity_id directly, OR by sender domain for accounts without direct entity links.
 #[tauri::command]
 pub fn get_entity_emails(
     state: State<Arc<AppState>>,
@@ -1389,98 +1269,7 @@ pub fn get_entity_emails(
     entity_type: String,
 ) -> Result<Vec<crate::db::DbEmail>, String> {
     match state.with_db_try_read(|db| {
-        // Try direct entity_id match first
-        let direct = db.get_emails_for_entity(&entity_id)?;
-        if !direct.is_empty() {
-            return Ok(direct);
-        }
-
-        // For person entities, also check emails sent by this person's email addresses
-        if entity_type == "person" {
-            if let Ok(Some(person)) = db.get_person(&entity_id) {
-                // Query by person's primary email
-                let mut stmt = db.conn_ref().prepare(
-                    "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
-                            priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                            last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
-                            contextual_summary, sentiment, urgency, user_is_last_sender,
-                            last_sender_email, message_count, created_at, updated_at,
-                            relevance_score, score_reason
-                     FROM emails WHERE sender_email = ?1 ORDER BY received_at DESC"
-                ).map_err(|e| format!("query error: {e}"))?;
-                let rows = stmt.query_map([&person.email], |row| {
-                    Ok(crate::db::DbEmail {
-                        email_id: row.get(0)?, thread_id: row.get(1)?, sender_email: row.get(2)?,
-                        sender_name: row.get(3)?, subject: row.get(4)?, snippet: row.get(5)?,
-                        priority: row.get(6)?, is_unread: row.get::<_, i32>(7)? != 0,
-                        received_at: row.get(8)?, enrichment_state: row.get(9)?,
-                        enrichment_attempts: row.get(10)?, last_enrichment_at: row.get(11)?,
-                        last_seen_at: row.get(12)?, resolved_at: row.get(13)?,
-                        entity_id: row.get(14)?, entity_type: row.get(15)?,
-                        contextual_summary: row.get(16)?, sentiment: row.get(17)?,
-                        urgency: row.get(18)?, user_is_last_sender: row.get::<_, i32>(19)? != 0,
-                        last_sender_email: row.get(20)?, message_count: row.get(21)?,
-                        created_at: row.get(22)?, updated_at: row.get(23)?,
-                        relevance_score: row.get(24).ok(), score_reason: row.get(25).ok(),
-                    })
-                }).map_err(|e| format!("query error: {e}"))?;
-                let by_sender: Vec<_> = rows.flatten().collect();
-                if !by_sender.is_empty() {
-                    return Ok(by_sender);
-                }
-            }
-        }
-
-        // For account entities, check emails from people linked to this account
-        if entity_type == "account" {
-            let mut stmt = db.conn_ref().prepare(
-                "SELECT DISTINCT pe.email FROM entity_people ep
-                 JOIN person_emails pe ON ep.person_id = pe.person_id
-                 WHERE ep.entity_id = ?1"
-            ).map_err(|e| format!("query error: {e}"))?;
-            let emails_list: Vec<String> = stmt.query_map([&entity_id], |row| row.get(0))
-                .map_err(|e| format!("query error: {e}"))?
-                .filter_map(|r| r.ok())
-                .collect();
-
-            if !emails_list.is_empty() {
-                let placeholders: Vec<String> = (0..emails_list.len()).map(|i| format!("?{}", i + 1)).collect();
-                let sql = format!(
-                    "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
-                            priority, is_unread, received_at, enrichment_state, enrichment_attempts,
-                            last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
-                            contextual_summary, sentiment, urgency, user_is_last_sender,
-                            last_sender_email, message_count, created_at, updated_at,
-                            relevance_score, score_reason
-                     FROM emails WHERE sender_email IN ({}) ORDER BY received_at DESC",
-                    placeholders.join(",")
-                );
-                let mut stmt = db.conn_ref().prepare(&sql).map_err(|e| format!("query error: {e}"))?;
-                let params: Vec<&dyn rusqlite::types::ToSql> = emails_list.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
-                let rows = stmt.query_map(params.as_slice(), |row| {
-                    Ok(crate::db::DbEmail {
-                        email_id: row.get(0)?, thread_id: row.get(1)?, sender_email: row.get(2)?,
-                        sender_name: row.get(3)?, subject: row.get(4)?, snippet: row.get(5)?,
-                        priority: row.get(6)?, is_unread: row.get::<_, i32>(7)? != 0,
-                        received_at: row.get(8)?, enrichment_state: row.get(9)?,
-                        enrichment_attempts: row.get(10)?, last_enrichment_at: row.get(11)?,
-                        last_seen_at: row.get(12)?, resolved_at: row.get(13)?,
-                        entity_id: row.get(14)?, entity_type: row.get(15)?,
-                        contextual_summary: row.get(16)?, sentiment: row.get(17)?,
-                        urgency: row.get(18)?, user_is_last_sender: row.get::<_, i32>(19)? != 0,
-                        last_sender_email: row.get(20)?, message_count: row.get(21)?,
-                        created_at: row.get(22)?, updated_at: row.get(23)?,
-                        relevance_score: row.get(24).ok(), score_reason: row.get(25).ok(),
-                    })
-                }).map_err(|e| format!("query error: {e}"))?;
-                let results: Vec<_> = rows.flatten().collect();
-                if !results.is_empty() {
-                    return Ok(results);
-                }
-            }
-        }
-
-        Ok(Vec::new())
+        crate::services::emails::get_entity_emails(db, &entity_id, &entity_type)
     }) {
         crate::state::DbTryRead::Ok(Ok(emails)) => Ok(emails),
         crate::state::DbTryRead::Ok(Err(e)) => Err(e),
@@ -1491,96 +1280,18 @@ pub fn get_entity_emails(
 }
 
 /// Refresh emails independently without re-running the full /today pipeline (I20).
-///
-/// Re-fetches from Gmail, classifies, and updates emails.json.
-/// Rejects if /today pipeline is currently running.
 #[tauri::command]
 pub async fn refresh_emails(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let state_clone = state.inner().clone();
-    let workspace_path = config.workspace_path.clone();
-
-    tauri::async_runtime::spawn(async move {
-        let workspace = std::path::Path::new(&workspace_path);
-        let executor = crate::executor::Executor::new(state_clone, app_handle);
-        executor.execute_email_refresh(workspace).await
-    })
-    .await
-    .map_err(|e| format!("Email refresh task failed: {}", e))?
-    .map(|_| "Email refresh complete".to_string())
+    crate::services::emails::refresh_emails(state.inner(), app_handle).await
 }
 
 /// Archive low-priority emails in Gmail and remove them from local data (I144).
-///
-/// Reads emails.json, collects IDs of low-priority emails, calls Gmail
-/// batchModify to remove the INBOX label, then rewrites emails.json
-/// without the archived entries.
 #[tauri::command]
 pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let workspace = Path::new(&config.workspace_path);
-    let emails_path = workspace.join("_today").join("data").join("emails.json");
-
-    // Read current emails.json
-    let content = std::fs::read_to_string(&emails_path)
-        .map_err(|e| format!("Failed to read emails.json: {}", e))?;
-    let mut data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse emails.json: {}", e))?;
-
-    // Collect low-priority email IDs
-    let low_emails = data["lowPriority"].as_array().cloned().unwrap_or_default();
-
-    let ids: Vec<String> = low_emails
-        .iter()
-        .filter_map(|e| e["id"].as_str().map(String::from))
-        .collect();
-
-    if ids.is_empty() {
-        return Ok(0);
-    }
-
-    // Archive in Gmail
-    let access_token = crate::google_api::get_valid_access_token()
-        .await
-        .map_err(|e| format!("Gmail auth failed: {}", e))?;
-
-    let archived = crate::google_api::gmail::archive_emails(&access_token, &ids)
-        .await
-        .map_err(|e| format!("Gmail archive failed: {}", e))?;
-
-    // Remove low-priority from local JSON and update stats
-    data["lowPriority"] = serde_json::json!([]);
-    if let Some(stats) = data.get_mut("stats") {
-        let high = stats["highCount"].as_u64().unwrap_or(0);
-        let medium = stats["mediumCount"].as_u64().unwrap_or(0);
-        stats["lowCount"] = serde_json::json!(0);
-        stats["total"] = serde_json::json!(high + medium);
-    }
-
-    crate::util::atomic_write_str(
-        &emails_path,
-        &serde_json::to_string_pretty(&data)
-            .map_err(|e| format!("Failed to serialize emails: {}", e))?,
-    )
-    .map_err(|e| format!("Failed to write emails.json: {}", e))?;
-
-    log::info!("Archived {} low-priority emails in Gmail", archived);
-    Ok(archived)
+    crate::services::emails::archive_low_priority_emails(&state).await
 }
 
 /// Set user profile (customer-success or general)
@@ -1605,74 +1316,13 @@ pub fn set_profile(profile: String, state: State<Arc<AppState>>) -> Result<Confi
 /// Creates Accounts/ dir if switching to account/both mode.
 #[tauri::command]
 pub fn set_entity_mode(mode: String, state: State<Arc<AppState>>) -> Result<Config, String> {
-    crate::types::validate_entity_mode(&mode)?;
-
-    let config = crate::state::create_or_update_config(&state, |config| {
-        config.entity_mode = mode.clone();
-        config.profile = crate::types::profile_for_entity_mode(&mode);
-    })?;
-
-    // If workspace exists, ensure entity dirs are created based on mode
-    if !config.workspace_path.is_empty() {
-        let workspace = std::path::Path::new(&config.workspace_path);
-        if workspace.exists() {
-            if mode == "account" || mode == "both" {
-                let accounts_dir = workspace.join("Accounts");
-                if !accounts_dir.exists() {
-                    let _ = std::fs::create_dir_all(&accounts_dir);
-                }
-            }
-            if mode == "project" || mode == "both" {
-                let projects_dir = workspace.join("Projects");
-                if !projects_dir.exists() {
-                    let _ = std::fs::create_dir_all(&projects_dir);
-                }
-            }
-        }
-    }
-
-    Ok(config)
+    crate::services::settings::set_entity_mode(&mode, &state)
 }
 
 /// Set workspace path and scaffold directory structure
 #[tauri::command]
 pub fn set_workspace_path(path: String, state: State<Arc<AppState>>) -> Result<Config, String> {
-    let workspace = std::path::Path::new(&path);
-
-    // Validate path is absolute
-    if !workspace.is_absolute() {
-        return Err("Workspace path must be absolute".to_string());
-    }
-
-    // Read current entity_mode (or default)
-    let entity_mode = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.entity_mode.clone()))
-        .unwrap_or_else(|| "account".to_string());
-
-    // Scaffold workspace dirs
-    crate::state::initialize_workspace(workspace, &entity_mode)?;
-
-    let config = crate::state::create_or_update_config(&state, |config| {
-        config.workspace_path = path.clone();
-    })?;
-
-    // Sync entities from the new workspace
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            let _ = crate::people::sync_people_from_workspace(
-                workspace,
-                db,
-                &config.resolved_user_domains(),
-            );
-            let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
-            let _ = crate::projects::sync_projects_from_workspace(workspace, db);
-        }
-    }
-
-    Ok(config)
+    crate::services::settings::set_workspace_path(&path, &state)
 }
 
 /// Toggle developer mode (shows/hides devtools panel)
@@ -1700,34 +1350,7 @@ pub fn set_ai_model(
     model: String,
     state: State<Arc<AppState>>,
 ) -> Result<Config, String> {
-    // Validate tier
-    let valid_tiers = ["synthesis", "extraction", "mechanical"];
-    if !valid_tiers.contains(&tier.as_str()) {
-        return Err(format!(
-            "Invalid tier '{}'. Must be one of: {}",
-            tier,
-            valid_tiers.join(", ")
-        ));
-    }
-
-    // Validate model
-    let valid_models = ["opus", "sonnet", "haiku"];
-    if !valid_models.contains(&model.as_str()) {
-        return Err(format!(
-            "Invalid model '{}'. Must be one of: {}",
-            model,
-            valid_models.join(", ")
-        ));
-    }
-
-    crate::state::create_or_update_config(&state, |config| {
-        match tier.as_str() {
-            "synthesis" => config.ai_models.synthesis = model.clone(),
-            "extraction" => config.ai_models.extraction = model.clone(),
-            "mechanical" => config.ai_models.mechanical = model.clone(),
-            _ => {} // unreachable after validation
-        }
-    })
+    crate::services::settings::set_ai_model(&tier, &model, &state)
 }
 
 /// Set hygiene configuration (I271)
@@ -1738,34 +1361,7 @@ pub fn set_hygiene_config(
     pre_meeting_hours: Option<u32>,
     state: State<Arc<AppState>>,
 ) -> Result<Config, String> {
-    // Validate values
-    if let Some(v) = scan_interval_hours {
-        if ![1, 2, 4, 8].contains(&v) {
-            return Err(format!("Invalid scan interval: {}. Must be 1, 2, 4, or 8.", v));
-        }
-    }
-    if let Some(v) = ai_budget {
-        if ![5, 10, 20, 50].contains(&v) {
-            return Err(format!("Invalid AI budget: {}. Must be 5, 10, 20, or 50.", v));
-        }
-    }
-    if let Some(v) = pre_meeting_hours {
-        if ![2, 4, 12, 24].contains(&v) {
-            return Err(format!("Invalid pre-meeting window: {}. Must be 2, 4, 12, or 24.", v));
-        }
-    }
-
-    crate::state::create_or_update_config(&state, |config| {
-        if let Some(v) = scan_interval_hours {
-            config.hygiene_scan_interval_hours = v;
-        }
-        if let Some(v) = ai_budget {
-            config.hygiene_ai_budget = v;
-        }
-        if let Some(v) = pre_meeting_hours {
-            config.hygiene_pre_meeting_hours = v;
-        }
-    })
+    crate::services::settings::set_hygiene_config(scan_interval_hours, ai_budget, pre_meeting_hours, &state)
 }
 
 /// Set schedule for a workflow
@@ -1777,39 +1373,7 @@ pub fn set_schedule(
     timezone: String,
     state: State<Arc<AppState>>,
 ) -> Result<Config, String> {
-    // Validate inputs
-    if hour > 23 {
-        return Err("Hour must be 0-23".to_string());
-    }
-    if minute > 59 {
-        return Err("Minute must be 0-59".to_string());
-    }
-
-    // Validate timezone parses
-    timezone
-        .parse::<chrono_tz::Tz>()
-        .map_err(|_| format!("Invalid timezone: {}", timezone))?;
-
-    let workflow_id: WorkflowId = workflow.parse()?;
-
-    crate::state::create_or_update_config(&state, |config| {
-        let cron = match workflow_id {
-            WorkflowId::Today => format!("{} {} * * 1-5", minute, hour),
-            WorkflowId::Archive => format!("{} {} * * *", minute, hour),
-            WorkflowId::InboxBatch => format!("{} {} * * 1-5", minute, hour),
-            WorkflowId::Week => format!("{} {} * * 1", minute, hour),
-        };
-
-        let entry = match workflow_id {
-            WorkflowId::Today => &mut config.schedules.today,
-            WorkflowId::Archive => &mut config.schedules.archive,
-            WorkflowId::InboxBatch => &mut config.schedules.inbox_batch,
-            WorkflowId::Week => &mut config.schedules.week,
-        };
-
-        entry.cron = cron;
-        entry.timezone = timezone.clone();
-    })
+    crate::services::settings::set_schedule(&workflow, hour, minute, &timezone, &state)
 }
 
 /// Save user profile fields (name, company, title, focus, domains)
@@ -1823,69 +1387,7 @@ pub fn set_user_profile(
     domains: Option<Vec<String>>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::state::create_or_update_config(&state, |config| {
-        // Helper: trim, convert empty to None
-        fn clean(val: Option<String>) -> Option<String> {
-            val.and_then(|s| {
-                let trimmed = s.trim().to_string();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed)
-                }
-            })
-        }
-
-        config.user_name = clean(name);
-        config.user_company = clean(company);
-        config.user_title = clean(title);
-        config.user_focus = clean(focus);
-
-        // Prefer multi-domain list; fall back to legacy single domain
-        if let Some(d) = domains {
-            let cleaned: Vec<String> = d
-                .into_iter()
-                .map(|s| s.trim().to_lowercase())
-                .filter(|s| !s.is_empty())
-                .collect();
-            if cleaned.is_empty() {
-                config.user_domains = None;
-                // Also clear legacy field
-                config.user_domain = None;
-            } else {
-                // Set first as legacy field for backwards compat
-                config.user_domain = Some(cleaned[0].clone());
-                config.user_domains = Some(cleaned);
-            }
-        } else if let Some(d) = domain {
-            let trimmed = d.trim().to_lowercase();
-            config.user_domain = if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            };
-        }
-    })?;
-
-    // Sync company name to internal root account entity if it changed
-    let current_company = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.user_company.clone()));
-    if let Some(ref company_name) = current_company {
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                if let Ok(Some(root)) = db.get_internal_root_account() {
-                    if root.name != *company_name {
-                        let _ = db.update_account_field(&root.id, "name", company_name);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok("ok".to_string())
+    crate::services::settings::set_user_profile(name, company, title, focus, domain, domains, &state)
 }
 
 /// List available meeting prep files
@@ -1970,32 +1472,10 @@ pub fn dismiss_email_item(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.dismiss_email_item(
-        &item_type,
-        &email_id,
-        &item_text,
-        sender_domain.as_deref(),
-        email_type.as_deref(),
-        entity_id.as_deref(),
+    crate::services::emails::dismiss_email_item(
+        db, &item_type, &email_id, &item_text,
+        sender_domain.as_deref(), email_type.as_deref(), entity_id.as_deref(),
     )
-    .map_err(|e| e.to_string())?;
-
-    let etype = entity_id.as_deref().map(|_| "account").unwrap_or("email");
-    let eid = entity_id.as_deref().unwrap_or(&email_id);
-    let _ = crate::signals::bus::emit_signal(
-        db,
-        etype,
-        eid,
-        "email_item_dismissed",
-        &item_type,
-        Some(&format!(
-            "{{\"email_id\":\"{}\",\"item_type\":\"{}\"}}",
-            email_id, item_type
-        )),
-        0.3,
-    );
-
-    Ok(())
 }
 
 /// Get all dismissed email item keys for frontend filtering.
@@ -2387,127 +1867,7 @@ pub async fn attach_meeting_transcript(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
-    // Check immutability + insert sentinel to prevent TOCTOU race (I61).
-    // The sentinel blocks concurrent callers while async work runs below.
-    {
-        let mut guard = state
-            .transcript_processed
-            .lock()
-            .map_err(|_| "Lock poisoned")?;
-        if guard.contains_key(&meeting.id) {
-            return Err(format!(
-                "Meeting '{}' already has a processed transcript",
-                meeting.title
-            ));
-        }
-        // Insert a sentinel record — concurrent calls will now see a key and bail.
-        guard.insert(
-            meeting.id.clone(),
-            crate::types::TranscriptRecord {
-                meeting_id: meeting.id.clone(),
-                file_path: String::new(),
-                destination: String::new(),
-                summary: None,
-                processed_at: "processing".to_string(),
-            },
-        );
-    }
-
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let state_clone = state.inner().clone();
-    let workspace_path = config.workspace_path.clone();
-    let profile = config.profile.clone();
-    let ai_config = config.ai_models.clone();
-    let meeting_id = meeting.id.clone();
-    let meeting_clone = meeting.clone();
-    let file_path_for_record = file_path.clone();
-
-    let result = match tauri::async_runtime::spawn_blocking(move || {
-        let workspace = Path::new(&workspace_path);
-        let db_guard = state_clone.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::transcript::process_transcript(
-            workspace,
-            &file_path,
-            &meeting_clone,
-            db_ref,
-            &profile,
-            Some(&ai_config),
-        )
-    })
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            // I61: Remove sentinel on task failure so retry is possible
-            if let Ok(mut guard) = state.transcript_processed.lock() {
-                guard.remove(&meeting_id);
-            }
-            return Err(format!("Transcript processing task failed: {}", e));
-        }
-    };
-
-    // On success, overwrite sentinel with real record.
-    // On failure, remove sentinel so retry is possible (I61).
-    let has_outcomes = result.status == "success"
-        && (result.summary.as_ref().is_some_and(|s| !s.is_empty())
-            || !result.wins.is_empty()
-            || !result.risks.is_empty()
-            || !result.decisions.is_empty()
-            || !result.actions.is_empty());
-
-    if result.status == "success" && has_outcomes {
-        let processed_at = chrono::Utc::now().to_rfc3339();
-        let transcript_destination = result.destination.clone().unwrap_or_default();
-        let record = crate::types::TranscriptRecord {
-            meeting_id: meeting_id.clone(),
-            file_path: file_path_for_record,
-            destination: transcript_destination.clone(),
-            summary: result.summary.clone(),
-            processed_at: processed_at.clone(),
-        };
-
-        if let Ok(mut guard) = state.transcript_processed.lock() {
-            guard.insert(meeting_id.clone(), record);
-            let _ = crate::state::save_transcript_records(&guard);
-        }
-
-        if let Ok(mut guard) = state.capture_captured.lock() {
-            guard.insert(meeting_id.clone());
-        }
-
-        // Persist transcript metadata in SQLite so outcomes are durable without map files.
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                if let Err(e) = db.update_meeting_transcript_metadata(
-                    &meeting_id,
-                    &transcript_destination,
-                    &processed_at,
-                    result.summary.as_deref(),
-                ) {
-                    log::warn!("Failed to persist transcript metadata: {}", e);
-                }
-            }
-        }
-
-        // Build and emit outcome data for live frontend updates
-        let outcome_data = build_outcome_data(&meeting_id, &result, &state);
-        let _ = app_handle.emit("transcript-processed", &outcome_data);
-    } else {
-        // Processing failed or AI extraction was empty — remove sentinel so retry is possible
-        if let Ok(mut guard) = state.transcript_processed.lock() {
-            guard.remove(&meeting_id);
-            let _ = crate::state::save_transcript_records(&guard);
-        }
-    }
-
-    Ok(result)
+    crate::services::meetings::attach_meeting_transcript(file_path, meeting, state.inner(), app_handle).await
 }
 
 /// Get meeting outcomes (from transcript processing or manual capture).
@@ -3293,7 +2653,7 @@ pub fn dev_clean_artifacts(include_workspace: bool) -> Result<String, String> {
 }
 
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
-fn build_outcome_data(
+pub fn build_outcome_data(
     meeting_id: &str,
     result: &crate::types::TranscriptResult,
     state: &AppState,
@@ -3662,34 +3022,7 @@ pub async fn enrich_person(
     person_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    use crate::intel_queue::{
-        gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
-        IntelRequest,
-    };
-
-    let request = IntelRequest {
-        entity_id: person_id,
-        entity_type: "person".to_string(),
-        priority: IntelPriority::Manual,
-        requested_at: std::time::Instant::now(),
-    };
-
-    // Phase 1: Brief DB lock — gather context
-    let input = gather_enrichment_input(&state, &request)?;
-
-    // Phase 2: No lock — PTY enrichment
-    let ai_config = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
-        .unwrap_or_default();
-    let intel = run_enrichment(&input, &ai_config)?;
-
-    // Phase 3: Brief DB lock — write results
-    write_enrichment_results(&state, &input, &intel)?;
-
-    Ok(intel)
+    crate::services::intelligence::enrich_entity(person_id, "person".to_string(), &state).await
 }
 
 // =============================================================================
@@ -3980,27 +3313,6 @@ pub struct CreateChildAccountResult {
     pub id: String,
 }
 
-// Domain normalization moved to crate::util::normalize_domains (DRY)
-
-fn create_child_account_record(
-    db: &crate::db::ActionDb,
-    workspace: Option<&Path>,
-    parent: &crate::db::DbAccount,
-    name: &str,
-    description: Option<&str>,
-    owner_person_id: Option<&str>,
-) -> Result<crate::db::DbAccount, String> {
-    crate::services::accounts::create_child_account_record(db, workspace, parent, name, description, owner_person_id)
-}
-
-fn infer_internal_account_for_meeting(
-    db: &crate::db::ActionDb,
-    title: &str,
-    attendees_csv: Option<&str>,
-) -> Option<crate::db::DbAccount> {
-    crate::services::accounts::infer_internal_account_for_meeting(db, title, attendees_csv)
-}
-
 #[tauri::command]
 pub fn get_internal_team_setup_status(
     state: State<Arc<AppState>>,
@@ -4058,180 +3370,14 @@ pub fn create_internal_organization(
     existing_person_ids: Option<Vec<String>>,
     state: State<Arc<AppState>>,
 ) -> Result<CreateInternalOrganizationResult, String> {
-    // Validation (before transaction)
-    let company_name = crate::util::validate_entity_name(&company_name)?.to_string();
-    let team_name = crate::util::validate_entity_name(&team_name)?.to_string();
-    let domains = crate::helpers::normalize_domains(&domains);
-    let workspace_path = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .as_ref()
-        .map(|c| c.workspace_path.clone())
-        .ok_or("Config not loaded")?;
-    let workspace = Path::new(&workspace_path);
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    // === CRITICAL SECTION: Transaction wraps all DB writes ===
-    // Filesystem writes happen after commit (best-effort per ADR-0048).
-    let (root_account, initial_team, created_people, updated_people) =
-        db.with_transaction(|db| {
-            if db
-                .get_internal_root_account()
-                .map_err(|e| e.to_string())?
-                .is_some()
-            {
-                return Err("Internal organization already exists".to_string());
-            }
-
-            let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
-            let mut suffix = 2usize;
-            while db
-                .get_account(&root_id)
-                .map_err(|e| e.to_string())?
-                .is_some()
-            {
-                root_id = format!(
-                    "internal-{}-{}",
-                    crate::util::slugify(&company_name),
-                    suffix
-                );
-                suffix += 1;
-            }
-
-            let now = chrono::Utc::now().to_rfc3339();
-            let root_account = crate::db::DbAccount {
-                id: root_id.clone(),
-                name: company_name.clone(),
-                lifecycle: Some("active".to_string()),
-                arr: None,
-                health: Some("green".to_string()),
-                contract_start: None,
-                contract_end: None,
-                nps: None,
-                tracker_path: Some(format!("Internal/{}", company_name)),
-                parent_id: None,
-                account_type: crate::db::AccountType::Internal,
-                updated_at: now,
-                archived: false,
-                keywords: None,
-                keywords_extracted_at: None,
-            metadata: None,
-            };
-            db.upsert_account(&root_account)
-                .map_err(|e| e.to_string())?;
-            db.set_account_domains(&root_account.id, &domains)
-                .map_err(|e| e.to_string())?;
-
-            let initial_team =
-                create_child_account_record(db, None, &root_account, &team_name, None, None)?;
-            db.copy_account_domains(&root_account.id, &initial_team.id)
-                .map_err(|e| e.to_string())?;
-
-            let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
-            for colleague in &colleagues {
-                let email = match crate::util::validate_email(&colleague.email) {
-                    Ok(e) => e,
-                    Err(_) => continue,
-                };
-                let person_id = crate::util::slugify(&email);
-                let now = chrono::Utc::now().to_rfc3339();
-                let person = crate::db::DbPerson {
-                    id: person_id.clone(),
-                    email: email.clone(),
-                    name: colleague.name.trim().to_string(),
-                    organization: Some(company_name.clone()),
-                    role: colleague.title.clone(),
-                    relationship: "internal".to_string(),
-                    notes: None,
-                    tracker_path: None,
-                    last_seen: None,
-                    first_seen: Some(now.clone()),
-                    meeting_count: 0,
-                    updated_at: now,
-                    archived: false,
-                    linkedin_url: None,
-                    twitter_handle: None,
-                    phone: None,
-                    photo_url: None,
-                    bio: None,
-                    title_history: None,
-                    company_industry: None,
-                    company_size: None,
-                    company_hq: None,
-                    last_enriched_at: None,
-                    enrichment_sources: None,
-                };
-                db.upsert_person(&person).map_err(|e| e.to_string())?;
-                db.link_person_to_entity(&person_id, &root_account.id, "member")
-                    .map_err(|e| e.to_string())?;
-                db.link_person_to_entity(&person_id, &initial_team.id, "member")
-                    .map_err(|e| e.to_string())?;
-                created_people.push(person);
-            }
-
-            let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
-            for person_id in existing_person_ids.unwrap_or_default() {
-                if let Ok(Some(mut person)) = db.get_person(&person_id) {
-                    if person.relationship != "internal" {
-                        person.relationship = "internal".to_string();
-                        person.organization = Some(company_name.clone());
-                        db.upsert_person(&person).map_err(|e| e.to_string())?;
-                        updated_people.push(person);
-                    }
-                    db.link_person_to_entity(&person_id, &root_account.id, "member")
-                        .map_err(|e| e.to_string())?;
-                    db.link_person_to_entity(&person_id, &initial_team.id, "member")
-                        .map_err(|e| e.to_string())?;
-                }
-            }
-
-            Ok((root_account, initial_team, created_people, updated_people))
-        })?;
-
-    // Filesystem writes (best-effort, outside transaction)
-    let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
-    let _ = std::fs::create_dir_all(&root_dir);
-    let _ = crate::util::bootstrap_entity_directory(&root_dir, &company_name, "account");
-    let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
-    let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
-
-    let team_dir = crate::accounts::resolve_account_dir(workspace, &initial_team);
-    let _ = std::fs::create_dir_all(&team_dir);
-    let _ = crate::util::bootstrap_entity_directory(&team_dir, &team_name, "account");
-    let _ = crate::accounts::write_account_json(workspace, &initial_team, None, db);
-    let _ = crate::accounts::write_account_markdown(workspace, &initial_team, None, db);
-
-    for person in &created_people {
-        let _ = crate::people::write_person_json(workspace, person, db);
-        let _ = crate::people::write_person_markdown(workspace, person, db);
-    }
-    for person in &updated_people {
-        let _ = crate::people::write_person_json(workspace, person, db);
-        let _ = crate::people::write_person_markdown(workspace, person, db);
-    }
-
-    drop(db_guard);
-
-    crate::state::create_or_update_config(&state, |config| {
-        config.internal_team_setup_completed = true;
-        config.internal_team_setup_version = 1;
-        config.internal_org_account_id = Some(root_account.id.clone());
-        if config.user_company.is_none() {
-            config.user_company = Some(company_name.clone());
-        }
-        if !domains.is_empty() {
-            config.user_domain = domains.first().cloned();
-            config.user_domains = Some(domains.clone());
-        }
-    })?;
-
-    Ok(CreateInternalOrganizationResult {
-        root_account_id: root_account.id,
-        initial_team_id: initial_team.id,
-    })
+    crate::services::accounts::create_internal_organization(
+        &state,
+        &company_name,
+        &domains,
+        &team_name,
+        &colleagues,
+        &existing_person_ids.unwrap_or_default(),
+    )
 }
 
 #[tauri::command]
@@ -4242,39 +3388,9 @@ pub fn create_child_account(
     owner_person_id: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<CreateChildAccountResult, String> {
-    let name = crate::util::validate_entity_name(&name)?.to_string();
-    let workspace_path = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .as_ref()
-        .map(|c| c.workspace_path.clone());
-    let workspace = workspace_path.as_deref().map(Path::new);
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let parent = db
-        .get_account(&parent_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Parent account not found: {}", parent_id))?;
-    let child = create_child_account_record(
-        db,
-        workspace,
-        &parent,
-        &name,
-        description.as_deref(),
-        owner_person_id.as_deref(),
-    )?;
-    drop(db_guard);
-
-    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id: child.id.clone(),
-        entity_type: "account".to_string(),
-        priority: crate::intel_queue::IntelPriority::ContentChange,
-        requested_at: std::time::Instant::now(),
-    });
-
-    Ok(CreateChildAccountResult { id: child.id })
+    crate::services::accounts::create_child_account_cmd(
+        &state, &parent_id, &name, description.as_deref(), owner_person_id.as_deref(),
+    )
 }
 
 #[tauri::command]
@@ -4312,35 +3428,7 @@ pub fn backfill_internal_meeting_associations(
 ) -> Result<usize, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let mut stmt = db
-        .conn_ref()
-        .prepare(
-            "SELECT m.id, m.title, m.attendees
-             FROM meetings_history m
-             LEFT JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_type = 'account'
-             WHERE m.meeting_type IN ('internal', 'team_sync', 'one_on_one')
-               AND me.meeting_id IS NULL",
-        )
-        .map_err(|e| e.to_string())?;
-    let meetings: Vec<(String, String, Option<String>)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    let mut updated = 0usize;
-    for (meeting_id, title, attendees) in meetings {
-        let Some(account) = infer_internal_account_for_meeting(db, &title, attendees.as_deref())
-        else {
-            continue;
-        };
-        let _ = db.link_meeting_entity(&meeting_id, &account.id, "account");
-        let _ = db.cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None);
-        updated += 1;
-    }
-
-    Ok(updated)
+    crate::services::accounts::backfill_internal_meeting_associations(db)
 }
 
 // =============================================================================
@@ -4894,34 +3982,7 @@ pub async fn enrich_account(
     account_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    use crate::intel_queue::{
-        gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
-        IntelRequest,
-    };
-
-    let request = IntelRequest {
-        entity_id: account_id,
-        entity_type: "account".to_string(),
-        priority: IntelPriority::Manual,
-        requested_at: std::time::Instant::now(),
-    };
-
-    // Phase 1: Brief DB lock — gather context
-    let input = gather_enrichment_input(&state, &request)?;
-
-    // Phase 2: No lock — PTY enrichment
-    let ai_config = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
-        .unwrap_or_default();
-    let intel = run_enrichment(&input, &ai_config)?;
-
-    // Phase 3: Brief DB lock — write results
-    write_enrichment_results(&state, &input, &intel)?;
-
-    Ok(intel)
+    crate::services::intelligence::enrich_entity(account_id, "account".to_string(), &state).await
 }
 
 // =============================================================================
@@ -4993,51 +4054,7 @@ pub struct ProjectChildSummary {
 /// Get all projects with computed summary fields for the list page.
 #[tauri::command]
 pub fn get_projects_list(state: State<Arc<AppState>>) -> Result<Vec<ProjectListItem>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let projects = db.get_all_projects().map_err(|e| e.to_string())?;
-
-    // Pre-compute parent names for all projects with a parent_id
-    let parent_names: std::collections::HashMap<String, String> = projects
-        .iter()
-        .map(|p| (p.id.clone(), p.name.clone()))
-        .collect();
-
-    let items: Vec<ProjectListItem> = projects
-        .into_iter()
-        .map(|p| {
-            let open_action_count = db.get_project_actions(&p.id).map(|a| a.len()).unwrap_or(0);
-            let days_since_last_meeting = db.get_project_signals(&p.id).ok().and_then(|s| {
-                s.last_meeting.as_ref().and_then(|lm| {
-                    chrono::DateTime::parse_from_rfc3339(lm)
-                        .ok()
-                        .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
-                })
-            });
-            let child_count = db.get_child_projects(&p.id).map(|c| c.len()).unwrap_or(0);
-            let parent_name = p
-                .parent_id
-                .as_ref()
-                .and_then(|pid| parent_names.get(pid).cloned());
-            ProjectListItem {
-                id: p.id,
-                name: p.name,
-                status: p.status,
-                milestone: p.milestone,
-                owner: p.owner,
-                target_date: p.target_date,
-                open_action_count,
-                days_since_last_meeting,
-                is_parent: child_count > 0,
-                child_count,
-                parent_name,
-                parent_id: p.parent_id,
-            }
-        })
-        .collect();
-
-    Ok(items)
+    crate::services::projects::get_projects_list(&state)
 }
 
 /// Get full detail for a project.
@@ -5055,44 +4072,7 @@ pub fn get_child_projects_list(
     parent_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<Vec<ProjectListItem>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let children = db.get_child_projects(&parent_id).map_err(|e| e.to_string())?;
-    let parent_name = db.get_project(&parent_id).ok().flatten().map(|p| p.name);
-
-    let items: Vec<ProjectListItem> = children
-        .into_iter()
-        .map(|p| {
-            let open_action_count = db.get_project_actions(&p.id).map(|a| a.len()).unwrap_or(0);
-            let days_since_last_meeting = db.get_project_signals(&p.id).ok().and_then(|s| {
-                s.last_meeting.as_ref().and_then(|lm| {
-                    chrono::DateTime::parse_from_rfc3339(lm)
-                        .ok()
-                        .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
-                })
-            });
-            let child_count = db.get_child_projects(&p.id).map(|c| c.len()).unwrap_or(0);
-            let mut item = ProjectListItem {
-                id: p.id,
-                name: p.name,
-                status: p.status,
-                milestone: p.milestone,
-                owner: p.owner,
-                target_date: p.target_date,
-                open_action_count,
-                days_since_last_meeting,
-                parent_id: p.parent_id,
-                parent_name: None,
-                child_count,
-                is_parent: child_count > 0,
-            };
-            item.parent_name = parent_name.clone();
-            item
-        })
-        .collect();
-
-    Ok(items)
+    crate::services::projects::get_child_projects_list(&parent_id, &state)
 }
 
 /// I388: Get ancestor projects for breadcrumb navigation.
@@ -5114,48 +4094,7 @@ pub fn create_project(
     parent_id: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
-    let validated_name = crate::util::validate_entity_name(&name)?;
-    let id = crate::util::slugify(validated_name);
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    // Check for duplicate
-    if let Ok(Some(_)) = db.get_project(&id) {
-        return Err(format!("Project '{}' already exists", validated_name));
-    }
-
-    let project = crate::db::DbProject {
-        id: id.clone(),
-        name: validated_name.to_string(),
-        status: "active".to_string(),
-        milestone: None,
-        owner: None,
-        target_date: None,
-        tracker_path: Some(format!("Projects/{}", validated_name)),
-        parent_id,
-        updated_at: now,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-        metadata: None,
-    };
-
-    db.upsert_project(&project).map_err(|e| e.to_string())?;
-
-    // Create workspace files + directory template (ADR-0059)
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-        let project_dir = crate::projects::project_dir(workspace, validated_name);
-        let _ = std::fs::create_dir_all(&project_dir);
-        let _ = crate::util::bootstrap_entity_directory(&project_dir, validated_name, "project");
-        let _ = crate::projects::write_project_json(workspace, &project, None, db);
-        let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
-    }
-
-    Ok(id)
+    crate::services::projects::create_project(&name, parent_id, &state)
 }
 
 /// Update a single structured field on a project.
@@ -5166,46 +4105,7 @@ pub fn update_project_field(
     value: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    db.update_project_field(&project_id, &field, &value)
-        .map_err(|e| e.to_string())?;
-
-    // Emit field update signal (I308)
-    let _ = crate::signals::bus::emit_signal(db, "project", &project_id, "field_updated", "user_edit",
-        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
-
-    // Regenerate workspace files
-    if let Ok(Some(project)) = db.get_project(&project_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
-        if let Some(ref config) = *config {
-            let workspace = Path::new(&config.workspace_path);
-            let json_path =
-                crate::projects::project_dir(workspace, &project.name).join("dashboard.json");
-            let existing_json = if json_path.exists() {
-                crate::projects::read_project_json(&json_path)
-                    .ok()
-                    .map(|r| r.json)
-            } else {
-                None
-            };
-            let _ = crate::projects::write_project_json(
-                workspace,
-                &project,
-                existing_json.as_ref(),
-                db,
-            );
-            let _ = crate::projects::write_project_markdown(
-                workspace,
-                &project,
-                existing_json.as_ref(),
-                db,
-            );
-        }
-    }
-
-    Ok(())
+    crate::services::projects::update_project_field(&project_id, &field, &value, &state)
 }
 
 /// Update the notes field on a project.
@@ -5215,76 +4115,16 @@ pub fn update_project_notes(
     notes: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let project = db
-        .get_project(&project_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Project not found: {}", project_id))?;
-
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-        let json_path =
-            crate::projects::project_dir(workspace, &project.name).join("dashboard.json");
-
-        let mut json = if json_path.exists() {
-            crate::projects::read_project_json(&json_path)
-                .map(|r| r.json)
-                .unwrap_or_else(|_| crate::projects::default_project_json(&project))
-        } else {
-            crate::projects::default_project_json(&project)
-        };
-
-        json.notes = if notes.is_empty() { None } else { Some(notes.clone()) };
-
-        crate::projects::write_project_json(workspace, &project, Some(&json), db)?;
-        crate::projects::write_project_markdown(workspace, &project, Some(&json), db)?;
-
-        // Emit field update signal (I377)
-        let _ = crate::signals::bus::emit_signal(db, "project", &project_id, "field_updated", "user_edit",
-            Some(&format!("{{\"field\":\"notes\",\"value\":\"{}\"}}", notes.chars().take(100).collect::<String>().replace('"', "\\\""))), 0.8);
-    }
-
-    Ok(())
+    crate::services::projects::update_project_notes(&project_id, &notes, &state)
 }
 
 /// Enrich a project via Claude Code intelligence enrichment.
-/// Uses split-lock pattern (I173) — DB lock held only briefly during gather/write.
 #[tauri::command]
 pub async fn enrich_project(
     project_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    use crate::intel_queue::{
-        gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
-        IntelRequest,
-    };
-
-    let request = IntelRequest {
-        entity_id: project_id,
-        entity_type: "project".to_string(),
-        priority: IntelPriority::Manual,
-        requested_at: std::time::Instant::now(),
-    };
-
-    // Phase 1: Brief DB lock — gather context
-    let input = gather_enrichment_input(&state, &request)?;
-
-    // Phase 2: No lock — PTY enrichment
-    let ai_config = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
-        .unwrap_or_default();
-    let intel = run_enrichment(&input, &ai_config)?;
-
-    // Phase 3: Brief DB lock — write results
-    write_enrichment_results(&state, &input, &intel)?;
-
-    Ok(intel)
+    crate::services::intelligence::enrich_entity(project_id, "project".to_string(), &state).await
 }
 
 // ── I76: Database Backup & Rebuild ──────────────────────────────────
@@ -5491,14 +4331,7 @@ pub fn archive_project(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.archive_project(&id, archived)
-        .map_err(|e| e.to_string())?;
-
-    // Emit archive/unarchive signal (I308)
-    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
-    let _ = crate::signals::bus::emit_signal(db, "project", &id, signal_type, "user_action", None, 0.9);
-
-    Ok(())
+    crate::services::projects::archive_project(db, &id, archived)
 }
 
 /// Archive or unarchive a person.
@@ -5561,49 +4394,9 @@ pub fn restore_account(
 // =============================================================================
 
 /// Set multiple user domains for multi-org meeting classification.
-/// After saving, reclassifies existing people and meetings to reflect the new domains.
 #[tauri::command]
 pub fn set_user_domains(domains: String, state: State<Arc<AppState>>) -> Result<Config, String> {
-    let parsed: Vec<String> = domains
-        .split(',')
-        .map(|s| s.trim().to_lowercase())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    let config = crate::state::create_or_update_config(&state, |config| {
-        // Update legacy single-domain field for backward compat
-        config.user_domain = parsed.first().cloned();
-        config.user_domains = if parsed.is_empty() {
-            None
-        } else {
-            Some(parsed.clone())
-        };
-    })?;
-
-    // Reclassify existing people and meetings for the new domains (I184)
-    if !parsed.is_empty() {
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                match db.reclassify_people_for_domains(&parsed) {
-                    Ok(n) if n > 0 => {
-                        log::info!("Reclassified {} people after domain change", n);
-                        // Now fix meeting types based on updated relationships
-                        match db.reclassify_meeting_types_from_attendees() {
-                            Ok(m) if m > 0 => {
-                                log::info!("Reclassified {} meetings after domain change", m);
-                            }
-                            Ok(_) => {}
-                            Err(e) => log::warn!("Meeting reclassification failed: {}", e),
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(e) => log::warn!("People reclassification failed: {}", e),
-                }
-            }
-        }
-    }
-
-    Ok(config)
+    crate::services::settings::set_user_domains(&domains, &state)
 }
 
 // =============================================================================
@@ -5636,7 +4429,6 @@ pub fn bulk_create_projects(
 ) -> Result<Vec<String>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
     let workspace_path = config
         .as_ref()
@@ -5644,46 +4436,7 @@ pub fn bulk_create_projects(
         .workspace_path
         .clone();
     let workspace = Path::new(&workspace_path);
-
-    let mut created_ids = Vec::with_capacity(names.len());
-
-    for raw_name in &names {
-        let name = crate::util::validate_entity_name(raw_name)?;
-        let id = crate::util::slugify(name);
-
-        // Skip duplicates
-        if let Ok(Some(_)) = db.get_project(&id) {
-            continue;
-        }
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let project = crate::db::DbProject {
-            id: id.clone(),
-            name: name.to_string(),
-            status: "active".to_string(),
-            milestone: None,
-            owner: None,
-            target_date: None,
-            tracker_path: Some(format!("Projects/{}", name)),
-            parent_id: None,
-            updated_at: now,
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-            metadata: None,
-        };
-
-        db.upsert_project(&project).map_err(|e| e.to_string())?;
-
-        // Create workspace files + directory template (ADR-0059)
-        let project_dir = crate::projects::project_dir(workspace, name);
-        let _ = std::fs::create_dir_all(&project_dir);
-        let _ = crate::util::bootstrap_entity_directory(&project_dir, name, "project");
-        let _ = crate::projects::write_project_json(workspace, &project, None, db);
-        let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
-
-        created_ids.push(id);
-    }
+    let created_ids = crate::services::projects::bulk_create_projects(db, workspace, &names)?;
 
     Ok(created_ids)
 }
@@ -6480,45 +5233,7 @@ pub async fn generate_risk_briefing(
     state: State<'_, Arc<AppState>>,
     account_id: String,
 ) -> Result<crate::types::RiskBriefing, String> {
-    let app_state = state.inner().clone();
-
-    let task = tauri::async_runtime::spawn_blocking(move || {
-        // Phase 1: Brief DB lock — gather context + build prompt
-        let input = {
-            let db_guard = app_state
-                .db
-                .lock()
-                .map_err(|_| "Lock poisoned".to_string())?;
-            let db = db_guard
-                .as_ref()
-                .ok_or_else(|| "Database not initialized".to_string())?;
-
-            let config_guard = app_state
-                .config
-                .read()
-                .map_err(|_| "Config lock poisoned".to_string())?;
-            let config = config_guard
-                .as_ref()
-                .ok_or_else(|| "Config not initialized".to_string())?;
-
-            let workspace = std::path::Path::new(&config.workspace_path);
-            crate::risk_briefing::gather_risk_input(
-                workspace,
-                db,
-                &account_id,
-                config.user_name.clone(),
-                config.ai_models.clone(),
-            )?
-        }; // locks dropped here
-
-        // Phase 2: No lock — PTY enrichment (long-running)
-        crate::risk_briefing::run_risk_enrichment(&input)
-    });
-
-    match task.await {
-        Ok(result) => result,
-        Err(e) => Err(format!("Risk briefing task panicked: {}", e)),
-    }
+    crate::services::intelligence::generate_risk_briefing(state.inner(), &account_id).await
 }
 
 /// Read a cached risk briefing for an account (fast, no AI).
@@ -6529,18 +5244,7 @@ pub fn get_risk_briefing(
 ) -> Result<crate::types::RiskBriefing, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
-    let config = config_guard.as_ref().ok_or("Config not initialized")?;
-
-    let account = db
-        .get_account(&account_id)
-        .map_err(|e| format!("DB error: {}", e))?
-        .ok_or_else(|| format!("Account not found: {}", account_id))?;
-
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-    crate::risk_briefing::read_risk_briefing(&account_dir)
+    crate::services::intelligence::get_risk_briefing(db, &state, &account_id)
 }
 
 /// Save an edited risk briefing back to disk (user corrections).
@@ -6552,18 +5256,7 @@ pub fn save_risk_briefing(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
-    let config = config_guard.as_ref().ok_or("Config not initialized")?;
-
-    let account = db
-        .get_account(&account_id)
-        .map_err(|e| format!("DB error: {}", e))?
-        .ok_or_else(|| format!("Account not found: {}", account_id))?;
-
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-    crate::risk_briefing::write_risk_briefing(&account_dir, &briefing)
+    crate::services::intelligence::save_risk_briefing(db, &state, &account_id, &briefing)
 }
 
 // =============================================================================
@@ -6738,64 +5431,10 @@ pub fn update_intelligence_field(
     value: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let config = config.as_ref().ok_or("No configuration loaded")?;
-    let workspace = Path::new(&config.workspace_path);
-
-    // Look up entity to resolve directory
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let account = if entity_type == "account" {
-        db.get_account(&entity_id).map_err(|e| e.to_string())?
-    } else {
-        None
-    };
-
-    let entity_name = match entity_type.as_str() {
-        "account" => account.as_ref().map(|a| a.name.clone()),
-        "project" => db
-            .get_project(&entity_id)
-            .map_err(|e| e.to_string())?
-            .map(|p| p.name),
-        "person" => db
-            .get_person(&entity_id)
-            .map_err(|e| e.to_string())?
-            .map(|p| p.name),
-        _ => return Err(format!("Unsupported entity type: {}", entity_type)),
-    }
-    .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
-
-    let dir = crate::intelligence::resolve_entity_dir(
-        workspace,
-        &entity_type,
-        &entity_name,
-        account.as_ref(),
-    )?;
-
-    let intel = crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?;
-
-    // Update SQLite cache
-    let _ = db.upsert_entity_intelligence(&intel);
-
-    // Emit user_correction signal so Thompson Sampling learns from user edits (I307)
-    let _ = crate::signals::bus::emit_signal(
-        db,
-        &entity_type,
-        &entity_id,
-        "user_correction",
-        "user_edit",
-        Some(&format!("{{\"field\":\"{}\"}}", field_path)),
-        1.0,
-    );
-
-    Ok(())
+    crate::services::intelligence::update_intelligence_field(&entity_id, &entity_type, &field_path, &value, &state)
 }
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
-///
-/// Used for add/remove stakeholder operations. Replaces the entire
-/// stakeholderInsights array and marks it as user-edited.
 #[tauri::command]
 pub fn update_stakeholders(
     entity_id: String,
@@ -6806,51 +5445,7 @@ pub fn update_stakeholders(
     let stakeholders: Vec<crate::intelligence::StakeholderInsight> =
         serde_json::from_str(&stakeholders_json)
             .map_err(|e| format!("Invalid stakeholders JSON: {}", e))?;
-
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let config = config.as_ref().ok_or("No configuration loaded")?;
-    let workspace = Path::new(&config.workspace_path);
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let account = if entity_type == "account" {
-        db.get_account(&entity_id).map_err(|e| e.to_string())?
-    } else {
-        None
-    };
-
-    let entity_name = match entity_type.as_str() {
-        "account" => account.as_ref().map(|a| a.name.clone()),
-        "project" => db
-            .get_project(&entity_id)
-            .map_err(|e| e.to_string())?
-            .map(|p| p.name),
-        "person" => db
-            .get_person(&entity_id)
-            .map_err(|e| e.to_string())?
-            .map(|p| p.name),
-        _ => return Err(format!("Unsupported entity type: {}", entity_type)),
-    }
-    .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
-
-    let dir = crate::intelligence::resolve_entity_dir(
-        workspace,
-        &entity_type,
-        &entity_name,
-        account.as_ref(),
-    )?;
-
-    let intel = crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?;
-
-    // Update SQLite cache
-    let _ = db.upsert_entity_intelligence(&intel);
-
-    // Emit stakeholders updated signal (I377)
-    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, &entity_type, &entity_id, "stakeholders_updated", "user_edit",
-        None, 0.9);
-
-    Ok(())
+    crate::services::intelligence::update_stakeholders(&entity_id, &entity_type, stakeholders, &state)
 }
 
 /// Create a person entity from a stakeholder name (no email required).
