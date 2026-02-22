@@ -1030,70 +1030,8 @@ pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) ->
     )
 }
 
-/// Build the Claude Code prompt for account enrichment.
-pub fn enrichment_prompt(account_name: &str) -> String {
-    format!(
-        "Research the company \"{name}\". Use web search to find current information. \
-         Return ONLY the structured block below — no other text.\n\n\
-         ENRICHMENT\n\
-         DESCRIPTION: <one paragraph describing what the company does, their main product/service>\n\
-         INDUSTRY: <their primary industry>\n\
-         SIZE: <approximate employee count or range, e.g. \"500-1000\">\n\
-         HQ: <headquarters city and country>\n\
-         END_ENRICHMENT",
-        name = wrap_user_data(account_name)
-    )
-}
-
-/// Enrich an account via Claude Code websearch.
-///
-/// Calls Claude Code with a research prompt, parses the structured response,
-/// updates dashboard.json, SQLite, and dashboard.md.
-///
-/// Returns the enriched CompanyOverview on success.
-pub fn enrich_account(
-    workspace: &Path,
-    db: &ActionDb,
-    account_id: &str,
-    pty: &crate::pty::PtyManager,
-) -> Result<CompanyOverview, String> {
-    let account = db
-        .get_account(account_id)
-        .map_err(|e| format!("DB error: {}", e))?
-        .ok_or_else(|| format!("Account {} not found", account_id))?;
-
-    // I126: Append file context from content index to enrichment prompt
-    let file_context = build_file_context(workspace, db, account_id);
-    let prompt = format!("{}{}", enrichment_prompt(&account.name), file_context);
-    let output = pty
-        .spawn_claude(workspace, &prompt)
-        .map_err(|e| format!("Claude Code error: {}", e))?;
-
-    let overview = parse_enrichment_response(&output.stdout)
-        .ok_or("Could not parse enrichment response — no ENRICHMENT block found")?;
-
-    // Read existing JSON to preserve other narrative fields
-    let json_path = account_dir(workspace, &account.name).join("dashboard.json");
-    let mut json = if json_path.exists() {
-        read_account_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_account_json(&account))
-    } else {
-        default_account_json(&account)
-    };
-
-    json.company_overview = Some(overview.clone());
-
-    // Write JSON + markdown
-    write_account_json(workspace, &account, Some(&json), db)?;
-    write_account_markdown(workspace, &account, Some(&json), db)?;
-
-    log::info!(
-        "Enriched account '{}' via Claude Code websearch",
-        account.name
-    );
-    Ok(overview)
-}
+// Account enrichment via PTY removed per ADR-0086 (I376).
+// Entity intelligence is now enriched solely via intel_queue.
 
 /// Create a minimal AccountJson from a DbAccount (no narrative fields).
 fn default_account_json(account: &DbAccount) -> AccountJson {
