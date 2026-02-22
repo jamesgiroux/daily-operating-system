@@ -10,9 +10,9 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO accounts (
                 id, name, lifecycle, arr, health, contract_start, contract_end,
-                nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                nps, tracker_path, parent_id, is_internal, account_type, updated_at, archived,
                 keywords, keywords_extracted_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 lifecycle = excluded.lifecycle,
@@ -24,6 +24,7 @@ impl ActionDb {
                 tracker_path = excluded.tracker_path,
                 parent_id = excluded.parent_id,
                 is_internal = excluded.is_internal,
+                account_type = excluded.account_type,
                 updated_at = excluded.updated_at",
             params![
                 account.id,
@@ -36,7 +37,8 @@ impl ActionDb {
                 account.nps,
                 account.tracker_path,
                 account.parent_id,
-                account.is_internal as i32,
+                account.account_type.is_internal() as i32,
+                account.account_type.as_db_str(),
                 account.updated_at,
                 account.archived as i32,
                 account.keywords,
@@ -66,7 +68,7 @@ impl ActionDb {
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE id = ?1",
@@ -84,7 +86,7 @@ impl ActionDb {
     pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
@@ -102,7 +104,7 @@ impl ActionDb {
     pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts WHERE archived = 0 ORDER BY name",
         )?;
@@ -114,7 +116,7 @@ impl ActionDb {
     pub fn get_top_level_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
@@ -126,7 +128,7 @@ impl ActionDb {
     pub fn get_child_accounts(&self, parent_id: &str) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
@@ -144,7 +146,7 @@ impl ActionDb {
                 WHERE a.parent_id IS NOT NULL
             )
             SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                   nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                   nps, tracker_path, parent_id, account_type, updated_at, archived,
                    keywords, keywords_extracted_at, metadata
             FROM accounts
             WHERE id IN (SELECT id FROM ancestors WHERE id IS NOT NULL)
@@ -166,7 +168,7 @@ impl ActionDb {
             )
             SELECT acc.id, acc.name, acc.lifecycle, acc.arr, acc.health,
                    acc.contract_start, acc.contract_end, acc.nps, acc.tracker_path,
-                   acc.parent_id, acc.is_internal, acc.updated_at, acc.archived,
+                   acc.parent_id, acc.account_type, acc.updated_at, acc.archived,
                    acc.keywords, acc.keywords_extracted_at, acc.metadata
             FROM accounts acc
             JOIN descendants d ON acc.id = d.id
@@ -212,7 +214,7 @@ impl ActionDb {
     ) -> Result<Vec<(DbAccount, Vec<String>)>, DbError> {
         let query = if include_archived {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
-                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.account_type,
                     a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
                     ad.domain
              FROM accounts a
@@ -220,7 +222,7 @@ impl ActionDb {
              ORDER BY a.id, ad.domain"
         } else {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
-                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.account_type,
                     a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
                     ad.domain
              FROM accounts a
@@ -252,7 +254,7 @@ impl ActionDb {
                     nps: row.get(7)?,
                     tracker_path: row.get(8)?,
                     parent_id: row.get(9)?,
-                    is_internal: row.get::<_, i32>(10).unwrap_or(0) != 0,
+                    account_type: AccountType::from_db(&row.get::<_, String>(10).unwrap_or_else(|_| "customer".to_string())),
                     updated_at: row.get(11)?,
                     archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
                     keywords: row.get(13).unwrap_or(None),
@@ -285,13 +287,13 @@ impl ActionDb {
 
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
-                    a.nps, a.tracker_path, a.parent_id, a.is_internal,
-                    a.updated_at, a.archived
+                    a.nps, a.tracker_path, a.parent_id, a.account_type,
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata
              FROM accounts a
              INNER JOIN account_domains d ON d.account_id = a.id
              WHERE d.domain = ?1
                AND a.archived = 0
-             ORDER BY a.is_internal ASC, a.name ASC",
+             ORDER BY a.account_type ASC, a.name ASC",
         )?;
         let rows = stmt.query_map(params![normalized], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -311,10 +313,10 @@ impl ActionDb {
     pub fn get_internal_root_account(&self) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
-             WHERE is_internal = 1 AND parent_id IS NULL AND archived = 0
+             WHERE account_type = 'internal' AND parent_id IS NULL AND archived = 0
              ORDER BY updated_at DESC
              LIMIT 1",
         )?;
@@ -329,10 +331,10 @@ impl ActionDb {
     pub fn get_internal_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts
-             WHERE is_internal = 1 AND archived = 0
+             WHERE account_type = 'internal' AND archived = 0
              ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -651,15 +653,15 @@ impl ActionDb {
                     params![value, id, now],
                 )?;
 
-                // Propagate is_internal: if the child is internal, the parent should be too
-                let child_is_internal: i32 = self.conn.query_row(
-                    "SELECT is_internal FROM accounts WHERE id = ?1",
+                // Propagate account_type: if the child is internal, the parent should be too
+                let child_type: String = self.conn.query_row(
+                    "SELECT account_type FROM accounts WHERE id = ?1",
                     params![id],
                     |row| row.get(0),
-                ).unwrap_or(0);
-                if child_is_internal == 1 {
+                ).unwrap_or_else(|_| "customer".to_string());
+                if child_type == "internal" {
                     self.conn.execute(
-                        "UPDATE accounts SET is_internal = 1, updated_at = ?2 WHERE id = ?1 AND is_internal = 0",
+                        "UPDATE accounts SET account_type = 'internal', is_internal = 1, updated_at = ?2 WHERE id = ?1 AND account_type != 'internal'",
                         params![value, now],
                     )?;
                 }
@@ -677,6 +679,9 @@ impl ActionDb {
             }
             "contract_end" => {
                 "UPDATE accounts SET contract_end = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "account_type" => {
+                "UPDATE accounts SET account_type = ?1, is_internal = CASE WHEN ?1 = 'internal' THEN 1 ELSE 0 END, updated_at = ?3 WHERE id = ?2"
             }
             _ => {
                 return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
@@ -963,7 +968,7 @@ impl ActionDb {
             nps: row.get(7)?,
             tracker_path: row.get(8)?,
             parent_id: row.get(9)?,
-            is_internal: row.get::<_, i32>(10).unwrap_or(0) != 0,
+            account_type: AccountType::from_db(&row.get::<_, String>(10).unwrap_or_else(|_| "customer".to_string())),
             updated_at: row.get(11)?,
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
             keywords: row.get(13).unwrap_or(None),
@@ -1158,7 +1163,7 @@ impl ActionDb {
     pub fn get_archived_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                    nps, tracker_path, parent_id, account_type, updated_at, archived,
                     keywords, keywords_extracted_at, metadata
              FROM accounts WHERE archived = 1 ORDER BY name",
         )?;
@@ -1303,7 +1308,8 @@ impl ActionDb {
     pub fn get_accounts_past_renewal(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
-                    a.nps, a.tracker_path, a.parent_id, a.is_internal, a.updated_at, a.archived
+                    a.nps, a.tracker_path, a.parent_id, a.account_type, a.updated_at, a.archived,
+                    a.keywords, a.keywords_extracted_at, a.metadata
              FROM accounts a
              WHERE a.contract_end IS NOT NULL
                AND a.contract_end < date('now')

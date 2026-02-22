@@ -15,6 +15,8 @@ import {
   FilterTabs,
 } from "@/components/entity/EntityListShell";
 import { EntityRow } from "@/components/entity/EntityRow";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatArr } from "@/lib/utils";
 import type { AccountListItem } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
@@ -37,6 +39,16 @@ const healthDotColor: Record<string, string> = {
   red: "var(--color-spice-terracotta)",
 };
 
+/** Section configuration for the three account type groups (I383). */
+const ACCOUNT_SECTIONS: {
+  type: AccountListItem["accountType"];
+  title: string;
+}[] = [
+  { type: "customer", title: "Your Book" },
+  { type: "internal", title: "Your Team" },
+  { type: "partner", title: "Your Partners" },
+];
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +57,8 @@ export default function AccountsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newAccountType, setNewAccountType] = useState<"customer" | "internal" | "partner">("customer");
+  const [newParentId, setNewParentId] = useState<string | null>(null);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [childrenCache, setChildrenCache] = useState<Record<string, AccountListItem[]>>({});
   const [archiveTab, setArchiveTab] = useState<ArchiveTab>("active");
@@ -116,14 +130,45 @@ export default function AccountsPage() {
   async function handleCreate() {
     if (!newName.trim()) return;
     try {
-      await invoke<string>("create_account", { name: newName.trim() });
+      await invoke<string>("create_account", {
+        name: newName.trim(),
+        accountType: newAccountType,
+        parentId: newParentId,
+      });
       setNewName("");
+      setNewAccountType("customer");
+      setNewParentId(null);
       setCreating(false);
       await loadAccounts();
     } catch (e) {
       setError(String(e));
     }
   }
+
+  // Potential parent accounts: same type, not archived.
+  // Recursively flattens the full hierarchy from childrenCache so deeply
+  // nested accounts (e.g. Automattic > WPVIP > Sales > CS > Key Accounts)
+  // all appear as selectable parents. Each entry carries its depth for
+  // visual indentation in the dropdown.
+  const parentOptions = useMemo(() => {
+    if (newAccountType === "partner") return [];
+    const result: (AccountListItem & { _depth: number })[] = [];
+
+    function walk(items: AccountListItem[], depth: number) {
+      for (const acct of items) {
+        if (acct.archived) continue;
+        result.push({ ...acct, _depth: depth });
+        const children = childrenCache[acct.id];
+        if (children) walk(children, depth + 1);
+      }
+    }
+
+    const topLevel = accounts.filter(
+      (a) => a.accountType === newAccountType && !a.archived,
+    );
+    walk(topLevel, 0);
+    return result;
+  }, [accounts, childrenCache, newAccountType]);
 
   async function handleBulkCreate() {
     const names = parseBulkCreateInput(bulkValue);
@@ -178,19 +223,66 @@ export default function AccountsPage() {
       ? accounts
       : accounts.filter((a) => a.lifecycle === lifecycleFilter);
 
-  const filtered = searchQuery
-    ? lifecycleFiltered.filter(
-        (a) =>
-          a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (a.teamSummary ?? "").toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : lifecycleFiltered;
+  const filtered = useMemo(() => {
+    if (!searchQuery) return lifecycleFiltered;
+    const q = searchQuery.toLowerCase();
+    return lifecycleFiltered.filter((a) => {
+      if (a.name.toLowerCase().includes(q) || (a.teamSummary ?? "").toLowerCase().includes(q)) {
+        return true;
+      }
+      const children = childrenCache[a.id];
+      if (children && children.some((c) => c.name.toLowerCase().includes(q))) {
+        return true;
+      }
+      return false;
+    });
+  }, [searchQuery, lifecycleFiltered, childrenCache]);
+
+  // D3: Auto-expand parent accounts when a child matches the search query
+  useEffect(() => {
+    if (!searchQuery) return;
+    const q = searchQuery.toLowerCase();
+    const toExpand = new Set<string>();
+    for (const a of filtered) {
+      if (childrenCache[a.id]?.some((c) => c.name.toLowerCase().includes(q))) {
+        toExpand.add(a.id);
+      }
+    }
+    if (toExpand.size > 0) {
+      setExpandedParents((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const id of toExpand) {
+          if (!next.has(id)) { next.add(id); changed = true; }
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [searchQuery, filtered, childrenCache]);
 
   const filteredArchived = searchQuery
     ? archivedAccounts.filter(
         (a) => a.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : archivedAccounts;
+
+  // I383: Group filtered accounts by accountType for three-section layout
+  const groupedAccounts = useMemo(() => {
+    const groups: Record<string, AccountListItem[]> = {
+      customer: [],
+      internal: [],
+      partner: [],
+    };
+    for (const account of filtered) {
+      const type = account.accountType ?? "customer";
+      if (groups[type]) {
+        groups[type].push(account);
+      } else {
+        groups.customer.push(account);
+      }
+    }
+    return groups;
+  }, [filtered]);
 
   const isArchived = archiveTab === "archived";
   const displayList = isArchived ? filteredArchived : filtered;
@@ -300,13 +392,24 @@ export default function AccountsPage() {
         </h1>
         <EntityListEmpty title="No accounts yet" message="Create your first account to get started.">
           {creating ? (
-            <div style={{ maxWidth: 400, margin: "24px auto 0" }}>
+            <div style={{ maxWidth: 400, margin: "24px auto 0", display: "flex", flexDirection: "column", gap: 12 }}>
+              <AccountTypeSelector
+                value={newAccountType}
+                onChange={(v) => { setNewAccountType(v); setNewParentId(null); }}
+              />
+              {newAccountType !== "partner" && parentOptions.length > 0 && (
+                <ParentSelector
+                  value={newParentId}
+                  onChange={setNewParentId}
+                  options={parentOptions}
+                />
+              )}
               <InlineCreateForm
                 value={newName}
                 onChange={setNewName}
                 onCreate={handleCreate}
-                onCancel={() => setCreating(false)}
-                placeholder="Account name"
+                onCancel={() => { setCreating(false); setNewAccountType("customer"); setNewParentId(null); }}
+                placeholder={newParentId ? "Business unit name" : "Account name"}
               />
             </div>
           ) : (
@@ -362,64 +465,97 @@ export default function AccountsPage() {
               onChange={setBulkValue}
               onCreate={handleBulkCreate}
               onSingleMode={() => { setBulkMode(false); setBulkValue(""); }}
-              onCancel={() => { setCreating(false); setBulkMode(false); setBulkValue(""); setNewName(""); }}
+              onCancel={() => { setCreating(false); setBulkMode(false); setBulkValue(""); setNewName(""); setNewParentId(null); }}
               placeholder="One account name per line"
             />
           ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <InlineCreateForm
-                value={newName}
-                onChange={setNewName}
-                onCreate={handleCreate}
-                onCancel={() => { setCreating(false); setNewName(""); }}
-                placeholder="Account name"
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <AccountTypeSelector
+                value={newAccountType}
+                onChange={(v) => { setNewAccountType(v); setNewParentId(null); }}
               />
-              <button
-                onClick={() => setBulkMode(true)}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                Bulk
-              </button>
+              {newAccountType !== "partner" && parentOptions.length > 0 && (
+                <ParentSelector
+                  value={newParentId}
+                  onChange={setNewParentId}
+                  options={parentOptions}
+                />
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <InlineCreateForm
+                  value={newName}
+                  onChange={setNewName}
+                  onCreate={handleCreate}
+                  onCancel={() => { setCreating(false); setNewName(""); setNewAccountType("customer"); setNewParentId(null); }}
+                  placeholder={newParentId ? "Business unit name" : "Account name"}
+                />
+                <button
+                  onClick={() => setBulkMode(true)}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  Bulk
+                </button>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Account rows */}
-      <section>
-        {displayList.length === 0 ? (
+      {/* Account rows — grouped by account type (I383) or flat for archived */}
+      {isArchived ? (
+        <section>
+          {filteredArchived.length === 0 ? (
+            <EntityListEmpty
+              title="No archived accounts"
+              message="Archived accounts will appear here."
+            />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {filteredArchived.map((account, i) => (
+                <EntityRow
+                  key={account.id}
+                  to="/accounts/$accountId"
+                  params={{ accountId: account.id }}
+                  dotColor={healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)"}
+                  name={account.name}
+                  showBorder={i < filteredArchived.length - 1}
+                  subtitle={account.lifecycle}
+                >
+                  {account.arr != null && (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                      ${formatArr(account.arr)}
+                    </span>
+                  )}
+                </EntityRow>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : filtered.length === 0 ? (
+        <section>
           <EntityListEmpty
-            title={isArchived ? "No archived accounts" : "No matches"}
-            message={isArchived ? "Archived accounts will appear here." : "Try a different search or filter."}
+            title="No matches"
+            message="Try a different search or filter."
           />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {isArchived
-              ? filteredArchived.map((account, i) => (
-                  <EntityRow
-                    key={account.id}
-                    to="/accounts/$accountId"
-                    params={{ accountId: account.id }}
-                    dotColor={healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)"}
-                    name={account.name}
-                    showBorder={i < filteredArchived.length - 1}
-                    subtitle={account.lifecycle}
-                  >
-                    {account.arr != null && (
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
-                        ${formatArr(account.arr)}
-                      </span>
-                    )}
-                  </EntityRow>
-                ))
-              : filtered.map((account, i) => (
+        </section>
+      ) : (
+        /* Three-group layout: render each non-empty section with ChapterHeading */
+        ACCOUNT_SECTIONS.map(({ type, title }) => {
+          const sectionAccounts = groupedAccounts[type] ?? [];
+          if (sectionAccounts.length === 0) return null;
+
+          return (
+            <section key={type} style={{ marginBottom: "var(--space-2xl)" }}>
+              <ChapterHeading title={title} />
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {sectionAccounts.map((account, i) => (
                   <AccountTreeNode
                     key={account.id}
                     account={account}
@@ -427,12 +563,14 @@ export default function AccountsPage() {
                     expandedParents={expandedParents}
                     childrenCache={childrenCache}
                     toggleExpand={toggleExpand}
-                    isLastSibling={i === filtered.length - 1}
+                    isLastSibling={i === sectionAccounts.length - 1}
                   />
                 ))}
-          </div>
-        )}
-      </section>
+              </div>
+            </section>
+          );
+        })
+      )}
 
       {displayList.length > 0 && <EntityListEndMark />}
     </div>
@@ -516,7 +654,7 @@ function AccountRow({
 
   const nameSuffix = (
     <>
-      {account.isInternal && (
+      {account.accountType !== "customer" && (
         <span
           style={{
             fontFamily: "var(--font-mono)",
@@ -524,10 +662,10 @@ function AccountRow({
             fontWeight: 600,
             letterSpacing: "0.06em",
             textTransform: "uppercase",
-            color: "var(--color-text-tertiary)",
+            color: account.accountType === "partner" ? "var(--color-garden-rosemary)" : "var(--color-text-tertiary)",
           }}
         >
-          Internal
+          {account.accountType === "partner" ? "Partner" : "Internal"}
         </span>
       )}
       {onToggleExpand && (
@@ -557,7 +695,7 @@ function AccountRow({
     <EntityRow
       to="/accounts/$accountId"
       params={{ accountId: account.id }}
-      dotColor={account.isInternal ? "var(--color-garden-larkspur)" : (healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)")}
+      dotColor={account.accountType === "internal" ? "var(--color-garden-larkspur)" : account.accountType === "partner" ? "var(--color-garden-rosemary)" : (healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)")}
       name={account.name}
       showBorder={showBorder}
       paddingLeft={depth > 0 ? depth * 28 : 0}
@@ -581,5 +719,137 @@ function AccountRow({
         </span>
       )}
     </EntityRow>
+  );
+}
+
+// ─── Account Type Selector ──────────────────────────────────────────────────
+
+const TYPE_OPTIONS: { value: "customer" | "internal" | "partner"; label: string; color: string }[] = [
+  { value: "customer", label: "Customer", color: "var(--color-spice-turmeric)" },
+  { value: "internal", label: "Internal", color: "var(--color-garden-larkspur)" },
+  { value: "partner", label: "Partner", color: "var(--color-garden-rosemary)" },
+];
+
+function AccountTypeSelector({
+  value,
+  onChange,
+}: {
+  value: "customer" | "internal" | "partner";
+  onChange: (v: "customer" | "internal" | "partner") => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 0, borderRadius: 4, overflow: "hidden", border: "1px solid var(--color-paper-linen)" }}>
+      {TYPE_OPTIONS.map((opt) => {
+        const isActive = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            style={{
+              flex: 1,
+              padding: "6px 12px",
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: isActive ? 600 : 400,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: isActive ? opt.color : "var(--color-text-tertiary)",
+              background: isActive ? "rgba(30,37,48,0.04)" : "transparent",
+              border: "none",
+              borderRight: opt.value !== "partner" ? "1px solid var(--color-paper-linen)" : "none",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Parent Account Selector ────────────────────────────────────────────────
+
+function ParentSelector({
+  value,
+  onChange,
+  options,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+  options: (AccountListItem & { _depth: number })[];
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <label
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--color-text-tertiary)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Parent
+      </label>
+      <Select value={value ?? "__none__"} onValueChange={(v) => onChange(v === "__none__" ? null : v)}>
+        <SelectTrigger
+          className=""
+          style={{
+            flex: 1,
+            fontFamily: "var(--font-sans)",
+            fontSize: 13,
+            color: value ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+            background: "var(--color-paper-warm-white)",
+            border: "1px solid var(--color-paper-linen)",
+            borderRadius: 4,
+            padding: "5px 8px",
+            height: "auto",
+            boxShadow: "none",
+          }}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent
+          position="popper"
+          style={{
+            background: "var(--color-paper-warm-white)",
+            border: "1px solid var(--color-paper-linen)",
+            borderRadius: 6,
+            fontFamily: "var(--font-sans)",
+            fontSize: 13,
+            maxHeight: 240,
+          }}
+        >
+          <SelectItem
+            value="__none__"
+            style={{ color: "var(--color-text-tertiary)", fontFamily: "var(--font-sans)", fontSize: 13 }}
+          >
+            None (top-level)
+          </SelectItem>
+          {options.map((acct) => {
+            const indent = acct._depth > 0 ? 12 + acct._depth * 16 : undefined;
+            const prefix = acct._depth > 0 ? "└ " : "";
+            return (
+              <SelectItem
+                key={acct.id}
+                value={acct.id}
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 13,
+                  paddingLeft: indent,
+                  color: acct._depth > 0 ? "var(--color-text-secondary)" : undefined,
+                }}
+              >
+                {prefix}{acct.name}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
