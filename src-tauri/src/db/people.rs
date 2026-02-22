@@ -268,7 +268,8 @@ impl ActionDb {
                    ) cnt90 ON cnt90.person_id = p.id
                    LEFT JOIN (
                        SELECT ma.person_id, MAX(m.start_time) AS max_start FROM meeting_attendees ma
-                       JOIN meetings_history m ON m.id = ma.meeting_id GROUP BY ma.person_id
+                       JOIN meetings_history m ON m.id = ma.meeting_id
+                       WHERE m.start_time <= datetime('now') GROUP BY ma.person_id
                    ) last_m ON last_m.person_id = p.id
                    LEFT JOIN (
                        SELECT ep.person_id, GROUP_CONCAT(e.name, ', ') AS names
@@ -290,6 +291,9 @@ impl ActionDb {
                 None => "cold".to_string(),
             };
             let trend = compute_trend(count_30d, count_90d);
+            let days_since_last_meeting = last_meeting
+                .as_deref()
+                .and_then(crate::db::types::days_since_iso);
 
             Ok(PersonListItem {
                 id: row.get(0)?,
@@ -308,6 +312,7 @@ impl ActionDb {
                 temperature,
                 trend,
                 account_names: row.get(16)?,
+                days_since_last_meeting,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -517,7 +522,8 @@ impl ActionDb {
             .query_row(
                 "SELECT MAX(m.start_time) FROM meetings_history m
                  JOIN meeting_attendees ma ON m.id = ma.meeting_id
-                 WHERE ma.person_id = ?1",
+                 WHERE ma.person_id = ?1
+                   AND m.start_time <= datetime('now')",
                 params![person_id],
                 |row| row.get(0),
             )
