@@ -721,7 +721,7 @@ pub async fn get_live_proactive_suggestions(
 
     // Check cache unless force refresh requested
     if !force_refresh.unwrap_or(false) {
-        if let Ok(guard) = state.week_calendar_cache.read() {
+        if let Ok(guard) = state.calendar.week_cache.read() {
             if let Some((ref events, fetched_at)) = *guard {
                 let age = fetched_at.elapsed().as_secs();
                 if age < WEEK_CACHE_FRESH_SECS {
@@ -760,7 +760,7 @@ async fn refresh_week_calendar_cache(
 ) -> Result<Vec<CalendarEvent>, String> {
     let events = crate::queries::proactive::fetch_week_events(config, &entity_hints).await?;
 
-    if let Ok(mut guard) = state.week_calendar_cache.write() {
+    if let Ok(mut guard) = state.calendar.week_cache.write() {
         *guard = Some((events.clone(), std::time::Instant::now()));
     }
 
@@ -1643,7 +1643,7 @@ struct GoogleAuthFailedPayload {
 pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
     let started = std::time::Instant::now();
     let cached = state
-        .google_auth
+        .calendar.google_auth
         .lock()
         .map(|guard| guard.clone())
         .unwrap_or(GoogleAuthStatus::NotConfigured);
@@ -1653,7 +1653,7 @@ pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
     if matches!(cached, GoogleAuthStatus::NotConfigured) {
         let fresh = crate::state::detect_google_auth();
         if matches!(fresh, GoogleAuthStatus::Authenticated { .. }) {
-            if let Ok(mut guard) = state.google_auth.lock() {
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
                 *guard = fresh.clone();
             }
             log_command_latency(
@@ -1709,7 +1709,7 @@ pub async fn start_google_auth(
     };
 
     // Update state
-    if let Ok(mut guard) = state.google_auth.lock() {
+    if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = new_status.clone();
     }
 
@@ -1742,12 +1742,12 @@ pub fn disconnect_google(
     let new_status = GoogleAuthStatus::NotConfigured;
 
     // Update state
-    if let Ok(mut guard) = state.google_auth.lock() {
+    if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = new_status.clone();
     }
 
     // Clear calendar events
-    if let Ok(mut guard) = state.calendar_events.write() {
+    if let Ok(mut guard) = state.calendar.events.write() {
         guard.clear();
     }
 
@@ -1765,7 +1765,7 @@ pub fn disconnect_google(
 #[tauri::command]
 pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
     state
-        .calendar_events
+        .calendar.events
         .read()
         .map(|guard| guard.clone())
         .unwrap_or_default()
@@ -1775,7 +1775,7 @@ pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
 #[tauri::command]
 pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state.calendar_events.read().ok().and_then(|guard| {
+    state.calendar.events.read().ok().and_then(|guard| {
         guard
             .iter()
             .find(|e| e.start <= now && e.end > now && !e.is_all_day)
@@ -1787,7 +1787,7 @@ pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent>
 #[tauri::command]
 pub fn get_next_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state.calendar_events.read().ok().and_then(|guard| {
+    state.calendar.events.read().ok().and_then(|guard| {
         guard
             .iter()
             .filter(|e| e.start > now && !e.is_all_day)
@@ -1815,7 +1815,7 @@ pub fn dismiss_meeting_prompt(
     meeting_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    if let Ok(mut guard) = state.capture_dismissed.lock() {
+    if let Ok(mut guard) = state.capture.dismissed.lock() {
         guard.insert(meeting_id);
     }
     Ok(())

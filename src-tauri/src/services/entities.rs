@@ -268,7 +268,7 @@ pub fn get_executive_intelligence(
             .map(|(_overview, meetings)| meetings)
             .unwrap_or_default();
         let live_events = state
-            .calendar_events
+            .calendar.events
             .read()
             .map(|g| g.clone())
             .unwrap_or_default();
