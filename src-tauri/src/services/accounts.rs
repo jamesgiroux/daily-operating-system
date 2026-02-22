@@ -360,9 +360,14 @@ pub fn update_account_field(
     db.update_account_field(account_id, field, value)
         .map_err(|e| e.to_string())?;
 
-    // Emit field update signal (I308)
-    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, "account", account_id, "field_updated", "user_edit",
-        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
+    // Emit field update signal + self-healing evaluation (I308, I410)
+    let _ = crate::signals::bus::emit_signal_propagate_and_evaluate(db, &state.signal_engine, "account", account_id, "field_updated", "user_edit",
+        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8, &state.intel_queue);
+
+    // Self-healing: record user correction for Clay-enrichable fields (I409)
+    if matches!(field, "lifecycle" | "arr" | "health" | "nps") {
+        crate::self_healing::feedback::record_enrichment_correction(db, account_id, "account", "clay");
+    }
 
     // Regenerate workspace files
     if let Ok(Some(account)) = db.get_account(account_id) {
@@ -534,6 +539,9 @@ pub fn create_account(
         let _ = crate::accounts::write_account_json(workspace, &account, None, db);
         let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
     }
+
+    // Self-healing: initialize quality row for new entity (I406)
+    crate::self_healing::quality::ensure_quality_row(db, &id, "account");
 
     Ok(id)
 }
