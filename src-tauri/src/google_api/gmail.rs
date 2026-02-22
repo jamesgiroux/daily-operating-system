@@ -1,8 +1,8 @@
-//! Gmail API v1 — fetch unread emails.
+//! Gmail API v1 — fetch inbox emails.
 //!
-//! Replaces ops/email_fetch.py:_fetch_unread_emails().
-//! Fetches message list (is:unread newer_than:1d), then metadata
-//! for each message (From, Subject, Date, List-Unsubscribe, Precedence).
+//! Fetches all messages currently in the inbox (query "in:inbox"), with
+//! pagination support (up to 5 pages). Each message is fetched with
+//! format=metadata including labelIds to detect unread status.
 
 use serde::Deserialize;
 
@@ -39,6 +39,8 @@ struct MessageDetail {
     #[serde(default)]
     snippet: String,
     #[serde(default)]
+    label_ids: Vec<String>,
+    #[serde(default)]
     payload: Option<MessagePayload>,
 }
 
@@ -72,6 +74,8 @@ pub struct RawEmail {
     pub date: String,
     pub list_unsubscribe: String,
     pub precedence: String,
+    /// Whether the UNREAD label is present on this message.
+    pub is_unread: bool,
     /// Optional email body text (only fetched when emailBodyAccess is enabled).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
@@ -81,52 +85,78 @@ pub struct RawEmail {
 // Gmail API
 // ============================================================================
 
-/// Fetch unread emails from the last 24 hours.
+/// Fetch unread emails from the last 24 hours (legacy wrapper).
 ///
-/// Mirrors Python's `_fetch_unread_emails()`: lists messages matching
-/// "is:unread newer_than:1d", then fetches metadata headers for each.
-/// Individual message fetch failures are silently skipped.
+/// Calls `fetch_inbox_emails` for backwards compatibility.
 pub async fn fetch_unread_emails(
     access_token: &str,
     max_results: u32,
 ) -> Result<Vec<RawEmail>, GoogleApiError> {
+    fetch_inbox_emails(access_token, max_results).await
+}
+
+/// Fetch all emails currently in the inbox.
+///
+/// Queries "in:inbox" with pagination (up to 5 pages). Each message is
+/// fetched with format=metadata including labelIds to detect unread status.
+/// Individual message fetch failures are silently skipped.
+pub async fn fetch_inbox_emails(
+    access_token: &str,
+    max_results: u32,
+) -> Result<Vec<RawEmail>, GoogleApiError> {
     let client = reqwest::Client::new();
+    let mut all_stubs: Vec<MessageStub> = Vec::new();
+    let mut page_token: Option<String> = None;
+    const MAX_PAGES: usize = 5;
 
-    // Step 1: List unread messages
-    let resp = send_with_retry(
-        client
-            .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
-            .bearer_auth(access_token)
-            .query(&[
-                ("q", "is:unread newer_than:1d"),
-                ("maxResults", &max_results.to_string()),
-            ]),
-        &RetryPolicy::default(),
-    )
-    .await?;
+    // Step 1: List inbox messages with pagination
+    for _ in 0..MAX_PAGES {
+        let mut query_params: Vec<(&str, String)> = vec![
+            ("q", "in:inbox".to_string()),
+            ("maxResults", max_results.to_string()),
+        ];
+        if let Some(ref token) = page_token {
+            query_params.push(("pageToken", token.clone()));
+        }
 
-    let status = resp.status();
-    if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(GoogleApiError::AuthExpired);
+        let resp = send_with_retry(
+            client
+                .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+                .bearer_auth(access_token)
+                .query(&query_params),
+            &RetryPolicy::default(),
+        )
+        .await?;
+
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(GoogleApiError::AuthExpired);
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(GoogleApiError::ApiError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+
+        let list: MessageListResponse = resp.json().await?;
+        all_stubs.extend(list.messages);
+
+        match list.next_page_token {
+            Some(token) => page_token = Some(token),
+            None => break,
+        }
     }
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(GoogleApiError::ApiError {
-            status: status.as_u16(),
-            message: body,
-        });
-    }
 
-    let list: MessageListResponse = resp.json().await?;
-
-    if list.messages.is_empty() {
+    if all_stubs.is_empty() {
         return Ok(Vec::new());
     }
 
     // Step 2: Fetch metadata for each message
-    let mut emails = Vec::with_capacity(list.messages.len());
+    let mut emails = Vec::with_capacity(all_stubs.len());
 
-    for stub in &list.messages {
+    for stub in &all_stubs {
         match fetch_message_metadata(&client, access_token, &stub.id).await {
             Ok(email) => emails.push(email),
             Err(e) => {
@@ -187,6 +217,8 @@ async fn fetch_message_metadata(
             .unwrap_or_default()
     };
 
+    let is_unread = detail.label_ids.iter().any(|l| l == "UNREAD");
+
     Ok(RawEmail {
         id: detail.id,
         thread_id: detail.thread_id,
@@ -196,6 +228,7 @@ async fn fetch_message_metadata(
         date: get_header("Date"),
         list_unsubscribe: get_header("List-Unsubscribe"),
         precedence: get_header("Precedence"),
+        is_unread,
         body: None,
     })
 }
@@ -309,6 +342,62 @@ fn decode_url_safe_base64(data: &str) -> Option<String> {
         Ok(bytes) => String::from_utf8(bytes).ok(),
         Err(_) => None,
     }
+}
+
+// ============================================================================
+// Sent message thread IDs (I370)
+// ============================================================================
+
+/// Fetch thread IDs from recent sent messages (last 24 hours).
+///
+/// Used to determine thread position — if the user sent the last message
+/// in a thread, `user_is_last_sender` is true for that thread.
+pub async fn fetch_recent_sent_thread_ids(
+    access_token: &str,
+) -> Result<std::collections::HashSet<String>, GoogleApiError> {
+    let client = reqwest::Client::new();
+    let mut thread_ids = std::collections::HashSet::new();
+    let mut page_token: Option<String> = None;
+
+    // Scan up to 2 pages of recent sent messages
+    for _ in 0..2 {
+        let mut query_params: Vec<(&str, String)> = vec![
+            ("q", "in:sent newer_than:1d".to_string()),
+            ("maxResults", "100".to_string()),
+        ];
+        if let Some(ref token) = page_token {
+            query_params.push(("pageToken", token.clone()));
+        }
+
+        let resp = send_with_retry(
+            client
+                .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+                .bearer_auth(access_token)
+                .query(&query_params),
+            &RetryPolicy::default(),
+        )
+        .await?;
+
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(GoogleApiError::AuthExpired);
+        }
+        if !status.is_success() {
+            break;
+        }
+
+        let list: MessageListResponse = resp.json().await?;
+        for stub in &list.messages {
+            thread_ids.insert(stub.thread_id.clone());
+        }
+
+        match list.next_page_token {
+            Some(token) => page_token = Some(token),
+            None => break,
+        }
+    }
+
+    Ok(thread_ids)
 }
 
 // ============================================================================
@@ -592,6 +681,7 @@ mod tests {
             date: "2026-02-08".to_string(),
             list_unsubscribe: "".to_string(),
             precedence: "".to_string(),
+            is_unread: true,
             body: None,
         };
 
