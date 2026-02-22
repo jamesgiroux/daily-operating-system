@@ -144,6 +144,7 @@ pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String
             .entry(sig.email_id.clone())
             .or_default()
             .push(EmailSignal {
+                id: Some(sig.id),
                 signal_type: sig.signal_type.clone(),
                 signal_text: sig.signal_text.clone(),
                 confidence: sig.confidence,
@@ -183,6 +184,7 @@ pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String
             .entry(sig.entity_id.clone())
             .or_insert_with(|| (sig.entity_type.clone(), Vec::new(), HashSet::new()));
         entry.1.push(EmailSignal {
+            id: Some(sig.id),
             signal_type: sig.signal_type.clone(),
             signal_text: sig.signal_text.clone(),
             confidence: sig.confidence,

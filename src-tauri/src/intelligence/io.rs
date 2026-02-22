@@ -69,6 +69,47 @@ pub struct PortfolioIntelligence {
     pub portfolio_narrative: Option<String>,
 }
 
+// =============================================================================
+// Network Intelligence (I391 — person relationship graph)
+// =============================================================================
+
+/// A key relationship in a person's network graph.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkKeyRelationship {
+    pub person_id: String,
+    pub name: String,
+    pub relationship_type: String,
+    pub confidence: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signal_summary: Option<String>,
+}
+
+/// Network intelligence for person entities (I391, ADR-0088).
+///
+/// Only present on persons with relationship edges — sparse but always
+/// defined for persons during enrichment. File-only (no DB cache column).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkIntelligence {
+    #[serde(default = "default_network_health")]
+    pub health: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub key_relationships: Vec<NetworkKeyRelationship>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub risks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub opportunities: Vec<String>,
+    #[serde(default)]
+    pub influence_radius: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_summary: Option<String>,
+}
+
+pub(crate) fn default_network_health() -> String {
+    "unknown".to_string()
+}
+
 /// Top-level intelligence file (intelligence.json).
 ///
 /// Entity-generic — same schema for accounts, projects, and people per ADR-0057.
@@ -123,6 +164,11 @@ pub struct IntelligenceJson {
     /// Only present on accounts with child accounts — leaf nodes never get this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portfolio: Option<PortfolioIntelligence>,
+
+    /// Network intelligence for person entities (I391, ADR-0088).
+    /// Only present on persons with relationship edges — sparse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<NetworkIntelligence>,
 
     /// User edits — field paths that the user has manually corrected.
     /// Enrichment cycles preserve these fields instead of overwriting them.
@@ -650,6 +696,7 @@ impl ActionDb {
                 next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),
                 company_context: company_json.and_then(|j| serde_json::from_str(&j).ok()),
                 portfolio: None, // Not cached in DB (stored in file only)
+                network: None,  // Not cached in DB (stored in file only)
                 user_edits: Vec::new(), // Not cached in DB (stored in file only)
             })
         });
@@ -1352,6 +1399,7 @@ mod tests {
                 additional_context: None,
             }),
             portfolio: None,
+            network: None,
             user_edits: Vec::new(),
         }
     }
@@ -1627,6 +1675,7 @@ mod tests {
                 additional_context: None,
             }),
             portfolio: None,
+            network: None,
             user_edits: Vec::new(),
         };
 
