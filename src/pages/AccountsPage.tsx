@@ -715,7 +715,7 @@ function AccountRow({
             color: isStale ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
           }}
         >
-          {daysSince === 0 ? "Today" : `${daysSince}d`}
+          {daysSince === 0 ? "Last met today" : `Last met ${daysSince}d ago`}
         </span>
       )}
     </EntityRow>
