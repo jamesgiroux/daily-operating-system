@@ -314,7 +314,7 @@ pub fn update_meeting_entity(
     }
 
     // I305: Queue prep regeneration
-    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+    if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
         queue.push(meeting_id.to_string());
     }
 
@@ -387,7 +387,7 @@ pub fn add_meeting_entity(
     // DB lock released
 
     // I305: Queue prep regeneration
-    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+    if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
         queue.push(meeting_id.to_string());
     }
 
@@ -429,7 +429,7 @@ pub fn remove_meeting_entity(
     // DB lock released
 
     // I305: Queue prep regeneration
-    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+    if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
         queue.push(meeting_id.to_string());
     }
 
@@ -1279,7 +1279,7 @@ pub fn update_meeting_user_agenda(
             .map(|e| (e.entity_type.as_str().to_string(), e.id))
             .unwrap_or_else(|| ("meeting".to_string(), meeting_id.to_string()));
         let _ = crate::services::signals::emit_and_propagate(
-            db, &state.signal_engine,
+            db, &state.signals.engine,
             &etype,
             &eid,
             "prep_edited",
