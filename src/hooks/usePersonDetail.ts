@@ -376,6 +376,7 @@ export function usePersonDetail(personId: string | undefined) {
     dirty, setDirty,
     saving,
     handleSave,
+    saveField,
     handleCancelEdit,
 
     // Enrichment

@@ -177,8 +177,11 @@ impl AppState {
         // Build the prep invalidation queue and signal engine together so
         // the engine can push invalidated meeting IDs into the shared queue.
         let prep_queue = Arc::new(Mutex::new(Vec::new()));
+        let intel_queue_arc = Arc::new(crate::intel_queue::IntelligenceQueue::new());
         let mut signal_engine = crate::signals::propagation::default_engine();
         signal_engine.set_prep_queue(Arc::clone(&prep_queue));
+        // I385: Wire intel_queue so propagated cross-entity signals trigger enrichment
+        signal_engine.set_intel_queue(Arc::clone(&intel_queue_arc));
 
         Self {
             config: RwLock::new(config),
@@ -191,7 +194,7 @@ impl AppState {
             capture_dismissed: Mutex::new(std::collections::HashSet::new()),
             capture_captured: Mutex::new(std::collections::HashSet::new()),
             transcript_processed: Mutex::new(transcript_processed),
-            intel_queue: Arc::new(crate::intel_queue::IntelligenceQueue::new()),
+            intel_queue: intel_queue_arc,
             embedding_model: Arc::new(crate::embeddings::EmbeddingModel::new()),
             embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
             last_hygiene_report: Mutex::new(None),

@@ -162,6 +162,7 @@ export default function ProjectDetailEditorial() {
           editStatus={proj.editStatus}
           setEditStatus={(v) => { proj.setEditStatus(v); proj.setDirty(true); }}
           onSave={proj.handleSave}
+          onSaveField={proj.saveField}
           onEnrich={proj.handleEnrich}
           enriching={proj.enriching}
           enrichSeconds={proj.enrichSeconds}
