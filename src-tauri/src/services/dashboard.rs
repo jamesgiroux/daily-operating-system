@@ -340,7 +340,7 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
     let result = (|| {
         // Get Google auth status for frontend
         let google_auth = state
-            .google_auth
+            .calendar.google_auth
             .lock()
             .map(|g| g.clone())
             .unwrap_or(GoogleAuthStatus::NotConfigured);
@@ -403,7 +403,7 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
 
         // Merge briefing meetings with live calendar events (ADR-0032)
         let live_events = state
-            .calendar_events
+            .calendar.events
             .read()
             .map(|g| g.clone())
             .unwrap_or_default();
