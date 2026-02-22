@@ -97,7 +97,12 @@ pub fn classify_email_priority(
     )
 }
 
-/// Classify email priority with optional role-preset keywords.
+/// Urgency keywords that override dismissal penalty (I374).
+const URGENCY_OVERRIDE_KEYWORDS: &[&str] = &[
+    "urgent", "asap", "critical", "deadline", "emergency", "immediately",
+];
+
+/// Classify email priority with optional role-preset keywords and dismissal penalty.
 #[allow(clippy::too_many_arguments)]
 pub fn classify_email_priority_with_extras(
     from_raw: &str,
@@ -109,13 +114,43 @@ pub fn classify_email_priority_with_extras(
     account_hints: &HashSet<String>,
     extra_high_keywords: &[String],
 ) -> &'static str {
+    classify_email_priority_full(
+        from_raw,
+        subject,
+        list_unsubscribe,
+        precedence,
+        customer_domains,
+        user_domain,
+        account_hints,
+        extra_high_keywords,
+        &HashSet::new(),
+    )
+}
+
+/// Full classifier with dismissal learning (I374).
+///
+/// `dismissed_domains` contains sender domains with >= threshold dismissals.
+/// Emails from these domains are downgraded one priority tier unless the
+/// subject contains urgency keywords.
+#[allow(clippy::too_many_arguments)]
+pub fn classify_email_priority_full(
+    from_raw: &str,
+    subject: &str,
+    list_unsubscribe: &str,
+    precedence: &str,
+    customer_domains: &HashSet<String>,
+    user_domain: &str,
+    account_hints: &HashSet<String>,
+    extra_high_keywords: &[String],
+    dismissed_domains: &HashSet<String>,
+) -> &'static str {
     let from_addr = extract_email_address(from_raw);
     let domain = extract_domain(&from_addr);
     let subject_lower = subject.to_lowercase();
 
     // HIGH: Customer domains (from today's meeting attendees)
     if customer_domains.contains(&domain) {
-        return "high";
+        return apply_dismissal_penalty("high", &domain, &subject_lower, dismissed_domains);
     }
 
     // HIGH: Sender domain matches a known customer account
@@ -123,7 +158,7 @@ pub fn classify_email_priority_with_extras(
         let domain_base = domain.split('.').next().unwrap_or("");
         for hint in account_hints {
             if hint == domain_base || (hint.len() >= 4 && domain_base.contains(hint.as_str())) {
-                return "high";
+                return apply_dismissal_penalty("high", &domain, &subject_lower, dismissed_domains);
             }
         }
     }
@@ -133,6 +168,7 @@ pub fn classify_email_priority_with_extras(
         .iter()
         .any(|kw| subject_lower.contains(kw))
     {
+        // Urgency keywords override dismissal penalty — return high directly
         return "high";
     }
 
@@ -141,7 +177,7 @@ pub fn classify_email_priority_with_extras(
         .iter()
         .any(|kw| subject_lower.contains(&kw.to_lowercase()))
     {
-        return "high";
+        return apply_dismissal_penalty("high", &domain, &subject_lower, dismissed_domains);
     }
 
     // LOW: Newsletters, automated, GitHub
@@ -182,7 +218,7 @@ pub fn classify_email_priority_with_extras(
 
     // MEDIUM: Internal colleagues
     if !user_domain.is_empty() && domain == user_domain {
-        return "medium";
+        return apply_dismissal_penalty("medium", &domain, &subject_lower, dismissed_domains);
     }
 
     // MEDIUM: Meeting-related
@@ -190,10 +226,38 @@ pub fn classify_email_priority_with_extras(
         .iter()
         .any(|kw| subject_lower.contains(kw))
     {
-        return "medium";
+        return apply_dismissal_penalty("medium", &domain, &subject_lower, dismissed_domains);
     }
 
-    "medium"
+    apply_dismissal_penalty("medium", &domain, &subject_lower, dismissed_domains)
+}
+
+/// Apply dismissal penalty: downgrade one tier if domain is in dismissed set,
+/// unless subject contains urgency keywords (I374).
+fn apply_dismissal_penalty(
+    base_priority: &'static str,
+    domain: &str,
+    subject_lower: &str,
+    dismissed_domains: &HashSet<String>,
+) -> &'static str {
+    if dismissed_domains.is_empty() || !dismissed_domains.contains(domain) {
+        return base_priority;
+    }
+
+    // Urgency keywords override dismissal penalty
+    if URGENCY_OVERRIDE_KEYWORDS
+        .iter()
+        .any(|kw| subject_lower.contains(kw))
+    {
+        return base_priority;
+    }
+
+    // Downgrade one tier
+    match base_priority {
+        "high" => "medium",
+        "medium" => "low",
+        _ => base_priority, // low stays low
+    }
 }
 
 // ============================================================================
@@ -309,118 +373,6 @@ pub fn boost_with_entity_context(
     }
 
     None
-}
-
-// ============================================================================
-// I357: Semantic email reclassification (opt-in AI re-scoring)
-// ============================================================================
-
-/// Result of AI reclassification for a single email.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ReclassResult {
-    pub email_id: String,
-    pub original_priority: String,
-    pub new_priority: String,
-    pub reason: String,
-}
-
-/// AI-reclassify medium-priority emails that may be mis-classified.
-///
-/// Requires feature flag `semanticEmailReclass` (default false).
-/// Uses the extraction-tier PtyManager with a 60s timeout.
-/// Returns a list of reclassification results for emails whose priority changed.
-pub fn reclassify_with_ai(
-    emails: &[serde_json::Value],
-    pty: &crate::pty::PtyManager,
-    workspace: &std::path::Path,
-) -> Vec<ReclassResult> {
-    let medium_emails: Vec<&serde_json::Value> = emails
-        .iter()
-        .filter(|e| e.get("priority").and_then(|v| v.as_str()) == Some("medium"))
-        .collect();
-
-    if medium_emails.is_empty() {
-        return Vec::new();
-    }
-
-    // Cap at 15 emails to keep prompt concise
-    let batch: Vec<&&serde_json::Value> = medium_emails.iter().take(15).collect();
-
-    let mut context = String::new();
-    for email in &batch {
-        let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-        let from = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
-        let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
-        let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
-        context.push_str(&format!(
-            "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
-            id, from, subject, snippet
-        ));
-    }
-
-    let prompt = format!(
-        "You are re-classifying email priority. Each email below is currently classified as \
-         \"medium\" priority. Re-evaluate whether it should be \"high\", \"medium\", or \"low\" \
-         based on business importance, urgency signals, and sender relevance.\n\n\
-         Only output emails whose priority should CHANGE. Skip emails that should stay medium.\n\n\
-         Format:\n\
-         RECLASS:email-id\n\
-         PRIORITY: high|low\n\
-         REASON: <brief explanation>\n\
-         END_RECLASS\n\n\
-         {}",
-        context
-    );
-
-    let output = match pty.spawn_claude(workspace, &prompt) {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!("reclassify_with_ai: Claude invocation failed: {}", e);
-            return Vec::new();
-        }
-    };
-
-    parse_reclassification(&output.stdout)
-}
-
-/// Parse Claude's reclassification response.
-fn parse_reclassification(response: &str) -> Vec<ReclassResult> {
-    let mut results = Vec::new();
-    let mut current_id: Option<String> = None;
-    let mut priority: Option<String> = None;
-    let mut reason: Option<String> = None;
-
-    for line in response.lines() {
-        let trimmed = line.trim();
-
-        if let Some(id) = trimmed.strip_prefix("RECLASS:") {
-            current_id = Some(id.trim().to_string());
-            priority = None;
-            reason = None;
-        } else if trimmed == "END_RECLASS" {
-            if let (Some(id), Some(pri)) = (current_id.take(), priority.take()) {
-                if pri == "high" || pri == "low" {
-                    results.push(ReclassResult {
-                        email_id: id,
-                        original_priority: "medium".to_string(),
-                        new_priority: pri,
-                        reason: reason.take().unwrap_or_default(),
-                    });
-                }
-            }
-            current_id = None;
-            priority = None;
-            reason = None;
-        } else if current_id.is_some() {
-            if let Some(val) = trimmed.strip_prefix("PRIORITY:") {
-                priority = Some(val.trim().to_lowercase());
-            } else if let Some(val) = trimmed.strip_prefix("REASON:") {
-                reason = Some(val.trim().to_string());
-            }
-        }
-    }
-
-    results
 }
 
 // ============================================================================
@@ -694,43 +646,111 @@ mod tests {
         assert_eq!(extract_display_name("<jane@co.com>"), None);
     }
 
-    #[test]
-    fn test_parse_reclassification() {
-        let response = "\
-RECLASS:msg-1
-PRIORITY: high
-REASON: Contains urgent escalation from VP
-END_RECLASS
+    // --- I374: Dismissal penalty tests ---
 
-RECLASS:msg-2
-PRIORITY: low
-REASON: Automated notification, no action needed
-END_RECLASS
-";
-        let results = super::parse_reclassification(response);
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].email_id, "msg-1");
-        assert_eq!(results[0].new_priority, "high");
-        assert!(results[0].reason.contains("escalation"));
-        assert_eq!(results[1].email_id, "msg-2");
-        assert_eq!(results[1].new_priority, "low");
+    #[test]
+    fn test_dismissal_penalty_downgrades_medium_to_low() {
+        let mut dismissed = HashSet::new();
+        dismissed.insert("spammy.com".to_string());
+
+        assert_eq!(
+            classify_email_priority_full(
+                "someone@spammy.com",
+                "Hello there",
+                "",
+                "",
+                &HashSet::new(),
+                "myco.com",
+                &HashSet::new(),
+                &[],
+                &dismissed,
+            ),
+            "low"
+        );
     }
 
     #[test]
-    fn test_parse_reclassification_skips_medium() {
-        let response = "\
-RECLASS:msg-1
-PRIORITY: medium
-REASON: Should stay medium
-END_RECLASS
-";
-        let results = super::parse_reclassification(response);
-        assert_eq!(results.len(), 0, "medium→medium should be filtered out");
+    fn test_dismissal_penalty_downgrades_high_to_medium() {
+        let mut customer = HashSet::new();
+        customer.insert("spammy.com".to_string());
+        let mut dismissed = HashSet::new();
+        dismissed.insert("spammy.com".to_string());
+
+        assert_eq!(
+            classify_email_priority_full(
+                "jane@spammy.com",
+                "Hello",
+                "",
+                "",
+                &customer,
+                "myco.com",
+                &HashSet::new(),
+                &[],
+                &dismissed,
+            ),
+            "medium"
+        );
     }
 
     #[test]
-    fn test_parse_reclassification_empty() {
-        let results = super::parse_reclassification("No reclassifications needed.");
-        assert!(results.is_empty());
+    fn test_dismissal_penalty_skipped_for_urgency() {
+        let mut dismissed = HashSet::new();
+        dismissed.insert("spammy.com".to_string());
+
+        // "urgent" in subject overrides dismissal penalty
+        assert_eq!(
+            classify_email_priority_full(
+                "someone@spammy.com",
+                "URGENT: please respond",
+                "",
+                "",
+                &HashSet::new(),
+                "myco.com",
+                &HashSet::new(),
+                &[],
+                &dismissed,
+            ),
+            "high"
+        );
+    }
+
+    #[test]
+    fn test_dismissal_penalty_no_effect_without_domain() {
+        // Domain not in dismissed set — no penalty
+        let mut dismissed = HashSet::new();
+        dismissed.insert("other.com".to_string());
+
+        assert_eq!(
+            classify_email_priority_full(
+                "someone@unknown.com",
+                "Hello there",
+                "",
+                "",
+                &HashSet::new(),
+                "myco.com",
+                &HashSet::new(),
+                &[],
+                &dismissed,
+            ),
+            "medium"
+        );
+    }
+
+    #[test]
+    fn test_dismissal_penalty_empty_set_no_effect() {
+        assert_eq!(
+            classify_email_priority_full(
+                "someone@unknown.com",
+                "Hello there",
+                "",
+                "",
+                &HashSet::new(),
+                "myco.com",
+                &HashSet::new(),
+                &[],
+                &HashSet::new(),
+            ),
+            "medium"
+        );
     }
 }
