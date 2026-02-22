@@ -453,6 +453,8 @@ pub fn run() {
             // I50: Project Dashboards
             commands::get_projects_list,
             commands::get_project_detail,
+            commands::get_child_projects_list,
+            commands::get_project_ancestors,
             commands::create_project,
             commands::update_project_field,
             commands::update_project_notes,
