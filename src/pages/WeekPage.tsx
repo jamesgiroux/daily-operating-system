@@ -164,11 +164,14 @@ export default function WeekPage() {
 
   const timelineGroups = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    // Use local timezone, not UTC — toISOString() shifts the date boundary
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
     const byDate = new Map<string, TimelineMeeting[]>();
     for (const m of timeline) {
-      const dateKey = m.startTime.slice(0, 10);
+      // Parse to local date — startTime may be UTC, slice(0,10) would give wrong day near midnight
+      const d = new Date(m.startTime);
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       if (!byDate.has(dateKey)) byDate.set(dateKey, []);
       byDate.get(dateKey)!.push(m);
     }
