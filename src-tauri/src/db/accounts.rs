@@ -1003,14 +1003,24 @@ impl ActionDb {
         Ok(changed)
     }
 
-    /// Archive or unarchive a project.
+    /// Archive or unarchive a project. Cascade: archiving a parent archives all children (I388).
     pub fn archive_project(&self, id: &str, archived: bool) -> Result<usize, DbError> {
         let val = if archived { 1 } else { 0 };
         let now = Utc::now().to_rfc3339();
-        Ok(self.conn.execute(
+        let changed = self.conn.execute(
             "UPDATE projects SET archived = ?1, updated_at = ?2 WHERE id = ?3",
             params![val, now, id],
-        )?)
+        )?;
+
+        // If archiving a parent, cascade to children
+        if archived {
+            self.conn.execute(
+                "UPDATE projects SET archived = 1, updated_at = ?1 WHERE parent_id = ?2",
+                params![now, id],
+            )?;
+        }
+
+        Ok(changed)
     }
 
     /// Archive or unarchive a person.
@@ -1174,8 +1184,8 @@ impl ActionDb {
     /// Get archived projects.
     pub fn get_archived_projects(&self) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, status, milestone, owner, target_date, tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at, metadata
+            "SELECT id, name, status, milestone, owner, target_date, tracker_path, parent_id,
+                    updated_at, archived, keywords, keywords_extracted_at, metadata
              FROM projects WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;

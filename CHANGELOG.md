@@ -4,6 +4,29 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.4] - 2026-02-22
+
+v0.13.3 proved that parent accounts become portfolio surfaces when two-layer intelligence and bidirectional signal propagation are wired correctly. This version applies the identical architecture to project entities: parent projects become portfolio surfaces for users in project-mode roles (Marketing, Product, Agency), child project signals propagate upward to feed portfolio intelligence, and parent-level signals cascade down to direct children. Navigation now adapts to the user's role — project-mode users see Projects before Accounts.
+
+### Added
+
+- **Project hierarchy** — `parent_id` column on projects table (migration 037), recursive ancestor/descendant queries, parent aggregate stats (active/on-hold/completed counts, nearest target date), circular-reference prevention on parent assignment
+- **Project portfolio intelligence** — `build_project_portfolio_children_context` gathers each child project's intelligence.json and active signals into the parent's enrichment prompt with project-appropriate vocabulary (campaign, workstream, milestone, program health — not account health, renewal, spend)
+- **Bidirectional signal propagation for projects** — `rule_hierarchy_up` and `rule_hierarchy_down` extended to handle project entity type with same confidence attenuation as accounts (0.6× upward, 0.5× downward, 0.7 confidence gate for fan-out)
+- **Parent project enqueue on child update** — intel_queue enqueues the parent project for portfolio refresh whenever a child project's intelligence is written, matching the account pattern from I384
+- **Portfolio chapter on parent project detail** — portfolio narrative (serif epigraph), hotspots (child projects needing attention with one-line reason, linking to child detail), cross-project patterns (hidden when empty), condensed child list with status indicators and action counts
+- **Ancestor breadcrumbs on project detail** — nested projects show a `Projects / Parent / Current` breadcrumb trail via `get_project_ancestors` recursive CTE
+- **Sub-project creation** — "+ Sub-Project" button on parent project detail pages opens a creation dialog that sets `parent_id` on the new project
+- **Expandable project tree on projects list** — parent projects show expand chevron with child count; clicking loads children via `get_child_projects_list`; recursive tree rendering with indentation; search matches against child project names
+- **Entity-mode-aware navigation ordering** — FloatingNavIsland accepts `entityMode` prop; project-mode role presets (Marketing, Product) show Projects before Accounts in the nav; account-mode presets (CS, Sales) show the reverse; switching presets in Settings updates nav immediately without app restart
+
+### Changed
+
+- **`create_project` accepts optional `parent_id`** — existing callers unaffected (Tauri deserializes absent field as None)
+- **Archive cascade for projects** — archiving a parent project now cascades to all child projects, matching the account archive behavior
+- **`ProjectListItem` and `ProjectDetailResult`** — both structs now include `parent_id`, `parent_name`, `child_count`, `is_parent`, `children`, and `parent_aggregate` fields
+- **MagazinePageLayout re-fetches entity mode on navigation** — ensures preset changes in Settings take effect on the next page transition without a full app restart
+
 ## [0.13.3] - 2026-02-22
 
 Parent accounts are portfolio surfaces, not folders. A user managing Salesforce's 10 BUs under one parent needs a surface that shows the whole picture: which BUs are healthy, which need attention, what patterns emerge across the portfolio. This version makes parent accounts into that surface, adds partner as a first-class entity type, regroups the accounts page to match, and wires bidirectional signal propagation so BU signals accumulate at the parent without the user specifying which children are affected.
