@@ -620,6 +620,7 @@ pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<R
                  SELECT 1 FROM email_signals es
                  WHERE es.entity_id = a.id AND es.entity_type = 'account'
                    AND es.detected_at >= datetime('now', '-30 days')
+                   AND es.deactivated_at IS NULL
              )",
         )
         .and_then(|mut stmt| {
