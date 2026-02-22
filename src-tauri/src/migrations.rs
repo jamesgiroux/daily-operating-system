@@ -113,6 +113,12 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 33,
     sql: include_str!("migrations/033_people_last_seen_index.sql"),
+}, Migration {
+    version: 34,
+    sql: include_str!("migrations/034_emails.sql"),
+}, Migration {
+    version: 35,
+    sql: include_str!("migrations/035_email_relevance_score.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -274,13 +280,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 33,
-            "should apply all migrations including people_last_seen_index"
+            applied, 35,
+            "should apply all migrations including emails"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 33);
+        assert_eq!(version, 35);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -591,6 +597,25 @@ mod tests {
             [],
         )
         .expect("linear_projects table should exist and accept inserts");
+
+        // Verify emails table (migration 034)
+        conn.execute(
+            "INSERT INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet,
+             priority, is_unread, received_at, enrichment_state, entity_id, entity_type,
+             contextual_summary, sentiment, urgency, user_is_last_sender, last_sender_email, message_count)
+             VALUES ('e-1', 't-1', 'alice@acme.com', 'Alice', 'Q4 Review', 'Let us discuss...',
+             'high', 1, '2026-02-01T10:00:00Z', 'pending', 'a1', 'account',
+             NULL, NULL, NULL, 0, 'alice@acme.com', 1)",
+            [],
+        )
+        .expect("emails table should exist and accept inserts");
+
+        // Verify deactivated_at column on email_signals (migration 034)
+        conn.execute(
+            "UPDATE email_signals SET deactivated_at = '2026-02-01T10:00:00Z' WHERE email_id = 'em-1'",
+            [],
+        )
+        .expect("email_signals should have deactivated_at column");
     }
 
     #[test]
@@ -722,11 +747,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 32, "bootstrap should mark v1, then apply v2 through v33");
+        assert_eq!(applied, 34, "bootstrap should mark v1, then apply v2 through v35");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 33);
+        assert_eq!(version, 35);
 
         // Verify existing data is untouched
         let title: String = conn
