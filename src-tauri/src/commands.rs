@@ -1431,7 +1431,7 @@ pub fn get_actions_from_db(
 pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::complete_action(db, &state.signal_engine, &id)
+    crate::services::actions::complete_action(db, &state.signals.engine, &id)
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -1439,7 +1439,7 @@ pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), St
 pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reopen_action(db, &state.signal_engine, &id)
+    crate::services::actions::reopen_action(db, &state.signals.engine, &id)
 }
 
 /// Accept a proposed action, moving it to pending (I256).
@@ -1447,7 +1447,7 @@ pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), Stri
 pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::accept_proposed_action(db, &state.signal_engine, &id)
+    crate::services::actions::accept_proposed_action(db, &state.signals.engine, &id)
 }
 
 /// Reject a proposed action by archiving it (I256).
@@ -1455,7 +1455,7 @@ pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result
 pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reject_proposed_action(db, &state.signal_engine, &id)
+    crate::services::actions::reject_proposed_action(db, &state.signals.engine, &id)
 }
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
@@ -1915,7 +1915,7 @@ pub fn update_action_priority(
     }
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::update_action_priority(db, &state.signal_engine, &id, &priority)
+    crate::services::actions::update_action_priority(db, &state.signals.engine, &id, &priority)
 }
 
 // =============================================================================
@@ -6395,7 +6395,7 @@ pub fn start_clay_bulk_enrich(
     drop(db_guard);
 
     // Wake the Clay poller immediately to process queued items
-    state.clay_poller_wake.notify_one();
+    state.integrations.clay_poller_wake.notify_one();
 
     Ok(BulkEnrichResult {
         queued: total,
@@ -6559,7 +6559,7 @@ pub async fn test_linear_connection(
 /// Trigger an immediate Linear sync.
 #[tauri::command]
 pub fn start_linear_sync(state: State<Arc<AppState>>) -> Result<(), String> {
-    state.linear_poller_wake.notify_one();
+    state.integrations.linear_poller_wake.notify_one();
     Ok(())
 }
 
@@ -6920,14 +6920,14 @@ pub fn upsert_person_relationship(
 
     // Emit signal to re-enqueue both persons in intel_queue
     let _ = crate::services::signals::emit_and_propagate(
-        db, &state.signal_engine,
+        db, &state.signals.engine,
         "person", &payload.from_person_id,
         "relationship_graph_changed", "user_action",
         Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.to_person_id)),
         0.9,
     );
     let _ = crate::services::signals::emit_and_propagate(
-        db, &state.signal_engine,
+        db, &state.signals.engine,
         "person", &payload.to_person_id,
         "relationship_graph_changed", "user_action",
         Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.from_person_id)),
@@ -6955,14 +6955,14 @@ pub fn delete_person_relationship(
     // Emit signals on both persons to re-enqueue for intel enrichment
     if let Some((from_id, to_id)) = person_ids {
         let _ = crate::services::signals::emit_and_propagate(
-            db, &state.signal_engine,
+            db, &state.signals.engine,
             "person", &from_id,
             "relationship_graph_changed", "user_action",
             Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
             0.7,
         );
         let _ = crate::services::signals::emit_and_propagate(
-            db, &state.signal_engine,
+            db, &state.signals.engine,
             "person", &to_id,
             "relationship_graph_changed", "user_action",
             Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
