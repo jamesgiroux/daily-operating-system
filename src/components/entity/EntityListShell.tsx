@@ -220,27 +220,9 @@ export function FilterTabs<T extends string>({
 
 // ─── End Mark ────────────────────────────────────────────────────────────────
 
-export function EntityListEndMark({ text = "That's everything." }: { text?: string }) {
-  return (
-    <div
-      style={{
-        borderTop: "1px solid var(--color-rule-heavy)",
-        marginTop: 48,
-        paddingTop: 32,
-        paddingBottom: 120,
-        textAlign: "center",
-      }}
-    >
-      <div
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 14,
-          fontStyle: "italic",
-          color: "var(--color-text-tertiary)",
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  );
+import { FinisMarker } from "@/components/editorial/FinisMarker";
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function EntityListEndMark(_props?: { text?: string }) {
+  return <FinisMarker />;
 }
