@@ -276,11 +276,13 @@ export default function MeetingDetailPage() {
   const handleRefreshIntelligence = useCallback(async () => {
     if (!meetingId) return;
     setRefreshingIntel(true);
+    toast("Checking for updates…", { duration: 10000, id: "intel-refresh" });
     try {
       await invoke("generate_meeting_intelligence", { meetingId, force: true });
       await loadMeetingIntelligence();
+      toast.success("Briefing updated", { id: "intel-refresh" });
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Refresh failed");
+      toast.error(typeof err === "string" ? err : "Update failed", { id: "intel-refresh" });
     } finally {
       setRefreshingIntel(false);
     }
@@ -439,7 +441,7 @@ Thanks!`;
         <FolioRefreshButton
           onClick={() => loadMeetingIntelligence()}
           loading={refreshingIntel}
-          title="Refresh intelligence"
+          title="Check for updates"
         />
       </div>
     ) : undefined,
