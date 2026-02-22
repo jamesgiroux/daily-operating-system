@@ -24,6 +24,13 @@ pub async fn enrich_entity(
         requested_at: std::time::Instant::now(),
     };
 
+    // Manual refresh: clear circuit breaker so enrichment proceeds (I410)
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            crate::self_healing::scheduler::reset_circuit_breaker(db, &request.entity_id);
+        }
+    }
+
     let input = gather_enrichment_input(state, &request)?;
 
     let ai_config = state
@@ -94,6 +101,9 @@ pub fn update_intelligence_field(
         Some(&format!("{{\"field\":\"{}\"}}", field_path)),
         1.0,
     );
+
+    // Self-healing: record user correction to lower quality score (I409)
+    crate::self_healing::feedback::record_enrichment_correction(db, entity_id, entity_type, "intel_queue");
 
     Ok(())
 }
