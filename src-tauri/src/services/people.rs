@@ -67,7 +67,7 @@ pub fn delete_person(
     db.delete_person(person_id).map_err(|e| e.to_string())?;
 
     // Emit deletion signal (I308)
-    let _ = crate::signals::bus::emit_signal(db, "person", person_id, "entity_deleted", "user_action",
+    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, "person", person_id, "entity_deleted", "user_action",
         Some(&format!("{{\"name\":\"{}\"}}", person.name.replace('"', "\\\""))), 1.0);
 
     // Filesystem cleanup
@@ -171,4 +171,213 @@ pub fn get_person_detail(
         open_actions,
         upcoming_meetings,
     })
+}
+
+/// Update a single field on a person, emit signal, and regenerate workspace files.
+pub fn update_person_field(
+    db: &ActionDb,
+    state: &AppState,
+    person_id: &str,
+    field: &str,
+    value: &str,
+) -> Result<(), String> {
+    db.update_person_field(person_id, field, value)
+        .map_err(|e| e.to_string())?;
+
+    // Emit field update signal (I377)
+    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, "person", person_id, "field_updated", "user_edit",
+        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
+
+    // Regenerate workspace files
+    if let Ok(Some(person)) = db.get_person(person_id) {
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let _ = crate::people::write_person_json(workspace, &person, db);
+            let _ = crate::people::write_person_markdown(workspace, &person, db);
+        }
+    }
+
+    Ok(())
+}
+
+/// Link a person to an entity and regenerate workspace files.
+pub fn link_person_entity(
+    db: &ActionDb,
+    state: &AppState,
+    person_id: &str,
+    entity_id: &str,
+    relationship_type: &str,
+) -> Result<(), String> {
+    db.link_person_to_entity(person_id, entity_id, relationship_type)
+        .map_err(|e| e.to_string())?;
+
+    // Emit person linked signal (I308)
+    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, relationship_type, entity_id, "person_linked", "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.9);
+
+    // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
+    if let Ok(Some(person)) = db.get_person(person_id) {
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let _ = crate::people::write_person_json(workspace, &person, db);
+            let _ = crate::people::write_person_markdown(workspace, &person, db);
+        }
+    }
+
+    Ok(())
+}
+
+/// Unlink a person from an entity and regenerate workspace files.
+pub fn unlink_person_entity(
+    db: &ActionDb,
+    state: &AppState,
+    person_id: &str,
+    entity_id: &str,
+) -> Result<(), String> {
+    db.unlink_person_from_entity(person_id, entity_id)
+        .map_err(|e| e.to_string())?;
+
+    // Emit person unlinked signal (I308)
+    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, "entity", entity_id, "person_unlinked", "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.7);
+
+    // Regenerate person.json so linked_entities reflects removal (ADR-0048)
+    if let Ok(Some(person)) = db.get_person(person_id) {
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let _ = crate::people::write_person_json(workspace, &person, db);
+            let _ = crate::people::write_person_markdown(workspace, &person, db);
+        }
+    }
+
+    Ok(())
+}
+
+/// Create a new person manually. Returns the generated person ID.
+pub fn create_person(
+    db: &ActionDb,
+    email: &str,
+    name: &str,
+    organization: Option<&str>,
+    role: Option<&str>,
+    relationship: Option<&str>,
+) -> Result<String, String> {
+    let id = crate::util::slugify(email);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let person = crate::db::DbPerson {
+        id: id.clone(),
+        email: email.to_string(),
+        name: name.to_string(),
+        organization: organization.map(|s| s.to_string()),
+        role: role.map(|s| s.to_string()),
+        relationship: relationship.unwrap_or("unknown").to_string(),
+        notes: None,
+        tracker_path: None,
+        last_seen: None,
+        first_seen: Some(now.clone()),
+        meeting_count: 0,
+        updated_at: now,
+        archived: false,
+        linkedin_url: None,
+        twitter_handle: None,
+        phone: None,
+        photo_url: None,
+        bio: None,
+        title_history: None,
+        company_industry: None,
+        company_size: None,
+        company_hq: None,
+        last_enriched_at: None,
+        enrichment_sources: None,
+    };
+
+    db.upsert_person(&person).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+/// Archive or unarchive a person with signal emission.
+pub fn archive_person(
+    db: &ActionDb,
+    state: &AppState,
+    id: &str,
+    archived: bool,
+) -> Result<(), String> {
+    db.archive_person(id, archived)
+        .map_err(|e| e.to_string())?;
+
+    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
+    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, "person", id, signal_type, "user_action", None, 0.9);
+
+    Ok(())
+}
+
+/// Create a person entity from a stakeholder name (no email required).
+/// Links to the parent entity and writes workspace files.
+pub fn create_person_from_stakeholder(
+    db: &ActionDb,
+    state: &AppState,
+    entity_id: &str,
+    entity_type: &str,
+    name: &str,
+    role: Option<&str>,
+) -> Result<String, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("Name is required".to_string());
+    }
+
+    let id = crate::util::slugify(&name);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let person = crate::db::DbPerson {
+        id: id.clone(),
+        email: String::new(),
+        name: name.clone(),
+        organization: None,
+        role: role.map(|s| s.to_string()),
+        relationship: "external".to_string(),
+        notes: None,
+        tracker_path: None,
+        last_seen: None,
+        first_seen: Some(now.clone()),
+        meeting_count: 0,
+        updated_at: now,
+        archived: false,
+        linkedin_url: None,
+        twitter_handle: None,
+        phone: None,
+        photo_url: None,
+        bio: None,
+        title_history: None,
+        company_industry: None,
+        company_size: None,
+        company_hq: None,
+        last_enriched_at: None,
+        enrichment_sources: None,
+    };
+
+    db.upsert_person(&person).map_err(|e| e.to_string())?;
+
+    // Link to the parent entity
+    db.link_person_to_entity(&id, entity_id, entity_type)
+        .map_err(|e| e.to_string())?;
+
+    // Write person files to workspace
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let _ = crate::people::write_person_json(workspace, &person, db);
+        let _ = crate::people::write_person_markdown(workspace, &person, db);
+    }
+
+    log::info!(
+        "Created person '{}' (id={}) from stakeholder, linked to {} '{}'",
+        name, id, entity_type, entity_id,
+    );
+
+    Ok(id)
 }
