@@ -942,6 +942,7 @@ export interface PersonListItem extends Person {
   trend: string;
   /** Comma-separated names of linked account entities. */
   accountNames?: string;
+  daysSinceLastMeeting?: number;
 }
 
 export interface PersonSignals {
