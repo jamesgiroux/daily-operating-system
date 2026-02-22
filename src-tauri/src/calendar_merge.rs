@@ -152,10 +152,18 @@ mod tests {
     }
 
     fn make_live_event(id: &str, title: &str, start_hour: u32, end_hour: u32) -> CalendarEvent {
-        // Use today's date so events pass the today-filter in merge_meetings (I386)
-        let today = Utc::now().date_naive();
-        let start = today.and_hms_opt(start_hour, 0, 0).unwrap().and_utc();
-        let end = today.and_hms_opt(end_hour, 0, 0).unwrap().and_utc();
+        // Build events using today in the test timezone (America/New_York) so they
+        // always pass the today-filter in merge_meetings regardless of UTC wall-clock.
+        let tz = make_tz();
+        let today_local = Utc::now().with_timezone(&tz).date_naive();
+        let start = tz
+            .from_local_datetime(&today_local.and_hms_opt(start_hour, 0, 0).unwrap())
+            .unwrap()
+            .to_utc();
+        let end = tz
+            .from_local_datetime(&today_local.and_hms_opt(end_hour, 0, 0).unwrap())
+            .unwrap()
+            .to_utc();
         CalendarEvent {
             id: id.to_string(),
             title: title.to_string(),
