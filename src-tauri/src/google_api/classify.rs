@@ -2,12 +2,13 @@
 //!
 //! Replaces ops/calendar_fetch.py:classify_meeting().
 //! Classification priority (first match wins):
-//!   1. Personal: 0-1 attendees
-//!   2. All-hands: 50+ attendees
-//!   3. Title keywords: all hands, qbr, training, one_on_one
-//!   4. Domain-based: internal vs external
-//!   5. External path: personal email, customer, external
-//!   6. Internal path: one_on_one, team_sync, internal
+//!   1. Title keywords: all-hands / town-hall (organizational events)
+//!   2. Personal: 0-1 attendees
+//!   3. All-hands: 50+ attendees
+//!   4. Title keywords: qbr, training, one_on_one
+//!   5. Domain-based: internal vs external
+//!   6. External path: personal email, customer, external
+//!   7. Internal path: one_on_one, team_sync, internal
 
 use serde::{Deserialize, Serialize};
 
@@ -135,22 +136,24 @@ pub fn classify_meeting_multi(
         intelligence_tier: IntelligenceTier::Person, // default, overridden below
     };
 
-    // ---- Step 1: Personal (no attendees or only organizer) ----
+    // ---- Step 1: Title keyword overrides (all-hands / town-hall) ----
+    // Runs before attendee count so copied calendar events (0 attendees)
+    // with organizational titles still classify correctly.
+    if contains_any(&title_lower, &["all hands", "all-hands", "town hall"]) {
+        result.meeting_type = "all_hands".to_string();
+        result.intelligence_tier = IntelligenceTier::Skip;
+        return result;
+    }
+
+    // ---- Step 2: Personal (no attendees or only organizer) ----
     if attendee_count <= 1 {
         result.meeting_type = "personal".to_string();
         result.intelligence_tier = IntelligenceTier::Minimal;
         return result;
     }
 
-    // ---- Step 2: Scale-based override (50+ attendees) ----
+    // ---- Step 3: Scale-based override (50+ attendees) ----
     if attendee_count >= ALL_HANDS_THRESHOLD {
-        result.meeting_type = "all_hands".to_string();
-        result.intelligence_tier = IntelligenceTier::Skip;
-        return result;
-    }
-
-    // ---- Step 3: Title keyword overrides (all-hands) ----
-    if contains_any(&title_lower, &["all hands", "all-hands", "town hall"]) {
         result.meeting_type = "all_hands".to_string();
         result.intelligence_tier = IntelligenceTier::Skip;
         return result;
@@ -593,6 +596,16 @@ mod tests {
         let event = make_event("Focus time", vec!["me@company.com"], false);
         let result = classify_meeting(&event, "company.com", &empty_hints());
         assert_eq!(result.meeting_type, "personal");
+    }
+
+    // Step 1: Title all-hands/town-hall before attendee count
+    #[test]
+    fn test_classify_town_hall_no_attendees_is_all_hands() {
+        // Copied calendar event: title says "Town Hall" but no invite list
+        let event = make_event("A8C Town Hall: Roadmap Reset", vec![], false);
+        let result = classify_meeting(&event, "company.com", &empty_hints());
+        assert_eq!(result.meeting_type, "all_hands");
+        assert_eq!(result.intelligence_tier, IntelligenceTier::Skip);
     }
 
     // Step 2: All-hands (scale)
