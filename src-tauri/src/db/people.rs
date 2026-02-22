@@ -291,6 +291,9 @@ impl ActionDb {
                 None => "cold".to_string(),
             };
             let trend = compute_trend(count_30d, count_90d);
+            let days_since_last_meeting = last_meeting
+                .as_deref()
+                .and_then(crate::db::types::days_since_iso);
 
             Ok(PersonListItem {
                 id: row.get(0)?,
@@ -309,6 +312,7 @@ impl ActionDb {
                 temperature,
                 trend,
                 account_names: row.get(16)?,
+                days_since_last_meeting,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
