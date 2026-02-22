@@ -640,9 +640,6 @@ function AccountRow({
   depth?: number;
   showBorder: boolean;
 }) {
-  const daysSince = account.daysSinceLastMeeting;
-  const isStale = daysSince != null && daysSince > 14;
-
   const subtitle = account.teamSummary ? (
     <>
       {account.teamSummary}
@@ -705,17 +702,6 @@ function AccountRow({
       {account.arr != null && (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
           ${formatArr(account.arr)}
-        </span>
-      )}
-      {daysSince != null && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            color: isStale ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-          }}
-        >
-          {daysSince === 0 ? "Last met today" : `Last met ${daysSince}d ago`}
         </span>
       )}
     </EntityRow>
