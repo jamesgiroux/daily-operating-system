@@ -191,6 +191,31 @@ pub fn emit_signal_and_propagate(
     Ok((id, derived_ids))
 }
 
+/// Emit a signal, propagate, AND evaluate for self-healing re-enrichment (I410).
+///
+/// Wrapper around `emit_signal_and_propagate` that additionally checks whether
+/// the affected entity should be re-enriched based on its trigger score.
+/// Use this from service-layer call sites that have access to the IntelligenceQueue.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_signal_propagate_and_evaluate(
+    db: &ActionDb,
+    engine: &super::propagation::PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+    queue: &crate::intel_queue::IntelligenceQueue,
+) -> Result<(String, Vec<String>), DbError> {
+    let result = emit_signal_and_propagate(db, engine, entity_type, entity_id, signal_type, source, value, confidence)?;
+
+    // Self-healing: event-driven trigger evaluation (I410)
+    let _ = crate::self_healing::scheduler::evaluate_on_signal(db, entity_id, entity_type, queue);
+
+    Ok(result)
+}
+
 /// When a signal is emitted for an entity, flag all future meetings
 /// linked to that entity as having new signals.
 pub fn propagate_signal_to_meetings(
