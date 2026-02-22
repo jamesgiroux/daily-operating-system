@@ -1,13 +1,14 @@
 // Meetings service — extracted from commands.rs
 // Business logic for meeting intelligence assembly and entity operations.
 
+use chrono::TimeZone;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::commands::{MeetingHistoryDetail, MeetingSearchResult, PrepContext};
 use crate::db::ActionDb;
 use crate::state::AppState;
-use crate::types::CapturedOutcome;
+use crate::types::{CapturedOutcome, MeetingIntelligence};
 
 /// Hydrate attendee context by matching calendar attendee emails to person entities.
 /// Scoped to external (non-internal) attendees who are in the people database.
@@ -131,14 +132,12 @@ pub fn collect_meeting_outcomes_from_db(
     })
 }
 
-/// Load meeting prep from multiple sources: JSON file, frozen payload, or DB context.
+/// Load meeting prep from DB first (mechanical assembly), then disk file fallback.
 pub fn load_meeting_prep_from_sources(
     today_dir: &Path,
     meeting: &crate::db::DbMeeting,
 ) -> Option<crate::types::FullMeetingPrep> {
-    if let Ok(prep) = crate::json_loader::load_prep_json(today_dir, &meeting.id) {
-        return Some(prep);
-    }
+    // Source 1: prep_frozen_json — mechanical assembly from entity intelligence (ADR-0086)
     if let Some(ref frozen) = meeting.prep_frozen_json {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(frozen) {
             if let Some(prep_val) = value.get("prep") {
@@ -150,6 +149,10 @@ pub fn load_meeting_prep_from_sources(
                 return Some(prep);
             }
         }
+    }
+    // Source 2: disk prep file (daily pipeline output)
+    if let Ok(prep) = crate::json_loader::load_prep_json(today_dir, &meeting.id) {
+        return Some(prep);
     }
     if let Some(ref prep_json) = meeting.prep_context_json {
         // Try direct deserialization first
@@ -194,6 +197,7 @@ pub fn load_meeting_prep_from_sources(
             }
         }
     }
+
     None
 }
 
@@ -885,4 +889,443 @@ fn find_prior_meeting(
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     stmt.query_row(param_refs.as_slice(), |row| row.get::<_, String>(0))
         .ok()
+}
+
+/// Parse a meeting datetime string into a UTC DateTime.
+pub fn parse_meeting_datetime(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M %p"] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(value, fmt) {
+            if let Some(local_dt) = chrono::Local.from_local_datetime(&ndt).single() {
+                return Some(local_dt.with_timezone(&chrono::Utc));
+            }
+            return Some(chrono::Utc.from_utc_datetime(&ndt));
+        }
+    }
+    None
+}
+
+/// Parsed user agenda layer — supports both legacy `["item"]` and rich format.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserAgendaLayer {
+    #[serde(default)]
+    pub items: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dismissed_topics: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_attendees: Vec<String>,
+}
+
+/// Parse user agenda JSON (legacy vec or rich layer).
+pub fn parse_user_agenda_layer(value: Option<&str>) -> UserAgendaLayer {
+    let Some(json) = value else { return UserAgendaLayer::default() };
+    if let Ok(layer) = serde_json::from_str::<UserAgendaLayer>(json) {
+        return layer;
+    }
+    if let Ok(items) = serde_json::from_str::<Vec<String>>(json) {
+        return UserAgendaLayer { items, ..Default::default() };
+    }
+    UserAgendaLayer::default()
+}
+
+/// Check if a meeting's user layer fields are read-only.
+pub fn is_meeting_user_layer_read_only(meeting: &crate::db::DbMeeting) -> bool {
+    if meeting.prep_frozen_at.is_some() {
+        return true;
+    }
+    let now = chrono::Utc::now();
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or_else(|| {
+            parse_meeting_datetime(&meeting.start_time)
+                .map(|s| s + chrono::Duration::hours(1))
+        });
+    end_dt.is_some_and(|e| e < now)
+}
+
+/// Resolve the on-disk path for a meeting's prep JSON file.
+pub fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::PathBuf, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = Path::new(&config.workspace_path);
+    let preps_dir = workspace.join("_today").join("data").join("preps");
+    let clean_id = meeting_id.trim_end_matches(".json").trim_end_matches(".md");
+    let path = preps_dir.join(format!("{}.json", clean_id));
+
+    if !path.starts_with(&preps_dir) {
+        return Err("Invalid meeting ID".to_string());
+    }
+
+    if path.exists() {
+        Ok(path)
+    } else {
+        Err(format!("Prep file not found: {}", path.display()))
+    }
+}
+
+/// Get full meeting intelligence for the detail page.
+pub fn get_meeting_intelligence(
+    state: &AppState,
+    meeting_id: &str,
+) -> Result<MeetingIntelligence, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let meeting = if let Some(row) = db
+        .get_meeting_intelligence_row(meeting_id)
+        .map_err(|e| e.to_string())?
+    {
+        row
+    } else {
+        let raw_calendar_id = meeting_id.replace("_at_", "@");
+        db.get_meeting_by_calendar_event_id(&raw_calendar_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?
+    };
+
+    let agenda_layer = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+    let user_agenda = if agenda_layer.items.is_empty() { None } else { Some(agenda_layer.items.clone()) };
+    let dismissed_topics = agenda_layer.dismissed_topics.clone();
+    let hidden_attendees = agenda_layer.hidden_attendees.clone();
+    let user_notes = meeting.user_notes.clone();
+    let mut prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+
+    if let Some(ref mut prep_data) = prep {
+        prep_data.user_agenda = user_agenda.clone();
+        prep_data.user_notes = user_notes.clone();
+        let _ = db.mark_prep_reviewed(
+            &meeting.id,
+            prep_data.calendar_event_id.as_deref(),
+            &prep_data.title,
+        );
+
+        // Hydrate attendee_context from people DB (I51)
+        if prep_data.attendee_context.is_none() {
+            let attendee_context = hydrate_attendee_context(db, &meeting);
+            if !attendee_context.is_empty() {
+                prep_data.attendee_context = Some(attendee_context);
+            }
+        }
+    }
+
+    let now = chrono::Utc::now();
+    let start_dt = parse_meeting_datetime(&meeting.start_time);
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or(start_dt.map(|s| s + chrono::Duration::hours(1)));
+    let is_current = start_dt
+        .zip(end_dt)
+        .is_some_and(|(s, e)| s <= now && now <= e);
+    let is_past = end_dt.is_some_and(|e| e < now);
+    let is_frozen = meeting.prep_frozen_at.is_some();
+    let can_edit_user_layer = !(is_past || is_frozen);
+
+    let captures = db
+        .get_captures_for_meeting(&meeting.id)
+        .map_err(|e| e.to_string())?;
+    let actions = db
+        .get_actions_for_meeting(&meeting.id)
+        .map_err(|e| e.to_string())?;
+    let linked_entities = db
+        .get_meeting_entities(&meeting.id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|e| crate::types::LinkedEntity {
+            id: e.id,
+            name: e.name,
+            entity_type: e.entity_type.as_str().to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    let outcomes = collect_meeting_outcomes_from_db(db, &meeting);
+    let prep_snapshot_path = meeting.prep_snapshot_path.clone();
+    let prep_frozen_at = meeting.prep_frozen_at.clone();
+    let transcript_path = meeting.transcript_path.clone();
+    let transcript_processed_at = meeting.transcript_processed_at.clone();
+
+    let intelligence_quality = Some(crate::intelligence::assess_intelligence_quality(db, meeting_id));
+    let _ = db.clear_meeting_new_signals(meeting_id);
+
+    Ok(MeetingIntelligence {
+        meeting,
+        prep,
+        is_past,
+        is_current,
+        is_frozen,
+        can_edit_user_layer,
+        user_agenda,
+        user_notes,
+        dismissed_topics,
+        hidden_attendees,
+        outcomes,
+        captures,
+        actions,
+        linked_entities,
+        prep_snapshot_path,
+        prep_frozen_at,
+        transcript_path,
+        transcript_processed_at,
+        intelligence_quality,
+    })
+}
+
+/// Link meeting entity: DB link, clear prep, enqueue re-assembly.
+pub fn link_meeting_entity_with_prep_queue(
+    state: &AppState,
+    meeting_id: &str,
+    entity_id: &str,
+    entity_type: &str,
+) -> Result<(), String> {
+    {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        db.link_meeting_entity(meeting_id, entity_id, entity_type)
+            .map_err(|e| e.to_string())?;
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
+            rusqlite::params![meeting_id],
+        );
+    }
+    state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+        meeting_id: meeting_id.to_string(),
+        priority: crate::meeting_prep_queue::PrepPriority::Manual,
+        requested_at: std::time::Instant::now(),
+    });
+    log::info!(
+        "link_meeting_entity: relinked {} to {} ({}), enqueued prep re-assembly",
+        meeting_id, entity_id, entity_type,
+    );
+    Ok(())
+}
+
+/// Unlink meeting entity: DB unlink, clear prep, enqueue re-assembly.
+pub fn unlink_meeting_entity_with_prep_queue(
+    state: &AppState,
+    meeting_id: &str,
+    entity_id: &str,
+) -> Result<(), String> {
+    {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        db.unlink_meeting_entity(meeting_id, entity_id)
+            .map_err(|e| e.to_string())?;
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
+            rusqlite::params![meeting_id],
+        );
+    }
+    state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+        meeting_id: meeting_id.to_string(),
+        priority: crate::meeting_prep_queue::PrepPriority::Manual,
+        requested_at: std::time::Instant::now(),
+    });
+    log::info!(
+        "unlink_meeting_entity: unlinked {} from {}, enqueued prep re-assembly",
+        meeting_id, entity_id,
+    );
+    Ok(())
+}
+
+/// List available meeting prep files from the workspace.
+pub fn list_meeting_preps(state: &AppState) -> Result<Vec<String>, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = Path::new(&config.workspace_path);
+    let preps_dir = workspace.join("_today").join("data").join("preps");
+
+    if !preps_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut preps = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&preps_dir) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if name.ends_with(".json") {
+                    preps.push(name.trim_end_matches(".json").to_string());
+                }
+            }
+        }
+    }
+
+    Ok(preps)
+}
+
+/// Update user-authored agenda items on a meeting.
+pub fn update_meeting_user_agenda(
+    db: &ActionDb,
+    state: &AppState,
+    meeting_id: &str,
+    agenda: Option<Vec<String>>,
+    dismissed_topics: Option<Vec<String>>,
+    hidden_attendees: Option<Vec<String>>,
+) -> Result<(), String> {
+    let meeting = db
+        .get_meeting_intelligence_row(meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+
+    if is_meeting_user_layer_read_only(&meeting) {
+        return Err("Meeting user fields are read-only after freeze/past state".to_string());
+    }
+
+    let existing = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+
+    let truncate_strings = |v: Vec<String>, max_items: usize, max_chars: usize| -> Vec<String> {
+        v.into_iter()
+            .take(max_items)
+            .map(|s| {
+                if s.len() <= max_chars {
+                    s
+                } else {
+                    let mut end = max_chars;
+                    while !s.is_char_boundary(end) && end > 0 {
+                        end -= 1;
+                    }
+                    s[..end].to_string()
+                }
+            })
+            .collect()
+    };
+
+    let layer = UserAgendaLayer {
+        items: truncate_strings(agenda.unwrap_or(existing.items), 50, 500),
+        dismissed_topics: truncate_strings(dismissed_topics.unwrap_or(existing.dismissed_topics), 50, 500),
+        hidden_attendees: truncate_strings(hidden_attendees.unwrap_or(existing.hidden_attendees), 50, 500),
+    };
+
+    let agenda_json = if layer.items.is_empty() && layer.dismissed_topics.is_empty() && layer.hidden_attendees.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&layer).map_err(|e| format!("Serialize error: {}", e))?)
+    };
+    db.update_meeting_user_layer(
+        meeting_id,
+        agenda_json.as_deref(),
+        meeting.user_notes.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Optional mirror write to active prep file for same-session coherence.
+    if let Ok(prep_path) = resolve_prep_path(meeting_id, state) {
+        if let Ok(content) = std::fs::read_to_string(&prep_path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if layer.items.is_empty() {
+                    json.as_object_mut().map(|o| o.remove("userAgenda"));
+                } else {
+                    json["userAgenda"] = serde_json::json!(layer.items);
+                }
+                if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&prep_path, updated);
+                }
+            }
+        }
+    }
+
+    // Emit prep quality feedback signal
+    let edit_count =
+        layer.items.len() + layer.dismissed_topics.len() + layer.hidden_attendees.len();
+    if edit_count > 0 {
+        let entity_info = db
+            .get_meeting_entities(meeting_id)
+            .ok()
+            .and_then(|entities| {
+                entities.into_iter().find(|e| {
+                    e.entity_type == crate::entity::EntityType::Account
+                        || e.entity_type == crate::entity::EntityType::Project
+                })
+            });
+        let (etype, eid) = entity_info
+            .map(|e| (e.entity_type.as_str().to_string(), e.id))
+            .unwrap_or_else(|| ("meeting".to_string(), meeting_id.to_string()));
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db, &state.signal_engine,
+            &etype,
+            &eid,
+            "prep_edited",
+            "user_edit",
+            Some(&format!(
+                "{{\"meeting_id\":\"{}\",\"agenda_items\":{},\"dismissed\":{},\"hidden_attendees\":{}}}",
+                meeting_id,
+                layer.items.len(),
+                layer.dismissed_topics.len(),
+                layer.hidden_attendees.len()
+            )),
+            0.6,
+        );
+    }
+
+    Ok(())
+}
+
+/// Update user-authored notes on a meeting.
+pub fn update_meeting_user_notes(
+    db: &ActionDb,
+    state: &AppState,
+    meeting_id: &str,
+    notes: &str,
+) -> Result<(), String> {
+    let meeting = db
+        .get_meeting_intelligence_row(meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+
+    if is_meeting_user_layer_read_only(&meeting) {
+        return Err("Meeting user fields are read-only after freeze/past state".to_string());
+    }
+
+    let notes_opt = if notes.trim().is_empty() {
+        None
+    } else {
+        Some(notes)
+    };
+    db.update_meeting_user_layer(meeting_id, meeting.user_agenda_json.as_deref(), notes_opt)
+        .map_err(|e| e.to_string())?;
+
+    // Optional mirror write to active prep file for same-session coherence.
+    if let Ok(prep_path) = resolve_prep_path(meeting_id, state) {
+        if let Ok(content) = std::fs::read_to_string(&prep_path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if notes.is_empty() {
+                    json.as_object_mut().map(|o| o.remove("userNotes"));
+                } else {
+                    json["userNotes"] = serde_json::json!(notes);
+                }
+                if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&prep_path, updated);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
