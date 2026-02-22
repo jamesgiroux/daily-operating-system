@@ -452,7 +452,7 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
         return;
     }
 
-    let events = match state.calendar_events.read() {
+    let events = match state.calendar.events.read() {
         Ok(guard) => guard.clone(),
         Err(_) => return,
     };
@@ -477,7 +477,7 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
         }
 
         // Check transcript immutability — skip if already processed
-        if let Ok(processed) = state.transcript_processed.lock() {
+        if let Ok(processed) = state.capture.transcript_processed.lock() {
             if processed.contains_key(&event.id) {
                 continue;
             }
