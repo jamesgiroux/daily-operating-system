@@ -34,6 +34,41 @@ pub struct UserEdit {
     pub edited_at: String,
 }
 
+// =============================================================================
+// Portfolio Intelligence (I384 — parent account hierarchy)
+// =============================================================================
+
+/// A child account flagged as a hotspot in the parent's portfolio assessment.
+///
+/// Hotspots are children with active risk or opportunity signals that warrant
+/// executive attention at the portfolio level.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioHotspot {
+    pub child_id: String,
+    pub child_name: String,
+    pub reason: String,
+}
+
+/// Portfolio-level intelligence for parent accounts (I384).
+///
+/// Synthesized from children's intelligence data. Only present on accounts
+/// that have child accounts — leaf-node accounts never get this field.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PortfolioIntelligence {
+    /// Executive summary of the portfolio's overall health.
+    pub health_summary: Option<String>,
+    /// Children with active risk or opportunity signals.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hotspots: Vec<PortfolioHotspot>,
+    /// Signal types appearing across 2+ children (e.g., "budget_risk", "expansion").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cross_bu_patterns: Vec<String>,
+    /// Executive synthesis of the portfolio narrative.
+    pub portfolio_narrative: Option<String>,
+}
+
 /// Top-level intelligence file (intelligence.json).
 ///
 /// Entity-generic — same schema for accounts, projects, and people per ADR-0057.
@@ -83,6 +118,11 @@ pub struct IntelligenceJson {
     /// Company/project context from web search or overview.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub company_context: Option<CompanyContext>,
+
+    /// Portfolio intelligence for parent accounts (I384).
+    /// Only present on accounts with child accounts — leaf nodes never get this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portfolio: Option<PortfolioIntelligence>,
 
     /// User edits — field paths that the user has manually corrected.
     /// Enrichment cycles preserve these fields instead of overwriting them.
@@ -166,6 +206,12 @@ pub struct StakeholderInsight {
     pub engagement: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// Deterministic link to a Person entity (I420: reconciliation).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person_id: Option<String>,
+    /// Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_person_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -603,6 +649,7 @@ impl ActionDb {
                 value_delivered: Vec::new(), // Not cached in DB (stored in file only)
                 next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),
                 company_context: company_json.and_then(|j| serde_json::from_str(&j).ok()),
+                portfolio: None, // Not cached in DB (stored in file only)
                 user_edits: Vec::new(), // Not cached in DB (stored in file only)
             })
         });
@@ -1280,6 +1327,8 @@ mod tests {
                 assessment: Some("Strong advocate, drives adoption.".to_string()),
                 engagement: Some("high".to_string()),
                 source: Some("meetings".to_string()),
+                person_id: None,
+                suggested_person_id: None,
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
@@ -1302,6 +1351,7 @@ mod tests {
                 headquarters: Some("San Francisco, USA".to_string()),
                 additional_context: None,
             }),
+            portfolio: None,
             user_edits: Vec::new(),
         }
     }
@@ -1374,7 +1424,7 @@ mod tests {
             nps: None,
             tracker_path: Some("Accounts/Acme Corp".to_string()),
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1427,7 +1477,7 @@ mod tests {
             nps: None,
             tracker_path: Some("Accounts/Empty Corp".to_string()),
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1552,6 +1602,8 @@ mod tests {
                 assessment: Some("Strong advocate.".to_string()),
                 engagement: Some("high".to_string()),
                 source: None,
+                person_id: None,
+                suggested_person_id: None,
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
@@ -1574,6 +1626,7 @@ mod tests {
                 headquarters: Some("San Francisco".to_string()),
                 additional_context: None,
             }),
+            portfolio: None,
             user_edits: Vec::new(),
         };
 

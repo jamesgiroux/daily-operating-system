@@ -504,8 +504,12 @@ pub fn gather_enrichment_input(
     );
 
     // Build prompt (pure function, but easier to do here while we have the data)
-    // Extract relationship for person entities so the prompt adapts framing
-    let relationship = person.as_ref().map(|p| p.relationship.as_str());
+    // Extract relationship for person entities so the prompt adapts framing.
+    // For accounts, pass account_type so prompts can adapt for partner vs customer (I382).
+    let relationship = person
+        .as_ref()
+        .map(|p| p.relationship.as_str())
+        .or_else(|| account.as_ref().map(|a| a.account_type.as_db_str()));
     // Read active preset for domain-specific prompt language (I313)
     let preset_guard = state.active_preset.read().map_err(|_| "Preset lock poisoned")?;
     let prompt = build_intelligence_prompt_with_preset(&entity_name, &request.entity_type, &ctx, relationship, preset_guard.as_ref());
@@ -790,6 +794,22 @@ pub fn write_enrichment_results(
         }
     }
 
+    // I420: Reconcile stakeholders against linked Person entities
+    if input.entity_type == "account" || input.entity_type == "project" {
+        if let Ok(db_for_people) = crate::db::ActionDb::open() {
+            let linked_people = db_for_people
+                .get_people_for_entity(&input.entity_id)
+                .unwrap_or_default();
+            if !linked_people.is_empty() {
+                crate::intelligence::reconcile_stakeholders::reconcile_stakeholders(
+                    &mut final_intel.stakeholder_insights,
+                    &linked_people,
+                    &final_intel.user_edits,
+                );
+            }
+        }
+    }
+
     // Write intelligence.json to disk (no DB needed)
     write_intelligence_json(&input.entity_dir, &final_intel)?;
 
@@ -802,6 +822,27 @@ pub fn write_enrichment_results(
         if let Ok(Some(person)) = db.get_person(&input.entity_id) {
             let _ = crate::people::write_person_markdown(&input.workspace, &person, &db);
             let _ = crate::people::write_person_dashboard_json(&input.workspace, &person, &db);
+        }
+    }
+
+    // I384: After writing a child account's enrichment, enqueue the parent for
+    // portfolio intelligence refresh. This ensures parent portfolio views stay
+    // current when any child's intelligence updates.
+    if input.entity_type == "account" {
+        if let Ok(Some(account)) = db.get_account(&input.entity_id) {
+            if let Some(ref parent_id) = account.parent_id {
+                _state.intel_queue.enqueue(IntelRequest {
+                    entity_id: parent_id.clone(),
+                    entity_type: "account".to_string(),
+                    priority: IntelPriority::ContentChange,
+                    requested_at: std::time::Instant::now(),
+                });
+                log::info!(
+                    "IntelProcessor: enqueued parent {} for portfolio refresh after child {} update",
+                    parent_id,
+                    input.entity_id,
+                );
+            }
         }
     }
 

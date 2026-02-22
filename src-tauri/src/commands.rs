@@ -2785,29 +2785,29 @@ pub fn populate_workspace(
             log::warn!("Failed to bootstrap account template '{}': {}", name, e);
         }
 
-        // Upsert to SQLite (non-fatal)
+        // Upsert to SQLite (non-fatal). Preserve existing account_type/archived.
         let slug = crate::util::slugify(name);
-        let db_account = crate::db::DbAccount {
-            id: slug,
-            name: name.to_string(),
-            lifecycle: None,
-            arr: None,
-            health: None,
-            contract_start: None,
-            contract_end: None,
-            nps: None,
-            tracker_path: Some(format!("Accounts/{}", name)),
-            parent_id: None,
-            is_internal: false,
-            updated_at: now.clone(),
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-        metadata: None,
-        };
-
         if let Ok(db_guard) = state.db.lock() {
             if let Some(db) = db_guard.as_ref() {
+                let existing = db.get_account(&slug).ok().flatten();
+                let db_account = crate::db::DbAccount {
+                    id: slug,
+                    name: name.to_string(),
+                    lifecycle: existing.as_ref().and_then(|e| e.lifecycle.clone()),
+                    arr: existing.as_ref().and_then(|e| e.arr),
+                    health: existing.as_ref().and_then(|e| e.health.clone()),
+                    contract_start: existing.as_ref().and_then(|e| e.contract_start.clone()),
+                    contract_end: existing.as_ref().and_then(|e| e.contract_end.clone()),
+                    nps: existing.as_ref().and_then(|e| e.nps),
+                    tracker_path: Some(format!("Accounts/{}", name)),
+                    parent_id: existing.as_ref().and_then(|e| e.parent_id.clone()),
+                    account_type: existing.as_ref().map(|e| e.account_type.clone()).unwrap_or(crate::db::AccountType::Customer),
+                    updated_at: now.clone(),
+                    archived: existing.as_ref().map(|e| e.archived).unwrap_or(false),
+                    keywords: existing.as_ref().and_then(|e| e.keywords.clone()),
+                    keywords_extracted_at: existing.as_ref().and_then(|e| e.keywords_extracted_at.clone()),
+                    metadata: existing.as_ref().and_then(|e| e.metadata.clone()),
+                };
                 if let Err(e) = db.upsert_account(&db_account) {
                     log::warn!("Failed to upsert account '{}': {}", name, e);
                 }
@@ -3670,7 +3670,7 @@ pub struct AccountListItem {
     pub parent_name: Option<String>,
     pub child_count: usize,
     pub is_parent: bool,
-    pub is_internal: bool,
+    pub account_type: crate::db::AccountType,
     pub archived: bool,
 }
 
@@ -3703,7 +3703,7 @@ pub struct AccountDetailResult {
     pub parent_name: Option<String>,
     pub children: Vec<AccountChildSummary>,
     pub parent_aggregate: Option<crate::db::ParentAggregate>,
-    pub is_internal: bool,
+    pub account_type: crate::db::AccountType,
     pub archived: bool,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3719,6 +3719,7 @@ pub struct AccountChildSummary {
     pub health: Option<String>,
     pub arr: Option<f64>,
     pub open_action_count: usize,
+    pub account_type: String,
 }
 
 /// Get top-level accounts with computed summary fields for the list page (I114).
@@ -3739,7 +3740,7 @@ pub struct PickerAccount {
     pub id: String,
     pub name: String,
     pub parent_name: Option<String>,
-    pub is_internal: bool,
+    pub account_type: crate::db::AccountType,
 }
 
 #[tauri::command]
@@ -3881,15 +3882,19 @@ pub fn update_account_programs(
 
 /// Create a new account. Creates SQLite record + workspace files.
 /// If `parent_id` is provided, creates a child (BU) account under that parent.
+/// If `account_type` is provided, uses that type; otherwise defaults to `customer`
+/// (or inherits from parent for child accounts).
 #[tauri::command]
 pub fn create_account(
     name: String,
     parent_id: Option<String>,
+    account_type: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::create_account(db, &state, &name, parent_id.as_deref())
+    let acct_type = account_type.map(|s| crate::db::AccountType::from_db(&s));
+    crate::services::accounts::create_account(db, &state, &name, parent_id.as_deref(), acct_type)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -4063,7 +4068,7 @@ pub fn create_internal_organization(
                 nps: None,
                 tracker_path: Some(format!("Internal/{}", company_name)),
                 parent_id: None,
-                is_internal: true,
+                account_type: crate::db::AccountType::Internal,
                 updated_at: now,
                 archived: false,
                 keywords: None,

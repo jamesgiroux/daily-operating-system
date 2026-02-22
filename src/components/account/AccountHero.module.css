@@ -82,6 +82,11 @@
   color: var(--color-spice-turmeric);
 }
 
+.partnerBadge {
+  background: rgba(74, 103, 65, 0.12);
+  color: var(--color-garden-rosemary);
+}
+
 .archivedBanner {
   display: flex;
   align-items: center;

@@ -70,6 +70,19 @@ export function useAccountFields(
     }
   }, [detail, editName, editHealth, editLifecycle, editArr, editNps, editRenewal, editParentId, editNotes, reload, setError]);
 
+  // Save a single field immediately with the provided value.
+  // Avoids the stale-state problem where setState hasn't flushed
+  // before handleSave reads the field from React state.
+  const saveField = useCallback(async (field: string, value: string) => {
+    if (!detail) return;
+    try {
+      await invoke("update_account_field", { accountId: detail.id, field, value });
+      await reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [detail, reload, setError]);
+
   const handleCancelEdit = useCallback(() => {
     if (!detail) return;
     setEditName(detail.name);
@@ -96,6 +109,7 @@ export function useAccountFields(
     dirty, setDirty,
     saving,
     handleSave,
+    saveField,
     handleCancelEdit,
   };
 }
