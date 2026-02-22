@@ -199,7 +199,9 @@ pub fn rule_departure_renewal(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
     if signal.entity_type != "person" {
         return Vec::new();
     }
-    if signal.signal_type != "person_departed" && signal.signal_type != "company_change" {
+    // person_departed has no emitter yet (no UI path to mark departure).
+    // company_change from the Clay integration covers the real-world departure case.
+    if signal.signal_type != "company_change" {
         return Vec::new();
     }
 
