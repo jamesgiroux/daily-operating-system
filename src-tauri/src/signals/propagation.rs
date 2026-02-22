@@ -118,7 +118,7 @@ pub fn default_engine() -> PropagationEngine {
     let mut engine = PropagationEngine::new();
 
     engine.register("rule_person_job_change", super::rules::rule_person_job_change);
-    engine.register("rule_meeting_frequency_drop", super::rules::rule_meeting_frequency_drop);
+    // NOTE: rule_meeting_frequency_drop removed — no code emits "meeting_frequency" signals (I377 audit)
     engine.register("rule_overdue_actions", super::rules::rule_overdue_actions);
     engine.register("rule_champion_sentiment", super::rules::rule_champion_sentiment);
     engine.register("rule_departure_renewal", super::rules::rule_departure_renewal);

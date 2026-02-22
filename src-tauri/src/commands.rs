@@ -248,117 +248,7 @@ pub fn get_meeting_intelligence(
     meeting_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<MeetingIntelligence, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let meeting = if let Some(row) = db
-        .get_meeting_intelligence_row(&meeting_id)
-        .map_err(|e| e.to_string())?
-    {
-        row
-    } else {
-        let raw_calendar_id = meeting_id.replace("_at_", "@");
-        db.get_meeting_by_calendar_event_id(&raw_calendar_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?
-    };
-
-    let agenda_layer = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
-    let user_agenda = if agenda_layer.items.is_empty() { None } else { Some(agenda_layer.items.clone()) };
-    let dismissed_topics = agenda_layer.dismissed_topics.clone();
-    let hidden_attendees = agenda_layer.hidden_attendees.clone();
-    let user_notes = meeting.user_notes.clone();
-    let mut prep = load_meeting_prep_from_sources(&today_dir, &meeting);
-
-    if let Some(ref mut prep_data) = prep {
-        prep_data.user_agenda = user_agenda.clone();
-        prep_data.user_notes = user_notes.clone();
-        let _ = db.mark_prep_reviewed(
-            &meeting.id,
-            prep_data.calendar_event_id.as_deref(),
-            &prep_data.title,
-        );
-
-        // Hydrate attendee_context from people DB (I51)
-        if prep_data.attendee_context.is_none() {
-            let attendee_context = hydrate_attendee_context(db, &meeting);
-            if !attendee_context.is_empty() {
-                prep_data.attendee_context = Some(attendee_context);
-            }
-        }
-    }
-
-    let now = chrono::Utc::now();
-    let start_dt = parse_meeting_datetime(&meeting.start_time);
-    let end_dt = meeting
-        .end_time
-        .as_deref()
-        .and_then(parse_meeting_datetime)
-        .or(start_dt.map(|s| s + chrono::Duration::hours(1)));
-    let is_current = start_dt
-        .zip(end_dt)
-        .is_some_and(|(s, e)| s <= now && now <= e);
-    let is_past = end_dt.is_some_and(|e| e < now);
-    let is_frozen = meeting.prep_frozen_at.is_some();
-    let can_edit_user_layer = !(is_past || is_frozen);
-
-    let captures = db
-        .get_captures_for_meeting(&meeting.id)
-        .map_err(|e| e.to_string())?;
-    let actions = db
-        .get_actions_for_meeting(&meeting.id)
-        .map_err(|e| e.to_string())?;
-    let linked_entities = db
-        .get_meeting_entities(&meeting.id)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|e| crate::types::LinkedEntity {
-            id: e.id,
-            name: e.name,
-            entity_type: e.entity_type.as_str().to_string(),
-        })
-        .collect::<Vec<_>>();
-
-    let outcomes = collect_meeting_outcomes_from_db(db, &meeting);
-    let prep_snapshot_path = meeting.prep_snapshot_path.clone();
-    let prep_frozen_at = meeting.prep_frozen_at.clone();
-    let transcript_path = meeting.transcript_path.clone();
-    let transcript_processed_at = meeting.transcript_processed_at.clone();
-
-    // Compute intelligence quality and clear new-signals flag on view
-    let intelligence_quality = Some(crate::intelligence::assess_intelligence_quality(db, &meeting_id));
-    let _ = db.clear_meeting_new_signals(&meeting_id);
-
-    Ok(MeetingIntelligence {
-        meeting,
-        prep,
-        is_past,
-        is_current,
-        is_frozen,
-        can_edit_user_layer,
-        user_agenda,
-        user_notes,
-        dismissed_topics,
-        hidden_attendees,
-        outcomes,
-        captures,
-        actions,
-        linked_entities,
-        prep_snapshot_path,
-        prep_frozen_at,
-        transcript_path,
-        transcript_processed_at,
-        intelligence_quality,
-    })
+    crate::services::meetings::get_meeting_intelligence(&state, &meeting_id)
 }
 
 /// Generate or refresh intelligence for a single meeting (ADR-0081).
@@ -1957,33 +1847,7 @@ pub fn set_user_profile(
 /// List available meeting prep files
 #[tauri::command]
 pub fn list_meeting_preps(state: State<Arc<AppState>>) -> Result<Vec<String>, String> {
-    // Get config
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let workspace = Path::new(&config.workspace_path);
-    let preps_dir = workspace.join("_today").join("data").join("preps");
-
-    if !preps_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut preps = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&preps_dir) {
-        for entry in entries.flatten() {
-            if let Some(name) = entry.file_name().to_str() {
-                if name.ends_with(".json") {
-                    preps.push(name.trim_end_matches(".json").to_string());
-                }
-            }
-        }
-    }
-
-    Ok(preps)
+    crate::services::meetings::list_meeting_preps(&state)
 }
 
 // =============================================================================
@@ -2011,40 +1875,7 @@ pub fn get_actions_from_db(
 ) -> Result<Vec<ActionListItem>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let mut actions = db
-        .get_due_actions(days_ahead.unwrap_or(7))
-        .map_err(|e| e.to_string())?;
-    let completed = db.get_completed_actions(48).map_err(|e| e.to_string())?;
-    actions.extend(completed);
-
-    // Batch-resolve account names: collect unique IDs, single query each
-    let mut name_cache: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
-    for a in &actions {
-        if let Some(ref aid) = a.account_id {
-            if !name_cache.contains_key(aid) {
-                if let Ok(Some(account)) = db.get_account(aid) {
-                    name_cache.insert(aid.clone(), account.name);
-                }
-            }
-        }
-    }
-
-    let items = actions
-        .into_iter()
-        .map(|a| {
-            let account_name = a
-                .account_id
-                .as_ref()
-                .and_then(|aid| name_cache.get(aid).cloned());
-            ActionListItem {
-                action: a,
-                account_name,
-            }
-        })
-        .collect();
-
-    Ok(items)
+    crate::services::actions::get_actions_from_db(db, days_ahead.unwrap_or(7))
 }
 
 /// Mark an action as completed in the SQLite database.
@@ -2054,7 +1885,7 @@ pub fn get_actions_from_db(
 pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::complete_action(db, &id)
+    crate::services::actions::complete_action(db, &state.signal_engine, &id)
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -2062,7 +1893,7 @@ pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), St
 pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reopen_action(db, &id)
+    crate::services::actions::reopen_action(db, &state.signal_engine, &id)
 }
 
 /// Accept a proposed action, moving it to pending (I256).
@@ -2070,7 +1901,7 @@ pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), Stri
 pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::accept_proposed_action(db, &id)
+    crate::services::actions::accept_proposed_action(db, &state.signal_engine, &id)
 }
 
 /// Reject a proposed action by archiving it (I256).
@@ -2078,7 +1909,7 @@ pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result
 pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reject_proposed_action(db, &id)
+    crate::services::actions::reject_proposed_action(db, &state.signal_engine, &id)
 }
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
@@ -2154,7 +1985,7 @@ pub fn get_proposed_actions(
 ) -> Result<Vec<crate::db::DbAction>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_proposed_actions().map_err(|e| e.to_string())
+    crate::services::actions::get_proposed_actions(db)
 }
 
 /// Get recent meeting history for an account from the SQLite database.
@@ -2267,31 +2098,7 @@ pub fn get_action_detail(
 ) -> Result<ActionDetail, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let action = db
-        .get_action_by_id(&action_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Action not found: {action_id}"))?;
-
-    // Resolve account name
-    let account_name = if let Some(ref aid) = action.account_id {
-        db.get_account(aid).ok().flatten().map(|a| a.name)
-    } else {
-        None
-    };
-
-    // Resolve source meeting title
-    let source_meeting_title = if let Some(ref sid) = action.source_id {
-        db.get_meeting_by_id(sid).ok().flatten().map(|m| m.title)
-    } else {
-        None
-    };
-
-    Ok(ActionDetail {
-        action,
-        account_name,
-        source_meeting_title,
-    })
+    crate::services::actions::get_action_detail(db, &action_id)
 }
 
 // =============================================================================
@@ -2704,7 +2511,7 @@ pub fn update_action_priority(
     }
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::update_action_priority(db, &id, &priority)
+    crate::services::actions::update_action_priority(db, &state.signal_engine, &id, &priority)
 }
 
 // =============================================================================
@@ -3578,21 +3385,7 @@ pub fn update_person(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    db.update_person_field(&person_id, &field, &value)
-        .map_err(|e| e.to_string())?;
-
-    // Regenerate workspace files
-    if let Ok(Some(person)) = db.get_person(&person_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
-        if let Some(ref config) = *config {
-            let workspace = Path::new(&config.workspace_path);
-            let _ = crate::people::write_person_json(workspace, &person, db);
-            let _ = crate::people::write_person_markdown(workspace, &person, db);
-        }
-    }
-
-    Ok(())
+    crate::services::people::update_person_field(db, &state, &person_id, &field, &value)
 }
 
 /// Link a person to an entity (account/project).
@@ -3606,24 +3399,7 @@ pub fn link_person_entity(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.link_person_to_entity(&person_id, &entity_id, &relationship_type)
-        .map_err(|e| e.to_string())?;
-
-    // Emit person linked signal (I308)
-    let _ = crate::signals::bus::emit_signal(db, &relationship_type, &entity_id, "person_linked", "user_action",
-        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.9);
-
-    // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
-    if let Ok(Some(person)) = db.get_person(&person_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
-        if let Some(ref config) = *config {
-            let workspace = Path::new(&config.workspace_path);
-            let _ = crate::people::write_person_json(workspace, &person, db);
-            let _ = crate::people::write_person_markdown(workspace, &person, db);
-        }
-    }
-
-    Ok(())
+    crate::services::people::link_person_entity(db, &state, &person_id, &entity_id, &relationship_type)
 }
 
 /// Unlink a person from an entity.
@@ -3636,24 +3412,7 @@ pub fn unlink_person_entity(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.unlink_person_from_entity(&person_id, &entity_id)
-        .map_err(|e| e.to_string())?;
-
-    // Emit person unlinked signal (I308)
-    let _ = crate::signals::bus::emit_signal(db, "entity", &entity_id, "person_unlinked", "user_action",
-        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.7);
-
-    // Regenerate person.json so linked_entities reflects removal (ADR-0048)
-    if let Ok(Some(person)) = db.get_person(&person_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
-        if let Some(ref config) = *config {
-            let workspace = Path::new(&config.workspace_path);
-            let _ = crate::people::write_person_json(workspace, &person, db);
-            let _ = crate::people::write_person_markdown(workspace, &person, db);
-        }
-    }
-
-    Ok(())
+    crate::services::people::unlink_person_entity(db, &state, &person_id, &entity_id)
 }
 
 /// Get people linked to an entity.
@@ -3685,6 +3444,8 @@ pub fn get_meeting_attendees(
 // =========================================================================
 
 /// Link a meeting to an entity (account/project) via the junction table.
+/// ADR-0086: After relinking, clears prep_frozen_json and enqueues for
+/// mechanical re-assembly from the new entity's intelligence.
 #[tauri::command]
 pub fn link_meeting_entity(
     meeting_id: String,
@@ -3692,23 +3453,23 @@ pub fn link_meeting_entity(
     entity_type: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
-        .map_err(|e| e.to_string())
+    crate::services::meetings::link_meeting_entity_with_prep_queue(
+        &state, &meeting_id, &entity_id, &entity_type,
+    )
 }
 
 /// Remove a meeting-entity link from the junction table.
+/// ADR-0086: After unlinking, clears prep_frozen_json and enqueues for
+/// mechanical re-assembly without the removed entity's intelligence.
 #[tauri::command]
 pub fn unlink_meeting_entity(
     meeting_id: String,
     entity_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.unlink_meeting_entity(&meeting_id, &entity_id)
-        .map_err(|e| e.to_string())
+    crate::services::meetings::unlink_meeting_entity_with_prep_queue(
+        &state, &meeting_id, &entity_id,
+    )
 }
 
 /// Get all entities linked to a meeting via the junction table.
@@ -3821,42 +3582,11 @@ pub fn create_person(
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
     let email = crate::util::validate_email(&email)?;
-
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let id = crate::util::slugify(&email);
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let person = crate::db::DbPerson {
-        id: id.clone(),
-        email,
-        name,
-        organization,
-        role,
-        relationship: relationship.unwrap_or_else(|| "unknown".to_string()),
-        notes: None,
-        tracker_path: None,
-        last_seen: None,
-        first_seen: Some(now.clone()),
-        meeting_count: 0,
-        updated_at: now,
-        archived: false,
-        linkedin_url: None,
-        twitter_handle: None,
-        phone: None,
-        photo_url: None,
-        bio: None,
-        title_history: None,
-        company_industry: None,
-        company_size: None,
-        company_hq: None,
-        last_enriched_at: None,
-        enrichment_sources: None,
-    };
-
-    db.upsert_person(&person).map_err(|e| e.to_string())?;
-    Ok(id)
+    crate::services::people::create_person(
+        db, &email, &name, organization.as_deref(), role.as_deref(), relationship.as_deref(),
+    )
 }
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`, then delete the removed person.
@@ -3999,19 +3729,7 @@ pub struct AccountChildSummary {
 pub fn get_accounts_list(state: State<Arc<AppState>>) -> Result<Vec<AccountListItem>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let accounts = db.get_top_level_accounts().map_err(|e| e.to_string())?;
-
-    let items: Vec<AccountListItem> = accounts
-        .into_iter()
-        .map(|a| {
-            let child_count = db.get_child_accounts(&a.id).map(|c| c.len()).unwrap_or(0);
-
-            account_to_list_item(&a, db, child_count)
-        })
-        .collect();
-
-    Ok(items)
+    crate::services::accounts::get_accounts_list(db)
 }
 
 /// Lightweight list of ALL accounts (parents + children) for entity pickers.
@@ -4028,33 +3746,7 @@ pub struct PickerAccount {
 pub fn get_accounts_for_picker(state: State<Arc<AppState>>) -> Result<Vec<PickerAccount>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let all = db.get_all_accounts().map_err(|e| e.to_string())?;
-
-    // Build a parent name lookup from the same list
-    let parent_names: std::collections::HashMap<String, String> = all
-        .iter()
-        .filter(|a| a.parent_id.is_none())
-        .map(|a| (a.id.clone(), a.name.clone()))
-        .collect();
-
-    let items: Vec<PickerAccount> = all
-        .into_iter()
-        .map(|a| {
-            let parent_name = a
-                .parent_id
-                .as_ref()
-                .and_then(|pid| parent_names.get(pid).cloned());
-            PickerAccount {
-                id: a.id,
-                name: a.name,
-                parent_name,
-                is_internal: a.is_internal,
-            }
-        })
-        .collect();
-
-    Ok(items)
+    crate::services::accounts::get_accounts_for_picker(db)
 }
 
 /// Get child accounts for a parent (I114).
@@ -4065,25 +3757,7 @@ pub fn get_child_accounts_list(
 ) -> Result<Vec<AccountListItem>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let children = db
-        .get_child_accounts(&parent_id)
-        .map_err(|e| e.to_string())?;
-
-    // Look up parent name for breadcrumb context
-    let parent_name = db.get_account(&parent_id).ok().flatten().map(|a| a.name);
-
-    let items: Vec<AccountListItem> = children
-        .into_iter()
-        .map(|a| {
-            let grandchild_count = db.get_child_accounts(&a.id).map(|c| c.len()).unwrap_or(0);
-            let mut item = account_to_list_item(&a, db, grandchild_count);
-            item.parent_name = parent_name.clone();
-            item
-        })
-        .collect();
-
-    Ok(items)
+    crate::services::accounts::get_child_accounts_list(db, &parent_id)
 }
 
 /// I316: Get ancestor accounts for breadcrumb navigation.
@@ -4116,62 +3790,7 @@ fn account_to_list_item(
     db: &crate::db::ActionDb,
     child_count: usize,
 ) -> AccountListItem {
-    let open_action_count = db
-        .get_account_actions(&a.id)
-        .map(|actions| actions.len())
-        .unwrap_or(0);
-
-    let signals = db.get_stakeholder_signals(&a.id).ok();
-    let days_since_last_meeting = signals.as_ref().and_then(|s| {
-        s.last_meeting.as_ref().and_then(|lm| {
-            chrono::DateTime::parse_from_rfc3339(lm)
-                .or_else(|_| {
-                    chrono::DateTime::parse_from_rfc3339(&format!(
-                        "{}+00:00",
-                        lm.trim_end_matches('Z')
-                    ))
-                })
-                .ok()
-                .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
-        })
-    });
-
-    let team_summary = db.get_account_team(&a.id).ok().and_then(|members| {
-        if members.is_empty() {
-            None
-        } else {
-            let labels: Vec<String> = members
-                .iter()
-                .take(2)
-                .map(|m| format!("{} ({})", m.person_name, m.role.to_uppercase()))
-                .collect();
-            let suffix = if members.len() > 2 {
-                format!(" +{}", members.len() - 2)
-            } else {
-                String::new()
-            };
-            Some(format!("Team: {}{}", labels.join(", "), suffix))
-        }
-    });
-
-    AccountListItem {
-        id: a.id.clone(),
-        name: a.name.clone(),
-        lifecycle: a.lifecycle.clone(),
-        arr: a.arr,
-        health: a.health.clone(),
-        nps: a.nps,
-        team_summary,
-        renewal_date: a.contract_end.clone(),
-        open_action_count,
-        days_since_last_meeting,
-        parent_id: a.parent_id.clone(),
-        parent_name: None,
-        child_count,
-        is_parent: child_count > 0,
-        is_internal: a.is_internal,
-        archived: a.archived,
-    }
+    crate::services::accounts::account_to_list_item(a, db, child_count)
 }
 
 /// Get full detail for an account (DB fields + narrative JSON + computed data).
@@ -4202,14 +3821,9 @@ pub fn add_account_team_member(
     role: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let role = role.trim().to_lowercase();
-    if role.is_empty() {
-        return Err("Role is required".to_string());
-    }
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.add_account_team_member(&account_id, &person_id, &role)
-        .map_err(|e| e.to_string())
+    crate::services::accounts::add_account_team_member(db, &state, &account_id, &person_id, &role)
 }
 
 /// Remove a person-role pair from an account team (I207).
@@ -4222,8 +3836,7 @@ pub fn remove_account_team_member(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.remove_account_team_member(&account_id, &person_id, &role)
-        .map_err(|e| e.to_string())
+    crate::services::accounts::remove_account_team_member(db, &state, &account_id, &person_id, &role)
 }
 
 /// Update a single structured field on an account.
@@ -4237,36 +3850,7 @@ pub fn update_account_field(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    db.update_account_field(&account_id, &field, &value)
-        .map_err(|e| e.to_string())?;
-
-    // Emit field update signal (I308)
-    let _ = crate::signals::bus::emit_signal(db, "account", &account_id, "field_updated", "user_edit",
-        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8);
-
-    // Regenerate workspace files
-    if let Ok(Some(account)) = db.get_account(&account_id) {
-        let config = state.config.read().map_err(|_| "Lock poisoned")?;
-        if let Some(ref config) = *config {
-            let workspace = Path::new(&config.workspace_path);
-            // Read existing JSON to preserve narrative fields
-            let json_path =
-                crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-            let existing = if json_path.exists() {
-                crate::accounts::read_account_json(&json_path)
-                    .ok()
-                    .map(|r| r.json)
-            } else {
-                None
-            };
-            let _ = crate::accounts::write_account_json(workspace, &account, existing.as_ref(), db);
-            let _ =
-                crate::accounts::write_account_markdown(workspace, &account, existing.as_ref(), db);
-        }
-    }
-
-    Ok(())
+    crate::services::accounts::update_account_field(db, &state, &account_id, &field, &value)
 }
 
 /// Update account notes (narrative field — JSON only, not SQLite).
@@ -4279,34 +3863,7 @@ pub fn update_account_notes(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let account = db
-        .get_account(&account_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Account not found: {}", account_id))?;
-
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let config = config.as_ref().ok_or("Config not loaded")?;
-    let workspace = Path::new(&config.workspace_path);
-
-    // Read existing JSON
-    let json_path =
-        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-    let mut existing = if json_path.exists() {
-        crate::accounts::read_account_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_account_json(&account))
-    } else {
-        default_account_json(&account)
-    };
-
-    // Update notes
-    existing.notes = if notes.is_empty() { None } else { Some(notes) };
-
-    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
-
-    Ok(())
+    crate::services::accounts::update_account_notes(db, &state, &account_id, &notes)
 }
 
 /// Update account strategic programs (narrative field — JSON only).
@@ -4319,35 +3876,7 @@ pub fn update_account_programs(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let account = db
-        .get_account(&account_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Account not found: {}", account_id))?;
-
-    let programs: Vec<crate::accounts::StrategicProgram> = serde_json::from_str(&programs_json)
-        .map_err(|e| format!("Invalid programs JSON: {}", e))?;
-
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let config = config.as_ref().ok_or("Config not loaded")?;
-    let workspace = Path::new(&config.workspace_path);
-
-    let json_path =
-        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
-    let mut existing = if json_path.exists() {
-        crate::accounts::read_account_json(&json_path)
-            .map(|r| r.json)
-            .unwrap_or_else(|_| default_account_json(&account))
-    } else {
-        default_account_json(&account)
-    };
-
-    existing.strategic_programs = programs;
-
-    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
-    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
-
-    Ok(())
+    crate::services::accounts::update_account_programs(db, &state, &account_id, &programs_json)
 }
 
 /// Create a new account. Creates SQLite record + workspace files.
@@ -4358,67 +3887,9 @@ pub fn create_account(
     parent_id: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
-    // I60: validate name before using as directory
-    let name = crate::util::validate_entity_name(&name)?.to_string();
-
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    // Derive ID and tracker_path based on whether this is a child account
-    let (id, tracker_path, is_internal) = if let Some(ref pid) = parent_id {
-        let parent = db
-            .get_account(pid)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Parent account not found: {}", pid))?;
-        let child_id = format!("{}--{}", pid, crate::util::slugify(&name));
-        let parent_dir = parent
-            .tracker_path
-            .unwrap_or_else(|| format!("Accounts/{}", parent.name));
-        let tp = format!("{}/{}", parent_dir, name);
-        (child_id, tp, parent.is_internal)
-    } else {
-        let id = crate::util::slugify(&name);
-        (id, format!("Accounts/{}", name), false)
-    };
-
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let account = crate::db::DbAccount {
-        id: id.clone(),
-        name: name.clone(),
-        lifecycle: None,
-        arr: None,
-        health: None,
-        contract_start: None,
-        contract_end: None,
-        nps: None,
-        tracker_path: Some(tracker_path),
-        parent_id,
-        is_internal,
-        updated_at: now,
-        archived: false,
-        keywords: None,
-        keywords_extracted_at: None,
-    metadata: None,
-    };
-
-    db.upsert_account(&account).map_err(|e| e.to_string())?;
-    if let Some(ref pid) = account.parent_id {
-        let _ = db.copy_account_domains(pid, &account.id);
-    }
-
-    // Create workspace files + directory template (ADR-0059)
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-        let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-        let _ = std::fs::create_dir_all(&account_dir);
-        let _ = crate::util::bootstrap_entity_directory(&account_dir, &name, "account");
-        let _ = crate::accounts::write_account_json(workspace, &account, None, db);
-        let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
-    }
-
-    Ok(id)
+    crate::services::accounts::create_account(db, &state, &name, parent_id.as_deref())
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -5615,10 +5086,14 @@ pub fn update_project_notes(
             crate::projects::default_project_json(&project)
         };
 
-        json.notes = if notes.is_empty() { None } else { Some(notes) };
+        json.notes = if notes.is_empty() { None } else { Some(notes.clone()) };
 
         crate::projects::write_project_json(workspace, &project, Some(&json), db)?;
         crate::projects::write_project_markdown(workspace, &project, Some(&json), db)?;
+
+        // Emit field update signal (I377)
+        let _ = crate::signals::bus::emit_signal(db, "project", &project_id, "field_updated", "user_edit",
+            Some(&format!("{{\"field\":\"notes\",\"value\":\"{}\"}}", notes.chars().take(100).collect::<String>().replace('"', "\\\""))), 0.8);
     }
 
     Ok(())
@@ -5841,14 +5316,7 @@ pub fn archive_account(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.archive_account(&id, archived)
-        .map_err(|e| e.to_string())?;
-
-    // Emit archive/unarchive signal (I308)
-    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
-    let _ = crate::signals::bus::emit_signal(db, "account", &id, signal_type, "user_action", None, 0.9);
-
-    Ok(())
+    crate::services::accounts::archive_account(db, &state, &id, archived)
 }
 
 /// Merge source account into target account.
@@ -5860,8 +5328,7 @@ pub fn merge_accounts(
 ) -> Result<crate::db::MergeResult, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.merge_accounts(&from_id, &into_id)
-        .map_err(|e| e.to_string())
+    crate::services::accounts::merge_accounts(db, &state, &from_id, &into_id)
 }
 
 /// Archive or unarchive a project.
@@ -5892,14 +5359,7 @@ pub fn archive_person(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.archive_person(&id, archived)
-        .map_err(|e| e.to_string())?;
-
-    // Emit archive/unarchive signal (I308)
-    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
-    let _ = crate::signals::bus::emit_signal(db, "person", &id, signal_type, "user_action", None, 0.9);
-
-    Ok(())
+    crate::services::people::archive_person(db, &state, &id, archived)
 }
 
 /// Get archived accounts.
@@ -5942,8 +5402,7 @@ pub fn restore_account(
 ) -> Result<usize, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.restore_account(&account_id, restore_children)
-        .map_err(|e| e.to_string())
+    crate::services::accounts::restore_account(db, &account_id, restore_children)
 }
 
 // =============================================================================
@@ -6008,7 +5467,6 @@ pub fn bulk_create_accounts(
 ) -> Result<Vec<String>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
     let workspace_path = config
         .as_ref()
@@ -6016,51 +5474,7 @@ pub fn bulk_create_accounts(
         .workspace_path
         .clone();
     let workspace = Path::new(&workspace_path);
-
-    let mut created_ids = Vec::with_capacity(names.len());
-
-    for raw_name in &names {
-        let name = crate::util::validate_entity_name(raw_name)?;
-        let id = crate::util::slugify(name);
-
-        // Skip duplicates
-        if let Ok(Some(_)) = db.get_account(&id) {
-            continue;
-        }
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let account = crate::db::DbAccount {
-            id: id.clone(),
-            name: name.to_string(),
-            lifecycle: None,
-            arr: None,
-            health: None,
-            contract_start: None,
-            contract_end: None,
-            nps: None,
-            tracker_path: Some(format!("Accounts/{}", name)),
-            parent_id: None,
-            is_internal: false,
-            updated_at: now,
-            archived: false,
-            keywords: None,
-            keywords_extracted_at: None,
-        metadata: None,
-        };
-
-        db.upsert_account(&account).map_err(|e| e.to_string())?;
-
-        // Create workspace files + directory template (ADR-0059)
-        let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-        let _ = std::fs::create_dir_all(&account_dir);
-        let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
-        let _ = crate::accounts::write_account_json(workspace, &account, None, db);
-        let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
-
-        created_ids.push(id);
-    }
-
-    Ok(created_ids)
+    crate::services::accounts::bulk_create_accounts(db, workspace, &names)
 }
 
 /// Bulk-create projects from a list of names. Returns created project IDs.
@@ -6138,14 +5552,9 @@ pub fn record_account_event(
 ) -> Result<i64, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.record_account_event(
-        &account_id,
-        &event_type,
-        &event_date,
-        arr_impact,
-        notes.as_deref(),
+    crate::services::accounts::record_account_event(
+        db, &state, &account_id, &event_type, &event_date, arr_impact, notes.as_deref(),
     )
-    .map_err(|e| e.to_string())
 }
 
 /// Get account events for a given account.
@@ -6462,106 +5871,9 @@ pub fn update_meeting_user_agenda(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let meeting = db
-        .get_meeting_intelligence_row(&meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
-
-    if is_meeting_user_layer_read_only(&meeting) {
-        return Err("Meeting user fields are read-only after freeze/past state".to_string());
-    }
-
-    // Merge with existing layer to preserve fields not being updated
-    let existing = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
-
-    // Defence-in-depth: cap list lengths and item sizes to prevent abuse
-    let truncate_strings = |v: Vec<String>, max_items: usize, max_chars: usize| -> Vec<String> {
-        v.into_iter()
-            .take(max_items)
-            .map(|s| {
-                if s.len() <= max_chars {
-                    s
-                } else {
-                    // Find a valid UTF-8 boundary at or before max_chars
-                    let mut end = max_chars;
-                    while !s.is_char_boundary(end) && end > 0 {
-                        end -= 1;
-                    }
-                    s[..end].to_string()
-                }
-            })
-            .collect()
-    };
-
-    let layer = UserAgendaLayer {
-        items: truncate_strings(agenda.unwrap_or(existing.items), 50, 500),
-        dismissed_topics: truncate_strings(dismissed_topics.unwrap_or(existing.dismissed_topics), 50, 500),
-        hidden_attendees: truncate_strings(hidden_attendees.unwrap_or(existing.hidden_attendees), 50, 500),
-    };
-
-    let agenda_json = if layer.items.is_empty() && layer.dismissed_topics.is_empty() && layer.hidden_attendees.is_empty() {
-        None
-    } else {
-        Some(serde_json::to_string(&layer).map_err(|e| format!("Serialize error: {}", e))?)
-    };
-    db.update_meeting_user_layer(
-        &meeting_id,
-        agenda_json.as_deref(),
-        meeting.user_notes.as_deref(),
+    crate::services::meetings::update_meeting_user_agenda(
+        db, &state, &meeting_id, agenda, dismissed_topics, hidden_attendees,
     )
-    .map_err(|e| e.to_string())?;
-
-    // Optional mirror write to active prep file for same-session coherence.
-    if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
-        if let Ok(content) = std::fs::read_to_string(&prep_path) {
-            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if layer.items.is_empty() {
-                    json.as_object_mut().map(|o| o.remove("userAgenda"));
-                } else {
-                    json["userAgenda"] = serde_json::json!(layer.items);
-                }
-                if let Ok(updated) = serde_json::to_string_pretty(&json) {
-                    let _ = std::fs::write(&prep_path, updated);
-                }
-            }
-        }
-    }
-
-    // Emit prep quality feedback signal
-    let edit_count =
-        layer.items.len() + layer.dismissed_topics.len() + layer.hidden_attendees.len();
-    if edit_count > 0 {
-        // Try to get the meeting's linked entity for signal attribution
-        let entity_info = db
-            .get_meeting_entities(&meeting_id)
-            .ok()
-            .and_then(|entities| {
-                entities.into_iter().find(|e| {
-                    e.entity_type == crate::entity::EntityType::Account
-                        || e.entity_type == crate::entity::EntityType::Project
-                })
-            });
-        let (etype, eid) = entity_info
-            .map(|e| (e.entity_type.as_str().to_string(), e.id))
-            .unwrap_or_else(|| ("meeting".to_string(), meeting_id.clone()));
-        let _ = crate::signals::bus::emit_signal(
-            db,
-            &etype,
-            &eid,
-            "prep_edited",
-            "user_edit",
-            Some(&format!(
-                "{{\"meeting_id\":\"{}\",\"agenda_items\":{},\"dismissed\":{},\"hidden_attendees\":{}}}",
-                meeting_id,
-                layer.items.len(),
-                layer.dismissed_topics.len(),
-                layer.hidden_attendees.len()
-            )),
-            0.6,
-        );
-    }
-
-    Ok(())
 }
 
 /// Update user-authored notes on a meeting prep file.
@@ -6573,40 +5885,7 @@ pub fn update_meeting_user_notes(
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let meeting = db
-        .get_meeting_intelligence_row(&meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
-
-    if is_meeting_user_layer_read_only(&meeting) {
-        return Err("Meeting user fields are read-only after freeze/past state".to_string());
-    }
-
-    let notes_opt = if notes.trim().is_empty() {
-        None
-    } else {
-        Some(notes.as_str())
-    };
-    db.update_meeting_user_layer(&meeting_id, meeting.user_agenda_json.as_deref(), notes_opt)
-        .map_err(|e| e.to_string())?;
-
-    // Optional mirror write to active prep file for same-session coherence.
-    if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
-        if let Ok(content) = std::fs::read_to_string(&prep_path) {
-            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if notes.is_empty() {
-                    json.as_object_mut().map(|o| o.remove("userNotes"));
-                } else {
-                    json["userNotes"] = serde_json::json!(notes);
-                }
-                if let Ok(updated) = serde_json::to_string_pretty(&json) {
-                    let _ = std::fs::write(&prep_path, updated);
-                }
-            }
-        }
-    }
-
-    Ok(())
+    crate::services::meetings::update_meeting_user_notes(db, &state, &meeting_id, &notes)
 }
 
 /// Resolve the on-disk path for a meeting's prep JSON file.
@@ -7415,6 +6694,10 @@ pub fn update_stakeholders(
     // Update SQLite cache
     let _ = db.upsert_entity_intelligence(&intel);
 
+    // Emit stakeholders updated signal (I377)
+    let _ = crate::signals::bus::emit_signal_and_propagate(db, &state.signal_engine, &entity_type, &entity_id, "stakeholders_updated", "user_edit",
+        None, 0.9);
+
     Ok(())
 }
 
@@ -7430,68 +6713,11 @@ pub fn create_person_from_stakeholder(
     role: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
-    let name = name.trim().to_string();
-    if name.is_empty() {
-        return Err("Name is required".to_string());
-    }
-
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    // Generate ID from name (no email available)
-    let id = crate::util::slugify(&name);
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let person = crate::db::DbPerson {
-        id: id.clone(),
-        email: String::new(), // Empty email — no address known
-        name: name.clone(),
-        organization: None,
-        role,
-        relationship: "external".to_string(),
-        notes: None,
-        tracker_path: None,
-        last_seen: None,
-        first_seen: Some(now.clone()),
-        meeting_count: 0,
-        updated_at: now,
-        archived: false,
-        linkedin_url: None,
-        twitter_handle: None,
-        phone: None,
-        photo_url: None,
-        bio: None,
-        title_history: None,
-        company_industry: None,
-        company_size: None,
-        company_hq: None,
-        last_enriched_at: None,
-        enrichment_sources: None,
-    };
-
-    db.upsert_person(&person).map_err(|e| e.to_string())?;
-
-    // Link to the parent entity
-    db.link_person_to_entity(&id, &entity_id, &entity_type)
-        .map_err(|e| e.to_string())?;
-
-    // Write person files to workspace
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    if let Some(ref config) = *config {
-        let workspace = Path::new(&config.workspace_path);
-        let _ = crate::people::write_person_json(workspace, &person, db);
-        let _ = crate::people::write_person_markdown(workspace, &person, db);
-    }
-
-    log::info!(
-        "Created person '{}' (id={}) from stakeholder, linked to {} '{}'",
-        name,
-        id,
-        entity_type,
-        entity_id,
-    );
-
-    Ok(id)
+    crate::services::people::create_person_from_stakeholder(
+        db, &state, &entity_id, &entity_type, &name, role.as_deref(),
+    )
 }
 
 // =============================================================================
