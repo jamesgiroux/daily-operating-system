@@ -4,6 +4,27 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.5] - 2026-02-22
+
+People are the most under-represented entities in DailyOS. A user managing a buying committee sees five individuals by name but has no way to express that Rachel manages Amy, that two engineers are peers who collaborate on the same project, or that a mentor introduced them to a key contact. This version adds typed person-to-person relationship edges with manual CRUD, directional label resolution, signal propagation across the network, and AI enrichment that synthesizes network intelligence from relationship context.
+
+### Added
+
+- **Person relationship graph** — `person_relationships` table (migration 038) with 7 person-to-person types: peer, manager, mentor, collaborator, ally, partner, introduced_by. Context-scoped edges (optional entity association). Confidence decay on inferred edges (90-day half-life), no decay on user-confirmed edges.
+- **Migration 039** — recreates `person_relationships` table with corrected CHECK constraint, maps any legacy account-context types (champion, executive_sponsor, etc.) to person-to-person equivalents
+- **Tauri CRUD commands** — `upsert_person_relationship`, `delete_person_relationship`, `get_person_relationships` with computed effective confidence and joined person/entity names
+- **Person-to-person signal propagation** — `rule_person_network` propagates signals across relationship edges with type-sensitive multipliers (manager/partner 1.0x, mentor 0.8x, collaborator 0.8x gated at 0.7 confidence, peer/ally 0.7x, introduced_by 0.5x). Loop prevention via source tag. Confidence gate at 0.65.
+- **Network intelligence in enrichment** — person enrichment prompt includes relationship edges and neighbor signal summaries. AI produces `network` field: cluster_summary, key_relationships, risks, opportunities, influence_radius, health assessment
+- **"Their Network" chapter** — new chapter on person detail pages with manual add/delete connections, editorial Select dropdown with directional choices (Manager/Direct Report, Mentor/Mentee), confidence tooltip for inferred edges, empty state with add CTA
+- **Directional label resolution** — asymmetric types flip labels based on viewing direction (manager displays as "Direct Report" on the other person's page, mentor as "Mentee")
+- **Relationship vocabulary on presets** — `relationshipVocabulary` field on `RolePreset` for preset-sensitive edge labels
+
+### Changed
+
+- **"The Network" renamed to "Their Orbit"** — person detail Chapter 3 (linked accounts/projects) renamed; "Their Network" is the new Chapter 4 (person-to-person relationships)
+- **Chapter spacing** — Both "Their Orbit" and "Their Network" use proper design system spacing (`padding-top: var(--space-2xl)`)
+- **PersonNetwork and PersonRelationships** — removed duplicate `sectionId` prop (parent wrapper handles scroll anchoring)
+
 ## [0.13.4] - 2026-02-22
 
 v0.13.3 proved that parent accounts become portfolio surfaces when two-layer intelligence and bidirectional signal propagation are wired correctly. This version applies the identical architecture to project entities: parent projects become portfolio surfaces for users in project-mode roles (Marketing, Product, Agency), child project signals propagate upward to feed portfolio intelligence, and parent-level signals cascade down to direct children. Navigation now adapts to the user's role — project-mode users see Projects before Accounts.
