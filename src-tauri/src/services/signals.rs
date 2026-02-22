@@ -4,8 +4,14 @@
 //! `crate::signals::bus` directly.  Infrastructure callers that only have
 //! a raw `db` handle (prepare/, processor/, gravatar/) stay direct.
 
+use std::sync::{Arc, Mutex};
+
+use serde_json::Value;
+
 use crate::db::ActionDb;
+use crate::embeddings::EmbeddingModel;
 use crate::signals::bus::{self, SignalEvent};
+use crate::signals::callouts::BriefingCallout;
 use crate::signals::propagation::PropagationEngine;
 
 /// Emit a signal event (no propagation). Convenience wrapper around bus::emit_signal.
@@ -70,4 +76,29 @@ pub fn get_by_type(
     signal_type: &str,
 ) -> Result<Vec<SignalEvent>, crate::db::DbError> {
     bus::get_active_signals_by_type(db, entity_type, entity_id, signal_type)
+}
+
+/// Generate signal-based briefing callouts.
+pub fn get_callouts(
+    db: &ActionDb,
+    model: Option<&EmbeddingModel>,
+    todays_meetings: &[Value],
+) -> Vec<BriefingCallout> {
+    crate::signals::callouts::generate_callouts(db, model, todays_meetings)
+}
+
+/// Run cross-entity propagation rules for a signal.
+pub fn run_propagation(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    signal: &SignalEvent,
+) -> Result<Vec<String>, crate::db::DbError> {
+    engine.propagate(db, signal)
+}
+
+/// Queue affected meeting preps for regeneration after entity correction.
+pub fn invalidate_preps(queue: &Arc<Mutex<Vec<String>>>, meeting_ids: Vec<String>) {
+    if let Ok(mut q) = queue.lock() {
+        q.extend(meeting_ids);
+    }
 }
