@@ -4170,7 +4170,7 @@ pub fn get_hygiene_report(
     state: State<Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneReport>, String> {
     let guard = state
-        .last_hygiene_report
+        .hygiene.report
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?;
     Ok(guard.clone())
@@ -4182,7 +4182,7 @@ pub fn get_hygiene_narrative(
     state: State<Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneNarrativeView>, String> {
     let report = state
-        .last_hygiene_report
+        .hygiene.report
         .lock()
         .map_err(|_| "Lock poisoned")?;
     Ok(report
@@ -4196,7 +4196,7 @@ pub fn get_intelligence_hygiene_status(
     state: State<Arc<AppState>>,
 ) -> Result<HygieneStatusView, String> {
     let report = state
-        .last_hygiene_report
+        .hygiene.report
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?
         .clone();
@@ -4207,7 +4207,7 @@ pub fn get_intelligence_hygiene_status(
 #[tauri::command]
 pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatusView, String> {
     if state
-        .hygiene_scan_running
+        .hygiene.scan_running
         .compare_exchange(
             false,
             true,
@@ -4233,7 +4233,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             &db,
             &config,
             workspace,
-            Some(&state.hygiene_budget),
+            Some(&state.hygiene.budget),
             Some(&state.intel_queue),
             false,
             Some(state.embedding_model.as_ref()),
@@ -4245,13 +4245,13 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             log::info!("run_hygiene_scan_now: pruned {} old audit files", pruned);
         }
 
-        if let Ok(mut guard) = state.last_hygiene_report.lock() {
+        if let Ok(mut guard) = state.hygiene.report.lock() {
             *guard = Some(report.clone());
         }
-        if let Ok(mut guard) = state.last_hygiene_scan_at.lock() {
+        if let Ok(mut guard) = state.hygiene.last_scan_at.lock() {
             *guard = Some(report.scanned_at.clone());
         }
-        if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
+        if let Ok(mut guard) = state.hygiene.next_scan_at.lock() {
             *guard = Some(
                 (chrono::Utc::now()
                     + chrono::Duration::seconds(crate::hygiene::scan_interval_secs(Some(&config)) as i64))
@@ -4263,7 +4263,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
     })();
 
     state
-        .hygiene_scan_running
+        .hygiene.scan_running
         .store(false, std::sync::atomic::Ordering::Release);
 
     let report = scan_result?;
@@ -6919,14 +6919,14 @@ pub fn upsert_person_relationship(
     }).map_err(|e| format!("Failed to upsert relationship: {}", e))?;
 
     // Emit signal to re-enqueue both persons in intel_queue
-    let _ = crate::signals::bus::emit_signal_and_propagate(
+    let _ = crate::services::signals::emit_and_propagate(
         db, &state.signal_engine,
         "person", &payload.from_person_id,
         "relationship_graph_changed", "user_action",
         Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.to_person_id)),
         0.9,
     );
-    let _ = crate::signals::bus::emit_signal_and_propagate(
+    let _ = crate::services::signals::emit_and_propagate(
         db, &state.signal_engine,
         "person", &payload.to_person_id,
         "relationship_graph_changed", "user_action",
@@ -6954,14 +6954,14 @@ pub fn delete_person_relationship(
 
     // Emit signals on both persons to re-enqueue for intel enrichment
     if let Some((from_id, to_id)) = person_ids {
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, &state.signal_engine,
             "person", &from_id,
             "relationship_graph_changed", "user_action",
             Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
             0.7,
         );
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, &state.signal_engine,
             "person", &to_id,
             "relationship_graph_changed", "user_action",
