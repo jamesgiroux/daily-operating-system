@@ -100,6 +100,21 @@ pub struct WorkflowState {
     pub last_scheduled_run: RwLock<HashMap<WorkflowId, DateTime<Utc>>>,
 }
 
+/// Integration poller wake signals (I405).
+pub struct IntegrationState {
+    pub clay_poller_wake: Arc<tokio::sync::Notify>,
+    pub quill_poller_wake: Arc<tokio::sync::Notify>,
+    pub linear_poller_wake: Arc<tokio::sync::Notify>,
+    pub email_poller_wake: Arc<tokio::sync::Notify>,
+}
+
+/// Signal bus state (I405).
+pub struct SignalState {
+    pub engine: Arc<crate::signals::propagation::PropagationEngine>,
+    pub entity_resolution_wake: Arc<tokio::sync::Notify>,
+    pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
+}
+
 /// Application state managed by Tauri
 pub struct AppState {
     pub config: RwLock<Option<Config>>,
@@ -120,21 +135,10 @@ pub struct AppState {
     /// Stashed live workspace path before switching to dev mode (I298).
     /// `restore_live()` reads this back to return to the user's real workspace.
     pub pre_dev_workspace: Mutex<Option<String>>,
-    /// Wake signal for the Clay enrichment poller (bulk enrich → immediate processing).
-    pub clay_poller_wake: Arc<tokio::sync::Notify>,
-    /// Queue of meeting IDs whose prep needs regeneration after entity correction (I305).
-    /// Shared with the signal propagation engine for signal-driven invalidation.
-    pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
-    /// Signal propagation engine with registered cross-entity rules (I308).
-    pub signal_engine: Arc<crate::signals::propagation::PropagationEngine>,
-    /// Wake signal for event-driven entity resolution (I308).
-    pub entity_resolution_wake: Arc<tokio::sync::Notify>,
-    /// Wake signal for Quill transcript poller (immediate sync after meeting ends).
-    pub quill_poller_wake: Arc<tokio::sync::Notify>,
-    /// Wake signal for Linear sync poller (I346).
-    pub linear_poller_wake: Arc<tokio::sync::Notify>,
-    /// Wake signal for email poller (reset poll cycle on manual refresh).
-    pub email_poller_wake: Arc<tokio::sync::Notify>,
+    /// Signal bus state (I405).
+    pub signals: SignalState,
+    /// Integration poller wake signals (I405).
+    pub integrations: IntegrationState,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
@@ -226,13 +230,17 @@ impl AppState {
                 full_orphan_scan_done: AtomicBool::new(false),
             },
             pre_dev_workspace: Mutex::new(None),
-            clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
-            prep_invalidation_queue: prep_queue,
-            signal_engine: Arc::new(signal_engine),
-            entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
-            quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
-            linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
-            email_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            signals: SignalState {
+                engine: Arc::new(signal_engine),
+                entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
+                prep_invalidation_queue: prep_queue,
+            },
+            integrations: IntegrationState {
+                clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                email_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            },
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
         }

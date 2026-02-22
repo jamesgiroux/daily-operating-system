@@ -155,7 +155,7 @@ pub fn update_stakeholders(
 
     let _ = crate::services::signals::emit_and_propagate(
         db,
-        &state.signal_engine,
+        &state.signals.engine,
         entity_type,
         entity_id,
         "stakeholders_updated",

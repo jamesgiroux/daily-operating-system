@@ -361,7 +361,7 @@ pub fn update_account_field(
         .map_err(|e| e.to_string())?;
 
     // Emit field update signal + self-healing evaluation (I308, I410)
-    let _ = crate::services::signals::emit_propagate_and_evaluate(db, &state.signal_engine, "account", account_id, "field_updated", "user_edit",
+    let _ = crate::services::signals::emit_propagate_and_evaluate(db, &state.signals.engine, "account", account_id, "field_updated", "user_edit",
         Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8, &state.intel_queue);
 
     // Self-healing: record user correction for Clay-enrichable fields (I409)
@@ -425,7 +425,7 @@ pub fn update_account_notes(
     let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
 
     // Emit field update signal (I377)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "account", account_id, "field_updated", "user_edit",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "field_updated", "user_edit",
         Some(&format!("{{\"field\":\"notes\",\"value\":\"{}\"}}", notes.chars().take(100).collect::<String>().replace('"', "\\\""))), 0.8);
 
     Ok(())
@@ -467,7 +467,7 @@ pub fn update_account_programs(
     let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
 
     // Emit field update signal (I377)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "account", account_id, "field_updated", "user_edit",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "field_updated", "user_edit",
         Some("{\"field\":\"strategic_programs\"}"), 0.8);
 
     Ok(())
@@ -552,7 +552,7 @@ pub fn archive_account(db: &ActionDb, state: &crate::state::AppState, id: &str, 
         .map_err(|e| e.to_string())?;
 
     let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "account", id, signal_type, "user_action", None, 0.9);
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", id, signal_type, "user_action", None, 0.9);
 
     Ok(())
 }
@@ -562,7 +562,7 @@ pub fn merge_accounts(db: &ActionDb, state: &crate::state::AppState, from_id: &s
     let result = db.merge_accounts(from_id, into_id)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "account", into_id, "entity_merged", "user_action",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", into_id, "entity_merged", "user_action",
         Some(&format!("{{\"merged_from\":\"{}\"}}", from_id)), 0.9);
 
     Ok(result)
@@ -589,7 +589,7 @@ pub fn add_account_team_member(
     db.add_account_team_member(account_id, person_id, &role)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "account", account_id, "team_member_added", "user_action",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "team_member_added", "user_action",
         Some(&format!("{{\"person_id\":\"{}\",\"role\":\"{}\"}}", person_id, role)), 0.8);
 
     Ok(())
@@ -606,7 +606,7 @@ pub fn remove_account_team_member(
     db.remove_account_team_member(account_id, person_id, role)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "account", account_id, "team_member_removed", "user_action",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "team_member_removed", "user_action",
         Some(&format!("{{\"person_id\":\"{}\",\"role\":\"{}\"}}", person_id, role)), 0.7);
 
     Ok(())
@@ -625,7 +625,7 @@ pub fn record_account_event(
     let event_id = db.record_account_event(account_id, event_type, event_date, arr_impact, notes)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signal_engine, "account", account_id, "account_event_recorded", "user_action",
+    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "account_event_recorded", "user_action",
         Some(&format!("{{\"event_type\":\"{}\",\"event_date\":\"{}\"}}", event_type, event_date)), 0.8);
 
     Ok(event_id)

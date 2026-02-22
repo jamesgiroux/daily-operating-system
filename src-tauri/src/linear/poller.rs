@@ -25,7 +25,7 @@ pub async fn run_linear_poller(state: Arc<AppState>) {
         if !enabled || api_key.is_none() {
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_secs(300)) => {},
-                _ = state.linear_poller_wake.notified() => {
+                _ = state.integrations.linear_poller_wake.notified() => {
                     log::info!("Linear poller: woken by sync signal (disabled path)");
                 },
             }
@@ -68,7 +68,7 @@ pub async fn run_linear_poller(state: Arc<AppState>) {
             _ = tokio::time::sleep(std::time::Duration::from_secs(
                 poll_interval as u64 * 60,
             )) => {},
-            _ = state.linear_poller_wake.notified() => {
+            _ = state.integrations.linear_poller_wake.notified() => {
                 log::info!("Linear poller: woken by manual sync signal");
             },
         }
