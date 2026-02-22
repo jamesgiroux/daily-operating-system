@@ -4,6 +4,27 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.7] - 2026-02-22
+
+Intelligence self-healing. The hygiene system now knows when its intelligence is wrong, not just when it's missing. Four new capabilities detect quality degradation, validate semantic coherence against meeting history, replace the hardcoded 14-day enrichment threshold with a continuous priority function, and wire user corrections back to source reliability. A circuit breaker prevents thrashing on persistently incoherent entities.
+
+### Added
+
+- **Entity quality scoring (I406)** — Beta distribution quality model per entity (`entity_quality` table, migration 040). Quality starts at 0.5 (uniform prior), increments alpha on enrichment success, increments beta on user correction. Low-quality entities (< 0.45) surface in the hygiene report and rank higher in the enrichment queue.
+- **Semantic coherence validation (I407)** — Post-enrichment embedding check compares entity intelligence text against the entity's linked meeting corpus (last 90 days). Cosine similarity below 0.30 flags the intelligence and re-enqueues for enrichment. Emits `entity_coherence_flagged` signal for downstream consumers. Gracefully skips when embedding model is unavailable or entity has fewer than 2 meetings.
+- **Enrichment trigger function (I408)** — Continuous priority score replaces the binary 14-day threshold: `imminence × 0.35 + staleness × 0.25 + quality_deficit × 0.20 + importance × 0.10 + signal_delta × 0.10`. Entities with imminent meetings and low quality scores rank highest. Trigger scores logged at DEBUG level for inspection.
+- **Feedback closure (I409)** — User corrections to intelligence fields decrement the entity's quality score and penalize the enrichment source (`intel_queue`) in the Thompson Sampling weight system. Editing Clay-enrichable fields on people, accounts, and projects penalizes the `clay` source. Successful enrichments increment alpha immediately.
+- **Circuit breaker (I410)** — Prevents infinite re-enrichment loops. Three coherence failures within 24 hours trips the breaker; auto-expires after 72 hours. Manual "Refresh Intelligence" bypasses the breaker and resets retry state. Blocked entities surface in the hygiene report.
+- **Event-driven signal evaluation (I410)** — `emit_signal_propagate_and_evaluate` wrapper in signal bus triggers enrichment re-evaluation on signal arrival (trigger score > 0.7) without waiting for the 4-hour scan. Wired in account, person, and project field update paths.
+- **`self_healing/` module** — 1,100+ lines across 6 files (quality.rs, detector.rs, remediation.rs, feedback.rs, scheduler.rs, mod.rs). Clean separation from hygiene.rs which gained only ~17 net lines for integration hooks.
+
+### Changed
+
+- **Hygiene Phase 3 uses `evaluate_portfolio()`** — Replaces `enqueue_ai_enrichments()` with self-healing-aware portfolio evaluation that respects quality scores, circuit breakers, and continuous trigger priorities.
+- **`check_upcoming_meeting_readiness` uses trigger score** — Pre-meeting refresh now uses the continuous trigger function instead of the hardcoded `PRE_MEETING_STALE_DAYS` constant. Imminent meetings (< 24h) always trigger refresh regardless of enrichment age.
+- **New entity creation initializes quality row** — `create_account`, `create_project`, and `create_person` service functions insert an `entity_quality` row at Beta(1,1) so quality-aware code paths work immediately.
+- **`HygieneReport` expanded** — Two new fields: `lowQualityEntities` (score < 0.45) and `coherenceBlockedEntities` (circuit breaker tripped).
+
 ## [0.13.6] - 2026-02-22
 
 Maximum commands.rs extraction. Moved 1,405 lines of business logic from command handlers into the service layer, creating two new service files (settings, intelligence) and expanding four existing ones. commands.rs is now a thin IPC dispatch layer at ~7,000 lines. One UX fix ensures internal meetings show their attendees instead of an empty room.
