@@ -267,7 +267,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         // I372: Emit entity signals from enriched emails
         let signal_guard = state.db.lock().ok();
         if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
-            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db);
+            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db, &state.signal_engine);
             if emitted > 0 {
                 log::info!("prepare_today: emitted {} email-entity signals", emitted);
             }
@@ -382,7 +382,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     {
         let bridge_guard = state.db.lock().ok();
         if let Some(db) = bridge_guard.as_ref().and_then(|g| g.as_ref()) {
-            match crate::signals::email_bridge::run_email_meeting_bridge(db) {
+            match crate::signals::email_bridge::run_email_meeting_bridge(db, &state.signal_engine) {
                 Ok(correlations) if !correlations.is_empty() => {
                     log::info!("prepare_today: {} email-meeting correlations", correlations.len());
                 }
@@ -1278,7 +1278,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         // I372: Emit entity signals from enriched emails
         let signal_guard = state.db.lock().ok();
         if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
-            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db);
+            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db, &state.signal_engine);
             if emitted > 0 {
                 log::info!("refresh_emails: emitted {} email-entity signals", emitted);
             }
