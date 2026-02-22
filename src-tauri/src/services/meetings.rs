@@ -152,8 +152,46 @@ pub fn load_meeting_prep_from_sources(
         }
     }
     if let Some(ref prep_json) = meeting.prep_context_json {
+        // Try direct deserialization first
         if let Ok(prep) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
             return Some(prep);
+        }
+        // Fallback: if prep_context_json was overwritten with AI-schema
+        // ({"quality": ..., "ai_intelligence": ...}), extract what we can
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(prep_json) {
+            if let Some(ai) = value.get("ai_intelligence") {
+                let mut prep = crate::types::FullMeetingPrep {
+                    file_path: String::new(),
+                    calendar_event_id: meeting.calendar_event_id.clone(),
+                    title: meeting.title.clone(),
+                    time_range: meeting.start_time.clone(),
+                    meeting_context: None, calendar_notes: None,
+                    account_snapshot: None, quick_context: None, user_agenda: None,
+                    user_notes: None, attendees: None, since_last: None,
+                    strategic_programs: None, current_state: None, open_items: None,
+                    risks: None, talking_points: None, recent_wins: None,
+                    recent_win_sources: None, questions: None, key_principles: None,
+                    references: None, raw_markdown: None, stakeholder_signals: None,
+                    attendee_context: None, proposed_agenda: None,
+                    intelligence_summary: None, entity_risks: None,
+                    entity_readiness: None, stakeholder_insights: None,
+                    recent_email_signals: None,
+                };
+                // Extract AI narrative into intelligenceSummary
+                if let Some(narrative) = ai.get("narrative").and_then(|v| v.as_str()) {
+                    prep.intelligence_summary = Some(narrative.to_string());
+                }
+                if let Some(ctx) = ai.get("meetingContext").or_else(|| ai.get("meeting_context")).and_then(|v| v.as_str()) {
+                    prep.meeting_context = Some(ctx.to_string());
+                }
+                if let Some(risks) = ai.get("risks").and_then(|v| v.as_array()) {
+                    prep.risks = Some(risks.iter().filter_map(|r| r.as_str().map(|s| s.to_string())).collect());
+                }
+                if let Some(tp) = ai.get("talkingPoints").or_else(|| ai.get("talking_points")).and_then(|v| v.as_array()) {
+                    prep.talking_points = Some(tp.iter().filter_map(|r| r.as_str().map(|s| s.to_string())).collect());
+                }
+                return Some(prep);
+            }
         }
     }
     None
