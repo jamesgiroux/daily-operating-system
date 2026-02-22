@@ -4,77 +4,125 @@ use crate::state::AppState;
 use crate::types::EmailSignal;
 
 /// Build an editorial prose summary for an entity's email signals.
-/// Instead of "2 risks, 1 expansion" produces something like
-/// "Risk signals detected across 3 emails. Expansion opportunity flagged."
+///
+/// Uses the AI-generated `signal_text` to give the user a hit of what each
+/// signal refers to, rather than just counting types. Follows ADR-0083
+/// product vocabulary: "signal" → "update"/"change", warm chief-of-staff voice.
+///
+/// Priority order: risk/churn/escalation first, then positive, then informational.
+/// Each type gets one representative line using the actual signal content.
 pub fn build_entity_signal_prose(signals: &[EmailSignal], email_count: usize) -> String {
-    let mut type_counts: HashMap<&str, usize> = HashMap::new();
-    for s in signals {
-        let key = s.signal_type.as_str();
-        *type_counts.entry(key).or_insert(0) += 1;
+    if signals.is_empty() {
+        return if email_count == 1 {
+            "1 email — routine correspondence.".to_string()
+        } else {
+            format!("{} emails — routine correspondence.", email_count)
+        };
     }
 
-    if type_counts.is_empty() {
-        return format!(
-            "{} email{} this period.",
-            email_count,
-            if email_count == 1 { "" } else { "s" },
-        );
+    // Group signals by type, keeping the signal_text for each
+    let mut by_type: HashMap<&str, Vec<&str>> = HashMap::new();
+    for s in signals {
+        by_type
+            .entry(s.signal_type.as_str())
+            .or_default()
+            .push(s.signal_text.as_str());
     }
 
     let mut parts = Vec::new();
 
-    // Risks first (most newsworthy)
+    // Risk signals first (most newsworthy) — use signal_text for substance
     for key in &["risk", "churn", "escalation"] {
-        if let Some(&count) = type_counts.get(key) {
-            parts.push(if count == 1 {
-                format!("One {} signal detected.", key)
+        if let Some(texts) = by_type.remove(key) {
+            let label = match *key {
+                "churn" => "Churn risk",
+                "escalation" => "Escalation",
+                _ => "Risk",
+            };
+            // Use the first non-empty signal_text as the detail
+            let detail = texts.iter().find(|t| !t.is_empty()).copied();
+            if let Some(text) = detail {
+                let truncated = truncate_signal_text(text, 80);
+                parts.push(format!("{}: {}", label, truncated));
             } else {
-                format!("{} {} signals detected.", count, key)
-            });
-        }
-    }
-
-    // Positive signals
-    for key in &["expansion", "positive", "success"] {
-        if let Some(&count) = type_counts.get(key) {
-            parts.push(if count == 1 {
-                format!("{} opportunity flagged.", capitalize_first(key))
-            } else {
-                format!("{} {} signals.", count, key)
-            });
-        }
-    }
-
-    // Informational
-    for key in &["question", "timeline", "sentiment", "feedback", "relationship"] {
-        if let Some(&count) = type_counts.get(key) {
-            if count == 1 {
-                parts.push(format!("{} signal noted.", capitalize_first(key)));
-            } else {
-                parts.push(format!("{} {} signals.", count, key));
+                parts.push(format!("{} flagged.", label));
             }
         }
     }
 
-    // Catch any remaining types
-    for (key, &count) in &type_counts {
-        let is_handled = ["risk", "churn", "escalation", "expansion", "positive",
-            "success", "question", "timeline", "sentiment", "feedback", "relationship"]
-            .contains(key);
-        if !is_handled {
-            parts.push(format!("{} {} signal{}.", count, key, if count == 1 { "" } else { "s" }));
+    // Positive signals — expansion, success, positive
+    for key in &["expansion", "positive", "success"] {
+        if let Some(texts) = by_type.remove(key) {
+            let label = match *key {
+                "expansion" => "Expansion",
+                "success" => "Win",
+                _ => "Positive",
+            };
+            let detail = texts.iter().find(|t| !t.is_empty()).copied();
+            if let Some(text) = detail {
+                let truncated = truncate_signal_text(text, 80);
+                parts.push(format!("{}: {}", label, truncated));
+            } else {
+                parts.push(format!("{} opportunity noted.", label));
+            }
+        }
+    }
+
+    // Informational signals — use signal_text for context
+    for key in &["question", "timeline", "sentiment", "feedback", "relationship", "commitment"] {
+        if let Some(texts) = by_type.remove(key) {
+            let label = match *key {
+                "question" => "Open question",
+                "timeline" => "Timeline",
+                "sentiment" => "Sentiment shift",
+                "feedback" => "Feedback",
+                "relationship" => "Relationship",
+                "commitment" => "Commitment",
+                _ => *key,
+            };
+            let detail = texts.iter().find(|t| !t.is_empty()).copied();
+            if let Some(text) = detail {
+                let truncated = truncate_signal_text(text, 80);
+                parts.push(format!("{}: {}", label, truncated));
+            } else {
+                parts.push(format!("{} noted.", capitalize_first(label)));
+            }
+        }
+    }
+
+    // Catch any remaining signal types not in the priority lists
+    for (key, texts) in &by_type {
+        let detail = texts.iter().find(|t| !t.is_empty()).copied();
+        if let Some(text) = detail {
+            let truncated = truncate_signal_text(text, 80);
+            parts.push(format!("{}: {}", capitalize_first(key), truncated));
+        } else {
+            parts.push(format!("{} noted.", capitalize_first(key)));
         }
     }
 
     if parts.is_empty() {
-        format!(
-            "{} email{} this period.",
-            email_count,
-            if email_count == 1 { "" } else { "s" },
-        )
+        if email_count == 1 {
+            "1 email — routine correspondence.".to_string()
+        } else {
+            format!("{} emails — routine correspondence.", email_count)
+        }
     } else {
         parts.join(" ")
     }
+}
+
+/// Truncate signal text to a max length, breaking at a word boundary.
+/// Ensures the text ends with a period if it doesn't already.
+fn truncate_signal_text(text: &str, max_len: usize) -> String {
+    let trimmed = text.trim().trim_end_matches('.');
+    if trimmed.len() <= max_len {
+        return format!("{}.", trimmed);
+    }
+    // Break at the last space before max_len
+    let truncated = &trimmed[..max_len];
+    let break_at = truncated.rfind(' ').unwrap_or(max_len);
+    format!("{}.", trimmed[..break_at].trim_end_matches(',').trim())
 }
 
 pub fn capitalize_first(s: &str) -> String {
