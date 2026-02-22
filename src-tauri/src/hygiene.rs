@@ -589,7 +589,7 @@ fn archive_empty_shell_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>)
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account')",
+               AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account' AND es.deactivated_at IS NULL)",
         )
         .and_then(|mut stmt| {
             stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -634,7 +634,7 @@ fn count_empty_shell_accounts(db: &ActionDb) -> usize {
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account')",
+               AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account' AND es.deactivated_at IS NULL)",
             [],
             |row| row.get(0),
         )

@@ -306,6 +306,8 @@ impl ActionDb {
     }
 
     /// Update the entity assignment for an email (I395 — user correction).
+    /// Also cascades the change to `email_signals`: moves signals to the new entity,
+    /// or deactivates them if entity_id is cleared.
     pub fn update_email_entity(
         &self,
         email_id: &str,
@@ -319,6 +321,40 @@ impl ActionDb {
                 rusqlite::params![entity_id, entity_type, now, email_id],
             )
             .map_err(|e| format!("Failed to update email entity for {email_id}: {e}"))?;
+
+        // Cascade to email_signals
+        match entity_id {
+            Some(new_entity_id) => {
+                // Move signals to the new entity. UPDATE OR IGNORE skips rows that
+                // would violate the unique constraint (email_id, entity_id, signal_type).
+                self.conn
+                    .execute(
+                        "UPDATE OR IGNORE email_signals SET entity_id = ?1, entity_type = COALESCE(?2, entity_type)
+                         WHERE email_id = ?3 AND entity_id != ?1 AND deactivated_at IS NULL",
+                        rusqlite::params![new_entity_id, entity_type, email_id],
+                    )
+                    .map_err(|e| format!("Failed to move email signals for {email_id}: {e}"))?;
+                // Delete any constraint-blocked duplicates that couldn't move
+                self.conn
+                    .execute(
+                        "DELETE FROM email_signals
+                         WHERE email_id = ?1 AND entity_id != ?2 AND deactivated_at IS NULL",
+                        rusqlite::params![email_id, new_entity_id],
+                    )
+                    .map_err(|e| format!("Failed to clean duplicate signals for {email_id}: {e}"))?;
+            }
+            None => {
+                // Entity cleared — deactivate signals instead of deleting
+                self.conn
+                    .execute(
+                        "UPDATE email_signals SET deactivated_at = ?1
+                         WHERE email_id = ?2 AND deactivated_at IS NULL",
+                        rusqlite::params![now, email_id],
+                    )
+                    .map_err(|e| format!("Failed to deactivate signals for {email_id}: {e}"))?;
+            }
+        }
+
         Ok(())
     }
 
