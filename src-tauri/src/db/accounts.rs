@@ -1248,6 +1248,7 @@ impl ActionDb {
                 temperature,
                 trend,
                 account_names: row.get(15)?,
+                days_since_last_meeting: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
