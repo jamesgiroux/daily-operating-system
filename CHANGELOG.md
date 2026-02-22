@@ -4,6 +4,24 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.2] - 2026-02-21
+
+Know what you built before you build the next layer. Every AI enrichment call site audited and classified against ADR-0086. Every signal propagation rule confirmed to have a live emitter. Every `intelligence.json` field mapped as live, write-only, or dead — dead fields removed. The vector DB confirmed useful with four live consumers. `commands.rs` reduced by service extraction to 8,121 lines. `db/mod.rs` reduced to 441 lines via domain module migration. No user-visible changes.
+
+### Changed
+
+- **Service extraction** — action, account, people, and meeting business logic extracted from `commands.rs` into dedicated `services/` modules. Command handlers are now parse → delegate → serialize with no embedded logic. `commands.rs` reduced from 11,500 to 8,121 lines
+- **DB domain migration** — all domain SQL moved from `db/mod.rs` into `db/accounts.rs`, `db/actions.rs`, `db/meetings.rs`, `db/people.rs`, `db/projects.rs`, `db/signals.rs`, `db/emails.rs`, `db/entities.rs`. `db/mod.rs` reduced from ~9,700 to 441 lines; retains only struct definition, `open()`, `conn_ref()`, `with_transaction()`, shared constants, and re-exports
+- **Signal chain completed** — all 15 user field edit handlers (accounts, people, projects, stakeholders, intelligence fields) now call `emit_signal_and_propagate` after each DB write, closing the loop from user edit → signal → intel_queue → intelligence refresh → UI update without manual refresh
+- **Entity relinking is instant** — changing which account/project/person is linked to a meeting now triggers immediate prep re-assembly via `MeetingPrepQueue` with no AI call and no page reload. Meeting card updates within 2 seconds
+- **Intelligence schema aligned** — `valueDelivered` field removed from AI prompts, `entity_intel` schema, and TypeScript types. `entity_intel` table columns and TypeScript `EntityIntelligence` type are now structurally consistent with no undocumented divergence
+- **Entity list pages use FinisMarker** — `EntityListEndMark` now renders the canonical three-asterisk `FinisMarker` component instead of a custom italic text ending
+
+### Fixed
+
+- Removed dead `person_departed` signal path from `rule_departure_renewal` — no emitter exists for this signal type; Clay's `company_change` covers the real-world case and remains
+- Removed `person_departed` from meeting invalidation watch list for the same reason
+
 ## [0.13.1] - 2026-02-21
 
 Email is an intelligence input, not a display surface. Every email in your inbox is AI-processed, resolved to an entity, and synthesised with existing intelligence to produce contextual understanding you can act on. The email page shows you what your emails mean. The daily briefing's "Worth Your Attention" section surfaces the emails that actually matter, scored by entity relevance, signal activity, meeting proximity, and urgency — not by mechanical priority tier. Calendar polling now covers the full week so cancellations, rescheduling, and new events appear without a page visit.
