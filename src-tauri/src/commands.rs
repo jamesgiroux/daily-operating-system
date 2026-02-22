@@ -4005,6 +4005,7 @@ pub struct ProjectListItem {
     pub parent_name: Option<String>,
     pub child_count: usize,
     pub is_parent: bool,
+    pub archived: bool,
 }
 
 /// Full project detail for the detail page.
