@@ -17,6 +17,7 @@ interface ProjectHeroProps {
   editStatus?: string;
   setEditStatus?: (value: string) => void;
   onSave?: () => void;
+  onSaveField?: (field: string, value: string) => void;
   onEnrich?: () => void;
   enriching?: boolean;
   enrichSeconds?: number;
@@ -41,7 +42,8 @@ export function ProjectHero({
   setEditName,
   editStatus,
   setEditStatus: _setEditStatus,
-  onSave,
+  onSave: _onSave,
+  onSaveField,
   onEnrich,
   enriching,
   enrichSeconds,
@@ -77,7 +79,7 @@ export function ProjectHero({
           <EditableText
             as="span"
             value={editName}
-            onChange={(v) => { setEditName(v); onSave?.(); }}
+            onChange={(v) => { setEditName(v); onSaveField?.("name", v); }}
             multiline={false}
             placeholder="Project name"
             fieldId="project-name"

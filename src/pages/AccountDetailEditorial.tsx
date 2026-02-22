@@ -10,6 +10,7 @@ import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import {
   AlignLeft,
+  Briefcase,
   Clock,
   Users,
   Eye,
@@ -46,6 +47,7 @@ import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
@@ -111,7 +113,8 @@ function buildAccountVitals(detail: {
 }
 
 // Chapter definitions for the editorial layout — icons match the v3 mockup nav island
-const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
+// I393: Portfolio chapter conditionally included for parent accounts
+const BASE_CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "headline", label: "The Headline", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
   { id: "state-of-play", label: "State of Play", icon: <Clock size={18} strokeWidth={1.5} /> },
   { id: "the-room", label: "The Room", icon: <Users size={18} strokeWidth={1.5} /> },
@@ -119,6 +122,18 @@ const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
   { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
 ];
+
+const PORTFOLIO_CHAPTER = {
+  id: "portfolio",
+  label: "Portfolio",
+  icon: <Briefcase size={18} strokeWidth={1.5} />,
+};
+
+function buildChapters(isParent: boolean) {
+  if (!isParent) return BASE_CHAPTERS;
+  // Portfolio appears after headline, before State of Play
+  return [BASE_CHAPTERS[0], PORTFOLIO_CHAPTER, ...BASE_CHAPTERS.slice(1)];
+}
 
 export default function AccountDetailEditorial() {
   const { accountId } = useParams({ strict: false });
@@ -130,11 +145,11 @@ export default function AccountDetailEditorial() {
   // Register magazine shell configuration — MagazinePageLayout consumes this
   const shellConfig = useMemo(
     () => ({
-      folioLabel: acct.detail?.isInternal ? "Internal" : "Account",
-      atmosphereColor: acct.detail?.isInternal ? "larkspur" as const : "turmeric" as const,
+      folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
+      atmosphereColor: acct.detail?.accountType === "internal" ? "larkspur" as const : "turmeric" as const,
       activePage: "accounts" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
-      chapters: CHAPTERS,
+      chapters: buildChapters(acct.detail?.isParent ?? false),
       folioActions: (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {acct.detail && (
@@ -307,6 +322,11 @@ export default function AccountDetailEditorial() {
           editLifecycle={acct.editLifecycle}
           setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
           onSave={acct.handleSave}
+          onSaveField={(field, value) => {
+            invoke("update_account_field", { accountId: detail.id, field, value })
+              .then(() => acct.load())
+              .catch((err) => console.error("update_account_field failed:", err));
+          }}
           onEnrich={acct.handleEnrich}
           enriching={acct.enriching}
           enrichSeconds={acct.enrichSeconds}
@@ -314,7 +334,7 @@ export default function AccountDetailEditorial() {
           onUnarchive={acct.handleUnarchive}
         />
         <div className="editorial-reveal">
-          {!detail.isInternal && (
+          {detail.accountType !== "internal" && (
             preset ? (
               <EditableVitalsStrip
                 fields={preset.vitals.account}
@@ -427,6 +447,294 @@ export default function AccountDetailEditorial() {
         )}
       </section>
 
+      {/* I393: Portfolio chapter — only for parent accounts */}
+      {detail.isParent && detail.children.length > 0 && (
+        <section id="portfolio" className="editorial-reveal" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+          <ChapterHeading title="Portfolio" />
+
+          {/* Health summary — one-sentence portfolio health statement */}
+          {intelligence?.portfolio?.healthSummary && (
+            <div style={{ marginBottom: 32 }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 18,
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                  color: "var(--color-text-primary)",
+                  maxWidth: 640,
+                  margin: 0,
+                }}
+              >
+                {intelligence.portfolio.healthSummary}
+              </p>
+            </div>
+          )}
+
+          {/* Portfolio narrative */}
+          {intelligence?.portfolio?.portfolioNarrative && (
+            <div style={{ marginBottom: 48 }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 21,
+                  fontStyle: "italic",
+                  fontWeight: 300,
+                  lineHeight: 1.65,
+                  color: "var(--color-text-primary)",
+                  maxWidth: 640,
+                  margin: 0,
+                }}
+              >
+                {intelligence.portfolio.portfolioNarrative}
+              </p>
+            </div>
+          )}
+
+          {/* Hotspots — child accounts needing attention */}
+          {intelligence?.portfolio?.hotspots && intelligence.portfolio.hotspots.length > 0 && (
+            <div style={{ marginBottom: 48 }}>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "var(--color-spice-terracotta)",
+                  marginBottom: 20,
+                }}
+              >
+                Needs Attention
+              </div>
+              {intelligence.portfolio.hotspots.map((hotspot, i) => (
+                <div
+                  key={hotspot.childId}
+                  style={{
+                    display: "flex",
+                    gap: 14,
+                    padding: "16px 0",
+                    borderBottom:
+                      i === intelligence.portfolio!.hotspots.length - 1
+                        ? "none"
+                        : "1px solid rgba(30,37,48,0.06)",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "var(--color-spice-terracotta)",
+                      flexShrink: 0,
+                      marginTop: 6,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <button
+                      onClick={() =>
+                        navigate({
+                          to: "/accounts/$accountId",
+                          params: { accountId: hotspot.childId },
+                        })
+                      }
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: "var(--color-spice-turmeric)",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 0,
+                        textAlign: "left",
+                      }}
+                    >
+                      {hotspot.childName}
+                    </button>
+                    <p
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        color: "var(--color-text-secondary)",
+                        margin: "4px 0 0",
+                      }}
+                    >
+                      {hotspot.reason}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Cross-BU patterns — only shown when non-empty */}
+          {intelligence?.portfolio?.crossBuPatterns && intelligence.portfolio.crossBuPatterns.length > 0 && (
+            <div
+              style={{
+                background: "rgba(30,37,48,0.04)",
+                borderLeft: "3px solid var(--color-garden-larkspur)",
+                borderRadius: "0 6px 6px 0",
+                padding: "16px 20px",
+                marginBottom: 48,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "var(--color-garden-larkspur)",
+                  marginBottom: 12,
+                }}
+              >
+                Cross-BU Patterns
+              </div>
+              {intelligence.portfolio.crossBuPatterns.map((pattern, i) => (
+                <p
+                  key={i}
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    color: "var(--color-text-primary)",
+                    margin: i === 0 ? 0 : "8px 0 0",
+                  }}
+                >
+                  {pattern}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Condensed child list */}
+          <div style={{ marginBottom: 24 }}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 500,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                color: "var(--color-text-tertiary)",
+                marginBottom: 16,
+              }}
+            >
+              Business Units
+            </div>
+            {detail.children.map((child, i) => (
+              <div
+                key={child.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 0",
+                  borderBottom:
+                    i === detail.children.length - 1
+                      ? "none"
+                      : "1px solid rgba(30,37,48,0.06)",
+                }}
+              >
+                <button
+                  onClick={() =>
+                    navigate({
+                      to: "/accounts/$accountId",
+                      params: { accountId: child.id },
+                    })
+                  }
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 400,
+                    color: "var(--color-text-primary)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                    textAlign: "left",
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {child.name}
+                  {child.accountType && child.accountType !== "customer" && (
+                    <span style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      color: "var(--color-text-tertiary)",
+                      marginLeft: 4,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}>
+                      {child.accountType === "partner" ? "Partner" : "Internal"}
+                    </span>
+                  )}
+                </button>
+                {/* Health indicator */}
+                {child.health && (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      fontWeight: 500,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      color:
+                        child.health === "green"
+                          ? "var(--color-garden-sage)"
+                          : child.health === "red"
+                            ? "var(--color-spice-terracotta)"
+                            : "var(--color-spice-saffron)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background:
+                          child.health === "green"
+                            ? "var(--color-garden-sage)"
+                            : child.health === "red"
+                              ? "var(--color-spice-terracotta)"
+                              : "var(--color-spice-saffron)",
+                      }}
+                    />
+                    {child.health === "green"
+                      ? "Healthy"
+                      : child.health === "red"
+                        ? "At Risk"
+                        : "Monitor"}
+                  </span>
+                )}
+                {/* ARR if available */}
+                {child.arr != null && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      fontWeight: 500,
+                      letterSpacing: "0.04em",
+                      color: "var(--color-text-tertiary)",
+                    }}
+                  >
+                    ${formatArr(child.arr)}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Chapter 2: State of Play */}
       <div id="state-of-play" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <StateOfPlay intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
@@ -533,10 +841,10 @@ export default function AccountDetailEditorial() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {detail.isInternal ? "Create Team" : "Create Business Unit"}
+              {detail.accountType === "internal" ? "Create Team" : "Create Business Unit"}
             </DialogTitle>
             <DialogDescription>
-              Create a new {detail.isInternal ? "team" : "business unit"} under {detail.name}.
+              Create a new {detail.accountType === "internal" ? "team" : "business unit"} under {detail.name}.
             </DialogDescription>
           </DialogHeader>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>

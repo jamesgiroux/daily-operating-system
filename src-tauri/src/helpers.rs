@@ -48,6 +48,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                     domains,
                     keywords,
                     emails: vec![],
+                    account_type: Some(acct.account_type.as_db_str().to_string()),
                 });
             }
         }
@@ -69,6 +70,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                     domains: vec![],
                     keywords,
                     emails: vec![],
+                    account_type: None,
                 });
             }
         }
@@ -94,6 +96,7 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
                 domains: vec![],
                 keywords: vec![],
                 emails,
+                account_type: None,
             });
         }
     }

@@ -119,6 +119,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 35,
     sql: include_str!("migrations/035_email_relevance_score.sql"),
+}, Migration {
+    version: 36,
+    sql: include_str!("migrations/036_account_type.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -280,13 +283,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 35,
-            "should apply all migrations including emails"
+            applied, 36,
+            "should apply all migrations including account_type"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 35);
+        assert_eq!(version, 36);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -616,6 +619,45 @@ mod tests {
             [],
         )
         .expect("email_signals should have deactivated_at column");
+
+        // Verify account_type column exists with correct default (migration 036)
+        let acct_type: String = conn
+            .query_row(
+                "SELECT account_type FROM accounts WHERE id = 'a1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("account_type column should exist");
+        assert_eq!(acct_type, "customer", "default account_type should be 'customer'");
+
+        // Verify is_internal backfill sets account_type = 'internal'
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at, is_internal, archived)
+             VALUES ('internal-1', 'My Org', '2025-01-01', 1, 0)",
+            [],
+        )
+        .expect("insert internal account");
+        // Simulate the migration backfill for newly inserted rows
+        conn.execute(
+            "UPDATE accounts SET account_type = 'internal' WHERE is_internal = 1 AND account_type = 'customer'",
+            [],
+        )
+        .expect("backfill internal");
+        let internal_type: String = conn
+            .query_row(
+                "SELECT account_type FROM accounts WHERE id = 'internal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query internal account_type");
+        assert_eq!(internal_type, "internal");
+
+        // Verify partner type can be set
+        conn.execute(
+            "UPDATE accounts SET account_type = 'partner' WHERE id = 'a1'",
+            [],
+        )
+        .expect("should accept partner account_type");
     }
 
     #[test]
@@ -747,11 +789,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 34, "bootstrap should mark v1, then apply v2 through v35");
+        assert_eq!(applied, 35, "bootstrap should mark v1, then apply v2 through v36");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 35);
+        assert_eq!(version, 36);
 
         // Verify existing data is untouched
         let title: String = conn

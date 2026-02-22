@@ -19,6 +19,7 @@ interface PersonHeroProps {
   editRole?: string;
   setEditRole?: (value: string) => void;
   onSave?: () => void;
+  onSaveField?: (field: string, value: string) => void;
   onEnrich?: () => void;
   enriching?: boolean;
   enrichSeconds?: number;
@@ -50,7 +51,8 @@ export function PersonHero({
   setEditName,
   editRole,
   setEditRole,
-  onSave,
+  onSave: _onSave,
+  onSaveField,
   onEnrich,
   enriching,
   enrichSeconds,
@@ -109,7 +111,7 @@ export function PersonHero({
             <EditableText
               as="span"
               value={editName}
-              onChange={(v) => { setEditName(v); onSave?.(); }}
+              onChange={(v) => { setEditName(v); onSaveField?.("name", v); }}
               multiline={false}
               placeholder="Full name"
               fieldId="person-name"
@@ -154,7 +156,7 @@ export function PersonHero({
             <EditableText
               as="span"
               value={editRole}
-              onChange={(v) => { setEditRole(v); onSave?.(); }}
+              onChange={(v) => { setEditRole(v); onSaveField?.("role", v); }}
               multiline={false}
               placeholder="Role / Title"
               fieldId="person-role"
