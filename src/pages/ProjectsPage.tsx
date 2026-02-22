@@ -64,6 +64,8 @@ export default function ProjectsPage() {
   const [newName, setNewName] = useState("");
   const [archiveTab, setArchiveTab] = useState<ArchiveTab>("active");
   const [archivedProjects, setArchivedProjects] = useState<ArchivedProject[]>([]);
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [childrenCache, setChildrenCache] = useState<Record<string, ProjectListItem[]>>({});
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkValue, setBulkValue] = useState("");
 
@@ -73,6 +75,33 @@ export default function ProjectsPage() {
       setError(null);
       const result = await invoke<ProjectListItem[]>("get_projects_list");
       setProjects(result);
+
+      // Auto-expand all parents and pre-fetch children
+      const expanded = new Set<string>();
+      const cache: Record<string, ProjectListItem[]> = {};
+
+      async function expandRecursive(items: ProjectListItem[]) {
+        const parents = items.filter((p) => p.isParent);
+        if (parents.length === 0) return;
+        await Promise.all(
+          parents.map(async (p) => {
+            expanded.add(p.id);
+            if (!cache[p.id]) {
+              try {
+                const children = await invoke<ProjectListItem[]>("get_child_projects_list", { parentId: p.id });
+                cache[p.id] = children;
+                await expandRecursive(children);
+              } catch { /* ignore */ }
+            }
+          }),
+        );
+      }
+
+      await expandRecursive(result);
+      if (expanded.size > 0) {
+        setExpandedParents(expanded);
+        setChildrenCache((prev) => ({ ...prev, ...cache }));
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -126,17 +155,46 @@ export default function ProjectsPage() {
     }
   }
 
+  async function toggleExpand(parentId: string) {
+    const next = new Set(expandedParents);
+    if (next.has(parentId)) {
+      next.delete(parentId);
+    } else {
+      next.add(parentId);
+      if (!childrenCache[parentId]) {
+        try {
+          const children = await invoke<ProjectListItem[]>(
+            "get_child_projects_list",
+            { parentId }
+          );
+          setChildrenCache((prev) => ({ ...prev, [parentId]: children }));
+        } catch (e) {
+          setError(String(e));
+          return;
+        }
+      }
+    }
+    setExpandedParents(next);
+  }
+
   // Filters
   const statusFiltered =
     statusTab === "all" ? projects : projects.filter((p) => p.status === statusTab);
 
-  const filtered = searchQuery
-    ? statusFiltered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (p.owner ?? "").toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : statusFiltered;
+  const filtered = useMemo(() => {
+    if (!searchQuery) return statusFiltered;
+    const q = searchQuery.toLowerCase();
+    return statusFiltered.filter((p) => {
+      if (p.name.toLowerCase().includes(q) || (p.owner ?? "").toLowerCase().includes(q)) {
+        return true;
+      }
+      const children = childrenCache[p.id];
+      if (children && children.some((c) => c.name.toLowerCase().includes(q))) {
+        return true;
+      }
+      return false;
+    });
+  }, [searchQuery, statusFiltered, childrenCache]);
 
   const filteredArchived = searchQuery
     ? archivedProjects.filter(
@@ -328,7 +386,15 @@ export default function ProjectsPage() {
                   );
                 })
               : filtered.map((project, i) => (
-                  <ProjectRow key={project.id} project={project} showBorder={i < filtered.length - 1} />
+                  <ProjectTreeNode
+                    key={project.id}
+                    project={project}
+                    depth={0}
+                    expandedParents={expandedParents}
+                    childrenCache={childrenCache}
+                    toggleExpand={toggleExpand}
+                    isLastSibling={i === filtered.length - 1}
+                  />
                 ))}
           </div>
         )}
@@ -339,9 +405,67 @@ export default function ProjectsPage() {
   );
 }
 
+// ─── Recursive Project Tree Node ──────────────────────────────────────────────
+
+function ProjectTreeNode({
+  project,
+  depth,
+  expandedParents,
+  childrenCache,
+  toggleExpand,
+  isLastSibling,
+}: {
+  project: ProjectListItem;
+  depth: number;
+  expandedParents: Set<string>;
+  childrenCache: Record<string, ProjectListItem[]>;
+  toggleExpand: (id: string) => void;
+  isLastSibling: boolean;
+}) {
+  const isExpanded = expandedParents.has(project.id);
+  const children = childrenCache[project.id] ?? [];
+  const hasExpandedChildren = project.isParent && isExpanded && children.length > 0;
+
+  return (
+    <div>
+      <ProjectRow
+        project={project}
+        depth={depth}
+        isExpanded={isExpanded}
+        onToggleExpand={project.isParent ? () => toggleExpand(project.id) : undefined}
+        showBorder={!isLastSibling || hasExpandedChildren}
+      />
+      {hasExpandedChildren &&
+        children.map((child, ci) => (
+          <ProjectTreeNode
+            key={child.id}
+            project={child}
+            depth={depth + 1}
+            expandedParents={expandedParents}
+            childrenCache={childrenCache}
+            toggleExpand={toggleExpand}
+            isLastSibling={ci === children.length - 1 && isLastSibling}
+          />
+        ))}
+    </div>
+  );
+}
+
 // ─── Project Row ────────────────────────────────────────────────────────────
 
-function ProjectRow({ project, showBorder }: { project: ProjectListItem; showBorder: boolean }) {
+function ProjectRow({
+  project,
+  depth = 0,
+  isExpanded,
+  onToggleExpand,
+  showBorder,
+}: {
+  project: ProjectListItem;
+  depth?: number;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  showBorder: boolean;
+}) {
   const daysSince = project.daysSinceLastMeeting;
   const isStale = daysSince != null && daysSince > 30;
 
@@ -351,22 +475,44 @@ function ProjectRow({ project, showBorder }: { project: ProjectListItem; showBor
   ].filter(Boolean).join(" \u00B7 ");
 
   const nameSuffix = (
-    <span
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-        color: project.status === "active"
-          ? "var(--color-garden-sage)"
-          : project.status === "on_hold"
-            ? "var(--color-spice-turmeric)"
-            : "var(--color-garden-larkspur)",
-      }}
-    >
-      {statusLabel[project.status] ?? project.status}
-    </span>
+    <>
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: project.status === "active"
+            ? "var(--color-garden-sage)"
+            : project.status === "on_hold"
+              ? "var(--color-spice-turmeric)"
+              : "var(--color-garden-larkspur)",
+        }}
+      >
+        {statusLabel[project.status] ?? project.status}
+      </span>
+      {onToggleExpand && (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleExpand();
+          }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          {isExpanded ? "\u25BE" : "\u25B8"} {project.childCount} sub{project.childCount !== 1 ? "s" : ""}
+        </button>
+      )}
+    </>
   );
 
   return (
@@ -376,6 +522,7 @@ function ProjectRow({ project, showBorder }: { project: ProjectListItem; showBor
       dotColor={statusDotColor[project.status] ?? "var(--color-paper-linen)"}
       name={project.name}
       showBorder={showBorder}
+      paddingLeft={depth > 0 ? depth * 28 : 0}
       nameSuffix={nameSuffix}
       subtitle={subtitle || undefined}
     >

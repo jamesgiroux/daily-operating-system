@@ -34,6 +34,12 @@ export function useProjectDetail(projectId: string | undefined) {
   const [newActionTitle, setNewActionTitle] = useState("");
   const [creatingAction, setCreatingAction] = useState(false);
 
+  // Child project creation
+  const [createChildOpen, setCreateChildOpen] = useState(false);
+  const [childName, setChildName] = useState("");
+  const [childDescription, setChildDescription] = useState("");
+  const [creatingChild, setCreatingChild] = useState(false);
+
   // Files
   const [files, setFiles] = useState<ContentFile[]>([]);
   const [indexing, setIndexing] = useState(false);
@@ -198,6 +204,26 @@ export function useProjectDetail(projectId: string | undefined) {
     }
   }
 
+  async function handleCreateChild() {
+    if (!detail || !childName.trim()) return;
+    setCreatingChild(true);
+    try {
+      const newId = await invoke<string>("create_project", {
+        name: childName.trim(),
+        parentId: detail.id,
+      });
+      setCreateChildOpen(false);
+      setChildName("");
+      setChildDescription("");
+      await load();
+      navigate({ to: "/projects/$projectId", params: { projectId: newId } });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCreatingChild(false);
+    }
+  }
+
   async function handleIndexFiles() {
     if (!detail) return;
     setIndexing(true);
@@ -255,6 +281,12 @@ export function useProjectDetail(projectId: string | undefined) {
     newActionTitle, setNewActionTitle,
     creatingAction,
     handleCreateAction,
+    // Child project creation
+    createChildOpen, setCreateChildOpen,
+    childName, setChildName,
+    childDescription, setChildDescription,
+    creatingChild,
+    handleCreateChild,
     // File indexing
     indexing,
     indexFeedback,
