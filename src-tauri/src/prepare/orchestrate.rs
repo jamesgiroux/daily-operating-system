@@ -79,6 +79,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     domains: vec![],
                     keywords: vec![],
                     emails: vec![],
+                    account_type: None,
                 }).collect()
             }
         }

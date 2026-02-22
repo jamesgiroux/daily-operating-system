@@ -77,6 +77,7 @@ export default function WeekPage() {
 
   // ─── Live events — keep the page current without user action ──────────────
 
+  useTauriEvent("day-changed", loadTimeline);
   useTauriEvent("calendar-updated", loadTimeline);
   useTauriEvent("intelligence-updated", loadTimeline);
   useTauriEvent("prep-ready", loadTimeline);

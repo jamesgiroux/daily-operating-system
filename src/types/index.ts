@@ -1063,6 +1063,7 @@ export interface AccountChildSummary {
   health?: AccountHealth;
   arr?: number;
   openActionCount: number;
+  accountType: string;
 }
 
 export interface AccountTeamMember {

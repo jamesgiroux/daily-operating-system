@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use chrono_tz::Tz;
 use cron::Schedule;
 use tokio::sync::mpsc;
@@ -59,11 +59,21 @@ impl Scheduler {
         let mut last_check = Utc::now();
         let mut last_proposed_archive = Utc::now();
         let mut last_pre_meeting_refresh = Utc::now();
+        let mut last_date = Local::now().date_naive();
 
         loop {
             tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
 
             let now = Utc::now();
+
+            // Detect day change (midnight crossing or sleep/wake across day boundary)
+            let today = Local::now().date_naive();
+            if today != last_date {
+                log::info!("Day changed: {} → {}", last_date, today);
+                let _ = self.app_handle.emit("day-changed", ());
+                crate::meeting_prep_queue::sweep_meetings_needing_prep(&self.state);
+                last_date = today;
+            }
 
             // Detect sleep: time jumped more than 5 minutes
             let time_jump = (now - last_check).num_seconds();

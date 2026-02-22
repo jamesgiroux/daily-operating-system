@@ -609,7 +609,7 @@ pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<R
     let accounts: Vec<(String, String)> = conn
         .prepare(
             "SELECT a.id, a.name FROM accounts a
-             WHERE a.archived = 0 AND a.is_internal = 0
+             WHERE a.archived = 0 AND a.account_type = 'customer'
              AND NOT EXISTS (
                  SELECT 1 FROM meetings_history mh
                  JOIN meeting_entities me ON me.meeting_id = mh.id
@@ -664,7 +664,7 @@ pub fn detect_renewal_proximity(db: &ActionDb, ctx: &DetectorContext) -> Vec<Raw
                AND a.contract_end >= date('now')
                AND a.contract_end <= date('now', '+90 days')
                AND a.archived = 0
-               AND a.is_internal = 0
+               AND a.account_type = 'customer'
                AND NOT EXISTS (
                    SELECT 1 FROM account_events ae
                    WHERE ae.account_id = a.id AND ae.event_type = 'churn'
@@ -1261,8 +1261,8 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 3, 15).unwrap();
 
         conn.execute(
-            "INSERT INTO accounts (id, name, updated_at, is_internal, archived)
-             VALUES ('a1', 'InternalCo', '2026-01-01', 1, 0)",
+            "INSERT INTO accounts (id, name, updated_at, is_internal, account_type, archived)
+             VALUES ('a1', 'InternalCo', '2026-01-01', 1, 'internal', 0)",
             [],
         ).unwrap();
 
