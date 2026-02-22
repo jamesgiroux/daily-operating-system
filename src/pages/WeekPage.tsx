@@ -434,7 +434,7 @@ export default function WeekPage() {
         >
           <ChapterHeading
             title="The Timeline"
-            epigraph="Context across your meetings, \u00b17 days."
+            epigraph="Context across your meetings, ±7 days."
           />
 
           {/* Past — Earlier (collapsed) */}
