@@ -54,6 +54,9 @@ pub struct IntelligenceContext {
     /// Portfolio context for parent accounts (I384).
     /// Contains children's intelligence summaries and signal data for portfolio synthesis.
     pub portfolio_children_context: Option<String>,
+    /// Person relationship edges for network intelligence (I391).
+    /// Pre-formatted string of edges with effective confidence and types.
+    pub relationship_edges: Option<String>,
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
@@ -399,6 +402,54 @@ pub fn build_intelligence_context(
             } else {
                 ctx.stakeholders
                     .push_str(&format!("\n\nEntity Connections:\n{}", lines.join("\n")));
+            }
+        }
+    }
+
+    // --- Person relationship edges (I391) ---
+    if entity_type == "person" {
+        if let Ok(edges) = db.get_relationships_for_person(entity_id) {
+            if !edges.is_empty() {
+                let mut lines: Vec<String> = Vec::new();
+                for edge in &edges {
+                    let other_id = if edge.from_person_id == entity_id {
+                        &edge.to_person_id
+                    } else {
+                        &edge.from_person_id
+                    };
+                    let other_name = db
+                        .get_person(other_id)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| other_id.clone());
+                    let context = match (&edge.context_entity_id, &edge.context_entity_type) {
+                        (Some(cid), Some(ctype)) => format!(" [context: {} {}]", ctype, cid),
+                        _ => String::new(),
+                    };
+                    let direction_label = if edge.direction == "symmetric" {
+                        "↔"
+                    } else {
+                        "→"
+                    };
+                    lines.push(format!(
+                        "- {} {} {} ({}, confidence: {:.2}, source: {}){}",
+                        if edge.from_person_id == entity_id { "self" } else { &other_name },
+                        direction_label,
+                        if edge.to_person_id == entity_id { "self" } else { &other_name },
+                        edge.relationship_type,
+                        edge.effective_confidence,
+                        edge.source,
+                        context,
+                    ));
+                }
+                // Replace IDs with names for readability
+                let header = format!(
+                    "{} relationship edges (person-to-person):\n{}",
+                    edges.len(),
+                    lines.join("\n")
+                );
+                ctx.relationship_edges = Some(header);
             }
         }
     }
@@ -1053,6 +1104,15 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
+    // I391: Person relationship edges for network intelligence
+    if let Some(ref edges_ctx) = ctx.relationship_edges {
+        prompt.push_str("## Relationship Network (person-to-person edges)\n");
+        prompt.push_str("These are typed relationship edges with confidence scores. ");
+        prompt.push_str("Use them to assess network health, risks, and opportunities.\n\n");
+        prompt.push_str(&wrap_user_data(edges_ctx));
+        prompt.push_str("\n\n");
+    }
+
     // Recent call transcripts (raw text for engagement assessment)
     if !ctx.recent_transcripts.is_empty() {
         prompt.push_str(
@@ -1193,6 +1253,27 @@ fn build_intelligence_prompt_inner(
         );
     }
 
+    // I391: Network intelligence section for persons with relationship edges
+    if ctx.relationship_edges.is_some() {
+        prompt.push_str(
+            ",\n\
+               \"network\": {\n\
+                 \"health\": \"strong|at_risk|weakened|unknown\",\n\
+                 \"keyRelationships\": [{\"personId\":\"...\",\"name\":\"...\",\"relationshipType\":\"...\",\"confidence\":0.8,\"signalSummary\":\"1 sentence\"}],\n\
+                 \"risks\": [\"network-level risk (e.g., key manager departing, cluster weakening)\"],\n\
+                 \"opportunities\": [\"network-level opportunity (e.g., new ally, expanding influence)\"],\n\
+                 \"influenceRadius\": 4,\n\
+                 \"clusterSummary\": \"2-3 sentence synthesis of this person's network position and dynamics\"\n\
+               }",
+        );
+    } else if entity_type == "person" {
+        // Persons with no edges get a minimal stub
+        prompt.push_str(
+            ",\n\
+               \"network\": {\"health\":\"unknown\",\"keyRelationships\":[],\"risks\":[],\"opportunities\":[],\"influenceRadius\":0}",
+        );
+    }
+
     // I305: Keyword extraction for entity resolution
     prompt.push_str(
         ",\n\
@@ -1246,9 +1327,62 @@ struct AiIntelResponse {
     /// Portfolio intelligence for parent accounts (I384).
     #[serde(default)]
     portfolio: Option<AiPortfolioIntelligence>,
+    /// Network intelligence for person entities (I391).
+    #[serde(default)]
+    network: Option<AiNetworkIntelligence>,
+    /// Inferred person-to-person relationships (I391).
+    #[serde(default)]
+    inferred_relationships: Vec<AiInferredRelationship>,
     /// Auto-extracted keywords for entity resolution (I305).
     #[serde(default)]
     keywords: Vec<String>,
+}
+
+/// AI response structure for network intelligence (I391).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiNetworkIntelligence {
+    #[serde(default = "super::io::default_network_health")]
+    health: String,
+    #[serde(default)]
+    key_relationships: Vec<AiNetworkKeyRelationship>,
+    #[serde(default)]
+    risks: Vec<String>,
+    #[serde(default)]
+    opportunities: Vec<String>,
+    #[serde(default)]
+    influence_radius: u32,
+    #[serde(default)]
+    cluster_summary: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiNetworkKeyRelationship {
+    #[serde(default)]
+    person_id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    relationship_type: String,
+    #[serde(default)]
+    confidence: f64,
+    #[serde(default)]
+    signal_summary: Option<String>,
+}
+
+/// AI response structure for an inferred relationship (I391).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiInferredRelationship {
+    #[serde(default)]
+    from_person_id: String,
+    #[serde(default)]
+    to_person_id: String,
+    #[serde(default)]
+    relationship_type: String,
+    #[serde(default)]
+    reason: Option<String>,
 }
 
 /// AI response structure for portfolio intelligence (I384).
@@ -1386,6 +1520,49 @@ pub fn parse_intelligence_response(
     }
 
     Ok(intel)
+}
+
+/// An inferred person-to-person relationship extracted from AI enrichment (I391).
+pub struct InferredRelationship {
+    pub from_person_id: String,
+    pub to_person_id: String,
+    pub relationship_type: String,
+}
+
+/// Extract inferred relationships from an AI enrichment response (I391).
+/// Returns empty vec if no valid relationships are found.
+pub fn extract_inferred_relationships(response: &str) -> Vec<InferredRelationship> {
+    let json_str = match extract_json_from_response(response) {
+        Some(s) => s,
+        None => return Vec::new(),
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let arr = match parsed.get("inferredRelationships").and_then(|v| v.as_array()) {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+    arr.iter()
+        .filter_map(|entry| {
+            let from = entry.get("fromPersonId")?.as_str()?.to_string();
+            let to = entry.get("toPersonId")?.as_str()?.to_string();
+            let rel_type = entry.get("relationshipType")?.as_str()?.to_string();
+            // Validate relationship type
+            if rel_type.parse::<crate::db::person_relationships::RelationshipType>().is_err() {
+                return None;
+            }
+            if from.is_empty() || to.is_empty() {
+                return None;
+            }
+            Some(InferredRelationship {
+                from_person_id: from,
+                to_person_id: to,
+                relationship_type: rel_type,
+            })
+        })
+        .collect()
 }
 
 /// Extract a JSON object from the response text.
@@ -1553,6 +1730,20 @@ fn try_parse_json_response(
         next_meeting_readiness,
         company_context,
         portfolio,
+        network: ai_resp.network.map(|n| NetworkIntelligence {
+            health: n.health,
+            key_relationships: n.key_relationships.into_iter().map(|kr| NetworkKeyRelationship {
+                person_id: kr.person_id,
+                name: kr.name,
+                relationship_type: kr.relationship_type,
+                confidence: kr.confidence,
+                signal_summary: kr.signal_summary,
+            }).collect(),
+            risks: n.risks,
+            opportunities: n.opportunities,
+            influence_radius: n.influence_radius,
+            cluster_summary: n.cluster_summary,
+        }),
         user_edits: Vec::new(),
     })
 }
@@ -1893,6 +2084,7 @@ mod tests {
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
             portfolio_children_context: None,
             canonical_contacts: None,
+            relationship_edges: None,
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);

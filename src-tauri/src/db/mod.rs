@@ -410,6 +410,7 @@ pub mod entities;
 pub mod signals;
 pub mod emails;
 pub mod content;
+pub mod person_relationships;
 
 // =============================================================================
 // Shared test utilities
