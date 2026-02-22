@@ -355,6 +355,23 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 &request.entity_id,
             );
 
+            // Self-healing: record success + post-enrichment coherence check (I409/I410)
+            {
+                if let Ok(db_guard) = state.db.lock() {
+                    if let Some(db) = db_guard.as_ref() {
+                        crate::self_healing::feedback::record_enrichment_success(db, &request.entity_id);
+                        let _ = crate::self_healing::scheduler::on_enrichment_complete(
+                            db,
+                            Some(state.embedding_model.as_ref()),
+                            &request.entity_id,
+                            &request.entity_type,
+                            &state.intel_queue,
+                            Some(state.signal_engine.as_ref()),
+                        );
+                    }
+                }
+            }
+
             log::info!(
                 "IntelProcessor: completed {} ({} risks, {} wins)",
                 request.entity_id,
