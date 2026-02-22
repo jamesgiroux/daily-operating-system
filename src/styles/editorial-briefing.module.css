@@ -1121,6 +1121,130 @@
 }
 
 /* =============================================================================
+   EMAIL INTELLIGENCE — Contextual summary items (I367/I369)
+   ============================================================================= */
+
+.emailIntelItem {
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  position: relative;
+}
+
+.emailIntelItem:last-child {
+  border-bottom: none;
+}
+
+.emailIntelSummary {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+  max-width: 640px;
+}
+
+.emailIntelSummaryHighUrgency {
+  font-weight: 400;
+}
+
+.emailIntelMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.emailIntelMeta span {
+  max-width: 50ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailIntelUrgencyBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-spice-terracotta);
+  background: rgba(196, 101, 74, 0.08);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+}
+
+.emailIntelSentiment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.emailIntelSentimentDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.emailIntelBuilding {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+/* I395: Score reason metadata */
+.emailScoreReason {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+}
+
+/* I395: Score band group headers */
+.emailScoreBandLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  padding: var(--space-sm) 0;
+  margin-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.emailScoreBandLabel:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+.replySummary {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  max-width: 480px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* =============================================================================
    BRIEFING CARD OVERRIDE — Parks shared MeetingCard accent bar in margin gutter
    ============================================================================= */
 

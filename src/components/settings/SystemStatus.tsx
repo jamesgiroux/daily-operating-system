@@ -984,6 +984,60 @@ function CaptureSection() {
 }
 
 // ---------------------------------------------------------------------------
+// DataManagementSection — reset email learning (I374)
+// ---------------------------------------------------------------------------
+
+function DataManagementSection() {
+  const [resetting, setResetting] = useState(false);
+
+  async function handleResetEmailPreferences() {
+    setResetting(true);
+    try {
+      const result = await invoke<string>("reset_email_preferences");
+      toast.success(result);
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to reset email preferences");
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Data Management</p>
+      <div style={styles.settingRow}>
+        <div>
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            Email Learning
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            Clear dismissal history so all sender domains start fresh
+          </p>
+        </div>
+        <button
+          style={{
+            ...styles.btn,
+            ...styles.btnGhost,
+            opacity: resetting ? 0.5 : 1,
+          }}
+          onClick={handleResetEmailPreferences}
+          disabled={resetting}
+        >
+          {resetting ? "Resetting..." : "Reset"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SystemStatus — main exported component
 // ---------------------------------------------------------------------------
 
@@ -1027,6 +1081,7 @@ export default function SystemStatus() {
           <FeaturesSection />
           <HygieneSection />
           <CaptureSection />
+          <DataManagementSection />
         </div>
       )}
     </div>

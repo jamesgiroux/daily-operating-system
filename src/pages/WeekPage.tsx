@@ -35,6 +35,7 @@ export default function WeekPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // ─── Data loading ─────────────────────────────────────────────────────────
 
@@ -61,13 +62,16 @@ export default function WeekPage() {
   // ─── Refresh: clear + requeue meeting preps ───────────────────────────────
 
   const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
     try {
       await invoke("refresh_meeting_preps");
-      loadTimeline();
+      await loadTimeline();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to refresh meeting preps"
       );
+    } finally {
+      setRefreshing(false);
     }
   }, [loadTimeline]);
 
@@ -116,7 +120,7 @@ export default function WeekPage() {
     () => (
       <FolioRefreshButton
         onClick={handleRefresh}
-        loading={false}
+        loading={refreshing}
         title="Refresh meeting preps"
       />
     ),
@@ -160,11 +164,14 @@ export default function WeekPage() {
 
   const timelineGroups = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    // Use local timezone, not UTC — toISOString() shifts the date boundary
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
     const byDate = new Map<string, TimelineMeeting[]>();
     for (const m of timeline) {
-      const dateKey = m.startTime.slice(0, 10);
+      // Parse to local date — startTime may be UTC, slice(0,10) would give wrong day near midnight
+      const d = new Date(m.startTime);
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       if (!byDate.has(dateKey)) byDate.set(dateKey, []);
       byDate.get(dateKey)!.push(m);
     }
@@ -430,7 +437,7 @@ export default function WeekPage() {
         >
           <ChapterHeading
             title="The Timeline"
-            epigraph="Context across your meetings, \u00b17 days."
+            epigraph="Context across your meetings, ±7 days."
           />
 
           {/* Past — Earlier (collapsed) */}
