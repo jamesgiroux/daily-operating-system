@@ -183,9 +183,73 @@ pub struct PrepReadyPayload {
 /// 5. Converts context to `FullMeetingPrep` via `build_prep_json`
 /// 6. Writes result to `prep_frozen_json` in DB
 /// 7. Emits `prep-ready` event
+fn sweep_meetings_needing_prep(state: &AppState) {
+    let db_guard = match state.db.lock() {
+        Ok(g) => g,
+        Err(_) => {
+            log::warn!("MeetingPrepSweep: DB lock poisoned");
+            return;
+        }
+    };
+    let db = match db_guard.as_ref() {
+        Some(d) => d,
+        None => return,
+    };
+
+    // Find future meetings that have at least one linked entity but no prep
+    let sql = "SELECT DISTINCT mh.id
+               FROM meetings_history mh
+               INNER JOIN meeting_entities me ON mh.id = me.meeting_id
+               WHERE mh.start_time > datetime('now')
+                 AND mh.prep_frozen_json IS NULL
+                 AND (mh.intelligence_state IS NULL OR mh.intelligence_state != 'archived')";
+
+    let meeting_ids: Vec<String> = {
+        let conn = db.conn_ref();
+        let mut stmt = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("MeetingPrepSweep: query error: {}", e);
+                return;
+            }
+        };
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+    };
+
+    if meeting_ids.is_empty() {
+        log::info!("MeetingPrepSweep: all future meetings have prep");
+        return;
+    }
+
+    log::info!(
+        "MeetingPrepSweep: enqueuing {} meetings for mechanical prep",
+        meeting_ids.len()
+    );
+
+    // Drop DB lock before enqueuing
+    drop(db_guard);
+
+    for mid in &meeting_ids {
+        state.meeting_prep_queue.enqueue(PrepRequest {
+            meeting_id: mid.clone(),
+            priority: PrepPriority::Background,
+            requested_at: Instant::now(),
+        });
+    }
+
+    log::info!("MeetingPrepSweep: enqueued {} meetings", meeting_ids.len());
+}
+
 pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
     log::info!("MeetingPrepProcessor: started");
 
+    // Startup sweep: enqueue all future meetings that have linked entities but no prep.
+    // This ensures every meeting with entity intelligence gets a mechanical briefing
+    // before the user ever opens it. ADR-0086: meeting prep is a consumer of entity intel.
+    sweep_meetings_needing_prep(&state);
 
     let mut polls_since_prune: u64 = 0;
     let prune_interval = 60 / POLL_INTERVAL_SECS;
@@ -273,21 +337,12 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
         return Ok(());
     }
 
-    // Also check if a prep file exists on disk (today's meetings)
+    // Resolve workspace path for context gathering
     let workspace = {
         let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
         let config = config_guard.as_ref().ok_or("No config")?;
         std::path::PathBuf::from(&config.workspace_path)
     };
-    let today_dir = workspace.join("_today").join("data");
-    let prep_path = today_dir.join(format!("preps/{}.json", meeting_id));
-    if prep_path.exists() {
-        log::debug!(
-            "MeetingPrepQueue: {} has disk prep file, skipping",
-            meeting_id
-        );
-        return Ok(());
-    }
 
     // Phase 3: Build classified meeting JSON for gather_meeting_context
     let classified = json!({
