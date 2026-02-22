@@ -39,7 +39,7 @@ pub fn create_child_account_record(
     }
 
     let parent_tracker = parent.tracker_path.clone().unwrap_or_else(|| {
-        if parent.is_internal {
+        if parent.account_type.is_internal() {
             format!("Internal/{}", parent.name)
         } else {
             format!("Accounts/{}", parent.name)
@@ -59,7 +59,7 @@ pub fn create_child_account_record(
         nps: None,
         tracker_path: Some(tracker_path),
         parent_id: Some(parent.id.clone()),
-        is_internal: parent.is_internal,
+        account_type: parent.account_type.clone(),
         updated_at: now,
         archived: false,
         keywords: None,
@@ -312,6 +312,7 @@ pub fn get_account_detail(
                 health: child.health.clone(),
                 arr: child.arr,
                 open_action_count,
+                account_type: child.account_type.as_db_str().to_string(),
             }
         })
         .collect();
@@ -341,7 +342,7 @@ pub fn get_account_detail(
         parent_name,
         children,
         parent_aggregate,
-        is_internal: account.is_internal,
+        account_type: account.account_type.clone(),
         archived: account.archived,
         intelligence,
     })
@@ -474,10 +475,11 @@ pub fn create_account(
     state: &AppState,
     name: &str,
     parent_id: Option<&str>,
+    explicit_type: Option<crate::db::AccountType>,
 ) -> Result<String, String> {
     let name = crate::util::validate_entity_name(name)?.to_string();
 
-    let (id, tracker_path, is_internal) = if let Some(pid) = parent_id {
+    let (id, tracker_path, account_type) = if let Some(pid) = parent_id {
         let parent = db
             .get_account(pid)
             .map_err(|e| e.to_string())?
@@ -487,10 +489,13 @@ pub fn create_account(
             .tracker_path
             .unwrap_or_else(|| format!("Accounts/{}", parent.name));
         let tp = format!("{}/{}", parent_dir, name);
-        (child_id, tp, parent.is_internal)
+        // Explicit type overrides parent inheritance
+        let at = explicit_type.unwrap_or_else(|| parent.account_type.clone());
+        (child_id, tp, at)
     } else {
         let id = crate::util::slugify(&name);
-        (id, format!("Accounts/{}", name), false)
+        let at = explicit_type.unwrap_or(crate::db::AccountType::Customer);
+        (id, format!("Accounts/{}", name), at)
     };
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -506,7 +511,7 @@ pub fn create_account(
         nps: None,
         tracker_path: Some(tracker_path),
         parent_id: parent_id.map(|s| s.to_string()),
-        is_internal,
+        account_type,
         updated_at: now,
         archived: false,
         keywords: None,
@@ -647,7 +652,7 @@ pub fn bulk_create_accounts(
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: now,
             archived: false,
             keywords: None,
@@ -670,6 +675,7 @@ pub fn bulk_create_accounts(
 }
 
 /// Convert a DbAccount to an AccountListItem with computed signals.
+/// For parent accounts, rolls up child ARR into `arr` when the parent's own ARR is unset.
 pub fn account_to_list_item(
     a: &crate::db::DbAccount,
     db: &ActionDb,
@@ -679,6 +685,17 @@ pub fn account_to_list_item(
         .get_account_actions(&a.id)
         .map(|actions| actions.len())
         .unwrap_or(0);
+
+    // Roll up child ARR for parent accounts with no direct ARR
+    let arr = if a.arr.is_some() {
+        a.arr
+    } else if child_count > 0 {
+        db.get_parent_aggregate(&a.id)
+            .ok()
+            .and_then(|agg| agg.total_arr)
+    } else {
+        None
+    };
 
     let signals = db.get_stakeholder_signals(&a.id).ok();
     let days_since_last_meeting = signals.as_ref().and_then(|s| {
@@ -717,7 +734,7 @@ pub fn account_to_list_item(
         id: a.id.clone(),
         name: a.name.clone(),
         lifecycle: a.lifecycle.clone(),
-        arr: a.arr,
+        arr,
         health: a.health.clone(),
         nps: a.nps,
         team_summary,
@@ -728,7 +745,7 @@ pub fn account_to_list_item(
         parent_name: None,
         child_count,
         is_parent: child_count > 0,
-        is_internal: a.is_internal,
+        account_type: a.account_type.clone(),
         archived: a.archived,
     }
 }
@@ -793,7 +810,7 @@ pub fn get_accounts_for_picker(db: &ActionDb) -> Result<Vec<PickerAccount>, Stri
                 id: a.id,
                 name: a.name,
                 parent_name,
-                is_internal: a.is_internal,
+                account_type: a.account_type.clone(),
             }
         })
         .collect();

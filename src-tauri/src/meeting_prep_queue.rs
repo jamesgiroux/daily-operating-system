@@ -183,7 +183,7 @@ pub struct PrepReadyPayload {
 /// 5. Converts context to `FullMeetingPrep` via `build_prep_json`
 /// 6. Writes result to `prep_frozen_json` in DB
 /// 7. Emits `prep-ready` event
-fn sweep_meetings_needing_prep(state: &AppState) {
+pub fn sweep_meetings_needing_prep(state: &AppState) {
     let db_guard = match state.db.lock() {
         Ok(g) => g,
         Err(_) => {

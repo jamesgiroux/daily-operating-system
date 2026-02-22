@@ -549,7 +549,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
             nps: json.structured.nps,
             tracker_path: Some(tracker_path),
             parent_id: effective_parent_id,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at,
             archived: false,
             keywords: None,
@@ -627,7 +627,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     nps: None,
                     tracker_path: Some(format!("Accounts/{}", name)),
                     parent_id: None,
-                    is_internal: false,
+                    account_type: crate::db::AccountType::Customer,
                     updated_at: now,
                     archived: false,
                     keywords: None,
@@ -654,8 +654,10 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                         if file_account.updated_at > db_account.updated_at {
                             // File is newer — update SQLite, regen markdown
                             let mut merged = file_account;
-                            // Preserve DB-only fields
+                            // Preserve DB-only fields that dashboard.json doesn't carry
                             merged.contract_start = db_account.contract_start.clone();
+                            merged.account_type = db_account.account_type.clone();
+                            merged.archived = db_account.archived;
                             // Preserve user-edited name: the DB name is authoritative
                             // because users rename via the UI, not by renaming directories.
                             merged.name = db_account.name.clone();
@@ -786,6 +788,9 @@ fn scan_child_accounts_inner(
                         if file_account.updated_at > db_account.updated_at {
                             let mut merged = file_account;
                             merged.contract_start = db_account.contract_start.clone();
+                            merged.account_type = db_account.account_type.clone();
+                            merged.archived = db_account.archived;
+                            merged.name = db_account.name.clone();
                             let _ = db.upsert_account(&merged);
                             let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
@@ -830,7 +835,7 @@ fn scan_child_accounts_inner(
                     nps: None,
                     tracker_path: Some(child_tracker.clone()),
                     parent_id: child_parent_id,
-                    is_internal: false,
+                    account_type: crate::db::AccountType::Customer,
                     updated_at: now,
                     archived: false,
                     keywords: None,
@@ -1078,7 +1083,7 @@ mod tests {
             nps: Some(80),
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: now,
             archived: false,
             keywords: None,
@@ -1465,7 +1470,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Crestview Media/BrandsCo".to_string()),
             parent_id: Some("acmecorp".to_string()),
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1546,7 +1551,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Crestview Media".to_string()),
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1567,7 +1572,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Crestview Media/BrandsCo".to_string()),
             parent_id: Some("acmecorp".to_string()),
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1587,7 +1592,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Crestview Media/Enterprise".to_string()),
             parent_id: Some("acmecorp".to_string()),
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1624,7 +1629,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: None,
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1645,7 +1650,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: None,
             parent_id: Some("parent".to_string()),
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
@@ -1665,7 +1670,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: None,
             parent_id: Some("parent".to_string()),
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,

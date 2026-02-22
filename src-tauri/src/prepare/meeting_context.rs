@@ -870,7 +870,7 @@ fn resolve_account_for_meeting(
     if best.as_ref().is_none_or(|(s, _)| *s == 0) {
         if let Ok(all_accounts) = db.get_all_accounts() {
             for account in all_accounts {
-                if account.is_internal || account.archived {
+                if account.account_type.is_internal() || account.archived {
                     continue;
                 }
                 let account_key = normalize_account_key(&account.name);
@@ -1787,7 +1787,7 @@ mod tests {
                 contract_end: None,
                 nps: None,
                 parent_id: None,
-                is_internal: false,
+                account_type: crate::db::AccountType::Customer,
                 tracker_path: None,
                 updated_at: now.clone(),
                 archived: false,

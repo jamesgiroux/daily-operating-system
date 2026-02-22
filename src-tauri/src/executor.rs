@@ -232,7 +232,7 @@ impl Executor {
 
                     if targets.is_empty() && !domain.is_empty() {
                         if let Ok(accounts) = db.lookup_account_candidates_by_domain(&domain) {
-                            for account in accounts.into_iter().filter(|a| !a.is_internal) {
+                            for account in accounts.into_iter().filter(|a| !a.account_type.is_internal()) {
                                 targets.insert((account.id, "account".to_string()));
                             }
                         }

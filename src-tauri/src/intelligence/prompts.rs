@@ -356,8 +356,8 @@ pub fn build_intelligence_context(
             .iter()
             .map(|p| {
                 format!(
-                    "- \"{}\" (id: {}, email: {})",
-                    p.name, p.id, p.email
+                    "- \"{}\" (role: {}, id: {}, email: {})",
+                    p.name, p.role.as_deref().unwrap_or("unknown"), p.id, p.email
                 )
             })
             .collect();

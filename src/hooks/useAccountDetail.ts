@@ -378,6 +378,7 @@ export function useAccountDetail(accountId: string | undefined) {
     load,
     silentRefresh,
     handleSave: fields.handleSave,
+    saveField: fields.saveField,
     handleCancelEdit: fields.handleCancelEdit,
     handleIndexFiles,
     handleEnrich,

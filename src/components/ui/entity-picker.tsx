@@ -21,7 +21,7 @@ interface EntityOption {
   name: string;
   type: "account" | "project";
   parentName?: string;
-  isInternal?: boolean;
+  accountType?: "customer" | "internal" | "partner";
 }
 
 interface EntityPickerProps {
@@ -55,7 +55,7 @@ export function EntityPicker({
       if (entityType !== "project") {
         try {
           const accounts = await invoke<
-            { id: string; name: string; parentName?: string; isInternal: boolean }[]
+            { id: string; name: string; parentName?: string; accountType: "customer" | "internal" | "partner" }[]
           >("get_accounts_for_picker");
           items.push(
             ...accounts.map((a) => ({
@@ -63,7 +63,7 @@ export function EntityPicker({
               name: a.name,
               type: "account" as const,
               parentName: a.parentName ?? undefined,
-              isInternal: a.isInternal,
+              accountType: a.accountType,
             }))
           );
         } catch {
@@ -103,15 +103,18 @@ export function EntityPicker({
   const isMultiSelect = !!excludeIds;
 
   const internalAccounts = entities.filter(
-    (e) => e.type === "account" && e.isInternal && !isExcluded(e.id)
+    (e) => e.type === "account" && e.accountType === "internal" && !isExcluded(e.id)
+  );
+  const partnerAccounts = entities.filter(
+    (e) => e.type === "account" && e.accountType === "partner" && !isExcluded(e.id)
   );
   // Keep parents even if excluded, so their children still render nested.
   // The parent CommandItem itself is hidden via the render.
   const externalParentAccounts = entities.filter(
-    (e) => e.type === "account" && !e.isInternal && !e.parentName
+    (e) => e.type === "account" && e.accountType === "customer" && !e.parentName
   );
   const externalChildAccounts = entities.filter(
-    (e) => e.type === "account" && !e.isInternal && e.parentName && !isExcluded(e.id)
+    (e) => e.type === "account" && e.accountType === "customer" && e.parentName && !isExcluded(e.id)
   );
   const projects = entities.filter((e) => e.type === "project" && !isExcluded(e.id));
 
@@ -177,6 +180,9 @@ export function EntityPicker({
                   >
                     <Building2 className="mr-2 size-3.5 text-primary" />
                     {a.name}
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", marginLeft: 4 }}>
+                      Internal
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -223,6 +229,26 @@ export function EntityPicker({
                     </div>
                   );
                 })}
+              </CommandGroup>
+            )}
+            {partnerAccounts.length > 0 && (
+              <CommandGroup heading="Partners">
+                {partnerAccounts.map((a) => (
+                  <CommandItem
+                    key={a.id}
+                    value={`partner ${a.name}`}
+                    onSelect={() => {
+                      onChange(a.id, a.name, a.type);
+                      if (!isMultiSelect) { setSelectedName(a.name); setOpen(false); }
+                    }}
+                  >
+                    <Building2 className="mr-2 size-3.5 text-muted-foreground" />
+                    {a.name}
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", marginLeft: 4 }}>
+                      Partner
+                    </span>
+                  </CommandItem>
+                ))}
               </CommandGroup>
             )}
             {projects.length > 0 && (
