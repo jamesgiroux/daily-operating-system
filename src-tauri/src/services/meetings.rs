@@ -1278,7 +1278,7 @@ pub fn update_meeting_user_agenda(
         let (etype, eid) = entity_info
             .map(|e| (e.entity_type.as_str().to_string(), e.id))
             .unwrap_or_else(|| ("meeting".to_string(), meeting_id.to_string()));
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, &state.signal_engine,
             &etype,
             &eid,
