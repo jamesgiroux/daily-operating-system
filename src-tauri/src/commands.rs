@@ -1411,6 +1411,151 @@ pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingD
     crate::services::emails::get_emails_enriched(&state)
 }
 
+/// Update the entity assignment for an email (I395 — user correction).
+#[tauri::command]
+pub fn update_email_entity(
+    state: State<Arc<AppState>>,
+    email_id: String,
+    entity_id: Option<String>,
+    entity_type: Option<String>,
+) -> Result<(), String> {
+    match state.with_db_try_read(|db| {
+        db.update_email_entity(
+            &email_id,
+            entity_id.as_deref(),
+            entity_type.as_deref(),
+        )
+    }) {
+        crate::state::DbTryRead::Ok(Ok(())) => Ok(()),
+        crate::state::DbTryRead::Ok(Err(e)) => Err(e),
+        _ => Err("Database unavailable".to_string()),
+    }
+}
+
+/// Get email sync status: last fetch time, enrichment progress, failure count (I373).
+#[tauri::command]
+pub fn get_email_sync_status(
+    state: State<Arc<AppState>>,
+) -> Result<crate::db::EmailSyncStats, String> {
+    match state.with_db_try_read(|db| db.get_email_sync_stats()) {
+        crate::state::DbTryRead::Ok(Ok(stats)) => Ok(stats),
+        crate::state::DbTryRead::Ok(Err(e)) => Err(e),
+        crate::state::DbTryRead::Busy => Err("Database busy".to_string()),
+        crate::state::DbTryRead::Unavailable => Err("Database not available".to_string()),
+        crate::state::DbTryRead::Poisoned => Err("Database lock poisoned".to_string()),
+    }
+}
+
+/// Get emails linked to a specific entity for entity detail pages (I368 AC5).
+/// Queries by entity_id directly, OR by sender domain for accounts without direct entity links.
+#[tauri::command]
+pub fn get_entity_emails(
+    state: State<Arc<AppState>>,
+    entity_id: String,
+    entity_type: String,
+) -> Result<Vec<crate::db::DbEmail>, String> {
+    match state.with_db_try_read(|db| {
+        // Try direct entity_id match first
+        let direct = db.get_emails_for_entity(&entity_id)?;
+        if !direct.is_empty() {
+            return Ok(direct);
+        }
+
+        // For person entities, also check emails sent by this person's email addresses
+        if entity_type == "person" {
+            if let Ok(Some(person)) = db.get_person(&entity_id) {
+                // Query by person's primary email
+                let mut stmt = db.conn_ref().prepare(
+                    "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
+                            priority, is_unread, received_at, enrichment_state, enrichment_attempts,
+                            last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                            contextual_summary, sentiment, urgency, user_is_last_sender,
+                            last_sender_email, message_count, created_at, updated_at,
+                            relevance_score, score_reason
+                     FROM emails WHERE sender_email = ?1 ORDER BY received_at DESC"
+                ).map_err(|e| format!("query error: {e}"))?;
+                let rows = stmt.query_map([&person.email], |row| {
+                    Ok(crate::db::DbEmail {
+                        email_id: row.get(0)?, thread_id: row.get(1)?, sender_email: row.get(2)?,
+                        sender_name: row.get(3)?, subject: row.get(4)?, snippet: row.get(5)?,
+                        priority: row.get(6)?, is_unread: row.get::<_, i32>(7)? != 0,
+                        received_at: row.get(8)?, enrichment_state: row.get(9)?,
+                        enrichment_attempts: row.get(10)?, last_enrichment_at: row.get(11)?,
+                        last_seen_at: row.get(12)?, resolved_at: row.get(13)?,
+                        entity_id: row.get(14)?, entity_type: row.get(15)?,
+                        contextual_summary: row.get(16)?, sentiment: row.get(17)?,
+                        urgency: row.get(18)?, user_is_last_sender: row.get::<_, i32>(19)? != 0,
+                        last_sender_email: row.get(20)?, message_count: row.get(21)?,
+                        created_at: row.get(22)?, updated_at: row.get(23)?,
+                        relevance_score: row.get(24).ok(), score_reason: row.get(25).ok(),
+                    })
+                }).map_err(|e| format!("query error: {e}"))?;
+                let by_sender: Vec<_> = rows.flatten().collect();
+                if !by_sender.is_empty() {
+                    return Ok(by_sender);
+                }
+            }
+        }
+
+        // For account entities, check emails from people linked to this account
+        if entity_type == "account" {
+            let mut stmt = db.conn_ref().prepare(
+                "SELECT DISTINCT pe.email FROM entity_people ep
+                 JOIN person_emails pe ON ep.person_id = pe.person_id
+                 WHERE ep.entity_id = ?1"
+            ).map_err(|e| format!("query error: {e}"))?;
+            let emails_list: Vec<String> = stmt.query_map([&entity_id], |row| row.get(0))
+                .map_err(|e| format!("query error: {e}"))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            if !emails_list.is_empty() {
+                let placeholders: Vec<String> = (0..emails_list.len()).map(|i| format!("?{}", i + 1)).collect();
+                let sql = format!(
+                    "SELECT email_id, thread_id, sender_email, sender_name, subject, snippet,
+                            priority, is_unread, received_at, enrichment_state, enrichment_attempts,
+                            last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
+                            contextual_summary, sentiment, urgency, user_is_last_sender,
+                            last_sender_email, message_count, created_at, updated_at,
+                            relevance_score, score_reason
+                     FROM emails WHERE sender_email IN ({}) ORDER BY received_at DESC",
+                    placeholders.join(",")
+                );
+                let mut stmt = db.conn_ref().prepare(&sql).map_err(|e| format!("query error: {e}"))?;
+                let params: Vec<&dyn rusqlite::types::ToSql> = emails_list.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+                let rows = stmt.query_map(params.as_slice(), |row| {
+                    Ok(crate::db::DbEmail {
+                        email_id: row.get(0)?, thread_id: row.get(1)?, sender_email: row.get(2)?,
+                        sender_name: row.get(3)?, subject: row.get(4)?, snippet: row.get(5)?,
+                        priority: row.get(6)?, is_unread: row.get::<_, i32>(7)? != 0,
+                        received_at: row.get(8)?, enrichment_state: row.get(9)?,
+                        enrichment_attempts: row.get(10)?, last_enrichment_at: row.get(11)?,
+                        last_seen_at: row.get(12)?, resolved_at: row.get(13)?,
+                        entity_id: row.get(14)?, entity_type: row.get(15)?,
+                        contextual_summary: row.get(16)?, sentiment: row.get(17)?,
+                        urgency: row.get(18)?, user_is_last_sender: row.get::<_, i32>(19)? != 0,
+                        last_sender_email: row.get(20)?, message_count: row.get(21)?,
+                        created_at: row.get(22)?, updated_at: row.get(23)?,
+                        relevance_score: row.get(24).ok(), score_reason: row.get(25).ok(),
+                    })
+                }).map_err(|e| format!("query error: {e}"))?;
+                let results: Vec<_> = rows.flatten().collect();
+                if !results.is_empty() {
+                    return Ok(results);
+                }
+            }
+        }
+
+        Ok(Vec::new())
+    }) {
+        crate::state::DbTryRead::Ok(Ok(emails)) => Ok(emails),
+        crate::state::DbTryRead::Ok(Err(e)) => Err(e),
+        crate::state::DbTryRead::Busy => Err("Database busy".to_string()),
+        crate::state::DbTryRead::Unavailable => Err("Database not available".to_string()),
+        crate::state::DbTryRead::Poisoned => Err("Database lock poisoned".to_string()),
+    }
+}
+
 /// Refresh emails independently without re-running the full /today pipeline (I20).
 ///
 /// Re-fetches from Gmail, classifies, and updates emails.json.
@@ -1987,6 +2132,19 @@ pub fn list_dismissed_email_items(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     let set = db.list_dismissed_email_items().map_err(|e| e.to_string())?;
     Ok(set.into_iter().collect())
+}
+
+/// Reset all email dismissal learning data (I374).
+/// Truncates the email_dismissals table so classification starts fresh.
+#[tauri::command]
+pub fn reset_email_preferences(
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let count = db.reset_email_dismissals().map_err(|e| e.to_string())?;
+    log::info!("reset_email_preferences: cleared {} dismissal records", count);
+    Ok(format!("Cleared {} email dismissal records", count))
 }
 
 /// Get all proposed (AI-suggested) actions (I256).

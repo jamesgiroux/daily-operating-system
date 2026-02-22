@@ -408,6 +408,7 @@ pub mod meetings;
 pub mod projects;
 pub mod entities;
 pub mod signals;
+pub mod emails;
 pub mod content;
 
 
