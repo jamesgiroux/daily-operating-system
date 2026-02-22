@@ -1225,7 +1225,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,

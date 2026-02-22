@@ -49,6 +49,45 @@ pub struct DbAction {
     pub next_meeting_start: Option<String>,
 }
 
+/// Account classification: customer, internal org, or partner (I382).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AccountType {
+    Customer,
+    Internal,
+    Partner,
+}
+
+impl AccountType {
+    /// Parse from the TEXT column stored in SQLite.
+    pub fn from_db(s: &str) -> Self {
+        match s {
+            "internal" => AccountType::Internal,
+            "partner" => AccountType::Partner,
+            _ => AccountType::Customer,
+        }
+    }
+
+    /// Value to store in SQLite TEXT column.
+    pub fn as_db_str(&self) -> &'static str {
+        match self {
+            AccountType::Customer => "customer",
+            AccountType::Internal => "internal",
+            AccountType::Partner => "partner",
+        }
+    }
+
+    pub fn is_internal(&self) -> bool {
+        matches!(self, AccountType::Internal)
+    }
+}
+
+impl std::fmt::Display for AccountType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_db_str())
+    }
+}
+
 /// A row from the `accounts` table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,7 +102,7 @@ pub struct DbAccount {
     pub nps: Option<i32>,
     pub tracker_path: Option<String>,
     pub parent_id: Option<String>,
-    pub is_internal: bool,
+    pub account_type: AccountType,
     pub updated_at: String,
     pub archived: bool,
     /// JSON array of auto-extracted keywords for entity resolution (I305).

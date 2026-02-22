@@ -39,6 +39,8 @@ pub struct IntelligenceContext {
     pub recent_email_signals: String,
     /// Linked stakeholders from entity_people + people.
     pub stakeholders: String,
+    /// Canonical contact names with IDs for stakeholder reconciliation (I420).
+    pub canonical_contacts: Option<String>,
     /// Source file manifest.
     pub file_manifest: Vec<SourceManifestEntry>,
     /// Extracted text from workspace files (50KB initial, 20KB incremental).
@@ -49,6 +51,9 @@ pub struct IntelligenceContext {
     pub prior_intelligence: Option<String>,
     /// Next upcoming meeting for this entity.
     pub next_meeting: Option<String>,
+    /// Portfolio context for parent accounts (I384).
+    /// Contains children's intelligence summaries and signal data for portfolio synthesis.
+    pub portfolio_children_context: Option<String>,
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
@@ -345,6 +350,18 @@ pub fn build_intelligence_context(
             })
             .collect();
         ctx.stakeholders = lines.join("\n");
+
+        // I420: Canonical contacts for stakeholder reconciliation
+        let canonical_lines: Vec<String> = people
+            .iter()
+            .map(|p| {
+                format!(
+                    "- \"{}\" (role: {}, id: {}, email: {})",
+                    p.name, p.role.as_deref().unwrap_or("unknown"), p.id, p.email
+                )
+            })
+            .collect();
+        ctx.canonical_contacts = Some(canonical_lines.join("\n"));
     }
 
     // --- Entity connections (people only) ---
@@ -547,7 +564,145 @@ pub fn build_intelligence_context(
         }
     }
 
+    // --- Portfolio context for parent accounts (I384) ---
+    // If this account has children, gather their intelligence summaries and signals
+    // for portfolio-level synthesis.
+    if entity_type == "account" {
+        if let Ok(children) = db.get_child_accounts(entity_id) {
+            if !children.is_empty() {
+                ctx.portfolio_children_context =
+                    Some(build_portfolio_children_context(db, &children));
+            }
+        }
+    }
+
     ctx
+}
+
+/// Maximum context bytes for portfolio children data (I384).
+///
+/// Parent accounts with many children could exceed the standard MAX_CONTEXT_BYTES.
+/// Tiered approach: full executive assessment + signals for first 8 children sorted
+/// by signal recency, then name-only with health for the rest.
+///
+/// Rationale: A typical child's context block is ~500-800 bytes (assessment excerpt +
+/// signals + health facts). At 8 children with full detail, that's ~5KB. Real parent
+/// accounts rarely exceed 10-15 children. 20KB budget accommodates the largest
+/// portfolios while keeping total prompt size reasonable alongside the parent's
+/// own entity context (~10KB).
+const MAX_PORTFOLIO_CONTEXT_BYTES: usize = 20_000;
+
+/// Build portfolio context from children's intelligence for a parent account (I384).
+///
+/// Gathers each child's intelligence.json (from DB cache) and active signals,
+/// then formats them as a context block for the parent's enrichment prompt.
+/// Sorted by signal recency so the most active children get full detail.
+fn build_portfolio_children_context(
+    db: &ActionDb,
+    children: &[DbAccount],
+) -> String {
+    // Collect child data: (name, id, health, intel, signal_count, latest_signal_time)
+    let mut child_data: Vec<(
+        &str,           // name
+        &str,           // id
+        Option<&str>,   // health
+        Option<IntelligenceJson>,
+        Vec<crate::signals::bus::SignalEvent>,
+    )> = Vec::new();
+
+    for child in children {
+        let intel = db.get_entity_intelligence(&child.id).ok().flatten();
+        let signals = crate::signals::bus::get_active_signals(db, "account", &child.id)
+            .unwrap_or_default();
+        child_data.push((
+            &child.name,
+            &child.id,
+            child.health.as_deref(),
+            intel,
+            signals,
+        ));
+    }
+
+    // Sort by signal recency (most recent first), then by name
+    child_data.sort_by(|a, b| {
+        let a_latest = a.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
+        let b_latest = b.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
+        b_latest.cmp(a_latest).then(a.0.cmp(b.0))
+    });
+
+    let mut parts: Vec<String> = Vec::new();
+    let mut total_bytes = 0usize;
+    let mut full_detail_count = 0usize;
+
+    for (name, id, health, intel, signals) in &child_data {
+        let health_str = health.unwrap_or("unknown");
+
+        // After 8 children with full detail, switch to summary-only
+        if full_detail_count >= 8 || total_bytes >= MAX_PORTFOLIO_CONTEXT_BYTES {
+            let summary = format!("- {} [{}]: health={}", name, id, health_str);
+            let summary_bytes = summary.len();
+            if total_bytes + summary_bytes > MAX_PORTFOLIO_CONTEXT_BYTES {
+                parts.push(format!(
+                    "... and {} more children (truncated for context budget)",
+                    child_data.len() - full_detail_count
+                ));
+                break;
+            }
+            parts.push(summary);
+            total_bytes += summary_bytes;
+            continue;
+        }
+
+        let mut block = format!("### {} [{}]\nHealth: {}\n", name, id, health_str);
+
+        // Executive assessment excerpt (first 300 chars)
+        if let Some(ref intel_json) = intel {
+            if let Some(ref assessment) = intel_json.executive_assessment {
+                let excerpt = if assessment.len() > 300 {
+                    format!("{}...", &assessment[..300])
+                } else {
+                    assessment.clone()
+                };
+                block.push_str(&format!("Assessment: {}\n", excerpt));
+            }
+
+            // Risks summary
+            if !intel_json.risks.is_empty() {
+                let risk_lines: Vec<String> = intel_json.risks.iter()
+                    .take(3)
+                    .map(|r| format!("  - [{}] {}", r.urgency, r.text))
+                    .collect();
+                block.push_str("Risks:\n");
+                block.push_str(&risk_lines.join("\n"));
+                block.push('\n');
+            }
+        }
+
+        // Active signals (up to 5)
+        if !signals.is_empty() {
+            let signal_lines: Vec<String> = signals.iter()
+                .take(5)
+                .map(|s| format!("  - [{}] {} ({})", s.signal_type, s.value.as_deref().unwrap_or(""), s.created_at))
+                .collect();
+            block.push_str("Signals:\n");
+            block.push_str(&signal_lines.join("\n"));
+            block.push('\n');
+        }
+
+        let block_bytes = block.len();
+        if total_bytes + block_bytes > MAX_PORTFOLIO_CONTEXT_BYTES {
+            // Exceeded budget, switch to summary for remaining
+            parts.push(format!("- {} [{}]: health={}", name, id, health_str));
+            total_bytes += name.len() + id.len() + health_str.len() + 30;
+            continue;
+        }
+
+        parts.push(block);
+        total_bytes += block_bytes;
+        full_detail_count += 1;
+    }
+
+    parts.join("\n")
 }
 
 fn semantic_gap_query(prior: Option<&IntelligenceJson>) -> String {
@@ -611,9 +766,13 @@ fn build_intelligence_prompt_inner(
 ) -> String {
     let is_incremental = ctx.prior_intelligence.is_some();
     let entity_label = match entity_type {
-        "account" => vocabulary
-            .map(|v| v.entity_noun.as_str())
-            .unwrap_or("customer account"),
+        "account" => match relationship {
+            Some("partner") => "partner organization",
+            Some("internal") => "internal organization",
+            _ => vocabulary
+                .map(|v| v.entity_noun.as_str())
+                .unwrap_or("customer account"),
+        },
         "project" => "project",
         "person" => match relationship {
             Some("internal") => "internal teammate / colleague",
@@ -724,6 +883,19 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
+    // I420: Canonical contacts for deterministic stakeholder naming
+    if let Some(ref contacts) = ctx.canonical_contacts {
+        prompt.push_str(
+            "## Known Contacts (canonical names)\n\
+             The following people are confirmed contacts for this entity. When \
+             referencing any of them in your stakeholder analysis, use their \
+             canonical name EXACTLY as listed. Do not create duplicate entries \
+             using nicknames, abbreviations, or partial names.\n\n",
+        );
+        prompt.push_str(&wrap_user_data(contacts));
+        prompt.push_str("\n\n");
+    }
+
     // File manifest (always shown so Claude knows what exists)
     if !ctx.file_manifest.is_empty() {
         prompt.push_str("## Workspace Files\n");
@@ -748,6 +920,15 @@ fn build_intelligence_prompt_inner(
             prompt.push_str("## File Summaries (by priority)\n");
         }
         prompt.push_str(&wrap_user_data(&ctx.file_contents));
+        prompt.push_str("\n\n");
+    }
+
+    // Portfolio children context for parent accounts (I384)
+    if let Some(ref portfolio_ctx) = ctx.portfolio_children_context {
+        prompt.push_str("## Portfolio: Child Account Intelligence\n");
+        prompt.push_str("This is a PARENT account with child business units. ");
+        prompt.push_str("Use the intelligence data below to synthesize a portfolio-level view.\n\n");
+        prompt.push_str(&wrap_user_data(portfolio_ctx));
         prompt.push_str("\n\n");
     }
 
@@ -804,9 +985,27 @@ fn build_intelligence_prompt_inner(
         }
     }
 
+    // Partner-specific framing (I382): partner accounts use distinct vocabulary
+    if entity_type == "account" && relationship == Some("partner") {
+        prompt.push_str(
+            "PARTNER CONTEXT:\n\
+             - This is a PARTNER organization, not a customer. Do NOT use customer vocabulary \
+               (no renewal_risk, churn risk, spend, NPS, customer health).\n\
+             - Focus on: alignment health, joint deliverables, communication cadence, escalation risk.\n\
+             - WORKING items = productive joint initiatives, clear ownership, responsive communication.\n\
+             - NOT_WORKING items = misaligned priorities, stalled deliverables, communication gaps, unresolved escalations.\n\
+             - Risks should focus on partnership risks — priority misalignment, resource constraints, \
+               relationship cooling, blocked integrations.\n\
+             - Assessment should answer: 'How healthy is this partnership and what needs attention?'\n\n",
+        );
+    }
+
     // Output format instructions
     let p1_framing = match entity_type {
-        "account" => "account trajectory",
+        "account" => match relationship {
+            Some("partner") => "partnership health",
+            _ => "account trajectory",
+        },
         "project" => "project trajectory",
         "person" => match relationship {
             Some("internal") => "collaboration dynamic",
@@ -854,6 +1053,21 @@ fn build_intelligence_prompt_inner(
                  \"size\": \"employee count or range\",\n\
                  \"headquarters\": \"city and country\",\n\
                  \"additionalContext\": \"any additional relevant business context\"\n\
+               }",
+        );
+    }
+
+    // I384: Portfolio section for parent accounts with children
+    if ctx.portfolio_children_context.is_some() {
+        prompt.push_str(
+            ",\n\
+               \"portfolio\": {\n\
+                 \"healthSummary\": \"1-2 sentence executive synthesis of portfolio health across all BUs\",\n\
+                 \"hotspots\": [\n\
+                   {\"childId\": \"child-account-id\", \"childName\": \"Child Name\", \"reason\": \"one-line reason this BU needs attention (risk or opportunity)\"}\n\
+                 ],\n\
+                 \"crossBuPatterns\": [\"signal types or themes appearing in 2+ children (e.g., 'budget risk', 'expansion opportunity')\"],\n\
+                 \"portfolioNarrative\": \"2-3 paragraph executive synthesis: portfolio trajectory, systemic risks, cross-BU opportunities, and recommended portfolio-level actions\"\n\
                }",
         );
     }
@@ -908,9 +1122,34 @@ struct AiIntelResponse {
     next_meeting_readiness: Option<AiMeetingReadiness>,
     #[serde(default)]
     company_context: Option<AiCompanyContext>,
+    /// Portfolio intelligence for parent accounts (I384).
+    #[serde(default)]
+    portfolio: Option<AiPortfolioIntelligence>,
     /// Auto-extracted keywords for entity resolution (I305).
     #[serde(default)]
     keywords: Vec<String>,
+}
+
+/// AI response structure for portfolio intelligence (I384).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiPortfolioIntelligence {
+    #[serde(default)]
+    health_summary: Option<String>,
+    #[serde(default)]
+    hotspots: Vec<AiPortfolioHotspot>,
+    #[serde(default)]
+    cross_bu_patterns: Vec<String>,
+    #[serde(default)]
+    portfolio_narrative: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiPortfolioHotspot {
+    child_id: String,
+    child_name: String,
+    reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1129,6 +1368,17 @@ fn try_parse_json_response(
         additional_context: cc.additional_context,
     });
 
+    let portfolio = ai_resp.portfolio.map(|p| PortfolioIntelligence {
+        health_summary: p.health_summary,
+        hotspots: p.hotspots.into_iter().map(|h| PortfolioHotspot {
+            child_id: h.child_id,
+            child_name: h.child_name,
+            reason: h.reason,
+        }).collect(),
+        cross_bu_patterns: p.cross_bu_patterns,
+        portfolio_narrative: p.portfolio_narrative,
+    });
+
     Some(IntelligenceJson {
         version: 1,
         entity_id: entity_id.to_string(),
@@ -1165,6 +1415,8 @@ fn try_parse_json_response(
                 assessment: s.assessment,
                 engagement: s.engagement,
                 source: None,
+                person_id: None,
+                suggested_person_id: None,
             })
             .collect(),
         value_delivered: ai_resp
@@ -1179,6 +1431,7 @@ fn try_parse_json_response(
             .collect(),
         next_meeting_readiness,
         company_context,
+        portfolio,
         user_edits: Vec::new(),
     })
 }
@@ -1411,6 +1664,8 @@ fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
         assessment,
         engagement,
         source: None,
+        person_id: None,
+        suggested_person_id: None,
     })
 }
 
@@ -1515,6 +1770,8 @@ mod tests {
             recent_transcripts: String::new(),
             prior_intelligence: None, // Initial mode
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
+            portfolio_children_context: None,
+            canonical_contacts: None,
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
@@ -1884,7 +2141,7 @@ Hope this helps!"#;
             nps: Some(75),
             tracker_path: None,
             parent_id: None,
-            is_internal: false,
+            account_type: crate::db::AccountType::Customer,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
             keywords: None,
