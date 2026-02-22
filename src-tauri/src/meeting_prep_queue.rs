@@ -351,15 +351,17 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
         }
     }
 
-    // Phase 6: Write result to prep_frozen_json in DB
+    // Phase 6: Write result to prep_frozen_json in DB.
+    // Deliberately does NOT set prep_frozen_at — that column is owned by the AI
+    // workflow (reconcile.rs freeze_meeting_prep_snapshot) and gates on IS NULL.
+    // Setting it here would prevent the workflow from ever writing real AI content.
     let frozen_str =
         serde_json::to_string(&prep_json).map_err(|e| format!("Serialize error: {}", e))?;
 
-    let now = chrono::Utc::now().to_rfc3339();
     db.conn_ref()
         .execute(
-            "UPDATE meetings_history SET prep_frozen_json = ?1, prep_frozen_at = ?2 WHERE id = ?3",
-            rusqlite::params![frozen_str, now, meeting_id],
+            "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+            rusqlite::params![frozen_str, meeting_id],
         )
         .map_err(|e| format!("Failed to write prep: {}", e))?;
 
