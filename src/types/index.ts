@@ -1193,6 +1193,45 @@ export interface PortfolioIntelligence {
   portfolioNarrative?: string;
 }
 
+/** A key relationship in a person's network (I391, ADR-0088). */
+export interface NetworkKeyRelationship {
+  personId: string;
+  name: string;
+  relationshipType: string;
+  confidence: number;
+  signalSummary?: string;
+}
+
+/** Network intelligence for person entities (I391, ADR-0088). */
+export interface NetworkIntelligence {
+  health: 'strong' | 'at_risk' | 'weakened' | 'unknown';
+  keyRelationships: NetworkKeyRelationship[];
+  risks: string[];
+  opportunities: string[];
+  influenceRadius: number;
+  clusterSummary?: string;
+}
+
+/** A person-to-person relationship edge (I390, ADR-0088). */
+export interface PersonRelationshipEdge {
+  id: string;
+  fromPersonId: string;
+  toPersonId: string;
+  fromPersonName?: string;
+  toPersonName?: string;
+  relationshipType: string;
+  direction: string;
+  confidence: number;
+  effectiveConfidence: number;
+  contextEntityId?: string;
+  contextEntityType?: string;
+  contextEntityName?: string;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+  lastReinforcedAt?: string;
+}
+
 /** Synthesized intelligence for an entity (account, project, or person). */
 export interface EntityIntelligence {
   version: number;
@@ -1210,6 +1249,8 @@ export interface EntityIntelligence {
   companyContext?: IntelCompanyContext;
   /** Portfolio intelligence for parent accounts (I384) */
   portfolio?: PortfolioIntelligence;
+  /** Network intelligence for person entities (I391) */
+  network?: NetworkIntelligence;
   userEdits?: UserEdit[];
 }
 

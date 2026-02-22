@@ -1,0 +1,318 @@
+/* PersonRelationships — "Their Network" chapter (I392, ADR-0088) */
+
+.chapter {
+  padding-top: var(--space-2xl);
+}
+
+.clusterSummary {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-lg);
+}
+
+.calloutList {
+  margin-bottom: var(--space-md);
+}
+
+.calloutRisk {
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding-left: var(--space-md);
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.calloutOpportunity {
+  border-left: 3px solid var(--color-garden-sage);
+  padding-left: var(--space-md);
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.edgeGroup {
+  margin-bottom: var(--space-lg);
+}
+
+.groupLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
+}
+
+/* Edge row */
+.edgeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.edgeLink {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.edgeLink:hover {
+  color: var(--color-garden-larkspur);
+}
+
+.edgeBadge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--radius-editorial-sm);
+  /* Charcoal tint — from --color-desk-charcoal #1e2530 */
+  background: rgba(30, 37, 48, 0.06);
+  color: var(--color-text-secondary);
+}
+
+.edgeMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.edgeConfidence {
+  cursor: help;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.edgeDate {
+  opacity: 0.7;
+}
+
+/* Delete button on edge rows */
+.deleteBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.edgeRow:hover .deleteBtn {
+  opacity: 1;
+}
+
+.deleteBtn:hover {
+  color: var(--color-spice-terracotta);
+}
+
+/* Empty state */
+.emptyState {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+}
+
+/* Add connection button */
+.addBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px dashed var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  margin-top: var(--space-sm);
+}
+
+.addBtn:hover {
+  color: var(--color-garden-larkspur);
+  border-color: var(--color-garden-larkspur);
+}
+
+/* Add flow container */
+.addFlow {
+  margin-top: var(--space-sm);
+}
+
+.searchInput {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: var(--color-garden-larkspur);
+}
+
+.searchResults {
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  margin-top: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--color-paper-warm-white);
+}
+
+.searchResultItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.searchResultItem:last-child {
+  border-bottom: none;
+}
+
+.searchResultItem:hover {
+  background: rgba(30, 37, 48, 0.04);
+}
+
+.searchResultName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.searchResultMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.noResults {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* Type selector (step 2) */
+.typeSelector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.selectedPersonLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.clearPersonBtn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 2px;
+}
+
+.clearPersonBtn:hover {
+  color: var(--color-spice-terracotta);
+}
+
+.typeSelectorRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.typeLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.typeSelectorActions {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.cancelBtn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+.cancelBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.saveBtn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-paper-warm-white);
+  background: var(--color-garden-larkspur);
+  border: none;
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.saveBtn:hover {
+  opacity: 0.9;
+}
+
+.saveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

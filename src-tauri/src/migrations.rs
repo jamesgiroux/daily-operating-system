@@ -125,6 +125,12 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 37,
     sql: include_str!("migrations/037_project_hierarchy.sql"),
+}, Migration {
+    version: 38,
+    sql: include_str!("migrations/038_person_relationships.sql"),
+}, Migration {
+    version: 39,
+    sql: include_str!("migrations/039_person_relationships_types.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -286,13 +292,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 37,
-            "should apply all migrations including project_hierarchy"
+            applied, 39,
+            "should apply all migrations including person_relationships type update"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 37);
+        assert_eq!(version, 39);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -655,6 +661,14 @@ mod tests {
             .expect("query internal account_type");
         assert_eq!(internal_type, "internal");
 
+        // Verify person_relationships table (migration 038)
+        conn.execute(
+            "INSERT INTO person_relationships (id, from_person_id, to_person_id, relationship_type, source)
+             VALUES ('pr-1', 'p1', 'p1', 'peer', 'user_confirmed')",
+            [],
+        )
+        .expect("person_relationships table should exist and accept inserts");
+
         // Verify partner type can be set
         conn.execute(
             "UPDATE accounts SET account_type = 'partner' WHERE id = 'a1'",
@@ -792,11 +806,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 36, "bootstrap should mark v1, then apply v2 through v37");
+        assert_eq!(applied, 38, "bootstrap should mark v1, then apply v2 through v39");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 37);
+        assert_eq!(version, 39);
 
         // Verify existing data is untouched
         let title: String = conn

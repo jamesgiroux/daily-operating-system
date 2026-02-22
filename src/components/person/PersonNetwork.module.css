@@ -1,0 +1,102 @@
+/* PersonNetwork — "Their Orbit" chapter (I392, ADR-0088) */
+
+.section {
+  scroll-margin-top: var(--page-margin-top);
+  padding-top: var(--space-2xl);
+}
+
+.emptyState {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  margin-top: var(--space-md);
+}
+
+.grid {
+  display: grid;
+  gap: 40px;
+  margin-top: var(--space-lg);
+}
+
+.gridTwoCol {
+  composes: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.gridOneCol {
+  composes: grid;
+  grid-template-columns: 1fr;
+}
+
+.columnLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+}
+
+.columnList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.pickerWrap {
+  margin-top: var(--space-lg);
+  max-width: 320px;
+}
+
+/* Entity row */
+.entityRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.entityLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--color-text-primary);
+}
+
+.entityDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.entityName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.entityType {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.unlinkBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+}
