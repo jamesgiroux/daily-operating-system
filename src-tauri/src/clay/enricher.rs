@@ -414,7 +414,7 @@ pub async fn enrich_person_from_clay_with_client(
             "new_value": signal.new_value,
         })
         .to_string();
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db,
             &state.signal_engine,
             "person",
@@ -646,7 +646,7 @@ pub async fn enrich_person_from_clay(
             "new_value": signal.new_value,
         })
         .to_string();
-        let _ = crate::signals::bus::emit_signal(
+        let _ = crate::services::signals::emit(
             db,
             "person",
             person_id,
