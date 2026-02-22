@@ -242,7 +242,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Detect cancelled meetings: today's DB meetings not in current poll (ADR-0081)
                 detect_cancelled_meetings(&events, &state);
 
-                if let Ok(mut guard) = state.calendar_events.write() {
+                if let Ok(mut guard) = state.calendar.events.write() {
                     *guard = events;
                 }
 
@@ -276,7 +276,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
-                if let Ok(mut guard) = state.google_auth.lock() {
+                if let Ok(mut guard) = state.calendar.google_auth.lock() {
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
                 let _ = app_handle.emit("google-auth-changed", GoogleAuthStatus::TokenExpired);
@@ -296,7 +296,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 fn should_poll(state: &AppState) -> bool {
     // Only gate: must be authenticated with Google
     state
-        .google_auth
+        .calendar.google_auth
         .lock()
         .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
         .unwrap_or(false)
@@ -513,7 +513,7 @@ struct CalendarSyncIntelligence {
 /// Returns sync intelligence for new/changed meetings that need intelligence triggers.
 fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) -> CalendarSyncIntelligence {
     // Acquire config/auth locks first (short-lived), then DB lock
-    let self_email = state.google_auth.lock().ok().and_then(|g| match &*g {
+    let self_email = state.calendar.google_auth.lock().ok().and_then(|g| match &*g {
         GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
         _ => None,
     });
