@@ -52,6 +52,7 @@ export default function EmailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
 
   const loadEmails = useCallback(async () => {
     try {
@@ -103,6 +104,15 @@ export default function EmailsPage() {
       });
     } catch (err) {
       console.error("Dismiss failed:", err);
+    }
+  }, []);
+
+  const handleDismissSignal = useCallback(async (signalId: number) => {
+    setDismissedSignals((prev) => new Set(prev).add(signalId));
+    try {
+      await invoke("dismiss_email_signal", { signalId });
+    } catch (err) {
+      console.error("Dismiss signal failed:", err);
     }
   }, []);
 
@@ -457,13 +467,25 @@ export default function EmailsPage() {
         </section>
       )}
 
-      {/* ═══ SIGNALS ═══ */}
-      {hasSignals && (
+      {/* ═══ UPDATES ═══ */}
+      {hasSignals && (() => {
+        // Filter threads: keep only those with visible (non-dismissed) signals
+        const liveThreads = entityThreads.filter((thread) =>
+          thread.signals.some((sig) => sig.id != null && !dismissedSignals.has(sig.id))
+        );
+        if (liveThreads.length === 0) return null;
+        const shown = liveThreads.slice(0, 3);
+        const overflow = liveThreads.slice(3);
+        return (
         <section style={{ marginBottom: 48 }}>
           <div className={s.marginGrid}>
-            <div className={s.marginLabel}>SIGNALS</div>
+            <div className={s.marginLabel}>UPDATES</div>
             <div className={s.marginContent}>
-              {entityThreads.slice(0, 3).map((thread, i) => (
+              {shown.map((thread, i) => {
+                const visibleSignals = thread.signals.filter(
+                  (sig) => sig.id != null && !dismissedSignals.has(sig.id)
+                );
+                return (
                 <div key={thread.entityId}>
                   <div
                     style={{
@@ -488,27 +510,69 @@ export default function EmailsPage() {
                       {thread.emailCount} email{thread.emailCount !== 1 ? "s" : ""}
                     </span>
                   </div>
-                  {thread.signalSummary && (
-                    <p
-                      style={{
-                        fontFamily: "var(--font-serif)",
-                        fontSize: 16,
-                        fontWeight: 300,
-                        lineHeight: 1.65,
-                        color: "var(--color-text-secondary)",
-                        margin: "0 0 16px 0",
-                        maxWidth: 640,
-                      }}
-                    >
-                      {thread.signalSummary}
-                    </p>
-                  )}
-                  {i < Math.min(entityThreads.length, 3) - 1 && (
+                  <div style={{ margin: "0 0 16px 0", maxWidth: 640 }}>
+                    {visibleSignals.map((sig) => (
+                      <div
+                        key={sig.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 8,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 10,
+                            fontWeight: 500,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                            color: "var(--color-text-tertiary)",
+                            minWidth: 72,
+                            paddingTop: 3,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {sig.signalType}
+                        </span>
+                        <span
+                          style={{
+                            fontFamily: "var(--font-serif)",
+                            fontSize: 15,
+                            fontWeight: 300,
+                            lineHeight: 1.5,
+                            color: "var(--color-text-secondary)",
+                            flex: 1,
+                          }}
+                        >
+                          {sig.signalText}
+                        </span>
+                        <button
+                          onClick={() => handleDismissSignal(sig.id!)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: 2,
+                            color: "var(--color-text-tertiary)",
+                            opacity: 0.5,
+                            flexShrink: 0,
+                          }}
+                          title="Dismiss signal"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {i < shown.length - 1 && (
                     <div className={s.sectionRule} style={{ marginBottom: 16 }} />
                   )}
                 </div>
-              ))}
-              {entityThreads.length > 3 && (
+                );
+              })}
+              {overflow.length > 0 && (
                 <div
                   style={{
                     fontFamily: "var(--font-sans)",
@@ -517,14 +581,15 @@ export default function EmailsPage() {
                     marginTop: 12,
                   }}
                 >
-                  {entityThreads.slice(3).map((t) => t.entityName).join(", ")}
+                  {overflow.map((t) => t.entityName).join(", ")}
                   {" — routine correspondence."}
                 </div>
               )}
             </div>
           </div>
         </section>
-      )}
+        );
+      })()}
 
       {/* ═══ ALL CORRESPONDENCE — Intelligence-first email list ═══ */}
       {allEnrichedEmails.length > 0 && (
