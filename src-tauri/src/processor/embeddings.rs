@@ -115,13 +115,21 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
         let config = match state.config.read().ok().and_then(|g| g.clone()) {
             Some(c) => c,
             None => {
-                tokio::time::sleep(Duration::from_secs(IDLE_POLL_SECS)).await;
+                let interval = crate::activity::adaptive_poll_interval(&state.activity, true);
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    _ = state.integrations.embedding_queue_wake.notified() => {}
+                }
                 continue;
             }
         };
 
         if !config.embeddings.enabled {
-            tokio::time::sleep(Duration::from_secs(IDLE_POLL_SECS)).await;
+            let interval = crate::activity::adaptive_poll_interval(&state.activity, true);
+            tokio::select! {
+                _ = tokio::time::sleep(interval) => {}
+                _ = state.integrations.embedding_queue_wake.notified() => {}
+            }
             continue;
         }
 
@@ -136,6 +144,16 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
 
         let request = state.embedding_queue.dequeue();
         if let Some(request) = request {
+            // Acquire heavy-work semaphore — embedding inference is CPU-intensive,
+            // serialize with PTY subprocess calls to avoid resource contention.
+            let _permit = match state.heavy_work_semaphore.acquire().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    log::warn!("EmbeddingProcessor: heavy_work_semaphore closed, stopping");
+                    return;
+                }
+            };
+
             match process_request(&state, &request) {
                 Ok(updated) => {
                     if updated > 0 {
@@ -153,7 +171,12 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
             continue;
         }
 
-        tokio::time::sleep(Duration::from_secs(IDLE_POLL_SECS)).await;
+        // Adaptive sleep: back off when queue is empty + user is active; wake instantly on enqueue
+        let interval = crate::activity::adaptive_poll_interval(&state.activity, true);
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {}
+            _ = state.integrations.embedding_queue_wake.notified() => {}
+        }
     }
 }
 
