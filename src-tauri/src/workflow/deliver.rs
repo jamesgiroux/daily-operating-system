@@ -647,6 +647,10 @@ pub fn deliver_schedule(
         .ok()
         .and_then(|c| c.schedules.today.timezone.parse::<Tz>().ok());
 
+    // Resolve authenticated user email for filtering self from attendee lists
+    let user_email = crate::google_api::token_store::peek_account_email()
+        .map(|e| e.to_lowercase());
+
     let events = &directive.calendar.events;
     let meetings_by_type = &directive.meetings;
     let meeting_contexts = &directive.meeting_contexts;
@@ -728,10 +732,41 @@ pub fn deliver_schedule(
                         if rsvp == "declined" {
                             return None;
                         }
+                        // Skip the authenticated user (they're always in the room)
+                        if let Some(ref ue) = user_email {
+                            if email.to_lowercase() == *ue {
+                                return None;
+                            }
+                        }
+                        // Name resolution: Google Calendar → attendee_display_names → people → email local part
                         let name = event
                             .attendee_names
                             .get(email)
                             .cloned()
+                            .or_else(|| {
+                                db.and_then(|db| {
+                                    // Try attendee_display_names table (cached Google names)
+                                    db.conn_ref()
+                                        .query_row(
+                                            "SELECT display_name FROM attendee_display_names WHERE email = ?1",
+                                            [email],
+                                            |row| row.get::<_, String>(0),
+                                        )
+                                        .ok()
+                                })
+                            })
+                            .or_else(|| {
+                                db.and_then(|db| {
+                                    // Try people table
+                                    db.conn_ref()
+                                        .query_row(
+                                            "SELECT name FROM people WHERE email = LOWER(?1)",
+                                            [email],
+                                            |row| row.get::<_, String>(0),
+                                        )
+                                        .ok()
+                                })
+                            })
                             .unwrap_or_else(|| email.split('@').next().unwrap_or(email).to_string());
                         let domain = email.split('@').nth(1).unwrap_or("");
                         Some(json!({
@@ -811,6 +846,7 @@ pub fn deliver_schedule(
         "summary": summary,
         "meetings": meetings_json,
         "userDomains": user_domains,
+        "userEmail": user_email,
     });
 
     if let Some(ref focus) = directive.context.focus {

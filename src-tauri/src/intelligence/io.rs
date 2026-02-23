@@ -110,6 +110,63 @@ pub(crate) fn default_network_health() -> String {
     "unknown".to_string()
 }
 
+// =============================================================================
+// I396: Intelligence Report Types
+// =============================================================================
+
+/// Health trend direction with rationale (I396).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthTrend {
+    pub direction: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+}
+
+/// A success metric / KPI tracked for an entity (I396).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessMetric {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+/// An open commitment — a promise made to/from the account (I396).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenCommitment {
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+/// Relationship depth assessment (I396).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipDepth {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_strength: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executive_access: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stakeholder_coverage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage_gaps: Option<Vec<String>>,
+}
+
 /// Top-level intelligence file (intelligence.json).
 ///
 /// Entity-generic — same schema for accounts, projects, and people per ADR-0057.
@@ -174,6 +231,26 @@ pub struct IntelligenceJson {
     /// Enrichment cycles preserve these fields instead of overwriting them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_edits: Vec<UserEdit>,
+
+    /// I396: Account health score (0-100). Null for sparse accounts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_score: Option<f64>,
+
+    /// I396: Health trend direction + rationale.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_trend: Option<HealthTrend>,
+
+    /// I396: Success metrics / KPIs tracked for this entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub success_metrics: Option<Vec<SuccessMetric>>,
+
+    /// I396: Open commitments (promises made to/from the account).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_commitments: Option<Vec<OpenCommitment>>,
+
+    /// I396: Relationship depth assessment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relationship_depth: Option<RelationshipDepth>,
 }
 
 fn default_version() -> u32 {
@@ -623,8 +700,10 @@ impl ActionDb {
                 entity_id, entity_type, enriched_at, source_file_count,
                 executive_assessment, risks_json, recent_wins_json,
                 current_state_json, stakeholder_insights_json,
-                next_meeting_readiness_json, company_context_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                next_meeting_readiness_json, company_context_json,
+                health_score, health_trend, value_delivered,
+                success_metrics, open_commitments, relationship_depth
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -635,7 +714,13 @@ impl ActionDb {
                 current_state_json = excluded.current_state_json,
                 stakeholder_insights_json = excluded.stakeholder_insights_json,
                 next_meeting_readiness_json = excluded.next_meeting_readiness_json,
-                company_context_json = excluded.company_context_json",
+                company_context_json = excluded.company_context_json,
+                health_score = excluded.health_score,
+                health_trend = excluded.health_trend,
+                value_delivered = excluded.value_delivered,
+                success_metrics = excluded.success_metrics,
+                open_commitments = excluded.open_commitments,
+                relationship_depth = excluded.relationship_depth",
             rusqlite::params![
                 intel.entity_id,
                 intel.entity_type,
@@ -648,6 +733,12 @@ impl ActionDb {
                 serde_json::to_string(&intel.stakeholder_insights).ok(),
                 serde_json::to_string(&intel.next_meeting_readiness).ok(),
                 serde_json::to_string(&intel.company_context).ok(),
+                intel.health_score,
+                serde_json::to_string(&intel.health_trend).ok(),
+                serde_json::to_string(&intel.value_delivered).ok(),
+                serde_json::to_string(&intel.success_metrics).ok(),
+                serde_json::to_string(&intel.open_commitments).ok(),
+                serde_json::to_string(&intel.relationship_depth).ok(),
             ],
         )?;
         Ok(())
@@ -662,7 +753,9 @@ impl ActionDb {
             "SELECT entity_id, entity_type, enriched_at, source_file_count,
                     executive_assessment, risks_json, recent_wins_json,
                     current_state_json, stakeholder_insights_json,
-                    next_meeting_readiness_json, company_context_json
+                    next_meeting_readiness_json, company_context_json,
+                    health_score, health_trend, value_delivered,
+                    success_metrics, open_commitments, relationship_depth
              FROM entity_intelligence WHERE entity_id = ?1",
         )?;
 
@@ -673,6 +766,11 @@ impl ActionDb {
             let stakeholder_json: Option<String> = row.get(8)?;
             let readiness_json: Option<String> = row.get(9)?;
             let company_json: Option<String> = row.get(10)?;
+            let health_trend_json: Option<String> = row.get(12)?;
+            let value_delivered_json: Option<String> = row.get(13)?;
+            let success_metrics_json: Option<String> = row.get(14)?;
+            let open_commitments_json: Option<String> = row.get(15)?;
+            let relationship_depth_json: Option<String> = row.get(16)?;
 
             Ok(IntelligenceJson {
                 version: 1,
@@ -692,12 +790,19 @@ impl ActionDb {
                 stakeholder_insights: stakeholder_json
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
-                value_delivered: Vec::new(), // Not cached in DB (stored in file only)
+                value_delivered: value_delivered_json
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
                 next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),
                 company_context: company_json.and_then(|j| serde_json::from_str(&j).ok()),
                 portfolio: None, // Not cached in DB (stored in file only)
                 network: None,  // Not cached in DB (stored in file only)
                 user_edits: Vec::new(), // Not cached in DB (stored in file only)
+                health_score: row.get(11)?,
+                health_trend: health_trend_json.and_then(|j| serde_json::from_str(&j).ok()),
+                success_metrics: success_metrics_json.and_then(|j| serde_json::from_str(&j).ok()),
+                open_commitments: open_commitments_json.and_then(|j| serde_json::from_str(&j).ok()),
+                relationship_depth: relationship_depth_json.and_then(|j| serde_json::from_str(&j).ok()),
             })
         });
 
@@ -1401,6 +1506,11 @@ mod tests {
             portfolio: None,
             network: None,
             user_edits: Vec::new(),
+            health_score: None,
+            health_trend: None,
+            success_metrics: None,
+            open_commitments: None,
+            relationship_depth: None,
         }
     }
 
@@ -1677,6 +1787,11 @@ mod tests {
             portfolio: None,
             network: None,
             user_edits: Vec::new(),
+            health_score: None,
+            health_trend: None,
+            success_metrics: None,
+            open_commitments: None,
+            relationship_depth: None,
         };
 
         let md = format_intelligence_markdown(&intel);

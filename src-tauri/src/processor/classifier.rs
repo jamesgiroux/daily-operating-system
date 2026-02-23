@@ -17,6 +17,8 @@ pub enum Classification {
     ActionItems { account: Option<String> },
     /// Context for an upcoming meeting
     MeetingContext { meeting_name: Option<String> },
+    /// User context document — stays in _user/attachments/
+    UserContext,
     /// Unknown type — needs AI enrichment
     Unknown,
 }
@@ -29,6 +31,7 @@ impl Classification {
             Self::AccountUpdate { .. } => "account_update",
             Self::ActionItems { .. } => "action_items",
             Self::MeetingContext { .. } => "meeting_context",
+            Self::UserContext => "user_context",
             Self::Unknown => "unknown",
         }
     }

@@ -9,13 +9,15 @@
  * brand mark at top. Chapter mode smooth-scrolls instead of navigating routes.
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { BrandMark } from '../ui/BrandMark';
 import {
   Calendar,
   Mail,
   Inbox,
   CheckSquare2,
+  UserCircle,
   Users,
   Building2,
   FolderKanban,
@@ -24,6 +26,7 @@ import {
 import { capitalize } from '@/lib/utils';
 import { smoothScrollTo } from '@/lib/smooth-scroll';
 import styles from './FloatingNavIsland.module.css';
+import type { UserEntity } from '@/types';
 
 export interface ChapterItem {
   id: string;
@@ -43,13 +46,13 @@ export interface FloatingNavIslandProps {
    * Currently active page for visual highlighting (app mode)
    * Default: 'today'
    */
-  activePage?: 'today' | 'week' | 'emails' | 'dropbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
+  activePage?: 'today' | 'week' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
 
   /**
    * Color of active state indicator
    * Default: 'turmeric'
    */
-  activeColor?: 'turmeric' | 'terracotta' | 'larkspur' | 'olive';
+  activeColor?: 'turmeric' | 'terracotta' | 'larkspur' | 'olive' | 'eucalyptus';
 
   /**
    * Entity mode from active role preset.
@@ -85,7 +88,7 @@ export interface FloatingNavIslandProps {
 }
 
 interface NavItem {
-  id: 'week' | 'emails' | 'dropbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
+  id: 'week' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
   label: string;
   icon: React.ReactNode;
   group: 'main' | 'entity' | 'admin';
@@ -103,6 +106,26 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   onChapterClick,
 }) => {
   const activeClass = styles[`active${capitalize(activeColor)}`] || '';
+
+  // Check if user entity is empty — drives dot indicator on Me nav item (prompt to fill in)
+  const [meNeedsContent, setMeNeedsContent] = useState(true);
+  useEffect(() => {
+    if (mode !== 'app') return;
+    invoke<UserEntity>('get_user_entity')
+      .then((entity) => {
+        const hasContent = !!(
+          entity.name || entity.company || entity.title ||
+          entity.valueProposition || entity.successDefinition ||
+          entity.productContext || entity.companyBio || entity.roleDescription ||
+          entity.howImMeasured || entity.pricingModel || entity.competitiveContext ||
+          entity.differentiators || entity.objections ||
+          entity.annualPriorities || entity.quarterlyPriorities ||
+          (entity.playbooks && entity.playbooks !== '{}')
+        );
+        setMeNeedsContent(!hasContent);
+      })
+      .catch(() => { /* user entity not available */ });
+  }, [mode]);
 
   // Chapter mode — icon-based scroll navigation (same visual style as app mode)
   if (mode === 'chapters' && chapters && chapters.length > 0) {
@@ -153,6 +176,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
     { id: 'emails', label: 'Mail', icon: <Mail size={18} strokeWidth={1.8} />, group: 'main' },
     { id: 'dropbox', label: 'Dropbox', icon: <Inbox size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'entity' },
+    { id: 'me', label: 'Me', icon: <UserCircle size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'people', label: 'People', icon: <Users size={18} strokeWidth={1.8} />, group: 'entity' },
     ...entityPair,
     { id: 'settings', label: 'Settings', icon: <Settings size={18} strokeWidth={1.8} />, group: 'admin' },
@@ -203,6 +227,9 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
             title={item.label}
           >
             {item.icon}
+            {item.id === 'me' && meNeedsContent && (
+              <span className={styles.meContentDot} aria-hidden="true" />
+            )}
           </button>
         ))}
 

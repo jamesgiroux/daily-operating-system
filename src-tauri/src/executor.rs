@@ -942,6 +942,11 @@ impl Executor {
                     let _ = self
                         .app_handle
                         .emit("email-error", format!("Email delivery failed: {}", e));
+                    crate::notification::emit_system_status(
+                        &self.app_handle,
+                        "pipeline_error",
+                        &format!("Email enrichment paused: {}", e),
+                    );
                     crate::workflow::deliver::set_email_sync_status(&data_dir, &sync)
                         .unwrap_or_else(|_| {
                             crate::workflow::deliver::empty_emails_payload(Some(&sync))
@@ -1174,6 +1179,11 @@ impl Executor {
             let _ = self
                 .app_handle
                 .emit("email-error", format!("Email refresh failed: {}", e));
+            crate::notification::emit_system_status(
+                &self.app_handle,
+                "pipeline_error",
+                &format!("Email enrichment paused: {}", e),
+            );
             return Err(format!("Email refresh failed: {}", e));
         }
 
