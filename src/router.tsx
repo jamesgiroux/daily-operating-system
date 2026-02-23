@@ -38,6 +38,7 @@ import ProjectsPage from "@/pages/ProjectsPage";
 import ProjectDetailEditorial from "@/pages/ProjectDetailEditorial";
 import RiskBriefingPage from "@/pages/RiskBriefingPage";
 import SettingsPage from "@/pages/SettingsPage";
+import MePage from "@/pages/MePage";
 import WeekPage from "@/pages/WeekPage";
 
 
@@ -51,6 +52,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
 import { useNotifications } from "@/hooks/useNotifications";
 import { PersonalityProvider } from "@/hooks/usePersonality";
+import { UpdateBanner } from "@/components/notifications/UpdateBanner";
+import { WhatsNewModal, useWhatsNewAutoShow } from "@/components/notifications/WhatsNewModal";
 
 const settingsTabs = new Set([
   "you",
@@ -70,7 +73,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
 // Root layout that wraps all pages
 function RootLayout() {
@@ -79,6 +82,8 @@ function RootLayout() {
   const navigate = useNavigate();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [checkingConfig, setCheckingConfig] = useState(true);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const { autoShowOpen, dismissAutoShow } = useWhatsNewAutoShow();
 
   // Magazine shell context — pages register their config, layout consumes it
   const magazineShell = useMagazineShellProvider();
@@ -118,6 +123,7 @@ function RootLayout() {
       emails: "/emails",
       dropbox: "/inbox",
       actions: "/actions",
+      me: "/me",
       people: "/people",
       accounts: "/accounts",
       projects: "/projects",
@@ -146,11 +152,17 @@ function RootLayout() {
     );
   }
 
+  const handleWhatsNewClose = () => {
+    setWhatsNewOpen(false);
+    if (autoShowOpen) dismissAutoShow();
+  };
+
   // Magazine shell for editorial pages (account detail, future editorial pages)
   if (useMagazineShell) {
     return (
       <ThemeProvider>
         <PersonalityProvider>
+          <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
           <MagazineShellContext.Provider value={magazineShell}>
             <MagazinePageLayout
               onFolioSearch={() => setCommandOpen(true)}
@@ -162,6 +174,7 @@ function RootLayout() {
           </MagazineShellContext.Provider>
           <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
           <PostMeetingPrompt />
+          <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
           <Toaster position="bottom-right" />
           <DevToolsPanel />
         </PersonalityProvider>
@@ -173,6 +186,7 @@ function RootLayout() {
   return (
     <ThemeProvider>
       <PersonalityProvider>
+        <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
         <SidebarProvider defaultOpen={false}>
           <SidebarInset>
             <Header onCommandMenuOpen={() => setCommandOpen(true)} />
@@ -181,6 +195,7 @@ function RootLayout() {
           <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
         </SidebarProvider>
         <PostMeetingPrompt />
+        <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
         <Toaster position="bottom-right" />
         <DevToolsPanel />
       </PersonalityProvider>
@@ -312,6 +327,12 @@ const settingsRoute = createRoute({
   },
 });
 
+const meRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/me",
+  component: MePage,
+});
+
 const weekRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/week",
@@ -363,7 +384,7 @@ const routeTree = rootRoute.addChildren([
   emailsRoute,
   historyRoute,
   inboxRoute,
-
+  meRoute,
   meetingHistoryDetailRoute,
   meetingDetailRoute,
   peopleRoute,

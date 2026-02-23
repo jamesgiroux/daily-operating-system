@@ -1825,13 +1825,27 @@ pub struct UserContext {
 }
 
 impl UserContext {
-    /// Build a UserContext from the app config.
+    /// Build a UserContext from the app config (legacy fallback).
     pub fn from_config(config: &Config) -> Self {
         Self {
             name: config.user_name.clone(),
             company: config.user_company.clone(),
             title: config.user_title.clone(),
             focus: config.user_focus.clone(),
+        }
+    }
+
+    /// Build a UserContext from the user_entity table, falling back to config.
+    pub fn from_db_or_config(db: &crate::db::ActionDb, config: &Config) -> Self {
+        if let Ok(entity) = crate::services::user_entity::get_user_entity_from_db(db) {
+            Self {
+                name: entity.name,
+                company: entity.company,
+                title: entity.title,
+                focus: entity.focus,
+            }
+        } else {
+            Self::from_config(config)
         }
     }
 
@@ -1872,6 +1886,78 @@ impl UserContext {
     pub fn title_or_default(&self) -> &str {
         self.title.as_deref().unwrap_or("a professional")
     }
+}
+
+// =============================================================================
+// User Entity Types (I411 — ADR-0089/0090)
+// =============================================================================
+
+/// The user's professional identity and context, stored as a single-row table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserEntity {
+    pub id: i64,
+    pub name: Option<String>,
+    pub company: Option<String>,
+    pub title: Option<String>,
+    pub focus: Option<String>,
+    pub value_proposition: Option<String>,
+    pub success_definition: Option<String>,
+    pub current_priorities: Option<String>,
+    pub product_context: Option<String>,
+    pub playbooks: Option<String>,
+    pub company_bio: Option<String>,
+    pub role_description: Option<String>,
+    pub how_im_measured: Option<String>,
+    pub pricing_model: Option<String>,
+    /// JSON array of strings
+    pub differentiators: Option<String>,
+    /// JSON array of strings
+    pub objections: Option<String>,
+    pub competitive_context: Option<String>,
+    /// JSON array of priority objects
+    pub annual_priorities: Option<String>,
+    /// JSON array of priority objects
+    pub quarterly_priorities: Option<String>,
+    pub user_relevance_weight: Option<f64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A professional knowledge snippet for semantic retrieval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserContextEntry {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub embedding_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// An annual priority (year-level bet).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnualPriority {
+    pub id: String,
+    pub text: String,
+    pub linked_entity_id: Option<String>,
+    /// "account" | "project"
+    pub linked_entity_type: Option<String>,
+    pub created_at: String,
+}
+
+/// A quarterly priority (current quarter focus).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuarterlyPriority {
+    pub id: String,
+    pub text: String,
+    pub linked_entity_id: Option<String>,
+    /// "account" | "project"
+    pub linked_entity_type: Option<String>,
+    pub created_at: String,
 }
 
 // =============================================================================
