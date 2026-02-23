@@ -17,13 +17,13 @@ use crate::state::AppState;
 /// - Rate limits between requests (5s Clay, 1s Gravatar)
 /// - Wakes on `enrichment_wake` signal or sleeps between sweeps
 pub async fn run_enrichment_processor(state: Arc<AppState>) {
-    log::info!("Enrichment processor: starting 60s startup delay");
+    eprintln!("[enrichment] starting 60s startup delay");
     tokio::time::sleep(Duration::from_secs(60)).await;
-    log::info!("Enrichment processor: startup delay complete, entering loop");
+    eprintln!("[enrichment] delay complete, entering loop");
 
     loop {
         let enriched = process_one_sweep(&state).await;
-        log::info!("Enrichment processor: sweep complete, {} processed", enriched);
+        eprintln!("[enrichment] sweep complete, {} processed", enriched);
 
         // Sleep until next sweep or wake signal
         let sweep_hours = state
@@ -66,6 +66,7 @@ async fn process_clay_queue(state: &AppState) -> u32 {
         }
     };
 
+    eprintln!("[enrichment] clay enabled={}", enabled);
     if !enabled {
         return 0;
     }
