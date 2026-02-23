@@ -107,22 +107,22 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 }) => {
   const activeClass = styles[`active${capitalize(activeColor)}`] || '';
 
-  // Check if user entity has content — drives dot indicator on Me nav item
-  const [meHasContent, setMeHasContent] = useState(false);
+  // Check if user entity is empty — drives dot indicator on Me nav item (prompt to fill in)
+  const [meNeedsContent, setMeNeedsContent] = useState(true);
   useEffect(() => {
     if (mode !== 'app') return;
     invoke<UserEntity>('get_user_entity')
       .then((entity) => {
         const hasContent = !!(
-          entity.name || entity.company || entity.title || entity.focus ||
-          entity.valueProposition || entity.successDefinition || entity.currentPriorities ||
+          entity.name || entity.company || entity.title ||
+          entity.valueProposition || entity.successDefinition ||
           entity.productContext || entity.companyBio || entity.roleDescription ||
           entity.howImMeasured || entity.pricingModel || entity.competitiveContext ||
           entity.differentiators || entity.objections ||
           entity.annualPriorities || entity.quarterlyPriorities ||
           (entity.playbooks && entity.playbooks !== '{}')
         );
-        setMeHasContent(hasContent);
+        setMeNeedsContent(!hasContent);
       })
       .catch(() => { /* user entity not available */ });
   }, [mode]);
@@ -227,7 +227,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
             title={item.label}
           >
             {item.icon}
-            {item.id === 'me' && meHasContent && (
+            {item.id === 'me' && meNeedsContent && (
               <span className={styles.meContentDot} aria-hidden="true" />
             )}
           </button>
