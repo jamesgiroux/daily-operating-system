@@ -134,6 +134,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 40,
     sql: include_str!("migrations/040_entity_quality.sql"),
+}, Migration {
+    version: 41,
+    sql: include_str!("migrations/041_linear_entity_links.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -295,13 +298,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 40,
-            "should apply all migrations including entity_quality"
+            applied, 41,
+            "should apply all migrations including linear_entity_links"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 40);
+        assert_eq!(version, 41);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -678,6 +681,14 @@ mod tests {
             [],
         )
         .expect("should accept partner account_type");
+
+        // Verify linear_entity_links table (migration 041)
+        conn.execute(
+            "INSERT INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
+             VALUES ('lel-1', 'lp-1', 'a1', 'account', 1)",
+            [],
+        )
+        .expect("linear_entity_links table should exist and accept inserts");
     }
 
     #[test]
@@ -816,11 +827,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 39, "bootstrap should mark v1, then apply v2 through v40");
+        assert_eq!(applied, 40, "bootstrap should mark v1, then apply v2 through v41");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 40);
+        assert_eq!(version, 41);
 
         // Verify existing data is untouched
         let title: String = conn
