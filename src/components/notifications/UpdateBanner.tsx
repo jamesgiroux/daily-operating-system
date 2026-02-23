@@ -63,7 +63,7 @@ export function UpdateBanner({ onWhatsNew }: UpdateBannerProps) {
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 24, flexShrink: 0 }}>
         <button
           onClick={onWhatsNew}
           style={{
@@ -90,21 +90,25 @@ export function UpdateBanner({ onWhatsNew }: UpdateBannerProps) {
           onClick={installAndRestart}
           disabled={installing}
           style={{
-            background: installing ? "var(--color-spice-turmeric)" : "var(--color-spice-turmeric)",
-            color: "var(--color-paper-warm-white)",
+            background: "none",
             border: "none",
-            borderRadius: 3,
-            padding: "8px 16px",
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            fontWeight: 500,
             cursor: installing ? "default" : "pointer",
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            color: "var(--color-garden-eucalyptus)",
+            textDecoration: "underline",
+            textDecorationColor: "var(--color-garden-eucalyptus)",
+            textUnderlineOffset: 3,
+            padding: "6px 0",
+            fontWeight: 500,
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            opacity: installing ? 0.7 : 1,
-            transition: "opacity 0.2s ease",
+            opacity: installing ? 0.6 : 1,
+            transition: "color 0.2s ease, opacity 0.2s ease",
           }}
+          onMouseEnter={(e) => !installing && (e.currentTarget.style.color = "var(--color-garden-rosemary)")}
+          onMouseLeave={(e) => !installing && (e.currentTarget.style.color = "var(--color-garden-eucalyptus)")}
         >
           {installing ? (
             <>
