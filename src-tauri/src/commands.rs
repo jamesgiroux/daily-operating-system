@@ -6466,7 +6466,7 @@ pub fn get_enrichment_log(
 // Clay — Smithery Connect (I422)
 // ---------------------------------------------------------------------------
 
-/// Auto-detect Smithery settings from the CLI config file.
+/// Auto-detect Smithery settings and Clay connection from CLI config + API.
 #[tauri::command]
 pub async fn detect_smithery_settings() -> Result<serde_json::Value, String> {
     let settings_path = dirs::home_dir()
@@ -6490,17 +6490,44 @@ pub async fn detect_smithery_settings() -> Result<serde_json::Value, String> {
         return Err("Smithery settings missing apiKey or namespace".to_string());
     }
 
-    // Mask the API key for display (show first 8 chars)
-    let masked = if api_key.len() > 8 {
-        format!("{}...", &api_key[..8])
-    } else {
-        api_key.to_string()
+    // List connections via Smithery API to find the Clay one
+    let client = reqwest::Client::new();
+    let connections_url = format!("https://api.smithery.ai/connect/{}", namespace);
+    let clay_connection_id = match client
+        .get(&connections_url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await.unwrap_or_default();
+            let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+            // Find a connection whose name/mcpUrl contains "clay"
+            parsed
+                .get("connections")
+                .and_then(|c| c.as_array())
+                .and_then(|arr| {
+                    arr.iter().find(|conn| {
+                        let name = conn.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                        let url = conn.get("mcpUrl").and_then(|u| u.as_str()).unwrap_or("");
+                        let status = conn
+                            .get("status")
+                            .and_then(|s| s.get("state"))
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("");
+                        (name.contains("clay") || url.contains("clay")) && status == "connected"
+                    })
+                })
+                .and_then(|conn| conn.get("connectionId").and_then(|id| id.as_str()))
+                .map(String::from)
+        }
+        _ => None,
     };
 
     Ok(serde_json::json!({
         "apiKey": api_key,
-        "apiKeyMasked": masked,
         "namespace": namespace,
+        "connectionId": clay_connection_id,
     }))
 }
 

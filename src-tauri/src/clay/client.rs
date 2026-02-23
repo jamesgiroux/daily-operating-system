@@ -187,6 +187,7 @@ impl ClayClient {
             .post(&me.endpoint)
             .header("Authorization", format!("Bearer {}", me.api_key))
             .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
             .json(&init_request)
             .send()
             .await
@@ -204,7 +205,8 @@ impl ClayClient {
             .await
             .map_err(|e| ClayError::ConnectionFailed(format!("Read init response: {}", e)))?;
 
-        let resp: JsonRpcResponse = serde_json::from_str(&body).map_err(|e| {
+        let json_text = extract_json_from_response(&body);
+        let resp: JsonRpcResponse = serde_json::from_str(&json_text).map_err(|e| {
             ClayError::ConnectionFailed(format!("Parse init response: {}: {}", e, body))
         })?;
 
@@ -226,6 +228,7 @@ impl ClayClient {
             .post(&me.endpoint)
             .header("Authorization", format!("Bearer {}", me.api_key))
             .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
             .json(&notif)
             .send()
             .await;
@@ -258,6 +261,7 @@ impl ClayClient {
             .post(&self.endpoint)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
             .json(&request)
             .send()
             .await
@@ -275,7 +279,8 @@ impl ClayClient {
             .await
             .map_err(|e| ClayError::ToolCallFailed(format!("Read response: {}", e)))?;
 
-        let resp: JsonRpcResponse = serde_json::from_str(&body).map_err(|e| {
+        let json_text = extract_json_from_response(&body);
+        let resp: JsonRpcResponse = serde_json::from_str(&json_text).map_err(|e| {
             ClayError::ParseError(format!("JSON-RPC parse: {}: {}", e, body))
         })?;
 
@@ -382,6 +387,26 @@ impl ClayClient {
 // ---------------------------------------------------------------------------
 // Response parsing helpers
 // ---------------------------------------------------------------------------
+
+/// Extract JSON from a response body that may be either raw JSON or SSE format.
+/// Smithery may return SSE-formatted responses with `data:` prefixed lines.
+fn extract_json_from_response(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.starts_with('{') {
+        return trimmed.to_string();
+    }
+    // Look for `data:` lines in SSE format
+    for line in trimmed.lines() {
+        let line = line.trim();
+        if let Some(data) = line.strip_prefix("data:") {
+            let data = data.trim();
+            if !data.is_empty() && data != "[DONE]" && data.starts_with('{') {
+                return data.to_string();
+            }
+        }
+    }
+    trimmed.to_string()
+}
 
 /// Extract text content from a JSON-RPC tool call result.
 /// MCP tool results have the shape: `{ "content": [{ "type": "text", "text": "..." }] }`
