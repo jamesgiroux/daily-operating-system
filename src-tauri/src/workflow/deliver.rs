@@ -647,6 +647,10 @@ pub fn deliver_schedule(
         .ok()
         .and_then(|c| c.schedules.today.timezone.parse::<Tz>().ok());
 
+    // Resolve authenticated user email for filtering self from attendee lists
+    let user_email = crate::google_api::token_store::peek_account_email()
+        .map(|e| e.to_lowercase());
+
     let events = &directive.calendar.events;
     let meetings_by_type = &directive.meetings;
     let meeting_contexts = &directive.meeting_contexts;
@@ -724,8 +728,15 @@ pub fn deliver_schedule(
                     .iter()
                     .filter_map(|email| {
                         let rsvp = event.attendee_rsvp.get(email).cloned().unwrap_or_default();
+                        // Skip declined attendees
                         if rsvp == "declined" {
                             return None;
+                        }
+                        // Skip the authenticated user (they're always in the room)
+                        if let Some(ref ue) = user_email {
+                            if email.to_lowercase() == *ue {
+                                return None;
+                            }
                         }
                         // Name resolution: Google Calendar → attendee_display_names → people → email local part
                         let name = event
@@ -835,6 +846,7 @@ pub fn deliver_schedule(
         "summary": summary,
         "meetings": meetings_json,
         "userDomains": user_domains,
+        "userEmail": user_email,
     });
 
     if let Some(ref focus) = directive.context.focus {
