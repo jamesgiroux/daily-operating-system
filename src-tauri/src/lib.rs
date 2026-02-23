@@ -541,6 +541,10 @@ pub fn run() {
             commands::enrich_account_from_clay,
             commands::start_clay_bulk_enrich,
             commands::get_enrichment_log,
+            commands::start_clay_oauth,
+            commands::save_clay_oauth_token,
+            commands::disconnect_clay,
+            commands::get_clay_oauth_status,
             // Linear Integration (I346)
             commands::get_linear_status,
             commands::set_linear_enabled,
