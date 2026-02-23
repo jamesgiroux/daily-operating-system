@@ -49,6 +49,7 @@ pub fn get_projects_list(state: &AppState) -> Result<Vec<ProjectListItem>, Strin
                 child_count,
                 parent_name,
                 parent_id: p.parent_id,
+                archived: p.archived,
             }
         })
         .collect();
@@ -98,6 +99,7 @@ pub fn get_child_projects_list(
                 parent_name: parent_name.clone(),
                 child_count,
                 is_parent: child_count > 0,
+                archived: p.archived,
             }
         })
         .collect();
@@ -293,7 +295,7 @@ pub fn update_project_field(
     db.update_project_field(project_id, field, value)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::signals::bus::emit_signal(
+    let _ = crate::services::signals::emit(
         db,
         "project",
         project_id,
@@ -384,7 +386,7 @@ pub fn update_project_notes(
         crate::projects::write_project_json(workspace, &project, Some(&json), db)?;
         crate::projects::write_project_markdown(workspace, &project, Some(&json), db)?;
 
-        let _ = crate::signals::bus::emit_signal(
+        let _ = crate::services::signals::emit(
             db,
             "project",
             project_id,
@@ -466,7 +468,7 @@ pub fn archive_project(
     } else {
         "entity_unarchived"
     };
-    let _ = crate::signals::bus::emit_signal(db, "project", id, signal_type, "user_action", None, 0.9);
+    let _ = crate::services::signals::emit(db, "project", id, signal_type, "user_action", None, 0.9);
 
     Ok(())
 }
