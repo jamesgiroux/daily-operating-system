@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTauriEvent } from "./useTauriEvent";
 import type { DashboardData, DataFreshness, GoogleAuthStatus } from "@/types";
@@ -37,6 +37,7 @@ export function useDashboardData(): {
 } {
   const [state, setState] = useState<DashboardLoadState>({ status: "loading" });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [, startTransition] = useTransition();
   const inFlightRef = useRef(false);
   const lastFocusRefreshRef = useRef(0);
 
@@ -55,16 +56,25 @@ export function useDashboardData(): {
     try {
       const result = await invoke<DashboardResult>("get_dashboard_data");
 
-      switch (result.status) {
-        case "success":
-          setState({ status: "success", data: result.data, freshness: result.freshness, googleAuth: result.googleAuth });
-          break;
-        case "empty":
-          setState({ status: "empty", message: result.message, googleAuth: result.googleAuth });
-          break;
-        case "error":
-          setState({ status: "error", message: result.message });
-          break;
+      const apply = () => {
+        switch (result.status) {
+          case "success":
+            setState({ status: "success", data: result.data, freshness: result.freshness, googleAuth: result.googleAuth });
+            break;
+          case "empty":
+            setState({ status: "empty", message: result.message, googleAuth: result.googleAuth });
+            break;
+          case "error":
+            setState({ status: "error", message: result.message });
+            break;
+        }
+      };
+
+      // Silent refreshes use startTransition to avoid jarring content blinks.
+      if (!showLoading) {
+        startTransition(apply);
+      } else {
+        apply();
       }
     } catch (err) {
       setState({
