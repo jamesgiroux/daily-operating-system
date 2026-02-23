@@ -88,9 +88,18 @@ pub async fn enrich_person_from_clay_with_client(
         }))
         .or_else(|| search_results.first())
         .ok_or("No contact selected")?;
-    let clay_id = best.id.clone();
+    let clay_id = best.id_str();
 
-    let detail = client.get_contact_detail(&clay_id).await.map_err(|e| e.to_string())?;
+    if clay_id.is_empty() {
+        return Err(format!(
+            "Clay search returned contact with empty id. person={}, best_name={:?}, results={}",
+            person_id, best.name, search_results.len()
+        ));
+    }
+
+    let detail = client.get_contact_detail(&clay_id).await.map_err(|e| {
+        format!("getContact failed for clay_id='{}' person={}: {}", clay_id, person_id, e)
+    })?;
 
     // Build title history JSON
     let title_history_json = if detail.title_history.is_empty() {

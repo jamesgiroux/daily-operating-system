@@ -996,6 +996,11 @@ impl ActionDb {
         }
 
         if updated.is_empty() {
+            // Still stamp last_enriched_at so this person isn't re-queued
+            let _ = conn.execute(
+                "UPDATE people SET last_enriched_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, person_id],
+            );
             return Ok(ProfileUpdateResult {
                 fields_updated: vec![],
             });
