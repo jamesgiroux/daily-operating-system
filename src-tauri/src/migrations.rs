@@ -135,17 +135,17 @@ const MIGRATIONS: &[Migration] = &[Migration {
     version: 40,
     sql: include_str!("migrations/040_entity_quality.sql"),
 }, Migration {
-    version: 41,
-    sql: include_str!("migrations/041_user_entity.sql"),
-}, Migration {
-    version: 43,
-    sql: include_str!("migrations/043_intelligence_report_fields.sql"),
-}, Migration {
     version: 44,
-    sql: include_str!("migrations/044_user_context_embedding.sql"),
+    sql: include_str!("migrations/044_user_entity.sql"),
 }, Migration {
     version: 45,
-    sql: include_str!("migrations/045_entity_intel_user_relevance.sql"),
+    sql: include_str!("migrations/045_intelligence_report_fields.sql"),
+}, Migration {
+    version: 46,
+    sql: include_str!("migrations/046_user_context_embedding.sql"),
+}, Migration {
+    version: 47,
+    sql: include_str!("migrations/047_entity_intel_user_relevance.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -307,13 +307,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 44,
+            applied, 47,
             "should apply all migrations including entity_intel_user_relevance"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 45);
+        assert_eq!(version, 47);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -828,11 +828,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 43, "bootstrap should mark v1, then apply v2 through v45");
+        assert_eq!(applied, 47, "bootstrap should mark v1, then apply v2 through v47");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 45);
+        assert_eq!(version, 47);
 
         // Verify existing data is untouched
         let title: String = conn
