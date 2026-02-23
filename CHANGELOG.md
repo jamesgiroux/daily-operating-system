@@ -4,6 +4,45 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.14.0] - 2026-02-23
+
+User entity + professional context. The app now knows about you — your role, what you deliver, your priorities, and your knowledge. This context shapes all entity intelligence, signal ranking, and meeting prep. Every account/person/project intelligence output now includes your perspective.
+
+### Added
+
+- **User Entity (`/me` page)** — Six-section editorial interface for professional context:
+  - About Me: Name, title, company, company bio, role description, measurement criteria
+  - What I Deliver: Value proposition, success definition, product context, pricing model, differentiators, objections, competitive context
+  - My Priorities: Two-layer model — annual priorities (year-level bets) and quarterly priorities (current focus). Both persist until manually removed (zero-guilt). Link to accounts or projects for context.
+  - My Playbooks: CS-first with 3 sections ("Win Strategy", "Renewal Strategy", "Escalation Protocol"); others get 1 generic section
+  - Context Entries: Knowledge base with semantic search — user-created content retrieved during enrichment when relevant
+  - Attachments: Drag-and-drop upload for PDFs, documents, etc. Content embedded and retrieved via cosine similarity (threshold 0.70)
+- **Signal Weighting (I414)** — User-context-aware signal ranking. Signals linked to annual/quarterly priorities receive 1.5–2.0x score multiplier. Baseline: 1.0x.
+- **File Attachment Embeddings (I413)** — PDF/document uploads from `/me` page attachments section stored with `source='user_context'`. Content retrieved with `search_user_attachments()` during enrichment. Embedding collection labels both context entries and file content for unified semantic search.
+- **Intelligence Fields (I396)** — 6 new fields on entity_intelligence:
+  - `health_score` (REAL) — Account/relationship health metric (0–100)
+  - `health_trend` (TEXT) — Trending direction (improving, stable, declining)
+  - `value_delivered` (TEXT) — User-facing value narrative (enriched from prior intelligence)
+  - `success_metrics` (TEXT) — How success is measured for this entity
+  - `open_commitments` (TEXT) — What's owed/pending (account-specific)
+  - `relationship_depth` (TEXT) — Relationship maturity/history (people-specific)
+- **User Context in Intelligence Prompts (I412)** — Entity enrichment pulls user entity fields + top-2 semantic context matches (entries + attachments). Injected as "Your Professional Context" section in intelligence prompts. Includes name, title, company, value proposition, annual/quarterly priorities, playbooks, and knowledge base matches.
+- **Auto-Show What's New Modal** — App detects version upgrade and auto-shows release notes (What's New modal) on first launch after update. Stores `last_seen_version` in localStorage.
+- **Update Check & Banner** — Settings includes "Check for Updates" button. When update available, persistent banner appears at top of app with "What's New" and "Install & Restart" options. Dismissible with X button.
+- **Editorial Design System for Notifications** — Update banner and What's New modal redesigned to match magazine aesthetic: Newsreader serif headlines, generous padding, minimal chrome, eucalyptus accent colors, type hierarchy doing structural work.
+- **Me Navigation Item** — Floating nav island includes new "Me" item (Larkspur accent). Shows content dot indicator when user entity is empty (prompt to fill in).
+- **Migration 044–047** — User entity schema, intelligence fields, embedding support, user relevance scoring.
+
+### Changed
+
+- **Settings Page (YouCard)** — Removed "About You" section with identity fields (name, company, title, focus). All user professional context now lives on `/me` page only. Settings now shows: Domains, Role Preset, Workspace, Day Start, Personality, Connectors.
+- **Navigation** — FloatingNavIsland includes "Me" item; activity dot shows when user entity is empty.
+- **Intelligence Output** — All entity intelligence enrichment now includes "Your Professional Context" section when user entity has content. Prioritizes user-defined context over generic patterns.
+
+### Removed
+
+- **Identity Fields from Config** — User name, company, title, focus migrate from `~/.dailyos/config.json` to `user_entity` SQLite table on first app launch. Config fields deprecated post-migration.
+
 ## [0.13.9] - 2026-02-23
 
 Connectors hardening. Every external data source now produces signals through the signal bus. Clay runs in production via Smithery Connect, Gravatar writes back to people profiles, Granola no longer hangs the app, and Linear issues surface in meeting prep. The enrichment pipeline is unified — one write path, one background processor, one source priority system.
