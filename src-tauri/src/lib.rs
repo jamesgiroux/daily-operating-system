@@ -203,10 +203,13 @@ pub fn run() {
             });
 
             // Spawn unified enrichment processor (Clay + Gravatar)
+            eprintln!("[SETUP] about to spawn enrichment processor");
             let enrichment_state = state.clone();
             tauri::async_runtime::spawn(async move {
+                eprintln!("[SETUP] enrichment task started");
                 enrichment::run_enrichment_processor(enrichment_state).await;
             });
+            eprintln!("[SETUP] enrichment processor spawned");
 
             // Spawn Linear sync poller (I346)
             let linear_state = state.clone();
