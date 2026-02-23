@@ -4,6 +4,40 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.9] - 2026-02-23
+
+Connectors hardening. Every external data source now produces signals through the signal bus. Clay runs in production via Smithery Connect, Gravatar writes back to people profiles, Granola no longer hangs the app, and Linear issues surface in meeting prep. The enrichment pipeline is unified — one write path, one background processor, one source priority system.
+
+### Added
+
+- **Unified enrichment pipeline** — `db/people.rs: update_person_profile()` is the single write function for all enrichment sources (Clay, Gravatar, user, AI). Handles source priority (User 4 > Clay 3 > Gravatar 2 > AI 1), provenance tracking via `enrichment_sources` JSON, and `enrichment_log` audit entries. Replaces scattered per-connector write logic.
+- **Unified enrichment processor** (`enrichment.rs`) — Single background task replaces separate Clay poller and Gravatar fetcher. Drain-until-empty loop (keeps sweeping while queue has work), budget by attempts not successes, wakes on `enrichment_wake` signal.
+- **Clay via Smithery Connect (I422)** — Clay's direct MCP endpoint has no public OAuth. Rewired to use Smithery as managed proxy (`https://api.smithery.ai/connect/{ns}/{conn}/mcp`). Auto-detects Smithery CLI config and Clay connection ID. Keychain storage for Smithery API key.
+- **Linear signal wiring (I425)** — Signals emitted on issue sync: `linear_issue_completed`, `linear_issue_blocked`, `linear_issue_overdue`. New `linear_entity_links` table (migration 041) maps Linear projects to DailyOS entities. Meeting prep includes related Linear issues for linked entities.
+- **Linear entity link picker** — Searchable picker in Linear connector card for manually linking Linear projects to DailyOS accounts/projects. Auto-detect button for name matching.
+- **Gravatar writeback (I423)** — Gravatar data (photo, bio, company, title) flows through `update_person_profile("gravatar")` with source priority. `emit_signal_and_propagate` for `profile_discovered` signals.
+- **Granola wake signal (I424)** — Calendar poller wakes Granola poller immediately when meetings end via `granola_poller_wake`. No more waiting for the full poll interval.
+- **Person profile rendering** — PersonHero shows bio (below intelligence lede), phone number, social link tooltips with full URLs. Avatar component accepts `photoUrl` prop for Clay/Gravatar photos.
+- **People list avatars** — People entity list shows avatar photos (or initial fallback) with relationship-colored rings: turmeric for external contacts, larkspur for internal team.
+- **People list grouping** — "All" tab groups people into sections matching accounts: "Your Contacts" (external), "Your Team" (internal), "Unclassified" (unknown) with ChapterHeading dividers.
+- **Logger backend** — `env_logger` initialized at startup. All `log::info!`/`log::warn!` calls now output to stderr. Default filter: `dailyos_lib=info,warn`. Override with `RUST_LOG`.
+
+### Changed
+
+- **"Connections" → "Connectors" (I421)** — All user-facing labels, component files, directory names, types, and routes renamed throughout the Settings UI.
+- **Granola DB mutex fix (I424)** — `process_granola_document` rewritten with three-phase lock pattern (read → drop → AI pipeline → re-acquire → write) matching Quill's approach. No more DB lock held across AI calls.
+- **Clay enricher simplified** — 500 → 170 lines. Builds a `ProfileUpdate` struct and calls `db.update_person_profile("clay")` instead of inline merge logic.
+- **Avatar loading** — `get_person_avatar` returns base64 data URL instead of local file path. No more dependency on Tauri asset protocol or `convertFileSrc`.
+- **EntityRow component** — Gains optional `avatar` prop that replaces the accent dot. Existing account/project list rendering unchanged.
+- **Active issues filter** — Linear connector "Recent Issues" section filters out completed/cancelled issues, sorted by priority.
+
+### Removed
+
+- **`clay/poller.rs`** — Replaced by unified `enrichment.rs`.
+- **Legacy `enrich_person_from_clay`** — Replaced by `enrich_person_from_clay_with_client` using `emit_signal_and_propagate`.
+- **`writeback_photo_url`** — Standalone Gravatar writeback function replaced by `update_person_profile("gravatar")`.
+- **Clay direct SSE/stdio transport** — Replaced by Smithery Connect HTTP transport.
+
 ## [0.13.8] - 2026-02-22
 
 AppState decomposition and SignalService formalization. The 30-field god struct is now a facade over 6 domain containers (14 top-level fields). The signal bus has a service-layer API so consumers no longer reach into bus internals. Purely mechanical refactoring — no logic changes, no behavior changes, no schema migrations.
