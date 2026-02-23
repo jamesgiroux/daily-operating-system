@@ -1,0 +1,480 @@
+/* =============================================================================
+   MePage.module.css — User entity page styles
+
+   Editorial magazine layout for the /me page.
+   Eucalyptus accent (--color-garden-eucalyptus) per ADR-0090.
+   ============================================================================= */
+
+@import '../styles/design-tokens.css';
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PAGE CONTAINER
+   ───────────────────────────────────────────────────────────────────────── */
+.page {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   HERO SECTION
+   ───────────────────────────────────────────────────────────────────────── */
+.hero {
+  padding-top: var(--space-5xl);
+  padding-bottom: var(--space-2xl);
+}
+
+.heroTitle {
+  font-family: var(--font-serif);
+  font-size: 52px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.06;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.heroSubtitle {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-sm);
+  margin-bottom: 0;
+}
+
+.heroRule {
+  height: 2px;
+  border: none;
+  /* Eucalyptus accent — from --color-garden-eucalyptus #6ba8a4 */
+  background: var(--color-garden-eucalyptus);
+  margin-top: var(--space-md);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ACTIVITY INDICATOR
+   ───────────────────────────────────────────────────────────────────────── */
+.activityLine {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
+  color: var(--color-garden-eucalyptus);
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-2xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SECTION
+   ───────────────────────────────────────────────────────────────────────── */
+.section {
+  margin-bottom: var(--space-2xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FIELD GRID — Two-column layout for short fields
+   ───────────────────────────────────────────────────────────────────────── */
+.fieldGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-lg) var(--space-xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FIELD ROW — Single labeled field
+   ───────────────────────────────────────────────────────────────────────── */
+.fieldRow {
+  margin-bottom: var(--space-lg);
+}
+
+.fieldLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+
+.fieldValue {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--color-text-primary);
+  line-height: 1.55;
+}
+
+.fieldValueMultiline {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--color-text-primary);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PRIORITY LIST
+   ───────────────────────────────────────────────────────────────────────── */
+.priorityList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.priorityItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.priorityItem:last-child {
+  border-bottom: none;
+}
+
+.priorityText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+.priorityDelete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  padding: 0;
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+
+.priorityDelete:hover {
+  opacity: 1;
+}
+
+.priorityAdd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-sm) 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: left;
+}
+
+.priorityAdd:hover {
+  color: var(--color-text-secondary);
+}
+
+.priorityAddForm {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.priorityAddInput {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: var(--space-xs) 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CONTEXT ENTRIES
+   ───────────────────────────────────────────────────────────────────────── */
+.entryList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.entryItem {
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.entryItem:last-child {
+  border-bottom: none;
+}
+
+.entryHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.entryTitle {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.entryDate {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.entryContent {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.entryActions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.entryActionBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.entryActionBtn:hover {
+  color: var(--color-text-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ADD ENTRY FORM
+   ───────────────────────────────────────────────────────────────────────── */
+.addEntryForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+}
+
+.addEntryInput {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: var(--space-xs) 0;
+}
+
+.addEntryTextarea {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: var(--space-xs) 0;
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.55;
+}
+
+.addEntryActions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}
+
+.addEntrySave {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
+  color: var(--color-garden-eucalyptus);
+  background: none;
+  border: 1px solid var(--color-garden-eucalyptus);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+}
+
+.addEntrySave:hover {
+  /* Eucalyptus tint — from --color-garden-eucalyptus #6ba8a4 */
+  background: rgba(107, 168, 164, 0.08);
+}
+
+.addEntryCancel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   EDIT ENTRY FORM (inline)
+   ───────────────────────────────────────────────────────────────────────── */
+.editEntryForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PLACEHOLDER SECTION
+   ───────────────────────────────────────────────────────────────────────── */
+.placeholder {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  padding: var(--space-lg) 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SUBSECTION LABEL
+   ───────────────────────────────────────────────────────────────────────── */
+.subsectionLabel {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-md) 0;
+}
+
+.thinRule {
+  border: none;
+  border-top: 1px solid var(--color-rule-light);
+  margin: var(--space-lg) 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PRIORITY ENTITY LINK
+   ───────────────────────────────────────────────────────────────────────── */
+.priorityEntityLink {
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DROPZONE
+   ───────────────────────────────────────────────────────────────────────── */
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl) var(--space-lg);
+  border: 2px dashed var(--color-rule-light);
+  border-radius: var(--radius-editorial-lg);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dropzone:hover {
+  border-color: var(--color-garden-eucalyptus);
+}
+
+.dropzoneActive {
+  border-color: var(--color-garden-eucalyptus);
+  /* Eucalyptus tint — from --color-garden-eucalyptus #6ba8a4 */
+  background: rgba(107, 168, 164, 0.06);
+}
+
+.dropzoneIcon {
+  color: var(--color-text-tertiary);
+}
+
+.dropzoneText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.dropzoneBrowse {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-garden-eucalyptus);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dropzoneBrowse:hover {
+  color: var(--color-text-primary);
+}
+
+.dropzoneHint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ATTACHMENT LIST
+   ───────────────────────────────────────────────────────────────────────── */
+.attachmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: var(--space-md);
+}
+
+.attachmentItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  color: var(--color-text-tertiary);
+}
+
+.attachmentItem:last-child {
+  border-bottom: none;
+}
+
+.attachmentName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}

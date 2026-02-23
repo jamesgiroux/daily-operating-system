@@ -124,6 +124,13 @@
   color: var(--color-garden-olive);
 }
 
+/* Eucalyptus active state — user entity (/me) */
+.activeEucalyptus {
+  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
+  background: rgba(107, 168, 164, 0.1);
+  color: var(--color-garden-eucalyptus);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    DIVIDER — Thin separator lines between nav groups
    ───────────────────────────────────────────────────────────────────────── */
@@ -192,5 +199,25 @@
 .colorOlive .activeOlive {
   background: rgba(107, 124, 82, 0.1);
   color: var(--color-garden-olive);
+}
+
+.colorEucalyptus .activeEucalyptus {
+  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
+  background: rgba(107, 168, 164, 0.1);
+  color: var(--color-garden-eucalyptus);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ME CONTENT DOT — Indicator that user entity has content
+   ───────────────────────────────────────────────────────────────────────── */
+.meContentDot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
+  background: var(--color-garden-eucalyptus);
 }
 
