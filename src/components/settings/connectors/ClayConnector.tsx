@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
 import type { ClayStatusData } from "@/types";
 import { styles } from "../styles";
@@ -46,7 +47,7 @@ export default function ClayConnection() {
   async function handleConnectOAuth() {
     try {
       const url = await invoke<string>("start_clay_oauth");
-      window.open(url, "_blank");
+      await open(url);
     } catch (err) {
       toast.error("Failed to start OAuth flow");
     }
