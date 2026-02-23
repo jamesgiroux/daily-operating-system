@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTauriEvent } from "./useTauriEvent";
 import type { InboxFile } from "@/types";
@@ -34,16 +34,24 @@ export function useInbox(): UseInboxReturn {
   const [files, setFiles] = useState<InboxFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
-  const loadFiles = useCallback(async () => {
+  const loadFiles = useCallback(async (silent = false) => {
     try {
       const result = await invoke<InboxResult>("get_inbox_files");
       if (result.status === "error") {
         setError(result.message || "Failed to load inbox");
       } else {
-        setFiles(result.files);
-        setCount(result.count);
-        setError(null);
+        const apply = () => {
+          setFiles(result.files);
+          setCount(result.count);
+          setError(null);
+        };
+        if (silent) {
+          startTransition(apply);
+        } else {
+          apply();
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -57,10 +65,10 @@ export function useInbox(): UseInboxReturn {
     loadFiles();
   }, [loadFiles]);
 
-  // Listen for watcher events
+  // Listen for watcher events — silent refresh to avoid blink
   const onInboxUpdated = useCallback((update: InboxUpdate) => {
     setCount(update.count);
-    loadFiles();
+    loadFiles(true);
   }, [loadFiles]);
   useTauriEvent("inbox-updated", onInboxUpdated);
 

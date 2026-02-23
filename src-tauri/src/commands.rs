@@ -1646,10 +1646,15 @@ pub fn dismiss_email_item(
 pub fn list_dismissed_email_items(
     state: State<Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let set = db.list_dismissed_email_items().map_err(|e| e.to_string())?;
-    Ok(set.into_iter().collect())
+    match state.with_db_try_read(|db| {
+        db.list_dismissed_email_items().map(|set| set.into_iter().collect())
+    }) {
+        crate::state::DbTryRead::Ok(Ok(items)) => Ok(items),
+        crate::state::DbTryRead::Ok(Err(e)) => Err(e.to_string()),
+        crate::state::DbTryRead::Busy => Ok(Vec::new()), // Graceful degradation when DB busy
+        crate::state::DbTryRead::Unavailable => Err("Database not initialized".to_string()),
+        crate::state::DbTryRead::Poisoned => Err("Lock poisoned".to_string()),
+    }
 }
 
 /// Reset all email dismissal learning data (I374).
@@ -3672,12 +3677,14 @@ pub fn index_entity_files(
             entity_type: entity_type.clone(),
             requested_at: std::time::Instant::now(),
         });
+    state.integrations.embedding_queue_wake.notify_one();
     state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
         entity_id,
         entity_type,
         priority: crate::intel_queue::IntelPriority::ContentChange,
         requested_at: std::time::Instant::now(),
     });
+    state.integrations.intel_queue_wake.notify_one();
 
     Ok(files)
 }
@@ -7229,6 +7236,7 @@ pub async fn get_meeting_timeline(
                     requested_at: std::time::Instant::now(),
                 });
             }
+            state.integrations.prep_queue_wake.notify_one();
         }
         return Ok(result);
     }
@@ -7350,6 +7358,9 @@ pub async fn get_meeting_timeline(
                 priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
                 requested_at: std::time::Instant::now(),
             });
+        }
+        if !upserted_ids.is_empty() {
+            state.integrations.prep_queue_wake.notify_one();
         }
 
         // Re-query with the newly upserted meetings
