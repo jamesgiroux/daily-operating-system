@@ -6,7 +6,6 @@
 pub mod client;
 pub mod enricher;
 pub mod oauth;
-pub mod poller;
 pub mod signals;
 
 use serde::{Deserialize, Serialize};
