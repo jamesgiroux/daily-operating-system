@@ -1253,6 +1253,18 @@ export interface EntityIntelligence {
   /** Network intelligence for person entities (I391) */
   network?: NetworkIntelligence;
   userEdits?: UserEdit[];
+  /** I396: Account health score (0-100). Null for sparse accounts. */
+  healthScore?: number | null;
+  /** I396: Health trend direction + rationale. */
+  healthTrend?: { direction: string; rationale?: string } | null;
+  /** I396: Value delivered to the account. */
+  valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string }> | null;
+  /** I396: Success metrics / KPIs tracked for this entity. */
+  successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
+  /** I396: Open commitments (promises made to/from the account). */
+  openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string }> | null;
+  /** I396: Relationship depth assessment. */
+  relationshipDepth?: { championStrength?: string; executiveAccess?: string; stakeholderCoverage?: string; coverageGaps?: string[] } | null;
 }
 
 export interface SourceManifestEntry {
@@ -1737,4 +1749,62 @@ export interface TimelineMeeting {
   followUpCount?: number;
   /** Whether a meeting briefing exists (prep_frozen_json or disk file) */
   hasPrep?: boolean;
+}
+
+// =============================================================================
+// User Entity Types (I411 — ADR-0089/0090)
+// =============================================================================
+
+export interface UserEntity {
+  id: number;
+  name: string | null;
+  company: string | null;
+  title: string | null;
+  focus: string | null;
+  valueProposition: string | null;
+  successDefinition: string | null;
+  currentPriorities: string | null;
+  productContext: string | null;
+  playbooks: string | null;
+  companyBio: string | null;
+  roleDescription: string | null;
+  howImMeasured: string | null;
+  pricingModel: string | null;
+  /** JSON array of strings */
+  differentiators: string | null;
+  /** JSON array of strings */
+  objections: string | null;
+  competitiveContext: string | null;
+  /** JSON array of AnnualPriority objects */
+  annualPriorities: string | null;
+  /** JSON array of QuarterlyPriority objects */
+  quarterlyPriorities: string | null;
+  userRelevanceWeight: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserContextEntry {
+  id: string;
+  title: string;
+  content: string;
+  embeddingId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnnualPriority {
+  id: string;
+  text: string;
+  linkedEntityId: string | null;
+  linkedEntityType: string | null;
+  createdAt: string;
+}
+
+export interface QuarterlyPriority {
+  id: string;
+  text: string;
+  linkedEntityId: string | null;
+  linkedEntityType: string | null;
+  createdAt: string;
 }

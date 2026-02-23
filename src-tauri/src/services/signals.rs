@@ -84,7 +84,8 @@ pub fn get_callouts(
     model: Option<&EmbeddingModel>,
     todays_meetings: &[Value],
 ) -> Vec<BriefingCallout> {
-    crate::signals::callouts::generate_callouts(db, model, todays_meetings)
+    let user_entity = crate::services::user_entity::get_user_entity_from_db(db).ok();
+    crate::signals::callouts::generate_callouts(db, model, todays_meetings, user_entity.as_ref())
 }
 
 /// Run cross-entity propagation rules for a signal.
