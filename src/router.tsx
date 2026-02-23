@@ -54,7 +54,7 @@ import { PersonalityProvider } from "@/hooks/usePersonality";
 
 const settingsTabs = new Set([
   "you",
-  "connections",
+  "connectors",
   "system",
   "diagnostics",
   // Legacy tab IDs for backwards compatibility

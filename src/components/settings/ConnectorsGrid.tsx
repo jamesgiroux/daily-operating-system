@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { connections } from "./connections/registry";
-import ConnectionDetail from "./ConnectionDetail";
+import { connectors } from "./connectors/registry";
+import ConnectorDetail from "./ConnectorDetail";
 import { styles } from "./styles";
 
 interface ConnectionStatus {
@@ -60,12 +60,12 @@ function resolveStatus(id: string, result: unknown): { connected: boolean; label
   return { connected: enabled, label: "Enabled" };
 }
 
-export default function ConnectionsGrid() {
+export default function ConnectorsGrid() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Record<string, ConnectionStatus>>({});
 
   useEffect(() => {
-    for (const conn of connections) {
+    for (const conn of connectors) {
       invoke(conn.statusCommand)
         .then((result) => {
           const resolved = resolveStatus(conn.id, result);
@@ -89,7 +89,7 @@ export default function ConnectionsGrid() {
 
   return (
     <div>
-      {connections.map((conn) => {
+      {connectors.map((conn) => {
         const status = statuses[conn.id];
         const isExpanded = expandedId === conn.id;
         const dotColor = !status
@@ -158,7 +158,7 @@ export default function ConnectionsGrid() {
             </button>
 
             {isExpanded && (
-              <ConnectionDetail
+              <ConnectorDetail
                 component={conn.component}
                 onClose={() => setExpandedId(null)}
               />
