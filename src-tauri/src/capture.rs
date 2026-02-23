@@ -145,7 +145,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Get current events
         let current_events = state
-            .calendar_events
+            .calendar.events
             .read()
             .map(|guard| guard.clone())
             .unwrap_or_default();
@@ -171,12 +171,12 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Find meetings that just ended (were in progress, now aren't)
         let dismissed = state
-            .capture_dismissed
+            .capture.dismissed
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
         let captured = state
-            .capture_captured
+            .capture.captured
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
@@ -261,7 +261,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
                         // Check immutability before processing
                         let already_processed = state
-                            .transcript_processed
+                            .capture.transcript_processed
                             .lock()
                             .map(|g| g.contains_key(&prompt.meeting.id))
                             .unwrap_or(false);
@@ -310,13 +310,13 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                     summary: result.summary.clone(),
                                     processed_at: Utc::now().to_rfc3339(),
                                 };
-                                if let Ok(mut guard) = state.transcript_processed.lock() {
+                                if let Ok(mut guard) = state.capture.transcript_processed.lock() {
                                     guard.insert(prompt.meeting.id.clone(), record);
                                     let _ = crate::state::save_transcript_records(&guard);
                                 }
 
                                 // Mark as captured
-                                if let Ok(mut guard) = state.capture_captured.lock() {
+                                if let Ok(mut guard) = state.capture.captured.lock() {
                                     guard.insert(prompt.meeting.id.clone());
                                 }
 
@@ -379,7 +379,7 @@ fn build_auto_outcome(
         .unwrap_or_default();
 
     let transcript_path = state
-        .transcript_processed
+        .capture.transcript_processed
         .lock()
         .ok()
         .and_then(|guard| guard.get(meeting_id).map(|r| r.destination.clone()));

@@ -179,7 +179,9 @@ export default function ProjectsPage() {
 
   // Filters
   const statusFiltered =
-    statusTab === "all" ? projects : projects.filter((p) => p.status === statusTab);
+    statusTab === "all"
+      ? projects.filter((p) => !p.archived)
+      : projects.filter((p) => !p.archived && p.status === statusTab);
 
   const filtered = useMemo(() => {
     if (!searchQuery) return statusFiltered;
