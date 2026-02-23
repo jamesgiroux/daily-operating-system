@@ -1,8 +1,7 @@
 //! Clay.earth MCP integration for contact and company enrichment (I228).
 //!
-//! Connects to the Clay MCP server (SSE primary, npm stdio fallback) to enrich
-//! people with social profiles, bios, title history, and company firmographics.
-//! Introduces a source attribution system so data provenance is tracked per-field.
+//! Connects to Clay via Smithery Connect — Smithery manages Clay OAuth and
+//! credentials. DailyOS sends JSON-RPC over HTTP to the Smithery endpoint.
 
 pub mod client;
 pub mod enricher;
@@ -18,6 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct ClayConfig {
     #[serde(default)]
     pub enabled: bool,
+    /// Legacy API key field — unused since Smithery migration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(default)]
@@ -26,6 +26,12 @@ pub struct ClayConfig {
     pub sweep_interval_hours: u32,
     #[serde(default = "default_max_per_sweep")]
     pub max_per_sweep: u32,
+    /// Smithery namespace (e.g. "viper-RmaO").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smithery_namespace: Option<String>,
+    /// Smithery connection ID for Clay MCP (e.g. "clay-mcp-vGfX").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smithery_connection_id: Option<String>,
 }
 
 fn default_sweep_interval_hours() -> u32 {
@@ -44,6 +50,8 @@ impl Default for ClayConfig {
             auto_enrich_on_create: false,
             sweep_interval_hours: default_sweep_interval_hours(),
             max_per_sweep: default_max_per_sweep(),
+            smithery_namespace: None,
+            smithery_connection_id: None,
         }
     }
 }

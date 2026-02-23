@@ -320,7 +320,6 @@ pub async fn enrich_person_from_clay_with_client(
     let clay_id = best.id.clone();
 
     let detail = client.get_contact_detail(&clay_id).await.map_err(|e| e.to_string())?;
-    let _stats = client.get_contact_stats(&clay_id).await.ok();
 
     // Phase 3: Merge + write under lock
     let new_title_history_json = if detail.title_history.is_empty() {
