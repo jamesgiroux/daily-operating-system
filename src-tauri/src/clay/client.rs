@@ -351,6 +351,9 @@ impl ClayClient {
     }
 
     /// Fetch full detail for a specific contact by ID.
+    ///
+    /// Smithery Clay returns a different schema than our struct, so we parse
+    /// the raw JSON and extract fields manually.
     pub async fn get_contact_detail(
         &self,
         contact_id: &str,
@@ -367,12 +370,70 @@ impl ClayClient {
             )
             .await?;
 
-        serde_json::from_str(&text).map_err(|e| {
-            ClayError::ParseError(format!(
-                "getContact response: {}: {}",
-                e,
-                &text[..text.len().min(200)]
-            ))
+        let raw: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            ClayError::ParseError(format!("getContact JSON: {}: {}", e, &text[..text.len().min(200)]))
+        })?;
+
+        // Extract first email from emails array
+        let email = raw.get("emails")
+            .and_then(|e| e.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        // Extract first phone from phone_numbers array
+        let phone = raw.get("phone_numbers")
+            .and_then(|p| p.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        // Extract linkedin/twitter from social_links array
+        let social_links: Vec<&str> = raw.get("social_links")
+            .and_then(|s| s.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+
+        let linkedin_url = social_links.iter()
+            .find(|u| u.contains("linkedin.com"))
+            .map(|u| u.to_string());
+        let twitter_handle = social_links.iter()
+            .find(|u| u.contains("twitter.com") || u.contains("x.com"))
+            .map(|u| u.to_string());
+
+        // Extract work history and derive current title/company
+        let work_history: Vec<TitleHistoryEntry> = raw.get("work_history")
+            .and_then(|w| w.as_array())
+            .map(|arr| arr.iter().map(|entry| TitleHistoryEntry {
+                title: entry.get("title").and_then(|t| t.as_str()).map(String::from),
+                company: entry.get("company").and_then(|c| c.as_str()).map(String::from),
+                start_date: entry.get("start_year").map(|y| y.to_string()),
+                end_date: entry.get("end_year").map(|y| y.to_string()),
+            }).collect())
+            .unwrap_or_default();
+
+        let current_job = work_history.first();
+        let title = current_job.and_then(|j| j.title.clone());
+        let company = current_job.and_then(|j| j.company.clone());
+
+        Ok(ClayContactDetail {
+            id: contact_id.to_string(),
+            name: raw.get("displayName").or_else(|| raw.get("name"))
+                .and_then(|n| n.as_str()).map(String::from),
+            email,
+            title,
+            company,
+            photo_url: raw.get("avatarURL").and_then(|u| u.as_str()).map(String::from),
+            linkedin_url,
+            twitter_handle,
+            bio: raw.get("bio").and_then(|b| b.as_str()).map(String::from),
+            phone,
+            title_history: work_history,
+            // Firmographics not available from Smithery getContact
+            company_industry: None,
+            company_size: None,
+            company_hq: raw.get("location").and_then(|l| l.as_str()).map(String::from),
+            company_funding: None,
         })
     }
 
