@@ -312,9 +312,24 @@ pub async fn enrich_person_from_clay_with_client(
         });
     }
 
+    // Match by email first (in email field or displayName), then by name
     let best = search_results
         .iter()
-        .find(|r| r.email.as_deref().map(|e| e.eq_ignore_ascii_case(&person.email)).unwrap_or(false))
+        .find(|r| {
+            r.email.as_deref().map(|e| e.eq_ignore_ascii_case(&person.email)).unwrap_or(false)
+        })
+        .or_else(|| {
+            // Smithery search results often put email in displayName
+            search_results.iter().find(|r| {
+                r.name.as_deref().map(|n| n.eq_ignore_ascii_case(&person.email)).unwrap_or(false)
+            })
+        })
+        .or_else(|| {
+            // Match by actual name
+            search_results.iter().find(|r| {
+                r.name.as_deref().map(|n| n.eq_ignore_ascii_case(&person.name)).unwrap_or(false)
+            })
+        })
         .or_else(|| search_results.first())
         .ok_or("No contact selected")?;
     let clay_id = best.id.clone();

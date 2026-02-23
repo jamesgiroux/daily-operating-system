@@ -313,41 +313,43 @@ impl ClayClient {
 
     /// Search for contacts matching a query (email, name, keywords).
     pub async fn search_contact(&self, query: &str) -> Result<Vec<ClayContact>, ClayError> {
+        // Use name filter for name queries, keywords for emails
+        let args = if query.contains('@') {
+            serde_json::json!({ "keywords": [query], "limit": 10 })
+        } else {
+            serde_json::json!({ "name": [query], "limit": 10 })
+        };
+
         let text = self
-            .call_tool_inner(
-                "searchContacts".to_string(),
-                serde_json::json!({ "keywords": [query], "limit": 10 }),
-            )
+            .call_tool_inner("searchContacts".to_string(), args)
             .await?;
 
-        // Smithery Clay returns: {"total": N, "results": [...]} or a bare array
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-            // Try {"results": [...]} wrapper (Smithery Clay format)
-            if let Some(arr) = val.get("results").and_then(|r| r.as_array()) {
-                let contacts: Vec<ClayContact> = arr
-                    .iter()
-                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                    .collect();
-                return Ok(contacts);
-            }
-            // Try bare array
-            if let Some(arr) = val.as_array() {
-                let contacts: Vec<ClayContact> = arr
-                    .iter()
-                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                    .collect();
-                return Ok(contacts);
-            }
-            // Single contact
-            if let Ok(contact) = serde_json::from_value::<ClayContact>(val) {
-                return Ok(vec![contact]);
-            }
-        }
+        // Smithery Clay returns: {"total": N, "results": [...]}
+        let val: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            ClayError::ParseError(format!("searchContacts: {}: {}", e, &text[..text.len().min(200)]))
+        })?;
 
-        Err(ClayError::ParseError(format!(
-            "searchContacts response: {}",
-            &text[..text.len().min(200)]
-        )))
+        let arr = val.get("results").and_then(|r| r.as_array())
+            .or_else(|| val.as_array());
+
+        let contacts = match arr {
+            Some(arr) => arr.iter().map(|v| {
+                let mut contact: ClayContact = serde_json::from_value(v.clone()).unwrap_or_default();
+                // Smithery search results don't have an email field — but if
+                // displayName looks like an email, use it
+                if contact.email.is_none() {
+                    if let Some(name) = &contact.name {
+                        if name.contains('@') {
+                            contact.email = Some(name.clone());
+                        }
+                    }
+                }
+                contact
+            }).collect(),
+            None => vec![],
+        };
+
+        Ok(contacts)
     }
 
     /// Fetch full detail for a specific contact by ID.
