@@ -344,18 +344,38 @@ impl ClayClient {
             .or_else(|| val.as_array());
 
         let contacts = match arr {
-            Some(arr) => arr.iter().map(|v| {
-                let mut contact: ClayContact = serde_json::from_value(v.clone()).unwrap_or_default();
-                // Smithery search results don't have an email field — but if
-                // displayName looks like an email, use it
-                if contact.email.is_none() {
-                    if let Some(name) = &contact.name {
-                        if name.contains('@') {
-                            contact.email = Some(name.clone());
+            Some(arr) => arr.iter().filter_map(|v| {
+                match serde_json::from_value::<ClayContact>(v.clone()) {
+                    Ok(mut contact) => {
+                        // Smithery search results don't have an email field — but if
+                        // displayName looks like an email, use it
+                        if contact.email.is_none() {
+                            if let Some(name) = &contact.name {
+                                if name.contains('@') {
+                                    contact.email = Some(name.clone());
+                                }
+                            }
+                        }
+                        // Skip contacts with empty IDs rather than silently defaulting
+                        if contact.id_str().is_empty() {
+                            log::warn!(
+                                "Enrichment: skipping Clay contact with empty id: {:?}",
+                                v.get("displayName").or_else(|| v.get("name"))
+                            );
+                            None
+                        } else {
+                            Some(contact)
                         }
                     }
+                    Err(e) => {
+                        log::warn!(
+                            "Enrichment: failed to parse Clay contact row: {} — {}",
+                            e,
+                            &v.to_string()[..v.to_string().len().min(100)]
+                        );
+                        None // Skip bad rows, never silently default
+                    }
                 }
-                contact
             }).collect(),
             None => vec![],
         };
@@ -376,7 +396,6 @@ impl ClayClient {
             ClayError::ToolCallFailed(format!("contact_id '{}' is not a valid number", contact_id))
         })?;
 
-        eprintln!("[clay] getContact contact_id={} (u64)", id_num);
         let text = self
             .call_tool_inner(
                 "getContact".to_string(),
