@@ -15,6 +15,10 @@ use super::cache;
 use super::matcher;
 
 /// Background loop that polls the Granola cache file for new transcripts.
+///
+/// Uses `tokio::select!` to wake immediately via `granola_poller_wake`
+/// (fired from the calendar poller when meetings end) instead of waiting
+/// for the full poll interval.
 pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // 45-second startup delay to let other subsystems initialize
     tokio::time::sleep(Duration::from_secs(45)).await;
@@ -29,7 +33,12 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let config = match granola_config {
             Some(cfg) if cfg.enabled => cfg,
             _ => {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(60)) => {}
+                    _ = state.integrations.granola_poller_wake.notified() => {
+                        log::info!("Granola poller: woken by signal (checking config)");
+                    }
+                }
                 continue;
             }
         };
@@ -41,7 +50,12 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
             log::warn!("Granola poller: {}", e);
         }
 
-        tokio::time::sleep(poll_interval).await;
+        tokio::select! {
+            _ = tokio::time::sleep(poll_interval) => {}
+            _ = state.integrations.granola_poller_wake.notified() => {
+                log::info!("Granola poller: woken by signal (meeting ended)");
+            }
+        }
     }
 }
 
@@ -134,43 +148,142 @@ fn poll_once(state: &AppState, app_handle: &AppHandle, cache_path: &str) -> Resu
 }
 
 /// Process a Granola document through the shared transcript pipeline.
+///
+/// Uses three-phase lock pattern (matching Quill's approach) to avoid
+/// holding the DB mutex across AI pipeline calls:
+///   Phase 1 (with lock): Read meeting data, config, build calendar_event
+///   Phase 2 (no lock): Run AI pipeline via process_fetched_transcript_without_db
+///   Phase 3 (with lock): Write results back to DB
 fn process_granola_document(
     state: &AppState,
     sync_id: &str,
     meeting_id: &str,
     content: &str,
 ) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    // Phase 1: Read data with lock, then drop
+    let (calendar_event, workspace, profile, ai_config) = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-    let meeting = db
-        .get_meeting_by_id(meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting {} not found", meeting_id))?;
+        let meeting = db
+            .get_meeting_by_id(meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting {} not found", meeting_id))?;
 
-    let calendar_event = crate::quill::sync::db_meeting_to_calendar_event(&meeting);
+        let calendar_event = crate::quill::sync::db_meeting_to_calendar_event(&meeting);
 
-    let (workspace, profile, ai_config) = {
-        let config_guard = state.config.read().map_err(|_| "Lock poisoned")?;
-        match config_guard.as_ref() {
-            Some(cfg) => (
-                std::path::PathBuf::from(&cfg.workspace_path),
-                cfg.profile.clone(),
-                Some(cfg.ai_models.clone()),
-            ),
-            None => return Err("Config not available".to_string()),
-        }
-    };
+        let (workspace, profile, ai_config) = {
+            let config_guard = state.config.read().map_err(|_| "Lock poisoned")?;
+            match config_guard.as_ref() {
+                Some(cfg) => (
+                    std::path::PathBuf::from(&cfg.workspace_path),
+                    cfg.profile.clone(),
+                    Some(cfg.ai_models.clone()),
+                ),
+                None => return Err("Config not available".to_string()),
+            }
+        };
 
-    crate::quill::sync::process_fetched_transcript(
-        db,
+        (calendar_event, workspace, profile, ai_config)
+    }; // DB lock dropped
+
+    // Phase 2: Run AI pipeline WITHOUT holding the DB mutex
+    let result = crate::quill::sync::process_fetched_transcript_without_db(
         sync_id,
         &calendar_event,
         content,
         &workspace,
         &profile,
         ai_config.as_ref(),
-    )
+    );
+
+    // Phase 3: Re-acquire lock to write results
+    match result {
+        Ok(tr) => {
+            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+            let dest = tr.destination.as_deref().unwrap_or("");
+            let processed_at = chrono::Utc::now().to_rfc3339();
+            let _ = db.update_meeting_transcript_metadata(
+                &calendar_event.id,
+                dest,
+                &processed_at,
+                tr.summary.as_deref(),
+            );
+
+            // Write captures (wins, risks, decisions) extracted by AI
+            let account = calendar_event.account.as_deref();
+            for win in &tr.wins {
+                let _ = db.insert_capture(
+                    &calendar_event.id, &calendar_event.title,
+                    account, "win", win,
+                );
+            }
+            for risk in &tr.risks {
+                let _ = db.insert_capture(
+                    &calendar_event.id, &calendar_event.title,
+                    account, "risk", risk,
+                );
+            }
+            for decision in &tr.decisions {
+                let _ = db.insert_capture(
+                    &calendar_event.id, &calendar_event.title,
+                    account, "decision", decision,
+                );
+            }
+
+            // Write extracted actions as proposed actions
+            let now = chrono::Utc::now().to_rfc3339();
+            for (i, action) in tr.actions.iter().enumerate() {
+                let db_action = crate::db::DbAction {
+                    id: format!("granola-{}-{}", meeting_id, i),
+                    title: action.title.clone(),
+                    priority: "P2".to_string(),
+                    status: "proposed".to_string(),
+                    created_at: now.clone(),
+                    due_date: action.due_date.clone(),
+                    completed_at: None,
+                    account_id: account.map(|a| {
+                        db.get_account_by_name(a)
+                            .ok()
+                            .flatten()
+                            .map(|acc| acc.id)
+                            .unwrap_or_default()
+                    }).filter(|s| !s.is_empty()),
+                    project_id: None,
+                    source_type: Some("transcript".to_string()),
+                    source_id: Some(calendar_event.id.clone()),
+                    source_label: Some(calendar_event.title.clone()),
+                    context: None,
+                    waiting_on: None,
+                    updated_at: now.clone(),
+                    person_id: None,
+                    account_name: None,
+                    next_meeting_title: None,
+                    next_meeting_start: None,
+                };
+                let _ = db.upsert_action_if_not_completed(&db_action);
+            }
+
+            // Transition sync state to completed
+            let _ = crate::quill::sync::transition_state(
+                db, sync_id, "completed", None, None, Some(dest), None,
+            );
+
+            Ok(dest.to_string())
+        }
+        Err(error) => {
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    let _ = crate::quill::sync::transition_state(
+                        db, sync_id, "failed", None, None, None, Some(&error),
+                    );
+                }
+            }
+            Err(error)
+        }
+    }
 }
 
 /// Get recent meetings (last 90 days) as (id, title, start_time) tuples for matching.

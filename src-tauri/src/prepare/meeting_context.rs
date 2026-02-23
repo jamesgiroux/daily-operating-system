@@ -528,6 +528,11 @@ fn gather_meeting_context(
             }
         }
 
+        // I425: Inject linked Linear issues for entity context
+        if let Some(db) = db {
+            inject_linear_issues(db, &em.entity_id, &mut ctx);
+        }
+
         // I135: Entity-generic intelligence injection
         inject_entity_intelligence(&em.workspace_path, &mut ctx);
     } else {
@@ -715,6 +720,35 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
                 })
             })
             .collect::<Vec<_>>());
+    }
+}
+
+/// I425: Inject active Linear issues linked to this entity via linear_entity_links.
+fn inject_linear_issues(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Value) {
+    let issues: Vec<Value> = (|| {
+        let conn = db.conn_ref();
+        let mut stmt = conn.prepare(
+            "SELECT li.identifier, li.title, li.state_name, li.priority_label, li.due_date
+             FROM linear_issues li
+             JOIN linear_entity_links lel ON lel.linear_project_id = li.project_id
+             WHERE lel.entity_id = ?1 AND li.state_type NOT IN ('completed', 'cancelled')
+             ORDER BY li.priority ASC, li.due_date ASC
+             LIMIT 10"
+        ).ok()?;
+        let rows = stmt.query_map([entity_id], |row| {
+            Ok(json!({
+                "identifier": row.get::<_, Option<String>>(0)?,
+                "title": row.get::<_, Option<String>>(1)?,
+                "state": row.get::<_, Option<String>>(2)?,
+                "priority": row.get::<_, Option<String>>(3)?,
+                "due_date": row.get::<_, Option<String>>(4)?,
+            }))
+        }).ok()?;
+        Some(rows.flatten().collect())
+    })().unwrap_or_default();
+
+    if !issues.is_empty() {
+        ctx["linear_issues"] = json!(issues);
     }
 }
 
