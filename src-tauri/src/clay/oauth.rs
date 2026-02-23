@@ -1,9 +1,13 @@
-//! Keychain helpers for Clay OAuth token storage (macOS).
+//! Keychain helpers for Smithery API key storage (macOS).
 //!
 //! Follows the same `security` CLI pattern as `google_api/token_store.rs`.
 
-const SERVICE: &str = "com.dailyos.desktop.clay-auth";
-const ACCOUNT: &str = "clay-oauth-token-v1";
+const SERVICE: &str = "com.dailyos.desktop.smithery";
+const ACCOUNT: &str = "smithery-api-key-v1";
+
+// Legacy constants for cleanup
+const LEGACY_SERVICE: &str = "com.dailyos.desktop.clay-auth";
+const LEGACY_ACCOUNT: &str = "clay-oauth-token-v1";
 
 /// Run a `security` CLI command with retry + backoff for transient Keychain
 /// contention (macOS errno 35 / EAGAIN).
@@ -43,8 +47,8 @@ fn run_security_cmd(args: &[&str]) -> Result<std::process::Output, String> {
     unreachable!()
 }
 
-/// Retrieve Clay OAuth token from keychain.
-pub fn get_clay_token() -> Option<String> {
+/// Retrieve Smithery API key from keychain.
+pub fn get_smithery_api_key() -> Option<String> {
     let output = run_security_cmd(&[
         "find-generic-password",
         "-a",
@@ -59,17 +63,17 @@ pub fn get_clay_token() -> Option<String> {
         return None;
     }
 
-    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if token.is_empty() {
+    let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if key.is_empty() {
         None
     } else {
-        Some(token)
+        Some(key)
     }
 }
 
-/// Save Clay OAuth token to keychain.
+/// Save Smithery API key to keychain.
 /// Uses `-U` flag to update if entry already exists.
-pub fn save_clay_token(token: &str) -> Result<(), String> {
+pub fn save_smithery_api_key(key: &str) -> Result<(), String> {
     let output = run_security_cmd(&[
         "add-generic-password",
         "-a",
@@ -77,21 +81,21 @@ pub fn save_clay_token(token: &str) -> Result<(), String> {
         "-s",
         SERVICE,
         "-w",
-        token,
+        key,
         "-U",
     ])?;
 
     if !output.status.success() {
         return Err(format!(
-            "Failed to save Clay token: {}",
+            "Failed to save Smithery API key: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
     Ok(())
 }
 
-/// Delete Clay OAuth token from keychain.
-pub fn delete_clay_token() -> Result<(), String> {
+/// Delete Smithery API key from keychain.
+pub fn delete_smithery_api_key() -> Result<(), String> {
     let output = run_security_cmd(&[
         "delete-generic-password",
         "-a",
@@ -110,7 +114,19 @@ pub fn delete_clay_token() -> Result<(), String> {
     }
 
     Err(format!(
-        "Failed to delete Clay token: {}",
+        "Failed to delete Smithery API key: {}",
         String::from_utf8_lossy(&output.stderr)
     ))
+}
+
+/// Clean up the legacy Clay OAuth keychain entry if it exists.
+/// Called once during migration to Smithery transport.
+pub fn cleanup_legacy_clay_token() {
+    let _ = run_security_cmd(&[
+        "delete-generic-password",
+        "-a",
+        LEGACY_ACCOUNT,
+        "-s",
+        LEGACY_SERVICE,
+    ]);
 }

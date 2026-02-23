@@ -29,20 +29,26 @@ pub async fn run_clay_poller(state: Arc<AppState>, _app_handle: tauri::AppHandle
 
     loop {
         // Read Clay config from shared state
-        let (enabled, api_key, sweep_interval, max_per_sweep) = {
+        let (enabled, smithery_ns, smithery_conn, sweep_interval, max_per_sweep) = {
             let config = state.config.read().ok();
             match config.as_ref().and_then(|g| g.as_ref()) {
                 Some(c) => (
                     c.clay.enabled,
-                    c.clay.api_key.clone(),
+                    c.clay.smithery_namespace.clone(),
+                    c.clay.smithery_connection_id.clone(),
                     c.clay.sweep_interval_hours,
                     c.clay.max_per_sweep,
                 ),
-                None => (false, None, 24, 20),
+                None => (false, None, None, 24, 20),
             }
         };
 
-        if !enabled || api_key.is_none() {
+        let smithery_api_key = crate::clay::oauth::get_smithery_api_key();
+        let has_credentials = smithery_api_key.is_some()
+            && smithery_ns.is_some()
+            && smithery_conn.is_some();
+
+        if !enabled || !has_credentials {
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_secs(300)) => {},
                 _ = state.integrations.clay_poller_wake.notified() => {
@@ -52,11 +58,13 @@ pub async fn run_clay_poller(state: Arc<AppState>, _app_handle: tauri::AppHandle
             continue;
         }
 
-        let api_key = api_key.unwrap();
-        log::info!("Clay poller: starting enrichment sweep");
+        let api_key = smithery_api_key.unwrap();
+        let namespace = smithery_ns.unwrap();
+        let connection_id = smithery_conn.unwrap();
+        log::info!("Clay poller: starting enrichment sweep via Smithery");
 
-        // Connect to Clay MCP server
-        match crate::clay::client::ClayClient::connect(&api_key).await {
+        // Connect to Clay MCP via Smithery
+        match crate::clay::client::ClayClient::connect(&api_key, &namespace, &connection_id).await {
             Ok(client) => {
                 // Phase 1: process pending clay_sync_state rows
                 let pending_ids = get_pending_sync_ids(&state, max_per_sweep as usize);

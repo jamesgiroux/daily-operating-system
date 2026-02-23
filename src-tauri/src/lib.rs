@@ -531,7 +531,7 @@ pub fn run() {
             commands::fetch_gravatar,
             commands::bulk_fetch_gravatars,
             commands::get_person_avatar,
-            // Clay Integration (I228)
+            // Clay Integration (I228) via Smithery Connect
             commands::get_clay_status,
             commands::set_clay_enabled,
             commands::set_clay_api_key,
@@ -541,10 +541,11 @@ pub fn run() {
             commands::enrich_account_from_clay,
             commands::start_clay_bulk_enrich,
             commands::get_enrichment_log,
-            commands::start_clay_oauth,
-            commands::save_clay_oauth_token,
-            commands::disconnect_clay,
-            commands::get_clay_oauth_status,
+            commands::detect_smithery_settings,
+            commands::save_smithery_api_key,
+            commands::set_smithery_connection,
+            commands::disconnect_smithery,
+            commands::get_smithery_status,
             // Linear Integration (I346)
             commands::get_linear_status,
             commands::set_linear_enabled,
