@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
 import type { ClayStatusData } from "@/types";
 import { styles } from "../styles";
@@ -13,8 +12,6 @@ interface OAuthStatus {
 export default function ClayConnection() {
   const [status, setStatus] = useState<ClayStatusData | null>(null);
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus | null>(null);
-  const [apiKey, setApiKey] = useState("");
-  const [apiKeyDirty, setApiKeyDirty] = useState(false);
   const [token, setToken] = useState("");
   const [testing, setTesting] = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -22,10 +19,7 @@ export default function ClayConnection() {
 
   useEffect(() => {
     invoke<ClayStatusData>("get_clay_status")
-      .then((s) => {
-        setStatus(s);
-        if (s.apiKeySet) setApiKey("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
-      })
+      .then(setStatus)
       .catch((err) => console.error("get_clay_status failed:", err));
 
     invoke<OAuthStatus>("get_clay_oauth_status")
@@ -44,15 +38,6 @@ export default function ClayConnection() {
     }
   }
 
-  async function handleConnectOAuth() {
-    try {
-      const url = await invoke<string>("start_clay_oauth");
-      await open(url);
-    } catch (err) {
-      toast.error("Failed to start OAuth flow");
-    }
-  }
-
   async function handleSaveToken() {
     const trimmed = token.trim();
     if (!trimmed) return;
@@ -61,7 +46,7 @@ export default function ClayConnection() {
       await invoke("save_clay_oauth_token", { token: trimmed });
       setToken("");
       setOauthStatus({ connected: true, method: "oauth" });
-      toast("Clay token saved");
+      toast("Clay token saved to keychain");
     } catch (err) {
       toast.error("Failed to save token");
     } finally {
@@ -76,19 +61,6 @@ export default function ClayConnection() {
       toast("Clay disconnected");
     } catch (err) {
       toast.error("Failed to disconnect Clay");
-    }
-  }
-
-  async function saveApiKey() {
-    const trimmed = apiKey.trim();
-    if (!trimmed || trimmed === "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") return;
-    try {
-      await invoke("set_clay_api_key", { key: trimmed });
-      setApiKeyDirty(false);
-      setStatus((prev) => prev ? { ...prev, apiKeySet: true } : prev);
-      toast("Clay API key saved");
-    } catch (err) {
-      toast.error("Failed to save API key");
     }
   }
 
@@ -169,46 +141,37 @@ export default function ClayConnection() {
 
       {status?.enabled && (
         <>
-          {/* OAuth connection */}
+          {/* Token authentication */}
           <div style={styles.settingRow}>
             <div>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
-                {oauthStatus?.connected ? "Connected via OAuth" : "Clay OAuth"}
+                {oauthStatus?.connected ? "Connected" : "Clay Token"}
               </span>
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
                 {oauthStatus?.connected
-                  ? "Token stored in system keychain"
-                  : "Connect with your Clay account"}
+                  ? "Bearer token stored in system keychain"
+                  : "Paste your Clay MCP bearer token"}
               </p>
             </div>
-            {oauthStatus?.connected ? (
+            {oauthStatus?.connected && (
               <button
                 style={{ ...styles.btn, ...styles.btnGhost }}
                 onClick={handleDisconnect}
               >
                 Disconnect
               </button>
-            ) : (
-              <button
-                style={{ ...styles.btn, ...styles.btnPrimary }}
-                onClick={handleConnectOAuth}
-              >
-                Connect Clay
-              </button>
             )}
           </div>
 
-          {/* Manual token paste fallback */}
           {!oauthStatus?.connected && (
             <div style={{ ...styles.settingRow, borderBottom: "none" }}>
               <div style={{ flex: 1 }}>
-                <span style={styles.monoLabel}>Or paste token manually</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <input
                     type="password"
                     value={token}
                     onChange={(e) => setToken(e.target.value)}
-                    placeholder="Paste Clay OAuth token"
+                    placeholder="Paste Clay bearer token"
                     style={{
                       ...styles.input,
                       width: 260,
@@ -269,39 +232,6 @@ export default function ClayConnection() {
             >
               {status.autoEnrichOnCreate ? "Disable" : "Enable"}
             </button>
-          </div>
-
-          {/* Legacy API key (fallback) */}
-          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
-            <div style={{ flex: 1 }}>
-              <span style={styles.monoLabel}>API Key (fallback)</span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Legacy API key — OAuth token is preferred
-              </p>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value);
-                    setApiKeyDirty(true);
-                  }}
-                  placeholder="Enter Clay API key"
-                  style={{
-                    ...styles.input,
-                    width: 260,
-                  }}
-                />
-                {apiKeyDirty && apiKey.trim() && (
-                  <button
-                    style={{ ...styles.btn, ...styles.btnPrimary }}
-                    onClick={saveApiKey}
-                  >
-                    Save
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
 
           {status.lastEnrichmentAt && (
