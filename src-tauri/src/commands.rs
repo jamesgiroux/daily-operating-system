@@ -6117,7 +6117,8 @@ pub async fn bulk_fetch_gravatars(
     Ok(fetched)
 }
 
-/// Get local avatar file path for a person (fast cache lookup).
+/// Get avatar for a person as a data URL (base64-encoded PNG).
+/// Returns None if no cached avatar exists.
 #[tauri::command]
 pub fn get_person_avatar(
     person_id: String,
@@ -6125,7 +6126,10 @@ pub fn get_person_avatar(
 ) -> Option<String> {
     let db_guard = state.db.lock().ok()?;
     let db = db_guard.as_ref()?;
-    crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)
+    let path = crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)?;
+    let bytes = std::fs::read(&path).ok()?;
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+    Some(format!("data:image/png;base64,{}", b64))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
