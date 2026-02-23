@@ -471,7 +471,7 @@ pub fn update_email_entity(
 
     let etype = entity_type.unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
-    let _ = crate::signals::bus::emit_signal(
+    let _ = crate::services::signals::emit(
         db,
         etype,
         eid,
@@ -494,7 +494,7 @@ pub fn dismiss_email_signal(
         .map_err(|e| e.to_string())?;
 
     if let Some((entity_id, entity_type, signal_type, email_id)) = context {
-        let _ = crate::signals::bus::emit_signal(
+        let _ = crate::services::signals::emit(
             db,
             &entity_type,
             &entity_id,
@@ -526,7 +526,7 @@ pub fn dismiss_email_item(
 
     let etype = entity_id.map(|_| "account").unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
-    let _ = crate::signals::bus::emit_signal(
+    let _ = crate::services::signals::emit(
         db,
         etype,
         eid,

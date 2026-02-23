@@ -92,7 +92,7 @@ pub fn update_intelligence_field(
 
     let _ = db.upsert_entity_intelligence(&intel);
 
-    let _ = crate::signals::bus::emit_signal(
+    let _ = crate::services::signals::emit(
         db,
         entity_type,
         entity_id,
@@ -153,9 +153,9 @@ pub fn update_stakeholders(
 
     let _ = db.upsert_entity_intelligence(&intel);
 
-    let _ = crate::signals::bus::emit_signal_and_propagate(
+    let _ = crate::services::signals::emit_and_propagate(
         db,
-        &state.signal_engine,
+        &state.signals.engine,
         entity_type,
         entity_id,
         "stakeholders_updated",
