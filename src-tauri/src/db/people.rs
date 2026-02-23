@@ -78,7 +78,9 @@ impl ActionDb {
     pub fn get_person_by_email(&self, email: &str) -> Result<Option<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people WHERE email = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![email], Self::map_person_row)?;
@@ -100,7 +102,9 @@ impl ActionDb {
         // Fallback: check person_emails alias table
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived,
+                    p.linkedin_url, p.twitter_handle, p.phone, p.photo_url, p.bio, p.title_history,
+                    p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM person_emails pe
              JOIN people p ON p.id = pe.person_id
              WHERE pe.email = LOWER(?1)
@@ -207,7 +211,9 @@ impl ActionDb {
     pub fn get_person(&self, id: &str) -> Result<Option<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_person_row)?;
@@ -223,7 +229,9 @@ impl ActionDb {
             Some(rel) => {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
-                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                            linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                            company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
                      FROM people WHERE relationship = ?1 AND archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map(params![rel], Self::map_person_row)?;
@@ -232,7 +240,9 @@ impl ActionDb {
             None => {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
-                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                            linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                            company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
                      FROM people WHERE archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map([], Self::map_person_row)?;
@@ -322,7 +332,9 @@ impl ActionDb {
     pub fn get_people_for_entity(&self, entity_id: &str) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived,
+                    p.linkedin_url, p.twitter_handle, p.phone, p.photo_url, p.bio, p.title_history,
+                    p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM people p
              JOIN entity_people ep ON p.id = ep.person_id
              WHERE ep.entity_id = ?1
@@ -432,7 +444,9 @@ impl ActionDb {
     pub fn get_meeting_attendees(&self, meeting_id: &str) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived,
+                    p.linkedin_url, p.twitter_handle, p.phone, p.photo_url, p.bio, p.title_history,
+                    p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM people p
              JOIN meeting_attendees ma ON p.id = ma.person_id
              WHERE ma.meeting_id = ?1
@@ -549,7 +563,9 @@ impl ActionDb {
         let pattern = format!("%{query}%");
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people
              WHERE name LIKE ?1 OR email LIKE ?1 OR organization LIKE ?1
              ORDER BY name
@@ -595,17 +611,17 @@ impl ActionDb {
             meeting_count: row.get(10)?,
             updated_at: row.get(11)?,
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
-            linkedin_url: None,
-            twitter_handle: None,
-            phone: None,
-            photo_url: None,
-            bio: None,
-            title_history: None,
-            company_industry: None,
-            company_size: None,
-            company_hq: None,
-            last_enriched_at: None,
-            enrichment_sources: None,
+            linkedin_url: row.get(13)?,
+            twitter_handle: row.get(14)?,
+            phone: row.get(15)?,
+            photo_url: row.get(16)?,
+            bio: row.get(17)?,
+            title_history: row.get(18)?,
+            company_industry: row.get(19)?,
+            company_size: row.get(20)?,
+            company_hq: row.get(21)?,
+            last_enriched_at: row.get(22)?,
+            enrichment_sources: row.get(23)?,
         })
     }
 
@@ -618,7 +634,9 @@ impl ActionDb {
     pub fn get_unnamed_people(&self) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people
              WHERE name NOT LIKE '% %' OR name LIKE '%@%'
              ORDER BY meeting_count DESC",
@@ -631,7 +649,9 @@ impl ActionDb {
     pub fn get_unknown_relationship_people(&self) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people
              WHERE relationship = 'unknown'
              ORDER BY meeting_count DESC",
