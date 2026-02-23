@@ -29,8 +29,8 @@ fn deserialize_id<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::E
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClayContact {
-    #[serde(default, alias = "objectID", deserialize_with = "deserialize_id")]
-    pub id: String,
+    #[serde(default, alias = "objectID")]
+    pub id: serde_json::Value,
     #[serde(default, alias = "fullName", alias = "displayName")]
     pub name: Option<String>,
     #[serde(default)]
@@ -47,12 +47,23 @@ pub struct ClayContact {
     pub twitter_handle: Option<String>,
 }
 
+impl ClayContact {
+    /// Extract contact ID as a string (handles both number and string JSON values).
+    pub fn id_str(&self) -> String {
+        match &self.id {
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::String(s) => s.clone(),
+            _ => String::new(),
+        }
+    }
+}
+
 /// Extended contact detail with bio, title history, and company firmographics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClayContactDetail {
-    #[serde(default, alias = "objectID", deserialize_with = "deserialize_id")]
-    pub id: String,
+    #[serde(default, alias = "objectID")]
+    pub id: serde_json::Value,
     #[serde(default, alias = "fullName", alias = "displayName")]
     pub name: Option<String>,
     #[serde(default)]
@@ -360,11 +371,12 @@ impl ClayClient {
         &self,
         contact_id: &str,
     ) -> Result<ClayContactDetail, ClayError> {
-        let id_num: serde_json::Value = contact_id
-            .parse::<u64>()
-            .map(|n| serde_json::json!(n))
-            .unwrap_or_else(|_| serde_json::json!(contact_id));
+        // Smithery Clay requires contact_id as a number
+        let id_num: u64 = contact_id.parse::<u64>().map_err(|_| {
+            ClayError::ToolCallFailed(format!("contact_id '{}' is not a valid number", contact_id))
+        })?;
 
+        eprintln!("[clay] getContact contact_id={} (u64)", id_num);
         let text = self
             .call_tool_inner(
                 "getContact".to_string(),
@@ -419,7 +431,7 @@ impl ClayClient {
         let company = current_job.and_then(|j| j.company.clone());
 
         Ok(ClayContactDetail {
-            id: contact_id.to_string(),
+            id: serde_json::Value::String(contact_id.to_string()),
             name: raw.get("displayName").or_else(|| raw.get("name"))
                 .and_then(|n| n.as_str()).map(String::from),
             email,
@@ -441,10 +453,9 @@ impl ClayClient {
 
     /// Add a note to a contact record in Clay.
     pub async fn add_note(&self, contact_id: &str, note: &str) -> Result<(), ClayError> {
-        let id_num: serde_json::Value = contact_id
-            .parse::<u64>()
-            .map(|n| serde_json::json!(n))
-            .unwrap_or_else(|_| serde_json::json!(contact_id));
+        let id_num: u64 = contact_id.parse::<u64>().map_err(|_| {
+            ClayError::ToolCallFailed(format!("contact_id '{}' is not a valid number", contact_id))
+        })?;
 
         self.call_tool_inner(
             "createNote".to_string(),
