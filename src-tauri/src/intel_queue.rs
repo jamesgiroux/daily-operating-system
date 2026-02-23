@@ -366,7 +366,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                             &request.entity_id,
                             &request.entity_type,
                             &state.intel_queue,
-                            Some(state.signal_engine.as_ref()),
+                            Some(state.signals.engine.as_ref()),
                         );
                     }
                 }
