@@ -105,7 +105,7 @@ export function PersonHero({
 
       {/* Name with avatar */}
       <div className={styles.nameRow}>
-        <Avatar name={detail.name} personId={detail.id} size={48} />
+        <Avatar name={detail.name} personId={detail.id} photoUrl={detail.photoUrl} size={48} />
         <h1 className={styles.name}>
           {editName != null && setEditName ? (
             <EditableText
@@ -167,14 +167,29 @@ export function PersonHero({
         </div>
       )}
 
-      {/* Social links (Clay enrichment I228) */}
-      {(detail.linkedinUrl || detail.twitterHandle) && (
-        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+      {/* Bio (from Clay/Gravatar enrichment — shown below lede when both exist) */}
+      {detail.bio && (
+        <p style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 15,
+          lineHeight: 1.6,
+          color: "var(--color-text-secondary)",
+          fontStyle: "italic",
+          marginTop: lede ? 8 : 0,
+        }}>
+          {detail.bio.length > LEDE_LIMIT ? detail.bio.slice(0, LEDE_LIMIT) + "…" : detail.bio}
+        </p>
+      )}
+
+      {/* Social links + phone */}
+      {(detail.linkedinUrl || detail.twitterHandle || detail.phone) && (
+        <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
           {detail.linkedinUrl && (
             <a
               href={detail.linkedinUrl}
               target="_blank"
               rel="noopener noreferrer"
+              title={detail.linkedinUrl}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 12,
@@ -190,6 +205,7 @@ export function PersonHero({
               href={`https://x.com/${detail.twitterHandle.replace(/^@/, "")}`}
               target="_blank"
               rel="noopener noreferrer"
+              title={`https://x.com/${detail.twitterHandle.replace(/^@/, "")}`}
               style={{
                 fontFamily: "var(--font-mono)",
                 fontSize: 12,
@@ -198,6 +214,20 @@ export function PersonHero({
               }}
             >
               @{detail.twitterHandle.replace(/^@/, "")} ↗
+            </a>
+          )}
+          {detail.phone && (
+            <a
+              href={`tel:${detail.phone}`}
+              title={detail.phone}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--color-text-secondary)",
+                textDecoration: "none",
+              }}
+            >
+              {detail.phone}
             </a>
           )}
         </div>

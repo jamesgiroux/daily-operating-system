@@ -40,13 +40,32 @@ interface ScheduleEntry {
 function cronToHumanTime(cron: string): string {
   const parts = cron.split(" ");
   if (parts.length < 2) return cron;
-  const minute = parseInt(parts[0], 10);
-  const hour = parseInt(parts[1], 10);
-  if (isNaN(minute) || isNaN(hour)) return cron;
-  const h = hour % 12 || 12;
-  const ampm = hour < 12 ? "AM" : "PM";
-  const m = minute.toString().padStart(2, "0");
-  return `${h}:${m} ${ampm}`;
+  const minute = parts[0];
+  const hour = parts[1];
+  const dayOfWeek = parts[4] ?? "*";
+
+  // "1 */4 * * *" → "Every 4 hours (daily)"
+  if (hour.startsWith("*/")) {
+    const interval = parseInt(hour.slice(2), 10);
+    const dayLabel = dayOfWeek === "1-5" ? "weekdays" : "daily";
+    return `Every ${interval} hours (${dayLabel})`;
+  }
+
+  // "0 */2 * * *" → "Every 2 hours (daily)"
+  if (hour.startsWith("*/")) {
+    const interval = parseInt(hour.slice(2), 10);
+    return `Every ${interval} hours`;
+  }
+
+  // Fixed time: "0 8 * * 1-5" → "8:00 AM (weekdays)"
+  const h = parseInt(hour, 10);
+  const m = parseInt(minute, 10);
+  if (isNaN(h) || isNaN(m)) return cron;
+  const hDisplay = h % 12 || 12;
+  const ampm = h < 12 ? "AM" : "PM";
+  const mDisplay = m.toString().padStart(2, "0");
+  const dayLabel = dayOfWeek === "1-5" ? " (weekdays)" : dayOfWeek === "1" ? " (Mondays)" : "";
+  return `${hDisplay}:${mDisplay} ${ampm}${dayLabel}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
