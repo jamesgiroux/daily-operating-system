@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useNavigate } from "@tanstack/react-router";
 import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
 import { Check, X, Loader2 } from "lucide-react";
@@ -35,38 +34,6 @@ const PERSONALITY_OPTIONS = [
 // ═══════════════════════════════════════════════════════════════════════════
 // Sub-sections
 // ═══════════════════════════════════════════════════════════════════════════
-
-function AboutYouSection() {
-  const navigate = useNavigate();
-  return (
-    <div>
-      <p style={styles.subsectionLabel}>About You</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
-        Your professional profile has moved to the{" "}
-        <button
-          type="button"
-          onClick={() => navigate({ to: "/me" })}
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: "inherit",
-            /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
-            color: "var(--color-garden-eucalyptus)",
-            fontWeight: 500,
-            textDecoration: "underline",
-            textUnderlineOffset: "3px",
-            cursor: "pointer",
-            background: "none",
-            border: "none",
-            padding: 0,
-          }}
-        >
-          Me page
-        </button>
-        . Edit your name, title, company, priorities, and more there.
-      </p>
-    </div>
-  );
-}
 
 function DomainsSection({
   config,
@@ -662,7 +629,7 @@ export default function YouCard() {
   if (loading) {
     return (
       <div>
-        <p style={styles.subsectionLabel}>About You</p>
+        <p style={styles.subsectionLabel}>Workspace</p>
         <div
           style={{
             height: 40,
@@ -677,8 +644,6 @@ export default function YouCard() {
 
   return (
     <div>
-      <AboutYouSection />
-      <hr style={styles.thinRule} />
       <DomainsSection config={config} />
       <hr style={styles.thinRule} />
       <RoleSection />
