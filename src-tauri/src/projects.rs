@@ -458,8 +458,12 @@ pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                 match db.get_project(&file_project.id) {
                     Ok(Some(db_project)) => {
                         if file_project.updated_at > db_project.updated_at {
-                            // File is newer -- update SQLite, regen markdown
-                            let _ = db.upsert_project(&file_project);
+                            // File is newer -- update SQLite, regen markdown.
+                            // Preserve archived state from DB — archive is a DB-only flag;
+                            // workspace files don't know about it.
+                            let mut project_to_sync = file_project.clone();
+                            project_to_sync.archived = db_project.archived;
+                            let _ = db.upsert_project(&project_to_sync);
                             let _ =
                                 write_project_markdown(workspace, &file_project, Some(&json), db);
                             synced += 1;
