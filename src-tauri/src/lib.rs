@@ -73,6 +73,16 @@ const SCHEDULER_CHANNEL_SIZE: usize = 32;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logger — writes to stderr, filtered by RUST_LOG env var.
+    // Default: info level for dailyos, warn for everything else.
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("dailyos_lib=info,warn"),
+    )
+    .format_timestamp_millis()
+    .init();
+
+    log::info!("DailyOS starting");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
@@ -203,13 +213,10 @@ pub fn run() {
             });
 
             // Spawn unified enrichment processor (Clay + Gravatar)
-            eprintln!("[SETUP] about to spawn enrichment processor");
             let enrichment_state = state.clone();
             tauri::async_runtime::spawn(async move {
-                eprintln!("[SETUP] enrichment task started");
                 enrichment::run_enrichment_processor(enrichment_state).await;
             });
-            eprintln!("[SETUP] enrichment processor spawned");
 
             // Spawn Linear sync poller (I346)
             let linear_state = state.clone();
