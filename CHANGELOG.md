@@ -4,6 +4,41 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.14.2] - 2026-02-23
+
+Role preset expansion + performance. Every role preset field now drives UI. Meeting prep speaks your role's language. Background tasks no longer fight each other for CPU.
+
+### Added
+
+- **Personality copy expansion (I439)** — 12 new personality-driven copy keys: action completed/dismissed/archived, generating briefing, building context, processing transcript, saved, connected, setup complete, sync/connection/enrichment errors. Toast messages, loading states, and errors now reflect your personality setting (professional, friendly, playful).
+- **Preset-driven stakeholder roles (I442)** — Relationship type on stakeholder cards uses a badge dropdown sourced from the active preset's `stakeholderRoles`. CS preset shows Champion, Executive Sponsor, Decision Maker, etc. Sales shows Economic Buyer, Coach, Blocker.
+- **Preset-driven team roles (I443)** — Internal team member roles sourced from preset's `internalTeamRoles` via the same badge pattern.
+- **Lifecycle in intelligence prompts (I444)** — Account lifecycle stage injected as a prominent `## Current Lifecycle Stage` section in entity intelligence prompts. Previously buried in facts block.
+- **Preset-driven account sorting (I445)** — Accounts page has a sort selector defaulting to the preset's `primarySignal` (CS: renewal proximity, Sales: deal stage, Leadership: ARR). User-chosen sort takes precedence.
+- **Preset-specific /me playbooks (I446)** — All 9 presets have 3 named playbook sections on the `/me` page (CS: At-Risk Accounts, Renewal Approach, EBR/QBR Preparation; Sales: Deal Review, Territory Planning, Competitive Response; etc.). Preset-specific placeholder text on all "What I Deliver" fields.
+- **1:1 meeting person focus (I455)** — 1:1 meetings resolve the non-user attendee as primary person context. Person intelligence, relationship history, and open actions surface in the briefing instead of generic account context. Works both when an entity is linked (person promoted over account) and when no entity is linked (person resolved from attendees).
+- **Background task throttling (I457)** — Three-layer system: ActivityMonitor tracks user presence (Active/Idle/Background), HeavyWorkSemaphore prevents PTY and embeddings from competing for CPU simultaneously, adaptive polling backs queue processors from 5s to 30s during active use. 83% reduction in idle wakeups, 50% reduction in peak CPU.
+- **Background status diagnostics** — `get_background_status` command returns activity level, queue depths, and semaphore state for dev tools.
+- **RoleBadge component** — Reusable badge-style dropdown for stakeholder and team role selection, matching the EngagementSelector visual pattern.
+- **useActivitySignal hook** — Frontend signals window focus/blur and debounced interaction to backend for activity-aware throttling.
+
+### Changed
+
+- **Meeting prep persona (I440)** — Removed hardcoded "Customer Success Manager" from all prep prompts. Now uses the active preset's role name and injects `briefing_emphasis` for role-specific framing.
+- **useActivePreset** — Rewritten from standalone hook to React context provider with `preset-changed` Tauri event reactivity. Single IPC call at app root instead of per-page.
+- **EngagementSelector** — Cleaned up: removed role-like options (Champion, Exec Sponsor) that belong on the role badge, replaced with actual engagement levels (Advocate, Active, Responsive, Passive, Disengaged, Blocker).
+- **Email scoring split-lock** — Email relevance scoring no longer holds the main DB mutex during embedding inference. Opens a separate DB connection for scoring, preventing UI freezes when navigating to the emails page.
+- **Silent background refreshes** — All event-driven data refreshes (dashboard, week, calendar, inbox, emails, executive intelligence) wrapped in `React.startTransition` to eliminate content blink when background data arrives.
+- **Toast deduplication** — Same milestone toast type within 30 seconds is suppressed to prevent stacking.
+- **Meeting detail refresh** — Folio bar refresh button now shows loading state and toast feedback. Subsequent data reloads preserve scroll position instead of flashing the loading skeleton.
+
+### Fixed
+
+- **ADR-0083 vocabulary violation** — Replaced "Informing all entity intelligence and signal ranking" on `/me` page with user-facing copy.
+- **1:1 resolution on unlinked meetings** — `resolve_1on1_person` and `is_two_person_meeting` helper functions were lost during worktree merge. Restored and added to the "no entity resolved" fallback path.
+- **`list_dismissed_email_items` blocking** — Switched from blocking `lock()` to non-blocking `try_lock()` with graceful degradation, preventing UI freeze when email poller holds DB lock.
+- **Empty state personality keys** — `projects-empty` wired to ProjectsPage initial empty state (was using `projects-no-matches`). `accounts-empty` wired to AccountsPage.
+
 ## [0.14.1] - 2026-02-23
 
 User entity + professional context. The app now knows about you — your role, what you deliver, your priorities, and your knowledge. This context shapes all entity intelligence, signal ranking, and meeting prep. Every account/person/project intelligence output now includes your perspective.
