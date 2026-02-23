@@ -721,7 +721,7 @@ pub async fn get_live_proactive_suggestions(
 
     // Check cache unless force refresh requested
     if !force_refresh.unwrap_or(false) {
-        if let Ok(guard) = state.week_calendar_cache.read() {
+        if let Ok(guard) = state.calendar.week_cache.read() {
             if let Some((ref events, fetched_at)) = *guard {
                 let age = fetched_at.elapsed().as_secs();
                 if age < WEEK_CACHE_FRESH_SECS {
@@ -760,7 +760,7 @@ async fn refresh_week_calendar_cache(
 ) -> Result<Vec<CalendarEvent>, String> {
     let events = crate::queries::proactive::fetch_week_events(config, &entity_hints).await?;
 
-    if let Ok(mut guard) = state.week_calendar_cache.write() {
+    if let Ok(mut guard) = state.calendar.week_cache.write() {
         *guard = Some((events.clone(), std::time::Instant::now()));
     }
 
@@ -1431,7 +1431,7 @@ pub fn get_actions_from_db(
 pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::complete_action(db, &state.signal_engine, &id)
+    crate::services::actions::complete_action(db, &state.signals.engine, &id)
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -1439,7 +1439,7 @@ pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), St
 pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reopen_action(db, &state.signal_engine, &id)
+    crate::services::actions::reopen_action(db, &state.signals.engine, &id)
 }
 
 /// Accept a proposed action, moving it to pending (I256).
@@ -1447,7 +1447,7 @@ pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), Stri
 pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::accept_proposed_action(db, &state.signal_engine, &id)
+    crate::services::actions::accept_proposed_action(db, &state.signals.engine, &id)
 }
 
 /// Reject a proposed action by archiving it (I256).
@@ -1455,7 +1455,7 @@ pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result
 pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reject_proposed_action(db, &state.signal_engine, &id)
+    crate::services::actions::reject_proposed_action(db, &state.signals.engine, &id)
 }
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
@@ -1643,7 +1643,7 @@ struct GoogleAuthFailedPayload {
 pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
     let started = std::time::Instant::now();
     let cached = state
-        .google_auth
+        .calendar.google_auth
         .lock()
         .map(|guard| guard.clone())
         .unwrap_or(GoogleAuthStatus::NotConfigured);
@@ -1653,7 +1653,7 @@ pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
     if matches!(cached, GoogleAuthStatus::NotConfigured) {
         let fresh = crate::state::detect_google_auth();
         if matches!(fresh, GoogleAuthStatus::Authenticated { .. }) {
-            if let Ok(mut guard) = state.google_auth.lock() {
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
                 *guard = fresh.clone();
             }
             log_command_latency(
@@ -1709,7 +1709,7 @@ pub async fn start_google_auth(
     };
 
     // Update state
-    if let Ok(mut guard) = state.google_auth.lock() {
+    if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = new_status.clone();
     }
 
@@ -1742,12 +1742,12 @@ pub fn disconnect_google(
     let new_status = GoogleAuthStatus::NotConfigured;
 
     // Update state
-    if let Ok(mut guard) = state.google_auth.lock() {
+    if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = new_status.clone();
     }
 
     // Clear calendar events
-    if let Ok(mut guard) = state.calendar_events.write() {
+    if let Ok(mut guard) = state.calendar.events.write() {
         guard.clear();
     }
 
@@ -1765,7 +1765,7 @@ pub fn disconnect_google(
 #[tauri::command]
 pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
     state
-        .calendar_events
+        .calendar.events
         .read()
         .map(|guard| guard.clone())
         .unwrap_or_default()
@@ -1775,7 +1775,7 @@ pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
 #[tauri::command]
 pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state.calendar_events.read().ok().and_then(|guard| {
+    state.calendar.events.read().ok().and_then(|guard| {
         guard
             .iter()
             .find(|e| e.start <= now && e.end > now && !e.is_all_day)
@@ -1787,7 +1787,7 @@ pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent>
 #[tauri::command]
 pub fn get_next_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state.calendar_events.read().ok().and_then(|guard| {
+    state.calendar.events.read().ok().and_then(|guard| {
         guard
             .iter()
             .filter(|e| e.start > now && !e.is_all_day)
@@ -1815,7 +1815,7 @@ pub fn dismiss_meeting_prompt(
     meeting_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    if let Ok(mut guard) = state.capture_dismissed.lock() {
+    if let Ok(mut guard) = state.capture.dismissed.lock() {
         guard.insert(meeting_id);
     }
     Ok(())
@@ -1915,7 +1915,7 @@ pub fn update_action_priority(
     }
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::update_action_priority(db, &state.signal_engine, &id, &priority)
+    crate::services::actions::update_action_priority(db, &state.signals.engine, &id, &priority)
 }
 
 // =============================================================================
@@ -4005,6 +4005,7 @@ pub struct ProjectListItem {
     pub parent_name: Option<String>,
     pub child_count: usize,
     pub is_parent: bool,
+    pub archived: bool,
 }
 
 /// Full project detail for the detail page.
@@ -4169,7 +4170,7 @@ pub fn get_hygiene_report(
     state: State<Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneReport>, String> {
     let guard = state
-        .last_hygiene_report
+        .hygiene.report
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?;
     Ok(guard.clone())
@@ -4181,7 +4182,7 @@ pub fn get_hygiene_narrative(
     state: State<Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneNarrativeView>, String> {
     let report = state
-        .last_hygiene_report
+        .hygiene.report
         .lock()
         .map_err(|_| "Lock poisoned")?;
     Ok(report
@@ -4195,7 +4196,7 @@ pub fn get_intelligence_hygiene_status(
     state: State<Arc<AppState>>,
 ) -> Result<HygieneStatusView, String> {
     let report = state
-        .last_hygiene_report
+        .hygiene.report
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?
         .clone();
@@ -4206,7 +4207,7 @@ pub fn get_intelligence_hygiene_status(
 #[tauri::command]
 pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatusView, String> {
     if state
-        .hygiene_scan_running
+        .hygiene.scan_running
         .compare_exchange(
             false,
             true,
@@ -4232,7 +4233,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             &db,
             &config,
             workspace,
-            Some(&state.hygiene_budget),
+            Some(&state.hygiene.budget),
             Some(&state.intel_queue),
             false,
             Some(state.embedding_model.as_ref()),
@@ -4244,13 +4245,13 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             log::info!("run_hygiene_scan_now: pruned {} old audit files", pruned);
         }
 
-        if let Ok(mut guard) = state.last_hygiene_report.lock() {
+        if let Ok(mut guard) = state.hygiene.report.lock() {
             *guard = Some(report.clone());
         }
-        if let Ok(mut guard) = state.last_hygiene_scan_at.lock() {
+        if let Ok(mut guard) = state.hygiene.last_scan_at.lock() {
             *guard = Some(report.scanned_at.clone());
         }
-        if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
+        if let Ok(mut guard) = state.hygiene.next_scan_at.lock() {
             *guard = Some(
                 (chrono::Utc::now()
                     + chrono::Duration::seconds(crate::hygiene::scan_interval_secs(Some(&config)) as i64))
@@ -4262,7 +4263,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
     })();
 
     state
-        .hygiene_scan_running
+        .hygiene.scan_running
         .store(false, std::sync::atomic::Ordering::Release);
 
     let report = scan_result?;
@@ -6394,7 +6395,7 @@ pub fn start_clay_bulk_enrich(
     drop(db_guard);
 
     // Wake the Clay poller immediately to process queued items
-    state.clay_poller_wake.notify_one();
+    state.integrations.clay_poller_wake.notify_one();
 
     Ok(BulkEnrichResult {
         queued: total,
@@ -6558,7 +6559,7 @@ pub async fn test_linear_connection(
 /// Trigger an immediate Linear sync.
 #[tauri::command]
 pub fn start_linear_sync(state: State<Arc<AppState>>) -> Result<(), String> {
-    state.linear_poller_wake.notify_one();
+    state.integrations.linear_poller_wake.notify_one();
     Ok(())
 }
 
@@ -6918,15 +6919,15 @@ pub fn upsert_person_relationship(
     }).map_err(|e| format!("Failed to upsert relationship: {}", e))?;
 
     // Emit signal to re-enqueue both persons in intel_queue
-    let _ = crate::signals::bus::emit_signal_and_propagate(
-        db, &state.signal_engine,
+    let _ = crate::services::signals::emit_and_propagate(
+        db, &state.signals.engine,
         "person", &payload.from_person_id,
         "relationship_graph_changed", "user_action",
         Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.to_person_id)),
         0.9,
     );
-    let _ = crate::signals::bus::emit_signal_and_propagate(
-        db, &state.signal_engine,
+    let _ = crate::services::signals::emit_and_propagate(
+        db, &state.signals.engine,
         "person", &payload.to_person_id,
         "relationship_graph_changed", "user_action",
         Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.from_person_id)),
@@ -6953,15 +6954,15 @@ pub fn delete_person_relationship(
 
     // Emit signals on both persons to re-enqueue for intel enrichment
     if let Some((from_id, to_id)) = person_ids {
-        let _ = crate::signals::bus::emit_signal_and_propagate(
-            db, &state.signal_engine,
+        let _ = crate::services::signals::emit_and_propagate(
+            db, &state.signals.engine,
             "person", &from_id,
             "relationship_graph_changed", "user_action",
             Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
             0.7,
         );
-        let _ = crate::signals::bus::emit_signal_and_propagate(
-            db, &state.signal_engine,
+        let _ = crate::services::signals::emit_and_propagate(
+            db, &state.signals.engine,
             "person", &to_id,
             "relationship_graph_changed", "user_action",
             Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),

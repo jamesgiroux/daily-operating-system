@@ -93,7 +93,7 @@ pub fn on_enrichment_complete(
 
     // Coherence failed — emit signal (I407 AC#6)
     if let Some(engine) = signal_engine {
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db,
             engine,
             entity_type,

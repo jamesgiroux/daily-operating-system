@@ -242,7 +242,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Detect cancelled meetings: today's DB meetings not in current poll (ADR-0081)
                 detect_cancelled_meetings(&events, &state);
 
-                if let Ok(mut guard) = state.calendar_events.write() {
+                if let Ok(mut guard) = state.calendar.events.write() {
                     *guard = events;
                 }
 
@@ -276,7 +276,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
-                if let Ok(mut guard) = state.google_auth.lock() {
+                if let Ok(mut guard) = state.calendar.google_auth.lock() {
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
                 let _ = app_handle.emit("google-auth-changed", GoogleAuthStatus::TokenExpired);
@@ -296,7 +296,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 fn should_poll(state: &AppState) -> bool {
     // Only gate: must be authenticated with Google
     state
-        .google_auth
+        .calendar.google_auth
         .lock()
         .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
         .unwrap_or(false)
@@ -513,7 +513,7 @@ struct CalendarSyncIntelligence {
 /// Returns sync intelligence for new/changed meetings that need intelligence triggers.
 fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) -> CalendarSyncIntelligence {
     // Acquire config/auth locks first (short-lived), then DB lock
-    let self_email = state.google_auth.lock().ok().and_then(|g| match &*g {
+    let self_email = state.calendar.google_auth.lock().ok().and_then(|g| match &*g {
         GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
         _ => None,
     });
@@ -609,7 +609,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                             "Calendar sync: title change for '{}' caused entity reclassification, invalidating prep",
                             meeting_id
                         );
-                        if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+                        if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
                             queue.push(meeting_id.clone());
                         }
                     }
@@ -709,9 +709,9 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 
                 // I353 Phase 2: Emit person_created signal for hygiene feedback loop
                 if is_new {
-                    let _ = crate::signals::bus::emit_signal_and_propagate(
+                    let _ = crate::services::signals::emit_and_propagate(
                         db,
-                        &state.signal_engine,
+                        &state.signals.engine,
                         "person",
                         &person.id,
                         "person_created",
@@ -813,8 +813,8 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
             );
         }
         // Emit cancellation signal (I308) with propagation
-        let _ = crate::signals::bus::emit_signal_and_propagate(
-            db, &state.signal_engine, "meeting", meeting_id, "meeting_cancelled", "calendar",
+        let _ = crate::services::signals::emit_and_propagate(
+            db, &state.signals.engine, "meeting", meeting_id, "meeting_cancelled", "calendar",
             None, 0.9,
         );
     }
@@ -1124,7 +1124,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         // Sleep between polls, interruptible by wake signal
         let interval = get_email_poll_interval(&state);
         let sleep = tokio::time::sleep(Duration::from_secs(interval * 60));
-        let wake = state.email_poller_wake.notified();
+        let wake = state.integrations.email_poller_wake.notified();
         tokio::pin!(sleep);
         tokio::pin!(wake);
 
