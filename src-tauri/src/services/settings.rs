@@ -200,55 +200,66 @@ pub fn set_user_profile(
     domains: Option<Vec<String>>,
     state: &AppState,
 ) -> Result<String, String> {
-    crate::state::create_or_update_config(state, |config| {
-        fn clean(val: Option<String>) -> Option<String> {
-            val.and_then(|s| {
-                let trimmed = s.trim().to_string();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed)
-                }
-            })
-        }
-
-        config.user_name = clean(name);
-        config.user_company = clean(company);
-        config.user_title = clean(title);
-        config.user_focus = clean(focus);
-
-        if let Some(d) = domains {
-            let cleaned: Vec<String> = d
-                .into_iter()
-                .map(|s| s.trim().to_lowercase())
-                .filter(|s| !s.is_empty())
-                .collect();
-            if cleaned.is_empty() {
-                config.user_domains = None;
-                config.user_domain = None;
-            } else {
-                config.user_domain = Some(cleaned[0].clone());
-                config.user_domains = Some(cleaned);
-            }
-        } else if let Some(d) = domain {
-            let trimmed = d.trim().to_lowercase();
-            config.user_domain = if trimmed.is_empty() {
+    // Clean helper shared by identity fields and domain writes
+    fn clean(val: Option<String>) -> Option<String> {
+        val.and_then(|s| {
+            let trimmed = s.trim().to_string();
+            if trimmed.is_empty() {
                 None
             } else {
                 Some(trimmed)
-            };
-        }
-    })?;
+            }
+        })
+    }
 
-    // Sync company name to internal root account entity if it changed
-    let current_company = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.user_company.clone()));
-    if let Some(ref company_name) = current_company {
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
+    // Clean identity fields (written to user_entity only, NOT config)
+    let uname = clean(name);
+    let ucompany = clean(company);
+    let utitle = clean(title);
+    let ufocus = clean(focus);
+
+    // Domain/domains stay in Config
+    if domain.is_some() || domains.is_some() {
+        crate::state::create_or_update_config(state, |config| {
+            if let Some(d) = domains {
+                let cleaned: Vec<String> = d
+                    .into_iter()
+                    .map(|s| s.trim().to_lowercase())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if cleaned.is_empty() {
+                    config.user_domains = None;
+                    config.user_domain = None;
+                } else {
+                    config.user_domain = Some(cleaned[0].clone());
+                    config.user_domains = Some(cleaned);
+                }
+            } else if let Some(d) = domain {
+                let trimmed = d.trim().to_lowercase();
+                config.user_domain = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                };
+            }
+        })?;
+    }
+
+    // Write identity fields to user_entity table only (I411 AC2: no dual storage)
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            // Upsert: create row if missing, then update
+            let _ = db.conn_ref().execute(
+                "INSERT INTO user_entity (id) VALUES (1) ON CONFLICT(id) DO NOTHING",
+                [],
+            );
+            let _ = db.conn_ref().execute(
+                "UPDATE user_entity SET name = ?1, company = ?2, title = ?3, focus = ?4, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+                rusqlite::params![uname, ucompany, utitle, ufocus],
+            );
+
+            // Sync company name to internal root account entity if it changed
+            if let Some(ref company_name) = ucompany {
                 if let Ok(Some(root)) = db.get_internal_root_account() {
                     if root.name != *company_name {
                         let _ = db.update_account_field(&root.id, "name", company_name);

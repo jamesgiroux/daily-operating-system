@@ -81,6 +81,11 @@ pub fn resolve_destination(
             }
         }
 
+        Classification::UserContext => {
+            // User context documents stay in _user/attachments/ — no move
+            None
+        }
+
         Classification::Unknown => {
             // Stay in inbox — needs AI enrichment
             None
