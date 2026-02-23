@@ -57,6 +57,8 @@ pub struct IntelligenceContext {
     /// Person relationship edges for network intelligence (I391).
     /// Pre-formatted string of edges with effective confidence and types.
     pub relationship_edges: Option<String>,
+    /// User professional context block for personalized enrichment (I412).
+    pub user_context: Option<String>,
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
@@ -639,7 +641,156 @@ pub fn build_intelligence_context(
         }
     }
 
+    // --- User professional context (I412 + I417) ---
+    let entity_name_for_ctx = match entity_type {
+        "account" => account.map(|a| a.name.as_str()),
+        "project" => project.map(|p| p.name.as_str()),
+        _ => None,
+    };
+    ctx.user_context = build_user_context_block(db, embedding_model, entity_name_for_ctx);
+
     ctx
+}
+
+/// Build a user professional context block from the user_entity table (I412).
+///
+/// Returns None when all fields are NULL (prompt is identical to pre-v0.14.0).
+/// Target: ~150-300 tokens for context injection.
+/// When an embedding model and entity name are available, appends top-2 semantically
+/// relevant user context entries as a "Professional Knowledge" sub-section (I417).
+fn build_user_context_block(
+    db: &ActionDb,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+    entity_name: Option<&str>,
+) -> Option<String> {
+    let entity = crate::services::user_entity::get_user_entity_from_db(db).ok()?;
+
+    let mut parts = Vec::new();
+
+    // Identity line
+    let mut identity = Vec::new();
+    if let Some(ref name) = entity.name {
+        identity.push(name.clone());
+    }
+    if let Some(ref title) = entity.title {
+        if let Some(ref company) = entity.company {
+            identity.push(format!("{} at {}", title, company));
+        } else {
+            identity.push(title.clone());
+        }
+    } else if let Some(ref company) = entity.company {
+        identity.push(format!("works at {}", company));
+    }
+    if !identity.is_empty() {
+        parts.push(format!("User: {}", identity.join(", ")));
+    }
+
+    if let Some(ref focus) = entity.focus {
+        parts.push(format!("Current focus: {}", focus));
+    }
+    if let Some(ref role_desc) = entity.role_description {
+        parts.push(format!("Role: {}", role_desc));
+    }
+    if let Some(ref measured) = entity.how_im_measured {
+        parts.push(format!("Measured by: {}", measured));
+    }
+    if let Some(ref vp) = entity.value_proposition {
+        parts.push(format!("Product value proposition: {}", vp));
+    }
+    if let Some(ref success) = entity.success_definition {
+        parts.push(format!("Success definition: {}", success));
+    }
+    if let Some(ref product) = entity.product_context {
+        parts.push(format!("Product context: {}", product));
+    }
+    if let Some(ref pricing) = entity.pricing_model {
+        parts.push(format!("Pricing model: {}", pricing));
+    }
+    if let Some(ref diff) = entity.differentiators {
+        if let Ok(arr) = serde_json::from_str::<Vec<String>>(diff) {
+            if !arr.is_empty() {
+                parts.push(format!("Key differentiators: {}", arr.join(", ")));
+            }
+        }
+    }
+    if let Some(ref obj) = entity.objections {
+        if let Ok(arr) = serde_json::from_str::<Vec<String>>(obj) {
+            if !arr.is_empty() {
+                parts.push(format!("Common objections: {}", arr.join(", ")));
+            }
+        }
+    }
+    if let Some(ref comp) = entity.competitive_context {
+        parts.push(format!("Competitive context: {}", comp));
+    }
+    if let Some(ref priorities) = entity.current_priorities {
+        parts.push(format!("Current priorities: {}", priorities));
+    }
+
+    // Annual priorities (year-level bets)
+    if let Some(ref ap) = entity.annual_priorities {
+        if let Ok(arr) = serde_json::from_str::<Vec<crate::types::AnnualPriority>>(ap) {
+            if !arr.is_empty() {
+                let items: Vec<String> = arr.iter().map(|p| format!("- {}", p.text)).collect();
+                parts.push(format!("Annual priorities:\n{}", items.join("\n")));
+            }
+        }
+    }
+
+    // Quarterly priorities (current quarter focus)
+    if let Some(ref qp) = entity.quarterly_priorities {
+        if let Ok(arr) = serde_json::from_str::<Vec<crate::types::QuarterlyPriority>>(qp) {
+            if !arr.is_empty() {
+                let items: Vec<String> = arr.iter().map(|p| format!("- {}", p.text)).collect();
+                parts.push(format!("This quarter:\n{}", items.join("\n")));
+            }
+        }
+    }
+
+    // I417: Semantic retrieval of user context entries relevant to this entity
+    // I413 AC4: Also search file attachments for relevant content
+    if let Some(name) = entity_name {
+        let mut matches = super::user_context::search_user_context(
+            db,
+            embedding_model,
+            name,
+            2,    // top-2 results
+            0.70, // similarity threshold (I413 AC4: raised from 0.50 to reduce noise)
+        );
+
+        // Search user attachments (file embeddings)
+        let attachment_matches = super::user_context::search_user_attachments(
+            db,
+            embedding_model,
+            name,
+            2,    // top-2 attachment chunks
+            0.70, // same threshold for consistency
+        );
+
+        // Combine both sources, sort by score, keep top-4 total
+        matches.extend(attachment_matches);
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        matches.truncate(4);
+
+        if !matches.is_empty() {
+            let mut knowledge = String::from("Professional knowledge:");
+            for m in &matches {
+                let source_label = if m.source == "attachment" { " (document)" } else { "" };
+                knowledge.push_str(&format!("\n- {}{}: {}", m.title, source_label, m.content));
+            }
+            parts.push(knowledge);
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    Some(parts.join("\n"))
 }
 
 /// Maximum context bytes for portfolio children data (I384).
@@ -987,6 +1138,13 @@ fn build_intelligence_prompt_inner(
         prompt.push('\n');
     }
 
+    // I412: User professional context — personalizes assessment framing
+    if let Some(ref user_ctx) = ctx.user_context {
+        prompt.push_str("## Your Professional Context\n");
+        prompt.push_str(&wrap_user_data(user_ctx));
+        prompt.push_str("\n\n");
+    }
+
     if is_incremental {
         prompt.push_str(
             "This is an INCREMENTAL update. Prior intelligence is provided below. \
@@ -1282,6 +1440,27 @@ fn build_intelligence_prompt_inner(
          abbreviations, and commonly used references.\"]",
     );
 
+    // I396: Intelligence report fields for CS health tracking
+    prompt.push_str(
+        ",\n\
+           \"healthScore\": \"number 0-100. Overall account health score. Only populate when the \
+         account has 3+ signals and 2+ meetings. Return null for sparse accounts.\",\n\
+           \"healthTrend\": {\"direction\": \"improving|stable|declining|volatile\", \
+         \"rationale\": \"1 sentence explaining trend direction\"},\n\
+           \"valueDelivered\": [{\"date\": \"ISO date\", \"statement\": \"what value was delivered\", \
+         \"source\": \"evidence source\", \"impact\": \"business impact\"}],\n\
+           \"successMetrics\": [{\"name\": \"KPI name\", \"target\": \"target value\", \
+         \"current\": \"current value\", \"status\": \"on_track|at_risk|behind|achieved\", \
+         \"owner\": \"who owns this metric\"}],\n\
+           \"openCommitments\": [{\"description\": \"what was committed\", \"owner\": \"who owns it\", \
+         \"dueDate\": \"ISO date or null\", \"source\": \"meeting/email where committed\", \
+         \"status\": \"open|in_progress|overdue|completed\"}],\n\
+           \"relationshipDepth\": {\"championStrength\": \"strong|moderate|weak|none\", \
+         \"executiveAccess\": \"direct|indirect|none\", \
+         \"stakeholderCoverage\": \"broad|narrow|single_threaded\", \
+         \"coverageGaps\": [\"role or team with no relationship\"]}",
+    );
+
     prompt.push_str(
         "\n\
          }}\n\
@@ -1292,7 +1471,13 @@ fn build_intelligence_prompt_inner(
          - low = mostly silent, reactive only, brief responses, or absent from recent calls\n\
          - unknown = person not present in available transcripts\n\n\
          Max 3 nextMeetingReadiness.prepItems. Each should answer ONLY: \
-         \"What do I need to do or ask before/during this meeting?\"\n",
+         \"What do I need to do or ask before/during this meeting?\"\n\n\
+         For healthScore, healthTrend, successMetrics, openCommitments, and relationshipDepth: \
+         return null/empty when the account has fewer than 2 signals. Do NOT hallucinate values \
+         for sparse accounts. valueDelivered should include completed commitments and wins. \
+         When the user's professional context includes a value proposition, frame valueDelivered \
+         entries through that lens — describe value in terms the user would use to communicate \
+         it to their stakeholders.\n",
     );
 
     prompt
@@ -1336,6 +1521,74 @@ struct AiIntelResponse {
     /// Auto-extracted keywords for entity resolution (I305).
     #[serde(default)]
     keywords: Vec<String>,
+    /// I396: Health score (0-100).
+    #[serde(default)]
+    health_score: Option<f64>,
+    /// I396: Health trend direction + rationale.
+    #[serde(default)]
+    health_trend: Option<AiHealthTrend>,
+    /// I396: Success metrics / KPIs the user tracks.
+    #[serde(default)]
+    success_metrics: Option<Vec<AiSuccessMetric>>,
+    /// I396: Open commitments (promises made to/from the account).
+    #[serde(default)]
+    open_commitments: Option<Vec<AiOpenCommitment>>,
+    /// I396: Relationship depth assessment.
+    #[serde(default)]
+    relationship_depth: Option<AiRelationshipDepth>,
+}
+
+/// I396: Health trend direction with rationale.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiHealthTrend {
+    direction: String,
+    #[serde(default)]
+    rationale: Option<String>,
+}
+
+/// I396: A success metric / KPI tracked for an entity.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiSuccessMetric {
+    name: String,
+    #[serde(default)]
+    target: Option<String>,
+    #[serde(default)]
+    current: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    owner: Option<String>,
+}
+
+/// I396: An open commitment (promise made to/from the account).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiOpenCommitment {
+    description: String,
+    #[serde(default)]
+    owner: Option<String>,
+    #[serde(default)]
+    due_date: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+}
+
+/// I396: Relationship depth assessment.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiRelationshipDepth {
+    #[serde(default)]
+    champion_strength: Option<String>,
+    #[serde(default)]
+    executive_access: Option<String>,
+    #[serde(default)]
+    stakeholder_coverage: Option<String>,
+    #[serde(default)]
+    coverage_gaps: Option<Vec<String>>,
 }
 
 /// AI response structure for network intelligence (I391).
@@ -1517,6 +1770,16 @@ pub fn parse_intelligence_response(
     }
     if let Some(ref mut readiness) = intel.next_meeting_readiness {
         readiness.prep_items.truncate(10);
+    }
+    // I396: Clamp health_score to 0-100 range
+    if let Some(ref mut score) = intel.health_score {
+        *score = score.clamp(0.0, 100.0);
+    }
+    if let Some(ref mut metrics) = intel.success_metrics {
+        metrics.truncate(20);
+    }
+    if let Some(ref mut commits) = intel.open_commitments {
+        commits.truncate(20);
     }
 
     Ok(intel)
@@ -1745,6 +2008,35 @@ fn try_parse_json_response(
             cluster_summary: n.cluster_summary,
         }),
         user_edits: Vec::new(),
+        health_score: ai_resp.health_score,
+        health_trend: ai_resp.health_trend.map(|ht| super::io::HealthTrend {
+            direction: ht.direction,
+            rationale: ht.rationale,
+        }),
+        success_metrics: ai_resp.success_metrics.map(|metrics| {
+            metrics.into_iter().map(|m| super::io::SuccessMetric {
+                name: m.name,
+                target: m.target,
+                current: m.current,
+                status: m.status,
+                owner: m.owner,
+            }).collect()
+        }),
+        open_commitments: ai_resp.open_commitments.map(|commits| {
+            commits.into_iter().map(|c| super::io::OpenCommitment {
+                description: c.description,
+                owner: c.owner,
+                due_date: c.due_date,
+                source: c.source,
+                status: c.status,
+            }).collect()
+        }),
+        relationship_depth: ai_resp.relationship_depth.map(|rd| super::io::RelationshipDepth {
+            champion_strength: rd.champion_strength,
+            executive_access: rd.executive_access,
+            stakeholder_coverage: rd.stakeholder_coverage,
+            coverage_gaps: rd.coverage_gaps,
+        }),
     })
 }
 
@@ -2085,6 +2377,7 @@ mod tests {
             portfolio_children_context: None,
             canonical_contacts: None,
             relationship_edges: None,
+            user_context: None,
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
