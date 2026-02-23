@@ -342,3 +342,68 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
     }
 }
 
+/// Write gravatar photo_url back to the people table, respecting source priority.
+/// Gravatar has priority 2 (Clay=3 > Gravatar=2 > AI=1). Only writes if no
+/// higher-priority source has already set photo_url.
+fn writeback_photo_url(db: &crate::db::ActionDb, person_id: &str, avatar_url: &str) {
+    let conn = db.conn_ref();
+
+    // Read current photo_url and enrichment_sources
+    let row: Option<(Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT photo_url, enrichment_sources FROM people WHERE id = ?1",
+            rusqlite::params![person_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
+    let (current_photo, sources_json) = match row {
+        Some(r) => r,
+        None => return,
+    };
+
+    // Check source priority -- only write if allowed
+    if !crate::clay::enricher::can_write_field(sources_json.as_deref(), "photo_url", "gravatar") {
+        return;
+    }
+
+    // Update photo_url and record provenance
+    let mut sources: std::collections::HashMap<String, crate::clay::enricher::FieldSource> =
+        sources_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+
+    sources.insert(
+        "photo_url".to_string(),
+        crate::clay::enricher::FieldSource {
+            source: "gravatar".to_string(),
+            at: chrono::Utc::now().to_rfc3339(),
+        },
+    );
+
+    let new_sources_json = serde_json::to_string(&sources).unwrap_or_default();
+
+    let _ = conn.execute(
+        "UPDATE people SET photo_url = ?2, enrichment_sources = ?3, updated_at = ?4 WHERE id = ?1",
+        rusqlite::params![
+            person_id,
+            avatar_url,
+            new_sources_json,
+            chrono::Utc::now().to_rfc3339(),
+        ],
+    );
+
+    if current_photo.is_none() {
+        log::info!(
+            "Gravatar: wrote photo_url for person {} (was NULL)",
+            person_id
+        );
+    } else {
+        log::info!(
+            "Gravatar: updated photo_url for person {} (lower-priority source)",
+            person_id
+        );
+    }
+}
+
