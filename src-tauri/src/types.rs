@@ -364,11 +364,20 @@ pub struct ScheduleEntry {
 }
 
 impl ScheduleEntry {
-    /// Default schedule for the "today" workflow: 8 AM weekdays
+    /// Default schedule for the "today" workflow.
+    ///
+    /// Runs every 4 hours, starting at 00:01 local time — so the briefing
+    /// manifest rolls over at midnight (emails/actions stay fresh, `isStale`
+    /// never fires incorrectly) and refreshes throughout the day.
+    ///
+    /// 8 AM weekdays-only was the right default when `/today` was the sole
+    /// intelligence generator. Now that meeting prep is event-driven and email
+    /// enrichment runs continuously, `/today` is a lightweight briefing-state
+    /// refresh. Every 4 hours, every day is appropriate.
     pub fn default_today() -> Self {
         Self {
             enabled: true,
-            cron: "0 8 * * 1-5".to_string(), // 8 AM weekdays
+            cron: "1 */4 * * *".to_string(), // 00:01, 04:01, 08:01, 12:01, 16:01, 20:01 daily
             timezone: "America/New_York".to_string(),
         }
     }
