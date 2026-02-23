@@ -6117,7 +6117,8 @@ pub async fn bulk_fetch_gravatars(
     Ok(fetched)
 }
 
-/// Get local avatar file path for a person (fast cache lookup).
+/// Get avatar for a person as a data URL (base64-encoded PNG).
+/// Returns None if no cached avatar exists.
 #[tauri::command]
 pub fn get_person_avatar(
     person_id: String,
@@ -6125,7 +6126,10 @@ pub fn get_person_avatar(
 ) -> Option<String> {
     let db_guard = state.db.lock().ok()?;
     let db = db_guard.as_ref()?;
-    crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)
+    let path = crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)?;
+    let bytes = std::fs::read(&path).ok()?;
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+    Some(format!("data:image/png;base64,{}", b64))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6238,19 +6242,34 @@ pub fn set_clay_auto_enrich(
     Ok(())
 }
 
-/// Test Clay connection by attempting to connect and list tools.
+/// Resolve Smithery credentials for Clay MCP: API key from keychain +
+/// namespace and connection ID from config.
+fn resolve_smithery_config(state: &AppState) -> Result<(String, String, String), String> {
+    let api_key = crate::clay::oauth::get_smithery_api_key()
+        .ok_or("No Smithery API key. Configure in Settings \u{2192} Connectors \u{2192} Clay.")?;
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.clay.clone()));
+    let clay = config.ok_or("Config not loaded")?;
+    let ns = clay
+        .smithery_namespace
+        .ok_or("Smithery namespace not configured")?;
+    let conn = clay
+        .smithery_connection_id
+        .ok_or("Smithery connection ID not configured")?;
+    Ok((api_key, ns, conn))
+}
+
+/// Test Clay connection by attempting to connect via Smithery.
 #[tauri::command]
 pub async fn test_clay_connection(
     state: State<'_, Arc<AppState>>,
 ) -> Result<bool, String> {
-    let api_key = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
-        .ok_or("No Clay API key configured")?;
+    let (api_key, ns, conn) = resolve_smithery_config(&state)?;
 
-    let client = crate::clay::client::ClayClient::connect(&api_key)
+    let client = crate::clay::client::ClayClient::connect(&api_key, &ns, &conn)
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -6273,14 +6292,9 @@ pub async fn enrich_person_from_clay(
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<EnrichmentResultData, String> {
-    let api_key = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
-        .ok_or("No Clay API key configured")?;
+    let (api_key, ns, conn) = resolve_smithery_config(&state)?;
 
-    let client = crate::clay::client::ClayClient::connect(&api_key)
+    let client = crate::clay::client::ClayClient::connect(&api_key, &ns, &conn)
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -6323,14 +6337,9 @@ pub async fn enrich_account_from_clay(
 
     let person_id = person_id.ok_or("No linked people found for this account")?;
 
-    let api_key = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
-        .ok_or("No Clay API key configured")?;
+    let (api_key, ns, conn) = resolve_smithery_config(&state)?;
 
-    let client = crate::clay::client::ClayClient::connect(&api_key)
+    let client = crate::clay::client::ClayClient::connect(&api_key, &ns, &conn)
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -6394,8 +6403,8 @@ pub fn start_clay_bulk_enrich(
     // Drop the DB lock before signaling
     drop(db_guard);
 
-    // Wake the Clay poller immediately to process queued items
-    state.integrations.clay_poller_wake.notify_one();
+    // Wake the enrichment processor immediately to process queued items
+    state.integrations.enrichment_wake.notify_one();
 
     Ok(BulkEnrichResult {
         queued: total,
@@ -6455,6 +6464,140 @@ pub fn get_enrichment_log(
         .collect();
 
     Ok(entries)
+}
+
+// ---------------------------------------------------------------------------
+// Clay — Smithery Connect (I422)
+// ---------------------------------------------------------------------------
+
+/// Auto-detect Smithery settings and Clay connection from CLI config + API.
+#[tauri::command]
+pub async fn detect_smithery_settings() -> Result<serde_json::Value, String> {
+    let settings_path = dirs::home_dir()
+        .ok_or("No home directory")?
+        .join("Library/Application Support/smithery/settings.json");
+
+    if !settings_path.exists() {
+        return Err("Smithery CLI not configured. Run: npx @smithery/cli login".to_string());
+    }
+
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read Smithery settings: {}", e))?;
+
+    let val: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse Smithery settings: {}", e))?;
+
+    let api_key = val.get("apiKey").and_then(|v| v.as_str()).unwrap_or("");
+    let namespace = val.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
+
+    if api_key.is_empty() || namespace.is_empty() {
+        return Err("Smithery settings missing apiKey or namespace".to_string());
+    }
+
+    // List connections via Smithery API to find the Clay one
+    let client = reqwest::Client::new();
+    let connections_url = format!("https://api.smithery.ai/connect/{}", namespace);
+    let clay_connection_id = match client
+        .get(&connections_url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await.unwrap_or_default();
+            let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+            // Find a connection whose name/mcpUrl contains "clay"
+            parsed
+                .get("connections")
+                .and_then(|c| c.as_array())
+                .and_then(|arr| {
+                    arr.iter().find(|conn| {
+                        let name = conn.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                        let url = conn.get("mcpUrl").and_then(|u| u.as_str()).unwrap_or("");
+                        let status = conn
+                            .get("status")
+                            .and_then(|s| s.get("state"))
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("");
+                        (name.contains("clay") || url.contains("clay")) && status == "connected"
+                    })
+                })
+                .and_then(|conn| conn.get("connectionId").and_then(|id| id.as_str()))
+                .map(String::from)
+        }
+        _ => None,
+    };
+
+    Ok(serde_json::json!({
+        "apiKey": api_key,
+        "namespace": namespace,
+        "connectionId": clay_connection_id,
+    }))
+}
+
+/// Save Smithery API key to keychain.
+#[tauri::command]
+pub async fn save_smithery_api_key(key: String) -> Result<(), String> {
+    let trimmed = key.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("API key cannot be empty".to_string());
+    }
+    crate::clay::oauth::save_smithery_api_key(&trimmed)
+}
+
+/// Save Smithery connection config (namespace + connection ID).
+#[tauri::command]
+pub fn set_smithery_connection(
+    namespace: String,
+    connection_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let ns = if namespace.trim().is_empty() { None } else { Some(namespace) };
+    let conn = if connection_id.trim().is_empty() { None } else { Some(connection_id) };
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.smithery_namespace = ns.clone();
+        config.clay.smithery_connection_id = conn.clone();
+    })?;
+    Ok(())
+}
+
+/// Disconnect Smithery — remove keychain entry and clear config fields.
+#[tauri::command]
+pub fn disconnect_smithery(state: State<Arc<AppState>>) -> Result<(), String> {
+    crate::clay::oauth::delete_smithery_api_key()?;
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.smithery_namespace = None;
+        config.clay.smithery_connection_id = None;
+    })?;
+    Ok(())
+}
+
+/// Get Smithery connection status.
+#[tauri::command]
+pub fn get_smithery_status(state: State<Arc<AppState>>) -> serde_json::Value {
+    let has_api_key = crate::clay::oauth::get_smithery_api_key().is_some();
+    let (namespace, connection_id) = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|c| {
+                (
+                    c.clay.smithery_namespace.clone(),
+                    c.clay.smithery_connection_id.clone(),
+                )
+            })
+        })
+        .unwrap_or((None, None));
+
+    let connected = has_api_key && namespace.is_some() && connection_id.is_some();
+
+    serde_json::json!({
+        "connected": connected,
+        "hasApiKey": has_api_key,
+        "namespace": namespace,
+        "connectionId": connection_id,
+    })
 }
 
 // =============================================================================
@@ -6561,6 +6704,191 @@ pub async fn test_linear_connection(
 pub fn start_linear_sync(state: State<Arc<AppState>>) -> Result<(), String> {
     state.integrations.linear_poller_wake.notify_one();
     Ok(())
+}
+
+/// I425: Get the 5 most recently synced Linear issues.
+#[tauri::command]
+pub fn get_linear_recent_issues(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    state.with_db_read(|db| {
+        let mut stmt = db.conn_ref().prepare(
+            "SELECT id, identifier, title, state_name, state_type, priority_label, due_date, synced_at
+             FROM linear_issues
+             WHERE state_type NOT IN ('completed', 'cancelled')
+             ORDER BY priority ASC, synced_at DESC LIMIT 5"
+        ).map_err(|e| e.to_string())?;
+        let issues = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "identifier": row.get::<_, String>(1)?,
+                "title": row.get::<_, String>(2)?,
+                "stateName": row.get::<_, Option<String>>(3)?,
+                "stateType": row.get::<_, Option<String>>(4)?,
+                "priorityLabel": row.get::<_, Option<String>>(5)?,
+                "dueDate": row.get::<_, Option<String>>(6)?,
+                "syncedAt": row.get::<_, Option<String>>(7)?,
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(issues)
+    })
+}
+
+/// I425: Get all Linear entity links with project and entity names.
+#[tauri::command]
+pub fn get_linear_entity_links(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    state.with_db_read(|db| {
+        let mut stmt = db.conn_ref().prepare(
+            "SELECT lel.id, lel.linear_project_id, lp.name as project_name,
+                    lel.entity_id, lel.entity_type, lel.confirmed,
+                    CASE lel.entity_type
+                        WHEN 'account' THEN (SELECT name FROM accounts WHERE id = lel.entity_id)
+                        WHEN 'project' THEN (SELECT name FROM projects WHERE id = lel.entity_id)
+                        WHEN 'person' THEN (SELECT name FROM people WHERE id = lel.entity_id)
+                    END as entity_name
+             FROM linear_entity_links lel
+             LEFT JOIN linear_projects lp ON lp.id = lel.linear_project_id
+             ORDER BY lel.created_at DESC"
+        ).map_err(|e| e.to_string())?;
+        let links = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "linearProjectId": row.get::<_, String>(1)?,
+                "projectName": row.get::<_, Option<String>>(2)?,
+                "entityId": row.get::<_, String>(3)?,
+                "entityType": row.get::<_, String>(4)?,
+                "confirmed": row.get::<_, bool>(5)?,
+                "entityName": row.get::<_, Option<String>>(6)?,
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(links)
+    })
+}
+
+/// I425: Auto-detect entity links by fuzzy-matching Linear project names to entity names.
+#[tauri::command]
+pub fn run_linear_auto_link(
+    state: State<Arc<AppState>>,
+) -> Result<usize, String> {
+    state.with_db_write(|db| {
+        let conn = db.conn_ref();
+        let mut linked = 0usize;
+
+        // Get all Linear projects
+        let projects: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, name FROM linear_projects"
+            ).map_err(|e| e.to_string())?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+            rows
+        };
+
+        for (project_id, project_name) in &projects {
+            let lower_name = project_name.to_lowercase();
+
+            // Try matching against accounts (exact case-insensitive)
+            let account_match: Option<String> = conn.query_row(
+                "SELECT id FROM accounts WHERE LOWER(name) = ?1 AND archived = 0",
+                [&lower_name],
+                |row| row.get(0),
+            ).ok();
+
+            if let Some(account_id) = account_match {
+                conn.execute(
+                    "INSERT OR IGNORE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
+                     VALUES (lower(hex(randomblob(16))), ?1, ?2, 'account', 0)",
+                    rusqlite::params![project_id, account_id],
+                ).map_err(|e| e.to_string())?;
+                linked += 1;
+                continue;
+            }
+
+            // Try matching against projects (exact case-insensitive)
+            let project_match: Option<String> = conn.query_row(
+                "SELECT id FROM projects WHERE LOWER(name) = ?1 AND archived = 0",
+                [&lower_name],
+                |row| row.get(0),
+            ).ok();
+
+            if let Some(proj_id) = project_match {
+                conn.execute(
+                    "INSERT OR IGNORE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
+                     VALUES (lower(hex(randomblob(16))), ?1, ?2, 'project', 0)",
+                    rusqlite::params![project_id, proj_id],
+                ).map_err(|e| e.to_string())?;
+                linked += 1;
+            }
+        }
+
+        Ok(linked)
+    })
+}
+
+/// I425: Delete a Linear entity link.
+#[tauri::command]
+pub fn delete_linear_entity_link(
+    state: State<Arc<AppState>>,
+    link_id: String,
+) -> Result<(), String> {
+    state.with_db_write(|db| {
+        db.conn_ref().execute(
+            "DELETE FROM linear_entity_links WHERE id = ?1",
+            [&link_id],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+/// List all Linear projects for the manual link picker.
+#[tauri::command]
+pub fn get_linear_projects(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    state.with_db_read(|db| {
+        let mut stmt = db.conn_ref().prepare(
+            "SELECT id, name FROM linear_projects ORDER BY name ASC"
+        ).map_err(|e| e.to_string())?;
+        let projects = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "name": row.get::<_, String>(1)?,
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(projects)
+    })
+}
+
+/// Manually create a Linear entity link.
+#[tauri::command]
+pub fn create_linear_entity_link(
+    state: State<Arc<AppState>>,
+    linear_project_id: String,
+    entity_id: String,
+    entity_type: String,
+) -> Result<(), String> {
+    if !["account", "project"].contains(&entity_type.as_str()) {
+        return Err("entity_type must be 'account' or 'project'".to_string());
+    }
+    state.with_db_write(|db| {
+        db.conn_ref().execute(
+            "INSERT OR IGNORE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
+             VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, 1)",
+            rusqlite::params![linear_project_id, entity_id, entity_type],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
 }
 
 // =============================================================================
