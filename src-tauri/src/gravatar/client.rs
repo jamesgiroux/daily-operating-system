@@ -302,17 +302,28 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                         if let Some(db) = db_guard.as_ref() {
                             let _ = super::cache::upsert_cache(db.conn_ref(), &cache_entry);
 
-                            // I306: Emit profile_discovered signal to bus
+                            // Write gravatar data to people table via unified profile update
                             if has_gravatar {
                                 if let Some(ref pid) = person_id {
+                                    let update = crate::db::people::ProfileUpdate {
+                                        photo_url: cache_entry.avatar_url.clone(),
+                                        bio: cache_entry.bio.clone(),
+                                        organization: cache_entry.company.clone(),
+                                        role: cache_entry.job_title.clone(),
+                                        ..Default::default()
+                                    };
+                                    let _ = db.update_person_profile(pid, &update, "gravatar");
+
+                                    // Emit profile_discovered signal with propagation
                                     let value = serde_json::json!({
                                         "display_name": cache_entry.display_name,
                                         "company": cache_entry.company,
                                         "job_title": cache_entry.job_title,
                                     })
                                     .to_string();
-                                    let _ = crate::signals::bus::emit_signal(
+                                    let _ = crate::signals::bus::emit_signal_and_propagate(
                                         db,
+                                        &state.signals.engine,
                                         "person",
                                         pid,
                                         "profile_discovered",
@@ -341,4 +352,5 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
         tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
     }
 }
+
 
