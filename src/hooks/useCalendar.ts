@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTauriEvent } from "./useTauriEvent";
 import type { CalendarEvent } from "@/types";
@@ -6,9 +6,18 @@ import type { CalendarEvent } from "@/types";
 export function useCalendar() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [now, setNow] = useState(Date.now());
+  const [, startTransition] = useTransition();
 
   const fetchEvents = useCallback(() => {
     invoke<CalendarEvent[]>("get_calendar_events").then(setEvents).catch((err) => {
+      console.error("get_calendar_events failed:", err);
+    });
+  }, []);
+
+  const silentFetchEvents = useCallback(() => {
+    invoke<CalendarEvent[]>("get_calendar_events").then((data) => {
+      startTransition(() => setEvents(data));
+    }).catch((err) => {
       console.error("get_calendar_events failed:", err);
     });
   }, []);
@@ -18,8 +27,8 @@ export function useCalendar() {
     fetchEvents();
   }, [fetchEvents]);
 
-  // Re-fetch when calendar-updated fires
-  useTauriEvent("calendar-updated", fetchEvents);
+  // Re-fetch when calendar-updated fires (silent to avoid blink)
+  useTauriEvent("calendar-updated", silentFetchEvents);
 
   // Client-side 30-second interval to re-evaluate current/next meeting
   useEffect(() => {

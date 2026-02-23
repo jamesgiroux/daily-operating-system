@@ -281,6 +281,7 @@ pub async fn generate_meeting_intelligence(
         priority: crate::meeting_prep_queue::PrepPriority::Manual,
         requested_at: std::time::Instant::now(),
     });
+    state.integrations.prep_queue_wake.notify_one();
 
     log::info!(
         "generate_meeting_intelligence: enqueued {} for mechanical prep assembly (quality={:?})",

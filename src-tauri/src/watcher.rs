@@ -419,6 +419,8 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             requested_at: std::time::Instant::now(),
                         });
                     }
+                    state.integrations.embedding_queue_wake.notify_one();
+                    state.integrations.intel_queue_wake.notify_one();
                     let _ = app_handle.emit("content-changed", payload.clone());
                 }
                 account_content_dirty.clear();
@@ -452,6 +454,8 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             requested_at: std::time::Instant::now(),
                         });
                     }
+                    state.integrations.embedding_queue_wake.notify_one();
+                    state.integrations.intel_queue_wake.notify_one();
                     let _ = app_handle.emit("content-changed", payload.clone());
                 }
                 project_content_dirty.clear();
@@ -765,6 +769,7 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
                         requested_at: std::time::Instant::now(),
                     },
                 );
+                state.integrations.embedding_queue_wake.notify_one();
             }
             crate::processor::ProcessingResult::Error { message } => {
                 log::warn!(
@@ -781,6 +786,7 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
                         requested_at: std::time::Instant::now(),
                     },
                 );
+                state.integrations.embedding_queue_wake.notify_one();
             }
             _ => {}
         }
