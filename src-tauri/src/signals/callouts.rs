@@ -60,11 +60,13 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
 /// Generate briefing callouts from recent high-confidence signals.
 ///
 /// Optionally ranks by embedding similarity to today's meetings if an
-/// embedding model is provided.
+/// embedding model is provided. When a UserEntity is provided, signal
+/// relevance is multiplied by alignment with user priorities (I414).
 pub fn generate_callouts(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,
     todays_meetings: &[Value],
+    user_entity: Option<&crate::types::UserEntity>,
 ) -> Vec<BriefingCallout> {
     // Get recent signals (last 24h) of callout-worthy types
     let signals = match db.get_recent_callout_signals(24, CALLOUT_SIGNAL_TYPES) {
@@ -81,7 +83,7 @@ pub fn generate_callouts(
 
     // Optionally rank by relevance to today's meetings
     let meeting_context = build_meeting_context_string(todays_meetings);
-    let scored_signals: Vec<(SignalEvent, f64)> = if !meeting_context.is_empty() {
+    let mut scored_signals: Vec<(SignalEvent, f64)> = if !meeting_context.is_empty() {
         if let Some(m) = model {
             super::relevance::rank_signals_by_relevance(m, &meeting_context, &signals)
         } else {
@@ -90,6 +92,27 @@ pub fn generate_callouts(
     } else {
         signals.iter().map(|s| (s.clone(), 0.0)).collect()
     };
+
+    // I414: Apply user-context relevance weighting and persist to entity_intelligence
+    if user_entity.is_some() {
+        for (signal, relevance) in &mut scored_signals {
+            let entity_name = helpers::resolve_entity_name(db, &signal.entity_type, &signal.entity_id);
+            let weight = super::user_relevance::compute_user_relevance_weight(
+                &signal.entity_id,
+                &entity_name,
+                user_entity,
+            );
+            *relevance *= weight;
+
+            // Persist non-default weights to entity_intelligence (I414 AC4)
+            if (weight - 1.0).abs() > f64::EPSILON {
+                let _ = db.conn_ref().execute(
+                    "UPDATE entity_intelligence SET user_relevance_weight = ?1 WHERE entity_id = ?2",
+                    params![weight, signal.entity_id],
+                );
+            }
+        }
+    }
 
     // Convert to callouts
     let mut callouts: Vec<BriefingCallout> = scored_signals
@@ -443,7 +466,7 @@ mod tests {
     #[test]
     fn test_generate_callouts_empty() {
         let db = test_db();
-        let callouts = generate_callouts(&db, None, &[]);
+        let callouts = generate_callouts(&db, None, &[], None);
         assert!(callouts.is_empty());
     }
 
@@ -471,7 +494,7 @@ mod tests {
             )
             .unwrap();
 
-        let callouts = generate_callouts(&db, None, &[]);
+        let callouts = generate_callouts(&db, None, &[], None);
         assert_eq!(callouts.len(), 1);
         assert_eq!(callouts[0].severity, "critical");
         assert_eq!(callouts[0].entity_name.as_deref(), Some("Acme Corp"));

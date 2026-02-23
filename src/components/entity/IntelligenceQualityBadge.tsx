@@ -39,15 +39,15 @@ function computeFreshness(enrichedAt?: string): Freshness {
 const DOT_COLORS: Record<Freshness, string> = {
   fresh: "var(--color-garden-sage)",
   recent: "var(--color-spice-turmeric)",
-  stale: "var(--color-spice-saffron)",
-  none: "var(--color-text-tertiary)",
+  stale: "var(--color-text-tertiary)",
+  none: "transparent",
 };
 
 const LABELS: Record<Freshness, string> = {
   fresh: "Fresh",
-  recent: "Recent",
-  stale: "Stale",
-  none: "Not analyzed",
+  recent: "Building",
+  stale: "Sparse",
+  none: "No data",
 };
 
 const QUALITY_DOT_COLORS: Record<StructuredQuality["level"], string> = {
@@ -146,7 +146,7 @@ export function IntelligenceQualityBadge({
         alignItems: "center",
         gap: 6,
       }}
-      title={enrichedAt ? `Last enriched: ${new Date(enrichedAt).toLocaleString()}` : "Not yet enriched"}
+      title={enrichedAt ? `${LABELS[freshness]} — Last enriched: ${new Date(enrichedAt).toLocaleString()}` : "Not yet enriched"}
     >
       <span
         style={{

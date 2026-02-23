@@ -315,6 +315,8 @@ The first release that subtracts. Every surface asked "does this earn its keep?"
 - Actions page: three tabs only (proposed, pending, completed) with smart default
 - Entity pages: removed Value Delivered, Portfolio Summary, Resolution Keywords, meeting readiness callouts
 - Deleted 5 unused components (ActionItem, ActionList, EmailList, WatchItem, AppSidebar)
+- Daily briefing: removed deep work block count from Day Frame, kept available minutes
+- Meeting detail: removed transcript sync button from folio bar for past meetings
 
 ### Product Vocabulary
 
@@ -323,16 +325,27 @@ The first release that subtracts. Every surface asked "does this earn its keep?"
 - "Entity mode" → "Work mode" in settings
 - "AI enrichment" → "AI analysis" in status messages and onboarding
 - "intelligence layer" → "daily briefings" in settings
+- "Generate Briefing" → "Prepare my day" on empty dashboard
+- "Read full intelligence →" → "Read full briefing →" on meeting cards and daily briefing
+- "Meeting Intelligence Report" → "Meeting Briefing" on meeting detail page
+- "Prep not ready yet" → "Not ready yet", "Prep is being generated" → "Briefing is being generated"
+- "AI Suggested" → "Suggested", action tabs show human labels (Suggested/Pending/Completed)
+- "Reject" → "Dismiss" on all action buttons
 
 ### Intelligence Quality Indicators
 
-- New IntelligenceQualityBadge component with freshness dots (green < 24h, amber < 48h, saffron > 48h, gray = none)
+- New IntelligenceQualityBadge component with freshness dots (green < 24h, amber < 48h, gray > 48h, transparent = none)
+- Labels: Fresh, Building, Sparse, No data — shown in tooltips alongside enrichment timestamp
 - Integrated into all entity heroes (accounts, people, projects)
+- Schedule row prep dots replaced with quality badges
 
 ### Inline Editing
 
 - EditableText rewritten: textarea-first default, Tauri event emission on commit, Tab/Shift+Tab keyboard navigation, Escape cancels
 - New EditableList component with HTML5 drag-to-reorder and grip handles
+- Account and project field drawers replaced with inline editable fields in hero sections
+- New CyclingPill component for select-style fields (Health, Lifecycle, Status) — click to cycle through options
+- Fields auto-persist on blur with debounced save, no explicit Save button
 
 ### Email Intelligence Backend
 
