@@ -302,7 +302,16 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                         if let Some(db) = db_guard.as_ref() {
                             let _ = super::cache::upsert_cache(db.conn_ref(), &cache_entry);
 
-                            // I306: Emit profile_discovered signal to bus
+                            // I423: Write photo_url back to people table (respects source priority)
+                            if has_gravatar {
+                                if let Some(ref avatar_url) = cache_entry.avatar_url {
+                                    if let Some(ref pid) = person_id {
+                                        writeback_photo_url(db, pid, avatar_url);
+                                    }
+                                }
+                            }
+
+                            // I423: Emit profile_discovered signal with propagation
                             if has_gravatar {
                                 if let Some(ref pid) = person_id {
                                     let value = serde_json::json!({
@@ -311,8 +320,9 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                                         "job_title": cache_entry.job_title,
                                     })
                                     .to_string();
-                                    let _ = crate::signals::bus::emit_signal(
+                                    let _ = crate::signals::bus::emit_signal_and_propagate(
                                         db,
+                                        &state.signals.engine,
                                         "person",
                                         pid,
                                         "profile_discovered",
