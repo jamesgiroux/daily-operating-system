@@ -167,9 +167,16 @@ export function PersonHero({
         </div>
       )}
 
-      {/* Bio (from Clay/Gravatar enrichment) */}
-      {detail.bio && !lede && (
-        <p className={styles.lede} style={{ fontStyle: "italic" }}>
+      {/* Bio (from Clay/Gravatar enrichment — shown below lede when both exist) */}
+      {detail.bio && (
+        <p style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 15,
+          lineHeight: 1.6,
+          color: "var(--color-text-secondary)",
+          fontStyle: "italic",
+          marginTop: lede ? 8 : 0,
+        }}>
           {detail.bio.length > LEDE_LIMIT ? detail.bio.slice(0, LEDE_LIMIT) + "…" : detail.bio}
         </p>
       )}
