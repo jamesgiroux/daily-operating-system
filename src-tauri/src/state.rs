@@ -69,59 +69,76 @@ impl HygieneBudget {
     }
 }
 
+/// Hygiene subsystem state (I404).
+pub struct HygieneState {
+    pub report: Mutex<Option<crate::hygiene::HygieneReport>>,
+    pub scan_running: AtomicBool,
+    pub last_scan_at: Mutex<Option<String>>,
+    pub next_scan_at: Mutex<Option<String>>,
+    pub budget: HygieneBudget,
+    pub full_orphan_scan_done: AtomicBool,
+}
+
+/// Capture subsystem state (I404).
+pub struct CaptureState {
+    pub dismissed: Mutex<std::collections::HashSet<String>>,
+    pub captured: Mutex<std::collections::HashSet<String>>,
+    pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
+}
+
+/// Calendar subsystem state (I404).
+pub struct CalendarState {
+    pub google_auth: Mutex<GoogleAuthStatus>,
+    pub events: RwLock<Vec<CalendarEvent>>,
+    pub week_cache: RwLock<Option<(Vec<CalendarEvent>, Instant)>>,
+}
+
+/// Workflow execution state (I404).
+pub struct WorkflowState {
+    pub status: RwLock<HashMap<WorkflowId, WorkflowStatus>>,
+    pub history: Mutex<Vec<ExecutionRecord>>,
+    pub last_scheduled_run: RwLock<HashMap<WorkflowId, DateTime<Utc>>>,
+}
+
+/// Integration poller wake signals (I405).
+pub struct IntegrationState {
+    pub clay_poller_wake: Arc<tokio::sync::Notify>,
+    pub quill_poller_wake: Arc<tokio::sync::Notify>,
+    pub linear_poller_wake: Arc<tokio::sync::Notify>,
+    pub email_poller_wake: Arc<tokio::sync::Notify>,
+}
+
+/// Signal bus state (I405).
+pub struct SignalState {
+    pub engine: Arc<crate::signals::propagation::PropagationEngine>,
+    pub entity_resolution_wake: Arc<tokio::sync::Notify>,
+    pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
+}
+
 /// Application state managed by Tauri
 pub struct AppState {
     pub config: RwLock<Option<Config>>,
-    pub workflow_status: RwLock<HashMap<WorkflowId, WorkflowStatus>>,
-    pub execution_history: Mutex<Vec<ExecutionRecord>>,
-    pub last_scheduled_run: RwLock<HashMap<WorkflowId, DateTime<Utc>>>,
+    pub workflow: WorkflowState,
     pub db: Mutex<Option<crate::db::ActionDb>>,
-    // Phase 3: Google + Calendar + Capture
-    pub google_auth: Mutex<GoogleAuthStatus>,
-    pub calendar_events: RwLock<Vec<CalendarEvent>>,
-    pub capture_dismissed: Mutex<std::collections::HashSet<String>>,
-    pub capture_captured: Mutex<std::collections::HashSet<String>>,
-    /// Tracks processed transcripts by meeting_id for immutability (one transcript per meeting)
-    pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
+    /// Calendar subsystem state (I404).
+    pub calendar: CalendarState,
+    /// Capture subsystem state (I404).
+    pub capture: CaptureState,
     /// Background intelligence enrichment queue (I132)
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
     /// Shared embedding model runtime (Sprint 26).
     pub embedding_model: Arc<crate::embeddings::EmbeddingModel>,
     /// Background embedding generation queue (Sprint 26).
     pub embedding_queue: Arc<crate::processor::embeddings::EmbeddingQueue>,
-    /// Last hygiene scan report (I145 — ADR-0058)
-    pub last_hygiene_report: Mutex<Option<crate::hygiene::HygieneReport>>,
-    /// Indicates whether a hygiene scan is currently running.
-    pub hygiene_scan_running: AtomicBool,
-    /// ISO timestamp for the most recent completed hygiene scan.
-    pub last_hygiene_scan_at: Mutex<Option<String>>,
-    /// ISO timestamp for the next scheduled hygiene scan.
-    pub next_hygiene_scan_at: Mutex<Option<String>>,
-    /// Daily AI budget for proactive hygiene (I146 — ADR-0058)
-    pub hygiene_budget: HygieneBudget,
-    /// TTL cache for live week calendar events used by proactive suggestions (W6).
-    /// Stores classified CalendarEvents for Mon-Fri + the instant they were fetched.
-    pub week_calendar_cache: RwLock<Option<(Vec<CalendarEvent>, Instant)>>,
-    /// Whether the first-run full orphan scan has been completed (I271).
-    pub hygiene_full_orphan_scan_done: AtomicBool,
+    /// Hygiene subsystem state (I404).
+    pub hygiene: HygieneState,
     /// Stashed live workspace path before switching to dev mode (I298).
     /// `restore_live()` reads this back to return to the user's real workspace.
     pub pre_dev_workspace: Mutex<Option<String>>,
-    /// Wake signal for the Clay enrichment poller (bulk enrich → immediate processing).
-    pub clay_poller_wake: Arc<tokio::sync::Notify>,
-    /// Queue of meeting IDs whose prep needs regeneration after entity correction (I305).
-    /// Shared with the signal propagation engine for signal-driven invalidation.
-    pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
-    /// Signal propagation engine with registered cross-entity rules (I308).
-    pub signal_engine: Arc<crate::signals::propagation::PropagationEngine>,
-    /// Wake signal for event-driven entity resolution (I308).
-    pub entity_resolution_wake: Arc<tokio::sync::Notify>,
-    /// Wake signal for Quill transcript poller (immediate sync after meeting ends).
-    pub quill_poller_wake: Arc<tokio::sync::Notify>,
-    /// Wake signal for Linear sync poller (I346).
-    pub linear_poller_wake: Arc<tokio::sync::Notify>,
-    /// Wake signal for email poller (reset poll cycle on manual refresh).
-    pub email_poller_wake: Arc<tokio::sync::Notify>,
+    /// Signal bus state (I405).
+    pub signals: SignalState,
+    /// Integration poller wake signals (I405).
+    pub integrations: IntegrationState,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
@@ -185,33 +202,45 @@ impl AppState {
 
         Self {
             config: RwLock::new(config),
-            workflow_status: RwLock::new(HashMap::new()),
-            execution_history: Mutex::new(history),
-            last_scheduled_run: RwLock::new(HashMap::new()),
+            workflow: WorkflowState {
+                status: RwLock::new(HashMap::new()),
+                history: Mutex::new(history),
+                last_scheduled_run: RwLock::new(HashMap::new()),
+            },
             db: Mutex::new(db),
-            google_auth: Mutex::new(google_auth),
-            calendar_events: RwLock::new(Vec::new()),
-            capture_dismissed: Mutex::new(std::collections::HashSet::new()),
-            capture_captured: Mutex::new(std::collections::HashSet::new()),
-            transcript_processed: Mutex::new(transcript_processed),
+            calendar: CalendarState {
+                google_auth: Mutex::new(google_auth),
+                events: RwLock::new(Vec::new()),
+                week_cache: RwLock::new(None),
+            },
+            capture: CaptureState {
+                dismissed: Mutex::new(std::collections::HashSet::new()),
+                captured: Mutex::new(std::collections::HashSet::new()),
+                transcript_processed: Mutex::new(transcript_processed),
+            },
             intel_queue: intel_queue_arc,
             embedding_model: Arc::new(crate::embeddings::EmbeddingModel::new()),
             embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
-            last_hygiene_report: Mutex::new(None),
-            hygiene_scan_running: AtomicBool::new(false),
-            last_hygiene_scan_at: Mutex::new(None),
-            next_hygiene_scan_at: Mutex::new(None),
-            hygiene_budget: HygieneBudget::new(hygiene_budget_limit),
-            week_calendar_cache: RwLock::new(None),
-            hygiene_full_orphan_scan_done: AtomicBool::new(false),
+            hygiene: HygieneState {
+                report: Mutex::new(None),
+                scan_running: AtomicBool::new(false),
+                last_scan_at: Mutex::new(None),
+                next_scan_at: Mutex::new(None),
+                budget: HygieneBudget::new(hygiene_budget_limit),
+                full_orphan_scan_done: AtomicBool::new(false),
+            },
             pre_dev_workspace: Mutex::new(None),
-            clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
-            prep_invalidation_queue: prep_queue,
-            signal_engine: Arc::new(signal_engine),
-            entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
-            quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
-            linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
-            email_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            signals: SignalState {
+                engine: Arc::new(signal_engine),
+                entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
+                prep_invalidation_queue: prep_queue,
+            },
+            integrations: IntegrationState {
+                clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                email_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            },
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
         }
@@ -219,7 +248,7 @@ impl AppState {
 
     /// Get current status of a workflow
     pub fn get_workflow_status(&self, workflow: WorkflowId) -> WorkflowStatus {
-        self.workflow_status
+        self.workflow.status
             .read()
             .map(|guard| guard.get(&workflow).cloned().unwrap_or_default())
             .unwrap_or_default()
@@ -227,14 +256,14 @@ impl AppState {
 
     /// Update workflow status
     pub fn set_workflow_status(&self, workflow: WorkflowId, status: WorkflowStatus) {
-        if let Ok(mut guard) = self.workflow_status.write() {
+        if let Ok(mut guard) = self.workflow.status.write() {
             guard.insert(workflow, status);
         }
     }
 
     /// Add an execution record to history
     pub fn add_execution_record(&self, record: ExecutionRecord) {
-        if let Ok(mut guard) = self.execution_history.lock() {
+        if let Ok(mut guard) = self.workflow.history.lock() {
             guard.insert(0, record);
 
             // Trim to max size
@@ -249,7 +278,7 @@ impl AppState {
 
     /// Update an existing execution record
     pub fn update_execution_record(&self, id: &str, f: impl FnOnce(&mut ExecutionRecord)) {
-        if let Ok(mut guard) = self.execution_history.lock() {
+        if let Ok(mut guard) = self.workflow.history.lock() {
             if let Some(record) = guard.iter_mut().find(|r| r.id == id) {
                 f(record);
             }
@@ -261,7 +290,7 @@ impl AppState {
 
     /// Get execution history
     pub fn get_execution_history(&self, limit: usize) -> Vec<ExecutionRecord> {
-        self.execution_history
+        self.workflow.history
             .lock()
             .map(|guard| guard.iter().take(limit).cloned().collect())
             .unwrap_or_default()
@@ -269,14 +298,14 @@ impl AppState {
 
     /// Record when a scheduled run last occurred
     pub fn set_last_scheduled_run(&self, workflow: WorkflowId, time: DateTime<Utc>) {
-        if let Ok(mut guard) = self.last_scheduled_run.write() {
+        if let Ok(mut guard) = self.workflow.last_scheduled_run.write() {
             guard.insert(workflow, time);
         }
     }
 
     /// Get when a workflow last ran on schedule
     pub fn get_last_scheduled_run(&self, workflow: WorkflowId) -> Option<DateTime<Utc>> {
-        self.last_scheduled_run
+        self.workflow.last_scheduled_run
             .read()
             .ok()
             .and_then(|guard| guard.get(&workflow).cloned())
@@ -334,7 +363,7 @@ impl AppState {
     /// Save execution history to disk
     fn save_execution_history(&self) -> Result<(), String> {
         let history = self
-            .execution_history
+            .workflow.history
             .lock()
             .map_err(|_| "Lock poisoned")?
             .clone();
