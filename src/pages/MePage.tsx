@@ -378,7 +378,7 @@ export default function MePage() {
       {/* Activity indicator */}
       {hasContent && (
         <div className={s.activityLine}>
-          Informing all entity intelligence and signal ranking.
+          Your profile shapes every briefing, insight, and recommendation.
         </div>
       )}
 
