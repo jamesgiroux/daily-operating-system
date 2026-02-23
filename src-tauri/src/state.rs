@@ -102,7 +102,7 @@ pub struct WorkflowState {
 
 /// Integration poller wake signals (I405).
 pub struct IntegrationState {
-    pub clay_poller_wake: Arc<tokio::sync::Notify>,
+    pub enrichment_wake: Arc<tokio::sync::Notify>,
     pub quill_poller_wake: Arc<tokio::sync::Notify>,
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
     pub email_poller_wake: Arc<tokio::sync::Notify>,
@@ -237,7 +237,7 @@ impl AppState {
                 prep_invalidation_queue: prep_queue,
             },
             integrations: IntegrationState {
-                clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                enrichment_wake: Arc::new(tokio::sync::Notify::new()),
                 quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 email_poller_wake: Arc::new(tokio::sync::Notify::new()),

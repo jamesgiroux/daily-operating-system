@@ -17,6 +17,7 @@ pub mod db;
 mod db_backup;
 mod devtools;
 pub mod embeddings;
+mod enrichment;
 pub mod entity;
 pub mod entity_io;
 mod error;
@@ -201,17 +202,10 @@ pub fn run() {
                 granola::poller::run_granola_poller(granola_state, granola_handle).await;
             });
 
-            // Spawn Gravatar avatar fetcher (I229)
-            let gravatar_state = state.clone();
+            // Spawn unified enrichment processor (Clay + Gravatar)
+            let enrichment_state = state.clone();
             tauri::async_runtime::spawn(async move {
-                gravatar::client::run_gravatar_fetcher(gravatar_state).await;
-            });
-
-            // Spawn Clay enrichment poller (I228)
-            let clay_state = state.clone();
-            let clay_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                clay::poller::run_clay_poller(clay_state, clay_handle).await;
+                enrichment::run_enrichment_processor(enrichment_state).await;
             });
 
             // Spawn Linear sync poller (I346)
