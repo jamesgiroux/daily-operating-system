@@ -1390,6 +1390,169 @@ pub fn set_user_profile(
     crate::services::settings::set_user_profile(name, company, title, focus, domain, domains, &state)
 }
 
+// =============================================================================
+// User Entity Commands (I411 — ADR-0089/0090)
+// =============================================================================
+
+/// Get the user entity (creates from config on first call).
+#[tauri::command]
+pub fn get_user_entity(
+    state: State<Arc<AppState>>,
+) -> Result<crate::types::UserEntity, String> {
+    crate::services::user_entity::get_user_entity(&state)
+}
+
+/// Update a single field on the user entity.
+#[tauri::command]
+pub fn update_user_entity_field(
+    field: String,
+    value: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::user_entity::update_user_entity_field(&field, &value, &state)
+}
+
+/// Get all user context entries.
+#[tauri::command]
+pub fn get_user_context_entries(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::types::UserContextEntry>, String> {
+    crate::services::user_entity::get_user_context_entries(&state)
+}
+
+/// Create a new user context entry.
+#[tauri::command]
+pub fn create_user_context_entry(
+    title: String,
+    content: String,
+    state: State<Arc<AppState>>,
+) -> Result<crate::types::UserContextEntry, String> {
+    crate::services::user_entity::create_user_context_entry(&title, &content, &state)
+}
+
+/// Update an existing user context entry.
+#[tauri::command]
+pub fn update_user_context_entry(
+    id: String,
+    title: String,
+    content: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::user_entity::update_user_context_entry(&id, &title, &content, &state)
+}
+
+/// Delete a user context entry.
+#[tauri::command]
+pub fn delete_user_context_entry(
+    id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::user_entity::delete_user_context_entry(&id, &state)
+}
+
+/// Process a user attachment from the /me page dropzone.
+///
+/// Copies the file into _user/attachments/ (if not already there), processes it
+/// through the file processor pipeline, and indexes it as user_context content.
+#[tauri::command]
+pub async fn process_user_attachment(
+    path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Internal error")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let attachments_dir = workspace.join("_user").join("attachments");
+
+    // Ensure _user/attachments/ exists
+    if !attachments_dir.exists() {
+        std::fs::create_dir_all(&attachments_dir)
+            .map_err(|e| format!("Failed to create _user/attachments: {}", e))?;
+    }
+
+    let source = std::path::Path::new(&path);
+    if !source.is_file() {
+        return Err(format!("Not a file: {}", path));
+    }
+
+    // Determine final path in _user/attachments/
+    let filename = source
+        .file_name()
+        .ok_or("Invalid filename")?;
+    let dest = attachments_dir.join(filename);
+
+    // Copy if not already in _user/attachments/
+    let final_path = if source.starts_with(&attachments_dir) {
+        source.to_path_buf()
+    } else {
+        // Handle duplicates
+        let final_dest = if dest.exists() {
+            let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+            let ext = dest.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let mut candidate = dest.clone();
+            for i in 1..1000 {
+                candidate = if ext.is_empty() {
+                    attachments_dir.join(format!("{}-{}", stem, i))
+                } else {
+                    attachments_dir.join(format!("{}-{}.{}", stem, i, ext))
+                };
+                if !candidate.exists() {
+                    break;
+                }
+            }
+            candidate
+        } else {
+            dest
+        };
+
+        std::fs::copy(source, &final_dest)
+            .map_err(|e| format!("Failed to copy file: {}", e))?;
+        final_dest
+    };
+
+    // Process through the pipeline
+    let state_inner = state.inner().clone();
+    let workspace_owned = workspace.to_path_buf();
+    let final_path_owned = final_path.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let db = crate::db::ActionDb::open().ok();
+        let result = crate::processor::process_user_attachment(
+            &workspace_owned,
+            &final_path_owned,
+            db.as_ref(),
+        );
+
+        // Queue embedding generation
+        if matches!(result, crate::processor::ProcessingResult::Routed { .. }) {
+            state_inner.embedding_queue.enqueue(
+                crate::processor::embeddings::EmbeddingRequest {
+                    entity_id: "user_context".to_string(),
+                    entity_type: "user_context".to_string(),
+                    requested_at: std::time::Instant::now(),
+                },
+            );
+        }
+
+        result
+    })
+    .await
+    .map_err(|e| format!("Processing failed: {}", e))?;
+
+    match result {
+        crate::processor::ProcessingResult::Routed { destination, .. } => Ok(destination),
+        crate::processor::ProcessingResult::Error { message } => Err(message),
+        crate::processor::ProcessingResult::NeedsEnrichment => {
+            Ok(final_path.display().to_string())
+        }
+    }
+}
+
 /// List available meeting prep files
 #[tauri::command]
 pub fn list_meeting_preps(state: State<Arc<AppState>>) -> Result<Vec<String>, String> {

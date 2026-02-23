@@ -3,6 +3,7 @@ pub mod io;
 pub mod lifecycle;
 pub mod prompts;
 pub mod reconcile_stakeholders;
+pub mod user_context;
 
 pub use compute::*;
 pub use io::*;

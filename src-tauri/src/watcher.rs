@@ -44,6 +44,7 @@ enum WatchSource {
     AccountContent(PathBuf),
     Projects(PathBuf),
     ProjectContent(PathBuf),
+    UserAttachments(PathBuf),
 }
 
 /// Start watching the _inbox/ directory for changes.
@@ -71,6 +72,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let people_dir = workspace.join("People");
         let accounts_dir = workspace.join("Accounts");
         let projects_dir = workspace.join("Projects");
+        let user_attachments_dir = workspace.join("_user").join("attachments");
 
         // Create _inbox/ if it doesn't exist
         if !inbox_dir.exists() {
@@ -99,6 +101,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let people_dir_clone = people_dir.clone();
         let accounts_dir_clone = accounts_dir.clone();
         let projects_dir_clone = projects_dir.clone();
+        let user_attachments_dir_clone = user_attachments_dir.clone();
         let mut watcher = match RecommendedWatcher::new(
             move |result: Result<Event, notify::Error>| {
                 if let Ok(event) = result {
@@ -210,6 +213,12 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             }) {
                                 let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
+                        } else if event.paths.iter().any(|p| p.starts_with(&user_attachments_dir_clone)) {
+                            for path in &event.paths {
+                                if path.starts_with(&user_attachments_dir_clone) && path.is_file() {
+                                    let _ = tx.try_send(WatchSource::UserAttachments(path.clone()));
+                                }
+                            }
                         } else if event.paths.iter().any(|p| p.starts_with(&inbox_dir_clone)) {
                             let _ = tx.try_send(WatchSource::Inbox);
                         }
@@ -256,6 +265,18 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
+        // Start watching _user/attachments/ for user context documents (I413)
+        if user_attachments_dir.exists() {
+            if let Err(e) = watcher.watch(&user_attachments_dir, RecursiveMode::NonRecursive) {
+                log::warn!(
+                    "Watcher: failed to watch _user/attachments/: {}. User attachment auto-processing disabled.",
+                    e
+                );
+            } else {
+                log::info!("Watcher: watching {} for changes", user_attachments_dir.display());
+            }
+        }
+
         // Start watching Projects/ (recursive to catch Projects/*/dashboard.json)
         if projects_dir.exists() {
             if let Err(e) = watcher.watch(&projects_dir, RecursiveMode::Recursive) {
@@ -275,6 +296,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let mut account_content_dirty: Vec<PathBuf> = Vec::new();
         let mut projects_dirty: Vec<PathBuf> = Vec::new();
         let mut project_content_dirty: Vec<PathBuf> = Vec::new();
+        let mut user_attachments_dirty: Vec<PathBuf> = Vec::new();
         loop {
             // Wait for an event
             let source = match fs_rx.recv().await {
@@ -309,6 +331,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         project_content_dirty.push(p);
                     }
                 }
+                WatchSource::UserAttachments(p) => {
+                    if !user_attachments_dirty.contains(&p) {
+                        user_attachments_dirty.push(p);
+                    }
+                }
             }
 
             // Debounce: drain any events that arrive within the window
@@ -339,6 +366,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     WatchSource::ProjectContent(p) => {
                         if !project_content_dirty.contains(&p) {
                             project_content_dirty.push(p);
+                        }
+                    }
+                    WatchSource::UserAttachments(p) => {
+                        if !user_attachments_dirty.contains(&p) {
+                            user_attachments_dirty.push(p);
                         }
                     }
                 }
@@ -423,6 +455,12 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     let _ = app_handle.emit("content-changed", payload.clone());
                 }
                 project_content_dirty.clear();
+            }
+
+            // Process user attachment changes (I413: _user/attachments/)
+            if !user_attachments_dirty.is_empty() {
+                handle_user_attachment_changes(&user_attachments_dirty, &state, &workspace);
+                user_attachments_dirty.clear();
             }
         }
 
@@ -692,6 +730,60 @@ fn handle_project_content_changes(
         })
     } else {
         None
+    }
+}
+
+/// Handle detected changes to _user/attachments/ files (I413).
+///
+/// Processes new or modified user attachment files through the pipeline
+/// and queues embedding generation.
+fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
+    if crate::db::is_dev_db_mode() {
+        log::debug!("Watcher: skipping user attachment processing — dev DB mode active");
+        return;
+    }
+
+    let db = match crate::db::ActionDb::open().ok() {
+        Some(db) => db,
+        None => return,
+    };
+
+    for path in paths {
+        if !path.exists() || !path.is_file() {
+            continue;
+        }
+
+        let result = crate::processor::process_user_attachment(workspace, path, Some(&db));
+        match &result {
+            crate::processor::ProcessingResult::Routed { .. } => {
+                log::info!("Watcher: processed user attachment {}", path.display());
+                // Queue embedding generation
+                state.embedding_queue.enqueue(
+                    crate::processor::embeddings::EmbeddingRequest {
+                        entity_id: "user_context".to_string(),
+                        entity_type: "user_context".to_string(),
+                        requested_at: std::time::Instant::now(),
+                    },
+                );
+            }
+            crate::processor::ProcessingResult::Error { message } => {
+                log::warn!(
+                    "Watcher: failed to process user attachment {}: {}. Enqueuing for retry via embedding queue.",
+                    path.display(),
+                    message
+                );
+                // I413 AC5: Enqueue for retry — the next hygiene/embedding cycle will
+                // re-attempt processing when the embedding worker picks up this request.
+                state.embedding_queue.enqueue(
+                    crate::processor::embeddings::EmbeddingRequest {
+                        entity_id: "user_context".to_string(),
+                        entity_type: "user_context".to_string(),
+                        requested_at: std::time::Instant::now(),
+                    },
+                );
+            }
+            _ => {}
+        }
     }
 }
 

@@ -280,6 +280,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
                 let _ = app_handle.emit("google-auth-changed", GoogleAuthStatus::TokenExpired);
+                crate::notification::emit_system_status(
+                    &app_handle,
+                    "auth_expired",
+                    "Google account needs reconnection",
+                );
+                let _ = crate::notification::notify_auth_expired(&app_handle);
             }
             Err(PollError::ApiError(e)) => {
                 log::warn!("Calendar poll error: {}", e);
