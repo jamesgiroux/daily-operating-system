@@ -4,7 +4,7 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.14.0] - 2026-02-23
+## [0.14.1] - 2026-02-23
 
 User entity + professional context. The app now knows about you — your role, what you deliver, your priorities, and your knowledge. This context shapes all entity intelligence, signal ranking, and meeting prep. Every account/person/project intelligence output now includes your perspective.
 
