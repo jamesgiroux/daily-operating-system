@@ -107,6 +107,12 @@ pub struct IntegrationState {
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
     pub email_poller_wake: Arc<tokio::sync::Notify>,
     pub granola_poller_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the intelligence queue processor.
+    pub intel_queue_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the meeting prep queue processor.
+    pub prep_queue_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the embedding queue processor.
+    pub embedding_queue_wake: Arc<tokio::sync::Notify>,
 }
 
 /// Signal bus state (I405).
@@ -144,6 +150,12 @@ pub struct AppState {
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
+    /// Semaphore limiting concurrent heavy operations (PTY subprocess,
+    /// embedding inference) to one at a time. Prevents resource contention
+    /// between background processors.
+    pub heavy_work_semaphore: Arc<tokio::sync::Semaphore>,
+    /// User activity monitor for background task throttling.
+    pub activity: crate::activity::ActivityMonitor,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -242,9 +254,14 @@ impl AppState {
                 linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 email_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 granola_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                intel_queue_wake: Arc::new(tokio::sync::Notify::new()),
+                prep_queue_wake: Arc::new(tokio::sync::Notify::new()),
+                embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
             },
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
+            heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+            activity: crate::activity::ActivityMonitor::new(),
         }
     }
 
