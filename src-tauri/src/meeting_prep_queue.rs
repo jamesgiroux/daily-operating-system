@@ -239,6 +239,9 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
             requested_at: Instant::now(),
         });
     }
+    if !meeting_ids.is_empty() {
+        state.integrations.prep_queue_wake.notify_one();
+    }
 
     log::info!("MeetingPrepSweep: enqueued {} meetings", meeting_ids.len());
 }
@@ -255,7 +258,12 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
     let prune_interval = 60 / POLL_INTERVAL_SECS;
 
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        // Adaptive sleep: back off when queue is empty + user is active; wake instantly on enqueue
+        let interval = crate::activity::adaptive_poll_interval(&state.activity, state.meeting_prep_queue.is_empty());
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {}
+            _ = state.integrations.prep_queue_wake.notified() => {}
+        }
 
         // Periodic pruning
         polls_since_prune += 1;
