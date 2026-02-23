@@ -724,14 +724,38 @@ pub fn deliver_schedule(
                     .iter()
                     .filter_map(|email| {
                         let rsvp = event.attendee_rsvp.get(email).cloned().unwrap_or_default();
-                        // Skip declined attendees
                         if rsvp == "declined" {
                             return None;
                         }
+                        // Name resolution: Google Calendar → attendee_display_names → people → email local part
                         let name = event
                             .attendee_names
                             .get(email)
                             .cloned()
+                            .or_else(|| {
+                                db.and_then(|db| {
+                                    // Try attendee_display_names table (cached Google names)
+                                    db.conn_ref()
+                                        .query_row(
+                                            "SELECT display_name FROM attendee_display_names WHERE email = ?1",
+                                            [email],
+                                            |row| row.get::<_, String>(0),
+                                        )
+                                        .ok()
+                                })
+                            })
+                            .or_else(|| {
+                                db.and_then(|db| {
+                                    // Try people table
+                                    db.conn_ref()
+                                        .query_row(
+                                            "SELECT name FROM people WHERE email = LOWER(?1)",
+                                            [email],
+                                            |row| row.get::<_, String>(0),
+                                        )
+                                        .ok()
+                                })
+                            })
                             .unwrap_or_else(|| email.split('@').next().unwrap_or(email).to_string());
                         let domain = email.split('@').nth(1).unwrap_or("");
                         Some(json!({
