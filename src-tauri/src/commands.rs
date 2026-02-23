@@ -6615,7 +6615,9 @@ pub fn get_linear_recent_issues(
     state.with_db_read(|db| {
         let mut stmt = db.conn_ref().prepare(
             "SELECT id, identifier, title, state_name, state_type, priority_label, due_date, synced_at
-             FROM linear_issues ORDER BY synced_at DESC LIMIT 5"
+             FROM linear_issues
+             WHERE state_type NOT IN ('completed', 'cancelled')
+             ORDER BY priority ASC, synced_at DESC LIMIT 5"
         ).map_err(|e| e.to_string())?;
         let issues = stmt.query_map([], |row| {
             Ok(serde_json::json!({
@@ -6743,6 +6745,48 @@ pub fn delete_linear_entity_link(
         db.conn_ref().execute(
             "DELETE FROM linear_entity_links WHERE id = ?1",
             [&link_id],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+/// List all Linear projects for the manual link picker.
+#[tauri::command]
+pub fn get_linear_projects(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    state.with_db_read(|db| {
+        let mut stmt = db.conn_ref().prepare(
+            "SELECT id, name FROM linear_projects ORDER BY name ASC"
+        ).map_err(|e| e.to_string())?;
+        let projects = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "name": row.get::<_, String>(1)?,
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(projects)
+    })
+}
+
+/// Manually create a Linear entity link.
+#[tauri::command]
+pub fn create_linear_entity_link(
+    state: State<Arc<AppState>>,
+    linear_project_id: String,
+    entity_id: String,
+    entity_type: String,
+) -> Result<(), String> {
+    if !["account", "project"].contains(&entity_type.as_str()) {
+        return Err("entity_type must be 'account' or 'project'".to_string());
+    }
+    state.with_db_write(|db| {
+        db.conn_ref().execute(
+            "INSERT OR IGNORE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
+             VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, 1)",
+            rusqlite::params![linear_project_id, entity_id, entity_type],
         ).map_err(|e| e.to_string())?;
         Ok(())
     })
