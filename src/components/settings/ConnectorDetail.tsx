@@ -2,12 +2,12 @@ import type { ComponentType } from "react";
 import { X } from "lucide-react";
 import { styles } from "./styles";
 
-interface ConnectionDetailProps {
+interface ConnectorDetailProps {
   component: ComponentType;
   onClose: () => void;
 }
 
-export default function ConnectionDetail({ component: Component, onClose }: ConnectionDetailProps) {
+export default function ConnectorDetail({ component: Component, onClose }: ConnectorDetailProps) {
   return (
     <div
       style={{
