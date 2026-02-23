@@ -6563,6 +6563,147 @@ pub fn start_linear_sync(state: State<Arc<AppState>>) -> Result<(), String> {
     Ok(())
 }
 
+/// I425: Get the 5 most recently synced Linear issues.
+#[tauri::command]
+pub fn get_linear_recent_issues(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    state.with_db_read(|db| {
+        let mut stmt = db.conn_ref().prepare(
+            "SELECT id, identifier, title, state_name, state_type, priority_label, due_date, synced_at
+             FROM linear_issues ORDER BY synced_at DESC LIMIT 5"
+        ).map_err(|e| e.to_string())?;
+        let issues = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "identifier": row.get::<_, String>(1)?,
+                "title": row.get::<_, String>(2)?,
+                "stateName": row.get::<_, Option<String>>(3)?,
+                "stateType": row.get::<_, Option<String>>(4)?,
+                "priorityLabel": row.get::<_, Option<String>>(5)?,
+                "dueDate": row.get::<_, Option<String>>(6)?,
+                "syncedAt": row.get::<_, Option<String>>(7)?,
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(issues)
+    })
+}
+
+/// I425: Get all Linear entity links with project and entity names.
+#[tauri::command]
+pub fn get_linear_entity_links(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    state.with_db_read(|db| {
+        let mut stmt = db.conn_ref().prepare(
+            "SELECT lel.id, lel.linear_project_id, lp.name as project_name,
+                    lel.entity_id, lel.entity_type, lel.confirmed,
+                    CASE lel.entity_type
+                        WHEN 'account' THEN (SELECT name FROM accounts WHERE id = lel.entity_id)
+                        WHEN 'project' THEN (SELECT name FROM projects WHERE id = lel.entity_id)
+                        WHEN 'person' THEN (SELECT name FROM people WHERE id = lel.entity_id)
+                    END as entity_name
+             FROM linear_entity_links lel
+             LEFT JOIN linear_projects lp ON lp.id = lel.linear_project_id
+             ORDER BY lel.created_at DESC"
+        ).map_err(|e| e.to_string())?;
+        let links = stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "linearProjectId": row.get::<_, String>(1)?,
+                "projectName": row.get::<_, Option<String>>(2)?,
+                "entityId": row.get::<_, String>(3)?,
+                "entityType": row.get::<_, String>(4)?,
+                "confirmed": row.get::<_, bool>(5)?,
+                "entityName": row.get::<_, Option<String>>(6)?,
+            }))
+        }).map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(links)
+    })
+}
+
+/// I425: Auto-detect entity links by fuzzy-matching Linear project names to entity names.
+#[tauri::command]
+pub fn run_linear_auto_link(
+    state: State<Arc<AppState>>,
+) -> Result<usize, String> {
+    state.with_db_write(|db| {
+        let conn = db.conn_ref();
+        let mut linked = 0usize;
+
+        // Get all Linear projects
+        let projects: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, name FROM linear_projects"
+            ).map_err(|e| e.to_string())?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+            rows
+        };
+
+        for (project_id, project_name) in &projects {
+            let lower_name = project_name.to_lowercase();
+
+            // Try matching against accounts (exact case-insensitive)
+            let account_match: Option<String> = conn.query_row(
+                "SELECT id FROM accounts WHERE LOWER(name) = ?1 AND archived = 0",
+                [&lower_name],
+                |row| row.get(0),
+            ).ok();
+
+            if let Some(account_id) = account_match {
+                conn.execute(
+                    "INSERT OR IGNORE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
+                     VALUES (lower(hex(randomblob(16))), ?1, ?2, 'account', 0)",
+                    rusqlite::params![project_id, account_id],
+                ).map_err(|e| e.to_string())?;
+                linked += 1;
+                continue;
+            }
+
+            // Try matching against projects (exact case-insensitive)
+            let project_match: Option<String> = conn.query_row(
+                "SELECT id FROM projects WHERE LOWER(name) = ?1 AND archived = 0",
+                [&lower_name],
+                |row| row.get(0),
+            ).ok();
+
+            if let Some(proj_id) = project_match {
+                conn.execute(
+                    "INSERT OR IGNORE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
+                     VALUES (lower(hex(randomblob(16))), ?1, ?2, 'project', 0)",
+                    rusqlite::params![project_id, proj_id],
+                ).map_err(|e| e.to_string())?;
+                linked += 1;
+            }
+        }
+
+        Ok(linked)
+    })
+}
+
+/// I425: Delete a Linear entity link.
+#[tauri::command]
+pub fn delete_linear_entity_link(
+    state: State<Arc<AppState>>,
+    link_id: String,
+) -> Result<(), String> {
+    state.with_db_write(|db| {
+        db.conn_ref().execute(
+            "DELETE FROM linear_entity_links WHERE id = ?1",
+            [&link_id],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
 // =============================================================================
 // I309: Role Presets
 // =============================================================================
