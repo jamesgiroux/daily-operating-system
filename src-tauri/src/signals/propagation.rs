@@ -152,6 +152,7 @@ pub fn default_engine() -> PropagationEngine {
     engine.register("rule_person_network", super::rules::rule_person_network);
     engine.register("rule_hierarchy_up", super::rules::rule_hierarchy_up);
     engine.register("rule_hierarchy_down", super::rules::rule_hierarchy_down);
+    engine.register("rule_person_profile_discovered", super::rules::rule_person_profile_discovered);
 
     engine
 }
