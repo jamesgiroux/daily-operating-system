@@ -625,6 +625,23 @@ fn gather_meeting_context(
             }
         }
 
+        // I455: 1:1 person resolution fallback — when no entity is linked,
+        // resolve the non-user attendee as a person and inject person context.
+        if meeting_type == "one_on_one" || is_two_person_meeting(meeting) {
+            if let Some(db) = db {
+                if let Some(person_match) = resolve_1on1_person(db, meeting, workspace) {
+                    gather_person_context(db, workspace, &person_match, &mut ctx);
+                    ctx["primary_entity"] = json!({
+                        "entity_id": person_match.entity_id,
+                        "entity_type": "person",
+                        "name": person_match.name,
+                        "confidence": person_match.confidence,
+                        "source": person_match.source,
+                    });
+                }
+            }
+        }
+
         // Fallback pending actions for internal types
         let internal_types = ["internal", "team_sync", "one_on_one"];
         if internal_types.contains(&meeting_type) {
@@ -750,6 +767,70 @@ fn inject_linear_issues(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Val
     if !issues.is_empty() {
         ctx["linear_issues"] = json!(issues);
     }
+}
+
+// ---------------------------------------------------------------------------
+// 1:1 meeting person resolution (I455)
+// ---------------------------------------------------------------------------
+
+/// Check if a meeting has exactly 2 attendees (a 1:1 regardless of classification).
+fn is_two_person_meeting(meeting: &Value) -> bool {
+    meeting
+        .get("attendees")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.len() == 2)
+        .unwrap_or(false)
+}
+
+/// Resolve the non-user attendee in a 1:1 meeting as a person entity.
+///
+/// Uses the authenticated Google email to identify which attendee is "self",
+/// then looks up the other attendee in the people DB.
+fn resolve_1on1_person(
+    db: &crate::db::ActionDb,
+    meeting: &Value,
+    workspace: &Path,
+) -> Option<EntityContextMatch> {
+    let attendees: Vec<String> = meeting
+        .get("attendees")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_lowercase()))
+                .filter(|s| s.contains('@'))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if attendees.len() < 2 {
+        return None;
+    }
+
+    // Determine user email from Google OAuth token
+    let user_email = crate::google_api::token_store::peek_account_email()
+        .map(|e| e.to_lowercase())?;
+
+    // Find the non-user attendee
+    let other_email = attendees
+        .iter()
+        .find(|email| **email != user_email)?;
+
+    // Look up the person in DB
+    let person = db
+        .get_person_by_email_or_alias(other_email)
+        .ok()
+        .flatten()?;
+
+    let person_dir = crate::entity_io::entity_dir(workspace, "People", &person.name);
+
+    Some(EntityContextMatch {
+        entity_id: person.id,
+        entity_type: crate::entity::EntityType::Person,
+        name: person.name,
+        workspace_path: person_dir,
+        confidence: 0.90,
+        source: "one_on_one_attendee".to_string(),
+    })
 }
 
 fn inject_recent_email_signals(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Value) {
