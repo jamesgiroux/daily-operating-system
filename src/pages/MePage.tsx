@@ -280,14 +280,14 @@ function ContextEntryList({
             className={s.addEntryInput}
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Title"
+            placeholder="e.g., 'Infrastructure scaling philosophy' or 'Customer success metrics'"
             autoFocus
           />
           <textarea
             className={s.addEntryTextarea}
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
-            placeholder="Content — professional context, methodologies, key knowledge..."
+            placeholder="Write 1–3 paragraphs about your approach, methodology, or key insight. This context will be retrieved during account/person enrichment when relevant."
             rows={3}
           />
           <div className={s.addEntryActions}>
@@ -350,7 +350,7 @@ export default function MePage() {
   // Activity check: any non-null user-editable field
   const hasContent = !!(
     entity.name || entity.company || entity.title || entity.focus ||
-    entity.valueProposition || entity.successDefinition || entity.currentPriorities ||
+    entity.valueProposition || entity.successDefinition ||
     entity.productContext || entity.companyBio || entity.roleDescription ||
     entity.howImMeasured || entity.pricingModel || entity.competitiveContext ||
     (entity.differentiators && parseJsonArray<string>(entity.differentiators).length > 0) ||
@@ -378,7 +378,7 @@ export default function MePage() {
       {/* Activity indicator */}
       {hasContent && (
         <div className={s.activityLine}>
-          Your details are enhancing context.
+          Informing all entity intelligence and signal ranking.
         </div>
       )}
 
