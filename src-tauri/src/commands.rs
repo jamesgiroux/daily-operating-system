@@ -6521,9 +6521,11 @@ pub fn set_smithery_connection(
     connection_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
+    let ns = if namespace.trim().is_empty() { None } else { Some(namespace) };
+    let conn = if connection_id.trim().is_empty() { None } else { Some(connection_id) };
     crate::state::create_or_update_config(&state, |config| {
-        config.clay.smithery_namespace = Some(namespace.clone());
-        config.clay.smithery_connection_id = Some(connection_id.clone());
+        config.clay.smithery_namespace = ns.clone();
+        config.clay.smithery_connection_id = conn.clone();
     })?;
     Ok(())
 }
