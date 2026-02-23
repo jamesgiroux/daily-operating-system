@@ -6238,28 +6238,34 @@ pub fn set_clay_auto_enrich(
     Ok(())
 }
 
-/// Resolve the best available Clay credential: OAuth token from keychain,
-/// falling back to API key from config.
-fn resolve_clay_credential(state: &AppState) -> Result<String, String> {
-    if let Some(token) = crate::clay::oauth::get_clay_token() {
-        return Ok(token);
-    }
-    state
+/// Resolve Smithery credentials for Clay MCP: API key from keychain +
+/// namespace and connection ID from config.
+fn resolve_smithery_config(state: &AppState) -> Result<(String, String, String), String> {
+    let api_key = crate::clay::oauth::get_smithery_api_key()
+        .ok_or("No Smithery API key. Configure in Settings \u{2192} Connectors \u{2192} Clay.")?;
+    let config = state
         .config
         .read()
         .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
-        .ok_or_else(|| "No Clay credential configured (OAuth token or API key)".to_string())
+        .and_then(|g| g.as_ref().map(|c| c.clay.clone()));
+    let clay = config.ok_or("Config not loaded")?;
+    let ns = clay
+        .smithery_namespace
+        .ok_or("Smithery namespace not configured")?;
+    let conn = clay
+        .smithery_connection_id
+        .ok_or("Smithery connection ID not configured")?;
+    Ok((api_key, ns, conn))
 }
 
-/// Test Clay connection by attempting to connect and list tools.
+/// Test Clay connection by attempting to connect via Smithery.
 #[tauri::command]
 pub async fn test_clay_connection(
     state: State<'_, Arc<AppState>>,
 ) -> Result<bool, String> {
-    let api_key = resolve_clay_credential(&state)?;
+    let (api_key, ns, conn) = resolve_smithery_config(&state)?;
 
-    let client = crate::clay::client::ClayClient::connect(&api_key)
+    let client = crate::clay::client::ClayClient::connect(&api_key, &ns, &conn)
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -6282,9 +6288,9 @@ pub async fn enrich_person_from_clay(
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<EnrichmentResultData, String> {
-    let api_key = resolve_clay_credential(&state)?;
+    let (api_key, ns, conn) = resolve_smithery_config(&state)?;
 
-    let client = crate::clay::client::ClayClient::connect(&api_key)
+    let client = crate::clay::client::ClayClient::connect(&api_key, &ns, &conn)
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -6327,9 +6333,9 @@ pub async fn enrich_account_from_clay(
 
     let person_id = person_id.ok_or("No linked people found for this account")?;
 
-    let api_key = resolve_clay_credential(&state)?;
+    let (api_key, ns, conn) = resolve_smithery_config(&state)?;
 
-    let client = crate::clay::client::ClayClient::connect(&api_key)
+    let client = crate::clay::client::ClayClient::connect(&api_key, &ns, &conn)
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
@@ -6457,48 +6463,108 @@ pub fn get_enrichment_log(
 }
 
 // ---------------------------------------------------------------------------
-// Clay OAuth (I422)
+// Clay — Smithery Connect (I422)
 // ---------------------------------------------------------------------------
 
-/// Return the Clay OAuth authorization URL for the frontend to open.
+/// Auto-detect Smithery settings from the CLI config file.
 #[tauri::command]
-pub async fn start_clay_oauth(
-    _state: State<'_, Arc<AppState>>,
-) -> Result<String, String> {
-    Ok("https://app.clay.earth/oauth/authorize".to_string())
-}
+pub async fn detect_smithery_settings() -> Result<serde_json::Value, String> {
+    let settings_path = dirs::home_dir()
+        .ok_or("No home directory")?
+        .join("Library/Application Support/smithery/settings.json");
 
-/// Save a Clay OAuth token to the keychain (manual paste flow).
-#[tauri::command]
-pub async fn save_clay_oauth_token(
-    _state: State<'_, Arc<AppState>>,
-    token: String,
-) -> Result<(), String> {
-    let trimmed = token.trim().to_string();
-    if trimmed.is_empty() {
-        return Err("Token cannot be empty".to_string());
+    if !settings_path.exists() {
+        return Err("Smithery CLI not configured. Run: npx @smithery/cli login".to_string());
     }
-    crate::clay::oauth::save_clay_token(&trimmed)
-}
 
-/// Disconnect Clay by removing the OAuth token from keychain.
-#[tauri::command]
-pub async fn disconnect_clay(
-    _state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    crate::clay::oauth::delete_clay_token()
-}
+    let content = std::fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read Smithery settings: {}", e))?;
 
-/// Get Clay OAuth connection status.
-#[tauri::command]
-pub async fn get_clay_oauth_status(
-    _state: State<'_, Arc<AppState>>,
-) -> Result<serde_json::Value, String> {
-    let has_token = crate::clay::oauth::get_clay_token().is_some();
+    let val: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse Smithery settings: {}", e))?;
+
+    let api_key = val.get("apiKey").and_then(|v| v.as_str()).unwrap_or("");
+    let namespace = val.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
+
+    if api_key.is_empty() || namespace.is_empty() {
+        return Err("Smithery settings missing apiKey or namespace".to_string());
+    }
+
+    // Mask the API key for display (show first 8 chars)
+    let masked = if api_key.len() > 8 {
+        format!("{}...", &api_key[..8])
+    } else {
+        api_key.to_string()
+    };
+
     Ok(serde_json::json!({
-        "connected": has_token,
-        "method": if has_token { "oauth" } else { "none" }
+        "apiKey": api_key,
+        "apiKeyMasked": masked,
+        "namespace": namespace,
     }))
+}
+
+/// Save Smithery API key to keychain.
+#[tauri::command]
+pub async fn save_smithery_api_key(key: String) -> Result<(), String> {
+    let trimmed = key.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("API key cannot be empty".to_string());
+    }
+    crate::clay::oauth::save_smithery_api_key(&trimmed)
+}
+
+/// Save Smithery connection config (namespace + connection ID).
+#[tauri::command]
+pub fn set_smithery_connection(
+    namespace: String,
+    connection_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.smithery_namespace = Some(namespace.clone());
+        config.clay.smithery_connection_id = Some(connection_id.clone());
+    })?;
+    Ok(())
+}
+
+/// Disconnect Smithery — remove keychain entry and clear config fields.
+#[tauri::command]
+pub fn disconnect_smithery(state: State<Arc<AppState>>) -> Result<(), String> {
+    crate::clay::oauth::delete_smithery_api_key()?;
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.smithery_namespace = None;
+        config.clay.smithery_connection_id = None;
+    })?;
+    Ok(())
+}
+
+/// Get Smithery connection status.
+#[tauri::command]
+pub fn get_smithery_status(state: State<Arc<AppState>>) -> serde_json::Value {
+    let has_api_key = crate::clay::oauth::get_smithery_api_key().is_some();
+    let (namespace, connection_id) = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|c| {
+                (
+                    c.clay.smithery_namespace.clone(),
+                    c.clay.smithery_connection_id.clone(),
+                )
+            })
+        })
+        .unwrap_or((None, None));
+
+    let connected = has_api_key && namespace.is_some() && connection_id.is_some();
+
+    serde_json::json!({
+        "connected": connected,
+        "hasApiKey": has_api_key,
+        "namespace": namespace,
+        "connectionId": connection_id,
+    })
 }
 
 // =============================================================================
