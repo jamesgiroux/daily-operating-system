@@ -748,23 +748,39 @@ fn build_user_context_block(
     }
 
     // I417: Semantic retrieval of user context entries relevant to this entity
+    // I413 AC4: Also search file attachments for relevant content
     if let Some(name) = entity_name {
-        let matches = super::user_context::search_user_context(
+        let mut matches = super::user_context::search_user_context(
             db,
             embedding_model,
             name,
             2,    // top-2 results
             0.70, // similarity threshold (I413 AC4: raised from 0.50 to reduce noise)
         );
-        // TODO(I413 AC4): Also search content_embeddings joined to content_index
-        // WHERE content_index.entity_type = 'user_context' for file attachment retrieval.
-        // Requires embedding model reference for query embedding generation, which
-        // search_user_context already handles for context entries but the content_embeddings
-        // path for user_context files is not yet wired.
+
+        // Search user attachments (file embeddings)
+        let attachment_matches = super::user_context::search_user_attachments(
+            db,
+            embedding_model,
+            name,
+            2,    // top-2 attachment chunks
+            0.70, // same threshold for consistency
+        );
+
+        // Combine both sources, sort by score, keep top-4 total
+        matches.extend(attachment_matches);
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        matches.truncate(4);
+
         if !matches.is_empty() {
             let mut knowledge = String::from("Professional knowledge:");
             for m in &matches {
-                knowledge.push_str(&format!("\n- {}: {}", m.title, m.content));
+                let source_label = if m.source == "attachment" { " (document)" } else { "" };
+                knowledge.push_str(&format!("\n- {}{}: {}", m.title, source_label, m.content));
             }
             parts.push(knowledge);
         }
