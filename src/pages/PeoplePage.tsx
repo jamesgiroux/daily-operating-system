@@ -579,8 +579,8 @@ export default function PeoplePage() {
 // ─── Person Row ─────────────────────────────────────────────────────────────
 
 const relationshipRingColor: Record<string, string> = {
-  external: "var(--color-garden-larkspur)",
-  internal: "var(--color-text-tertiary)",
+  external: "var(--color-spice-turmeric)",
+  internal: "var(--color-garden-larkspur)",
   unknown: "var(--color-paper-linen)",
 };
 
