@@ -6399,8 +6399,8 @@ pub fn start_clay_bulk_enrich(
     // Drop the DB lock before signaling
     drop(db_guard);
 
-    // Wake the Clay poller immediately to process queued items
-    state.integrations.clay_poller_wake.notify_one();
+    // Wake the enrichment processor immediately to process queued items
+    state.integrations.enrichment_wake.notify_one();
 
     Ok(BulkEnrichResult {
         queued: total,

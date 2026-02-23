@@ -54,3 +54,4 @@ src-tauri/binaries/
 .setup-state.json
 .dailyos-setup-complete
 .dailyos-test
+tauri-dev.log
