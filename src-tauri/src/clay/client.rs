@@ -8,6 +8,20 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Deserialize an ID that may be either a JSON number or string.
+fn deserialize_id<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let val = serde_json::Value::deserialize(d)?;
+    match val {
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        serde_json::Value::String(s) => Ok(s),
+        _ => Ok(String::new()),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Response types
 // ---------------------------------------------------------------------------
 
@@ -15,7 +29,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClayContact {
-    #[serde(default, alias = "objectID")]
+    #[serde(default, alias = "objectID", deserialize_with = "deserialize_id")]
     pub id: String,
     #[serde(default, alias = "fullName", alias = "displayName")]
     pub name: Option<String>,
@@ -37,7 +51,7 @@ pub struct ClayContact {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClayContactDetail {
-    #[serde(default, alias = "objectID")]
+    #[serde(default, alias = "objectID", deserialize_with = "deserialize_id")]
     pub id: String,
     #[serde(default, alias = "fullName", alias = "displayName")]
     pub name: Option<String>,
@@ -306,15 +320,17 @@ impl ClayClient {
             )
             .await?;
 
-        // Smithery returns the contacts directly as a JSON array or object
-        // Try parsing as array first, then as single object
-        if let Ok(contacts) = serde_json::from_str::<Vec<ClayContact>>(&text) {
-            return Ok(contacts);
-        }
-
-        // Clay sometimes returns a wrapper object with contacts nested
+        // Smithery Clay returns: {"total": N, "results": [...]} or a bare array
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-            // Try common wrapper shapes
+            // Try {"results": [...]} wrapper (Smithery Clay format)
+            if let Some(arr) = val.get("results").and_then(|r| r.as_array()) {
+                let contacts: Vec<ClayContact> = arr
+                    .iter()
+                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                    .collect();
+                return Ok(contacts);
+            }
+            // Try bare array
             if let Some(arr) = val.as_array() {
                 let contacts: Vec<ClayContact> = arr
                     .iter()
@@ -322,7 +338,7 @@ impl ClayClient {
                     .collect();
                 return Ok(contacts);
             }
-            // Single contact returned
+            // Single contact
             if let Ok(contact) = serde_json::from_value::<ClayContact>(val) {
                 return Ok(vec![contact]);
             }
