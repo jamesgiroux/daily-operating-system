@@ -13,8 +13,8 @@ interface SmitheryStatus {
 
 interface SmitheryDetected {
   apiKey: string;
-  apiKeyMasked: string;
   namespace: string;
+  connectionId: string | null;
 }
 
 export default function ClayConnection() {
@@ -54,18 +54,22 @@ export default function ClayConnection() {
     setDetecting(true);
     try {
       const detected = await invoke<SmitheryDetected>("detect_smithery_settings");
-      // Save API key to keychain and namespace to config
+      // Save API key to keychain
       await invoke("save_smithery_api_key", { key: detected.apiKey });
+      // Save namespace + connection ID (if auto-detected) to config
       await invoke("set_smithery_connection", {
         namespace: detected.namespace,
-        connectionId: "",
+        connectionId: detected.connectionId ?? "",
       });
       setManualConnId("");
-      // Refresh and set namespace locally so the connection ID input renders
       const refreshed = await invoke<SmitheryStatus>("get_smithery_status");
-      // Manually set namespace since backend stored it
+      // Ensure namespace is visible even if backend stored empty connectionId
       setSmithery({ ...refreshed, namespace: detected.namespace });
-      toast("Smithery detected. Enter your Clay connection ID below.");
+      if (detected.connectionId) {
+        toast(`Clay connected via Smithery (${detected.connectionId})`);
+      } else {
+        toast("Smithery detected. Enter your Clay connection ID below.");
+      }
     } catch (err) {
       const msg = typeof err === "string" ? err : "Detection failed";
       toast.error(msg);
