@@ -1,7 +1,13 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { GoogleAuthStatus } from "@/types";
+
+interface SystemStatusPayload {
+  type: "pipeline_error" | "auth_expired";
+  message: string;
+}
 
 /**
  * Milestone operations worth toasting. During a morning workflow, the
@@ -60,6 +66,26 @@ export function useNotifications() {
         if (event.payload?.status === "tokenexpired") {
           toast.warning("Google token expired — reconnect in Settings", {
             duration: 10000,
+          });
+        }
+      }),
+    );
+
+    // System status events — pipeline errors and auth issues from backend
+    unlisteners.push(
+      listen<SystemStatusPayload>("system-status", (event) => {
+        const { type, message } = event.payload;
+        if (type === "auth_expired") {
+          toast.warning(message || "Google account needs reconnection", {
+            duration: 15000,
+          });
+        } else if (type === "pipeline_error") {
+          toast.error(message || "A pipeline operation failed", {
+            duration: 10000,
+            action: {
+              label: "Retry",
+              onClick: () => invoke("refresh_emails").catch(() => {}),
+            },
           });
         }
       }),

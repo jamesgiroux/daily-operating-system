@@ -213,6 +213,138 @@ pub fn process_file(
     result
 }
 
+/// Process a user attachment from _user/attachments/.
+///
+/// Unlike inbox processing, user attachments:
+/// - Stay in _user/attachments/ (no routing/move)
+/// - Are indexed as `user_context` entity type
+/// - Get embedded with `user_context` collection for semantic retrieval
+pub fn process_user_attachment(
+    workspace: &Path,
+    file_path: &Path,
+    db: Option<&crate::db::ActionDb>,
+) -> ProcessingResult {
+    if !file_path.exists() {
+        return ProcessingResult::Error {
+            message: format!("File not found: {}", file_path.display()),
+        };
+    }
+
+    // Validate file is within _user/attachments/
+    let attachments_dir = workspace.join("_user").join("attachments");
+    if !file_path.starts_with(&attachments_dir) {
+        return ProcessingResult::Error {
+            message: "File is not in _user/attachments/".to_string(),
+        };
+    }
+
+    let filename = match file_path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n.to_string(),
+        None => {
+            return ProcessingResult::Error {
+                message: "Invalid filename".to_string(),
+            }
+        }
+    };
+
+    // Detect format
+    let format = extract::detect_format(file_path);
+    if matches!(format, SupportedFormat::Unsupported) {
+        return ProcessingResult::Error {
+            message: format!(
+                "Unsupported file format: .{}",
+                file_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("unknown")
+            ),
+        };
+    }
+
+    // Extract text
+    let content = match extract::extract_text(file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return ProcessingResult::Error {
+                message: format!("Failed to extract text: {}", e),
+            }
+        }
+    };
+
+    // Index as a user_context content file in the DB
+    if let Some(db) = db {
+        let now = chrono::Utc::now().to_rfc3339();
+        let metadata = std::fs::metadata(file_path).ok();
+        let file_size = metadata.as_ref().map(|m| m.len() as i64).unwrap_or(0);
+        let modified_at = metadata
+            .and_then(|m| m.modified().ok())
+            .map(|t| {
+                let dt: chrono::DateTime<chrono::Utc> = t.into();
+                dt.to_rfc3339()
+            })
+            .unwrap_or_else(|| now.clone());
+
+        let relative_path = file_path
+            .strip_prefix(workspace)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| filename.clone());
+
+        let id = crate::util::slugify(&format!("user-context/{}", filename));
+
+        // Generate a mechanical summary
+        let summary = if !content.trim().is_empty() {
+            Some(crate::intelligence::mechanical_summary(&content, 500))
+        } else {
+            None
+        };
+
+        let record = crate::db::DbContentFile {
+            id,
+            entity_id: "user_context".to_string(),
+            entity_type: "user_context".to_string(),
+            filename: filename.clone(),
+            relative_path,
+            absolute_path: file_path.to_string_lossy().to_string(),
+            format: format!("{:?}", format),
+            file_size,
+            modified_at,
+            indexed_at: now.clone(),
+            extracted_at: Some(now.clone()),
+            summary,
+            embeddings_generated_at: None,
+            content_type: "user_context".to_string(),
+            priority: 10, // High priority — user-provided context
+        };
+
+        if let Err(e) = db.upsert_content_file(&record) {
+            log::warn!("Failed to index user attachment '{}': {}", filename, e);
+        } else {
+            log::info!("Indexed user attachment '{}' as user_context", filename);
+        }
+
+        // Log processing
+        let log_entry = DbProcessingLog {
+            id: uuid::Uuid::new_v4().to_string(),
+            filename: filename.clone(),
+            source_path: file_path.display().to_string(),
+            destination_path: Some(file_path.display().to_string()),
+            classification: "user_context".to_string(),
+            status: "completed".to_string(),
+            processed_at: Some(now.clone()),
+            error_message: None,
+            created_at: now,
+        };
+        if let Err(e) = db.insert_processing_log(&log_entry) {
+            log::warn!("Failed to log user attachment processing: {}", e);
+        }
+    }
+
+    ProcessingResult::Routed {
+        classification: "user_context".to_string(),
+        destination: file_path.display().to_string(),
+    }
+}
+
 /// Process all files in the inbox.
 ///
 /// Returns a summary of results: (routed, needs_enrichment, errors).
@@ -487,5 +619,60 @@ mod tests {
             }
             other => panic!("Expected Routed, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_process_user_attachment_indexes_as_user_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+
+        // Create _user/attachments/ directory
+        let attachments_dir = workspace.join("_user").join("attachments");
+        std::fs::create_dir_all(&attachments_dir).unwrap();
+
+        // Write a test file
+        let file_path = attachments_dir.join("my-resume.md");
+        std::fs::write(&file_path, "# Resume\n\nSenior CS Manager with 10 years experience.").unwrap();
+
+        let result = process_user_attachment(workspace, &file_path, None);
+
+        match &result {
+            ProcessingResult::Routed { classification, destination } => {
+                assert_eq!(classification, "user_context");
+                // File should stay in place
+                assert_eq!(destination, &file_path.display().to_string());
+                assert!(file_path.exists(), "File should not be moved");
+            }
+            other => panic!("Expected Routed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_process_user_attachment_rejects_outside_attachments() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+
+        // Create a file outside _user/attachments/
+        std::fs::create_dir_all(workspace.join("_inbox")).unwrap();
+        let file_path = workspace.join("_inbox").join("some-file.md");
+        std::fs::write(&file_path, "content").unwrap();
+
+        let result = process_user_attachment(workspace, &file_path, None);
+        assert!(matches!(result, ProcessingResult::Error { .. }));
+    }
+
+    #[test]
+    fn test_process_user_attachment_unsupported_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+
+        let attachments_dir = workspace.join("_user").join("attachments");
+        std::fs::create_dir_all(&attachments_dir).unwrap();
+
+        let file_path = attachments_dir.join("photo.png");
+        std::fs::write(&file_path, [0x89, 0x50, 0x4E, 0x47]).unwrap();
+
+        let result = process_user_attachment(workspace, &file_path, None);
+        assert!(matches!(result, ProcessingResult::Error { .. }));
     }
 }
