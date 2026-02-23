@@ -14,6 +14,8 @@ interface EntityRowProps {
   subtitle?: ReactNode;
   /** Right-aligned metadata slot */
   children?: ReactNode;
+  /** Optional avatar element to replace the accent dot */
+  avatar?: ReactNode;
 }
 
 export function EntityRow({
@@ -26,6 +28,7 @@ export function EntityRow({
   nameSuffix,
   subtitle,
   children,
+  avatar,
 }: EntityRowProps) {
   return (
     <Link
@@ -41,17 +44,19 @@ export function EntityRow({
         textDecoration: "none",
       }}
     >
-      {/* Accent dot */}
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          background: dotColor,
-          flexShrink: 0,
-          marginTop: 8,
-        }}
-      />
+      {/* Avatar or accent dot */}
+      {avatar ?? (
+        <div
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            background: dotColor,
+            flexShrink: 0,
+            marginTop: 8,
+          }}
+        />
+      )}
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>

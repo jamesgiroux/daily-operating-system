@@ -269,6 +269,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Check for recently-ended meetings needing Quill transcript sync
                 crate::quill::poller::check_ended_meetings_for_sync(&state);
 
+                // Wake Granola poller immediately when meetings end (I424)
+                state.integrations.granola_poller_wake.notify_one();
+
                 // Notify frontend about new preps
                 for _ in 0..new_preps {
                     let _ = app_handle.emit("prep-ready", ());

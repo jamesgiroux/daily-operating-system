@@ -1,18 +1,25 @@
-//! MCP client for communicating with the Clay MCP server.
+//! MCP client for communicating with the Clay MCP server via Smithery Connect.
 //!
-//! Dual transport strategy:
-//! 1. SSE primary — connects to `https://mcp.clay.earth/mcp` with Bearer auth
-//! 2. Stdio fallback — spawns `npx -y @clayhq/clay-mcp` as a child process
-//!
-//! Since the rmcp crate in this project does not include an SSE transport feature,
-//! the SSE path is attempted via raw reqwest + manual JSON-RPC, and the stdio path
-//! uses the standard rmcp `TokioChildProcess` transport (same pattern as Gravatar).
+//! Smithery manages Clay OAuth and credentials. DailyOS sends JSON-RPC over
+//! HTTP to `https://api.smithery.ai/connect/{namespace}/{connectionId}/mcp`
+//! with a Smithery API key as Bearer auth.
 
-use rmcp::model::CallToolRequestParam;
-use rmcp::service::RunningService;
-use rmcp::transport::child_process::TokioChildProcess;
-use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Deserialize an ID that may be either a JSON number or string.
+fn deserialize_id<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let val = serde_json::Value::deserialize(d)?;
+    match val {
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        serde_json::Value::String(s) => Ok(s),
+        _ => Ok(String::new()),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -22,44 +29,54 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClayContact {
-    #[serde(default)]
-    pub id: String,
-    #[serde(default)]
+    #[serde(default, alias = "objectID")]
+    pub id: serde_json::Value,
+    #[serde(default, alias = "fullName", alias = "displayName")]
     pub name: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "organization")]
     pub company: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "avatarURL")]
     pub photo_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "linkedinURL")]
     pub linkedin_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "twitterHandle")]
     pub twitter_handle: Option<String>,
+}
+
+impl ClayContact {
+    /// Extract contact ID as a string (handles both number and string JSON values).
+    pub fn id_str(&self) -> String {
+        match &self.id {
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::String(s) => s.clone(),
+            _ => String::new(),
+        }
+    }
 }
 
 /// Extended contact detail with bio, title history, and company firmographics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClayContactDetail {
-    // Base fields
-    #[serde(default)]
-    pub id: String,
-    #[serde(default)]
+    #[serde(default, alias = "objectID")]
+    pub id: serde_json::Value,
+    #[serde(default, alias = "fullName", alias = "displayName")]
     pub name: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "organization")]
     pub company: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "avatarURL")]
     pub photo_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "linkedinURL")]
     pub linkedin_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "twitterHandle")]
     pub twitter_handle: Option<String>,
 
     // Extended fields
@@ -67,7 +84,7 @@ pub struct ClayContactDetail {
     pub bio: Option<String>,
     #[serde(default)]
     pub phone: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "organizations")]
     pub title_history: Vec<TitleHistoryEntry>,
     #[serde(default)]
     pub company_industry: Option<String>,
@@ -85,24 +102,12 @@ pub struct ClayContactDetail {
 pub struct TitleHistoryEntry {
     #[serde(default)]
     pub title: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "name")]
     pub company: Option<String>,
     #[serde(default)]
     pub start_date: Option<String>,
     #[serde(default)]
     pub end_date: Option<String>,
-}
-
-/// Interaction statistics for a contact.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClayContactStats {
-    #[serde(default)]
-    pub total_interactions: u64,
-    #[serde(default)]
-    pub last_interaction_at: Option<String>,
-    #[serde(default)]
-    pub top_channels: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -112,225 +117,422 @@ pub struct ClayContactStats {
 /// Errors from Clay MCP operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ClayError {
-    #[error("npx not found on PATH")]
-    NpxNotFound,
-    #[error("Failed to spawn npx process: {0}")]
-    SpawnFailed(String),
     #[error("MCP connection failed: {0}")]
     ConnectionFailed(String),
     #[error("Tool call failed: {0}")]
     ToolCallFailed(String),
     #[error("Parse error: {0}")]
     ParseError(String),
-    #[error("No API key configured for Clay")]
-    NoApiKey,
+    #[error("No Smithery credentials configured")]
+    NoCredentials,
 }
 
 // ---------------------------------------------------------------------------
-// Transport wrapper
+// JSON-RPC types
 // ---------------------------------------------------------------------------
 
-/// Which transport the client connected through.
-#[derive(Debug)]
-enum Transport {
-    /// Connected via SSE to mcp.clay.earth (future — reserved).
-    /// Currently unused because rmcp doesn't ship an SSE transport feature,
-    /// but the variant is kept so the enum is non-exhaustive-ready.
-    #[allow(dead_code)]
-    Sse,
-    /// Connected via stdio child process (npx @clayhq/clay-mcp).
-    Stdio,
+#[derive(Serialize)]
+struct JsonRpcRequest {
+    jsonrpc: &'static str,
+    id: u64,
+    method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct JsonRpcResponse {
+    #[serde(default)]
+    result: Option<serde_json::Value>,
+    #[serde(default)]
+    error: Option<JsonRpcError>,
+}
+
+#[derive(Deserialize)]
+struct JsonRpcError {
+    #[serde(default)]
+    message: String,
 }
 
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
-/// MCP client wrapper for the Clay server.
+/// MCP client wrapper for Clay via Smithery Connect.
 pub struct ClayClient {
-    service: RunningService<RoleClient, ()>,
-    #[allow(dead_code)]
-    transport: Transport,
+    client: reqwest::Client,
+    api_key: String,
+    endpoint: String,
+    next_id: AtomicU64,
 }
 
 impl ClayClient {
-    /// Connect to the Clay MCP server.
+    /// Connect to Clay MCP via Smithery Connect.
     ///
-    /// Strategy:
-    /// 1. Try SSE to `https://mcp.clay.earth/mcp` (currently skipped — rmcp has
-    ///    no SSE transport feature compiled in; left as a TODO for when the crate
-    ///    adds `transport-sse`).
-    /// 2. Fall back to spawning `npx -y @clayhq/clay-mcp` via stdio.
-    ///
-    /// The API key is passed as `CLAY_API_KEY` env var to the child process.
-    pub async fn connect(api_key: &str) -> Result<Self, ClayError> {
-        if api_key.is_empty() {
-            return Err(ClayError::NoApiKey);
+    /// Endpoint: `https://api.smithery.ai/connect/{namespace}/{connection_id}/mcp`
+    pub async fn connect(
+        api_key: &str,
+        namespace: &str,
+        connection_id: &str,
+    ) -> Result<Self, ClayError> {
+        if api_key.is_empty() || namespace.is_empty() || connection_id.is_empty() {
+            return Err(ClayError::NoCredentials);
         }
 
-        // TODO: When rmcp gains `transport-sse`, try SSE first:
-        //   SseTransport::new("https://mcp.clay.earth/mcp")
-        //       .with_header("Authorization", format!("Bearer {}", api_key))
-        // For now, go straight to stdio fallback.
+        let endpoint = format!(
+            "https://api.smithery.ai/connect/{}/{}/mcp",
+            namespace, connection_id
+        );
+        let client = reqwest::Client::new();
 
-        Self::connect_stdio(api_key).await
+        let me = Self {
+            client,
+            api_key: api_key.to_string(),
+            endpoint,
+            next_id: AtomicU64::new(1),
+        };
+
+        // Verify connection with initialize handshake
+        let init_request = JsonRpcRequest {
+            jsonrpc: "2.0",
+            id: me.next_id.fetch_add(1, Ordering::Relaxed),
+            method: "initialize".to_string(),
+            params: Some(serde_json::json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "dailyos",
+                    "version": env!("CARGO_PKG_VERSION"),
+                }
+            })),
+        };
+
+        let response = me
+            .client
+            .post(&me.endpoint)
+            .header("Authorization", format!("Bearer {}", me.api_key))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&init_request)
+            .send()
+            .await
+            .map_err(|e| ClayError::ConnectionFailed(format!("Initialize failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(ClayError::ConnectionFailed(format!(
+                "Initialize returned status {}",
+                response.status()
+            )));
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ClayError::ConnectionFailed(format!("Read init response: {}", e)))?;
+
+        let json_text = extract_json_from_response(&body);
+        let resp: JsonRpcResponse = serde_json::from_str(&json_text).map_err(|e| {
+            ClayError::ConnectionFailed(format!("Parse init response: {}: {}", e, body))
+        })?;
+
+        if let Some(err) = resp.error {
+            return Err(ClayError::ConnectionFailed(format!(
+                "Initialize error: {}",
+                err.message
+            )));
+        }
+
+        // Send initialized notification (fire-and-forget, no id for notifications)
+        let notif = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        });
+
+        let _ = me
+            .client
+            .post(&me.endpoint)
+            .header("Authorization", format!("Bearer {}", me.api_key))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&notif)
+            .send()
+            .await;
+
+        log::info!("Clay MCP connected via Smithery");
+        Ok(me)
     }
 
-    /// Stdio fallback: spawn `npx -y @clayhq/clay-mcp`.
-    async fn connect_stdio(api_key: &str) -> Result<Self, ClayError> {
-        let npx_path = crate::util::resolve_npx_binary()
-            .ok_or(ClayError::NpxNotFound)?;
+    // -----------------------------------------------------------------------
+    // Internal: JSON-RPC tool call
+    // -----------------------------------------------------------------------
 
-        let mut cmd = tokio::process::Command::new(npx_path);
-        cmd.arg("-y").arg("@clayhq/clay-mcp");
-        cmd.env("CLAY_API_KEY", api_key);
+    async fn call_tool_inner(
+        &self,
+        name: String,
+        arguments: serde_json::Value,
+    ) -> Result<String, ClayError> {
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0",
+            id: self.next_id.fetch_add(1, Ordering::Relaxed),
+            method: "tools/call".to_string(),
+            params: Some(serde_json::json!({
+                "name": name,
+                "arguments": arguments.as_object(),
+            })),
+        };
 
-        let transport = TokioChildProcess::new(&mut cmd)
-            .map_err(|e| ClayError::SpawnFailed(e.to_string()))?;
-
-        let service = ()
-            .serve(transport)
+        let response = self
+            .client
+            .post(&self.endpoint)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&request)
+            .send()
             .await
-            .map_err(|e| ClayError::ConnectionFailed(e.to_string()))?;
+            .map_err(|e| ClayError::ToolCallFailed(format!("HTTP request failed: {}", e)))?;
 
-        Ok(Self {
-            service,
-            transport: Transport::Stdio,
-        })
+        if !response.status().is_success() {
+            return Err(ClayError::ToolCallFailed(format!(
+                "HTTP {} from Smithery",
+                response.status()
+            )));
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ClayError::ToolCallFailed(format!("Read response: {}", e)))?;
+
+        let json_text = extract_json_from_response(&body);
+        let resp: JsonRpcResponse = serde_json::from_str(&json_text).map_err(|e| {
+            ClayError::ParseError(format!("JSON-RPC parse: {}: {}", e, body))
+        })?;
+
+        if let Some(err) = resp.error {
+            return Err(ClayError::ToolCallFailed(err.message));
+        }
+
+        // Extract text content from MCP tool result
+        let result = resp.result.unwrap_or(serde_json::Value::Null);
+        extract_tool_text(&result)
     }
 
     // -----------------------------------------------------------------------
     // Tool methods
     // -----------------------------------------------------------------------
 
-    /// Search for contacts matching a free-text query (name, email, company, etc.).
+    /// Search for contacts matching a query (email, name, keywords).
     pub async fn search_contact(&self, query: &str) -> Result<Vec<ClayContact>, ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "search_contacts".into(),
-                arguments: serde_json::json!({ "query": query })
-                    .as_object()
-                    .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+        // Use name filter for name queries, keywords for emails
+        let args = if query.contains('@') {
+            serde_json::json!({ "keywords": [query], "limit": 10 })
+        } else {
+            serde_json::json!({ "name": [query], "limit": 10 })
+        };
 
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
+        let text = self
+            .call_tool_inner("searchContacts".to_string(), args)
+            .await?;
 
-        let text = Self::extract_text(&result);
-        serde_json::from_str(&text).map_err(|e| {
-            ClayError::ParseError(format!("search_contacts response: {}: {}", e, text))
-        })
+        // Smithery Clay returns: {"total": N, "results": [...]}
+        let val: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            ClayError::ParseError(format!("searchContacts: {}: {}", e, &text[..text.len().min(200)]))
+        })?;
+
+        let arr = val.get("results").and_then(|r| r.as_array())
+            .or_else(|| val.as_array());
+
+        let contacts = match arr {
+            Some(arr) => arr.iter().filter_map(|v| {
+                match serde_json::from_value::<ClayContact>(v.clone()) {
+                    Ok(mut contact) => {
+                        // Smithery search results don't have an email field — but if
+                        // displayName looks like an email, use it
+                        if contact.email.is_none() {
+                            if let Some(name) = &contact.name {
+                                if name.contains('@') {
+                                    contact.email = Some(name.clone());
+                                }
+                            }
+                        }
+                        // Skip contacts with empty IDs rather than silently defaulting
+                        if contact.id_str().is_empty() {
+                            log::warn!(
+                                "Enrichment: skipping Clay contact with empty id: {:?}",
+                                v.get("displayName").or_else(|| v.get("name"))
+                            );
+                            None
+                        } else {
+                            Some(contact)
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Enrichment: failed to parse Clay contact row: {} — {}",
+                            e,
+                            &v.to_string()[..v.to_string().len().min(100)]
+                        );
+                        None // Skip bad rows, never silently default
+                    }
+                }
+            }).collect(),
+            None => vec![],
+        };
+
+        Ok(contacts)
     }
 
     /// Fetch full detail for a specific contact by ID.
+    ///
+    /// Smithery Clay returns a different schema than our struct, so we parse
+    /// the raw JSON and extract fields manually.
     pub async fn get_contact_detail(
         &self,
         contact_id: &str,
     ) -> Result<ClayContactDetail, ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "get_contact".into(),
-                arguments: serde_json::json!({ "contactId": contact_id })
-                    .as_object()
-                    .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+        // Smithery Clay requires contact_id as a number
+        let id_num: u64 = contact_id.parse::<u64>().map_err(|_| {
+            ClayError::ToolCallFailed(format!("contact_id '{}' is not a valid number", contact_id))
+        })?;
 
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
+        let text = self
+            .call_tool_inner(
+                "getContact".to_string(),
+                serde_json::json!({ "contact_id": id_num }),
+            )
+            .await?;
 
-        let text = Self::extract_text(&result);
-        serde_json::from_str(&text).map_err(|e| {
-            ClayError::ParseError(format!("get_contact response: {}: {}", e, text))
-        })
-    }
+        let raw: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+            ClayError::ParseError(format!("getContact JSON: {}: {}", e, &text[..text.len().min(200)]))
+        })?;
 
-    /// Fetch interaction statistics for a contact.
-    pub async fn get_contact_stats(
-        &self,
-        contact_id: &str,
-    ) -> Result<ClayContactStats, ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "get_contact_stats".into(),
-                arguments: serde_json::json!({ "contactId": contact_id })
-                    .as_object()
-                    .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+        // Extract first email from emails array
+        let email = raw.get("emails")
+            .and_then(|e| e.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
+        // Extract first phone from phone_numbers array
+        let phone = raw.get("phone_numbers")
+            .and_then(|p| p.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
-        let text = Self::extract_text(&result);
-        serde_json::from_str(&text).map_err(|e| {
-            ClayError::ParseError(format!("get_contact_stats response: {}: {}", e, text))
+        // Extract linkedin/twitter from social_links array
+        let social_links: Vec<&str> = raw.get("social_links")
+            .and_then(|s| s.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+
+        let linkedin_url = social_links.iter()
+            .find(|u| u.contains("linkedin.com"))
+            .map(|u| u.to_string());
+        let twitter_handle = social_links.iter()
+            .find(|u| u.contains("twitter.com") || u.contains("x.com"))
+            .map(|u| u.to_string());
+
+        // Extract work history and derive current title/company
+        let work_history: Vec<TitleHistoryEntry> = raw.get("work_history")
+            .and_then(|w| w.as_array())
+            .map(|arr| arr.iter().map(|entry| TitleHistoryEntry {
+                title: entry.get("title").and_then(|t| t.as_str()).map(String::from),
+                company: entry.get("company").and_then(|c| c.as_str()).map(String::from),
+                start_date: entry.get("start_year").map(|y| y.to_string()),
+                end_date: entry.get("end_year").map(|y| y.to_string()),
+            }).collect())
+            .unwrap_or_default();
+
+        let current_job = work_history.first();
+        let title = current_job.and_then(|j| j.title.clone());
+        let company = current_job.and_then(|j| j.company.clone());
+
+        Ok(ClayContactDetail {
+            id: serde_json::Value::String(contact_id.to_string()),
+            name: raw.get("displayName").or_else(|| raw.get("name"))
+                .and_then(|n| n.as_str()).map(String::from),
+            email,
+            title,
+            company,
+            photo_url: raw.get("avatarURL").and_then(|u| u.as_str()).map(String::from),
+            linkedin_url,
+            twitter_handle,
+            bio: raw.get("bio").and_then(|b| b.as_str()).map(String::from),
+            phone,
+            title_history: work_history,
+            // Firmographics not available from Smithery getContact
+            company_industry: None,
+            company_size: None,
+            company_hq: raw.get("location").and_then(|l| l.as_str()).map(String::from),
+            company_funding: None,
         })
     }
 
     /// Add a note to a contact record in Clay.
     pub async fn add_note(&self, contact_id: &str, note: &str) -> Result<(), ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "add_note".into(),
-                arguments: serde_json::json!({
-                    "contactId": contact_id,
-                    "note": note,
-                })
-                .as_object()
-                .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+        let id_num: u64 = contact_id.parse::<u64>().map_err(|_| {
+            ClayError::ToolCallFailed(format!("contact_id '{}' is not a valid number", contact_id))
+        })?;
 
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
-
+        self.call_tool_inner(
+            "createNote".to_string(),
+            serde_json::json!({
+                "contact_id": id_num,
+                "content": note,
+            }),
+        )
+        .await?;
         Ok(())
     }
 
-    /// Disconnect from the Clay MCP server, shutting down the child process.
+    /// Disconnect (no-op for stateless HTTP).
     pub async fn disconnect(self) {
-        let _ = self.service.cancel().await;
+        // Smithery Connect is stateless HTTP — nothing to close
     }
+}
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Response parsing helpers
+// ---------------------------------------------------------------------------
 
-    /// Verify that npx is available (checks PATH and common install locations).
-    pub fn npx_available() -> bool {
-        crate::util::resolve_npx_binary().is_some()
+/// Extract JSON from a response body that may be either raw JSON or SSE format.
+/// Smithery may return SSE-formatted responses with `data:` prefixed lines.
+fn extract_json_from_response(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.starts_with('{') {
+        return trimmed.to_string();
     }
+    // Look for `data:` lines in SSE format
+    for line in trimmed.lines() {
+        let line = line.trim();
+        if let Some(data) = line.strip_prefix("data:") {
+            let data = data.trim();
+            if !data.is_empty() && data != "[DONE]" && data.starts_with('{') {
+                return data.to_string();
+            }
+        }
+    }
+    trimmed.to_string()
+}
 
-    /// Concatenate all text content from a tool call result.
-    fn extract_text(result: &rmcp::model::CallToolResult) -> String {
-        result
-            .content
+/// Extract text content from a JSON-RPC tool call result.
+/// MCP tool results have the shape: `{ "content": [{ "type": "text", "text": "..." }] }`
+fn extract_tool_text(result: &serde_json::Value) -> Result<String, ClayError> {
+    if let Some(content) = result.get("content").and_then(|c| c.as_array()) {
+        let text: String = content
             .iter()
-            .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
-            .collect()
-    }
-
-    /// Extract a human-readable error message from a tool call result.
-    fn extract_error_text(result: &rmcp::model::CallToolResult) -> String {
-        result
-            .content
-            .first()
-            .and_then(|c| c.as_text())
-            .map(|t| t.text.clone())
-            .unwrap_or_else(|| "Unknown error".to_string())
+            .filter_map(|item| {
+                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    item.get("text").and_then(|t| t.as_str()).map(String::from)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok(text)
+    } else {
+        Ok(result.to_string())
     }
 }

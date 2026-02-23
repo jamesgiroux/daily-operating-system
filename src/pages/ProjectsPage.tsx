@@ -13,7 +13,6 @@ import {
   EntityListHeader,
   EntityListEndMark,
   ArchiveToggle,
-  FilterTabs,
 } from "@/components/entity/EntityListShell";
 import { EntityRow } from "@/components/entity/EntityRow";
 import { usePersonality } from "@/hooks/usePersonality";
@@ -33,10 +32,6 @@ interface ArchivedProject {
 }
 
 type ArchiveTab = "active" | "archived";
-type StatusTab = "all" | "active" | "on_hold" | "completed";
-
-const statusTabs: readonly StatusTab[] = ["all", "active", "on_hold", "completed"];
-
 const statusDotColor: Record<string, string> = {
   active: "var(--color-garden-sage)",
   on_hold: "var(--color-spice-turmeric)",
@@ -49,16 +44,11 @@ const statusLabel: Record<string, string> = {
   completed: "Completed",
 };
 
-const statusTabLabels: Partial<Record<StatusTab, string>> = {
-  on_hold: "on hold",
-};
-
 export default function ProjectsPage() {
   const { personality } = usePersonality();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusTab, setStatusTab] = useState<StatusTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -177,16 +167,13 @@ export default function ProjectsPage() {
     setExpandedParents(next);
   }
 
-  // Filters
-  const statusFiltered =
-    statusTab === "all"
-      ? projects.filter((p) => !p.archived)
-      : projects.filter((p) => !p.archived && p.status === statusTab);
+  // Filters — archived/active split handled by archiveTab; no status sub-filter
+  const activeProjects = projects.filter((p) => !p.archived);
 
   const filtered = useMemo(() => {
-    if (!searchQuery) return statusFiltered;
+    if (!searchQuery) return activeProjects;
     const q = searchQuery.toLowerCase();
-    return statusFiltered.filter((p) => {
+    return activeProjects.filter((p) => {
       if (p.name.toLowerCase().includes(q) || (p.owner ?? "").toLowerCase().includes(q)) {
         return true;
       }
@@ -196,7 +183,7 @@ export default function ProjectsPage() {
       }
       return false;
     });
-  }, [searchQuery, statusFiltered, childrenCache]);
+  }, [searchQuery, activeProjects, childrenCache]);
 
   const filteredArchived = searchQuery
     ? archivedProjects.filter(
@@ -208,7 +195,7 @@ export default function ProjectsPage() {
 
   const isArchived = archiveTab === "archived";
   const displayList = isArchived ? filteredArchived : filtered;
-  const activeCount = projects.filter((p) => p.status === "active").length;
+  const activeCount = activeProjects.length;
 
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -314,14 +301,6 @@ export default function ProjectsPage() {
         searchPlaceholder="⌘  Search projects..."
       >
         <ArchiveToggle archiveTab={archiveTab} onTabChange={setArchiveTab} />
-        {!isArchived && (
-          <FilterTabs
-            tabs={statusTabs}
-            active={statusTab}
-            onChange={setStatusTab}
-            labelMap={statusTabLabels}
-          />
-        )}
       </EntityListHeader>
 
       {/* Create form */}
