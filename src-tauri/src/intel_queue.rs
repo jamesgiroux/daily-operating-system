@@ -243,7 +243,12 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
     let prune_interval = 60 / POLL_INTERVAL_SECS;
 
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        // Adaptive sleep: back off when queue is empty + user is active; wake instantly on enqueue
+        let interval = crate::activity::adaptive_poll_interval(&state.activity, state.intel_queue.is_empty());
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {}
+            _ = state.integrations.intel_queue_wake.notified() => {}
+        }
 
         // Periodic pruning of stale debounce entries (I234)
         polls_since_prune += 1;
@@ -303,6 +308,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Phase 2: Run PTY enrichment (no DB lock held)
+        // Acquire heavy-work semaphore — limits concurrent expensive operations
+        // (PTY subprocess, embedding inference) to one at a time.
+        let _permit = match state.heavy_work_semaphore.acquire().await {
+            Ok(permit) => permit,
+            Err(_) => {
+                log::warn!("IntelProcessor: heavy_work_semaphore closed, stopping");
+                return;
+            }
+        };
+
         let ai_config = state
             .config
             .read()
@@ -328,6 +343,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             // Multi-entity batch — combined prompt with delimiters (I289)
             run_batch_enrichment(inputs, &ai_config)
         };
+
+        // Release permit before Phase 3 — writing results is cheap, doesn't need it
+        drop(_permit);
 
         // Phase 3 + 4: Write results and emit events for each entity
         for (request, input, intel) in &results {
@@ -859,6 +877,7 @@ pub fn write_enrichment_results(
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
                 });
+                _state.integrations.intel_queue_wake.notify_one();
                 log::info!(
                     "IntelProcessor: enqueued parent {} for portfolio refresh after child {} update",
                     parent_id,
@@ -876,6 +895,7 @@ pub fn write_enrichment_results(
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
                 });
+                _state.integrations.intel_queue_wake.notify_one();
                 log::info!(
                     "IntelProcessor: enqueued parent project {} for portfolio refresh after child {} update",
                     parent_id,
@@ -952,6 +972,9 @@ fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: &str) {
                 priority: crate::meeting_prep_queue::PrepPriority::Background,
                 requested_at: std::time::Instant::now(),
             });
+    }
+    if !meeting_ids.is_empty() {
+        state.integrations.prep_queue_wake.notify_one();
     }
 
     log::info!(

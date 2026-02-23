@@ -1051,6 +1051,7 @@ pub fn create_child_account_cmd(
         priority: crate::intel_queue::IntelPriority::ContentChange,
         requested_at: std::time::Instant::now(),
     });
+    state.integrations.intel_queue_wake.notify_one();
 
     Ok(crate::commands::CreateChildAccountResult { id: child.id })
 }

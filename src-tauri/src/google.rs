@@ -159,7 +159,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
     loop {
         // Check if we should poll
         if !should_poll(&state) {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            let interval = crate::activity::adaptive_network_interval(&state.activity);
+            tokio::time::sleep(interval).await;
             continue;
         }
 
@@ -167,7 +168,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let workspace = match get_workspace(&state) {
             Some(p) => p,
             None => {
-                tokio::time::sleep(Duration::from_secs(30)).await;
+                let interval = crate::activity::adaptive_network_interval(&state.activity);
+                tokio::time::sleep(interval).await;
                 continue;
             }
         };
@@ -295,9 +297,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
-        // Sleep between polls
-        let interval = get_poll_interval(&state);
-        tokio::time::sleep(Duration::from_secs(interval * 60)).await;
+        // Sleep between polls -- adaptive based on user activity
+        let interval = crate::activity::adaptive_network_interval(&state.activity);
+        tokio::time::sleep(interval).await;
     }
 }
 
@@ -1007,7 +1009,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     loop {
         // Check if we should poll
         if !should_poll(&state) {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
             continue;
         }
 
@@ -1015,7 +1017,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let workspace = match get_workspace(&state) {
             Some(p) => p,
             None => {
-                tokio::time::sleep(Duration::from_secs(30)).await;
+                tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
                 continue;
             }
         };
@@ -1024,14 +1026,14 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let today_status = state.get_workflow_status(crate::types::WorkflowId::Today);
         if matches!(today_status, crate::types::WorkflowStatus::Running { .. }) {
             log::debug!("Email poll: skipping — /today pipeline is running");
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
             continue;
         }
 
         let data_dir = workspace.join("_today").join("data");
         if !data_dir.exists() {
             // No _today/data/ means briefing hasn't run yet
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
             continue;
         }
 
@@ -1096,21 +1098,45 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 _ => {}
                             }
 
-                            // I395: Re-score after enrichment so new intelligence is reflected
-                            if let Ok(guard) = state.db.lock() {
-                                if let Some(db) = guard.as_ref() {
-                                    let model = state.embedding_model.clone();
-                                    let active = db.get_all_active_emails().unwrap_or_default();
-                                    let scores = crate::signals::email_scoring::score_emails(
-                                        db, Some(&model), &active,
-                                    );
-                                    for (email_id, score, reason) in &scores {
-                                        let _ = db.set_relevance_score(email_id, *score, reason);
+                            // I395: Re-score after enrichment so new intelligence is reflected.
+                            // Split-lock: read emails + score outside lock, write scores under lock.
+                            // Scoring involves embedding inference which is CPU-heavy (100-500ms/email).
+                            // Holding the DB lock during inference blocks all UI commands (I457).
+                            let scores = {
+                                let active = if let Ok(guard) = state.db.lock() {
+                                    guard.as_ref().and_then(|db| db.get_all_active_emails().ok()).unwrap_or_default()
+                                } else {
+                                    Vec::new()
+                                };
+                                if !active.is_empty() {
+                                    // Open a separate DB connection for scoring so the main lock is free.
+                                    // score_emails needs DB for entity linkage + meeting context queries.
+                                    match crate::db::ActionDb::open() {
+                                        Ok(scoring_db) => {
+                                            let model = state.embedding_model.clone();
+                                            crate::signals::email_scoring::score_emails(
+                                                &scoring_db, Some(&model), &active,
+                                            )
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Email poll: failed to open scoring DB: {}", e);
+                                            Vec::new()
+                                        }
                                     }
-                                    if !scores.is_empty() {
-                                        log::info!("Email poll: scored {} emails", scores.len());
+                                } else {
+                                    Vec::new()
+                                }
+                            };
+                            // Write scores back under the main lock (fast — just UPDATEs).
+                            if !scores.is_empty() {
+                                if let Ok(guard) = state.db.lock() {
+                                    if let Some(db) = guard.as_ref() {
+                                        for (email_id, score, reason) in &scores {
+                                            let _ = db.set_relevance_score(email_id, *score, reason);
+                                        }
                                     }
                                 }
+                                log::info!("Email poll: scored {} emails", scores.len());
                             }
 
                             // Final event so frontend picks up enriched data
@@ -1130,9 +1156,8 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
-        // Sleep between polls, interruptible by wake signal
-        let interval = get_email_poll_interval(&state);
-        let sleep = tokio::time::sleep(Duration::from_secs(interval * 60));
+        // Sleep between polls, interruptible by wake signal -- adaptive based on user activity
+        let sleep = tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity));
         let wake = state.integrations.email_poller_wake.notified();
         tokio::pin!(sleep);
         tokio::pin!(wake);
