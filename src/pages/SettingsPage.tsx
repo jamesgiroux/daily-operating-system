@@ -6,7 +6,7 @@ import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import YouCard from "@/components/settings/YouCard";
-import ConnectionsGrid from "@/components/settings/ConnectionsGrid";
+import ConnectorsGrid from "@/components/settings/ConnectorsGrid";
 import SystemStatus from "@/components/settings/SystemStatus";
 import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
 
@@ -19,7 +19,7 @@ import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
 const LEGACY_TAB_MAP: Record<string, string> = {
   profile: "you",
   role: "you",
-  integrations: "connections",
+  integrations: "connectors",
   workflows: "system",
   intelligence: "system",
   hygiene: "system",
@@ -27,7 +27,7 @@ const LEGACY_TAB_MAP: Record<string, string> = {
 
 const VALID_TABS = new Set<string>([
   "you",
-  "connections",
+  "connectors",
   "system",
   "diagnostics",
   ...Object.keys(LEGACY_TAB_MAP),
@@ -44,7 +44,7 @@ function resolveTab(value: unknown): string | null {
 
 const CHAPTER_DEFS = [
   { id: "settings-you", label: "You", icon: <User size={18} strokeWidth={1.5} /> },
-  { id: "settings-connections", label: "Connections", icon: <Link2 size={18} strokeWidth={1.5} /> },
+  { id: "settings-connectors", label: "Connectors", icon: <Link2 size={18} strokeWidth={1.5} /> },
   { id: "settings-system", label: "System", icon: <Monitor size={18} strokeWidth={1.5} /> },
 ];
 
@@ -129,13 +129,13 @@ export default function SettingsPage() {
         <YouCard />
       </section>
 
-      {/* ═══ CONNECTIONS ═══ */}
-      <section id="settings-connections" style={{ marginBottom: 48 }}>
+      {/* ═══ CONNECTORS ═══ */}
+      <section id="settings-connectors" style={{ marginBottom: 48 }}>
         <ChapterHeading
-          title="Connections"
+          title="Connectors"
           epigraph="External services that feed your daily briefings."
         />
-        <ConnectionsGrid />
+        <ConnectorsGrid />
       </section>
 
       {/* ═══ SYSTEM ═══ */}
