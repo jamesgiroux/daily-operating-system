@@ -928,5 +928,180 @@ impl ActionDb {
         }).map_err(DbError::Migration)
     }
 
+    /// Unified person profile update — single write path for all enrichment sources.
+    ///
+    /// Checks source priority for each field, writes allowed fields to `people`,
+    /// updates provenance in `enrichment_sources`, records an `enrichment_log`
+    /// audit entry, and returns which fields were actually written.
+    pub fn update_person_profile(
+        &self,
+        person_id: &str,
+        fields: &ProfileUpdate,
+        source: &str,
+    ) -> Result<ProfileUpdateResult, DbError> {
+        let conn = &self.conn;
 
+        // Read current enrichment_sources
+        let current_sources_json: Option<String> = conn
+            .query_row(
+                "SELECT enrichment_sources FROM people WHERE id = ?1",
+                rusqlite::params![person_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| DbError::Migration(format!("read enrichment_sources: {}", e)))?;
+
+        let mut sources: std::collections::HashMap<String, FieldSource> = current_sources_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+
+        let csj = current_sources_json.as_deref();
+        let mut updated: Vec<String> = Vec::new();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Check each field against source priority
+        let candidates: Vec<(&str, &Option<String>)> = vec![
+            ("linkedin_url", &fields.linkedin_url),
+            ("twitter_handle", &fields.twitter_handle),
+            ("phone", &fields.phone),
+            ("photo_url", &fields.photo_url),
+            ("bio", &fields.bio),
+            ("title_history", &fields.title_history),
+            ("organization", &fields.organization),
+            ("role", &fields.role),
+            ("company_industry", &fields.company_industry),
+            ("company_size", &fields.company_size),
+            ("company_hq", &fields.company_hq),
+        ];
+
+        // Build SET clauses dynamically for allowed fields
+        let mut set_clauses: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        for (field_name, value) in &candidates {
+            if let Some(val) = value {
+                if !val.is_empty() && can_write_field(csj, field_name, source) {
+                    set_clauses.push(format!("{} = ?", field_name));
+                    params.push(Box::new(val.clone()));
+                    sources.insert(
+                        field_name.to_string(),
+                        FieldSource {
+                            source: source.to_string(),
+                            at: now.clone(),
+                        },
+                    );
+                    updated.push(field_name.to_string());
+                }
+            }
+        }
+
+        if updated.is_empty() {
+            return Ok(ProfileUpdateResult {
+                fields_updated: vec![],
+            });
+        }
+
+        // Always update enrichment_sources, last_enriched_at, updated_at
+        let sources_json =
+            serde_json::to_string(&sources).unwrap_or_else(|_| "{}".to_string());
+        set_clauses.push("enrichment_sources = ?".to_string());
+        params.push(Box::new(sources_json));
+        set_clauses.push("last_enriched_at = ?".to_string());
+        params.push(Box::new(now.clone()));
+        set_clauses.push("updated_at = ?".to_string());
+        params.push(Box::new(now));
+
+        // WHERE clause
+        params.push(Box::new(person_id.to_string()));
+
+        let sql = format!(
+            "UPDATE people SET {} WHERE id = ?",
+            set_clauses.join(", ")
+        );
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+
+        conn.execute(&sql, param_refs.as_slice())
+            .map_err(|e| DbError::Migration(format!("update_person_profile: {}", e)))?;
+
+
+        // Audit trail
+        let log_id = format!("el-{}", uuid::Uuid::new_v4());
+        let fields_json =
+            serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
+
+        let _ = conn.execute(
+            "INSERT INTO enrichment_log
+                (id, entity_type, entity_id, source, event_type, fields_updated, created_at)
+             VALUES (?1, 'person', ?2, ?3, 'enrichment', ?4, datetime('now'))",
+            rusqlite::params![log_id, person_id, source, fields_json],
+        );
+
+        Ok(ProfileUpdateResult {
+            fields_updated: updated,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Enrichment types (shared by all sources)
+// ---------------------------------------------------------------------------
+
+/// Fields that can be updated on a person profile from any enrichment source.
+#[derive(Debug, Clone, Default)]
+pub struct ProfileUpdate {
+    pub linkedin_url: Option<String>,
+    pub twitter_handle: Option<String>,
+    pub phone: Option<String>,
+    pub photo_url: Option<String>,
+    pub bio: Option<String>,
+    pub title_history: Option<String>,
+    pub organization: Option<String>,
+    pub role: Option<String>,
+    pub company_industry: Option<String>,
+    pub company_size: Option<String>,
+    pub company_hq: Option<String>,
+}
+
+/// Result of a profile update — which fields were actually written.
+#[derive(Debug, Clone)]
+pub struct ProfileUpdateResult {
+    pub fields_updated: Vec<String>,
+}
+
+/// Per-field provenance record stored in the `enrichment_sources` JSON column.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FieldSource {
+    pub source: String,
+    pub at: String,
+}
+
+/// Returns the numeric priority for a given enrichment source.
+/// Higher values win: User (4) > Clay (3) > Gravatar (2) > AI (1).
+pub fn source_priority(source: &str) -> u8 {
+    match source {
+        "user" => 4,
+        "clay" => 3,
+        "gravatar" => 2,
+        "ai" => 1,
+        _ => 0,
+    }
+}
+
+/// Checks whether a source is allowed to write a field given the current
+/// provenance map. Returns `true` when no higher-priority source has already
+/// written the field.
+pub fn can_write_field(current_sources_json: Option<&str>, field: &str, source: &str) -> bool {
+    let new_priority = source_priority(source);
+    if new_priority == 0 {
+        return false;
+    }
+    let sources: std::collections::HashMap<String, FieldSource> = current_sources_json
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+    match sources.get(field) {
+        Some(existing) => source_priority(&existing.source) <= new_priority,
+        None => true,
+    }
 }
