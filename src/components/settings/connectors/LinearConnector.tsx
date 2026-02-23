@@ -1,6 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { ChevronsUpDown } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { EntityPicker } from "@/components/ui/entity-picker";
 import type { LinearStatusData } from "@/types";
 import { styles } from "../styles";
 
@@ -30,12 +45,6 @@ interface LinearProject {
   name: string;
 }
 
-interface PickerEntity {
-  id: string;
-  name: string;
-  type: "account" | "project";
-}
-
 export default function LinearConnection() {
   const [status, setStatus] = useState<LinearStatusData | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -49,10 +58,12 @@ export default function LinearConnection() {
 
   // Manual link picker state
   const [linearProjects, setLinearProjects] = useState<LinearProject[]>([]);
-  const [entities, setEntities] = useState<PickerEntity[]>([]);
-  const [selectedProject, setSelectedProject] = useState("");
-  const [selectedEntity, setSelectedEntity] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
+  const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  const [selectedEntityType, setSelectedEntityType] = useState<"account" | "project" | null>(null);
   const [showLinkForm, setShowLinkForm] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   const loadRecentIssues = useCallback(async () => {
     try {
@@ -172,36 +183,26 @@ export default function LinearConnection() {
 
   async function openLinkForm() {
     setShowLinkForm(true);
-    setSelectedProject("");
-    setSelectedEntity("");
+    setSelectedProjectId(null);
+    setSelectedProjectName(null);
+    setSelectedEntityId(null);
+    setSelectedEntityType(null);
     try {
-      const [projects, accounts, projectsList] = await Promise.all([
-        invoke<LinearProject[]>("get_linear_projects"),
-        invoke<{ id: string; name: string }[]>("get_accounts_for_picker"),
-        invoke<{ id: string; name: string }[]>("get_projects_list"),
-      ]);
+      const projects = await invoke<LinearProject[]>("get_linear_projects");
       setLinearProjects(projects);
-      const merged: PickerEntity[] = [
-        ...accounts.map((a) => ({ id: a.id, name: a.name, type: "account" as const })),
-        ...projectsList.map((p) => ({ id: p.id, name: p.name, type: "project" as const })),
-      ];
-      merged.sort((a, b) => a.name.localeCompare(b.name));
-      setEntities(merged);
     } catch {
-      toast.error("Failed to load picker data");
+      toast.error("Failed to load Linear projects");
       setShowLinkForm(false);
     }
   }
 
   async function handleCreateLink() {
-    if (!selectedProject || !selectedEntity) return;
-    const entity = entities.find((e) => e.id === selectedEntity);
-    if (!entity) return;
+    if (!selectedProjectId || !selectedEntityId || !selectedEntityType) return;
     try {
       await invoke("create_linear_entity_link", {
-        linearProjectId: selectedProject,
-        entityId: entity.id,
-        entityType: entity.type,
+        linearProjectId: selectedProjectId,
+        entityId: selectedEntityId,
+        entityType: selectedEntityType,
       });
       toast("Link created");
       setShowLinkForm(false);
@@ -227,18 +228,6 @@ export default function LinearConnection() {
       case "High": return "var(--color-warm-turmeric)";
       default: return "var(--color-text-tertiary)";
     }
-  };
-
-  const selectStyle: React.CSSProperties = {
-    fontFamily: "var(--font-sans)",
-    fontSize: 13,
-    color: "var(--color-text-primary)",
-    backgroundColor: "var(--color-bg-secondary, #f5f5f0)",
-    border: "1px solid var(--color-rule-light)",
-    borderRadius: 4,
-    padding: "6px 8px",
-    flex: 1,
-    minWidth: 0,
   };
 
   return (
@@ -433,16 +422,46 @@ export default function LinearConnection() {
                   backgroundColor: "var(--color-bg-secondary, #f5f5f0)",
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <select
-                      value={selectedProject}
-                      onChange={(e) => setSelectedProject(e.target.value)}
-                      style={selectStyle}
-                    >
-                      <option value="">Select Linear project...</option>
-                      {linearProjects.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
+                    {/* Linear project picker (searchable) */}
+                    <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
+                      <PopoverTrigger
+                        className="inline-flex items-center justify-between gap-1 whitespace-nowrap rounded-md border bg-background px-2.5 h-7 text-xs text-muted-foreground shadow-xs hover:bg-accent hover:text-accent-foreground transition-all"
+                        style={{ flex: 1, minWidth: 0 }}
+                      >
+                        <span style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {selectedProjectName ?? "Select Linear project..."}
+                        </span>
+                        <ChevronsUpDown className="size-3 shrink-0" />
+                      </PopoverTrigger>
+                      <PopoverContent className="w-72 p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search projects..." />
+                          <CommandList>
+                            <CommandEmpty>No projects found.</CommandEmpty>
+                            <CommandGroup>
+                              {linearProjects.map((p) => (
+                                <CommandItem
+                                  key={p.id}
+                                  value={p.name}
+                                  onSelect={() => {
+                                    setSelectedProjectId(p.id);
+                                    setSelectedProjectName(p.name);
+                                    setProjectPickerOpen(false);
+                                  }}
+                                >
+                                  {p.name}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+
                     <span style={{
                       fontFamily: "var(--font-mono)",
                       fontSize: 11,
@@ -451,18 +470,16 @@ export default function LinearConnection() {
                     }}>
                       &rarr;
                     </span>
-                    <select
-                      value={selectedEntity}
-                      onChange={(e) => setSelectedEntity(e.target.value)}
-                      style={selectStyle}
-                    >
-                      <option value="">Select entity...</option>
-                      {entities.map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.name} ({e.type})
-                        </option>
-                      ))}
-                    </select>
+
+                    {/* Entity picker (existing searchable component) */}
+                    <EntityPicker
+                      value={selectedEntityId}
+                      onChange={(id, _name, entityType) => {
+                        setSelectedEntityId(id);
+                        setSelectedEntityType(entityType ?? null);
+                      }}
+                      placeholder="Select entity..."
+                    />
                   </div>
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                     <button
@@ -475,10 +492,10 @@ export default function LinearConnection() {
                       style={{
                         ...styles.btn,
                         ...styles.btnPrimary,
-                        opacity: !selectedProject || !selectedEntity ? 0.5 : 1,
+                        opacity: !selectedProjectId || !selectedEntityId ? 0.5 : 1,
                       }}
                       onClick={handleCreateLink}
-                      disabled={!selectedProject || !selectedEntity}
+                      disabled={!selectedProjectId || !selectedEntityId}
                     >
                       Link
                     </button>
