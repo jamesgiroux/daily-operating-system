@@ -106,6 +106,7 @@ pub struct IntegrationState {
     pub quill_poller_wake: Arc<tokio::sync::Notify>,
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
     pub email_poller_wake: Arc<tokio::sync::Notify>,
+    pub granola_poller_wake: Arc<tokio::sync::Notify>,
 }
 
 /// Signal bus state (I405).
@@ -240,6 +241,7 @@ impl AppState {
                 quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 email_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                granola_poller_wake: Arc::new(tokio::sync::Notify::new()),
             },
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
