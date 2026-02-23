@@ -35,146 +35,6 @@ const PERSONALITY_OPTIONS = [
 // Sub-sections
 // ═══════════════════════════════════════════════════════════════════════════
 
-function AboutYouSection({
-  config,
-}: {
-  config: {
-    userName?: string;
-    userCompany?: string;
-    userTitle?: string;
-    userFocus?: string;
-  } | null;
-}) {
-  const [name, setName] = useState("");
-  const [company, setCompany] = useState("");
-  const [title, setTitle] = useState("");
-  const [focus, setFocus] = useState("");
-
-  const initial = useRef({ name: "", company: "", title: "", focus: "" });
-
-  useEffect(() => {
-    if (!config) return;
-    const n = config.userName ?? "";
-    const c = config.userCompany ?? "";
-    const t = config.userTitle ?? "";
-    const f = config.userFocus ?? "";
-    setName(n);
-    setCompany(c);
-    setTitle(t);
-    setFocus(f);
-    initial.current = { name: n, company: c, title: t, focus: f };
-  }, [config]);
-
-  async function saveIfChanged() {
-    const current = {
-      name: name.trim(),
-      company: company.trim(),
-      title: title.trim(),
-      focus: focus.trim(),
-    };
-    if (
-      current.name === initial.current.name &&
-      current.company === initial.current.company &&
-      current.title === initial.current.title &&
-      current.focus === initial.current.focus
-    )
-      return;
-    try {
-      await invoke("set_user_profile", {
-        name: current.name || null,
-        company: current.company || null,
-        title: current.title || null,
-        focus: current.focus || null,
-        domain: null,
-      });
-      initial.current = current;
-      toast.success("Profile updated");
-    } catch (err) {
-      toast.error(typeof err === "string" ? err : "Failed to update profile");
-    }
-  }
-
-  return (
-    <div>
-      <p style={styles.subsectionLabel}>About You</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
-        Helps DailyOS personalize your briefings and meeting prep
-      </p>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "20px 32px",
-        }}
-      >
-        <div>
-          <label htmlFor="profile-name" style={styles.fieldLabel}>
-            Name
-          </label>
-          <input
-            id="profile-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={saveIfChanged}
-            placeholder="e.g. Jamie"
-            style={styles.input}
-          />
-        </div>
-        <div>
-          <label htmlFor="profile-company" style={styles.fieldLabel}>
-            Company
-          </label>
-          <input
-            id="profile-company"
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-            onBlur={saveIfChanged}
-            placeholder="e.g. Acme Inc."
-            style={styles.input}
-          />
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              color: "var(--color-text-tertiary)",
-              marginTop: 4,
-              letterSpacing: "0.04em",
-            }}
-          >
-            Updates your internal organization entity
-          </p>
-        </div>
-        <div>
-          <label htmlFor="profile-title" style={styles.fieldLabel}>
-            Title
-          </label>
-          <input
-            id="profile-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={saveIfChanged}
-            placeholder="e.g. Customer Success Manager"
-            style={styles.input}
-          />
-        </div>
-        <div>
-          <label htmlFor="profile-focus" style={styles.fieldLabel}>
-            Current focus
-          </label>
-          <input
-            id="profile-focus"
-            value={focus}
-            onChange={(e) => setFocus(e.target.value)}
-            onBlur={saveIfChanged}
-            placeholder="e.g. Driving Q2 renewals"
-            style={styles.input}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function DomainsSection({
   config,
 }: {
@@ -769,7 +629,7 @@ export default function YouCard() {
   if (loading) {
     return (
       <div>
-        <p style={styles.subsectionLabel}>About You</p>
+        <p style={styles.subsectionLabel}>Workspace</p>
         <div
           style={{
             height: 40,
@@ -784,8 +644,6 @@ export default function YouCard() {
 
   return (
     <div>
-      <AboutYouSection config={config} />
-      <hr style={styles.thinRule} />
       <DomainsSection config={config} />
       <hr style={styles.thinRule} />
       <RoleSection />
