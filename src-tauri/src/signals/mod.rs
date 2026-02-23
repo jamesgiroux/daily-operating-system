@@ -27,3 +27,4 @@ pub mod rules;
 pub mod sampling;
 pub mod scoring;
 pub mod email_scoring;
+pub mod user_relevance;
