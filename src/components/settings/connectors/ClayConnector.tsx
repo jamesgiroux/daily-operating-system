@@ -4,27 +4,39 @@ import { toast } from "sonner";
 import type { ClayStatusData } from "@/types";
 import { styles } from "../styles";
 
-interface OAuthStatus {
+interface SmitheryStatus {
   connected: boolean;
-  method: string;
+  hasApiKey: boolean;
+  namespace: string | null;
+  connectionId: string | null;
+}
+
+interface SmitheryDetected {
+  apiKey: string;
+  apiKeyMasked: string;
+  namespace: string;
 }
 
 export default function ClayConnection() {
   const [status, setStatus] = useState<ClayStatusData | null>(null);
-  const [oauthStatus, setOauthStatus] = useState<OAuthStatus | null>(null);
-  const [token, setToken] = useState("");
+  const [smithery, setSmithery] = useState<SmitheryStatus | null>(null);
   const [testing, setTesting] = useState(false);
   const [enriching, setEnriching] = useState(false);
-  const [savingToken, setSavingToken] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+
+  // Manual config state
+  const [manualKey, setManualKey] = useState("");
+  const [manualConnId, setManualConnId] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     invoke<ClayStatusData>("get_clay_status")
       .then(setStatus)
       .catch((err) => console.error("get_clay_status failed:", err));
 
-    invoke<OAuthStatus>("get_clay_oauth_status")
-      .then(setOauthStatus)
-      .catch((err) => console.error("get_clay_oauth_status failed:", err));
+    invoke<SmitheryStatus>("get_smithery_status")
+      .then(setSmithery)
+      .catch((err) => console.error("get_smithery_status failed:", err));
   }, []);
 
   async function toggleEnabled() {
@@ -38,29 +50,97 @@ export default function ClayConnection() {
     }
   }
 
-  async function handleSaveToken() {
-    const trimmed = token.trim();
-    if (!trimmed) return;
-    setSavingToken(true);
+  async function handleDetect() {
+    setDetecting(true);
     try {
-      await invoke("save_clay_oauth_token", { token: trimmed });
-      setToken("");
-      setOauthStatus({ connected: true, method: "oauth" });
-      toast("Clay token saved to keychain");
+      const detected = await invoke<SmitheryDetected>("detect_smithery_settings");
+      // Save API key to keychain
+      await invoke("save_smithery_api_key", { key: detected.apiKey });
+      // Save namespace to config (user still needs to provide connection ID)
+      setManualConnId("");
+      toast(`Smithery detected: ${detected.namespace}`);
+      // Refresh status
+      const refreshed = await invoke<SmitheryStatus>("get_smithery_status");
+      setSmithery(refreshed);
     } catch (err) {
-      toast.error("Failed to save token");
+      const msg = typeof err === "string" ? err : "Detection failed";
+      toast.error(msg);
     } finally {
-      setSavingToken(false);
+      setDetecting(false);
+    }
+  }
+
+  async function handleSaveManual() {
+    if (!manualKey.trim() || !manualConnId.trim()) return;
+    setSaving(true);
+    try {
+      // Save API key to keychain
+      await invoke("save_smithery_api_key", { key: manualKey.trim() });
+
+      // Parse namespace from API key or use a default
+      // Smithery keys start with "smry_" — the namespace comes from detect or manual entry
+      // For now, detect to get the namespace
+      let namespace = "";
+      try {
+        const detected = await invoke<SmitheryDetected>("detect_smithery_settings");
+        namespace = detected.namespace;
+      } catch {
+        // If detect fails, ask user — but for now use the connection ID prefix
+        toast.error("Could not detect Smithery namespace. Run: npx @smithery/cli login");
+        setSaving(false);
+        return;
+      }
+
+      await invoke("set_smithery_connection", {
+        namespace,
+        connectionId: manualConnId.trim(),
+      });
+
+      setManualKey("");
+      setManualConnId("");
+      toast("Smithery connection saved");
+
+      const refreshed = await invoke<SmitheryStatus>("get_smithery_status");
+      setSmithery(refreshed);
+    } catch (err) {
+      toast.error("Failed to save connection");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveConnectionId() {
+    if (!manualConnId.trim()) return;
+    setSaving(true);
+    try {
+      const ns = smithery?.namespace;
+      if (!ns) {
+        toast.error("Namespace not set. Run detect first.");
+        setSaving(false);
+        return;
+      }
+      await invoke("set_smithery_connection", {
+        namespace: ns,
+        connectionId: manualConnId.trim(),
+      });
+      setManualConnId("");
+      toast("Connection ID saved");
+      const refreshed = await invoke<SmitheryStatus>("get_smithery_status");
+      setSmithery(refreshed);
+    } catch (err) {
+      toast.error("Failed to save connection ID");
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleDisconnect() {
     try {
-      await invoke("disconnect_clay");
-      setOauthStatus({ connected: false, method: "none" });
-      toast("Clay disconnected");
+      await invoke("disconnect_smithery");
+      setSmithery({ connected: false, hasApiKey: false, namespace: null, connectionId: null });
+      toast("Smithery disconnected");
     } catch (err) {
-      toast.error("Failed to disconnect Clay");
+      toast.error("Failed to disconnect");
     }
   }
 
@@ -68,7 +148,7 @@ export default function ClayConnection() {
     setTesting(true);
     try {
       await invoke<boolean>("test_clay_connection");
-      toast("Clay connection successful");
+      toast("Clay connection successful via Smithery");
     } catch (err) {
       toast.error("Clay connection failed");
     } finally {
@@ -101,7 +181,6 @@ export default function ClayConnection() {
     }
   }
 
-  const hasCredential = oauthStatus?.connected || status?.apiKeySet;
   const statusColor = !status
     ? "var(--color-text-tertiary)"
     : status.enabled && status.enrichedCount > 0
@@ -112,11 +191,13 @@ export default function ClayConnection() {
     ? "Loading..."
     : `${status.enrichedCount} enriched \u00b7 ${status.pendingCount} pending`;
 
+  const needsConnectionId = smithery?.hasApiKey && smithery?.namespace && !smithery?.connectionId;
+
   return (
     <div>
       <p style={styles.subsectionLabel}>Clay Contact Enrichment</p>
       <p style={{ ...styles.description, marginBottom: 16 }}>
-        Enrich contacts with social profiles, bios, and company data from Clay.earth
+        Enrich contacts with social profiles, bios, and company data via Clay + Smithery
       </p>
 
       <div style={styles.settingRow}>
@@ -141,49 +222,59 @@ export default function ClayConnection() {
 
       {status?.enabled && (
         <>
-          {/* Token authentication */}
+          {/* Smithery connection */}
           <div style={styles.settingRow}>
             <div>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
-                {oauthStatus?.connected ? "Connected" : "Clay Token"}
+                {smithery?.connected ? "Connected via Smithery" : "Smithery Connect"}
               </span>
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                {oauthStatus?.connected
-                  ? "Bearer token stored in system keychain"
-                  : "Paste your Clay MCP bearer token"}
+                {smithery?.connected
+                  ? `${smithery.namespace} / ${smithery.connectionId}`
+                  : "Connect Clay through Smithery for managed OAuth"}
               </p>
             </div>
-            {oauthStatus?.connected && (
+            {smithery?.connected ? (
               <button
                 style={{ ...styles.btn, ...styles.btnGhost }}
                 onClick={handleDisconnect}
               >
                 Disconnect
               </button>
+            ) : (
+              <button
+                style={{ ...styles.btn, ...styles.btnPrimary, opacity: detecting ? 0.5 : 1 }}
+                onClick={handleDetect}
+                disabled={detecting}
+              >
+                {detecting ? "Detecting..." : "Detect Smithery"}
+              </button>
             )}
           </div>
 
-          {!oauthStatus?.connected && (
+          {/* Connection ID input — shown after detect finds API key + namespace but no connection ID */}
+          {needsConnectionId && (
             <div style={{ ...styles.settingRow, borderBottom: "none" }}>
               <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={styles.monoLabel}>Connection ID</span>
+                <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                  Run <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>npx @smithery/cli mcp add clay-inc/clay-mcp</code> then enter the connection ID
+                </p>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                   <input
-                    type="password"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="Paste Clay bearer token"
-                    style={{
-                      ...styles.input,
-                      width: 260,
-                    }}
+                    type="text"
+                    value={manualConnId}
+                    onChange={(e) => setManualConnId(e.target.value)}
+                    placeholder="e.g. clay-mcp-vGfX"
+                    style={{ ...styles.input, width: 200 }}
                   />
-                  {token.trim() && (
+                  {manualConnId.trim() && (
                     <button
-                      style={{ ...styles.btn, ...styles.btnPrimary, opacity: savingToken ? 0.5 : 1 }}
-                      onClick={handleSaveToken}
-                      disabled={savingToken}
+                      style={{ ...styles.btn, ...styles.btnPrimary, opacity: saving ? 0.5 : 1 }}
+                      onClick={handleSaveConnectionId}
+                      disabled={saving}
                     >
-                      {savingToken ? "Saving..." : "Save Token"}
+                      {saving ? "Saving..." : "Save"}
                     </button>
                   )}
                 </div>
@@ -191,53 +282,96 @@ export default function ClayConnection() {
             </div>
           )}
 
+          {/* Manual setup fallback — shown when nothing is detected */}
+          {!smithery?.connected && !smithery?.hasApiKey && (
+            <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+              <div style={{ flex: 1 }}>
+                <span style={styles.monoLabel}>Manual Setup</span>
+                <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                  Paste your Smithery API key and Clay connection ID
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                  <input
+                    type="password"
+                    value={manualKey}
+                    onChange={(e) => setManualKey(e.target.value)}
+                    placeholder="Smithery API key"
+                    style={{ ...styles.input, width: 300 }}
+                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="text"
+                      value={manualConnId}
+                      onChange={(e) => setManualConnId(e.target.value)}
+                      placeholder="Connection ID (e.g. clay-mcp-vGfX)"
+                      style={{ ...styles.input, width: 240 }}
+                    />
+                    {manualKey.trim() && manualConnId.trim() && (
+                      <button
+                        style={{ ...styles.btn, ...styles.btnPrimary, opacity: saving ? 0.5 : 1 }}
+                        onClick={handleSaveManual}
+                        disabled={saving}
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Status + actions */}
-          <div style={styles.settingRow}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={styles.statusDot(statusColor)} />
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
-                {statusLabel}
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                style={{ ...styles.btn, ...styles.btnGhost, opacity: testing ? 0.5 : 1 }}
-                onClick={testConnection}
-                disabled={testing || !hasCredential}
-              >
-                {testing ? "Testing..." : "Test Connection"}
-              </button>
-              <button
-                style={{ ...styles.btn, ...styles.btnGhost, opacity: enriching ? 0.5 : 1 }}
-                onClick={handleBulkEnrich}
-                disabled={enriching}
-              >
-                {enriching ? "Enriching..." : "Enrich All"}
-              </button>
-            </div>
-          </div>
+          {smithery?.connected && (
+            <>
+              <div style={styles.settingRow}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={styles.statusDot(statusColor)} />
+                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                    {statusLabel}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    style={{ ...styles.btn, ...styles.btnGhost, opacity: testing ? 0.5 : 1 }}
+                    onClick={testConnection}
+                    disabled={testing}
+                  >
+                    {testing ? "Testing..." : "Test Connection"}
+                  </button>
+                  <button
+                    style={{ ...styles.btn, ...styles.btnGhost, opacity: enriching ? 0.5 : 1 }}
+                    onClick={handleBulkEnrich}
+                    disabled={enriching}
+                  >
+                    {enriching ? "Enriching..." : "Enrich All"}
+                  </button>
+                </div>
+              </div>
 
-          <div style={styles.settingRow}>
-            <div>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
-                Auto-enrich new contacts
-              </span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Automatically enrich when new people are created
-              </p>
-            </div>
-            <button
-              style={{ ...styles.btn, ...styles.btnGhost }}
-              onClick={toggleAutoEnrich}
-            >
-              {status.autoEnrichOnCreate ? "Disable" : "Enable"}
-            </button>
-          </div>
+              <div style={styles.settingRow}>
+                <div>
+                  <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                    Auto-enrich new contacts
+                  </span>
+                  <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                    Automatically enrich when new people are created
+                  </p>
+                </div>
+                <button
+                  style={{ ...styles.btn, ...styles.btnGhost }}
+                  onClick={toggleAutoEnrich}
+                >
+                  {status.autoEnrichOnCreate ? "Disable" : "Enable"}
+                </button>
+              </div>
 
-          {status.lastEnrichmentAt && (
-            <div style={{ padding: "8px 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
-              Last enrichment: {new Date(status.lastEnrichmentAt).toLocaleString()}
-            </div>
+              {status.lastEnrichmentAt && (
+                <div style={{ padding: "8px 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                  Last enrichment: {new Date(status.lastEnrichmentAt).toLocaleString()}
+                </div>
+              )}
+            </>
           )}
         </>
       )}
