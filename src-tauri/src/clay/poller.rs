@@ -45,7 +45,7 @@ pub async fn run_clay_poller(state: Arc<AppState>, _app_handle: tauri::AppHandle
         if !enabled || api_key.is_none() {
             tokio::select! {
                 _ = tokio::time::sleep(std::time::Duration::from_secs(300)) => {},
-                _ = state.clay_poller_wake.notified() => {
+                _ = state.integrations.clay_poller_wake.notified() => {
                     log::info!("Clay poller: woken by bulk enrich signal (disabled path)");
                 },
             }
@@ -139,7 +139,7 @@ pub async fn run_clay_poller(state: Arc<AppState>, _app_handle: tauri::AppHandle
             _ = tokio::time::sleep(std::time::Duration::from_secs(
                 sweep_interval as u64 * 3600,
             )) => {},
-            _ = state.clay_poller_wake.notified() => {
+            _ = state.integrations.clay_poller_wake.notified() => {
                 log::info!("Clay poller: woken by bulk enrich signal");
             },
         }

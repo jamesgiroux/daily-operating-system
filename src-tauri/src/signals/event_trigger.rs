@@ -20,7 +20,7 @@ pub async fn run_entity_resolution_trigger(state: Arc<AppState>) {
     loop {
         // Wait for wake signal or 5-minute timeout
         tokio::select! {
-            _ = state.entity_resolution_wake.notified() => {
+            _ = state.signals.entity_resolution_wake.notified() => {
                 log::debug!("Entity resolution trigger: woken by reconcile signal");
             }
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(300)) => {

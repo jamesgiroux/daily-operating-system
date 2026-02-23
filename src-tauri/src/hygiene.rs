@@ -960,7 +960,7 @@ fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
 
         if db.merge_people(&keep_id, &remove_id).is_ok() {
             // Emit audit signal on the kept person
-            let _ = crate::signals::bus::emit_signal(
+            let _ = crate::services::signals::emit(
                 db,
                 "person",
                 &keep_id,
@@ -1042,7 +1042,7 @@ fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
                 _ => 0.95,
             };
 
-            let _ = crate::signals::bus::emit_signal(
+            let _ = crate::services::signals::emit(
                 db,
                 "person",
                 person_id,
@@ -1568,7 +1568,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
 
         // Prevent overlap with manual scan runs.
         let began_scan = state
-            .hygiene_scan_running
+            .hygiene.scan_running
             .compare_exchange(
                 false,
                 true,
@@ -1633,10 +1633,10 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             }
 
             // Store report for frontend access (Phase 4)
-            if let Ok(mut guard) = state.last_hygiene_report.lock() {
+            if let Ok(mut guard) = state.hygiene.report.lock() {
                 *guard = Some(report);
             }
-            if let Ok(mut guard) = state.last_hygiene_scan_at.lock() {
+            if let Ok(mut guard) = state.hygiene.last_scan_at.lock() {
                 *guard = Some(Utc::now().to_rfc3339());
             }
         }
@@ -1657,13 +1657,13 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             }
         }
 
-        if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
+        if let Ok(mut guard) = state.hygiene.next_scan_at.lock() {
             *guard = Some(
                 (Utc::now() + chrono::Duration::seconds(interval as i64)).to_rfc3339(),
             );
         }
         state
-            .hygiene_scan_running
+            .hygiene.scan_running
             .store(false, std::sync::atomic::Ordering::Release);
 
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
@@ -1695,7 +1695,7 @@ fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
 
     // First run does a full orphan scan (no lookback limit)
     let first_run = !state
-        .hygiene_full_orphan_scan_done
+        .hygiene.full_orphan_scan_done
         .swap(true, std::sync::atomic::Ordering::AcqRel);
 
     let workspace = std::path::Path::new(&config.workspace_path);
@@ -1703,7 +1703,7 @@ fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
         &db,
         &config,
         workspace,
-        Some(&state.hygiene_budget),
+        Some(&state.hygiene.budget),
         Some(&state.intel_queue),
         first_run,
         Some(state.embedding_model.as_ref()),
@@ -2146,7 +2146,7 @@ pub fn build_intelligence_hygiene_status(
         .unwrap_or(0);
 
     let is_running = state
-        .hygiene_scan_running
+        .hygiene.scan_running
         .load(std::sync::atomic::Ordering::Acquire);
 
     let (status, status_label) = if is_running {
@@ -2165,13 +2165,13 @@ pub fn build_intelligence_hygiene_status(
         .unwrap_or(0);
 
     let last_scan_time = state
-        .last_hygiene_scan_at
+        .hygiene.last_scan_at
         .lock()
         .ok()
         .and_then(|g| g.clone())
         .or_else(|| report.map(|r| r.scanned_at.clone()));
     let next_scan_time = state
-        .next_hygiene_scan_at
+        .hygiene.next_scan_at
         .lock()
         .ok()
         .and_then(|g| g.clone());
@@ -2192,8 +2192,8 @@ pub fn build_intelligence_hygiene_status(
         fix_details,
         gaps,
         budget: HygieneBudgetView {
-            used_today: state.hygiene_budget.used_today(),
-            daily_limit: state.hygiene_budget.daily_limit,
+            used_today: state.hygiene.budget.used_today(),
+            daily_limit: state.hygiene.budget.daily_limit,
             queued_for_next_budget,
         },
         scan_duration_ms: report.map(|r| r.scan_duration_ms),
@@ -2253,7 +2253,7 @@ fn detect_low_confidence_matches(
                     "source": entity.source,
                 })
                 .to_string();
-                let _ = crate::signals::bus::emit_signal(
+                let _ = crate::services::signals::emit(
                     db,
                     entity.entity_type.as_str(),
                     &entity.entity_id,

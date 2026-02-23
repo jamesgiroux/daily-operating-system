@@ -314,7 +314,7 @@ impl Executor {
                                                     }
                                                 })
                                             });
-                                        let _ = crate::signals::bus::emit_signal(
+                                        let _ = crate::services::signals::emit(
                                             db,
                                             "person",
                                             pid,
@@ -326,7 +326,7 @@ impl Executor {
                                         // Emit negative_sentiment for propagation rules
                                         // (e.g. rule_champion_sentiment → champion_risk)
                                         if sentiment == Some("negative") {
-                                            let _ = crate::signals::bus::emit_signal(
+                                            let _ = crate::services::signals::emit(
                                                 db,
                                                 "person",
                                                 pid,
@@ -533,7 +533,7 @@ impl Executor {
             }
         }
         // I308: Wake entity resolution trigger for newly-persisted meetings
-        self.state.entity_resolution_wake.notify_one();
+        self.state.signals.entity_resolution_wake.notify_one();
 
         // Step 3: Archive (move files, clean data/)
         let result = run_archive(workspace)
@@ -1235,7 +1235,7 @@ impl Executor {
 
 
         // Wake the email poller so it resets its sleep timer
-        self.state.email_poller_wake.notify_one();
+        self.state.integrations.email_poller_wake.notify_one();
 
         log::info!("Email refresh complete");
         Ok(())

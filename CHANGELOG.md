@@ -4,6 +4,20 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.8] - 2026-02-22
+
+AppState decomposition and SignalService formalization. The 30-field god struct is now a facade over 6 domain containers (14 top-level fields). The signal bus has a service-layer API so consumers no longer reach into bus internals. Purely mechanical refactoring — no logic changes, no behavior changes, no schema migrations.
+
+### Added
+
+- **SignalService facade (I403)** — `services/signals.rs` with 8 public functions: `emit`, `emit_and_propagate`, `emit_propagate_and_evaluate`, `get_for_entity`, `get_by_type`, `get_callouts`, `run_propagation`, `invalidate_preps`. All service-layer and infrastructure callers (13 files, ~40 call sites) migrated from direct `crate::signals::bus::*` imports. Internal `signals/` module callers stay direct. Six documented exceptions (prepare/, processor/, gravatar/) retain raw `db` handle access.
+
+### Changed
+
+- **AppState decomposition Phase 1 (I404)** — Extracted 4 sub-structs: `HygieneState` (6 fields: report, scan_running, last_scan_at, next_scan_at, budget, full_orphan_scan_done), `CaptureState` (3 fields: dismissed, captured, transcript_processed), `CalendarState` (3 fields: google_auth, events, week_cache), `WorkflowState` (3 fields: status, history, last_scheduled_run). All wrapper methods delegate to sub-struct fields.
+- **AppState decomposition Phase 2 (I405)** — Extracted 2 sub-structs: `IntegrationState` (4 poller wake signals: clay, quill, linear, email), `SignalState` (3 fields: engine, entity_resolution_wake, prep_invalidation_queue). Constructor preserves init order: prep queue built before signal engine, then wired via `set_prep_queue`/`set_intel_queue`.
+- **AppState reduced from 30 to 14 top-level fields** — All original fields accessible through domain containers. No field removed, only regrouped.
+
 ## [0.13.7] - 2026-02-22
 
 Intelligence self-healing. The hygiene system now knows when its intelligence is wrong, not just when it's missing. Four new capabilities detect quality degradation, validate semantic coherence against meeting history, replace the hardcoded 14-day enrichment threshold with a continuous priority function, and wire user corrections back to source reliability. A circuit breaker prevents thrashing on persistently incoherent entities.
