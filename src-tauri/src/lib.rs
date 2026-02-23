@@ -547,6 +547,10 @@ pub fn run() {
             commands::set_linear_api_key,
             commands::test_linear_connection,
             commands::start_linear_sync,
+            commands::get_linear_recent_issues,
+            commands::get_linear_entity_links,
+            commands::run_linear_auto_link,
+            commands::delete_linear_entity_link,
             // I309: Role Presets
             commands::set_role,
             commands::get_active_preset,

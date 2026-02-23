@@ -1,8 +1,29 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { LinearStatusData } from "@/types";
 import { styles } from "../styles";
+
+interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  stateName: string | null;
+  stateType: string | null;
+  priorityLabel: string | null;
+  dueDate: string | null;
+  syncedAt: string | null;
+}
+
+interface LinearEntityLink {
+  id: string;
+  linearProjectId: string;
+  projectName: string | null;
+  entityId: string;
+  entityType: string;
+  confirmed: boolean;
+  entityName: string | null;
+}
 
 export default function LinearConnection() {
   const [status, setStatus] = useState<LinearStatusData | null>(null);
@@ -11,15 +32,40 @@ export default function LinearConnection() {
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [viewerName, setViewerName] = useState<string | null>(null);
+  const [recentIssues, setRecentIssues] = useState<LinearIssue[]>([]);
+  const [entityLinks, setEntityLinks] = useState<LinearEntityLink[]>([]);
+  const [autoLinking, setAutoLinking] = useState(false);
+
+  const loadRecentIssues = useCallback(async () => {
+    try {
+      const issues = await invoke<LinearIssue[]>("get_linear_recent_issues");
+      setRecentIssues(issues);
+    } catch {
+      // Silently fail - issues section just won't show
+    }
+  }, []);
+
+  const loadEntityLinks = useCallback(async () => {
+    try {
+      const links = await invoke<LinearEntityLink[]>("get_linear_entity_links");
+      setEntityLinks(links);
+    } catch {
+      // Silently fail
+    }
+  }, []);
 
   useEffect(() => {
     invoke<LinearStatusData>("get_linear_status")
       .then((s) => {
         setStatus(s);
         if (s.apiKeySet) setApiKey("\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022");
+        if (s.enabled && s.issueCount > 0) {
+          loadRecentIssues();
+          loadEntityLinks();
+        }
       })
       .catch((err) => console.error("get_linear_status failed:", err));
-  }, []);
+  }, [loadRecentIssues, loadEntityLinks]);
 
   async function toggleEnabled() {
     if (!status) return;
@@ -68,12 +114,41 @@ export default function LinearConnection() {
         try {
           const refreshed = await invoke<LinearStatusData>("get_linear_status");
           setStatus(refreshed);
+          loadRecentIssues();
+          loadEntityLinks();
         } catch {}
         setSyncing(false);
       }, 3000);
     } catch (err) {
       toast.error("Sync failed");
       setSyncing(false);
+    }
+  }
+
+  async function handleAutoLink() {
+    setAutoLinking(true);
+    try {
+      const count = await invoke<number>("run_linear_auto_link");
+      if (count > 0) {
+        toast(`Linked ${count} project${count > 1 ? "s" : ""}`);
+        loadEntityLinks();
+      } else {
+        toast("No new matches found");
+      }
+    } catch (err) {
+      toast.error("Auto-link failed");
+    } finally {
+      setAutoLinking(false);
+    }
+  }
+
+  async function handleDeleteLink(linkId: string) {
+    try {
+      await invoke("delete_linear_entity_link", { linkId });
+      setEntityLinks((prev) => prev.filter((l) => l.id !== linkId));
+      toast("Link removed");
+    } catch (err) {
+      toast.error("Failed to remove link");
     }
   }
 
@@ -86,6 +161,14 @@ export default function LinearConnection() {
   const statusLabel = !status
     ? "Loading..."
     : `${status.issueCount} issues \u00b7 ${status.projectCount} projects`;
+
+  const priorityColor = (label: string | null) => {
+    switch (label) {
+      case "Urgent": return "var(--color-spice-terracotta)";
+      case "High": return "var(--color-warm-turmeric)";
+      default: return "var(--color-text-tertiary)";
+    }
+  };
 
   return (
     <div>
@@ -181,6 +264,166 @@ export default function LinearConnection() {
           {status.lastSyncAt && (
             <div style={{ padding: "8px 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
               Last sync: {new Date(status.lastSyncAt).toLocaleString()}
+            </div>
+          )}
+
+          {/* Recent Issues */}
+          {recentIssues.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <hr style={styles.thinRule} />
+              <p style={{ ...styles.monoLabel, marginBottom: 8 }}>Recent Issues</p>
+              {recentIssues.map((issue) => (
+                <div
+                  key={issue.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: 8,
+                    padding: "4px 0",
+                    borderBottom: "1px solid var(--color-rule-light)",
+                  }}
+                >
+                  <span style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    flexShrink: 0,
+                    width: 72,
+                  }}>
+                    {issue.identifier}
+                  </span>
+                  <span style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    color: "var(--color-text-primary)",
+                    flex: 1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {issue.title}
+                  </span>
+                  {issue.priorityLabel && (
+                    <span style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      color: priorityColor(issue.priorityLabel),
+                      flexShrink: 0,
+                    }}>
+                      {issue.priorityLabel}
+                    </span>
+                  )}
+                  <span style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    color: "var(--color-text-tertiary)",
+                    flexShrink: 0,
+                  }}>
+                    {issue.stateName ?? ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Entity Links */}
+          {status.issueCount > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <hr style={styles.thinRule} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <p style={{ ...styles.monoLabel, margin: 0 }}>Entity Links</p>
+                <button
+                  style={{ ...styles.btn, ...styles.btnGhost, opacity: autoLinking ? 0.5 : 1 }}
+                  onClick={handleAutoLink}
+                  disabled={autoLinking}
+                >
+                  {autoLinking ? "Detecting..." : "Auto-detect"}
+                </button>
+              </div>
+              <p style={{ ...styles.description, fontSize: 12, marginBottom: 8 }}>
+                Link Linear projects to DailyOS entities for signal routing and meeting context
+              </p>
+              {entityLinks.length === 0 ? (
+                <p style={{ ...styles.description, fontSize: 12, fontStyle: "italic" }}>
+                  No entity links configured. Use auto-detect to match by name.
+                </p>
+              ) : (
+                entityLinks.map((link) => (
+                  <div
+                    key={link.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "6px 0",
+                      borderBottom: "1px solid var(--color-rule-light)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                      <span style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 13,
+                        color: "var(--color-text-primary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}>
+                        {link.projectName ?? link.linearProjectId}
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        color: "var(--color-text-tertiary)",
+                        flexShrink: 0,
+                      }}>
+                        &rarr;
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 13,
+                        color: "var(--color-text-secondary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}>
+                        {link.entityName ?? link.entityId}
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: "var(--color-text-tertiary)",
+                        flexShrink: 0,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                      }}>
+                        {link.entityType}
+                      </span>
+                      {!link.confirmed && (
+                        <span style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 9,
+                          color: "var(--color-warm-turmeric)",
+                          flexShrink: 0,
+                        }}>
+                          auto
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      style={{
+                        ...styles.btn,
+                        ...styles.btnGhost,
+                        fontSize: 10,
+                        padding: "2px 8px",
+                        flexShrink: 0,
+                      }}
+                      onClick={() => handleDeleteLink(link.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </>
