@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
@@ -53,8 +53,9 @@ export default function EmailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
+  const [, startTransition] = useTransition();
 
-  const loadEmails = useCallback(async () => {
+  const loadEmails = useCallback(async (silent = false) => {
     try {
       const [result, dismissedItems, stats] = await Promise.all([
         invoke<EmailBriefingData>("get_emails_enriched"),
@@ -64,9 +65,18 @@ export default function EmailsPage() {
         }),
         invoke<EmailSyncStats>("get_email_sync_status").catch(() => null),
       ]);
-      setData(result);
-      setDismissed(new Set(dismissedItems));
-      setSyncStats(stats);
+      const apply = () => {
+        setData(result);
+        setDismissed(new Set(dismissedItems));
+        setSyncStats(stats);
+      };
+      // Silent refreshes use startTransition to avoid jarring content flashes.
+      // React keeps the old content visible until the new render is ready.
+      if (silent) {
+        startTransition(apply);
+      } else {
+        apply();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -78,8 +88,8 @@ export default function EmailsPage() {
     loadEmails();
   }, [loadEmails]);
 
-  // Silent refresh on backend email events
-  const silentRefresh = useCallback(() => { loadEmails(); }, [loadEmails]);
+  // Silent refresh on backend email events — uses transition to avoid blink
+  const silentRefresh = useCallback(() => { loadEmails(true); }, [loadEmails]);
   useTauriEvent("emails-updated", silentRefresh);
   useTauriEvent("workflow-completed", silentRefresh);
 

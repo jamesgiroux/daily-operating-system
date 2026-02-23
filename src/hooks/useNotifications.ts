@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -10,38 +10,47 @@ interface SystemStatusPayload {
 }
 
 /**
- * Milestone operations worth toasting. During a morning workflow, the
- * pipeline fires ~7 operation-delivered events in rapid succession.
- * Only surface the milestones users actually care about — not every
- * intermediate step.
+ * Milestone operations worth toasting.
+ *
+ * Only surface milestones users care about — not every intermediate step.
+ * Uses deduplication: same milestone type within 30s is suppressed.
  *
  * "briefing" is the final product of the morning pipeline.
  * "week-enriched" is the final product of the weekly pipeline.
- * Intermediate steps (schedule, actions, preps, emails) are intentionally
- * omitted to avoid toast spam.
  */
 const milestoneLabels: Record<string, string> = {
   briefing: "Daily briefing ready",
   "week-enriched": "Weekly briefing ready",
 };
 
+/** Dedup window: suppress duplicate milestone toasts within this period. */
+const DEDUP_WINDOW_MS = 30_000;
+
 /**
  * Global notification listener. Mounts once at the app root and
  * surfaces key backend events as toast notifications.
  *
- * Design intent: the user should know when background work completes
- * without having to watch a specific page. Toasts are informational,
- * not actionable — they confirm "something happened" and fade away.
+ * Design: background completions are silent — data just appears via
+ * startTransition refreshes. Toasts are reserved for milestones
+ * (briefing ready), errors, and auth issues. Duplicate milestones
+ * within 30s are suppressed to avoid toast stacking.
  */
 export function useNotifications() {
+  const lastMilestoneRef = useRef<Record<string, number>>({});
+
   useEffect(() => {
     const unlisteners: Promise<() => void>[] = [];
 
     // Milestone operations — briefing and weekly briefing ready
+    // Deduplicated: same type within 30s is suppressed
     unlisteners.push(
       listen<string>("operation-delivered", (event) => {
         const label = milestoneLabels[event.payload];
         if (label) {
+          const now = Date.now();
+          const lastShown = lastMilestoneRef.current[event.payload] ?? 0;
+          if (now - lastShown < DEDUP_WINDOW_MS) return;
+          lastMilestoneRef.current[event.payload] = now;
           toast.success(label);
         }
       }),

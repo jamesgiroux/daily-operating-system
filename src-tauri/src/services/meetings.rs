@@ -334,6 +334,7 @@ pub fn update_meeting_entity(
             requested_at: std::time::Instant::now(),
         });
     }
+    state.integrations.intel_queue_wake.notify_one();
 
     Ok(())
 }
@@ -398,6 +399,7 @@ pub fn add_meeting_entity(
         priority: crate::intel_queue::IntelPriority::CalendarChange,
         requested_at: std::time::Instant::now(),
     });
+    state.integrations.intel_queue_wake.notify_one();
 
     Ok(())
 }
@@ -440,6 +442,7 @@ pub fn remove_meeting_entity(
         priority: crate::intel_queue::IntelPriority::CalendarChange,
         requested_at: std::time::Instant::now(),
     });
+    state.integrations.intel_queue_wake.notify_one();
 
     Ok(())
 }
@@ -1126,6 +1129,7 @@ pub fn link_meeting_entity_with_prep_queue(
         priority: crate::meeting_prep_queue::PrepPriority::Manual,
         requested_at: std::time::Instant::now(),
     });
+    state.integrations.prep_queue_wake.notify_one();
     log::info!(
         "link_meeting_entity: relinked {} to {} ({}), enqueued prep re-assembly",
         meeting_id, entity_id, entity_type,
@@ -1154,6 +1158,7 @@ pub fn unlink_meeting_entity_with_prep_queue(
         priority: crate::meeting_prep_queue::PrepPriority::Manual,
         requested_at: std::time::Instant::now(),
     });
+    state.integrations.prep_queue_wake.notify_one();
     log::info!(
         "unlink_meeting_entity: unlinked {} from {}, enqueued prep re-assembly",
         meeting_id, entity_id,

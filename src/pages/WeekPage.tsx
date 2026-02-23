@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { invoke } from "@tauri-apps/api/core";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,17 +36,25 @@ export default function WeekPage() {
   const [error, setError] = useState<string | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [, startTransition] = useTransition();
 
   // ─── Data loading ─────────────────────────────────────────────────────────
 
-  const loadTimeline = useCallback(async () => {
+  const loadTimeline = useCallback(async (silent = false) => {
     try {
       const data = await invoke<TimelineMeeting[]>("get_meeting_timeline", {
         daysBefore: 7,
         daysAfter: 7,
       });
-      setTimeline(data);
-      setError(null);
+      const apply = () => {
+        setTimeline(data);
+        setError(null);
+      };
+      if (silent) {
+        startTransition(apply);
+      } else {
+        apply();
+      }
     } catch (err) {
       console.error("[WeekPage] Timeline failed:", err);
       setError(err instanceof Error ? err.message : "Failed to load timeline");
@@ -77,10 +85,11 @@ export default function WeekPage() {
 
   // ─── Live events — keep the page current without user action ──────────────
 
-  useTauriEvent("day-changed", loadTimeline);
-  useTauriEvent("calendar-updated", loadTimeline);
-  useTauriEvent("intelligence-updated", loadTimeline);
-  useTauriEvent("prep-ready", loadTimeline);
+  const silentRefreshTimeline = useCallback(() => { loadTimeline(true); }, [loadTimeline]);
+  useTauriEvent("day-changed", loadTimeline); // Day change should show immediately
+  useTauriEvent("calendar-updated", silentRefreshTimeline);
+  useTauriEvent("intelligence-updated", silentRefreshTimeline);
+  useTauriEvent("prep-ready", silentRefreshTimeline);
 
   // ─── Derived data ─────────────────────────────────────────────────────────
 

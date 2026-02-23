@@ -1583,6 +1583,19 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             continue;
         }
 
+        // Hygiene is lowest priority — skip if heavy work is in progress.
+        // Uses try_acquire to avoid blocking: if the semaphore is held by
+        // intel queue PTY or embedding inference, hygiene defers to next cycle.
+        let permit = state.heavy_work_semaphore.try_acquire();
+        if permit.is_err() {
+            log::debug!("HygieneLoop: skipping scan — heavy work in progress");
+            state
+                .hygiene.scan_running
+                .store(false, std::sync::atomic::Ordering::Release);
+            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+            continue;
+        }
+
         // Check for overnight window — use expanded scan with higher AI budget
         if is_overnight_window() {
             let overnight = try_run_overnight(&state);
@@ -1597,6 +1610,9 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
 
         // Run regular scan synchronously (all locks drop before the next await)
         let report = try_run_scan(&state);
+
+        // Release permit after scan completes — mechanical fixes + enqueue are done
+        drop(permit);
 
         if let Some(report) = report {
             let total_gaps = report.unnamed_people
