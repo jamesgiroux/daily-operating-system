@@ -25,6 +25,17 @@ interface LinearEntityLink {
   entityName: string | null;
 }
 
+interface LinearProject {
+  id: string;
+  name: string;
+}
+
+interface PickerEntity {
+  id: string;
+  name: string;
+  type: "account" | "project";
+}
+
 export default function LinearConnection() {
   const [status, setStatus] = useState<LinearStatusData | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -35,6 +46,13 @@ export default function LinearConnection() {
   const [recentIssues, setRecentIssues] = useState<LinearIssue[]>([]);
   const [entityLinks, setEntityLinks] = useState<LinearEntityLink[]>([]);
   const [autoLinking, setAutoLinking] = useState(false);
+
+  // Manual link picker state
+  const [linearProjects, setLinearProjects] = useState<LinearProject[]>([]);
+  const [entities, setEntities] = useState<PickerEntity[]>([]);
+  const [selectedProject, setSelectedProject] = useState("");
+  const [selectedEntity, setSelectedEntity] = useState("");
+  const [showLinkForm, setShowLinkForm] = useState(false);
 
   const loadRecentIssues = useCallback(async () => {
     try {
@@ -152,6 +170,47 @@ export default function LinearConnection() {
     }
   }
 
+  async function openLinkForm() {
+    setShowLinkForm(true);
+    setSelectedProject("");
+    setSelectedEntity("");
+    try {
+      const [projects, accounts, projectsList] = await Promise.all([
+        invoke<LinearProject[]>("get_linear_projects"),
+        invoke<{ id: string; name: string }[]>("get_accounts_for_picker"),
+        invoke<{ id: string; name: string }[]>("get_projects_list"),
+      ]);
+      setLinearProjects(projects);
+      const merged: PickerEntity[] = [
+        ...accounts.map((a) => ({ id: a.id, name: a.name, type: "account" as const })),
+        ...projectsList.map((p) => ({ id: p.id, name: p.name, type: "project" as const })),
+      ];
+      merged.sort((a, b) => a.name.localeCompare(b.name));
+      setEntities(merged);
+    } catch {
+      toast.error("Failed to load picker data");
+      setShowLinkForm(false);
+    }
+  }
+
+  async function handleCreateLink() {
+    if (!selectedProject || !selectedEntity) return;
+    const entity = entities.find((e) => e.id === selectedEntity);
+    if (!entity) return;
+    try {
+      await invoke("create_linear_entity_link", {
+        linearProjectId: selectedProject,
+        entityId: entity.id,
+        entityType: entity.type,
+      });
+      toast("Link created");
+      setShowLinkForm(false);
+      loadEntityLinks();
+    } catch (err) {
+      toast.error("Failed to create link");
+    }
+  }
+
   const statusColor = !status
     ? "var(--color-text-tertiary)"
     : status.enabled && status.issueCount > 0
@@ -168,6 +227,18 @@ export default function LinearConnection() {
       case "High": return "var(--color-warm-turmeric)";
       default: return "var(--color-text-tertiary)";
     }
+  };
+
+  const selectStyle: React.CSSProperties = {
+    fontFamily: "var(--font-sans)",
+    fontSize: 13,
+    color: "var(--color-text-primary)",
+    backgroundColor: "var(--color-bg-secondary, #f5f5f0)",
+    border: "1px solid var(--color-rule-light)",
+    borderRadius: 4,
+    padding: "6px 8px",
+    flex: 1,
+    minWidth: 0,
   };
 
   return (
@@ -271,7 +342,7 @@ export default function LinearConnection() {
           {recentIssues.length > 0 && (
             <div style={{ marginTop: 16 }}>
               <hr style={styles.thinRule} />
-              <p style={{ ...styles.monoLabel, marginBottom: 8 }}>Recent Issues</p>
+              <p style={{ ...styles.monoLabel, marginBottom: 8 }}>Active Issues</p>
               {recentIssues.map((issue) => (
                 <div
                   key={issue.id}
@@ -332,20 +403,92 @@ export default function LinearConnection() {
               <hr style={styles.thinRule} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                 <p style={{ ...styles.monoLabel, margin: 0 }}>Entity Links</p>
-                <button
-                  style={{ ...styles.btn, ...styles.btnGhost, opacity: autoLinking ? 0.5 : 1 }}
-                  onClick={handleAutoLink}
-                  disabled={autoLinking}
-                >
-                  {autoLinking ? "Detecting..." : "Auto-detect"}
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    style={{ ...styles.btn, ...styles.btnGhost, opacity: autoLinking ? 0.5 : 1 }}
+                    onClick={handleAutoLink}
+                    disabled={autoLinking}
+                  >
+                    {autoLinking ? "Detecting..." : "Auto-detect"}
+                  </button>
+                  <button
+                    style={{ ...styles.btn, ...styles.btnPrimary }}
+                    onClick={openLinkForm}
+                  >
+                    Link Project
+                  </button>
+                </div>
               </div>
               <p style={{ ...styles.description, fontSize: 12, marginBottom: 8 }}>
                 Link Linear projects to DailyOS entities for signal routing and meeting context
               </p>
-              {entityLinks.length === 0 ? (
+
+              {/* Manual link form */}
+              {showLinkForm && (
+                <div style={{
+                  padding: 12,
+                  marginBottom: 12,
+                  border: "1px solid var(--color-rule-light)",
+                  borderRadius: 4,
+                  backgroundColor: "var(--color-bg-secondary, #f5f5f0)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <select
+                      value={selectedProject}
+                      onChange={(e) => setSelectedProject(e.target.value)}
+                      style={selectStyle}
+                    >
+                      <option value="">Select Linear project...</option>
+                      {linearProjects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <span style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: "var(--color-text-tertiary)",
+                      flexShrink: 0,
+                    }}>
+                      &rarr;
+                    </span>
+                    <select
+                      value={selectedEntity}
+                      onChange={(e) => setSelectedEntity(e.target.value)}
+                      style={selectStyle}
+                    >
+                      <option value="">Select entity...</option>
+                      {entities.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.name} ({e.type})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button
+                      style={{ ...styles.btn, ...styles.btnGhost }}
+                      onClick={() => setShowLinkForm(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      style={{
+                        ...styles.btn,
+                        ...styles.btnPrimary,
+                        opacity: !selectedProject || !selectedEntity ? 0.5 : 1,
+                      }}
+                      onClick={handleCreateLink}
+                      disabled={!selectedProject || !selectedEntity}
+                    >
+                      Link
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {entityLinks.length === 0 && !showLinkForm ? (
                 <p style={{ ...styles.description, fontSize: 12, fontStyle: "italic" }}>
-                  No entity links configured. Use auto-detect to match by name.
+                  No entity links configured. Use auto-detect or link manually.
                 </p>
               ) : (
                 entityLinks.map((link) => (
