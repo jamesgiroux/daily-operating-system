@@ -72,12 +72,12 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          backgroundColor: "var(--color-paper-warm-white)",
-          borderRadius: "var(--radius-editorial-lg)",
-          boxShadow: "var(--shadow-md)",
+          backgroundColor: "var(--color-paper-cream)",
+          borderRadius: 0,
+          boxShadow: "0 20px 60px rgba(30, 37, 48, 0.15)",
           width: "100%",
-          maxWidth: 520,
-          maxHeight: "70vh",
+          maxWidth: 640,
+          maxHeight: "80vh",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -87,21 +87,21 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
         <div
           style={{
             display: "flex",
-            alignItems: "center",
+            alignItems: "flex-start",
             justifyContent: "space-between",
-            padding: "20px 24px 16px",
-            borderBottom: "1px solid var(--color-rule-light)",
+            padding: "32px 40px 24px",
+            borderBottom: "2px solid var(--color-rule-light)",
           }}
         >
-          <div>
+          <div style={{ flex: 1 }}>
             <h2
               style={{
                 fontFamily: "var(--font-serif)",
-                fontSize: 22,
+                fontSize: 32,
                 fontWeight: 400,
                 color: "var(--color-text-primary)",
-                margin: 0,
-                lineHeight: 1.2,
+                margin: "0 0 8px 0",
+                lineHeight: 1.1,
               }}
             >
               What's New
@@ -113,10 +113,10 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
                   fontSize: 11,
                   color: "var(--color-text-tertiary)",
                   textTransform: "uppercase",
-                  letterSpacing: "0.06em",
+                  letterSpacing: "0.1em",
                 }}
               >
-                v{displayVersion}
+                Version {displayVersion}
               </span>
             )}
           </div>
@@ -128,23 +128,27 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
               border: "none",
               cursor: "pointer",
               color: "var(--color-text-tertiary)",
-              padding: 4,
+              padding: "4px 8px",
               display: "flex",
               alignItems: "center",
+              transition: "color 0.2s ease",
+              marginTop: 4,
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-secondary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
 
         {/* Body */}
         <div
           style={{
-            padding: "20px 24px 24px",
+            padding: "32px 40px",
             overflow: "auto",
             fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            lineHeight: 1.6,
+            fontSize: 15,
+            lineHeight: 1.65,
             color: "var(--color-text-secondary)",
           }}
         >
@@ -153,16 +157,31 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
               className="whats-new-notes"
               style={{
                 fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                lineHeight: 1.6,
+                fontSize: 15,
+                lineHeight: 1.65,
                 color: "var(--color-text-secondary)",
               }}
-              dangerouslySetInnerHTML={{ __html: notesHtml }}
+              dangerouslySetInnerHTML={{
+                __html: notesHtml
+                  .replace(/<h2>/g, '<h2 style="font-family: var(--font-serif); font-size: 22px; font-weight: 400; color: var(--color-text-primary); margin: 24px 0 12px 0; line-height: 1.2;">')
+                  .replace(/<h3>/g, '<h3 style="font-family: var(--font-serif); font-size: 18px; font-weight: 400; color: var(--color-text-primary); margin: 18px 0 10px 0; line-height: 1.3;">')
+                  .replace(/<h4>/g, '<h4 style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary); margin: 12px 0 6px 0; text-transform: uppercase; letter-spacing: 0.05em;">')
+                  .replace(/<p>/g, '<p style="margin: 0 0 12px 0;">')
+                  .replace(/<li>/g, '<li style="margin-bottom: 8px;">')
+                  .replace(/<ul>/g, '<ul style="margin: 12px 0; padding-left: 24px;">')
+                  .replace(/<strong>/g, '<strong style="font-weight: 600; color: var(--color-text-primary);">')
+                  .replace(/<em>/g, '<em style="color: var(--color-text-secondary); font-style: italic;">')
+              }}
             />
           ) : (
-            <p style={{ color: "var(--color-text-tertiary)", margin: 0 }}>
-              You're running the latest version of DailyOS. Check the changelog for details.
-            </p>
+            <div>
+              <p style={{ color: "var(--color-text-tertiary)", margin: "0 0 12px 0", fontStyle: "italic" }}>
+                You're running the latest version of DailyOS.
+              </p>
+              <p style={{ color: "var(--color-text-tertiary)", margin: 0 }}>
+                Check the changelog for release details.
+              </p>
+            </div>
           )}
         </div>
       </div>
