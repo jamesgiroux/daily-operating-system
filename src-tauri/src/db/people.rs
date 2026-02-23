@@ -78,7 +78,9 @@ impl ActionDb {
     pub fn get_person_by_email(&self, email: &str) -> Result<Option<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people WHERE email = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![email], Self::map_person_row)?;
@@ -100,7 +102,9 @@ impl ActionDb {
         // Fallback: check person_emails alias table
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived,
+                    p.linkedin_url, p.twitter_handle, p.phone, p.photo_url, p.bio, p.title_history,
+                    p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM person_emails pe
              JOIN people p ON p.id = pe.person_id
              WHERE pe.email = LOWER(?1)
@@ -207,7 +211,9 @@ impl ActionDb {
     pub fn get_person(&self, id: &str) -> Result<Option<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_person_row)?;
@@ -223,7 +229,9 @@ impl ActionDb {
             Some(rel) => {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
-                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                            linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                            company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
                      FROM people WHERE relationship = ?1 AND archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map(params![rel], Self::map_person_row)?;
@@ -232,7 +240,9 @@ impl ActionDb {
             None => {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
-                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                            linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                            company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
                      FROM people WHERE archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map([], Self::map_person_row)?;
@@ -322,7 +332,9 @@ impl ActionDb {
     pub fn get_people_for_entity(&self, entity_id: &str) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived,
+                    p.linkedin_url, p.twitter_handle, p.phone, p.photo_url, p.bio, p.title_history,
+                    p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM people p
              JOIN entity_people ep ON p.id = ep.person_id
              WHERE ep.entity_id = ?1
@@ -432,7 +444,9 @@ impl ActionDb {
     pub fn get_meeting_attendees(&self, meeting_id: &str) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived,
+                    p.linkedin_url, p.twitter_handle, p.phone, p.photo_url, p.bio, p.title_history,
+                    p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM people p
              JOIN meeting_attendees ma ON p.id = ma.person_id
              WHERE ma.meeting_id = ?1
@@ -549,7 +563,9 @@ impl ActionDb {
         let pattern = format!("%{query}%");
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people
              WHERE name LIKE ?1 OR email LIKE ?1 OR organization LIKE ?1
              ORDER BY name
@@ -595,17 +611,17 @@ impl ActionDb {
             meeting_count: row.get(10)?,
             updated_at: row.get(11)?,
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
-            linkedin_url: None,
-            twitter_handle: None,
-            phone: None,
-            photo_url: None,
-            bio: None,
-            title_history: None,
-            company_industry: None,
-            company_size: None,
-            company_hq: None,
-            last_enriched_at: None,
-            enrichment_sources: None,
+            linkedin_url: row.get(13)?,
+            twitter_handle: row.get(14)?,
+            phone: row.get(15)?,
+            photo_url: row.get(16)?,
+            bio: row.get(17)?,
+            title_history: row.get(18)?,
+            company_industry: row.get(19)?,
+            company_size: row.get(20)?,
+            company_hq: row.get(21)?,
+            last_enriched_at: row.get(22)?,
+            enrichment_sources: row.get(23)?,
         })
     }
 
@@ -618,7 +634,9 @@ impl ActionDb {
     pub fn get_unnamed_people(&self) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people
              WHERE name NOT LIKE '% %' OR name LIKE '%@%'
              ORDER BY meeting_count DESC",
@@ -631,7 +649,9 @@ impl ActionDb {
     pub fn get_unknown_relationship_people(&self) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived,
+                    linkedin_url, twitter_handle, phone, photo_url, bio, title_history,
+                    company_industry, company_size, company_hq, last_enriched_at, enrichment_sources
              FROM people
              WHERE relationship = 'unknown'
              ORDER BY meeting_count DESC",
@@ -908,5 +928,185 @@ impl ActionDb {
         }).map_err(DbError::Migration)
     }
 
+    /// Unified person profile update — single write path for all enrichment sources.
+    ///
+    /// Checks source priority for each field, writes allowed fields to `people`,
+    /// updates provenance in `enrichment_sources`, records an `enrichment_log`
+    /// audit entry, and returns which fields were actually written.
+    pub fn update_person_profile(
+        &self,
+        person_id: &str,
+        fields: &ProfileUpdate,
+        source: &str,
+    ) -> Result<ProfileUpdateResult, DbError> {
+        let conn = &self.conn;
 
+        // Read current enrichment_sources
+        let current_sources_json: Option<String> = conn
+            .query_row(
+                "SELECT enrichment_sources FROM people WHERE id = ?1",
+                rusqlite::params![person_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| DbError::Migration(format!("read enrichment_sources: {}", e)))?;
+
+        let mut sources: std::collections::HashMap<String, FieldSource> = current_sources_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+
+        let csj = current_sources_json.as_deref();
+        let mut updated: Vec<String> = Vec::new();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Check each field against source priority
+        let candidates: Vec<(&str, &Option<String>)> = vec![
+            ("linkedin_url", &fields.linkedin_url),
+            ("twitter_handle", &fields.twitter_handle),
+            ("phone", &fields.phone),
+            ("photo_url", &fields.photo_url),
+            ("bio", &fields.bio),
+            ("title_history", &fields.title_history),
+            ("organization", &fields.organization),
+            ("role", &fields.role),
+            ("company_industry", &fields.company_industry),
+            ("company_size", &fields.company_size),
+            ("company_hq", &fields.company_hq),
+        ];
+
+        // Build SET clauses dynamically for allowed fields
+        let mut set_clauses: Vec<String> = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        for (field_name, value) in &candidates {
+            if let Some(val) = value {
+                if !val.is_empty() && can_write_field(csj, field_name, source) {
+                    set_clauses.push(format!("{} = ?", field_name));
+                    params.push(Box::new(val.clone()));
+                    sources.insert(
+                        field_name.to_string(),
+                        FieldSource {
+                            source: source.to_string(),
+                            at: now.clone(),
+                        },
+                    );
+                    updated.push(field_name.to_string());
+                }
+            }
+        }
+
+        if updated.is_empty() {
+            // Still stamp last_enriched_at so this person isn't re-queued
+            let _ = conn.execute(
+                "UPDATE people SET last_enriched_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, person_id],
+            );
+            return Ok(ProfileUpdateResult {
+                fields_updated: vec![],
+            });
+        }
+
+        // Always update enrichment_sources, last_enriched_at, updated_at
+        let sources_json =
+            serde_json::to_string(&sources).unwrap_or_else(|_| "{}".to_string());
+        set_clauses.push("enrichment_sources = ?".to_string());
+        params.push(Box::new(sources_json));
+        set_clauses.push("last_enriched_at = ?".to_string());
+        params.push(Box::new(now.clone()));
+        set_clauses.push("updated_at = ?".to_string());
+        params.push(Box::new(now));
+
+        // WHERE clause
+        params.push(Box::new(person_id.to_string()));
+
+        let sql = format!(
+            "UPDATE people SET {} WHERE id = ?",
+            set_clauses.join(", ")
+        );
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+
+        conn.execute(&sql, param_refs.as_slice())
+            .map_err(|e| DbError::Migration(format!("update_person_profile: {}", e)))?;
+
+
+        // Audit trail
+        let log_id = format!("el-{}", uuid::Uuid::new_v4());
+        let fields_json =
+            serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
+
+        let _ = conn.execute(
+            "INSERT INTO enrichment_log
+                (id, entity_type, entity_id, source, event_type, fields_updated, created_at)
+             VALUES (?1, 'person', ?2, ?3, 'enrichment', ?4, datetime('now'))",
+            rusqlite::params![log_id, person_id, source, fields_json],
+        );
+
+        Ok(ProfileUpdateResult {
+            fields_updated: updated,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Enrichment types (shared by all sources)
+// ---------------------------------------------------------------------------
+
+/// Fields that can be updated on a person profile from any enrichment source.
+#[derive(Debug, Clone, Default)]
+pub struct ProfileUpdate {
+    pub linkedin_url: Option<String>,
+    pub twitter_handle: Option<String>,
+    pub phone: Option<String>,
+    pub photo_url: Option<String>,
+    pub bio: Option<String>,
+    pub title_history: Option<String>,
+    pub organization: Option<String>,
+    pub role: Option<String>,
+    pub company_industry: Option<String>,
+    pub company_size: Option<String>,
+    pub company_hq: Option<String>,
+}
+
+/// Result of a profile update — which fields were actually written.
+#[derive(Debug, Clone)]
+pub struct ProfileUpdateResult {
+    pub fields_updated: Vec<String>,
+}
+
+/// Per-field provenance record stored in the `enrichment_sources` JSON column.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FieldSource {
+    pub source: String,
+    pub at: String,
+}
+
+/// Returns the numeric priority for a given enrichment source.
+/// Higher values win: User (4) > Clay (3) > Gravatar (2) > AI (1).
+pub fn source_priority(source: &str) -> u8 {
+    match source {
+        "user" => 4,
+        "clay" => 3,
+        "gravatar" => 2,
+        "ai" => 1,
+        _ => 0,
+    }
+}
+
+/// Checks whether a source is allowed to write a field given the current
+/// provenance map. Returns `true` when no higher-priority source has already
+/// written the field.
+pub fn can_write_field(current_sources_json: Option<&str>, field: &str, source: &str) -> bool {
+    let new_priority = source_priority(source);
+    if new_priority == 0 {
+        return false;
+    }
+    let sources: std::collections::HashMap<String, FieldSource> = current_sources_json
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+    match sources.get(field) {
+        Some(existing) => source_priority(&existing.source) <= new_priority,
+        None => true,
+    }
 }

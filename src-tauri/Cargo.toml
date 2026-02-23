@@ -1,6 +1,6 @@
 [package]
 name = "dailyos"
-version = "0.13.8"
+version = "0.13.9"
 default-run = "dailyos"
 description = "Operational intelligence for your workday. Open the app, your day is ready."
 authors = ["DailyOS"]
@@ -34,6 +34,7 @@ uuid = { version = "1", features = ["v4"] }
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "time", "process", "rt", "fs", "macros", "rt-multi-thread"] }
 log = "0.4"
+env_logger = "0.11"
 rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 notify = { version = "7", features = ["macos_fsevent"] }
 regex = "1"
@@ -42,7 +43,7 @@ hex = "0.4"
 walkdir = "2"
 
 # Sprint 8: Native Google API (ADR-0049)
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
 url = "2"
 open = "5"
 base64 = "0.22"

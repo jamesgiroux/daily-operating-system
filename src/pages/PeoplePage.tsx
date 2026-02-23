@@ -26,6 +26,8 @@ import {
   FilterTabs,
 } from "@/components/entity/EntityListShell";
 import { EntityRow } from "@/components/entity/EntityRow";
+import { Avatar } from "@/components/ui/Avatar";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { PersonListItem, DuplicateCandidate } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 
@@ -199,6 +201,26 @@ export default function PeoplePage() {
 
   const isArchived = archiveTab === "archived";
   const showRelationship = tab === "all";
+
+  // Group people by relationship when showing "all" tab
+  const PEOPLE_SECTIONS: { type: string; title: string }[] = [
+    { type: "external", title: "Your Contacts" },
+    { type: "internal", title: "Your Team" },
+    { type: "unknown", title: "Unclassified" },
+  ];
+
+  const groupedPeople = useMemo(() => {
+    if (!showRelationship) return null; // flat list when filtered to one tab
+    const groups: Record<string, PersonListItem[]> = {
+      external: [], internal: [], unknown: [],
+    };
+    for (const person of sorted) {
+      const rel = person.relationship ?? "unknown";
+      if (groups[rel]) groups[rel].push(person);
+      else groups.unknown.push(person);
+    }
+    return groups;
+  }, [sorted, showRelationship]);
 
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -520,10 +542,27 @@ export default function PeoplePage() {
             title={getPersonalityCopy("people-no-matches", personality).title}
             message={getPersonalityCopy("people-no-matches", personality).message ?? ""}
           />
+        ) : groupedPeople ? (
+          /* Grouped view: external → internal → unknown */
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {PEOPLE_SECTIONS.map(({ type, title }) => {
+              const sectionPeople = groupedPeople[type] ?? [];
+              if (sectionPeople.length === 0) return null;
+              return (
+                <div key={type}>
+                  <ChapterHeading title={title} />
+                  {sectionPeople.map((person, i) => (
+                    <PersonRow key={person.id} person={person} showRelationship={false} showBorder={i < sectionPeople.length - 1} />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* Flat view: single relationship tab selected */
           <div style={{ display: "flex", flexDirection: "column" }}>
             {sorted.map((person, i) => (
-              <PersonRow key={person.id} person={person} showRelationship={showRelationship} showBorder={i < sorted.length - 1} />
+              <PersonRow key={person.id} person={person} showRelationship={false} showBorder={i < sorted.length - 1} />
             ))}
           </div>
         )}
@@ -539,6 +578,12 @@ export default function PeoplePage() {
 
 // ─── Person Row ─────────────────────────────────────────────────────────────
 
+const relationshipRingColor: Record<string, string> = {
+  external: "var(--color-spice-turmeric)",
+  internal: "var(--color-garden-larkspur)",
+  unknown: "var(--color-paper-linen)",
+};
+
 function PersonRow({
   person,
   showRelationship,
@@ -548,26 +593,22 @@ function PersonRow({
   showRelationship: boolean;
   showBorder: boolean;
 }) {
-  const nameSuffix = (
-    <>
-      {showRelationship && person.relationship !== "unknown" && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: person.relationship === "external"
-              ? "var(--color-garden-larkspur)"
-              : "var(--color-text-tertiary)",
-          }}
-        >
-          {person.relationship}
-        </span>
-      )}
-    </>
-  );
+  const nameSuffix = showRelationship && person.relationship !== "unknown" ? (
+    <span
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+        color: person.relationship === "external"
+          ? "var(--color-garden-larkspur)"
+          : "var(--color-text-tertiary)",
+      }}
+    >
+      {person.relationship}
+    </span>
+  ) : undefined;
 
   const subtitle = (
     <>
@@ -575,6 +616,24 @@ function PersonRow({
       {(person.accountNames ?? person.organization) && person.role && " \u00B7 "}
       {person.role}
     </>
+  );
+
+  const ringColor = relationshipRingColor[person.relationship] ?? "var(--color-paper-linen)";
+
+  const avatar = (
+    <div style={{
+      width: 32,
+      height: 32,
+      borderRadius: "50%",
+      border: `2px solid ${ringColor}`,
+      flexShrink: 0,
+      marginTop: 2,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+    }}>
+      <Avatar name={person.name} personId={person.id} photoUrl={person.photoUrl ?? undefined} size={26} />
+    </div>
   );
 
   return (
@@ -586,8 +645,8 @@ function PersonRow({
       showBorder={showBorder}
       nameSuffix={nameSuffix}
       subtitle={subtitle}
-    >
-    </EntityRow>
+      avatar={avatar}
+    />
   );
 }
 

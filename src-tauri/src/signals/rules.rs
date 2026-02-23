@@ -526,6 +526,46 @@ pub fn rule_hierarchy_down(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSi
 }
 
 // ---------------------------------------------------------------------------
+// Rule: Person profile_discovered → Account profile_updated
+// ---------------------------------------------------------------------------
+
+/// When a person has a `profile_discovered` signal (e.g. from Gravatar),
+/// emit a derived `profile_updated` signal on each linked account so that
+/// account-level intelligence consumers are notified.
+pub fn rule_person_profile_discovered(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.entity_type != "person" || signal.signal_type != "profile_discovered" {
+        return Vec::new();
+    }
+
+    let entities = match db.get_entities_for_person(&signal.entity_id) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+
+    entities
+        .into_iter()
+        .filter(|e| matches!(e.entity_type, EntityType::Account))
+        .map(|e| {
+            let value = serde_json::json!({
+                "person_id": signal.entity_id,
+                "source_signal": signal.id,
+                "detail": signal.value,
+            })
+            .to_string();
+
+            DerivedSignal {
+                entity_type: "account".to_string(),
+                entity_id: e.id,
+                signal_type: "profile_updated".to_string(),
+                source: "propagation".to_string(),
+                value: Some(value),
+                confidence: signal.confidence * 0.8,
+            }
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // ActionDb helper methods for rules
 // ---------------------------------------------------------------------------
 
