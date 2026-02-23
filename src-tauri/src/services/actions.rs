@@ -33,7 +33,7 @@ pub fn complete_action(db: &ActionDb, engine: &crate::signals::propagation::Prop
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, engine,
             entity_type,
             &entity_id,
@@ -54,7 +54,7 @@ pub fn reopen_action(db: &ActionDb, engine: &crate::signals::propagation::Propag
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, engine,
             entity_type,
             &entity_id,
@@ -75,7 +75,7 @@ pub fn accept_proposed_action(db: &ActionDb, engine: &crate::signals::propagatio
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, engine,
             entity_type,
             &entity_id,
@@ -101,7 +101,7 @@ pub fn reject_proposed_action(db: &ActionDb, engine: &crate::signals::propagatio
     // Emit rejection signal for correction learning (I307)
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, engine,
             entity_type,
             &entity_id,
@@ -127,7 +127,7 @@ pub fn update_action_priority(db: &ActionDb, engine: &crate::signals::propagatio
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
-        let _ = crate::signals::bus::emit_signal_and_propagate(
+        let _ = crate::services::signals::emit_and_propagate(
             db, engine,
             entity_type,
             &entity_id,
