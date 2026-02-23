@@ -113,7 +113,9 @@ export default function MeetingDetailPage() {
       return;
     }
     try {
-      setLoading(true);
+      // Only show loading skeleton on initial load — subsequent reloads
+      // keep existing content visible to preserve scroll position.
+      if (!data) setLoading(true);
       setError(null);
       const intel = await invoke<MeetingIntelligence>("get_meeting_intelligence", {
         meetingId,
@@ -439,7 +441,7 @@ Thanks!`;
           </button>
         )}
         <FolioRefreshButton
-          onClick={() => loadMeetingIntelligence()}
+          onClick={handleRefreshIntelligence}
           loading={refreshingIntel}
           title="Check for updates"
         />
