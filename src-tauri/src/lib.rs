@@ -17,6 +17,7 @@ pub mod db;
 mod db_backup;
 mod devtools;
 pub mod embeddings;
+mod enrichment;
 pub mod entity;
 pub mod entity_io;
 mod error;
@@ -72,6 +73,16 @@ const SCHEDULER_CHANNEL_SIZE: usize = 32;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logger — writes to stderr, filtered by RUST_LOG env var.
+    // Default: info level for dailyos, warn for everything else.
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("dailyos_lib=info,warn"),
+    )
+    .format_timestamp_millis()
+    .init();
+
+    log::info!("DailyOS starting");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
@@ -201,17 +212,10 @@ pub fn run() {
                 granola::poller::run_granola_poller(granola_state, granola_handle).await;
             });
 
-            // Spawn Gravatar avatar fetcher (I229)
-            let gravatar_state = state.clone();
+            // Spawn unified enrichment processor (Clay + Gravatar)
+            let enrichment_state = state.clone();
             tauri::async_runtime::spawn(async move {
-                gravatar::client::run_gravatar_fetcher(gravatar_state).await;
-            });
-
-            // Spawn Clay enrichment poller (I228)
-            let clay_state = state.clone();
-            let clay_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                clay::poller::run_clay_poller(clay_state, clay_handle).await;
+                enrichment::run_enrichment_processor(enrichment_state).await;
             });
 
             // Spawn Linear sync poller (I346)
@@ -531,7 +535,7 @@ pub fn run() {
             commands::fetch_gravatar,
             commands::bulk_fetch_gravatars,
             commands::get_person_avatar,
-            // Clay Integration (I228)
+            // Clay Integration (I228) via Smithery Connect
             commands::get_clay_status,
             commands::set_clay_enabled,
             commands::set_clay_api_key,
@@ -541,12 +545,23 @@ pub fn run() {
             commands::enrich_account_from_clay,
             commands::start_clay_bulk_enrich,
             commands::get_enrichment_log,
+            commands::detect_smithery_settings,
+            commands::save_smithery_api_key,
+            commands::set_smithery_connection,
+            commands::disconnect_smithery,
+            commands::get_smithery_status,
             // Linear Integration (I346)
             commands::get_linear_status,
             commands::set_linear_enabled,
             commands::set_linear_api_key,
             commands::test_linear_connection,
             commands::start_linear_sync,
+            commands::get_linear_recent_issues,
+            commands::get_linear_entity_links,
+            commands::get_linear_projects,
+            commands::create_linear_entity_link,
+            commands::run_linear_auto_link,
+            commands::delete_linear_entity_link,
             // I309: Role Presets
             commands::set_role,
             commands::get_active_preset,
