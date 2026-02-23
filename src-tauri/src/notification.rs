@@ -3,7 +3,7 @@
 //! Provides a simple interface to send native notifications.
 //! Uses tauri-plugin-notification for cross-platform support.
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
 /// Send a notification to the user
@@ -44,6 +44,32 @@ pub fn notify_transcript_ready(
         _ => meeting_title.to_string(),
     };
     send_notification(app, "Transcript Ready", &body)
+}
+
+/// Send a native notification when Google OAuth token expires.
+/// Fires to macOS Notification Center so the user sees it even when the app is backgrounded.
+pub fn notify_auth_expired(app: &AppHandle) -> Result<(), String> {
+    send_notification(
+        app,
+        "DailyOS — Action Required",
+        "Reconnect your Google account in Settings.",
+    )
+}
+
+/// Emit a system-status event to the frontend for toast display.
+pub fn emit_system_status(app: &AppHandle, status_type: &str, message: &str) {
+    #[derive(serde::Serialize, Clone)]
+    struct SystemStatus {
+        r#type: String,
+        message: String,
+    }
+    let _ = app.emit(
+        "system-status",
+        SystemStatus {
+            r#type: status_type.to_string(),
+            message: message.to_string(),
+        },
+    );
 }
 
 /// Send an error notification

@@ -17,7 +17,7 @@ export interface AtmosphereLayerProps {
    * Color scheme for the gradient and watermark
    * Default: 'turmeric'
    */
-  color?: 'turmeric' | 'terracotta' | 'larkspur' | 'olive';
+  color?: 'turmeric' | 'terracotta' | 'larkspur' | 'olive' | 'eucalyptus';
 
   /**
    * Optional: custom class name for styling
