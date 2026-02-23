@@ -8,7 +8,7 @@ export type ProfileType = "customer-success" | "general";
 export type EntityMode = "account" | "project" | "both";
 export type SettingsTabId =
   | "you"
-  | "connections"
+  | "connectors"
   | "system"
   | "diagnostics"
   // Legacy tab IDs — kept for deep-link backwards compatibility
