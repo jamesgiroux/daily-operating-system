@@ -5,14 +5,15 @@
 //! 2. Stdio fallback — spawns `npx -y @clayhq/clay-mcp` as a child process
 //!
 //! Since the rmcp crate in this project does not include an SSE transport feature,
-//! the SSE path is attempted via raw reqwest + manual JSON-RPC, and the stdio path
-//! uses the standard rmcp `TokioChildProcess` transport (same pattern as Gravatar).
+//! the SSE path uses raw reqwest + manual JSON-RPC over HTTP (MCP Streamable HTTP).
+//! The stdio path uses the standard rmcp `TokioChildProcess` transport.
 
 use rmcp::model::CallToolRequestParam;
 use rmcp::service::RunningService;
 use rmcp::transport::child_process::TokioChildProcess;
 use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -124,22 +125,55 @@ pub enum ClayError {
     ParseError(String),
     #[error("No API key configured for Clay")]
     NoApiKey,
+    #[error("SSE error: {0}")]
+    SseError(String),
+}
+
+// ---------------------------------------------------------------------------
+// JSON-RPC types for SSE transport
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct JsonRpcRequest {
+    jsonrpc: &'static str,
+    id: u64,
+    method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    params: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct JsonRpcResponse {
+    #[serde(default)]
+    result: Option<serde_json::Value>,
+    #[serde(default)]
+    error: Option<JsonRpcError>,
+}
+
+#[derive(Deserialize)]
+struct JsonRpcError {
+    #[serde(default)]
+    message: String,
 }
 
 // ---------------------------------------------------------------------------
 // Transport wrapper
 // ---------------------------------------------------------------------------
 
+/// SSE transport state for direct HTTP communication with Clay MCP.
+struct SseTransport {
+    client: reqwest::Client,
+    token: String,
+    endpoint: String,
+    next_id: AtomicU64,
+}
+
 /// Which transport the client connected through.
-#[derive(Debug)]
 enum Transport {
-    /// Connected via SSE to mcp.clay.earth (future — reserved).
-    /// Currently unused because rmcp doesn't ship an SSE transport feature,
-    /// but the variant is kept so the enum is non-exhaustive-ready.
-    #[allow(dead_code)]
-    Sse,
+    /// Connected via SSE/HTTP to mcp.clay.earth with Bearer auth.
+    Sse(SseTransport),
     /// Connected via stdio child process (npx @clayhq/clay-mcp).
-    Stdio,
+    Stdio(RunningService<RoleClient, ()>),
 }
 
 // ---------------------------------------------------------------------------
@@ -148,8 +182,6 @@ enum Transport {
 
 /// MCP client wrapper for the Clay server.
 pub struct ClayClient {
-    service: RunningService<RoleClient, ()>,
-    #[allow(dead_code)]
     transport: Transport,
 }
 
@@ -157,23 +189,110 @@ impl ClayClient {
     /// Connect to the Clay MCP server.
     ///
     /// Strategy:
-    /// 1. Try SSE to `https://mcp.clay.earth/mcp` (currently skipped — rmcp has
-    ///    no SSE transport feature compiled in; left as a TODO for when the crate
-    ///    adds `transport-sse`).
-    /// 2. Fall back to spawning `npx -y @clayhq/clay-mcp` via stdio.
-    ///
-    /// The API key is passed as `CLAY_API_KEY` env var to the child process.
+    /// 1. If an OAuth token exists in keychain, try SSE to `https://mcp.clay.earth/mcp`.
+    /// 2. Fall back to spawning `npx -y @clayhq/clay-mcp` via stdio with the API key.
     pub async fn connect(api_key: &str) -> Result<Self, ClayError> {
         if api_key.is_empty() {
             return Err(ClayError::NoApiKey);
         }
 
-        // TODO: When rmcp gains `transport-sse`, try SSE first:
-        //   SseTransport::new("https://mcp.clay.earth/mcp")
-        //       .with_header("Authorization", format!("Bearer {}", api_key))
-        // For now, go straight to stdio fallback.
+        // Try SSE first if we have an OAuth token from keychain
+        if let Some(token) = super::oauth::get_clay_token() {
+            match Self::connect_sse(&token).await {
+                Ok(client) => return Ok(client),
+                Err(e) => {
+                    log::warn!("Clay SSE connection failed, falling back to stdio: {}", e);
+                }
+            }
+        }
 
         Self::connect_stdio(api_key).await
+    }
+
+    /// Connect via SSE to the Clay MCP endpoint.
+    async fn connect_sse(token: &str) -> Result<Self, ClayError> {
+        let endpoint = "https://mcp.clay.earth/mcp".to_string();
+        let client = reqwest::Client::new();
+
+        let sse = SseTransport {
+            client,
+            token: token.to_string(),
+            endpoint,
+            next_id: AtomicU64::new(1),
+        };
+
+        // Send initialize request to verify the connection works
+        let init_request = JsonRpcRequest {
+            jsonrpc: "2.0",
+            id: sse.next_id.fetch_add(1, Ordering::Relaxed),
+            method: "initialize".to_string(),
+            params: Some(serde_json::json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "dailyos",
+                    "version": env!("CARGO_PKG_VERSION"),
+                }
+            })),
+        };
+
+        let response = sse
+            .client
+            .post(&sse.endpoint)
+            .header("Authorization", format!("Bearer {}", sse.token))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&init_request)
+            .send()
+            .await
+            .map_err(|e| ClayError::SseError(format!("Initialize request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(ClayError::SseError(format!(
+                "Initialize returned status {}",
+                response.status()
+            )));
+        }
+
+        // Parse the response — it may come as SSE or direct JSON
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ClayError::SseError(format!("Failed to read init response: {}", e)))?;
+
+        let json_text = extract_json_from_sse_or_raw(&body);
+        let resp: JsonRpcResponse = serde_json::from_str(&json_text).map_err(|e| {
+            ClayError::SseError(format!("Failed to parse init response: {}: {}", e, body))
+        })?;
+
+        if let Some(err) = resp.error {
+            return Err(ClayError::SseError(format!(
+                "Initialize error: {}",
+                err.message
+            )));
+        }
+
+        // Send initialized notification (no response expected)
+        let notif = JsonRpcRequest {
+            jsonrpc: "2.0",
+            id: sse.next_id.fetch_add(1, Ordering::Relaxed),
+            method: "notifications/initialized".to_string(),
+            params: None,
+        };
+
+        let _ = sse
+            .client
+            .post(&sse.endpoint)
+            .header("Authorization", format!("Bearer {}", sse.token))
+            .header("Content-Type", "application/json")
+            .json(&notif)
+            .send()
+            .await;
+
+        log::info!("Clay SSE transport connected successfully");
+        Ok(Self {
+            transport: Transport::Sse(sse),
+        })
     }
 
     /// Stdio fallback: spawn `npx -y @clayhq/clay-mcp`.
@@ -194,9 +313,91 @@ impl ClayClient {
             .map_err(|e| ClayError::ConnectionFailed(e.to_string()))?;
 
         Ok(Self {
-            service,
-            transport: Transport::Stdio,
+            transport: Transport::Stdio(service),
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // Internal: call_tool dispatch
+    // -----------------------------------------------------------------------
+
+    /// Call an MCP tool, dispatching to the appropriate transport.
+    async fn call_tool_inner(
+        &self,
+        name: String,
+        arguments: serde_json::Value,
+    ) -> Result<String, ClayError> {
+        match &self.transport {
+            Transport::Sse(sse) => {
+                let request = JsonRpcRequest {
+                    jsonrpc: "2.0",
+                    id: sse.next_id.fetch_add(1, Ordering::Relaxed),
+                    method: "tools/call".to_string(),
+                    params: Some(serde_json::json!({
+                        "name": name,
+                        "arguments": arguments.as_object(),
+                    })),
+                };
+
+                let response = sse
+                    .client
+                    .post(&sse.endpoint)
+                    .header("Authorization", format!("Bearer {}", sse.token))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json, text/event-stream")
+                    .json(&request)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        ClayError::ToolCallFailed(format!("HTTP request failed: {}", e))
+                    })?;
+
+                if !response.status().is_success() {
+                    return Err(ClayError::ToolCallFailed(format!(
+                        "HTTP {} from Clay MCP",
+                        response.status()
+                    )));
+                }
+
+                let body = response.text().await.map_err(|e| {
+                    ClayError::ToolCallFailed(format!("Failed to read response: {}", e))
+                })?;
+
+                let json_text = extract_json_from_sse_or_raw(&body);
+                let resp: JsonRpcResponse =
+                    serde_json::from_str(&json_text).map_err(|e| {
+                        ClayError::ParseError(format!(
+                            "JSON-RPC parse error: {}: {}",
+                            e, body
+                        ))
+                    })?;
+
+                if let Some(err) = resp.error {
+                    return Err(ClayError::ToolCallFailed(err.message));
+                }
+
+                // Extract text content from the MCP tool result
+                let result = resp.result.unwrap_or(serde_json::Value::Null);
+                extract_tool_text_from_result(&result)
+            }
+            Transport::Stdio(service) => {
+                let result = service
+                    .call_tool(CallToolRequestParam {
+                        name: name.into(),
+                        arguments: arguments.as_object().cloned(),
+                    })
+                    .await
+                    .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+
+                if result.is_error == Some(true) {
+                    return Err(ClayError::ToolCallFailed(Self::extract_error_text(
+                        &result,
+                    )));
+                }
+
+                Ok(Self::extract_text(&result))
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -205,22 +406,10 @@ impl ClayClient {
 
     /// Search for contacts matching a free-text query (name, email, company, etc.).
     pub async fn search_contact(&self, query: &str) -> Result<Vec<ClayContact>, ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "search_contacts".into(),
-                arguments: serde_json::json!({ "query": query })
-                    .as_object()
-                    .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+        let text = self
+            .call_tool_inner("search_contacts".to_string(), serde_json::json!({ "query": query }))
+            .await?;
 
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
-
-        let text = Self::extract_text(&result);
         serde_json::from_str(&text).map_err(|e| {
             ClayError::ParseError(format!("search_contacts response: {}: {}", e, text))
         })
@@ -231,22 +420,13 @@ impl ClayClient {
         &self,
         contact_id: &str,
     ) -> Result<ClayContactDetail, ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "get_contact".into(),
-                arguments: serde_json::json!({ "contactId": contact_id })
-                    .as_object()
-                    .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+        let text = self
+            .call_tool_inner(
+                "get_contact".to_string(),
+                serde_json::json!({ "contactId": contact_id }),
+            )
+            .await?;
 
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
-
-        let text = Self::extract_text(&result);
         serde_json::from_str(&text).map_err(|e| {
             ClayError::ParseError(format!("get_contact response: {}: {}", e, text))
         })
@@ -257,22 +437,13 @@ impl ClayClient {
         &self,
         contact_id: &str,
     ) -> Result<ClayContactStats, ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "get_contact_stats".into(),
-                arguments: serde_json::json!({ "contactId": contact_id })
-                    .as_object()
-                    .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
+        let text = self
+            .call_tool_inner(
+                "get_contact_stats".to_string(),
+                serde_json::json!({ "contactId": contact_id }),
+            )
+            .await?;
 
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
-
-        let text = Self::extract_text(&result);
         serde_json::from_str(&text).map_err(|e| {
             ClayError::ParseError(format!("get_contact_stats response: {}: {}", e, text))
         })
@@ -280,30 +451,27 @@ impl ClayClient {
 
     /// Add a note to a contact record in Clay.
     pub async fn add_note(&self, contact_id: &str, note: &str) -> Result<(), ClayError> {
-        let result = self
-            .service
-            .call_tool(CallToolRequestParam {
-                name: "add_note".into(),
-                arguments: serde_json::json!({
-                    "contactId": contact_id,
-                    "note": note,
-                })
-                .as_object()
-                .cloned(),
-            })
-            .await
-            .map_err(|e| ClayError::ToolCallFailed(e.to_string()))?;
-
-        if result.is_error == Some(true) {
-            return Err(ClayError::ToolCallFailed(Self::extract_error_text(&result)));
-        }
-
+        self.call_tool_inner(
+            "add_note".to_string(),
+            serde_json::json!({
+                "contactId": contact_id,
+                "note": note,
+            }),
+        )
+        .await?;
         Ok(())
     }
 
     /// Disconnect from the Clay MCP server, shutting down the child process.
     pub async fn disconnect(self) {
-        let _ = self.service.cancel().await;
+        match self.transport {
+            Transport::Sse(_) => {
+                // HTTP transport has no persistent connection to close
+            }
+            Transport::Stdio(service) => {
+                let _ = service.cancel().await;
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -332,5 +500,61 @@ impl ClayClient {
             .and_then(|c| c.as_text())
             .map(|t| t.text.clone())
             .unwrap_or_else(|| "Unknown error".to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SSE response parsing helpers
+// ---------------------------------------------------------------------------
+
+/// Extract JSON from a response body that may be either raw JSON or SSE format.
+/// SSE responses contain lines like `data: {...}` — we extract the JSON from those.
+fn extract_json_from_sse_or_raw(body: &str) -> String {
+    let trimmed = body.trim();
+
+    // If it starts with '{', it's already raw JSON
+    if trimmed.starts_with('{') {
+        return trimmed.to_string();
+    }
+
+    // Otherwise, look for `data:` lines in SSE format and concatenate the JSON
+    let mut json_parts = Vec::new();
+    for line in trimmed.lines() {
+        let line = line.trim();
+        if let Some(data) = line.strip_prefix("data:") {
+            let data = data.trim();
+            if !data.is_empty() && data != "[DONE]" {
+                json_parts.push(data.to_string());
+            }
+        }
+    }
+
+    if json_parts.is_empty() {
+        // Fallback: return the whole body and let the caller's JSON parser fail
+        trimmed.to_string()
+    } else {
+        // Usually there's one JSON object in the data lines
+        json_parts.join("")
+    }
+}
+
+/// Extract text content from a JSON-RPC tool call result.
+/// MCP tool results have the shape: `{ "content": [{ "type": "text", "text": "..." }] }`
+fn extract_tool_text_from_result(result: &serde_json::Value) -> Result<String, ClayError> {
+    if let Some(content) = result.get("content").and_then(|c| c.as_array()) {
+        let text: String = content
+            .iter()
+            .filter_map(|item| {
+                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    item.get("text").and_then(|t| t.as_str()).map(String::from)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok(text)
+    } else {
+        // If the result itself is a string or something else, stringify it
+        Ok(result.to_string())
     }
 }
