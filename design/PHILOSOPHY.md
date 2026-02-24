@@ -123,12 +123,13 @@ Think about where your information lives right now:
 - Only accessible in Google Docs
 - Only accessible in Gong
 - Only accessible in Slack
-- Only accessible in Glean
 - Only accessible in [your company's tool of choice]
 
-Sure, there are connectors. Sure, there's shareability. But each tool is building a moat around your data. The "value" they sell is visibility to the group, but they extract a tax: your information becomes hostage to their database layer.
+Sure, there are connectors. Sure, there's shareability. But many of these tools are building moats around your data. The "value" they sell is visibility to the group, but they extract a tax: your information becomes hostage to their database layer.
 
 On any given day, you're hopping between 10 or 12 different apps. Not because it's efficient. Because your data is scattered across a dozen kingdoms that won't talk to each other.
+
+(Not all enterprise tools are silos. Some — like Glean — are moving toward open, consumption-friendly models: MCP servers, context APIs, cross-tool synthesis. Those are directionally aligned with what we believe. The enemy isn't enterprise software; it's data hostage-taking. Tools that trust you with your data are peers, not threats.)
 
 **Where's the one place that has access to everything? Your local machine.**
 
@@ -193,7 +194,7 @@ Here's what separates AI-native from digital-native at a fundamental level.
 
 **AI-native apps produce data every AI can consume.**
 
-DailyOS writes markdown. Not because we're nostalgic for text files. Because markdown is the universal language of AI. Every LLM — Claude, ChatGPT, Gemini, whatever comes next — can read, understand, and reason about markdown files. When DailyOS maintains your meeting prep, your account dashboards, your action items, your transcript summaries — it's simultaneously maintaining a knowledge base that *any* AI tool can work with.
+DailyOS writes open formats — markdown for narrative, JSON for structured intelligence. Not because we're nostalgic for text files. Because open formats are the universal language of AI. Every LLM — Claude, ChatGPT, Gemini, whatever comes next — can read, understand, and reason about them. When DailyOS maintains your meeting prep, your account dashboards, your action items, your transcript summaries — it's simultaneously maintaining a knowledge base that *any* AI tool can work with.
 
 This isn't a side effect. It's the strategy.
 
@@ -233,6 +234,46 @@ The productive work happens alone. Then you bring it to the group.
 **DailyOS is for the alone part.**
 
 The handoff to collaboration is simple: rendered outputs you can paste, share, or present. Documents ready for Google Docs. Summaries ready for Slack. Prep ready for meetings. The format of where your content goes is up to you—we give you something ready to use.
+
+---
+
+## The Three-Layer Context Model
+
+HBR published a study in 2024 comparing two B2B technology firms with identical CRM processes and materially different execution outcomes. The finding: systems of record capture outcomes. They don't capture how execution unfolded — the judgment calls, the escalation patterns, the risk trade-offs, the signals that shaped which deals closed and which didn't. That context lived in emails, chat threads, working documents, and conversations. It disappeared once the deal moved forward.
+
+Enterprise AI (Glean, Copilot, etc.) is building a second layer on top of systems of record — an organisational context graph. It pre-indexes everything the company knows, maps relationships across tools, and makes that knowledge available to AI systems before you ask. It's genuinely valuable.
+
+But there are three layers, not two:
+
+| Layer | What it holds | Who owns it |
+|-------|--------------|-------------|
+| Systems of record | Outcomes and transactions | The organisation |
+| Organisational context | How the org makes decisions; patterns across roles and deals | The organisation |
+| **Individual context** | How this person works; their relationships, judgment patterns, and accumulated professional knowledge | **The individual** |
+
+Enterprise AI addresses layers 1 and 2. Layer 3 is DailyOS's domain.
+
+The most valuable context — the sales director's instinct about why "internal budget alignment" in a customer email signals slippage, not paperwork — comes from her specific history with specific accounts over time. You can't index that without losing the specificity that makes it signal rather than noise. And once she knows the system is capturing her private observations for shared access, she stops writing honest ones.
+
+**The most valuable context is irreducibly personal.** Individual context cannot be fully captured without degrading it. It cannot be shared without transforming it. It lives in one person's experience, and it belongs to them.
+
+DailyOS is the individual context layer the enterprise AI stack is missing. Not a replacement for organisational knowledge graphs — a complement. Glean knows what your company knows. DailyOS knows what *you* know.
+
+---
+
+## Sharing at the Output Layer
+
+Because individual context is personal, sharing happens at the output layer — not the signal layer.
+
+The brief draws on private signals: email tone patterns, relationship temperature readings, personal coaching observations. These signals have value because they're unfiltered. The moment you introduce an audience, the honesty disappears. The intelligence gets sanitised for the reader.
+
+Reports are different. An EBR/QBR, an Account Health Review, a Stakeholder Map — these are documents you've reviewed, edited, and decided represent your considered view. They're authored, not automatically generated. They're appropriate to share.
+
+The architecture follows from this principle:
+- Signals → intelligence → brief: private, local, never leaves your machine
+- Intelligence → report: curated by you, shareable at your discretion
+
+This isn't a technical constraint. It's a values statement. DailyOS is not a surveillance tool. The value of personal intelligence depends on its remaining personal.
 
 ---
 

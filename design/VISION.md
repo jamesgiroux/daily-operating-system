@@ -32,6 +32,9 @@ We integrate with your calendar; we don't replace it. Google Calendar stays. We 
 **Not a collaboration tool.**
 DailyOS is for the alone part of work—individual execution, preparation, synthesis. Collaboration happens in Slack, Docs, meetings. We prepare you for those.
 
+**Not an enterprise knowledge tool.**
+Glean, Microsoft Copilot, and similar platforms index what the *organisation* knows — tickets, docs, CRM records, calls across every system. They answer "what does the company know about this account?" DailyOS answers "what do *you* know about this account?" These are different questions requiring different architectures. Glean is the org's knowledge graph. DailyOS is yours. They complement each other; DailyOS can consume Glean context as an enrichment source (via MCP), but DailyOS does not feed personal intelligence back into shared indexes.
+
 **Not a Claude Code replacement.**
 Power users who want full control can still use Claude Code directly. DailyOS is the consumption layer on top of the same primitives.
 
@@ -266,6 +269,10 @@ What makes this possible is the combination of **personal context** (your calend
 | Domain intelligence | Tools authoritative in their domain — CRM, transcripts, project tracking, support | Gong, Salesforce, Gainsight, Linear, Zendesk |
 | Operational memory | DailyOS maintains readiness with continuity — briefings, preps, entity intelligence, actions, relationship history | The app |
 | Creative/analytical | AI tools consume the archive for deeper work — reports, strategies, content, analysis | Claude Desktop, ChatGPT |
+
+There is also an adjacent but distinct layer: **organisational context** (Glean, Microsoft Copilot). This layer indexes what the entire organisation knows across all its tools. DailyOS and organisational context tools are complements: Glean knows what VIP knows about an account; DailyOS knows what *you* know. The integration model is one-way consumption — DailyOS can pull Glean context as an enrichment source, enriching entity intelligence with what VIP's systems record. DailyOS does not push personal signals into Glean.
+
+This distinction is important because the most valuable context in DailyOS is irreducibly personal. The brief's quality depends on it being honest, unfiltered, and built from your specific signals — your relationship history, your judgment patterns, your coaching observations. That quality disappears if the intelligence is shared into an organisational layer where users know colleagues and systems can see it.
 
 Domain tools are the best source for their data. DailyOS is the best synthesizer of *your* context across all of them — the layer that turns scattered signals into operational readiness, maintained continuously. Creative tools consume what DailyOS maintains to produce artifacts that require deeper thought.
 
