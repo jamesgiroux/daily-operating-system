@@ -7584,6 +7584,39 @@ pub fn trigger_drive_sync_now(state: State<Arc<AppState>>) -> Result<(), String>
     Ok(())
 }
 
+/// Import a file from Google Drive once (no ongoing sync).
+///
+/// Downloads the file, converts to markdown, and saves to the entity's
+/// Documents/ folder. Does NOT create a watched source entry.
+#[tauri::command]
+pub async fn import_google_drive_file(
+    google_id: String,
+    name: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let content = crate::google_drive::client::download_file_as_markdown(&google_id).await?;
+
+    let workspace = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
+        .ok_or("Workspace not configured")?;
+
+    let path = crate::google_drive::poller::save_to_entity_docs(
+        &workspace,
+        &entity_type,
+        &entity_id,
+        &name,
+        &content,
+    )?;
+
+    log::info!("Drive import (once): saved {} to {}", name, path.display());
+    Ok(path.display().to_string())
+}
+
 /// Add a watched Drive source linked to an entity.
 #[tauri::command]
 pub fn add_google_drive_watch(
