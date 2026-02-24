@@ -4,6 +4,41 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.14.3] - 2026-02-24
+
+Google Drive becomes a first-class connector. Import documents, spreadsheets, and presentations from Google Drive into entity intelligence — one-time or with ongoing sync via the Changes API.
+
+### Added
+
+- **Google Drive Connector** — Import files from Google Drive into entity Documents/ folders via Google Picker UI. Multi-select, entity linking, folder browsing. Files are converted to markdown: Docs via text/markdown export, Sheets via CSV in code blocks, Slides via text/plain export.
+- **Import Once vs Watch Mode** — Choose between one-time import (file downloaded, no ongoing sync) and watch mode (Drive Changes API polls for updates on 60-minute adaptive interval).
+- **Drive Settings UI** — Google connector section in Settings shows watched document count, last sync timestamp, Sync Now button, and per-source remove controls.
+
+### Fixed
+
+- **Update Banner Position** — Banner now renders below the FolioBar instead of behind it. Dismiss X button moved into flex flow (was overlapping Install & Restart).
+- **HTML in Meeting Descriptions** — Calendar descriptions containing HTML markup (from Google Calendar) now display as clean text on the daily briefing page.
+- **Tauri Command Serialization** — Fixed parameter names for all Google Drive commands.
+
+## [0.14.2] - 2026-02-23
+
+Role preset expansion and personality wiring. Every AI prompt now uses the active preset's persona instead of hardcoded "Customer Success Manager." Background task throttling reduces idle wakeups by 83%.
+
+### Added
+
+- **Role Preset Persona in AI Prompts** — Meeting prep and intelligence prompts use the active preset's role name and vocabulary. Sales users get sales-framed prep, Product Managers get product-framed prep.
+- **Background Task Throttling** — ActivityMonitor, adaptive polling. Heavy operations serialized during active use.
+- **Personality Expanded in UI** — Completion messages, generating states, toasts, and error copy all respond to personality setting. All 9 presets verified functional.
+
+### Fixed
+
+- **1:1 Meeting Prep** — 1:1 meetings now focus on person intelligence (relationship history, recent topics, open actions) rather than account intelligence.
+- **Product Vocabulary** — Fixed system terms appearing in user-facing copy on /me page.
+
+## [0.14.1] - 2026-02-23
+
+Retag of v0.14.0 for release pipeline.
+
 ## [0.14.0] - 2026-02-23
 
 User entity + professional context. The app now knows about you — your role, what you deliver, your priorities, and your knowledge. This context shapes all entity intelligence, signal ranking, and meeting prep. Every account/person/project intelligence output now includes your perspective.
