@@ -3255,6 +3255,7 @@ mod tests {
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
+            drive: crate::types::DriveConfig::default(),
         }
     }
 }
