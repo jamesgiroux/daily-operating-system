@@ -107,6 +107,8 @@ pub struct IntegrationState {
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
     pub email_poller_wake: Arc<tokio::sync::Notify>,
     pub granola_poller_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the Google Drive poller (I426).
+    pub drive_poller_wake: Arc<tokio::sync::Notify>,
     /// Wake signal for the intelligence queue processor.
     pub intel_queue_wake: Arc<tokio::sync::Notify>,
     /// Wake signal for the meeting prep queue processor.
@@ -254,6 +256,7 @@ impl AppState {
                 linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 email_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 granola_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                drive_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 intel_queue_wake: Arc::new(tokio::sync::Notify::new()),
                 prep_queue_wake: Arc::new(tokio::sync::Notify::new()),
                 embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
@@ -546,6 +549,7 @@ pub fn create_or_update_config(
                 gravatar: crate::gravatar::GravatarConfig::default(),
                 clay: crate::clay::ClayConfig::default(),
                 linear: crate::linear::LinearConfig::default(),
+                drive: crate::types::DriveConfig::default(),
                 features: std::collections::HashMap::new(),
                 user_domain: None,
                 user_domains: None,
