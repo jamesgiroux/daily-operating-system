@@ -31,8 +31,6 @@ export function UpdateBanner({ onWhatsNew }: UpdateBannerProps) {
         padding: "16px 32px",
         borderBottom: "2px solid var(--color-rule-light)",
         backgroundColor: "var(--color-paper-cream)",
-        position: "relative",
-        zIndex: "var(--z-app-shell)",
         flexShrink: 0,
       }}
     >
@@ -63,7 +61,7 @@ export function UpdateBanner({ onWhatsNew }: UpdateBannerProps) {
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 24, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
         <button
           onClick={onWhatsNew}
           style={{
@@ -119,30 +117,27 @@ export function UpdateBanner({ onWhatsNew }: UpdateBannerProps) {
             "Install & Restart"
           )}
         </button>
-      </div>
 
-      <button
-        onClick={handleDismiss}
-        aria-label="Dismiss update banner"
-        style={{
-          position: "absolute",
-          right: 24,
-          top: "50%",
-          transform: "translateY(-50%)",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          color: "var(--color-text-tertiary)",
-          padding: 4,
-          display: "flex",
-          alignItems: "center",
-          transition: "color 0.2s ease",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-secondary)")}
-        onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
-      >
-        <X size={16} />
-      </button>
+        <button
+          onClick={handleDismiss}
+          aria-label="Dismiss update banner"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--color-text-tertiary)",
+            padding: 4,
+            marginLeft: 4,
+            display: "flex",
+            alignItems: "center",
+            transition: "color 0.2s ease",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-secondary)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+        >
+          <X size={16} />
+        </button>
+      </div>
     </div>
   );
 }

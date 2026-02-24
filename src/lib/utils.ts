@@ -176,3 +176,38 @@ export function stripMarkdown(text: string): string {
     .replace(/`(.+?)`/g, "$1")         // `code`
     .replace(/\[(.+?)\]\(.+?\)/g, "$1"); // [text](url)
 }
+
+/** Strip HTML tags from a string, preserving readable text.
+ *  Links become "text (url)", block elements become newlines. */
+export function stripHtml(html: string | undefined): string | undefined {
+  if (!html) return undefined;
+  const raw = html.trim();
+  if (!raw) return undefined;
+  if (!/[<>]/.test(raw)) return raw;
+
+  const withStructure = raw
+    .replace(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi, "$2 ($1)")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*li[^>]*>/gi, "- ")
+    .replace(/<\/\s*(p|div|section|article|li|tr|h[1-6])\s*>/gi, "\n");
+
+  try {
+    const doc = new DOMParser().parseFromString(withStructure, "text/html");
+    const text = (doc.body?.textContent ?? "").replace(/\u00a0/g, " ");
+    const normalized = text
+      .split("\n")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter((line, i, arr) => line.length > 0 || (i > 0 && arr[i - 1].length > 0))
+      .join("\n")
+      .trim();
+    if (normalized) return normalized;
+  } catch {
+    // Fall through to regex fallback.
+  }
+
+  const fallback = withStructure
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return fallback || raw;
+}

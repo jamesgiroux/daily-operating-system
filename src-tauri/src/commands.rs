@@ -7518,11 +7518,190 @@ pub fn get_google_client_id() -> String {
     "245504828099".to_string()
 }
 
-// Google Drive commands temporarily disabled pending google_drive module recovery
-// See v0.14.3 implementation for references:
-// - get_google_drive_status
-// - set_google_drive_enabled
-// - trigger_drive_sync_now
-// - add_google_drive_watch
-// - remove_google_drive_watch
-// - get_google_drive_watches
+/// Get Google Drive integration status.
+#[tauri::command]
+pub fn get_google_drive_status(state: State<Arc<AppState>>) -> crate::commands::DriveStatusData {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.drive.clone()));
+
+    let drive_config = config.unwrap_or_default();
+
+    let connected = state
+        .calendar
+        .google_auth
+        .lock()
+        .map(|guard| matches!(*guard, crate::types::GoogleAuthStatus::Authenticated { .. }))
+        .unwrap_or(false);
+
+    let (watched_count, synced_count, last_sync) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let conn = db.conn_ref();
+                let watched: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM drive_watched_sources",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                let synced: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM drive_watched_sources WHERE last_synced_at IS NOT NULL",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                let last: Option<String> = conn
+                    .query_row(
+                        "SELECT MAX(last_synced_at) FROM drive_watched_sources",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(None);
+                (watched, synced, last)
+            })
+        })
+        .unwrap_or((0, 0, None));
+
+    crate::commands::DriveStatusData {
+        enabled: drive_config.enabled,
+        connected,
+        watched_count,
+        synced_count,
+        last_sync_at: last_sync,
+        poll_interval_minutes: drive_config.poll_interval_minutes,
+    }
+}
+
+/// Enable or disable Google Drive integration.
+#[tauri::command]
+pub fn set_google_drive_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.drive.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Trigger an immediate Drive sync.
+#[tauri::command]
+pub fn trigger_drive_sync_now(state: State<Arc<AppState>>) -> Result<(), String> {
+    state.integrations.drive_poller_wake.notify_one();
+    Ok(())
+}
+
+/// Import a file from Google Drive once (no ongoing sync).
+///
+/// Downloads the file, converts to markdown, and saves to the entity's
+/// Documents/ folder. Does NOT create a watched source entry.
+#[tauri::command]
+pub async fn import_google_drive_file(
+    google_id: String,
+    name: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let content = crate::google_drive::client::download_file_as_markdown(&google_id).await?;
+
+    let workspace = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
+        .ok_or("Workspace not configured")?;
+
+    let path = crate::google_drive::poller::save_to_entity_docs(
+        &workspace,
+        &entity_type,
+        &entity_id,
+        &name,
+        &content,
+    )?;
+
+    log::info!("Drive import (once): saved {} to {}", name, path.display());
+    Ok(path.display().to_string())
+}
+
+/// Add a watched Drive source linked to an entity.
+#[tauri::command]
+pub fn add_google_drive_watch(
+    google_id: String,
+    name: String,
+    file_type: String,
+    google_doc_url: Option<String>,
+    entity_id: String,
+    entity_type: String,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database unavailable")?;
+
+    let watch_id = crate::google_drive::sync::upsert_watched_source(
+        db,
+        &google_id,
+        &name,
+        &file_type,
+        google_doc_url.as_deref(),
+        &entity_id,
+        &entity_type,
+    )?;
+
+    // Wake the poller so it does an initial sync
+    state.integrations.drive_poller_wake.notify_one();
+
+    Ok(watch_id)
+}
+
+/// Remove a watched Drive source.
+#[tauri::command]
+pub fn remove_google_drive_watch(
+    watch_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database unavailable")?;
+    crate::google_drive::sync::remove_watched_source(db, &watch_id)
+}
+
+/// Get all watched Drive sources.
+#[tauri::command]
+pub fn get_google_drive_watches(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<DriveWatchData>, String> {
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database unavailable")?;
+
+    let sources = crate::google_drive::sync::get_all_watched_sources(db)?;
+    Ok(sources
+        .into_iter()
+        .map(|s| DriveWatchData {
+            id: s.id,
+            google_id: s.google_id,
+            name: s.name,
+            file_type: s.file_type,
+            google_doc_url: s.google_doc_url,
+            entity_id: s.entity_id,
+            entity_type: s.entity_type,
+            last_synced_at: s.last_synced_at,
+        })
+        .collect())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveWatchData {
+    pub id: String,
+    pub google_id: String,
+    pub name: String,
+    pub file_type: String,
+    pub google_doc_url: Option<String>,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub last_synced_at: Option<String>,
+}
