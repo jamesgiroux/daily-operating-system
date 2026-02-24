@@ -129,6 +129,8 @@ pub struct AppState {
     pub config: RwLock<Option<Config>>,
     pub workflow: WorkflowState,
     pub db: Mutex<Option<crate::db::ActionDb>>,
+    /// User activity monitor for throttling background work (I426).
+    pub activity: Arc<crate::activity::ActivityMonitor>,
     /// Calendar subsystem state (I404).
     pub calendar: CalendarState,
     /// Capture subsystem state (I404).
@@ -156,8 +158,6 @@ pub struct AppState {
     /// embedding inference) to one at a time. Prevents resource contention
     /// between background processors.
     pub heavy_work_semaphore: Arc<tokio::sync::Semaphore>,
-    /// User activity monitor for background task throttling.
-    pub activity: crate::activity::ActivityMonitor,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -223,6 +223,7 @@ impl AppState {
                 last_scheduled_run: RwLock::new(HashMap::new()),
             },
             db: Mutex::new(db),
+            activity: Arc::new(crate::activity::ActivityMonitor::new()),
             calendar: CalendarState {
                 google_auth: Mutex::new(google_auth),
                 events: RwLock::new(Vec::new()),
@@ -264,7 +265,6 @@ impl AppState {
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-            activity: crate::activity::ActivityMonitor::new(),
         }
     }
 
