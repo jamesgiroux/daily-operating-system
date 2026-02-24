@@ -257,8 +257,12 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             polls_since_prune = 0;
         }
 
-        // Phase 0: Dequeue up to MAX_BATCH_SIZE requests (I289)
-        let batch = state.intel_queue.dequeue_batch(MAX_BATCH_SIZE);
+        // Phase 0: Dequeue up to adaptive batch size based on activity level (I289, performance)
+        // When user is Active: batch size 1 (faster individual processing, keeps app responsive)
+        // When Idle: batch size 2 (moderate throughput)
+        // When Background: batch size 3 (max throughput)
+        let batch_size = crate::activity::adaptive_batch_size(&state.activity);
+        let batch = state.intel_queue.dequeue_batch(batch_size);
         if batch.is_empty() {
             continue;
         }

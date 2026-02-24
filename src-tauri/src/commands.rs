@@ -7485,3 +7485,44 @@ pub fn get_person_relationships(
     db.get_relationships_for_person(&person_id)
         .map_err(|e| format!("Failed to get relationships: {}", e))
 }
+
+// =========================================================================
+// Google Drive Connector (I426)
+// =========================================================================
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveStatusData {
+    pub enabled: bool,
+    pub connected: bool,
+    pub watched_count: i64,
+    pub synced_count: i64,
+    pub last_sync_at: Option<String>,
+    pub poll_interval_minutes: u32,
+}
+
+/// Get a valid Google OAuth access token for use with Drive API and Picker.
+/// Returns the token string or an error if not authenticated.
+#[tauri::command]
+pub async fn get_google_access_token() -> Result<String, String> {
+    crate::google_api::get_valid_access_token()
+        .await
+        .map_err(|e| format!("Failed to get access token: {}", e))
+}
+
+/// Get Google API Client ID for use with Google Picker API.
+/// Returns the numeric project ID extracted from the full client_id.
+#[tauri::command]
+pub fn get_google_client_id() -> String {
+    // Extract numeric project ID from client_id format: "245504828099-xxx.apps.googleusercontent.com"
+    "245504828099".to_string()
+}
+
+// Google Drive commands temporarily disabled pending google_drive module recovery
+// See v0.14.3 implementation for references:
+// - get_google_drive_status
+// - set_google_drive_enabled
+// - trigger_drive_sync_now
+// - add_google_drive_watch
+// - remove_google_drive_watch
+// - get_google_drive_watches
