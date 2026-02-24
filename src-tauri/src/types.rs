@@ -36,6 +36,9 @@ pub struct Config {
     pub clay: crate::clay::ClayConfig,
     #[serde(default)]
     pub linear: crate::linear::LinearConfig,
+    /// Google Drive connector configuration (I426).
+    #[serde(default)]
+    pub drive: DriveConfig,
     #[serde(default)]
     pub features: HashMap<String, bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1641,6 +1644,30 @@ impl Default for GoogleConfig {
     }
 }
 
+/// Google Drive connector configuration (I426).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Poll interval in minutes for checking Drive changes (default: 60).
+    #[serde(default = "default_drive_poll_interval")]
+    pub poll_interval_minutes: u32,
+}
+
+fn default_drive_poll_interval() -> u32 {
+    60
+}
+
+impl Default for DriveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            poll_interval_minutes: default_drive_poll_interval(),
+        }
+    }
+}
+
 /// Google authentication status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -2172,6 +2199,7 @@ mod tests {
             gravatar: crate::gravatar::GravatarConfig::default(),
             clay: crate::clay::ClayConfig::default(),
             linear: crate::linear::LinearConfig::default(),
+            drive: DriveConfig::default(),
             features: HashMap::new(),
             user_domain: None,
             user_domains: None,
