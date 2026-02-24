@@ -90,6 +90,28 @@ pub struct Config {
     /// Pre-meeting refresh window in hours (default: 12). Options: 2, 4, 12, 24.
     #[serde(default = "default_hygiene_pre_meeting_hours")]
     pub hygiene_pre_meeting_hours: u32,
+    /// Google Drive integration configuration (I426).
+    #[serde(default)]
+    pub drive: DriveConfig,
+}
+
+/// Google Drive integration configuration (I426).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriveConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Poll interval in minutes for checking Drive changes (default: 60).
+    #[serde(default = "default_drive_poll_interval")]
+    pub poll_interval_minutes: u32,
+}
+
+impl Default for DriveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            poll_interval_minutes: default_drive_poll_interval(),
+        }
+    }
 }
 
 /// Profile-specific configuration (CSM users)
@@ -1707,6 +1729,10 @@ fn default_transcript_wait_minutes() -> u32 {
     10
 }
 
+fn default_drive_poll_interval() -> u32 {
+    60
+}
+
 impl Default for PostMeetingCaptureConfig {
     fn default() -> Self {
         Self {
@@ -2191,6 +2217,7 @@ mod tests {
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
+            drive: DriveConfig::default(),
         }
     }
 

@@ -5,6 +5,7 @@
 // Devtools mock data uses large tuple types for seed fixtures.
 #![allow(clippy::type_complexity)]
 
+pub mod activity;
 pub mod accounts;
 mod audit;
 mod backfill_meetings;
