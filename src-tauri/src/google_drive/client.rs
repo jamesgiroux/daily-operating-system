@@ -80,13 +80,48 @@ pub async fn get_changes(page_token: &str) -> Result<(Vec<DriveChange>, String),
         })
         .collect();
 
-    let next_page_token = body
+    // nextPageToken = more pages of changes to fetch
+    // newStartPageToken = no more changes; use this token for the next poll
+    let next_token = body
         .get("nextPageToken")
+        .or_else(|| body.get("newStartPageToken"))
         .and_then(|t| t.as_str())
         .unwrap_or("")
         .to_string();
 
-    Ok((changes, next_page_token))
+    Ok((changes, next_token))
+}
+
+/// Get a start page token for the Changes API.
+///
+/// This token represents "now" — subsequent `get_changes()` calls with this
+/// token will return only changes that happen after this point.
+pub async fn get_start_page_token() -> Result<String, String> {
+    let token = get_valid_access_token()
+        .await
+        .map_err(|e| format!("Failed to get access token: {}", e))?;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://www.googleapis.com/drive/v3/changes/startPageToken")
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get start page token: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Drive API error getting start token: {}", response.status()));
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse start token response: {}", e))?;
+
+    body.get("startPageToken")
+        .and_then(|t| t.as_str())
+        .map(String::from)
+        .ok_or_else(|| "No startPageToken in response".to_string())
 }
 
 /// Download a file from Google Drive and convert to markdown.
@@ -157,6 +192,23 @@ pub async fn download_file_as_markdown(file_id: &str) -> Result<String, String> 
             .map_err(|e| format!("Failed to read export content: {}", e))?;
 
         Ok(format!("```csv\n{}\n```", content))
+    } else if mime_type.contains("presentation") {
+        // For slides, export as plain text
+        let export_url = format!(
+            "https://www.googleapis.com/drive/v3/files/{}/export?mimeType=text/plain",
+            file_id
+        );
+        let content = client
+            .get(&export_url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to export presentation: {}", e))?
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read export content: {}", e))?;
+
+        Ok(format!("# {}\n\n{}", name, content))
     } else {
         // For files we can't export, just add metadata
         Ok(format!("# {}\n\n*File type: {}*\n\n(Binary or unsupported format)", name, mime_type))
