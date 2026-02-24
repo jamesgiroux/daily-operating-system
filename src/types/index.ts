@@ -1721,6 +1721,27 @@ export interface LinearStatusData {
 }
 
 // =============================================================================
+// Google Drive Integration (I426)
+// =============================================================================
+
+export interface DriveStatusData {
+  enabled: boolean;
+  watchedCount: number;
+  lastSyncAt: string | null;
+}
+
+export interface DriveWatchedSource {
+  id: string;
+  googleId: string;
+  name: string;
+  type: "document" | "spreadsheet" | "folder" | "presentation";
+  googleDocUrl: string | null;
+  entityId: string;
+  entityType: string;
+  lastSyncedAt: string | null;
+}
+
+// =============================================================================
 // Meeting Timeline (±7 day intelligence timeline)
 // =============================================================================
 
