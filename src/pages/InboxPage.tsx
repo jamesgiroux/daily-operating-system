@@ -9,6 +9,7 @@ import { EditorialError } from "@/components/editorial/EditorialError";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
+import { GoogleDriveImportModal } from "@/components/inbox/GoogleDriveImportModal";
 import type { InboxFile, InboxFileType } from "@/types";
 
 // =============================================================================
@@ -183,6 +184,7 @@ export default function InboxPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [dropResult, setDropResult] = useState<{ count: number } | null>(null);
   const lastDropRef = useRef<{ signature: string; at: number } | null>(null);
+  const [driveModalOpen, setDriveModalOpen] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Tauri drag-drop listener
@@ -528,6 +530,26 @@ export default function InboxPage() {
       activePage: "dropbox" as const,
       folioActions: (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={() => setDriveModalOpen(true)}
+            disabled={processingAll}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: processingAll ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+              background: "none",
+              border: "1px solid var(--color-rule-heavy)",
+              borderRadius: 4,
+              padding: "2px 10px",
+              cursor: processingAll ? "default" : "pointer",
+              opacity: processingAll ? 0.5 : 1,
+            }}
+          >
+            Google Drive
+          </button>
           {processingAll ? (
             <button
               onClick={cancelAll}
@@ -888,6 +910,12 @@ export default function InboxPage() {
 
       {/* ═══ END MARK ═══ */}
       {visibleFiles.length > 0 && <FinisMarker />}
+
+      <GoogleDriveImportModal
+        open={driveModalOpen}
+        onClose={() => setDriveModalOpen(false)}
+        onImported={refresh}
+      />
     </div>
   );
 }
