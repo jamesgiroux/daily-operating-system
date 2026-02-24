@@ -156,6 +156,7 @@ const MIGRATIONS: &[Migration] = &[Migration {
     version: 47,
     sql: include_str!("migrations/047_entity_intel_user_relevance.sql"),
 }];
+// Migration 48 (google_drive_sync) temporarily disabled pending module recovery
 
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
@@ -317,7 +318,7 @@ mod tests {
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
             applied, 47,
-            "should apply all migrations including entity_intel_user_relevance"
+            "should apply all available migrations (google_drive_sync temporarily disabled)"
         );
 
         // Verify schema_version
