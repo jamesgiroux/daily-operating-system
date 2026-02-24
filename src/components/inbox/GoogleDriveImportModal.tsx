@@ -1,5 +1,70 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import { EntityPicker } from "@/components/ui/entity-picker";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface PickerFile {
+  id: string;
+  name: string;
+  mimeType: string;
+}
+
+type WatchMode = "once" | "watch";
+
+// Map Google MIME types to our DB type column
+function driveTypeFromMime(mime: string): string {
+  if (mime.includes("spreadsheet") || mime.includes("sheet")) return "spreadsheet";
+  if (mime.includes("presentation") || mime.includes("slide")) return "presentation";
+  if (mime.includes("folder")) return "folder";
+  return "document";
+}
+
+// ---------------------------------------------------------------------------
+// Google Picker loader
+// ---------------------------------------------------------------------------
+
+let pickerApiLoaded = false;
+let gapiLoaded = false;
+
+function loadGapi(): Promise<void> {
+  if (gapiLoaded) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src*="apis.google.com/js/api.js"]')) {
+      gapiLoaded = true;
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://apis.google.com/js/api.js";
+    script.onload = () => {
+      gapiLoaded = true;
+      resolve();
+    };
+    script.onerror = () => reject(new Error("Failed to load Google API script"));
+    document.head.appendChild(script);
+  });
+}
+
+function loadPickerApi(): Promise<void> {
+  if (pickerApiLoaded) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    window.gapi.load("picker", {
+      callback: () => {
+        pickerApiLoaded = true;
+        resolve();
+      },
+      onerror: () => reject(new Error("Failed to load Picker API")),
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 interface GoogleDriveImportModalProps {
   open: boolean;
@@ -7,150 +72,377 @@ interface GoogleDriveImportModalProps {
   onImported: () => void;
 }
 
-export function GoogleDriveImportModal({ open, onClose, onImported }: GoogleDriveImportModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function GoogleDriveImportModal({
+  open,
+  onClose,
+  onImported,
+}: GoogleDriveImportModalProps) {
+  const [pickerFiles, setPickerFiles] = useState<PickerFile[]>([]);
+  const [watchMode, setWatchMode] = useState<WatchMode>("once");
+  const [entityId, setEntityId] = useState<string | null>(null);
+  const [entityName, setEntityName] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const backdropRef = useRef<HTMLDivElement>(null);
 
-  if (!open) {
-    return null;
-  }
-
-  const handleClose = () => {
-    setError(null);
-    onClose();
-  };
-
-  const handleGetAccessToken = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      await invoke("get_google_access_token");
-      console.log("Access token retrieved for Google Drive");
-      // TODO: Initialize Google Picker with token
-      // For now, call onImported to refresh the inbox
-      onImported();
-      handleClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to get access token");
-    } finally {
-      setLoading(false);
+  // Reset state when modal opens
+  useEffect(() => {
+    if (open) {
+      setPickerFiles([]);
+      setWatchMode("once");
+      setEntityId(null);
+      setEntityName(null);
+      setSubmitting(false);
     }
-  };
+  }, [open]);
+
+  // Open Google Picker on mount when no files selected yet
+  useEffect(() => {
+    if (open && pickerFiles.length === 0 && !pickerOpen) {
+      openPicker();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const openPicker = useCallback(async () => {
+    setPickerOpen(true);
+    try {
+      // Get access token from backend
+      const token = await invoke<string>("get_google_access_token");
+
+      await loadGapi();
+      await loadPickerApi();
+
+      const google = window.google;
+      if (!google?.picker) {
+        toast.error("Google Picker API not available");
+        setPickerOpen(false);
+        return;
+      }
+
+      const docsView = new google.picker.DocsView()
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(true);
+
+      const picker = new google.picker.PickerBuilder()
+        .addView(docsView)
+        .setOAuthToken(token)
+        .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+        .setCallback((data: google.picker.ResponseObject) => {
+          if (data.action === google.picker.Action.PICKED) {
+            const files: PickerFile[] = data.docs.map((doc: google.picker.DocumentObject) => ({
+              id: doc.id,
+              name: doc.name,
+              mimeType: doc.mimeType,
+            }));
+            setPickerFiles(files);
+          } else if (data.action === google.picker.Action.CANCEL) {
+            // If no files were previously selected, close the modal
+            setPickerFiles((prev) => {
+              if (prev.length === 0) onClose();
+              return prev;
+            });
+          }
+          setPickerOpen(false);
+        })
+        .build();
+
+      picker.setVisible(true);
+    } catch (err) {
+      console.error("Picker error:", err);
+      toast.error("Failed to open Google Drive picker");
+      setPickerOpen(false);
+      onClose();
+    }
+  }, [onClose]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!entityId || pickerFiles.length === 0) return;
+    setSubmitting(true);
+    try {
+      for (const file of pickerFiles) {
+        await invoke("add_google_drive_watch", {
+          google_id: file.id,
+          name: file.name,
+          file_type: driveTypeFromMime(file.mimeType),
+          google_doc_url: null,
+          entity_id: entityId,
+          entity_type: "account", // Default to account; entity picker doesn't specify type
+        });
+      }
+      toast(
+        `${pickerFiles.length} file${pickerFiles.length === 1 ? "" : "s"} ${
+          watchMode === "watch" ? "watching" : "importing"
+        }`
+      );
+      onImported();
+      onClose();
+    } catch (err) {
+      const msg = typeof err === "string" ? err : "Failed to add Drive source";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [entityId, pickerFiles, watchMode, onImported, onClose]);
+
+  if (!open) return null;
 
   return (
     <div
+      ref={backdropRef}
+      onClick={(e) => {
+        if (e.target === backdropRef.current) onClose();
+      }}
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0, 0, 0, 0.5)",
+        zIndex: 100,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 100,
+        background: "rgba(0, 0, 0, 0.4)",
+        backdropFilter: "blur(2px)",
       }}
-      onClick={handleClose}
     >
       <div
         style={{
-          background: "var(--color-ui-background)",
-          borderRadius: 8,
-          padding: 24,
-          maxWidth: 500,
-          width: "90%",
+          width: 480,
           maxHeight: "80vh",
-          overflow: "auto",
-          boxShadow: "0 10px 40px rgba(0, 0, 0, 0.2)",
+          background: "var(--color-bg-primary, #faf8f2)",
+          borderRadius: 8,
+          border: "1px solid var(--color-rule-light)",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div
+          style={{
+            padding: "20px 24px 16px",
+            borderBottom: "1px solid var(--color-rule-light)",
+          }}
+        >
           <h2
             style={{
               fontFamily: "var(--font-serif)",
-              fontSize: 24,
+              fontSize: 20,
               fontWeight: 400,
-              margin: 0,
+              letterSpacing: "-0.01em",
               color: "var(--color-text-primary)",
+              margin: 0,
             }}
           >
             Import from Google Drive
           </h2>
-          <button
-            onClick={handleClose}
-            style={{
-              background: "none",
-              border: "none",
-              fontSize: 24,
-              cursor: "pointer",
-              color: "var(--color-text-tertiary)",
-              padding: 0,
-            }}
-          >
-            ×
-          </button>
-        </div>
-
-        {/* Content */}
-        <div style={{ marginBottom: 20 }}>
           <p
             style={{
               fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-secondary)",
-              lineHeight: 1.6,
-              margin: "0 0 16px 0",
+              fontSize: 13,
+              color: "var(--color-text-tertiary)",
+              margin: "6px 0 0",
             }}
           >
-            Select files or folders from your Google Drive to import. Files will be placed in your workspace and
-            automatically processed.
+            Select files or folders to import and link to an entity
           </p>
+        </div>
 
-          {error && (
-            <div
-              style={{
-                padding: 12,
-                background: "rgba(220, 38, 38, 0.1)",
-                border: "1px solid var(--color-spice-terracotta)",
-                borderRadius: 4,
-                color: "var(--color-spice-terracotta)",
-                fontSize: 13,
-                fontFamily: "var(--font-mono)",
-                marginBottom: 16,
-              }}
-            >
-              {error}
+        {/* Body */}
+        <div style={{ padding: "16px 24px", flex: 1, overflow: "auto" }}>
+          {/* Selected files */}
+          {pickerFiles.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                Selected Files
+              </span>
+              <div style={{ marginTop: 8 }}>
+                {pickerFiles.map((file) => (
+                  <div
+                    key={file.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 0",
+                      borderBottom: "1px solid var(--color-rule-light)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "var(--color-garden-sage)",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        color: "var(--color-text-primary)",
+                        flex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {file.name}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: "var(--color-text-tertiary)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {driveTypeFromMime(file.mimeType)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={openPicker}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  letterSpacing: "0.04em",
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  padding: "6px 0 0",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                }}
+              >
+                Change selection
+              </button>
             </div>
           )}
 
-          {/* Placeholder: Google Picker will be initialized here */}
-          <div
-            style={{
-              padding: 40,
-              background: "var(--color-rule-light)",
-              borderRadius: 4,
-              textAlign: "center",
-              color: "var(--color-text-tertiary)",
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              minHeight: 200,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div style={{ marginBottom: 12 }}>📁 Google Drive Picker</div>
-            <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-              Click "Open Picker" to select files from your Google Drive
+          {/* Watch mode toggle */}
+          <div style={{ marginBottom: 20 }}>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--color-text-tertiary)",
+                display: "block",
+                marginBottom: 8,
+              }}
+            >
+              Import Mode
+            </span>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(["once", "watch"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setWatchMode(mode)}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12,
+                    fontWeight: watchMode === mode ? 600 : 400,
+                    letterSpacing: "0.04em",
+                    color:
+                      watchMode === mode
+                        ? "var(--color-garden-olive)"
+                        : "var(--color-text-tertiary)",
+                    background: "none",
+                    border: `1px solid ${
+                      watchMode === mode
+                        ? "var(--color-garden-olive)"
+                        : "var(--color-rule-heavy)"
+                    }`,
+                    borderRadius: 4,
+                    padding: "6px 14px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {mode === "once" ? "Import once" : "Watch for changes"}
+                </button>
+              ))}
             </div>
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+                margin: "6px 0 0",
+              }}
+            >
+              {watchMode === "once"
+                ? "Import content now. No ongoing sync."
+                : "Import now and check for updates on each sync cycle."}
+            </p>
+          </div>
+
+          {/* Entity picker */}
+          <div style={{ marginBottom: 12 }}>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--color-text-tertiary)",
+                display: "block",
+                marginBottom: 8,
+              }}
+            >
+              Link to Entity
+            </span>
+            <EntityPicker
+              value={entityId}
+              onChange={(id, name) => {
+                setEntityId(id);
+                setEntityName(name ?? null);
+              }}
+              placeholder="Select account or project..."
+            />
+            {entityName && (
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 12,
+                  color: "var(--color-text-secondary)",
+                  margin: "6px 0 0",
+                }}
+              >
+                Files will be linked to <strong>{entityName}</strong>
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Actions */}
-        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+        {/* Footer */}
+        <div
+          style={{
+            padding: "12px 24px 16px",
+            borderTop: "1px solid var(--color-rule-light)",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+          }}
+        >
           <button
-            onClick={handleClose}
+            onClick={onClose}
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 11,
@@ -161,31 +453,35 @@ export function GoogleDriveImportModal({ open, onClose, onImported }: GoogleDriv
               background: "none",
               border: "1px solid var(--color-rule-heavy)",
               borderRadius: 4,
-              padding: "6px 14px",
+              padding: "4px 14px",
               cursor: "pointer",
             }}
           >
             Cancel
           </button>
           <button
-            onClick={handleGetAccessToken}
-            disabled={loading}
+            onClick={handleSubmit}
+            disabled={submitting || !entityId || pickerFiles.length === 0}
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 11,
               fontWeight: 600,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
-              color: loading ? "var(--color-text-tertiary)" : "var(--color-garden-sage)",
+              color: "var(--color-garden-olive)",
               background: "none",
-              border: loading ? "1px solid var(--color-rule-heavy)" : "1px solid var(--color-garden-sage)",
+              border: "1px solid var(--color-garden-olive)",
               borderRadius: 4,
-              padding: "6px 14px",
-              cursor: loading ? "default" : "pointer",
-              opacity: loading ? 0.5 : 1,
+              padding: "4px 14px",
+              cursor:
+                submitting || !entityId || pickerFiles.length === 0
+                  ? "default"
+                  : "pointer",
+              opacity: submitting || !entityId || pickerFiles.length === 0 ? 0.5 : 1,
+              transition: "all 0.15s ease",
             }}
           >
-            {loading ? "Opening..." : "Open Picker"}
+            {submitting ? "Importing..." : "Import"}
           </button>
         </div>
       </div>
