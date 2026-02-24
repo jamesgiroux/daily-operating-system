@@ -97,9 +97,12 @@ export function GoogleDriveImportModal({
   }, [open]);
 
   // Open Google Picker on mount when no files selected yet
+  // But don't show the modal backdrop until the picker is done
   useEffect(() => {
     if (open && pickerFiles.length === 0 && !pickerOpen) {
-      openPicker();
+      // Delay opening picker to avoid rendering both modals at once
+      const timer = setTimeout(() => openPicker(), 100);
+      return () => clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -190,12 +193,12 @@ export function GoogleDriveImportModal({
     try {
       for (const file of pickerFiles) {
         await invoke("add_google_drive_watch", {
-          google_id: file.id,
+          googleId: file.id,
           name: file.name,
-          file_type: driveTypeFromMime(file.mimeType),
-          google_doc_url: null,
-          entity_id: entityId,
-          entity_type: "account", // Default to account; entity picker doesn't specify type
+          fileType: driveTypeFromMime(file.mimeType),
+          googleDocUrl: null,
+          entityId: entityId,
+          entityType: "account", // Default to account; entity picker doesn't specify type
         });
       }
       toast(
@@ -214,6 +217,13 @@ export function GoogleDriveImportModal({
   }, [entityId, pickerFiles, watchMode, onImported, onClose]);
 
   if (!open) return null;
+
+  // Only show the modal form after files are selected (Picker has closed and files exist)
+  // This prevents rendering both the Picker and the modal form at the same time
+  if (pickerFiles.length === 0) {
+    // Picker is open or loading - don't show any modal UI yet
+    return null;
+  }
 
   return (
     <div
