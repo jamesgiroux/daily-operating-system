@@ -108,15 +108,43 @@ export function GoogleDriveImportModal({
     setPickerOpen(true);
     try {
       // Get access token from backend
-      const token = await invoke<string>("get_google_access_token");
+      let token: string;
+      try {
+        token = await invoke<string>("get_google_access_token");
+      } catch (err) {
+        const errMsg = typeof err === "string" ? err : "Token error";
+        console.error("get_google_access_token failed:", err);
+        toast.error(`Token error: ${errMsg}`);
+        setPickerOpen(false);
+        onClose();
+        return;
+      }
 
-      await loadGapi();
-      await loadPickerApi();
+      try {
+        await loadGapi();
+      } catch (err) {
+        console.error("loadGapi failed:", err);
+        toast.error("Failed to load Google API");
+        setPickerOpen(false);
+        onClose();
+        return;
+      }
+
+      try {
+        await loadPickerApi();
+      } catch (err) {
+        console.error("loadPickerApi failed:", err);
+        toast.error("Failed to load Google Picker");
+        setPickerOpen(false);
+        onClose();
+        return;
+      }
 
       const google = window.google;
       if (!google?.picker) {
         toast.error("Google Picker API not available");
         setPickerOpen(false);
+        onClose();
         return;
       }
 
@@ -150,7 +178,7 @@ export function GoogleDriveImportModal({
       picker.setVisible(true);
     } catch (err) {
       console.error("Picker error:", err);
-      toast.error("Failed to open Google Drive picker");
+      toast.error(`Picker error: ${typeof err === "string" ? err : "Unknown error"}`);
       setPickerOpen(false);
       onClose();
     }
