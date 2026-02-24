@@ -586,6 +586,15 @@ pub fn run() {
             commands::upsert_person_relationship,
             commands::delete_person_relationship,
             commands::get_person_relationships,
+            // Google Drive Connector (I426)
+            commands::get_google_access_token,
+            commands::get_google_client_id,
+            commands::get_google_drive_status,
+            commands::set_google_drive_enabled,
+            commands::trigger_drive_sync_now,
+            commands::add_google_drive_watch,
+            commands::remove_google_drive_watch,
+            commands::get_google_drive_watches,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

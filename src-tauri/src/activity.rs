@@ -92,16 +92,44 @@ impl ActivityMonitor {
 
 /// Returns an adaptive poll interval for background queue processors.
 ///
-/// When work is queued, process promptly (2s). When idle and user is active,
-/// back off significantly (30s). When app is in background, run at full speed.
+/// Balances queue processing speed with UI responsiveness:
+/// - Active user: process slowly (10s) to keep app responsive
+/// - Idle: moderate speed (5s)
+/// - Background: fast (2s)
 pub fn adaptive_poll_interval(activity: &ActivityMonitor, queue_empty: bool) -> Duration {
-    if !queue_empty {
-        return Duration::from_secs(2);
-    }
     match activity.level() {
-        ActivityLevel::Active => Duration::from_secs(30),
-        ActivityLevel::Idle => Duration::from_secs(15),
-        ActivityLevel::Background => Duration::from_secs(5),
+        ActivityLevel::Active => {
+            // User is actively using the app — process conservatively to stay responsive
+            if queue_empty {
+                Duration::from_secs(30)
+            } else {
+                Duration::from_secs(10)
+            }
+        }
+        ActivityLevel::Idle => {
+            // Window focused but no interaction for 2+ minutes
+            if queue_empty {
+                Duration::from_secs(15)
+            } else {
+                Duration::from_secs(5)
+            }
+        }
+        ActivityLevel::Background => {
+            // App in background — process at full speed regardless of queue
+            Duration::from_secs(2)
+        }
+    }
+}
+
+/// Returns an adaptive batch size for enrichment processing.
+///
+/// Smaller batches when user is active to process requests faster individually,
+/// larger batches when idle/background to maximize throughput per API call.
+pub fn adaptive_batch_size(activity: &ActivityMonitor) -> usize {
+    match activity.level() {
+        ActivityLevel::Active => 1,      // Process one at a time to stay responsive
+        ActivityLevel::Idle => 2,        // Moderate batch size
+        ActivityLevel::Background => 3,  // Max batch for throughput
     }
 }
 
@@ -134,9 +162,26 @@ mod tests {
     #[test]
     fn test_adaptive_intervals() {
         let m = ActivityMonitor::new();
-        // Background + empty queue → 5s
-        assert_eq!(adaptive_poll_interval(&m, true), Duration::from_secs(5));
+        // Background (window not focused) + empty queue → 2s
+        assert_eq!(adaptive_poll_interval(&m, true), Duration::from_secs(2));
         // Background + work queued → 2s
         assert_eq!(adaptive_poll_interval(&m, false), Duration::from_secs(2));
+
+        // Active (focused + touched recently) + empty queue → 30s
+        m.set_window_focused(true);
+        assert_eq!(adaptive_poll_interval(&m, true), Duration::from_secs(30));
+        // Active + work queued → 10s (keep app responsive)
+        assert_eq!(adaptive_poll_interval(&m, false), Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_adaptive_batch_sizes() {
+        let m = ActivityMonitor::new();
+        // Background → max batch (3)
+        assert_eq!(adaptive_batch_size(&m), 3);
+
+        // Active → single entity at a time (1)
+        m.set_window_focused(true);
+        assert_eq!(adaptive_batch_size(&m), 1);
     }
 }
