@@ -530,26 +530,6 @@ export default function InboxPage() {
       activePage: "dropbox" as const,
       folioActions: (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={() => setDriveModalOpen(true)}
-            disabled={processingAll}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: processingAll ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
-              background: "none",
-              border: "1px solid var(--color-rule-heavy)",
-              borderRadius: 4,
-              padding: "2px 10px",
-              cursor: processingAll ? "default" : "pointer",
-              opacity: processingAll ? 0.5 : 1,
-            }}
-          >
-            Google Drive
-          </button>
           {processingAll ? (
             <button
               onClick={cancelAll}
@@ -569,28 +549,26 @@ export default function InboxPage() {
             >
               Cancel
             </button>
-          ) : (
-            visibleFiles.length > 0 && (
-              <button
-                onClick={processAll}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase" as const,
-                  color: "var(--color-text-secondary)",
-                  background: "none",
-                  border: "1px solid var(--color-rule-heavy)",
-                  borderRadius: 4,
-                  padding: "2px 10px",
-                  cursor: "pointer",
-                }}
-              >
-                Process All
-              </button>
-            )
-          )}
+          ) : visibleFiles.length > 0 ? (
+            <button
+              onClick={processAll}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                color: "var(--color-text-secondary)",
+                background: "none",
+                border: "1px solid var(--color-rule-heavy)",
+                borderRadius: 4,
+                padding: "2px 10px",
+                cursor: "pointer",
+              }}
+            >
+              Process All
+            </button>
+          ) : null}
           <button
             onClick={handleRefresh}
             disabled={refreshing || processingAll}
@@ -695,6 +673,41 @@ export default function InboxPage() {
             </p>
           )}
         </div>
+
+        {/* Import from Google Drive button */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginTop: 24,
+          }}
+        >
+          <button
+            onClick={() => setDriveModalOpen(true)}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: "var(--color-text-secondary)",
+              background: "none",
+              border: "1px solid var(--color-rule-heavy)",
+              borderRadius: 4,
+              padding: "4px 14px",
+              cursor: "pointer",
+              marginTop: 16,
+            }}
+          >
+            Import from Google Drive
+          </button>
+        </div>
+
+        <GoogleDriveImportModal
+          open={driveModalOpen}
+          onClose={() => setDriveModalOpen(false)}
+          onImported={refresh}
+        />
       </div>
     );
   }
