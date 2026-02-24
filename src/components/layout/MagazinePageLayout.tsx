@@ -18,6 +18,7 @@ import styles from './MagazinePageLayout.module.css';
 import AtmosphereLayer from './AtmosphereLayer';
 import FolioBar from './FolioBar';
 import FloatingNavIsland from './FloatingNavIsland';
+import { UpdateBanner } from '@/components/notifications/UpdateBanner';
 import { useMagazineShellConfig } from '@/hooks/useMagazineShell';
 import { useChapterObserver } from '@/hooks/useChapterObserver';
 
@@ -33,6 +34,9 @@ export interface MagazinePageLayoutProps {
 
   /** Callback when nav home (asterisk) is clicked */
   onNavHome?: () => void;
+
+  /** Callback when "What's New" is clicked in the update banner */
+  onWhatsNew?: () => void;
 }
 
 export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
@@ -40,6 +44,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   onFolioSearch,
   onNavigate,
   onNavHome,
+  onWhatsNew,
 }) => {
   // Page-specific config registered via useRegisterMagazineShell()
   const pageConfig = useMagazineShellConfig();
@@ -102,6 +107,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
 
       {/* Main page container — content above atmosphere layer */}
       <main className={styles.pageContainer}>
+        {onWhatsNew && <UpdateBanner onWhatsNew={onWhatsNew} />}
         {children}
       </main>
     </div>
