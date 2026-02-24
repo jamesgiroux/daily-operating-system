@@ -6,6 +6,7 @@ import GranolaConnector from "./GranolaConnector";
 import GravatarConnector from "./GravatarConnector";
 import ClayConnector from "./ClayConnector";
 import LinearConnector from "./LinearConnector";
+import GoogleDriveConnector from "./GoogleDriveConnector";
 
 export interface ConnectorEntry {
   id: string;
@@ -22,4 +23,5 @@ export const connectors: ConnectorEntry[] = [
   { id: "gravatar", name: "Gravatar Avatars", component: GravatarConnector, statusCommand: "get_gravatar_status" },
   { id: "clay", name: "Clay Enrichment", component: ClayConnector, statusCommand: "get_clay_status" },
   { id: "linear", name: "Linear Issues", component: LinearConnector, statusCommand: "get_linear_status" },
+  { id: "google-drive", name: "Google Drive", component: GoogleDriveConnector, statusCommand: "get_google_drive_status" },
 ];
