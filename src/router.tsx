@@ -162,12 +162,12 @@ function RootLayout() {
     return (
       <ThemeProvider>
         <PersonalityProvider>
-          <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
           <MagazineShellContext.Provider value={magazineShell}>
             <MagazinePageLayout
               onFolioSearch={() => setCommandOpen(true)}
               onNavigate={handleNavNavigate}
               onNavHome={() => navigate({ to: "/" })}
+              onWhatsNew={() => setWhatsNewOpen(true)}
             >
               <Outlet />
             </MagazinePageLayout>
@@ -186,9 +186,9 @@ function RootLayout() {
   return (
     <ThemeProvider>
       <PersonalityProvider>
-        <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
         <SidebarProvider defaultOpen={false}>
           <SidebarInset>
+            <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
             <Header onCommandMenuOpen={() => setCommandOpen(true)} />
             <Outlet />
           </SidebarInset>
