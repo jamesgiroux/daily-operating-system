@@ -155,6 +155,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 47,
     sql: include_str!("migrations/047_entity_intel_user_relevance.sql"),
+}, Migration {
+    version: 48,
+    sql: include_str!("migrations/048_google_drive_sync.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -316,13 +319,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 47,
-            "should apply all migrations including entity_intel_user_relevance"
+            applied, 48,
+            "should apply all migrations including google_drive_sync"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 47);
+        assert_eq!(version, 48);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -843,13 +846,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v47 (46 pending migrations)
+        // Run migrations — should bootstrap v1 and apply v2 through v48 (47 pending migrations)
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 46, "bootstrap should mark v1, then apply 46 pending migrations (v2-v47)");
+        assert_eq!(applied, 47, "bootstrap should mark v1, then apply 47 pending migrations (v2-v48)");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 47);
+        assert_eq!(version, 48);
 
         // Verify existing data is untouched
         let title: String = conn
