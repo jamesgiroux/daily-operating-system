@@ -251,6 +251,43 @@ Right metrics:
 
 ---
 
+## Principle 12: Individual Context Is Not Organisational Property
+
+The most valuable context a professional has is irreducibly personal — their relationship history with specific stakeholders, their pattern recognition about which signals matter in which accounts, their accumulated judgment from years of execution. This context cannot be fully captured in a shared index without losing the specificity that makes it signal rather than noise.
+
+**What this means in practice:**
+- Personal signals (email history, relationship temperature, coaching observations) stay on the user's machine, always
+- Sharing happens at the output layer — reports, documents the user has deliberately authored — not the signal layer
+- When users know their private observations will be shared or indexed, they stop writing honest ones
+- The brief is personal because its quality depends on it being personal
+
+**The test:** Would the intelligence lose value if a colleague could read it? If yes, it belongs in the private layer.
+
+**Applies to:** Everything that feeds the brief. Does not apply to curated report outputs, which the user has intentionally authored for sharing.
+
+---
+
+## Principle 13: The Three Knowledge Layers
+
+Enterprise AI (Glean, Copilot) addresses the organisational knowledge layer. DailyOS addresses the individual context layer. They are complementary, not competing:
+
+| Layer | What it holds | Who owns it |
+|-------|--------------|-------------|
+| Systems of record | Outcomes and transactions | Organisation |
+| Organisational context | How the org makes decisions; patterns across roles and deals | Organisation |
+| **Individual context** | How this person works; their relationships, judgment patterns, signals | **The individual** |
+
+DailyOS is the layer 3 tool. Building toward layer 2 — feeding personal intelligence into shared indexes, creating team visibility into personal signals — would undermine the privacy model that makes layer 3 intelligence honest and valuable.
+
+**What this means in practice:**
+- Glean integration (I340) is a *consumer* relationship: DailyOS pulls org context from Glean to enrich individual intelligence
+- DailyOS does not push personal signals into Glean or any shared index
+- The Glean integration improves the brief by adding what the org knows; it does not share what the individual knows
+
+**The test:** Does this feature move intelligence from layer 3 to layer 2? If yes, it requires explicit user-initiated action (like publishing a report), never automatic pipelines.
+
+---
+
 ## Decision Framework
 
 When evaluating any feature, ask:
