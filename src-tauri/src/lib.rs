@@ -599,6 +599,7 @@ pub fn run() {
             commands::get_google_drive_status,
             commands::set_google_drive_enabled,
             commands::trigger_drive_sync_now,
+            commands::import_google_drive_file,
             commands::add_google_drive_watch,
             commands::remove_google_drive_watch,
             commands::get_google_drive_watches,

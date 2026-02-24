@@ -90,7 +90,31 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
 
 /// Sync a single watched source from Google Drive.
 async fn sync_watched_source(state: &Arc<AppState>, source: &sync::WatchedSource) -> Result<(), String> {
-    // Get changes since last sync
+    if source.changes_token.is_none() {
+        // Initial sync: download the file directly and get a start page token
+        // for subsequent change-based polling.
+        log::info!(
+            "GoogleDrivePoller: initial sync for {} ({})",
+            source.name,
+            source.google_id
+        );
+
+        let content = client::download_file_as_markdown(&source.google_id).await?;
+        let path = save_content_to_entity(state, source, &source.name, &content)?;
+        log::info!("GoogleDrivePoller: initial sync saved {} to {}", source.name, path.display());
+
+        // Get a start page token so future polls use the Changes API
+        let start_token = client::get_start_page_token().await?;
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let _ = sync::mark_synced(db, &source.id, &start_token);
+            }
+        }
+
+        return Ok(());
+    }
+
+    // Subsequent syncs: poll for changes
     let page_token = source.changes_token.as_deref().unwrap_or("");
     let (changes, next_token) = client::get_changes(page_token).await?;
 
@@ -107,7 +131,6 @@ async fn sync_watched_source(state: &Arc<AppState>, source: &sync::WatchedSource
     // Download and save files to entity Documents/ folder
     for change in changes {
         if change.removed {
-            // File was deleted in Drive, could delete local copy
             log::info!("GoogleDrivePoller: file {} removed in Drive", change.file_id);
             continue;
         }
@@ -129,13 +152,58 @@ async fn sync_watched_source(state: &Arc<AppState>, source: &sync::WatchedSource
     }
 
     // Update the changes token
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            let _ = sync::mark_synced(db, &source.id, &next_token);
+    if !next_token.is_empty() {
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let _ = sync::mark_synced(db, &source.id, &next_token);
+            }
         }
     }
 
     Ok(())
+}
+
+/// Save content to an entity's Documents/ folder as a markdown file.
+pub fn save_to_entity_docs(
+    workspace: &str,
+    entity_type: &str,
+    entity_id: &str,
+    name: &str,
+    content: &str,
+) -> Result<std::path::PathBuf, String> {
+    let base_path = std::path::Path::new(workspace);
+    let docs_dir = base_path.join(entity_type).join(entity_id).join("Documents");
+
+    std::fs::create_dir_all(&docs_dir)
+        .map_err(|e| format!("Failed to create Documents directory: {}", e))?;
+
+    let filename = format!(
+        "{}.md",
+        name.replace("/", "-").replace("\\", "-").replace(":", "-")
+    );
+    let file_path = docs_dir.join(&filename);
+
+    std::fs::write(&file_path, content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(file_path)
+}
+
+/// Save content to the entity's Documents/ folder as a markdown file (watched source variant).
+fn save_content_to_entity(
+    state: &Arc<AppState>,
+    source: &sync::WatchedSource,
+    name: &str,
+    content: &str,
+) -> Result<std::path::PathBuf, String> {
+    let workspace = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
+        .ok_or("Workspace not configured")?;
+
+    save_to_entity_docs(&workspace, &source.entity_type, &source.entity_id, name, content)
 }
 
 /// Download a file and save it to the entity's Documents/ folder.
@@ -145,33 +213,5 @@ async fn download_and_save_file(
     file: &client::DriveFile,
 ) -> Result<std::path::PathBuf, String> {
     let content = client::download_file_as_markdown(&file.id).await?;
-
-    // Get workspace and entity path
-    let workspace = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
-        .ok_or("Workspace not configured")?;
-
-    let base_path = std::path::Path::new(&workspace);
-    let entity_dir = base_path.join(&source.entity_type).join(&source.entity_id);
-    let docs_dir = entity_dir.join("Documents");
-
-    // Create Documents directory if needed
-    std::fs::create_dir_all(&docs_dir)
-        .map_err(|e| format!("Failed to create Documents directory: {}", e))?;
-
-    // Save file
-    let filename = format!(
-        "{}.md",
-        file.name.replace("/", "-").replace("\\", "-")
-    );
-    let file_path = docs_dir.join(&filename);
-
-    std::fs::write(&file_path, &content)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
-
-    // File watcher will detect the change and enqueue intel_queue automatically
-    Ok(file_path)
+    save_content_to_entity(state, source, &file.name, &content)
 }

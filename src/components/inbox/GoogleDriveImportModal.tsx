@@ -192,14 +192,23 @@ export function GoogleDriveImportModal({
     setSubmitting(true);
     try {
       for (const file of pickerFiles) {
-        await invoke("add_google_drive_watch", {
-          google_id: file.id,
-          name: file.name,
-          file_type: driveTypeFromMime(file.mimeType),
-          google_doc_url: null,
-          entity_id: entityId,
-          entity_type: "account", // Default to account; entity picker doesn't specify type
-        });
+        if (watchMode === "watch") {
+          await invoke("add_google_drive_watch", {
+            googleId: file.id,
+            name: file.name,
+            fileType: driveTypeFromMime(file.mimeType),
+            googleDocUrl: null,
+            entityId: entityId,
+            entityType: "account",
+          });
+        } else {
+          await invoke("import_google_drive_file", {
+            googleId: file.id,
+            name: file.name,
+            entityId: entityId,
+            entityType: "account",
+          });
+        }
       }
       toast(
         `${pickerFiles.length} file${pickerFiles.length === 1 ? "" : "s"} ${
