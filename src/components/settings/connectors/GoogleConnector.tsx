@@ -65,7 +65,7 @@ export default function GoogleConnection() {
 
   async function handleRemoveDriveSource(sourceId: string) {
     try {
-      await invoke("remove_google_drive_watch", { watchId: sourceId });
+      await invoke("remove_google_drive_watch", { watch_id: sourceId });
       setDriveSources((prev) => prev.filter((s) => s.id !== sourceId));
       setDriveStatus((prev) =>
         prev ? { ...prev, watchedCount: Math.max(0, prev.watchedCount - 1) } : prev

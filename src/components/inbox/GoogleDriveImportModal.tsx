@@ -193,12 +193,12 @@ export function GoogleDriveImportModal({
     try {
       for (const file of pickerFiles) {
         await invoke("add_google_drive_watch", {
-          googleId: file.id,
+          google_id: file.id,
           name: file.name,
-          fileType: driveTypeFromMime(file.mimeType),
-          googleDocUrl: null,
-          entityId: entityId,
-          entityType: "account", // Default to account; entity picker doesn't specify type
+          file_type: driveTypeFromMime(file.mimeType),
+          google_doc_url: null,
+          entity_id: entityId,
+          entity_type: "account", // Default to account; entity picker doesn't specify type
         });
       }
       toast(
