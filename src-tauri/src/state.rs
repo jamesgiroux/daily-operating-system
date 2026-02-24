@@ -107,6 +107,14 @@ pub struct IntegrationState {
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
     pub email_poller_wake: Arc<tokio::sync::Notify>,
     pub granola_poller_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the Google Drive poller (I426).
+    pub drive_poller_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the intelligence queue processor.
+    pub intel_queue_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the meeting prep queue processor.
+    pub prep_queue_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for the embedding queue processor.
+    pub embedding_queue_wake: Arc<tokio::sync::Notify>,
 }
 
 /// Signal bus state (I405).
@@ -121,6 +129,8 @@ pub struct AppState {
     pub config: RwLock<Option<Config>>,
     pub workflow: WorkflowState,
     pub db: Mutex<Option<crate::db::ActionDb>>,
+    /// User activity monitor for throttling background work (I426).
+    pub activity: Arc<crate::activity::ActivityMonitor>,
     /// Calendar subsystem state (I404).
     pub calendar: CalendarState,
     /// Capture subsystem state (I404).
@@ -209,6 +219,7 @@ impl AppState {
                 last_scheduled_run: RwLock::new(HashMap::new()),
             },
             db: Mutex::new(db),
+            activity: Arc::new(crate::activity::ActivityMonitor::new()),
             calendar: CalendarState {
                 google_auth: Mutex::new(google_auth),
                 events: RwLock::new(Vec::new()),
@@ -242,6 +253,10 @@ impl AppState {
                 linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 email_poller_wake: Arc::new(tokio::sync::Notify::new()),
                 granola_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                drive_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                intel_queue_wake: Arc::new(tokio::sync::Notify::new()),
+                prep_queue_wake: Arc::new(tokio::sync::Notify::new()),
+                embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
             },
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
@@ -548,6 +563,7 @@ pub fn create_or_update_config(
                 hygiene_scan_interval_hours: 4,
                 hygiene_ai_budget: 10,
                 hygiene_pre_meeting_hours: 12,
+                drive: crate::types::DriveConfig::default(),
             }
         }
     };
