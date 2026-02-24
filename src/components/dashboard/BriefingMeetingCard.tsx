@@ -17,7 +17,7 @@
 import { useState, useRef, useLayoutEffect, useCallback } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { stripMarkdown, formatMeetingType } from "@/lib/utils";
+import { stripMarkdown, stripHtml, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingCard } from "@/components/shared/MeetingCard";
 import type { Meeting, CalendarEvent, Action, Stakeholder, CalendarAttendee } from "@/types";
@@ -385,6 +385,7 @@ export function BriefingMeetingCard({
   const [measuredHeight, setMeasuredHeight] = useState<number>(isInitiallyExpanded ? 2000 : 0);
 
   const duration = formatDuration(meeting);
+  const cleanDescription = stripHtml(meeting.calendarDescription);
   const hasPrepContent = !!(meeting.prep && Object.keys(meeting.prep).length > 0);
   const canExpand = (state === "upcoming" || state === "in-progress") && (hasPrepContent || isUpNext);
 
@@ -490,7 +491,7 @@ export function BriefingMeetingCard({
         >
           <div ref={innerRef} className={s.expansionInner}>
             {/* Meeting context: calendar description (organizer's words) or AI brief */}
-            {meeting.calendarDescription ? (
+            {cleanDescription ? (
               <p
                 style={{
                   fontFamily: "var(--font-body)",
@@ -500,11 +501,12 @@ export function BriefingMeetingCard({
                   margin: "0 0 20px 0",
                   lineHeight: 1.55,
                   maxWidth: 560,
+                  whiteSpace: "pre-line",
                 }}
               >
-                {meeting.calendarDescription.length > 400
-                  ? `${meeting.calendarDescription.slice(0, 400)}…`
-                  : meeting.calendarDescription}
+                {cleanDescription.length > 400
+                  ? `${cleanDescription.slice(0, 400)}…`
+                  : cleanDescription}
               </p>
             ) : meeting.prep?.context ? (
               <p
