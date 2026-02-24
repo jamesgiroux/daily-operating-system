@@ -3252,6 +3252,7 @@ mod tests {
             gravatar: crate::gravatar::GravatarConfig::default(),
             clay: crate::clay::ClayConfig::default(),
             linear: crate::linear::LinearConfig::default(),
+            drive: crate::types::DriveConfig::default(),
             features: std::collections::HashMap::new(),
             user_domain: None,
             user_domains: None,
