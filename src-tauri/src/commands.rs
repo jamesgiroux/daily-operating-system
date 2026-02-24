@@ -7490,6 +7490,23 @@ pub struct DriveStatusData {
     pub poll_interval_minutes: u32,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AddDriveWatchRequest {
+    pub google_id: String,
+    pub name: String,
+    pub file_type: String,
+    pub google_doc_url: Option<String>,
+    pub entity_id: String,
+    pub entity_type: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoveDriveWatchRequest {
+    pub watch_id: String,
+}
+
 /// Get a valid Google OAuth access token for use with Drive API and Picker.
 /// Returns the token string or an error if not authenticated.
 #[tauri::command]
@@ -7587,12 +7604,7 @@ pub fn trigger_drive_sync_now(state: State<Arc<AppState>>) -> Result<(), String>
 /// Add a watched Drive source linked to an entity.
 #[tauri::command]
 pub fn add_google_drive_watch(
-    google_id: String,
-    name: String,
-    file_type: String,
-    google_doc_url: Option<String>,
-    entity_id: String,
-    entity_type: String,
+    req: AddDriveWatchRequest,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
     let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
@@ -7600,12 +7612,12 @@ pub fn add_google_drive_watch(
 
     let watch_id = crate::google_drive::sync::upsert_watched_source(
         db,
-        &google_id,
-        &name,
-        &file_type,
-        google_doc_url.as_deref(),
-        &entity_id,
-        &entity_type,
+        &req.google_id,
+        &req.name,
+        &req.file_type,
+        req.google_doc_url.as_deref(),
+        &req.entity_id,
+        &req.entity_type,
     )?;
 
     // Wake the poller so it does an initial sync
@@ -7617,12 +7629,12 @@ pub fn add_google_drive_watch(
 /// Remove a watched Drive source.
 #[tauri::command]
 pub fn remove_google_drive_watch(
-    watch_id: String,
+    req: RemoveDriveWatchRequest,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database unavailable")?;
-    crate::google_drive::sync::remove_watched_source(db, &watch_id)
+    crate::google_drive::sync::remove_watched_source(db, &req.watch_id)
 }
 
 /// Get all watched Drive sources.
