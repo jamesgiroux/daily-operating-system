@@ -26,6 +26,7 @@ mod focus_capacity;
 mod focus_prioritization;
 mod google;
 pub mod google_api;
+pub mod google_drive;
 pub mod gravatar;
 pub mod helpers;
 mod hygiene;
@@ -222,6 +223,12 @@ pub fn run() {
             let linear_state = state.clone();
             tauri::async_runtime::spawn(async move {
                 linear::poller::run_linear_poller(linear_state).await;
+            });
+
+            // Spawn Google Drive poller (I426)
+            let drive_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                google_drive::poller::run_drive_poller(drive_state).await;
             });
 
             // Spawn event-driven entity resolution trigger (I308)
