@@ -155,6 +155,12 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 47,
     sql: include_str!("migrations/047_entity_intel_user_relevance.sql"),
+}, Migration {
+    version: 48,
+    sql: include_str!("migrations/048_google_drive_sync.sql"),
+}, Migration {
+    version: 49,
+    sql: include_str!("migrations/049_drive_rename_type_column.sql"),
 }];
 // Migration 48 (google_drive_sync) temporarily disabled pending module recovery
 
@@ -277,13 +283,14 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     for migration in &pending {
         if let Err(e) = conn.execute_batch(migration.sql) {
             let msg = e.to_string();
-            // Tolerate "duplicate column name" errors — the ALTER TABLE may have
-            // already been applied out-of-band (e.g. baseline schema included the
-            // column but migration 006 wasn't tracked). All other errors are fatal.
-            if msg.contains("duplicate column name") {
+            // Tolerate benign schema-mismatch errors:
+            // - "duplicate column name": ALTER TABLE ADD already applied out-of-band
+            // - "no such column": ALTER TABLE RENAME targets a column that was
+            //   already created with the correct name (fresh install)
+            if msg.contains("duplicate column name") || msg.contains("no such column") {
                 log::info!(
-                    "Migration v{}: duplicate column (already exists), continuing",
-                    migration.version
+                    "Migration v{}: benign schema conflict ({}), continuing",
+                    migration.version, msg
                 );
             } else {
                 return Err(format!("Migration v{} failed: {}", migration.version, e));
@@ -317,13 +324,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 47,
-            "should apply all available migrations (google_drive_sync temporarily disabled)"
+            applied, 49,
+            "should apply all migrations including drive_rename_type_column"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 47);
+        assert_eq!(version, 49);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -844,13 +851,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v47 (46 pending migrations)
+        // Run migrations — should bootstrap v1 and apply v2 through v49 (48 pending migrations)
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 46, "bootstrap should mark v1, then apply 46 pending migrations (v2-v47)");
+        assert_eq!(applied, 48, "bootstrap should mark v1, then apply 48 pending migrations (v2-v49)");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 47);
+        assert_eq!(version, 49);
 
         // Verify existing data is untouched
         let title: String = conn
