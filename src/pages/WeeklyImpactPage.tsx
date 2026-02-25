@@ -49,11 +49,11 @@ function normalizeWeeklyImpact(raw: Record<string, unknown>): WeeklyImpactConten
 // =============================================================================
 
 const SLIDES = [
-  { id: "cover", label: "Cover", icon: <Calendar size={18} strokeWidth={1.5} /> },
-  { id: "priorities", label: "Priorities", icon: <Target size={18} strokeWidth={1.5} /> },
-  { id: "the-work", label: "The Work", icon: <CheckSquare size={18} strokeWidth={1.5} /> },
-  { id: "watch", label: "Watch", icon: <Eye size={18} strokeWidth={1.5} /> },
-  { id: "next-week", label: "Next Week", icon: <ArrowRight size={18} strokeWidth={1.5} /> },
+  { id: "cover", label: "Cover", icon: <Calendar size={18} strokeWidth={1.8} /> },
+  { id: "priorities", label: "Priorities", icon: <Target size={18} strokeWidth={1.8} /> },
+  { id: "the-work", label: "The Work", icon: <CheckSquare size={18} strokeWidth={1.8} /> },
+  { id: "watch", label: "Watch", icon: <Eye size={18} strokeWidth={1.8} /> },
+  { id: "next-week", label: "Next Week", icon: <ArrowRight size={18} strokeWidth={1.8} /> },
 ];
 
 // =============================================================================
