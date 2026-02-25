@@ -62,44 +62,50 @@ export interface AccountHealthContent {
 }
 
 // Weekly Impact Report content schema (mirrors Rust WeeklyImpactContent)
-export interface PriorityMove {
+export interface WeeklyImpactMove {
   priorityText: string;
   whatHappened: string;
   source: string;
 }
 
+export interface WeeklyImpactItem {
+  text: string;
+  source?: string | null;
+}
+
 export interface WeeklyImpactContent {
   weekLabel: string;
-  headlineStat: string;
-  prioritiesMoved: PriorityMove[];
-  wins: string[];
-  activitySummary: string;
-  watch: string[];
-  carryForward: string[];
+  totalMeetings: number;
+  totalActionsClosed: number;
+  headline: string;
+  prioritiesMoved: WeeklyImpactMove[];
+  wins: WeeklyImpactItem[];
+  whatYouDid: string;
+  watch: WeeklyImpactItem[];
+  intoNextWeek: string[];
 }
 
 // Monthly Wrapped Report content schema (mirrors Rust MonthlyWrappedContent)
-export interface MonthlyWin {
-  headline: string;
-  detail?: string | null;
-  source: string;
+export interface WrappedPersonality {
+  trait: string;
+  evidence: string;
 }
 
-export interface PriorityProgress {
-  priorityText: string;
-  progress: 'strong' | 'some' | 'none';
-  evidence?: string | null;
+export interface WrappedMoment {
+  headline: string;
+  detail?: string | null;
+  source?: string | null;
 }
 
 export interface MonthlyWrappedContent {
   monthLabel: string;
-  headlineStat: string;
   openingReflection: string;
-  topWins: MonthlyWin[];
-  priorityProgress: PriorityProgress[];
+  topMoments: WrappedMoment[];
+  byTheNumbers: string[];
+  personalityRead: WrappedPersonality[];
   honestMiss?: string | null;
   momentumBuilder: string;
-  byTheNumbers: string[];
+  intoNextMonth: string[];
 }
 
 // EBR/QBR Report content schema (mirrors Rust EbrQbrContent)
