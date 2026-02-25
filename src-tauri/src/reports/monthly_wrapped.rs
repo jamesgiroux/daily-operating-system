@@ -1,8 +1,7 @@
 //! Monthly Wrapped report (I419).
 //!
-//! Prior calendar month. Warmer, reflective tone.
-//! Honest miss: highest-importance priority with zero activity shown prominently.
-//! Comparison with prior month if that report exists.
+//! Prior calendar month. Spotify Wrapped energy — celebration, not a report.
+//! Personalized to the user's active role preset with a personality type assignment.
 
 use chrono::{Datelike, NaiveDate, Utc};
 
@@ -17,31 +16,63 @@ use crate::types::AiModelConfig;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MonthlyWin {
-    pub headline: String,
-    pub detail: Option<String>,
-    pub source: String, // meeting ID or date — required
+pub struct WrappedPersonality {
+    /// e.g. "The Relationship Architect"
+    pub type_name: String,
+    /// 1-2 sentences on what defines this type
+    pub description: String,
+    /// "Your defining move this month: [specific observation]"
+    pub key_signal: String,
+    /// "Only 18% this month" — AI invents a plausible-feeling percentage
+    pub rarity_label: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PriorityProgress {
-    pub priority_text: String,
-    pub progress: String,          // "strong", "some", "none"
-    pub evidence: Option<String>,  // What happened, or null if none
+pub struct WrappedMoment {
+    /// "A first" / "Peak week" / "Your best day" / "A surprise"
+    pub label: String,
+    /// "First meeting with Natasha Brown on Jan 20"
+    pub headline: String,
+    /// optional 1-line context
+    pub subtext: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonthlyWrappedContent {
-    pub month_label: String,               // e.g., "January 2026"
-    pub headline_stat: String,             // "X meetings, Y actions, Z signals"
-    pub opening_reflection: String,        // 1-2 sentences, warm tone
-    pub top_wins: Vec<MonthlyWin>,         // 2-4 wins with real citations
-    pub priority_progress: Vec<PriorityProgress>, // ALL priorities — no omissions
-    pub honest_miss: Option<String>,       // Highest-importance priority with zero activity
-    pub momentum_builder: String,          // 1-2 sentences looking forward
-    pub by_the_numbers: Vec<String>,       // Simple stats: ["X meetings", "Y actions closed"]
+    /// e.g. "February 2026"
+    pub month_label: String,
+    /// total meetings in the period
+    pub total_conversations: i32,
+    /// unique accounts/deals/clients touched
+    pub total_entities_touched: i32,
+    /// unique people met
+    pub total_people_met: i32,
+    /// signal events captured
+    pub signals_captured: i32,
+    /// most active account/deal/client name
+    pub top_entity_name: String,
+    /// how many times you engaged them
+    pub top_entity_touches: i32,
+    /// 2-3 specific memorable moments
+    pub moments: Vec<WrappedMoment>,
+    /// "You didn't know this: [something specific]"
+    pub hidden_pattern: String,
+    /// role-specific personality type assignment
+    pub personality: WrappedPersonality,
+    /// % of touches on priority entities — null if no priorities set
+    pub priority_alignment_pct: Option<i32>,
+    /// "On track" / "Worth a look" / "Your call" — null if no priorities
+    pub priority_alignment_label: Option<String>,
+    /// single biggest win of the month, celebrated
+    pub top_win: String,
+    /// forward-framed, never judgmental
+    pub carry_forward: String,
+    /// "Your [month] in three words:"
+    pub word_one: String,
+    pub word_two: String,
+    pub word_three: String,
 }
 
 // =============================================================================
@@ -60,6 +91,81 @@ pub fn prior_calendar_month() -> (NaiveDate, NaiveDate) {
 }
 
 // =============================================================================
+// Personality type matrix by preset
+// =============================================================================
+
+fn personality_types_for_preset(preset: &str) -> &'static str {
+    match preset {
+        "sales" => {
+            "- The Pipeline Builder: high outreach volume, new deal creation, discovery-focused\n\
+             - The Momentum Closer: deal velocity, stage progression, converting\n\
+             - The Trusted Advisor: fewer deals, deeper engagement, relationship-led\n\
+             - The Territory Owner: broad coverage, consistent touchpoints across territory"
+        }
+        "leadership" => {
+            "- The Strategic Connector: bridges across teams and portfolios, high cross-entity activity\n\
+             - The Force Multiplier: enables others, high team-facing engagement, amplifies output\n\
+             - The Portfolio Conductor: oversees diverse entities, broad awareness, orchestration\n\
+             - The Signal Reader: intelligence-first, pattern synthesis, high context intake"
+        }
+        "agency" => {
+            "- The Account Juggler: many active clients, high context-switching, parallel threads\n\
+             - The Delivery Captain: completion-focused, high action rate, deliverable-oriented\n\
+             - The Relationship Anchor: consistently deepens core client relationships, reliability\n\
+             - The Growth Scout: new business focus, expansion signals, new client meetings"
+        }
+        "consulting" => {
+            "- The Trusted Advisor: deep engagement on fewer engagements, advisor-level trust\n\
+             - The Insight Generator: high signal and capture rate, analysis-first\n\
+             - The Deliverable Driver: action completion, milestone-focused, outcomes-oriented\n\
+             - The Scope Expander: identifies expansion opportunities, growth signals across clients"
+        }
+        "marketing" => {
+            "- The Campaign Orchestrator: many parallel programs, high coordination, launch-focused\n\
+             - The Account Advocate: ABM focus, deep account relationships, relationship-first\n\
+             - The Market Signal Tracker: signal-heavy, intelligence-driven, always reading the room\n\
+             - The Relationship Marketer: nurtures relationships over volume, trust-building"
+        }
+        "partnerships" => {
+            "- The Alliance Builder: new partnerships initiated, relationship-first, introductions\n\
+             - The Ecosystem Architect: broad partner network development, strategic mapping\n\
+             - The Co-Sell Champion: cross-functional deal collaboration, joint-selling focused\n\
+             - The Integration Connector: technical depth, product-partner alignment"
+        }
+        "product" => {
+            "- The Voice Amplifier: high customer meeting count, carries customer voice internally\n\
+             - The Signal Synthesizer: translates customer signals into clear product insights\n\
+             - The Velocity Driver: high action completion, ships things, bias toward done\n\
+             - The Discovery Expert: exploration-focused, new use cases, uncharted territory"
+        }
+        "the-desk" => {
+            "- The Connector: broad relationship diversity, bridges people and contexts\n\
+             - The Finisher: high follow-through rate, commits and delivers\n\
+             - The Knowledge Builder: heavy context and signal capture, builds the knowledge base\n\
+             - The Consistent Presence: reliable, steady engagement rhythm, always there"
+        }
+        // customer-success and default
+        _ => {
+            "- The Relationship Architect: systematic, high breadth, multi-threaded account coverage\n\
+             - The Champion Builder: focus on new stakeholders, first meetings, relationship-building\n\
+             - The Renewal Strategist: high activity on renewal-adjacent accounts, value documentation\n\
+             - The Steady Hand: consistent reliable cadence, no big swings, accounts trust you to show up"
+        }
+    }
+}
+
+fn entity_noun_for_preset(preset: &str) -> &'static str {
+    match preset {
+        "sales" => "deal",
+        "agency" | "consulting" => "client",
+        "partnerships" => "partner",
+        "product" => "initiative",
+        "the-desk" => "project",
+        _ => "account",
+    }
+}
+
+// =============================================================================
 // Prompt
 // =============================================================================
 
@@ -67,10 +173,13 @@ fn build_monthly_wrapped_prompt(
     db: &ActionDb,
     month_start: NaiveDate,
     month_end: NaiveDate,
+    active_preset: &str,
 ) -> String {
     let month_start_str = month_start.format("%Y-%m-%d").to_string();
     let month_end_str = format!("{} 23:59:59", month_end.format("%Y-%m-%d"));
     let month_label = month_start.format("%B %Y").to_string();
+    let entity_noun = entity_noun_for_preset(active_preset);
+    let personality_types = personality_types_for_preset(active_preset);
 
     // Gather user priorities
     let priorities_json: String = db
@@ -82,7 +191,7 @@ fn build_monthly_wrapped_prompt(
         )
         .unwrap_or_default();
 
-    // Meetings for the month
+    // Meeting count
     let meeting_count: i64 = db
         .conn_ref()
         .query_row(
@@ -92,6 +201,7 @@ fn build_monthly_wrapped_prompt(
         )
         .unwrap_or(0);
 
+    // Full meeting list with IDs for citation
     let meetings: String = db
         .conn_ref()
         .prepare(
@@ -114,7 +224,7 @@ fn build_monthly_wrapped_prompt(
         })
         .unwrap_or_default();
 
-    // Completed actions for the month
+    // Completed actions
     let action_count: i64 = db
         .conn_ref()
         .query_row(
@@ -144,7 +254,7 @@ fn build_monthly_wrapped_prompt(
         })
         .unwrap_or_default();
 
-    // Signal events for the month
+    // Signal events
     let signal_count: i64 = db
         .conn_ref()
         .query_row(
@@ -157,7 +267,7 @@ fn build_monthly_wrapped_prompt(
     let signals: String = db
         .conn_ref()
         .prepare(
-            "SELECT se.signal_type, se.value, se.source, COALESCE(a.name, p.name, '') as entity_name
+            "SELECT se.signal_type, se.value, COALESCE(a.name, p.name, '') as entity_name
              FROM signal_events se
              LEFT JOIN accounts a ON se.entity_id = a.id AND se.entity_type = 'account'
              LEFT JOIN people p ON se.entity_id = p.id AND se.entity_type = 'person'
@@ -171,7 +281,7 @@ fn build_monthly_wrapped_prompt(
                 |row| {
                     let stype: String = row.get(0)?;
                     let val: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
-                    let entity: String = row.get(3)?;
+                    let entity: String = row.get(2)?;
                     Ok(format!("- [{}] {} — {}", stype, entity, val))
                 },
             )?;
@@ -179,75 +289,158 @@ fn build_monthly_wrapped_prompt(
         })
         .unwrap_or_default();
 
-    let mut prompt = build_report_preamble("you", "monthly_wrapped", "user");
+    // Unique entities touched (accounts linked to meetings)
+    let entities_touched: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(DISTINCT me.entity_id) FROM meeting_entities me
+             JOIN meetings_history m ON m.id = me.meeting_id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2 AND me.entity_type = 'account'",
+            rusqlite::params![month_start_str, month_end_str],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
 
-    prompt.push_str(&format!("# Month: {}\n\n", month_label));
+    // Unique people met
+    let people_met: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(DISTINCT ma.person_id) FROM meeting_attendees ma
+             JOIN meetings_history m ON m.id = ma.meeting_id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2",
+            rusqlite::params![month_start_str, month_end_str],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    // Top entity (most meetings)
+    let (top_entity_name, top_entity_touches) = db
+        .conn_ref()
+        .query_row(
+            "SELECT a.name, COUNT(*) as cnt
+             FROM meeting_entities me
+             JOIN meetings_history m ON m.id = me.meeting_id
+             JOIN accounts a ON a.id = me.entity_id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2 AND me.entity_type = 'account'
+             GROUP BY me.entity_id ORDER BY cnt DESC LIMIT 1",
+            rusqlite::params![month_start_str, month_end_str],
+            |row| {
+                let name: String = row.get(0)?;
+                let cnt: i64 = row.get(1)?;
+                Ok((name, cnt))
+            },
+        )
+        .unwrap_or_else(|_| ("(none)".to_string(), 0));
+
+    // Build prompt
+    let mut prompt = String::with_capacity(8192);
+
+    // Custom preamble — this is NOT a report, it's a celebration
     prompt.push_str(&format!(
-        "## Stats at a Glance\n- {} meetings\n- {} actions completed\n- {} intelligence signals\n\n",
-        meeting_count, action_count, signal_count
+        "You are writing a Monthly Wrapped experience for a {entity_noun}-facing professional using DailyOS.\n\
+         This is NOT a report. It's a celebration — think Spotify Wrapped energy. Whimsical, specific, personal.\n\
+         The user's role preset is: {active_preset} ({entity_noun} vocabulary)\n\
+         Month: {month_label}\n\n"
+    ));
+
+    prompt.push_str("## Personality Types for This Role\n");
+    prompt.push_str("Assign ONE of these based on the month's data patterns:\n");
+    prompt.push_str(personality_types);
+    prompt.push_str("\n\n");
+
+    prompt.push_str("## Month Data\n\n");
+    prompt.push_str(&format!(
+        "Stats: {} meetings, {} actions completed, {} updates captured\n\
+         Unique {}s touched: {}\n\
+         Unique people met: {}\n\
+         Top {}: {} ({} engagements)\n\n",
+        meeting_count, action_count, signal_count,
+        entity_noun, entities_touched,
+        people_met,
+        entity_noun, top_entity_name, top_entity_touches
     ));
 
     if !priorities_json.trim().is_empty() {
-        prompt.push_str("## Your Priorities\n");
+        prompt.push_str("### Priorities\n");
         prompt.push_str(&crate::util::wrap_user_data(&priorities_json));
         prompt.push_str("\n\n");
     }
 
     if !meetings.is_empty() {
-        prompt.push_str("## Meetings\n");
+        prompt.push_str("### Meetings (with IDs for citation)\n");
         prompt.push_str(&crate::util::wrap_user_data(&meetings));
         prompt.push_str("\n\n");
     }
 
     if !completed_actions.is_empty() {
-        prompt.push_str("## Completed Actions\n");
+        prompt.push_str("### Completed Actions\n");
         prompt.push_str(&crate::util::wrap_user_data(&completed_actions));
         prompt.push_str("\n\n");
     }
 
     if !signals.is_empty() {
-        prompt.push_str("## Intelligence Signals\n");
+        prompt.push_str("### Updates Captured\n");
         prompt.push_str(&crate::util::wrap_user_data(&signals));
         prompt.push_str("\n\n");
     }
 
-    prompt.push_str("# Output Format\n\n");
-    prompt.push_str("Write with warmth and honesty — this is a personal reflection, not a performance review.\n");
-    prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences):\n\n");
+    prompt.push_str("## Output Format\n\n");
+    prompt.push_str("Respond with ONLY valid JSON (no markdown fences) matching this schema exactly:\n\n");
     prompt.push_str(&format!(
         r#"{{
   "monthLabel": "{month_label}",
-  "headlineStat": "{meeting_count} meetings, {action_count} actions, {signal_count} signals — one phrase",
-  "openingReflection": "1-2 warm sentences summarizing the month's overall character. Not a list.",
-  "topWins": [
+  "totalConversations": {meeting_count},
+  "totalEntitiesTouched": {entities_touched},
+  "totalPeopleMet": {people_met},
+  "signalsCaptured": {signal_count},
+  "topEntityName": "{top_entity_name}",
+  "topEntityTouches": {top_entity_touches},
+  "moments": [
     {{
-      "headline": "Win in max 12 words",
-      "detail": "1 sentence detail or null",
-      "source": "meeting-id or date — REQUIRED"
+      "label": "A first | Peak week | Your best day | A surprise",
+      "headline": "Specific moment — use real names and dates from the data",
+      "subtext": "optional 1-line context or null"
     }}
   ],
-  "priorityProgress": [
-    {{
-      "priorityText": "The exact priority text",
-      "progress": "strong|some|none",
-      "evidence": "What happened this month or null if none"
-    }}
-  ],
-  "honestMiss": "If any priority has progress=none, state the highest-importance one honestly. null if all made progress.",
-  "momentumBuilder": "1-2 sentences looking forward to next month without making promises.",
-  "byTheNumbers": ["{meeting_count} external meetings", "{action_count} actions closed", "{signal_count} intelligence signals"]
+  "hiddenPattern": "Something the user might not have noticed. Be specific. E.g. 'Your {entity_noun} meetings are 3x more likely on Tuesdays' or 'You followed up on 94% of updates this month.'",
+  "personality": {{
+    "typeName": "The [Type Name] from the list above",
+    "description": "1-2 sentences specific to what defined THIS user's month — not generic",
+    "keySignal": "Your defining move this month: [specific observation from the data]",
+    "rarityLabel": "Only X% this month — pick a percentage that makes the type feel meaningfully earned"
+  }},
+  "priorityAlignmentPct": null,
+  "priorityAlignmentLabel": null,
+  "topWin": "Single biggest win, celebrated. Be specific and direct.",
+  "carryForward": "One thing, forward-framed. 'Bring [Entity X] back into rotation' not 'You neglected [Entity X].'",
+  "wordOne": "evocative word",
+  "wordTwo": "evocative word",
+  "wordThree": "evocative word"
 }}"#,
         month_label = month_label,
         meeting_count = meeting_count,
-        action_count = action_count,
-        signal_count = signal_count
+        entities_touched = entities_touched,
+        people_met = people_met,
+        signal_count = signal_count,
+        top_entity_name = top_entity_name.replace('"', "\\\""),
+        top_entity_touches = top_entity_touches,
+        entity_noun = entity_noun,
     ));
 
-    prompt.push_str("\n\n# Rules\n");
-    prompt.push_str("- priority_progress: Include ALL priorities. Never omit one with zero activity.\n");
-    prompt.push_str("- honest_miss: If any priority has progress='none', set honest_miss to the most important one. Don't soften it — be honest.\n");
-    prompt.push_str("- top_wins: 2–4 wins with REAL citations. source must be a meeting ID from the meetings list above.\n");
-    prompt.push_str("- tone: Personal and reflective, not corporate. Like a good journal entry.\n");
+    prompt.push_str("\n\n## Rules\n");
+    prompt.push_str(&format!(
+        "- totalConversations, totalEntitiesTouched, totalPeopleMet, signalsCaptured: use the EXACT numbers from the data above. Do not change them.\n\
+         - topEntityName / topEntityTouches: use the values from the data above.\n\
+         - moments: 2-3 SPECIFIC moments. Not 'a productive month' — 'First meeting with [actual name] on [actual date].' Use real names and dates from the meeting list.\n\
+         - hiddenPattern: Something genuinely interesting the user might not have noticed. Be specific.\n\
+         - personality: Assign the type that BEST fits the data. description and keySignal must reference this user's actual month, not be generic. rarityLabel should feel real ('Only 14% this month') — pick a % that makes the type feel earned.\n\
+         - priorityAlignmentPct: if priorities are set, estimate what % of {entity_noun} touches were on priority entities. null if no priorities.\n\
+         - priorityAlignmentLabel: 'On track' if >60%, 'Worth a look' if 40-60%, 'Your call' if <40%, null if no priorities.\n\
+         - topWin: One achievement. Celebrate it with specificity.\n\
+         - carryForward: One thing, forward-framed. Never guilt-inducing.\n\
+         - wordOne/wordTwo/wordThree: Specific and evocative. Not 'busy' or 'productive'. Try: momentum, foundation, expansion, steady, breakthrough, reconnection.\n\
+         - Do NOT mention AI, enrichment, signals, or internal app mechanics in any output text. Use human language.\n"
+    ));
 
     prompt
 }
@@ -260,10 +453,11 @@ pub fn gather_monthly_wrapped_input(
     workspace: &std::path::Path,
     db: &ActionDb,
     ai_models: AiModelConfig,
+    active_preset: &str,
 ) -> Result<ReportGeneratorInput, String> {
     let (month_start, month_end) = prior_calendar_month();
     let intel_hash = format!("month-{}", month_start.format("%Y-%m"));
-    let prompt = build_monthly_wrapped_prompt(db, month_start, month_end);
+    let prompt = build_monthly_wrapped_prompt(db, month_start, month_end, active_preset);
 
     let user_entity_id: String = db
         .conn_ref()
@@ -273,6 +467,11 @@ pub fn gather_monthly_wrapped_input(
             |row| row.get(0),
         )
         .unwrap_or_else(|_| "1".to_string());
+
+    // Override the generic preamble — monthly wrapped uses its own framing built above.
+    // build_report_preamble is called here for consistency but the prompt already
+    // has the correct framing as its first section.
+    let _ = build_report_preamble("you", "monthly_wrapped", "user");
 
     Ok(ReportGeneratorInput {
         entity_id: user_entity_id,
