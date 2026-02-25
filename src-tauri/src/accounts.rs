@@ -613,33 +613,10 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                 let _ = write_account_markdown(workspace, &db_account, None, db);
                 synced += 1;
             } else {
-                // New folder discovery — bootstrap minimal record from folder name
-                let now = Utc::now().to_rfc3339();
-                let id = slugify(&name);
-                let new_account = DbAccount {
-                    id,
-                    name: name.to_string(),
-                    lifecycle: None,
-                    arr: None,
-                    health: None,
-                    contract_start: None,
-                    contract_end: None,
-                    nps: None,
-                    tracker_path: Some(format!("Accounts/{}", name)),
-                    parent_id: None,
-                    account_type: crate::db::AccountType::Customer,
-                    updated_at: now,
-                    archived: false,
-                    keywords: None,
-                    keywords_extracted_at: None,
-                metadata: None,
-                };
-                if db.upsert_account(&new_account).is_ok() {
-                    let _ = write_account_json(workspace, &new_account, None, db);
-                    let _ = write_account_markdown(workspace, &new_account, None, db);
-                    log::info!("Bootstrapped account '{}' from existing folder", name);
-                    synced += 1;
-                }
+                // Unrecognized folder — skip instead of auto-bootstrapping.
+                // Inbox processing validates entities before routing, so new folders
+                // should only be created via explicit user action.
+                log::info!("Skipping unrecognized account folder '{}'", name);
             }
             continue;
         }
@@ -816,41 +793,18 @@ fn scan_child_accounts_inner(
             }
         } else {
             // BU directory without dashboard.json — bootstrap using hierarchy walker
-            let (child_id, child_name, child_parent_id, child_tracker) =
+            let (child_id, _child_name, _child_parent_id, child_tracker) =
                 match compute_account_hierarchy(&sub_entry.path()) {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
 
             if db.get_account(&child_id).ok().flatten().is_none() {
-                let now = Utc::now().to_rfc3339();
-                let new_child = DbAccount {
-                    id: child_id,
-                    name: child_name,
-                    lifecycle: None,
-                    arr: None,
-                    health: None,
-                    contract_start: None,
-                    contract_end: None,
-                    nps: None,
-                    tracker_path: Some(child_tracker.clone()),
-                    parent_id: child_parent_id,
-                    account_type: crate::db::AccountType::Customer,
-                    updated_at: now,
-                    archived: false,
-                    keywords: None,
-                    keywords_extracted_at: None,
-                metadata: None,
-                };
-                if db.upsert_account(&new_child).is_ok() {
-                    let _ = write_account_json(workspace, &new_child, None, db);
-                    let _ = write_account_markdown(workspace, &new_child, None, db);
-                    log::info!(
-                        "Bootstrapped child account '{}' from BU folder",
-                        child_tracker,
-                    );
-                    synced += 1;
-                }
+                // Unrecognized child folder — skip instead of auto-bootstrapping
+                log::info!(
+                    "Skipping unrecognized child account folder '{}'",
+                    child_tracker,
+                );
             }
         }
 
@@ -1315,7 +1269,7 @@ END_ENRICHMENT";
     }
 
     #[test]
-    fn test_sync_bootstraps_from_folder_name() {
+    fn test_sync_skips_unrecognized_folders() {
         let dir = tempfile::tempdir().expect("tempdir");
         let workspace = dir.path();
         let db = test_db();
@@ -1330,57 +1284,42 @@ END_ENRICHMENT";
         std::fs::write(acct1.join("notes.md"), "# Meeting notes\nSome content").unwrap();
 
         let synced = sync_accounts_from_workspace(workspace, &db).unwrap();
-        assert_eq!(synced, 2);
+        // No auto-bootstrap: unrecognized folders are skipped
+        assert_eq!(synced, 0);
 
-        // Verify SQLite records were created
+        // Verify NO SQLite records were created
         let acme = db.get_account("acme-corp").unwrap();
-        assert!(acme.is_some());
-        let acme = acme.unwrap();
-        assert_eq!(acme.name, "Acme Corp");
-        assert_eq!(acme.tracker_path, Some("Accounts/Acme Corp".to_string()));
+        assert!(acme.is_none(), "Unrecognized folder should NOT create account");
 
         let beta = db.get_account("beta-industries").unwrap();
-        assert!(beta.is_some());
-
-        // Verify dashboard.json was created
-        assert!(acct1.join("dashboard.json").exists());
-        assert!(acct2.join("dashboard.json").exists());
-
-        // Verify dashboard.md was created
-        assert!(acct1.join("dashboard.md").exists());
+        assert!(beta.is_none(), "Unrecognized folder should NOT create account");
 
         // Verify existing files were NOT touched
         let notes = std::fs::read_to_string(acct1.join("notes.md")).unwrap();
         assert!(notes.contains("Meeting notes"));
-
-        // Verify entity bridge fired (entity record exists)
-        let entity = db.get_entity("acme-corp").unwrap();
-        assert!(entity.is_some());
     }
 
     #[test]
-    fn test_sync_bootstrap_no_duplicates() {
+    fn test_sync_skip_bare_folder_no_duplicates() {
         let dir = tempfile::tempdir().expect("tempdir");
         let workspace = dir.path();
         let db = test_db();
 
-        // Create a bare folder
+        // Create a bare folder (no dashboard.json, no DB record)
         std::fs::create_dir_all(workspace.join("Accounts/Delta Co")).unwrap();
 
-        // First sync: bootstraps
+        // First sync: skips unrecognized folder
         let synced1 = sync_accounts_from_workspace(workspace, &db).unwrap();
-        assert_eq!(synced1, 1);
+        assert_eq!(synced1, 0, "bare folder should not bootstrap");
 
-        // Second sync: may re-sync due to timestamp harmonization, but must not duplicate
-        let _synced2 = sync_accounts_from_workspace(workspace, &db).unwrap();
+        // Second sync: still skips
+        let synced2 = sync_accounts_from_workspace(workspace, &db).unwrap();
+        assert_eq!(synced2, 0);
 
-        // Critical invariant: exactly one record, not two
+        // No records created
         let all = db.get_all_accounts().unwrap();
         let delta_count = all.iter().filter(|a| a.name == "Delta Co").count();
-        assert_eq!(
-            delta_count, 1,
-            "bootstrap must not create duplicates on re-sync"
-        );
+        assert_eq!(delta_count, 0, "bare folder should never create account");
     }
 
     // ── I114: Parent-Child tests ────────────────────────────────────────────
@@ -1489,12 +1428,12 @@ END_ENRICHMENT";
     }
 
     #[test]
-    fn test_sync_discovers_bu_subdirectories() {
+    fn test_sync_skips_bu_subdirectories_without_db_record() {
         let dir = tempfile::tempdir().expect("tempdir");
         let workspace = dir.path();
         let db = test_db();
 
-        // Create parent with dashboard.json
+        // Create parent with dashboard.json (will sync from JSON)
         let parent_dir = workspace.join("Accounts/TestParent");
         std::fs::create_dir_all(&parent_dir).unwrap();
         std::fs::write(
@@ -1503,7 +1442,7 @@ END_ENRICHMENT";
         )
         .unwrap();
 
-        // Create BU child dir (no dashboard.json — should be bootstrapped)
+        // Create BU child dir (no dashboard.json, no DB record — should be SKIPPED)
         let child_dir = parent_dir.join("TestChild");
         std::fs::create_dir_all(&child_dir).unwrap();
 
@@ -1512,21 +1451,16 @@ END_ENRICHMENT";
         std::fs::create_dir_all(&internal_dir).unwrap();
 
         let synced = sync_accounts_from_workspace(workspace, &db).unwrap();
-        assert!(synced >= 2, "Should sync at least parent + child");
+        // Only the parent syncs (from dashboard.json)
+        assert_eq!(synced, 1, "Only parent with dashboard.json should sync");
 
-        // Parent should exist
+        // Parent should exist (synced from dashboard.json)
         let parent = db.get_account("testparent").unwrap();
-        assert!(parent.is_some(), "Parent account should exist");
+        assert!(parent.is_some(), "Parent account should exist from dashboard.json");
 
-        // Child should exist with correct parent_id
+        // Child should NOT exist (bare folder, no auto-bootstrap)
         let child = db.get_account("testparent--testchild").unwrap();
-        assert!(child.is_some(), "Child account should exist");
-        let child = child.unwrap();
-        assert_eq!(child.parent_id, Some("testparent".to_string()));
-        assert_eq!(
-            child.tracker_path,
-            Some("Accounts/TestParent/TestChild".to_string())
-        );
+        assert!(child.is_none(), "Child without dashboard.json should NOT be bootstrapped");
 
         // Internal dir should NOT be an account
         let internal = db
