@@ -40,12 +40,15 @@ export function useDashboardData(): {
   const [, startTransition] = useTransition();
   const inFlightRef = useRef(false);
   const lastFocusRefreshRef = useRef(0);
+  const generationRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async (showLoading = true) => {
     if (inFlightRef.current) {
       return;
     }
     inFlightRef.current = true;
+    const generation = ++generationRef.current;
 
     if (showLoading) {
       setState({ status: "loading" });
@@ -55,6 +58,9 @@ export function useDashboardData(): {
 
     try {
       const result = await invoke<DashboardResult>("get_dashboard_data");
+
+      // Discard stale responses from previous mounts (fast navigation)
+      if (generationRef.current !== generation) return;
 
       const apply = () => {
         switch (result.status) {
@@ -77,6 +83,7 @@ export function useDashboardData(): {
         apply();
       }
     } catch (err) {
+      if (generationRef.current !== generation) return;
       setState({
         status: "error",
         message: err instanceof Error ? err.message : "Unknown error occurred",
@@ -107,13 +114,27 @@ export function useDashboardData(): {
     return () => window.removeEventListener("focus", onFocus);
   }, [loadData]);
 
-  // Auto-refresh on backend events
-  const silentRefresh = useCallback(() => { loadData(false); }, [loadData]);
-  useTauriEvent("workflow-completed", silentRefresh);
-  useTauriEvent("calendar-updated", silentRefresh);
-  useTauriEvent("prep-ready", silentRefresh);
-  useTauriEvent("entity-updated", silentRefresh);
-  useTauriEvent("emails-updated", silentRefresh);
+  // Auto-refresh on backend events — debounced to coalesce bursts.
+  // The backend often emits workflow-completed + entity-updated + prep-ready
+  // within milliseconds of each other; without debouncing, each triggers a
+  // separate get_dashboard_data IPC call.
+  const scheduleRefresh = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => { loadData(false); }, 300);
+  }, [loadData]);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  useTauriEvent("workflow-completed", scheduleRefresh);
+  useTauriEvent("calendar-updated", scheduleRefresh);
+  useTauriEvent("prep-ready", scheduleRefresh);
+  useTauriEvent("entity-updated", scheduleRefresh);
+  useTauriEvent("emails-updated", scheduleRefresh);
 
   return {
     state,
