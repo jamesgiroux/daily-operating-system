@@ -197,6 +197,9 @@ export default function ProjectDetailEditorial() {
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("project", projectId);
 
+  // Context entries — must be before early returns (React hooks rule)
+  const entityCtx = useEntityContextEntries("project", projectId ?? null);
+
   if (proj.loading) return <EditorialLoading />;
 
   if (proj.error || !proj.detail) {
@@ -204,7 +207,6 @@ export default function ProjectDetailEditorial() {
   }
 
   const { detail, intelligence, files } = proj;
-  const entityCtx = useEntityContextEntries("project", detail?.id ?? null);
 
   return (
     <>
