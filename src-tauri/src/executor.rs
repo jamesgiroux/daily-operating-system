@@ -691,6 +691,9 @@ impl Executor {
                     log::info!("Enriched '{}' → archived", filename);
                     enriched_count += 1;
                 }
+                crate::processor::enrich::EnrichResult::NeedsEntity { suggested_name, .. } => {
+                    log::info!("Enriched '{}' → needs entity assignment (suggested: '{}')", filename, suggested_name);
+                }
                 crate::processor::enrich::EnrichResult::Error { message } => {
                     log::warn!("Enrichment failed for '{}': {}", filename, message);
                 }
