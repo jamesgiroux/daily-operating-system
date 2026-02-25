@@ -5,9 +5,10 @@
  * ADR-0089/0090. Eucalyptus accent.
  */
 import { useState, useMemo, useCallback, useRef } from "react";
-import { User, Briefcase, Target, BookOpen, FileText, Paperclip, Upload } from "lucide-react";
+import { User, Briefcase, Target, BookOpen, FileText, Paperclip, Upload, TrendingUp } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { useNavigate } from "@tanstack/react-router";
 
 import { useMe } from "@/hooks/useMe";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -34,6 +35,7 @@ const CHAPTERS = [
   { id: "my-playbooks", label: "My Playbooks", icon: <BookOpen size={18} strokeWidth={1.5} /> },
   { id: "context-entries", label: "Context", icon: <FileText size={18} strokeWidth={1.5} /> },
   { id: "attachments", label: "Attachments", icon: <Paperclip size={18} strokeWidth={1.5} /> },
+  { id: "my-impact", label: "My Impact", icon: <TrendingUp size={18} strokeWidth={1.5} /> },
 ];
 
 // ─── JSON helpers ─────────────────────────────────────────────────────
@@ -319,6 +321,7 @@ function ContextEntryList({
 
 export default function MePage() {
   const me = useMe();
+  const navigate = useNavigate();
   useRevealObserver(!me.loading && !!me.userEntity);
 
   const shellConfig = useMemo(
@@ -607,6 +610,57 @@ export default function MePage() {
         />
 
         <AttachmentsSection />
+      </section>
+
+      {/* ═══ SECTION 7: My Impact ═══ */}
+      <section id="my-impact" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
+        <ChapterHeading
+          title="My Impact"
+          epigraph="Weekly and monthly reports on your professional impact."
+        />
+
+        <div style={{ paddingTop: "1.5rem", display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <button
+            onClick={() =>
+              navigate({ to: "/me/reports/$reportType", params: { reportType: "weekly_impact" } })
+            }
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: "var(--color-garden-eucalyptus)",
+              background: "none",
+              border: "1px solid var(--color-garden-eucalyptus)",
+              borderRadius: 4,
+              padding: "6px 16px",
+              cursor: "pointer",
+            }}
+          >
+            View Weekly Impact →
+          </button>
+          <button
+            onClick={() =>
+              navigate({ to: "/me/reports/$reportType", params: { reportType: "monthly_wrapped" } })
+            }
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: "var(--color-garden-sage)",
+              background: "none",
+              border: "1px solid var(--color-garden-sage)",
+              borderRadius: 4,
+              padding: "6px 16px",
+              cursor: "pointer",
+            }}
+          >
+            View Monthly Wrapped →
+          </button>
+        </div>
       </section>
 
       {/* ═══ FINIS ═══ */}

@@ -5459,6 +5459,60 @@ pub async fn save_risk_briefing(
 }
 
 // =============================================================================
+// Reports (v0.15.0 — I397)
+// =============================================================================
+
+/// Generate a report for an entity (async, PTY enrichment).
+#[tauri::command]
+pub async fn generate_report(
+    state: State<'_, Arc<AppState>>,
+    entity_id: String,
+    entity_type: String,
+    report_type: String,
+) -> Result<crate::reports::ReportRow, String> {
+    crate::services::reports::generate_report(state.inner(), &entity_id, &entity_type, &report_type).await
+}
+
+/// Read a cached report (fast, no AI).
+#[tauri::command]
+pub async fn get_report(
+    state: State<'_, Arc<AppState>>,
+    entity_id: String,
+    entity_type: String,
+    report_type: String,
+) -> Result<Option<crate::reports::ReportRow>, String> {
+    state.db_read(move |db| {
+        crate::services::reports::get_report_cached(db, &entity_id, &entity_type, &report_type)
+    }).await
+}
+
+/// Save user edits to a report (persists content_json back to DB).
+#[tauri::command]
+pub async fn save_report(
+    state: State<'_, Arc<AppState>>,
+    entity_id: String,
+    entity_type: String,
+    report_type: String,
+    content_json: String,
+) -> Result<(), String> {
+    state.db_write(move |db| {
+        crate::services::reports::save_report(db, &entity_id, &entity_type, &report_type, &content_json)
+    }).await
+}
+
+/// Fetch all reports for an entity.
+#[tauri::command]
+pub async fn get_reports_for_entity(
+    state: State<'_, Arc<AppState>>,
+    entity_id: String,
+    entity_type: String,
+) -> Result<Vec<crate::reports::ReportRow>, String> {
+    state.db_read(move |db| {
+        crate::services::reports::get_all_reports_for_entity(db, &entity_id, &entity_type)
+    }).await
+}
+
+// =============================================================================
 // MCP: Claude Desktop Configuration (ADR-0075)
 // =============================================================================
 
