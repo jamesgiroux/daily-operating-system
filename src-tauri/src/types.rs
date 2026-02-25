@@ -171,7 +171,7 @@ fn default_synthesis_model() -> String {
 }
 
 fn default_extraction_model() -> String {
-    "sonnet".to_string()
+    "haiku".to_string()
 }
 
 fn default_mechanical_model() -> String {
