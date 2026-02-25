@@ -171,12 +171,12 @@ pub fn build_intelligence_context(
         let lines: Vec<String> = meetings
             .iter()
             .map(|m| {
-                format!(
-                    "- {} | {} | {}",
-                    m.start_time,
-                    m.title,
-                    m.summary.as_deref().unwrap_or("no summary")
-                )
+                let doc = match (&m.summary, &m.transcript_path) {
+                    (Some(s), _) if !s.is_empty() => s.clone(),
+                    (_, Some(p)) if !p.is_empty() => "transcript available".to_string(),
+                    _ => "no documented summary".to_string(),
+                };
+                format!("- {} | {} | {}", m.start_time, m.title, doc)
             })
             .collect();
         ctx.meeting_history = lines.join("\n");

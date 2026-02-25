@@ -256,7 +256,7 @@ fn parse_risk_briefing_response(
 }
 
 /// Find the first complete JSON object `{...}` in the text.
-fn extract_json_object(text: &str) -> Option<String> {
+pub fn extract_json_object(text: &str) -> Option<String> {
     let start = text.find('{')?;
     let bytes = text.as_bytes();
     let mut depth = 0i32;

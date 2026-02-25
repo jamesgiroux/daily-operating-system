@@ -142,6 +142,15 @@ export default function AccountDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!acct.loading && !!acct.detail);
 
+  const [reportsOpen, setReportsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!reportsOpen) return;
+    function handleClick() { setReportsOpen(false); }
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [reportsOpen]);
+
   // Register magazine shell configuration — MagazinePageLayout consumes this
   const shellConfig = useMemo(
     () => ({
@@ -172,33 +181,89 @@ export default function AccountDetailEditorial() {
               + Business Unit
             </button>
           )}
-          <button
-            onClick={() =>
-              navigate({
-                to: "/accounts/$accountId/risk-briefing",
-                params: { accountId: accountId! },
-              })
-            }
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: "var(--color-spice-turmeric)",
-              background: "none",
-              border: "1px solid var(--color-spice-turmeric)",
-              borderRadius: 4,
-              padding: "2px 10px",
-              cursor: "pointer",
-            }}
-          >
-            Reports
-          </button>
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                color: "var(--color-spice-turmeric)",
+                background: "none",
+                border: "1px solid var(--color-spice-turmeric)",
+                borderRadius: 4,
+                padding: "2px 10px",
+                cursor: "pointer",
+              }}
+            >
+              Reports {reportsOpen ? "▴" : "▾"}
+            </button>
+            {reportsOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 6px)",
+                  right: 0,
+                  background: "var(--color-paper-warm-white)",
+                  border: "1px solid var(--color-paper-linen)",
+                  borderRadius: 6,
+                  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                  minWidth: 180,
+                  zIndex: 100,
+                  overflow: "hidden",
+                }}
+              >
+                {[
+                  { label: "Account Health", reportType: "account_health" as const, dedicated: true },
+                  { label: "EBR / QBR", reportType: "ebr_qbr" as const, dedicated: true },
+                  { label: "SWOT", reportType: "swot" as const, dedicated: false },
+                  { label: "Risk Briefing", reportType: null, dedicated: false },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => {
+                      setReportsOpen(false);
+                      if (item.reportType === null) {
+                        navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+                      } else if (item.reportType === "account_health") {
+                        navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
+                      } else if (item.reportType === "ebr_qbr") {
+                        navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
+                      } else {
+                        navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
+                      }
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "10px 16px",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      textTransform: "uppercase" as const,
+                      letterSpacing: "0.06em",
+                      color: "var(--color-desk-charcoal)",
+                      background: "none",
+                      border: "none",
+                      borderBottom: "1px solid var(--color-paper-linen)",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--color-paper-linen)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ),
     }),
-    [navigate, accountId, acct.detail, acct.setCreateChildOpen],
+    [navigate, accountId, acct.detail, acct.setCreateChildOpen, reportsOpen, setReportsOpen],
   );
   useRegisterMagazineShell(shellConfig);
 

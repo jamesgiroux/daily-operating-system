@@ -51,6 +51,7 @@ pub mod granola;
 pub mod quill;
 pub mod queries;
 mod risk_briefing;
+pub mod reports;
 mod scheduler;
 pub mod self_healing;
 pub mod services;
@@ -535,6 +536,11 @@ pub fn run() {
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
             commands::save_risk_briefing,
+            // Reports (v0.15.0)
+            commands::generate_report,
+            commands::get_report,
+            commands::get_reports_for_entity,
+            commands::save_report,
             // I261: Intelligence Field Editing
             commands::update_intelligence_field,
             commands::update_stakeholders,
