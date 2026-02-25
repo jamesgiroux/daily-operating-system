@@ -40,6 +40,7 @@ pub fn check_and_invalidate_preps(
         "stakeholders_updated",
         "team_member_added",
         "team_member_removed",
+        "transcript_outcomes", // manually attached transcript — invalidate linked future meeting preps
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {
