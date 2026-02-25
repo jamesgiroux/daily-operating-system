@@ -861,6 +861,9 @@ pub fn write_enrichment_results(
     let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
     let _ = db.upsert_entity_intelligence(&final_intel);
 
+    // Invalidate cached reports when entity intelligence is refreshed (I397)
+    let _ = crate::reports::invalidation::mark_reports_stale(&db, &input.entity_id);
+
     // I338: Regenerate person files after intelligence enrichment
     if input.entity_type == "person" {
         if let Ok(Some(person)) = db.get_person(&input.entity_id) {

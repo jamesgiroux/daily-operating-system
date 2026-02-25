@@ -161,8 +161,10 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 49,
     sql: include_str!("migrations/049_drive_rename_type_column.sql"),
+}, Migration {
+    version: 50,
+    sql: include_str!("migrations/050_reports.sql"),
 }];
-// Migration 48 (google_drive_sync) temporarily disabled pending module recovery
 
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
@@ -324,13 +326,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 49,
-            "should apply all migrations including drive_rename_type_column"
+            applied, 50,
+            "should apply all migrations including reports"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 49);
+        assert_eq!(version, 50);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -851,13 +853,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v49 (48 pending migrations)
+        // Run migrations — should bootstrap v1 and apply v2 through v50 (49 pending migrations)
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 48, "bootstrap should mark v1, then apply 48 pending migrations (v2-v49)");
+        assert_eq!(applied, 49, "bootstrap should mark v1, then apply 49 pending migrations (v2-v50)");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 49);
+        assert_eq!(version, 50);
 
         // Verify existing data is untouched
         let title: String = conn
