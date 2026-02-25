@@ -1,7 +1,7 @@
 {
   "id": "marketing",
   "name": "Marketing",
-  "description": "For marketing managers running campaigns and programs. Tracks campaign performance, content pipelines, and cross-functional coordination to surface deadlines and impact metrics.",
+  "description": "For marketing managers running campaigns and programs. Tracks campaign performance, content pipelines, and cross-functional coordination to flag deadlines and impact metrics.",
   "defaultEntityMode": "project",
   "vocabulary": {
     "entityNoun": "campaign",
