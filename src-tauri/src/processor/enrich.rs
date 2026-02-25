@@ -13,7 +13,7 @@ use crate::types::AiModelConfig;
 use crate::util::wrap_user_data;
 
 use super::classifier::Classification;
-use super::router::{move_file, resolve_destination};
+use super::router::{move_file, resolve_destination, RouteOutcome};
 
 /// Timeout for AI processing per file (2 minutes)
 const AI_TIMEOUT_SECS: u64 = 120;
@@ -32,6 +32,12 @@ pub enum EnrichResult {
     Archived {
         summary: String,
         destination: String,
+    },
+    /// AI identified an entity that doesn't exist in DB — file stays in inbox.
+    NeedsEntity {
+        classification: String,
+        suggested_name: String,
+        summary: String,
     },
     /// AI processing failed.
     Error { message: String },
@@ -129,8 +135,14 @@ pub fn enrich_file(
         _ => Classification::Unknown,
     };
 
-    let destination =
-        resolve_destination(&classification, workspace, filename, entity_tracker_path);
+    let enrich_db = crate::db::ActionDb::open().ok();
+    let route_outcome = resolve_destination(
+        &classification,
+        workspace,
+        filename,
+        entity_tracker_path,
+        enrich_db.as_ref(),
+    );
 
     // Capture fields before the match to avoid borrow-after-move issues
     let summary = parsed.summary.clone();
@@ -139,8 +151,21 @@ pub fn enrich_file(
     let wins = parsed.wins.clone();
     let risks = parsed.risks.clone();
 
-    let result = match destination {
-        Some(dest) => match move_file(&file_path, &dest) {
+    let result = match route_outcome {
+        RouteOutcome::NeedsEntity { suggested_name } => {
+            // File stays in _inbox/ — user must assign via entity picker
+            log::info!(
+                "AI enrichment for '{}' needs entity assignment (suggested: '{}') — leaving in inbox",
+                filename,
+                suggested_name
+            );
+            EnrichResult::NeedsEntity {
+                classification: file_type.clone(),
+                suggested_name,
+                summary: summary.clone(),
+            }
+        }
+        RouteOutcome::Destination(dest) => match move_file(&file_path, &dest) {
             Ok(route_result) => {
                 // Write enriched companion .md for non-markdown files
                 if is_non_md {
@@ -170,7 +195,7 @@ pub fn enrich_file(
                 message: format!("Failed to route: {}", e),
             },
         },
-        None => {
+        RouteOutcome::NeedsEnrichment => {
             // Even if unknown, archive it with AI summary
             let date = Utc::now().format("%Y-%m-%d").to_string();
             let archive_dest = workspace.join("_archive").join(&date).join(filename);
@@ -206,7 +231,8 @@ pub fn enrich_file(
         }
     };
 
-    // Run post-enrichment hooks
+    // Run post-enrichment hooks (skip for NeedsEntity — file hasn't been routed yet)
+    if !matches!(result, EnrichResult::NeedsEntity { .. }) {
     if let Some(state) = state {
         if let Ok(db_guard) = state.db.lock() {
             if let Some(db) = db_guard.as_ref() {
@@ -239,6 +265,7 @@ pub fn enrich_file(
             }
         }
     }
+    } // end !NeedsEntity guard
 
     // Log to database
     if let Some(state) = state {
@@ -258,11 +285,13 @@ pub fn enrich_file(
                         EnrichResult::Routed { .. } | EnrichResult::Archived { .. } => {
                             "completed".to_string()
                         }
+                        EnrichResult::NeedsEntity { .. } => "needs_entity".to_string(),
                         EnrichResult::Error { .. } => "error".to_string(),
                     },
                     processed_at: Some(Utc::now().to_rfc3339()),
                     error_message: match &result {
                         EnrichResult::Error { message } => Some(message.clone()),
+                        EnrichResult::NeedsEntity { suggested_name, .. } => Some(suggested_name.clone()),
                         _ => None,
                     },
                     created_at: Utc::now().to_rfc3339(),
