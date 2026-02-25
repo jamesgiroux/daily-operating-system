@@ -107,16 +107,16 @@ function normalizeMonthlyWrapped(raw: Record<string, unknown>): MonthlyWrappedCo
 // =============================================================================
 
 const SLIDES = [
-  { id: "splash",          label: "Cover",              icon: <BookOpen size={18} strokeWidth={1.5} /> },
-  { id: "volume",          label: "You Showed Up",      icon: <BarChart2 size={18} strokeWidth={1.5} /> },
-  { id: "top-entity",      label: "Top Account",        icon: <Star size={18} strokeWidth={1.5} /> },
-  { id: "moments",         label: "The Moments",        icon: <Layers size={18} strokeWidth={1.5} /> },
-  { id: "hidden-pattern",  label: "You Missed This",    icon: <Eye size={18} strokeWidth={1.5} /> },
-  { id: "personality",     label: "Your Type",          icon: <Sparkles size={18} strokeWidth={1.5} /> },
-  { id: "priority",        label: "Priority Check",     icon: <Target size={18} strokeWidth={1.5} /> },
-  { id: "top-win",         label: "Your Win",           icon: <Trophy size={18} strokeWidth={1.5} /> },
-  { id: "carry-forward",   label: "Carry Forward",      icon: <ArrowRight size={18} strokeWidth={1.5} /> },
-  { id: "close",           label: "See You Next Month", icon: <Moon size={18} strokeWidth={1.5} /> },
+  { id: "splash",          label: "Cover",              icon: <BookOpen size={18} strokeWidth={1.8} /> },
+  { id: "volume",          label: "You Showed Up",      icon: <BarChart2 size={18} strokeWidth={1.8} /> },
+  { id: "top-entity",      label: "Top Account",        icon: <Star size={18} strokeWidth={1.8} /> },
+  { id: "moments",         label: "The Moments",        icon: <Layers size={18} strokeWidth={1.8} /> },
+  { id: "hidden-pattern",  label: "You Missed This",    icon: <Eye size={18} strokeWidth={1.8} /> },
+  { id: "personality",     label: "Your Type",          icon: <Sparkles size={18} strokeWidth={1.8} /> },
+  { id: "priority",        label: "Priority Check",     icon: <Target size={18} strokeWidth={1.8} /> },
+  { id: "top-win",         label: "Your Win",           icon: <Trophy size={18} strokeWidth={1.8} /> },
+  { id: "carry-forward",   label: "Carry Forward",      icon: <ArrowRight size={18} strokeWidth={1.8} /> },
+  { id: "close",           label: "See You Next Month", icon: <Moon size={18} strokeWidth={1.8} /> },
 ];
 
 const ANALYSIS_PHASES = [
@@ -620,7 +620,7 @@ function PersonalitySlide({ content }: { content: MonthlyWrappedContent }) {
         flexDirection: "column",
         justifyContent: "center",
         padding: "120px 120px 80px",
-        background: "var(--color-desk-espresso)",
+        background: "var(--color-garden-rosemary)",
         position: "relative",
         overflow: "hidden",
       }}
@@ -1504,6 +1504,11 @@ export default function MonthlyWrappedPage() {
 
   // Render all 10 slides
   return (
+    // Escape the page container's max-width so slide backgrounds span the full viewport.
+    // margin-left: calc(50% - 50vw) offsets left by the difference between the
+    // container's half-width and the viewport's half-width.
+    // overflow: hidden prevents the horizontal scrollbar this would otherwise cause.
+    <div style={{ marginLeft: "calc(50% - 50vw)", width: "100vw", overflow: "hidden" }}>
     <div style={{ scrollSnapType: "y proximity" }}>
       <WrappedKeyframes />
 
@@ -1539,6 +1544,7 @@ export default function MonthlyWrappedPage() {
 
       {/* Slide 10 — Close */}
       <CloseSlide content={content!} />
+    </div>
     </div>
   );
 }
