@@ -33,7 +33,10 @@ pub async fn generate_report(
 
             match report_type_str.as_str() {
                 "swot" => gather_swot_input(workspace, db, &entity_id, &entity_type, ai_models)?,
-                "account_health" => crate::reports::account_health::gather_account_health_input(workspace, db, &entity_id, ai_models)?,
+                "account_health" => {
+                    let active_preset = config.role.clone();
+                    crate::reports::account_health::gather_account_health_input(workspace, db, &entity_id, ai_models, &active_preset)?
+                }
                 "weekly_impact" => {
                     let active_preset = config.role.clone();
                     crate::reports::weekly_impact::gather_weekly_impact_input(workspace, db, ai_models, &active_preset)?
@@ -42,7 +45,10 @@ pub async fn generate_report(
                     let active_preset = config.role.clone();
                     crate::reports::monthly_wrapped::gather_monthly_wrapped_input(workspace, db, ai_models, &active_preset)?
                 }
-                "ebr_qbr" => crate::reports::ebr_qbr::gather_ebr_qbr_input(workspace, db, &entity_id, ai_models)?,
+                "ebr_qbr" => {
+                    let active_preset = config.role.clone();
+                    crate::reports::ebr_qbr::gather_ebr_qbr_input(workspace, db, &entity_id, ai_models, &active_preset)?
+                }
                 _ => return Err(format!("Unknown report type: {}", report_type_str)),
             }
         };
