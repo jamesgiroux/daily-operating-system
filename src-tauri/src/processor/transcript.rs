@@ -61,12 +61,24 @@ pub fn process_transcript(
     let dest_filename = format!("{}-{}-transcript.md", date, slug);
 
     let destination = if let Some(ref account) = meeting.account {
-        let account_dir = sanitize_account_dir(account);
-        workspace
-            .join("Accounts")
-            .join(&account_dir)
-            .join("Call-Transcripts")
-            .join(&dest_filename)
+        // Validate account exists in DB before routing to its folder
+        let account_exists = db
+            .and_then(|db| db.get_account_by_name(account).ok().flatten())
+            .is_some();
+        if account_exists {
+            let account_dir = sanitize_account_dir(account);
+            workspace
+                .join("Accounts")
+                .join(&account_dir)
+                .join("Call-Transcripts")
+                .join(&dest_filename)
+        } else {
+            log::info!(
+                "Account '{}' not found in DB — routing transcript to archive",
+                account
+            );
+            workspace.join("_archive").join(&date).join(&dest_filename)
+        }
     } else {
         workspace.join("_archive").join(&date).join(&dest_filename)
     };
