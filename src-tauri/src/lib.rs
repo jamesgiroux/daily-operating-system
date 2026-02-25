@@ -16,6 +16,7 @@ mod commands;
 pub mod linear;
 pub mod db;
 mod db_backup;
+pub mod db_service;
 mod devtools;
 pub mod embeddings;
 mod enrichment;
@@ -94,6 +95,20 @@ pub fn run() {
         .setup(|app| {
             // Create shared state
             let state = Arc::new(AppState::new());
+
+            // Initialize async DbService (read/write separated connections).
+            // Runs in background — command handlers fall back to the sync mutex
+            // until this completes (typically <100ms).
+            {
+                let init_state = state.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = init_state.init_db_service().await {
+                        log::warn!("DbService init failed: {e}. Falling back to sync mutex.");
+                    } else {
+                        log::info!("DbService initialized (1 writer + 2 readers)");
+                    }
+                });
+            }
 
             // Initialize embedding model asynchronously (nomic-embed-text-v1.5).
             // Downloads ~137MB on first run, caches in ~/.dailyos/models/.

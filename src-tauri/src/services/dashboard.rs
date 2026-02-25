@@ -9,7 +9,7 @@ use crate::json_loader::{
     load_emails_json_with_sync, load_schedule_json, DataFreshness,
 };
 use crate::parser::count_inbox;
-use crate::state::{AppState, DbTryRead};
+use crate::state::AppState;
 use crate::types::{
     Action, CalendarEvent, DailyFocus, DashboardData, DayOverview, DayStats,
     EmailSyncStage, EmailSyncState, EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus, Priority,
@@ -69,8 +69,8 @@ fn normalize_match_key(value: &str) -> String {
 /// Build dashboard data from live SQLite when schedule.json is missing.
 ///
 /// Returns `None` if no meetings exist for today or DB is unavailable.
-pub fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
-    // Gather all data under a single try-read lock.
+pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
+    // Gather all data under a single read lock.
     struct LiveSnapshot {
         meetings: Vec<crate::db::DbMeeting>,
         actions: Vec<crate::db::DbAction>,
@@ -84,7 +84,7 @@ pub fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
         .format("%Y-%m-%d")
         .to_string();
 
-    let snap = match state.with_db_try_read(|db| {
+    let snap = match state.db_read(move |db| {
         let conn = db.conn_ref();
 
         // 1. Query today's meetings from meetings_history
@@ -97,7 +97,7 @@ pub fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
                  WHERE start_time >= ?1 AND start_time < ?2
                  ORDER BY start_time ASC",
             )
-            .ok()?;
+            .map_err(|e| e.to_string())?;
         let meeting_rows = stmt
             .query_map(rusqlite::params![today, tomorrow], |row| {
                 Ok(crate::db::DbMeeting {
@@ -129,12 +129,12 @@ pub fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
                     last_viewed_at: None,
                 })
             })
-            .ok()?;
+            .map_err(|e| e.to_string())?;
         let meetings: Vec<crate::db::DbMeeting> =
             meeting_rows.filter_map(|r| r.ok()).collect();
 
         if meetings.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         // 2. Get actions
@@ -150,15 +150,15 @@ pub fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
             iq_map.insert(mid.clone(), q);
         }
 
-        Some(LiveSnapshot {
+        Ok(Some(LiveSnapshot {
             meetings,
             actions,
             focus_candidates,
             entity_map,
             intelligence_qualities: iq_map,
-        })
-    }) {
-        DbTryRead::Ok(Some(snap)) => snap,
+        }))
+    }).await {
+        Ok(Some(snap)) => snap,
         _ => return None,
     };
 
@@ -333,11 +333,40 @@ pub fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData> {
 ///
 /// This is the main business logic for the `get_dashboard_data` command.
 /// Returns the full DashboardResult including latency tracking.
-pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
+pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
     let started = std::time::Instant::now();
     let mut db_busy = false;
 
-    let result = (|| {
+    let result = get_dashboard_data_inner(state, &mut db_busy).await;
+
+    let elapsed_ms = started.elapsed().as_millis();
+    crate::latency::record_latency(
+        "get_dashboard_data",
+        elapsed_ms,
+        DASHBOARD_LATENCY_BUDGET_MS,
+    );
+    if db_busy {
+        crate::latency::increment_degraded("get_dashboard_data");
+    }
+    if elapsed_ms > DASHBOARD_LATENCY_BUDGET_MS {
+        log::warn!(
+            "get_dashboard_data exceeded latency budget: {}ms > {}ms (db_busy={})",
+            elapsed_ms,
+            DASHBOARD_LATENCY_BUDGET_MS,
+            db_busy
+        );
+    } else {
+        log::debug!(
+            "get_dashboard_data completed in {}ms (db_busy={})",
+            elapsed_ms,
+            db_busy
+        );
+    }
+
+    result
+}
+
+async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> DashboardResult {
         // Get Google auth status for frontend
         let google_auth = state
             .calendar.google_auth
@@ -381,7 +410,7 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
             Some(data) => data,
             None => {
                 // Fallback: build dashboard from SQLite meetings_history
-                if let Some(live_data) = build_live_dashboard_data(state) {
+                if let Some(live_data) = build_live_dashboard_data(state).await {
                     if !live_data.meetings.is_empty() {
                         log::info!(
                             "schedule.json unavailable — serving {} meetings from SQLite",
@@ -428,27 +457,27 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
             intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
         }
 
-        let db_snapshot = match state.with_db_try_read(|db| {
+        let meeting_ids_clone = meeting_ids.clone();
+        let db_snapshot = match state.db_read(move |db| {
             let mut iq_map = HashMap::new();
-            for mid in &meeting_ids {
+            for mid in &meeting_ids_clone {
                 let q = crate::intelligence::assess_intelligence_quality(db, mid);
                 iq_map.insert(mid.clone(), q);
             }
-            DashboardDbSnapshot {
+            Ok(DashboardDbSnapshot {
                 reviewed: db.get_reviewed_preps().ok(),
-                entity_map: db.get_meeting_entity_map(&meeting_ids).ok(),
+                entity_map: db.get_meeting_entity_map(&meeting_ids_clone).ok(),
                 accounts_with_domains: db.get_all_accounts_with_domains(true).ok(),
                 non_briefing_actions: db.get_non_briefing_pending_actions().ok(),
                 focus_candidates: db.get_focus_candidate_actions(7).ok(),
                 intelligence_qualities: iq_map,
-            }
-        }) {
-            DbTryRead::Ok(snap) => Some(snap),
-            DbTryRead::Busy => {
-                db_busy = true;
+            })
+        }).await {
+            Ok(snap) => Some(snap),
+            Err(_) => {
+                *db_busy = true;
                 None
             }
-            DbTryRead::Unavailable | DbTryRead::Poisoned => None,
         };
 
         // Apply DB data to meetings (outside the lock)
@@ -611,8 +640,11 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
         // I368: Try DB first for enriched emails, fall back to JSON
         let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
             let mut db_emails: Vec<crate::types::Email> =
-                match state.with_db_try_read(|db| {
-                    let rows = db.get_all_active_emails()?;
+                state.db_read(|db| {
+                    let rows = db.get_all_active_emails().map_err(|e| e.to_string())?;
+                    if rows.is_empty() {
+                        return Ok(Vec::new());
+                    }
                     // Batch-resolve entity names (same approach as emails service)
                     let entity_ids: std::collections::HashSet<String> = rows
                         .iter()
@@ -638,10 +670,7 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
                             entity_names.insert(eid.clone(), p.name);
                         }
                     }
-                    Ok::<_, String>((rows, entity_names))
-                }) {
-                    DbTryRead::Ok(Ok((rows, entity_names))) if !rows.is_empty() => rows
-                        .iter()
+                    Ok(rows.iter()
                         .map(|dbe| {
                             let entity_name = dbe.entity_id.as_ref()
                                 .and_then(|eid| entity_names.get(eid).cloned());
@@ -671,9 +700,8 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
                             relevance_score: dbe.relevance_score,
                             score_reason: dbe.score_reason.clone(),
                         }})
-                        .collect(),
-                    _ => Vec::new(),
-                };
+                        .collect())
+                }).await.unwrap_or_default();
 
             // I395: Sort by relevance score for briefing
             db_emails.sort_by(|a, b| {
@@ -763,6 +791,31 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
             .map(|d| (d.emails.narrative, d.emails.replies_needed))
             .unwrap_or_default();
 
+        // Fall back to DB enrichment stats when JSON sync status absent (I373)
+        let email_sync_fallback: Option<EmailSyncStatus> = if email_sync.is_none() {
+            match state.db_read(|db| db.get_email_sync_stats().map_err(|e| e.to_string())).await {
+                Ok(stats) => {
+                    stats.last_fetch_at.as_ref().map(|last| EmailSyncStatus {
+                        state: if stats.failed > 0 { EmailSyncState::Warning } else { EmailSyncState::Ok },
+                        stage: EmailSyncStage::Enrich,
+                        code: None,
+                        message: Some(format!("{}/{} ready", stats.enriched, stats.total)),
+                        using_last_known_good: None,
+                        can_retry: if stats.failed > 0 { Some(true) } else { None },
+                        last_attempt_at: Some(last.clone()),
+                        last_success_at: Some(last.clone()),
+                        enrichment_pending: Some(stats.pending as i64),
+                        enrichment_enriched: Some(stats.enriched as i64),
+                        enrichment_failed: Some(stats.failed as i64),
+                        total_active: Some(stats.total as i64),
+                    })
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
         DashboardResult::Success {
             data: DashboardData {
                 overview,
@@ -770,30 +823,7 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
                 meetings,
                 actions,
                 emails,
-                email_sync: email_sync.or_else(|| {
-                    // Fall back to DB enrichment stats when JSON sync status absent (I373)
-                    if let crate::state::DbTryRead::Ok(Ok(stats)) =
-                        state.with_db_try_read(|db| db.get_email_sync_stats())
-                    {
-                        let last = stats.last_fetch_at?;
-                        Some(EmailSyncStatus {
-                            state: if stats.failed > 0 { EmailSyncState::Warning } else { EmailSyncState::Ok },
-                            stage: EmailSyncStage::Enrich,
-                            code: None,
-                            message: Some(format!("{}/{} ready", stats.enriched, stats.total)),
-                            using_last_known_good: None,
-                            can_retry: if stats.failed > 0 { Some(true) } else { None },
-                            last_attempt_at: Some(last.clone()),
-                            last_success_at: Some(last),
-                            enrichment_pending: Some(stats.pending as i64),
-                            enrichment_enriched: Some(stats.enriched as i64),
-                            enrichment_failed: Some(stats.failed as i64),
-                            total_active: Some(stats.total as i64),
-                        })
-                    } else {
-                        None
-                    }
-                }),
+                email_sync: email_sync.or(email_sync_fallback),
                 focus,
                 email_narrative,
                 replies_needed,
@@ -805,33 +835,6 @@ pub fn get_dashboard_data(state: &AppState) -> DashboardResult {
             freshness,
             google_auth,
         }
-    })();
-
-    let elapsed_ms = started.elapsed().as_millis();
-    crate::latency::record_latency(
-        "get_dashboard_data",
-        elapsed_ms,
-        DASHBOARD_LATENCY_BUDGET_MS,
-    );
-    if db_busy {
-        crate::latency::increment_degraded("get_dashboard_data");
-    }
-    if elapsed_ms > DASHBOARD_LATENCY_BUDGET_MS {
-        log::warn!(
-            "get_dashboard_data exceeded latency budget: {}ms > {}ms (db_busy={})",
-            elapsed_ms,
-            DASHBOARD_LATENCY_BUDGET_MS,
-            db_busy
-        );
-    } else {
-        log::debug!(
-            "get_dashboard_data completed in {}ms (db_busy={})",
-            elapsed_ms,
-            db_busy
-        );
-    }
-
-    result
 }
 
 /// Get week overview data from workspace _today/data/ JSON files.

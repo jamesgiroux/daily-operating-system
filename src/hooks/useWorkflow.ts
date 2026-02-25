@@ -62,8 +62,6 @@ export interface ExecutionRecord {
 interface UseWorkflowOptions {
   /** Workflow to monitor (default: "today") */
   workflow?: "today" | "archive" | "week" | "inbox_batch";
-  /** Poll interval in ms (default: 5000) */
-  pollInterval?: number;
 }
 
 /**
@@ -104,7 +102,7 @@ interface UseWorkflowReturn {
  * ```
  */
 export function useWorkflow(options: UseWorkflowOptions = {}): UseWorkflowReturn {
-  const { workflow = "today", pollInterval = 5000 } = options;
+  const { workflow = "today" } = options;
 
   const [status, setStatus] = useState<WorkflowStatus>({ status: "idle" });
   const [history, setHistory] = useState<ExecutionRecord[]>([]);
@@ -197,16 +195,14 @@ export function useWorkflow(options: UseWorkflowOptions = {}): UseWorkflowReturn
     };
   }, [workflow, fetchHistory]);
 
-  // Poll for status updates (backup for missed events)
+  // Re-fetch status when window regains focus (covers app resume from background).
+  // Replaces the previous 5-second polling loop — the event listener above
+  // handles real-time updates during normal operation.
   useEffect(() => {
-    // Only poll when not running
-    if (status.status === "running") {
-      return;
-    }
-
-    const interval = setInterval(fetchStatus, pollInterval);
-    return () => clearInterval(interval);
-  }, [status.status, fetchStatus, pollInterval]);
+    const onFocus = () => { void fetchStatus(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [fetchStatus]);
 
   return {
     status,

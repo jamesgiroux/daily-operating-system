@@ -113,7 +113,7 @@ async fn process_clay_queue(state: &AppState) -> u32 {
     };
 
     // Phase 1: pending clay_sync_state rows
-    let pending_ids = get_pending_clay_ids(state, max_per_sweep as usize);
+    let pending_ids = get_pending_clay_ids(state, max_per_sweep as usize).await;
     let mut attempted: u32 = 0;
 
     log::info!(
@@ -126,7 +126,7 @@ async fn process_clay_queue(state: &AppState) -> u32 {
         attempted += 1;
         match crate::clay::enricher::enrich_person_from_clay_with_client(state, person_id, &client).await {
             Ok(result) => {
-                mark_clay_completed(state, person_id);
+                mark_clay_completed(state, person_id).await;
                 log::info!(
                     "Enrichment: Clay OK {} ({} fields)",
                     person_id,
@@ -134,7 +134,7 @@ async fn process_clay_queue(state: &AppState) -> u32 {
                 );
             }
             Err(e) => {
-                mark_clay_failed(state, person_id, &e);
+                mark_clay_failed(state, person_id, &e).await;
                 log::warn!("Enrichment: Clay FAIL {}: {}", person_id, e);
             }
         }
@@ -146,13 +146,13 @@ async fn process_clay_queue(state: &AppState) -> u32 {
 
     // Phase 2: sweep unenriched people not yet in clay_sync_state
     if attempted < max_per_sweep {
-        let unenriched = get_unenriched_people(state, (max_per_sweep - attempted) as usize);
+        let unenriched = get_unenriched_people(state, (max_per_sweep - attempted) as usize).await;
         for person_id in &unenriched {
-            insert_clay_sync(state, person_id);
+            insert_clay_sync(state, person_id).await;
             attempted += 1;
             match crate::clay::enricher::enrich_person_from_clay_with_client(state, person_id, &client).await {
                 Ok(result) => {
-                    mark_clay_completed(state, person_id);
+                    mark_clay_completed(state, person_id).await;
                     log::info!(
                         "Enrichment: Clay sweep OK {} ({} fields)",
                         person_id,
@@ -160,7 +160,7 @@ async fn process_clay_queue(state: &AppState) -> u32 {
                     );
                 }
                 Err(e) => {
-                    mark_clay_failed(state, person_id, &e);
+                    mark_clay_failed(state, person_id, &e).await;
                     log::warn!("Enrichment: Clay sweep FAIL {}: {}", person_id, e);
                 }
             }
@@ -189,14 +189,13 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
         return 0;
     }
 
-    let emails_to_fetch: Vec<(String, Option<String>)> = {
-        let db_guard = state.db.lock().ok();
-        match db_guard.as_ref().and_then(|g| g.as_ref()) {
-            Some(db) => crate::gravatar::cache::get_stale_emails(db.conn_ref(), 50)
-                .unwrap_or_default(),
-            None => Vec::new(),
-        }
-    };
+    let emails_to_fetch: Vec<(String, Option<String>)> = state
+        .db_read(move |db| {
+            Ok(crate::gravatar::cache::get_stale_emails(db.conn_ref(), 50)
+                .unwrap_or_default())
+        })
+        .await
+        .unwrap_or_default();
 
     if emails_to_fetch.is_empty() {
         return 0;
@@ -260,12 +259,13 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
             person_id: person_id.clone(),
         };
 
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
+        let engine = Arc::clone(&state.signals.engine);
+        let _ = state
+            .db_write(move |db| {
                 let _ = crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry);
 
                 if has_gravatar {
-                    if let Some(ref pid) = person_id {
+                    if let Some(ref pid) = cache_entry.person_id {
                         let update = crate::db::people::ProfileUpdate {
                             photo_url: cache_entry.avatar_url.clone(),
                             bio: cache_entry.bio.clone(),
@@ -283,7 +283,7 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
                         .to_string();
                         let _ = crate::signals::bus::emit_signal_and_propagate(
                             db,
-                            &state.signals.engine,
+                            &engine,
                             "person",
                             pid,
                             "profile_discovered",
@@ -293,8 +293,10 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
                         );
                     }
                 }
-            }
-        }
+
+                Ok(())
+            })
+            .await;
 
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
@@ -308,120 +310,97 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
 // Clay sync state helpers
 // ---------------------------------------------------------------------------
 
-fn get_pending_clay_ids(state: &AppState, limit: usize) -> Vec<String> {
-    let db_guard = match state.db.lock() {
-        Ok(g) => g,
-        Err(_) => return Vec::new(),
-    };
-    let db = match db_guard.as_ref() {
-        Some(d) => d,
-        None => return Vec::new(),
-    };
+async fn get_pending_clay_ids(state: &AppState, limit: usize) -> Vec<String> {
+    state
+        .db_read(move |db| {
+            let mut stmt = db.conn_ref().prepare(
+                "SELECT entity_id FROM clay_sync_state
+                 WHERE state = 'pending' AND attempts < max_attempts
+                 ORDER BY created_at ASC LIMIT ?1",
+            ).map_err(|e| format!("failed to query pending syncs: {}", e))?;
 
-    let mut stmt = match db.conn_ref().prepare(
-        "SELECT entity_id FROM clay_sync_state
-         WHERE state = 'pending' AND attempts < max_attempts
-         ORDER BY created_at ASC LIMIT ?1",
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            log::warn!("Enrichment: failed to query pending syncs: {}", e);
-            return Vec::new();
-        }
-    };
+            let rows = stmt
+                .query_map(rusqlite::params![limit as i64], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("query_map failed: {}", e))?
+                .filter_map(|r| r.ok())
+                .collect();
 
-    stmt.query_map(rusqlite::params![limit as i64], |row| row.get::<_, String>(0))
-        .ok()
-        .map(|iter| iter.filter_map(|r| r.ok()).collect())
+            Ok(rows)
+        })
+        .await
         .unwrap_or_default()
 }
 
-fn get_unenriched_people(state: &AppState, limit: usize) -> Vec<String> {
-    let db_guard = match state.db.lock() {
-        Ok(g) => g,
-        Err(_) => return Vec::new(),
-    };
-    let db = match db_guard.as_ref() {
-        Some(d) => d,
-        None => return Vec::new(),
-    };
-
+async fn get_unenriched_people(state: &AppState, limit: usize) -> Vec<String> {
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(30))
         .format("%Y-%m-%dT%H:%M:%S")
         .to_string();
 
-    let mut stmt = match db.conn_ref().prepare(
-        "SELECT id FROM people
-         WHERE last_enriched_at IS NULL OR last_enriched_at < ?1
-         ORDER BY last_enriched_at ASC NULLS FIRST LIMIT ?2",
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            log::warn!("Enrichment: failed to query unenriched people: {}", e);
-            return Vec::new();
-        }
-    };
+    state
+        .db_read(move |db| {
+            let mut stmt = db.conn_ref().prepare(
+                "SELECT id FROM people
+                 WHERE last_enriched_at IS NULL OR last_enriched_at < ?1
+                 ORDER BY last_enriched_at ASC NULLS FIRST LIMIT ?2",
+            ).map_err(|e| format!("failed to query unenriched people: {}", e))?;
 
-    stmt.query_map(rusqlite::params![cutoff, limit as i64], |row| row.get::<_, String>(0))
-        .ok()
-        .map(|iter| iter.filter_map(|r| r.ok()).collect())
+            let rows = stmt
+                .query_map(rusqlite::params![cutoff, limit as i64], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("query_map failed: {}", e))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            Ok(rows)
+        })
+        .await
         .unwrap_or_default()
 }
 
-fn insert_clay_sync(state: &AppState, person_id: &str) {
-    let db_guard = match state.db.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let db = match db_guard.as_ref() {
-        Some(d) => d,
-        None => return,
-    };
-
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-
-    let _ = db.conn_ref().execute(
-        "INSERT OR IGNORE INTO clay_sync_state (id, entity_type, entity_id, state, created_at, updated_at)
-         VALUES (?1, 'person', ?2, 'pending', ?3, ?3)",
-        rusqlite::params![id, person_id, now],
-    );
+async fn insert_clay_sync(state: &AppState, person_id: &str) {
+    let person_id = person_id.to_string();
+    let _ = state
+        .db_write(move |db| {
+            let id = uuid::Uuid::new_v4().to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+            db.conn_ref().execute(
+                "INSERT OR IGNORE INTO clay_sync_state (id, entity_type, entity_id, state, created_at, updated_at)
+                 VALUES (?1, 'person', ?2, 'pending', ?3, ?3)",
+                rusqlite::params![id, person_id, now],
+            ).map_err(|e| format!("insert_clay_sync failed: {}", e))?;
+            Ok(())
+        })
+        .await;
 }
 
-fn mark_clay_completed(state: &AppState, person_id: &str) {
-    let db_guard = match state.db.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let db = match db_guard.as_ref() {
-        Some(d) => d,
-        None => return,
-    };
-
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-    let _ = db.conn_ref().execute(
-        "UPDATE clay_sync_state SET state = 'completed', completed_at = ?1, updated_at = ?1
-         WHERE entity_type = 'person' AND entity_id = ?2 AND state = 'pending'",
-        rusqlite::params![now, person_id],
-    );
+async fn mark_clay_completed(state: &AppState, person_id: &str) {
+    let person_id = person_id.to_string();
+    let _ = state
+        .db_write(move |db| {
+            let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+            db.conn_ref().execute(
+                "UPDATE clay_sync_state SET state = 'completed', completed_at = ?1, updated_at = ?1
+                 WHERE entity_type = 'person' AND entity_id = ?2 AND state = 'pending'",
+                rusqlite::params![now, person_id],
+            ).map_err(|e| format!("mark_clay_completed failed: {}", e))?;
+            Ok(())
+        })
+        .await;
 }
 
-fn mark_clay_failed(state: &AppState, person_id: &str, error: &str) {
-    let db_guard = match state.db.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let db = match db_guard.as_ref() {
-        Some(d) => d,
-        None => return,
-    };
-
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
-    let _ = db.conn_ref().execute(
-        "UPDATE clay_sync_state
-         SET state = CASE WHEN attempts + 1 >= max_attempts THEN 'failed' ELSE 'pending' END,
-             attempts = attempts + 1, last_attempt_at = ?1, error_message = ?2, updated_at = ?1
-         WHERE entity_type = 'person' AND entity_id = ?3 AND state = 'pending'",
-        rusqlite::params![now, error, person_id],
-    );
+async fn mark_clay_failed(state: &AppState, person_id: &str, error: &str) {
+    let person_id = person_id.to_string();
+    let error = error.to_string();
+    let _ = state
+        .db_write(move |db| {
+            let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+            db.conn_ref().execute(
+                "UPDATE clay_sync_state
+                 SET state = CASE WHEN attempts + 1 >= max_attempts THEN 'failed' ELSE 'pending' END,
+                     attempts = attempts + 1, last_attempt_at = ?1, error_message = ?2, updated_at = ?1
+                 WHERE entity_type = 'person' AND entity_id = ?3 AND state = 'pending'",
+                rusqlite::params![now, error, person_id],
+            ).map_err(|e| format!("mark_clay_failed failed: {}", e))?;
+            Ok(())
+        })
+        .await;
 }
