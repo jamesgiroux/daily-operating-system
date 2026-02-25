@@ -556,6 +556,8 @@ pub struct InboxFile {
     pub processing_status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub processing_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_entity_name: Option<String>,
 }
 
 /// Day overview parsed from _today/overview.md
@@ -1959,6 +1961,19 @@ pub struct UserContextEntry {
     pub title: String,
     pub content: String,
     pub embedding_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A structured context entry attached to an entity (account, person, or project).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityContextEntry {
+    pub id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub title: String,
+    pub content: String,
     pub created_at: String,
     pub updated_at: String,
 }

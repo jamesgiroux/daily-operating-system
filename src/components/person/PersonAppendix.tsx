@@ -7,17 +7,21 @@ import React from "react";
 import type { PersonDetail, DuplicateCandidate, ContentFile } from "@/types";
 import { formatShortDate } from "@/lib/utils";
 import { FileListSection } from "@/components/entity/FileListSection";
+import { ContextEntryList } from "@/components/entity/ContextEntryList";
 
 interface PersonAppendixProps {
   detail: PersonDetail;
-  editNotes: string;
-  setEditNotes: (v: string) => void;
   onSave: () => void;
   dirty: boolean;
   saving: boolean;
   duplicateCandidates: DuplicateCandidate[];
   onMergeSuggested: (candidate: DuplicateCandidate) => void;
   merging: boolean;
+  // Context entries
+  contextEntries?: { id: string; title: string; content: string; createdAt: string }[];
+  onCreateContextEntry?: (title: string, content: string) => void;
+  onUpdateContextEntry?: (id: string, title: string, content: string) => void;
+  onDeleteContextEntry?: (id: string) => void;
   // Files
   files?: ContentFile[];
   onIndexFiles?: () => void;
@@ -43,20 +47,21 @@ const ruleStyle: React.CSSProperties = {
 
 export function PersonAppendix({
   detail,
-  editNotes,
-  setEditNotes,
   onSave,
   dirty,
   saving,
   duplicateCandidates,
   onMergeSuggested,
   merging,
+  contextEntries,
+  onCreateContextEntry,
+  onUpdateContextEntry,
+  onDeleteContextEntry,
   files,
   onIndexFiles,
   indexing,
   indexFeedback,
 }: PersonAppendixProps) {
-  const notesDirty = editNotes !== (detail.notes ?? "");
 
   return (
     <section id="appendix" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
@@ -104,7 +109,7 @@ export function PersonAppendix({
           </div>
         </div>
 
-        {/* Notes (editable) */}
+        {/* Context */}
         <div style={ruleStyle}>
           <div
             style={{
@@ -114,8 +119,8 @@ export function PersonAppendix({
               marginBottom: 0,
             }}
           >
-            <div style={sectionLabelStyle}>Notes</div>
-            {(dirty || notesDirty) && (
+            <div style={sectionLabelStyle}>Context</div>
+            {dirty && (
               <button
                 onClick={onSave}
                 disabled={saving}
@@ -131,29 +136,35 @@ export function PersonAppendix({
                   padding: 0,
                 }}
               >
-                {saving ? "Saving…" : "Save"}
+                {saving ? "Saving\u2026" : "Save"}
               </button>
             )}
           </div>
-          <textarea
-            value={editNotes}
-            onChange={(e) => setEditNotes(e.target.value)}
-            placeholder="Notes about this person…"
-            rows={6}
-            style={{
-              width: "100%",
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              lineHeight: 1.65,
-              color: "var(--color-text-primary)",
-              background: "none",
-              border: "none",
-              borderBottom: "1px solid var(--color-rule-light)",
-              outline: "none",
-              resize: "vertical",
-              padding: "8px 0",
-            }}
-          />
+          {onCreateContextEntry && onUpdateContextEntry && onDeleteContextEntry && contextEntries ? (
+            <ContextEntryList
+              entries={contextEntries}
+              onCreate={onCreateContextEntry}
+              onUpdate={onUpdateContextEntry}
+              onDelete={onDeleteContextEntry}
+              addLabel="+ Add context entry"
+              placeholders={{
+                title: "e.g., 'Career goals' or 'Communication preference'",
+                content: "What you know about this person...",
+              }}
+            />
+          ) : (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                color: "var(--color-text-tertiary)",
+                fontStyle: "italic",
+                margin: 0,
+              }}
+            >
+              No context entries.
+            </p>
+          )}
         </div>
 
         {/* Files */}
