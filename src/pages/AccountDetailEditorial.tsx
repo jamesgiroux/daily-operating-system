@@ -299,6 +299,9 @@ export default function AccountDetailEditorial() {
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
 
+  // Context entries — must be before early returns (React hooks rule)
+  const entityCtx = useEntityContextEntries("account", accountId ?? null);
+
   if (acct.loading) return <EditorialLoading />;
 
   if (acct.error || !acct.detail) {
@@ -306,7 +309,6 @@ export default function AccountDetailEditorial() {
   }
 
   const { detail, intelligence, events, files } = acct;
-  const entityCtx = useEntityContextEntries("account", detail?.id ?? null);
 
   return (
     <>
