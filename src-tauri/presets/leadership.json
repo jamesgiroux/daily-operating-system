@@ -1,7 +1,7 @@
 {
   "id": "leadership",
   "name": "Leadership",
-  "description": "For executives and team leads who need a strategic overview across people, projects, and priorities. Surfaces cross-team risks, key decisions, and organizational health without micromanaging details.",
+  "description": "For executives and team leads who need a strategic overview across people, projects, and priorities. Flags cross-team risks, key decisions, and organizational health without micromanaging details.",
   "defaultEntityMode": "both",
   "vocabulary": {
     "entityNoun": "team",
