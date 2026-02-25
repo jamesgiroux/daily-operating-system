@@ -164,6 +164,9 @@ export default function PersonDetailEditorial() {
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("person", personId);
 
+  // Context entries — must be before early returns (React hooks rule)
+  const entityCtx = useEntityContextEntries("person", personId ?? null);
+
   if (person.loading) return <EditorialLoading />;
 
   if (person.error || !person.detail) {
@@ -171,7 +174,6 @@ export default function PersonDetailEditorial() {
   }
 
   const { detail, intelligence } = person;
-  const entityCtx = useEntityContextEntries("person", detail?.id ?? null);
 
   return (
     <>
