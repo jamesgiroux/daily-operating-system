@@ -10,11 +10,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { ReportShell } from "@/components/reports/ReportShell";
 import { SwotReport } from "@/components/reports/SwotReport";
 import { AccountHealthReport } from "@/components/reports/AccountHealthReport";
-import { WeeklyImpactReport } from "@/components/reports/WeeklyImpactReport";
 import { EbrQbrReport } from "@/components/reports/EbrQbrReport";
-import { MonthlyWrappedReport } from "@/components/reports/MonthlyWrappedReport";
 import { REPORT_TYPE_LABELS } from "@/types/reports";
-import type { ReportRow, ReportType, SwotContent, AccountHealthContent, WeeklyImpactContent, EbrQbrContent, MonthlyWrappedContent } from "@/types/reports";
+import type { ReportRow, ReportType, SwotContent, AccountHealthContent, EbrQbrContent } from "@/types/reports";
 import type { UserEntity } from "@/types";
 
 export default function ReportPage() {
@@ -109,12 +107,8 @@ export default function ReportPage() {
           return <SwotReport content={content as SwotContent} />;
         case "account_health":
           return <AccountHealthReport content={content as AccountHealthContent} />;
-        case "weekly_impact":
-          return <WeeklyImpactReport content={content as WeeklyImpactContent} />;
         case "ebr_qbr":
           return <EbrQbrReport content={content as EbrQbrContent} />;
-        case "monthly_wrapped":
-          return <MonthlyWrappedReport content={content as MonthlyWrappedContent} />;
         default:
           return (
             <pre
