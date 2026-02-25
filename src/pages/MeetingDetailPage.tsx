@@ -102,6 +102,10 @@ export default function MeetingDetailPage() {
   // Clipboard copy indicator for collaboration actions
   const [copiedAction, setCopiedAction] = useState<string | null>(null);
 
+  // Connector state — determines which transcript actions are available
+  const [quillEnabled, setQuillEnabled] = useState(false);
+  const [granolaEnabled, setGranolaEnabled] = useState(false);
+
   // Persisted user overrides
   const [dismissedTopics, setDismissedTopics] = useState<string[]>([]);
   const [hiddenAttendees, setHiddenAttendees] = useState<string[]>([]);
@@ -372,6 +376,15 @@ Thanks!`;
     loadMeetingIntelligence();
   }, [loadMeetingIntelligence]);
 
+  useEffect(() => {
+    invoke<{ enabled: boolean }>("get_quill_status")
+      .then((s) => setQuillEnabled(s.enabled))
+      .catch(() => {});
+    invoke<{ enabled: boolean }>("get_granola_status")
+      .then((s) => setGranolaEnabled(s.enabled))
+      .catch(() => {});
+  }, []);
+
   // Reveal observer for editorial-reveal animations
   useRevealObserver(!loading && !!data);
 
@@ -430,7 +443,7 @@ Thanks!`;
             Draft Agenda
           </button>
         )}
-        {isPastMeeting && (
+        {isPastMeeting && quillEnabled && (
           <button
             onClick={handleSyncTranscript}
             disabled={syncing}
@@ -447,7 +460,7 @@ Thanks!`;
         />
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, quillEnabled, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -778,14 +791,16 @@ Thanks!`;
 
             {/* Transcript CTA — moved from folio bar to page body */}
             <div className={clsx("editorial-reveal", styles.transcriptCta)}>
-              <button
-                onClick={handleSyncTranscript}
-                disabled={syncing}
-                className={clsx(styles.transcriptCtaBtn, syncing && styles.transcriptCtaBtnDisabled)}
-              >
-                {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
-                {syncing ? "Syncing…" : "Sync Transcript"}
-              </button>
+              {quillEnabled && (
+                <button
+                  onClick={handleSyncTranscript}
+                  disabled={syncing}
+                  className={clsx(styles.transcriptCtaBtn, syncing && styles.transcriptCtaBtnDisabled)}
+                >
+                  {syncing ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <RefreshCw className={styles.iconMd} />}
+                  {syncing ? "Syncing…" : "Sync Transcript"}
+                </button>
+              )}
               <button
                 onClick={handleAttachTranscript}
                 disabled={attaching}
@@ -794,9 +809,16 @@ Thanks!`;
                 {attaching ? <Loader2 className={clsx(styles.iconMd, styles.spinAnimation)} /> : <Paperclip className={styles.iconMd} />}
                 {attaching ? "Processing…" : "Attach Transcript"}
               </button>
-              <span className={styles.transcriptCtaLabel}>
-                {isPastMeeting ? "Add meeting transcript for outcome extraction" : "Attach transcript or notes"}
-              </span>
+              {granolaEnabled && (
+                <span className={styles.transcriptCtaLabel}>
+                  Granola transcripts sync automatically
+                </span>
+              )}
+              {!granolaEnabled && (
+                <span className={styles.transcriptCtaLabel}>
+                  {isPastMeeting ? "Add meeting transcript for outcome extraction" : "Attach transcript or notes"}
+                </span>
+              )}
             </div>
 
             {/* ================================================================
