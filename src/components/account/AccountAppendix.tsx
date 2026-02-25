@@ -11,16 +11,17 @@ import type {
 } from "@/types";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import { FileListSection } from "@/components/entity/FileListSection";
+import { ContextEntryList } from "@/components/entity/ContextEntryList";
 
 interface AccountAppendixProps {
   detail: AccountDetail;
   events: AccountEvent[];
   files: ContentFile[];
-  // Notes editing
-  editNotes?: string;
-  setEditNotes?: (v: string) => void;
-  onSaveNotes?: () => void;
-  notesDirty?: boolean;
+  // Context entries
+  contextEntries?: { id: string; title: string; content: string; createdAt: string }[];
+  onCreateContextEntry?: (title: string, content: string) => void;
+  onUpdateContextEntry?: (id: string, title: string, content: string) => void;
+  onDeleteContextEntry?: (id: string) => void;
   // Lifecycle events
   onRecordEvent?: () => void;
   // File indexing
@@ -84,10 +85,10 @@ export function AccountAppendix({
   detail,
   events,
   files,
-  editNotes,
-  setEditNotes,
-  onSaveNotes,
-  notesDirty,
+  contextEntries,
+  onCreateContextEntry,
+  onUpdateContextEntry,
+  onDeleteContextEntry,
   onRecordEvent,
   onIndexFiles,
   indexing,
@@ -216,59 +217,21 @@ export function AccountAppendix({
         )}
       </div>
 
-      {/* ── Notes ─────────────────────────────────────────────────── */}
+      {/* ── Context ─────────────────────────────────────────────── */}
       <div style={{ marginBottom: 40 }}>
-        <div style={sectionTitleStyle}>Notes</div>
-        {setEditNotes ? (
-          <div style={{ maxWidth: 580 }}>
-            <textarea
-              value={editNotes ?? detail.notes ?? ""}
-              onChange={(e) => setEditNotes(e.target.value)}
-              placeholder="Add notes about this account..."
-              style={{
-                width: "100%",
-                minHeight: 80,
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                lineHeight: 1.6,
-                color: "var(--color-text-secondary)",
-                background: "none",
-                border: "none",
-                borderBottom: "1px solid var(--color-rule-light)",
-                outline: "none",
-                resize: "vertical",
-                padding: "4px 0",
-                maxWidth: 580,
-              }}
-            />
-            {notesDirty && onSaveNotes && (
-              <button
-                onClick={onSaveNotes}
-                style={{
-                  ...monoActionButtonStyle,
-                  padding: "4px 0",
-                  marginTop: 4,
-                }}
-              >
-                Save Notes
-              </button>
-            )}
-          </div>
-        ) : detail.notes ? (
-          <p
-            className="appendix-notes"
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              lineHeight: 1.6,
-              color: "var(--color-text-secondary)",
-              maxWidth: 580,
-              margin: 0,
-              whiteSpace: "pre-wrap",
+        <div style={sectionTitleStyle}>Context</div>
+        {onCreateContextEntry && onUpdateContextEntry && onDeleteContextEntry && contextEntries ? (
+          <ContextEntryList
+            entries={contextEntries}
+            onCreate={onCreateContextEntry}
+            onUpdate={onUpdateContextEntry}
+            onDelete={onDeleteContextEntry}
+            addLabel="+ Add context entry"
+            placeholders={{
+              title: "e.g., 'Renewal strategy' or 'Key stakeholder change'",
+              content: "What happened and why it matters...",
             }}
-          >
-            {detail.notes}
-          </p>
+          />
         ) : (
           <p
             style={{
@@ -279,7 +242,7 @@ export function AccountAppendix({
               margin: 0,
             }}
           >
-            No notes.
+            No context entries.
           </p>
         )}
       </div>
