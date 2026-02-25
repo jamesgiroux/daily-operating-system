@@ -155,7 +155,7 @@ pub enum ActionsResult {
 }
 
 /// Get all actions with full context (merges briefing JSON + SQLite).
-pub fn get_all_actions(state: &AppState) -> ActionsResult {
+pub async fn get_all_actions(state: &AppState) -> ActionsResult {
     let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
@@ -178,34 +178,34 @@ pub fn get_all_actions(state: &AppState) -> ActionsResult {
     let mut actions = crate::json_loader::load_actions_json(&today_dir).unwrap_or_default();
 
     // Merge non-briefing actions from SQLite (same logic as dashboard)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
-                let json_titles: HashSet<String> = actions
-                    .iter()
-                    .map(|a| a.title.to_lowercase().trim().to_string())
-                    .collect();
-                for dba in db_actions {
-                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                        let priority = match dba.priority.as_str() {
-                            "P1" => Priority::P1,
-                            "P3" => Priority::P3,
-                            _ => Priority::P2,
-                        };
-                        actions.push(Action {
-                            id: dba.id,
-                            title: dba.title,
-                            account: dba.account_id,
-                            due_date: dba.due_date,
-                            priority,
-                            status: crate::types::ActionStatus::Pending,
-                            is_overdue: None,
-                            context: dba.context,
-                            source: dba.source_label,
-                            days_overdue: None,
-                        });
-                    }
-                }
+    let db_actions_result = state.db_read(|db| {
+        db.get_non_briefing_pending_actions().map_err(|e| e.to_string())
+    }).await;
+
+    if let Ok(db_actions) = db_actions_result {
+        let json_titles: HashSet<String> = actions
+            .iter()
+            .map(|a| a.title.to_lowercase().trim().to_string())
+            .collect();
+        for dba in db_actions {
+            if !json_titles.contains(dba.title.to_lowercase().trim()) {
+                let priority = match dba.priority.as_str() {
+                    "P1" => Priority::P1,
+                    "P3" => Priority::P3,
+                    _ => Priority::P2,
+                };
+                actions.push(Action {
+                    id: dba.id,
+                    title: dba.title,
+                    account: dba.account_id,
+                    due_date: dba.due_date,
+                    priority,
+                    status: crate::types::ActionStatus::Pending,
+                    is_overdue: None,
+                    context: dba.context,
+                    source: dba.source_label,
+                    days_overdue: None,
+                });
             }
         }
     }
@@ -220,7 +220,7 @@ pub fn get_all_actions(state: &AppState) -> ActionsResult {
 }
 
 /// Create a new action with validation.
-pub fn create_action(
+pub async fn create_action(
     request: CreateActionRequest,
     state: &AppState,
 ) -> Result<String, String> {
@@ -282,14 +282,14 @@ pub fn create_action(
         next_meeting_start: None,
     };
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.upsert_action(&action).map_err(|e| e.to_string())?;
-    Ok(id)
+    state.db_write(move |db| {
+        db.upsert_action(&action).map_err(|e| e.to_string())?;
+        Ok(id)
+    }).await
 }
 
 /// Update arbitrary fields on an existing action (I128).
-pub fn update_action(
+pub async fn update_action(
     request: UpdateActionRequest,
     state: &AppState,
 ) -> Result<(), String> {
@@ -337,53 +337,52 @@ pub fn update_action(
         crate::util::validate_id_slug(p, "person_id")?;
     }
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    state.db_write(move |db| {
+        let mut action = db
+            .get_action_by_id(&id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Action not found: {id}"))?;
 
-    let mut action = db
-        .get_action_by_id(&id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Action not found: {id}"))?;
+        if let Some(t) = title {
+            action.title = t;
+        }
+        if let Some(p) = priority {
+            action.priority = p;
+        }
+        if clear_due_date == Some(true) {
+            action.due_date = None;
+        } else if let Some(d) = due_date {
+            action.due_date = Some(d);
+        }
+        if clear_context == Some(true) {
+            action.context = None;
+        } else if let Some(c) = context {
+            action.context = Some(c);
+        }
+        if clear_source_label == Some(true) {
+            action.source_label = None;
+        } else if let Some(s) = source_label {
+            action.source_label = Some(s);
+        }
+        if clear_account == Some(true) {
+            action.account_id = None;
+        } else if let Some(a) = account_id {
+            action.account_id = Some(a);
+        }
+        if clear_project == Some(true) {
+            action.project_id = None;
+        } else if let Some(p) = project_id {
+            action.project_id = Some(p);
+        }
+        if clear_person == Some(true) {
+            action.person_id = None;
+        } else if let Some(p) = person_id {
+            action.person_id = Some(p);
+        }
 
-    if let Some(t) = title {
-        action.title = t;
-    }
-    if let Some(p) = priority {
-        action.priority = p;
-    }
-    if clear_due_date == Some(true) {
-        action.due_date = None;
-    } else if let Some(d) = due_date {
-        action.due_date = Some(d);
-    }
-    if clear_context == Some(true) {
-        action.context = None;
-    } else if let Some(c) = context {
-        action.context = Some(c);
-    }
-    if clear_source_label == Some(true) {
-        action.source_label = None;
-    } else if let Some(s) = source_label {
-        action.source_label = Some(s);
-    }
-    if clear_account == Some(true) {
-        action.account_id = None;
-    } else if let Some(a) = account_id {
-        action.account_id = Some(a);
-    }
-    if clear_project == Some(true) {
-        action.project_id = None;
-    } else if let Some(p) = project_id {
-        action.project_id = Some(p);
-    }
-    if clear_person == Some(true) {
-        action.person_id = None;
-    } else if let Some(p) = person_id {
-        action.person_id = Some(p);
-    }
-
-    action.updated_at = chrono::Utc::now().to_rfc3339();
-    db.upsert_action(&action).map_err(|e| e.to_string())
+        action.updated_at = chrono::Utc::now().to_rfc3339();
+        db.upsert_action(&action).map_err(|e| e.to_string())
+    }).await
 }
 
 /// Get full detail for a single action, with resolved relationships.

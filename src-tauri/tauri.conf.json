@@ -24,10 +24,6 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://asset.localhost; connect-src ipc: http://ipc.localhost"
-    },
-    "trayIcon": {
-      "iconPath": "icons/tray-iconTemplate@2x.png",
-      "iconAsTemplate": true
     }
   },
   "bundle": {
