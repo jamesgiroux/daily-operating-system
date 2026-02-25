@@ -377,7 +377,7 @@ pub async fn delete_user_context_entry(id: &str, state: &AppState) -> Result<(),
 ///
 /// Returns `None` when the embedding model is unavailable (entry saves without
 /// an embedding — the background sweep or next update will retry).
-fn embed_context_text(
+pub(crate) fn embed_context_text(
     model: &crate::embeddings::EmbeddingModel,
     title: &str,
     content: &str,

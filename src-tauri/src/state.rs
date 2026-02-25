@@ -540,6 +540,13 @@ pub fn run_startup_sync(state: &AppState) {
         }
     }
 
+    // Migrate legacy people notes to entity_context_entries (idempotent)
+    match crate::services::entity_context::migrate_legacy_notes(&db) {
+        Ok(n) if n > 0 => log::info!("Startup sync: migrated {} legacy notes", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("Startup sync: legacy notes migration failed: {}", e),
+    }
+
     // One-off: import master-task-list.md into SQLite (DELETE after confirmed)
     import_master_task_list(workspace, &db);
 }

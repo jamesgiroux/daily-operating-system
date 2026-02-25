@@ -251,6 +251,7 @@ export interface InboxFile {
   fileType: InboxFileType;
   processingStatus?: string;
   processingError?: string;
+  suggestedEntityName?: string;
 }
 
 export type DataFreshness =
@@ -1810,6 +1811,16 @@ export interface UserContextEntry {
   title: string;
   content: string;
   embeddingId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EntityContextEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  title: string;
+  content: string;
   createdAt: string;
   updatedAt: string;
 }
