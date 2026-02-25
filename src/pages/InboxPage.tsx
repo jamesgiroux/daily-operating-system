@@ -715,35 +715,6 @@ export default function InboxPage() {
           )}
         </div>
 
-        {/* Import from Google Drive button */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginTop: 24,
-          }}
-        >
-          <button
-            onClick={() => setDriveModalOpen(true)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: "var(--color-text-secondary)",
-              background: "none",
-              border: "1px solid var(--color-rule-heavy)",
-              borderRadius: 4,
-              padding: "4px 14px",
-              cursor: "pointer",
-              marginTop: 16,
-            }}
-          >
-            Import from Google Drive
-          </button>
-        </div>
-
         <GoogleDriveImportModal
           open={driveModalOpen}
           onClose={() => setDriveModalOpen(false)}
