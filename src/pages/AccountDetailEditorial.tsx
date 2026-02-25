@@ -53,6 +53,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
+import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 
 /* ── Vitals assembly (moved from old account/VitalsStrip) ── */
 
@@ -305,9 +306,7 @@ export default function AccountDetailEditorial() {
   }
 
   const { detail, intelligence, events, files } = acct;
-
-  // Notes dirty tracking (compare editNotes to saved detail.notes)
-  const notesDirty = acct.editNotes !== (detail.notes ?? "");
+  const entityCtx = useEntityContextEntries("account", detail?.id ?? null);
 
   return (
     <>
@@ -850,13 +849,10 @@ export default function AccountDetailEditorial() {
           detail={detail}
           events={events}
           files={files}
-          editNotes={acct.editNotes}
-          setEditNotes={(v) => {
-            acct.setEditNotes(v);
-            acct.setDirty(true);
-          }}
-          onSaveNotes={acct.handleSave}
-          notesDirty={notesDirty}
+          contextEntries={entityCtx.entries}
+          onCreateContextEntry={entityCtx.createEntry}
+          onUpdateContextEntry={entityCtx.updateEntry}
+          onDeleteContextEntry={entityCtx.deleteEntry}
           onRecordEvent={() => setEventDrawerOpen(true)}
           onIndexFiles={acct.handleIndexFiles}
           indexing={acct.indexing}
