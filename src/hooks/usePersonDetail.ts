@@ -23,7 +23,6 @@ export function usePersonDetail(personId: string | undefined) {
   // Editable fields
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState("");
-  const [editNotes, setEditNotes] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -63,7 +62,6 @@ export function usePersonDetail(personId: string | undefined) {
       if (showLoading) {
         setEditName(result.name);
         setEditRole(result.role ?? "");
-        setEditNotes(result.notes ?? "");
         setDirty(false);
       }
 
@@ -168,7 +166,6 @@ export function usePersonDetail(personId: string | undefined) {
     const updates: [string, string][] = [];
     if (editName !== detail.name) updates.push(["name", editName]);
     if (editRole !== (detail.role ?? "")) updates.push(["role", editRole]);
-    if (editNotes !== (detail.notes ?? "")) updates.push(["notes", editNotes]);
 
     for (const [field, value] of updates) {
       await saveField(field, value);
@@ -181,7 +178,6 @@ export function usePersonDetail(personId: string | undefined) {
     if (!detail) return;
     setEditName(detail.name);
     setEditRole(detail.role ?? "");
-    setEditNotes(detail.notes ?? "");
     setDirty(false);
   }
 
@@ -372,7 +368,6 @@ export function usePersonDetail(personId: string | undefined) {
     // Field editing
     editName, setEditName,
     editRole, setEditRole,
-    editNotes, setEditNotes,
     dirty, setDirty,
     saving,
     handleSave,

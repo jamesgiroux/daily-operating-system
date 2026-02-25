@@ -25,7 +25,6 @@ export function useProjectDetail(projectId: string | undefined) {
   const [editMilestone, setEditMilestone] = useState("");
   const [editOwner, setEditOwner] = useState("");
   const [editTargetDate, setEditTargetDate] = useState("");
-  const [editNotes, setEditNotes] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -58,7 +57,6 @@ export function useProjectDetail(projectId: string | undefined) {
         setEditMilestone(result.milestone ?? "");
         setEditOwner(result.owner ?? "");
         setEditTargetDate(result.targetDate ?? "");
-        setEditNotes(result.notes ?? "");
         setDirty(false);
       }
 
@@ -125,10 +123,6 @@ export function useProjectDetail(projectId: string | undefined) {
         await invoke("update_project_field", { projectId: detail.id, field, value });
       }
 
-      if (editNotes !== (detail.notes ?? "")) {
-        await invoke("update_project_notes", { projectId: detail.id, notes: editNotes });
-      }
-
       setDirty(false);
       await load();
     } catch (e) {
@@ -145,7 +139,6 @@ export function useProjectDetail(projectId: string | undefined) {
     setEditMilestone(detail.milestone ?? "");
     setEditOwner(detail.owner ?? "");
     setEditTargetDate(detail.targetDate ?? "");
-    setEditNotes(detail.notes ?? "");
     setDirty(false);
   }
 
@@ -263,7 +256,6 @@ export function useProjectDetail(projectId: string | undefined) {
     editMilestone, setEditMilestone,
     editOwner, setEditOwner,
     editTargetDate, setEditTargetDate,
-    editNotes, setEditNotes,
     dirty, setDirty,
     saving,
     handleSave,
