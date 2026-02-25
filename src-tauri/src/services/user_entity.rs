@@ -69,46 +69,50 @@ pub fn get_user_entity_from_db(db: &ActionDb) -> Result<UserEntity, String> {
 }
 
 /// Get the user entity, seeding from config if no row exists yet.
-pub fn get_user_entity(state: &AppState) -> Result<UserEntity, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+pub async fn get_user_entity(state: &AppState) -> Result<UserEntity, String> {
+    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
 
-    match get_user_entity_from_db(db) {
-        Ok(entity) => Ok(entity),
-        Err(_) => {
-            // No row yet — seed from config identity fields
-            let config_guard = state.config.read().map_err(|_| "Lock poisoned")?;
-            let config = config_guard.as_ref().ok_or("Config not initialized")?;
+    let result = state.db_write(move |db| {
+        match get_user_entity_from_db(db) {
+            Ok(entity) => Ok((entity, false)),
+            Err(_) => {
+                // No row yet — seed from config identity fields
+                let config = config.as_ref().ok_or("Config not initialized")?;
 
-            let name = config.user_name.clone();
-            let company = config.user_company.clone();
-            let title = config.user_title.clone();
-            let focus = config.user_focus.clone();
+                let name = config.user_name.clone();
+                let company = config.user_company.clone();
+                let title = config.user_title.clone();
+                let focus = config.user_focus.clone();
 
-            db.conn_ref()
-                .execute(
-                    "INSERT INTO user_entity (id, name, company, title, focus)
-                     VALUES (1, ?1, ?2, ?3, ?4)",
-                    rusqlite::params![name, company, title, focus],
-                )
-                .map_err(|e| format!("Failed to seed user_entity: {}", e))?;
+                db.conn_ref()
+                    .execute(
+                        "INSERT INTO user_entity (id, name, company, title, focus)
+                         VALUES (1, ?1, ?2, ?3, ?4)",
+                        rusqlite::params![name, company, title, focus],
+                    )
+                    .map_err(|e| format!("Failed to seed user_entity: {}", e))?;
 
-            // Clear identity fields from config (they now live in DB)
-            drop(config_guard);
-            let _ = crate::state::create_or_update_config(state, |config| {
-                config.user_name = None;
-                config.user_company = None;
-                config.user_title = None;
-                config.user_focus = None;
-            });
-
-            get_user_entity_from_db(db)
+                let entity = get_user_entity_from_db(db)?;
+                Ok((entity, true))
+            }
         }
+    }).await?;
+
+    let (entity, needs_config_clear) = result;
+    if needs_config_clear {
+        let _ = crate::state::create_or_update_config(state, |config| {
+            config.user_name = None;
+            config.user_company = None;
+            config.user_title = None;
+            config.user_focus = None;
+        });
     }
+
+    Ok(entity)
 }
 
 /// Update a single field on the user entity.
-pub fn update_user_entity_field(field: &str, value: &str, state: &AppState) -> Result<(), String> {
+pub async fn update_user_entity_field(field: &str, value: &str, state: &AppState) -> Result<(), String> {
     if !ALLOWED_FIELDS.contains(&field) {
         return Err(format!(
             "Invalid field '{}'. Allowed: {}",
@@ -127,77 +131,134 @@ pub fn update_user_entity_field(field: &str, value: &str, state: &AppState) -> R
             .map_err(|e| format!("Invalid JSON for field '{}': {}", field, e))?;
     }
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
 
-    // Ensure row exists
-    let exists: bool = db
-        .conn_ref()
-        .query_row(
-            "SELECT COUNT(*) > 0 FROM user_entity WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(false);
-
-    if !exists {
-        db.conn_ref()
-            .execute(
-                "INSERT INTO user_entity (id) VALUES (1)",
+    let field = field.to_string();
+    let value = value.to_string();
+    state.db_write(move |db| {
+        // Ensure row exists
+        let exists: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM user_entity WHERE id = 1",
                 [],
+                |row| row.get(0),
             )
-            .map_err(|e| format!("Failed to create user_entity row: {}", e))?;
-    }
+            .unwrap_or(false);
 
-    // Dynamic field update — field name is validated against ALLOWED_FIELDS above
-    let sql = format!(
-        "UPDATE user_entity SET {} = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
-        field
-    );
-    let value_param: Option<&str> = if value.is_empty() { None } else { Some(value) };
-    db.conn_ref()
-        .execute(&sql, rusqlite::params![value_param])
-        .map_err(|e| format!("Failed to update user_entity.{}: {}", field, e))?;
+        if !exists {
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO user_entity (id) VALUES (1)",
+                    [],
+                )
+                .map_err(|e| format!("Failed to create user_entity row: {}", e))?;
+        }
 
-    // Write context.json to workspace
-    let _ = write_user_context_json(db, state);
+        // Dynamic field update — field name is validated against ALLOWED_FIELDS above
+        let sql = format!(
+            "UPDATE user_entity SET {} = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+            field
+        );
+        let value_param: Option<&str> = if value.is_empty() { None } else { Some(&value) };
+        db.conn_ref()
+            .execute(&sql, rusqlite::params![value_param])
+            .map_err(|e| format!("Failed to update user_entity.{}: {}", field, e))?;
 
-    Ok(())
+        // Write context.json to workspace (inline since we can't call the method with state)
+        if let Some(ref config) = config {
+            if !config.workspace_path.is_empty() {
+                let workspace = std::path::Path::new(&config.workspace_path);
+                let user_dir = workspace.join("_user");
+                if !user_dir.exists() {
+                    let _ = std::fs::create_dir_all(&user_dir);
+                }
+                if let Ok(entity) = get_user_entity_from_db(db) {
+                    let mut obj = serde_json::Map::new();
+                    macro_rules! add_field {
+                        ($field:ident) => {
+                            if let Some(ref val) = entity.$field {
+                                if !val.is_empty() {
+                                    obj.insert(
+                                        stringify!($field).to_string(),
+                                        serde_json::Value::String(val.clone()),
+                                    );
+                                }
+                            }
+                        };
+                    }
+                    add_field!(name); add_field!(company); add_field!(title);
+                    add_field!(focus); add_field!(value_proposition); add_field!(success_definition);
+                    add_field!(current_priorities); add_field!(product_context); add_field!(playbooks);
+                    add_field!(company_bio); add_field!(role_description); add_field!(how_im_measured);
+                    add_field!(pricing_model); add_field!(competitive_context);
+
+                    for json_field in &["differentiators", "objections", "annual_priorities", "quarterly_priorities"] {
+                        let val = match *json_field {
+                            "differentiators" => &entity.differentiators,
+                            "objections" => &entity.objections,
+                            "annual_priorities" => &entity.annual_priorities,
+                            "quarterly_priorities" => &entity.quarterly_priorities,
+                            _ => continue,
+                        };
+                        if let Some(ref s) = val {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                                obj.insert(json_field.to_string(), parsed);
+                            }
+                        }
+                    }
+                    if let Some(w) = entity.user_relevance_weight {
+                        obj.insert(
+                            "user_relevance_weight".to_string(),
+                            serde_json::Value::Number(
+                                serde_json::Number::from_f64(w).unwrap_or_else(|| serde_json::Number::from(1)),
+                            ),
+                        );
+                    }
+                    if let Ok(json) = serde_json::to_string_pretty(&serde_json::Value::Object(obj)) {
+                        let path = user_dir.join("context.json");
+                        let _ = crate::util::atomic_write_str(&path, &json);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }).await
 }
 
 /// Get all user context entries.
-pub fn get_user_context_entries(state: &AppState) -> Result<Vec<UserContextEntry>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+pub async fn get_user_context_entries(state: &AppState) -> Result<Vec<UserContextEntry>, String> {
+    state.db_read(|db| {
+        let conn = db.conn_ref();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, content, embedding_id, created_at, updated_at
+                 FROM user_context_entries ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
-    let conn = db.conn_ref();
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, title, content, embedding_id, created_at, updated_at
-             FROM user_context_entries ORDER BY created_at DESC",
-        )
-        .map_err(|e| format!("Failed to prepare query: {}", e))?;
-
-    let entries = stmt
-        .query_map([], |row| {
-            Ok(UserContextEntry {
-                id: row.get("id")?,
-                title: row.get("title")?,
-                content: row.get("content")?,
-                embedding_id: row.get("embedding_id")?,
-                created_at: row.get("created_at")?,
-                updated_at: row.get("updated_at")?,
+        let entries = stmt
+            .query_map([], |row| {
+                Ok(UserContextEntry {
+                    id: row.get("id")?,
+                    title: row.get("title")?,
+                    content: row.get("content")?,
+                    embedding_id: row.get("embedding_id")?,
+                    created_at: row.get("created_at")?,
+                    updated_at: row.get("updated_at")?,
+                })
             })
-        })
-        .map_err(|e| format!("Failed to query context entries: {}", e))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to map context entries: {}", e))?;
+            .map_err(|e| format!("Failed to query context entries: {}", e))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to map context entries: {}", e))?;
 
-    Ok(entries)
+        Ok(entries)
+    }).await
 }
 
 /// Create a new user context entry and generate its embedding (I417).
-pub fn create_user_context_entry(
+pub async fn create_user_context_entry(
     title: &str,
     content: &str,
     state: &AppState,
@@ -207,41 +268,42 @@ pub fn create_user_context_entry(
     // Generate embedding before acquiring DB lock (embedding is CPU-bound)
     let embedding_blob = embed_context_text(&state.embedding_model, title, content);
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let title = title.to_string();
+    let content = content.to_string();
+    state.db_write(move |db| {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO user_context_entries (id, title, content, embedding)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, title, content, embedding_blob],
+            )
+            .map_err(|e| format!("Failed to create context entry: {}", e))?;
 
-    db.conn_ref()
-        .execute(
-            "INSERT INTO user_context_entries (id, title, content, embedding)
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![id, title, content, embedding_blob],
-        )
-        .map_err(|e| format!("Failed to create context entry: {}", e))?;
+        let entry = db
+            .conn_ref()
+            .query_row(
+                "SELECT id, title, content, embedding_id, created_at, updated_at
+                 FROM user_context_entries WHERE id = ?1",
+                rusqlite::params![id],
+                |row| {
+                    Ok(UserContextEntry {
+                        id: row.get("id")?,
+                        title: row.get("title")?,
+                        content: row.get("content")?,
+                        embedding_id: row.get("embedding_id")?,
+                        created_at: row.get("created_at")?,
+                        updated_at: row.get("updated_at")?,
+                    })
+                },
+            )
+            .map_err(|e| format!("Failed to read created entry: {}", e))?;
 
-    let entry = db
-        .conn_ref()
-        .query_row(
-            "SELECT id, title, content, embedding_id, created_at, updated_at
-             FROM user_context_entries WHERE id = ?1",
-            rusqlite::params![id],
-            |row| {
-                Ok(UserContextEntry {
-                    id: row.get("id")?,
-                    title: row.get("title")?,
-                    content: row.get("content")?,
-                    embedding_id: row.get("embedding_id")?,
-                    created_at: row.get("created_at")?,
-                    updated_at: row.get("updated_at")?,
-                })
-            },
-        )
-        .map_err(|e| format!("Failed to read created entry: {}", e))?;
-
-    Ok(entry)
+        Ok(entry)
+    }).await
 }
 
 /// Update an existing user context entry and regenerate its embedding (I417).
-pub fn update_user_context_entry(
+pub async fn update_user_context_entry(
     id: &str,
     title: &str,
     content: &str,
@@ -250,63 +312,65 @@ pub fn update_user_context_entry(
     // Regenerate embedding before acquiring DB lock
     let embedding_blob = embed_context_text(&state.embedding_model, title, content);
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let id = id.to_string();
+    let title = title.to_string();
+    let content = content.to_string();
+    state.db_write(move |db| {
+        let updated = db
+            .conn_ref()
+            .execute(
+                "UPDATE user_context_entries
+                 SET title = ?1, content = ?2, embedding = ?4, embedding_id = NULL, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?3",
+                rusqlite::params![title, content, id, embedding_blob],
+            )
+            .map_err(|e| format!("Failed to update context entry: {}", e))?;
 
-    let updated = db
-        .conn_ref()
-        .execute(
-            "UPDATE user_context_entries
-             SET title = ?1, content = ?2, embedding = ?4, embedding_id = NULL, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?3",
-            rusqlite::params![title, content, id, embedding_blob],
-        )
-        .map_err(|e| format!("Failed to update context entry: {}", e))?;
+        if updated == 0 {
+            return Err(format!("Context entry not found: {}", id));
+        }
 
-    if updated == 0 {
-        return Err(format!("Context entry not found: {}", id));
-    }
-
-    Ok(())
+        Ok(())
+    }).await
 }
 
 /// Delete a user context entry and its associated embedding.
-pub fn delete_user_context_entry(id: &str, state: &AppState) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+pub async fn delete_user_context_entry(id: &str, state: &AppState) -> Result<(), String> {
+    let id = id.to_string();
+    state.db_write(move |db| {
+        // Get embedding_id before deletion for cleanup
+        let embedding_id: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT embedding_id FROM user_context_entries WHERE id = ?1",
+                rusqlite::params![id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten();
 
-    // Get embedding_id before deletion for cleanup
-    let embedding_id: Option<String> = db
-        .conn_ref()
-        .query_row(
-            "SELECT embedding_id FROM user_context_entries WHERE id = ?1",
-            rusqlite::params![id],
-            |row| row.get::<_, Option<String>>(0),
-        )
-        .ok()
-        .flatten();
+        let deleted = db
+            .conn_ref()
+            .execute(
+                "DELETE FROM user_context_entries WHERE id = ?1",
+                rusqlite::params![id],
+            )
+            .map_err(|e| format!("Failed to delete context entry: {}", e))?;
 
-    let deleted = db
-        .conn_ref()
-        .execute(
-            "DELETE FROM user_context_entries WHERE id = ?1",
-            rusqlite::params![id],
-        )
-        .map_err(|e| format!("Failed to delete context entry: {}", e))?;
+        if deleted == 0 {
+            return Err(format!("Context entry not found: {}", id));
+        }
 
-    if deleted == 0 {
-        return Err(format!("Context entry not found: {}", id));
-    }
+        // Clean up associated embedding if it exists
+        if let Some(ref emb_id) = embedding_id {
+            let _ = db.conn_ref().execute(
+                "DELETE FROM content_embeddings WHERE id = ?1",
+                rusqlite::params![emb_id],
+            );
+        }
 
-    // Clean up associated embedding if it exists
-    if let Some(ref emb_id) = embedding_id {
-        let _ = db.conn_ref().execute(
-            "DELETE FROM content_embeddings WHERE id = ?1",
-            rusqlite::params![emb_id],
-        );
-    }
-
-    Ok(())
+        Ok(())
+    }).await
 }
 
 /// Embed context entry text using the document prefix for asymmetric retrieval.
