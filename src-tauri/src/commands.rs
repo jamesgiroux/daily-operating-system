@@ -52,7 +52,7 @@ fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u1
 
 /// Get current configuration
 #[tauri::command]
-pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
+pub fn get_config(state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     let guard = state.config.read().map_err(|_| "Lock poisoned")?;
     guard
         .clone()
@@ -61,14 +61,14 @@ pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
 
 /// Reload configuration from disk
 #[tauri::command]
-pub fn reload_configuration(state: State<Arc<AppState>>) -> Result<Config, String> {
+pub fn reload_configuration(state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     reload_config(&state)
 }
 
 /// Get dashboard data from workspace _today/data/ JSON files
 #[tauri::command]
-pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
-    crate::services::dashboard::get_dashboard_data(&state)
+pub async fn get_dashboard_data(state: State<'_, Arc<AppState>>) -> Result<DashboardResult, String> {
+    Ok(crate::services::dashboard::get_dashboard_data(&state).await)
 }
 
 /// Trigger a workflow execution
@@ -85,7 +85,7 @@ pub fn run_workflow(workflow: String, sender: State<SchedulerSender>) -> Result<
 #[tauri::command]
 pub fn get_workflow_status(
     workflow: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<WorkflowStatus, String> {
     let started = std::time::Instant::now();
     let result = (|| {
@@ -100,7 +100,7 @@ pub fn get_workflow_status(
 #[tauri::command]
 pub fn get_execution_history(
     limit: Option<usize>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Vec<ExecutionRecord> {
     let started = std::time::Instant::now();
     let result = state.get_execution_history(limit.unwrap_or(10));
@@ -112,7 +112,7 @@ pub fn get_execution_history(
 #[tauri::command]
 pub fn get_next_run_time(
     workflow: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Option<String>, String> {
     let started = std::time::Instant::now();
     let result = (|| {
@@ -222,11 +222,11 @@ fn collect_meeting_outcomes_from_db(
 
 /// Unified meeting detail payload for current + historical meetings.
 #[tauri::command]
-pub fn get_meeting_intelligence(
+pub async fn get_meeting_intelligence(
     meeting_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<MeetingIntelligence, String> {
-    crate::services::meetings::get_meeting_intelligence(&state, &meeting_id)
+    crate::services::meetings::get_meeting_intelligence(&state, &meeting_id).await
 }
 
 /// Generate or refresh intelligence for a single meeting (ADR-0081).
@@ -271,8 +271,8 @@ pub async fn enrich_meeting_background(
 
 /// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
 #[tauri::command]
-pub fn get_meeting_prep(meeting_id: String, state: State<Arc<AppState>>) -> MeetingPrepResult {
-    match get_meeting_intelligence(meeting_id, state) {
+pub async fn get_meeting_prep(meeting_id: String, state: State<'_, Arc<AppState>>) -> Result<MeetingPrepResult, String> {
+    Ok(match get_meeting_intelligence(meeting_id, state).await {
         Ok(intel) => match intel.prep {
             Some(data) => MeetingPrepResult::Success { data },
             None => MeetingPrepResult::NotFound {
@@ -280,7 +280,7 @@ pub fn get_meeting_prep(meeting_id: String, state: State<Arc<AppState>>) -> Meet
             },
         },
         Err(message) => MeetingPrepResult::NotFound { message },
-    }
+    })
 }
 
 #[derive(Debug, Default, serde::Serialize)]
@@ -647,9 +647,9 @@ fn backfill_db_prep_contexts(
 /// - `_today/data/preps/*.json`
 /// - `meetings_history.prep_context_json`
 #[tauri::command]
-pub fn backfill_prep_semantics(
+pub async fn backfill_prep_semantics(
     dry_run: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<BackfillReport, String> {
     let config = state
         .config
@@ -672,9 +672,9 @@ pub fn backfill_prep_semantics(
     report.skipped_file_count = file_counts.skipped;
     report.parse_error_file_count = file_counts.parse_errors;
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let db_counts = backfill_db_prep_contexts(db, dry_run)?;
+    let db_counts = state.db_write(move |db| {
+        backfill_db_prep_contexts(db, dry_run)
+    }).await?;
     report.candidate_db_row_count = db_counts.candidate;
     report.transformed_db_row_count = db_counts.transformed;
     report.skipped_db_row_count = db_counts.skipped;
@@ -689,7 +689,7 @@ pub fn backfill_prep_semantics(
 
 /// Get week overview data
 #[tauri::command]
-pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
+pub fn get_week_data(state: State<'_, Arc<AppState>>) -> WeekResult {
     crate::services::dashboard::get_week_data(&state)
 }
 
@@ -772,8 +772,8 @@ async fn refresh_week_calendar_cache(
 /// Clears existing prep_frozen_json and enqueues all future meetings into the
 /// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
 #[tauri::command]
-pub fn refresh_meeting_preps(state: State<Arc<AppState>>) -> Result<String, String> {
-    crate::services::meetings::refresh_meeting_preps(&state)
+pub async fn refresh_meeting_preps(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    crate::services::meetings::refresh_meeting_preps(&state).await
 }
 
 // =============================================================================
@@ -786,8 +786,8 @@ pub fn refresh_meeting_preps(state: State<Arc<AppState>>) -> Result<String, Stri
 
 /// Get all actions with full context
 #[tauri::command]
-pub fn get_all_actions(state: State<Arc<AppState>>) -> ActionsResult {
-    crate::services::actions::get_all_actions(&state)
+pub async fn get_all_actions(state: State<'_, Arc<AppState>>) -> Result<ActionsResult, String> {
+    Ok(crate::services::actions::get_all_actions(&state).await)
 }
 
 // =============================================================================
@@ -817,24 +817,24 @@ pub enum InboxResult {
 
 /// Get files from the _inbox/ directory
 #[tauri::command]
-pub fn get_inbox_files(state: State<Arc<AppState>>) -> InboxResult {
+pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxResult, String> {
     let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
-                return InboxResult::Error {
+                return Ok(InboxResult::Error {
                     message: "No configuration loaded".to_string(),
                     files: Vec::new(),
                     count: 0,
-                }
+                })
             }
         },
         Err(_) => {
-            return InboxResult::Error {
+            return Ok(InboxResult::Error {
                 message: "Internal error: config lock poisoned".to_string(),
                 files: Vec::new(),
                 count: 0,
-            }
+            })
         }
     };
 
@@ -843,27 +843,25 @@ pub fn get_inbox_files(state: State<Arc<AppState>>) -> InboxResult {
     let count = files.len();
 
     // Enrich files with persistent processing status from DB
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(status_map) = db.get_latest_processing_status() {
-                for file in &mut files {
-                    if let Some((status, error)) = status_map.get(&file.filename) {
-                        file.processing_status = Some(status.clone());
-                        file.processing_error = error.clone();
-                    }
-                }
+    if let Ok(status_map) = state.db_read(|db| {
+        db.get_latest_processing_status().map_err(|e| e.to_string())
+    }).await {
+        for file in &mut files {
+            if let Some((status, error)) = status_map.get(&file.filename) {
+                file.processing_status = Some(status.clone());
+                file.processing_error = error.clone();
             }
         }
     }
 
     if files.is_empty() {
-        InboxResult::Empty {
+        Ok(InboxResult::Empty {
             message: "Inbox is clear".to_string(),
             files,
             count,
-        }
+        })
     } else {
-        InboxResult::Success { files, count }
+        Ok(InboxResult::Success { files, count })
     }
 }
 
@@ -883,7 +881,6 @@ pub async fn process_inbox_file(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
     let entity_id = entity_id.clone();
@@ -894,8 +891,10 @@ pub async fn process_inbox_file(
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
-        let db_guard = state.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        // Open a dedicated connection instead of holding the shared mutex
+        // for the entire duration of process_file (which can take seconds).
+        let db = crate::db::ActionDb::open().ok();
+        let db_ref = db.as_ref();
         let entity_tracker_path = entity_id.as_deref().and_then(|eid| {
             db_ref
                 .and_then(|db| db.get_entity(eid).ok().flatten())
@@ -927,15 +926,15 @@ pub async fn process_all_inbox(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
-        let db_guard = state.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::process_all(workspace, db_ref, &profile)
+        // Open a dedicated connection instead of holding the shared mutex
+        // for the entire batch processing duration.
+        let db = crate::db::ActionDb::open().ok();
+        crate::processor::process_all(workspace, db.as_ref(), &profile)
     })
     .await
     .map_err(|e| format!("Batch processing failed: {}", e))
@@ -1002,7 +1001,7 @@ pub async fn enrich_inbox_file(
 #[tauri::command]
 pub fn get_inbox_file_content(
     filename: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let config = state
         .config
@@ -1061,7 +1060,7 @@ pub fn get_inbox_file_content(
 /// Accepts absolute file paths from the drag-drop event.
 /// Returns the number of files successfully copied.
 #[tauri::command]
-pub fn copy_to_inbox(paths: Vec<String>, state: State<Arc<AppState>>) -> Result<usize, String> {
+pub fn copy_to_inbox(paths: Vec<String>, state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     let config = state
         .config
         .read()
@@ -1176,7 +1175,7 @@ pub enum EmailsResult {
 
 /// Get all emails
 #[tauri::command]
-pub fn get_all_emails(state: State<Arc<AppState>>) -> EmailsResult {
+pub fn get_all_emails(state: State<'_, Arc<AppState>>) -> EmailsResult {
     // Get config
     let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
@@ -1217,66 +1216,56 @@ pub fn get_all_emails(state: State<Arc<AppState>>) -> EmailsResult {
 ///
 /// Get enriched email briefing data with signals and entity threads.
 #[tauri::command]
-pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingData, String> {
-    crate::services::emails::get_emails_enriched(&state)
+pub async fn get_emails_enriched(state: State<'_, Arc<AppState>>) -> Result<EmailBriefingData, String> {
+    crate::services::emails::get_emails_enriched(&state).await
 }
 
 /// Update the entity assignment for an email (I395 — user correction).
 /// Cascades to email_signals and emits a signal bus event for relevance learning.
 #[tauri::command]
-pub fn update_email_entity(
-    state: State<Arc<AppState>>,
+pub async fn update_email_entity(
+    state: State<'_, Arc<AppState>>,
     email_id: String,
     entity_id: Option<String>,
     entity_type: Option<String>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::emails::update_email_entity(db, &email_id, entity_id.as_deref(), entity_type.as_deref())
+    state.db_write(move |db| {
+        crate::services::emails::update_email_entity(db, &email_id, entity_id.as_deref(), entity_type.as_deref())
+    }).await
 }
 
 /// Dismiss a single email signal by ID. Sets `deactivated_at` to now.
 /// Emits a signal bus event for relevance learning.
 #[tauri::command]
-pub fn dismiss_email_signal(
-    state: State<Arc<AppState>>,
+pub async fn dismiss_email_signal(
+    state: State<'_, Arc<AppState>>,
     signal_id: i64,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::emails::dismiss_email_signal(db, signal_id)
+    state.db_write(move |db| {
+        crate::services::emails::dismiss_email_signal(db, signal_id)
+    }).await
 }
 
 /// Get email sync status: last fetch time, enrichment progress, failure count (I373).
 #[tauri::command]
-pub fn get_email_sync_status(
-    state: State<Arc<AppState>>,
+pub async fn get_email_sync_status(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<crate::db::EmailSyncStats, String> {
-    match state.with_db_try_read(|db| db.get_email_sync_stats()) {
-        crate::state::DbTryRead::Ok(Ok(stats)) => Ok(stats),
-        crate::state::DbTryRead::Ok(Err(e)) => Err(e),
-        crate::state::DbTryRead::Busy => Err("Database busy".to_string()),
-        crate::state::DbTryRead::Unavailable => Err("Database not available".to_string()),
-        crate::state::DbTryRead::Poisoned => Err("Database lock poisoned".to_string()),
-    }
+    state.db_read(|db| {
+        db.get_email_sync_stats()
+    }).await
 }
 
 /// Get emails linked to a specific entity for entity detail pages (I368 AC5).
 #[tauri::command]
-pub fn get_entity_emails(
-    state: State<Arc<AppState>>,
+pub async fn get_entity_emails(
+    state: State<'_, Arc<AppState>>,
     entity_id: String,
     entity_type: String,
 ) -> Result<Vec<crate::db::DbEmail>, String> {
-    match state.with_db_try_read(|db| {
+    state.db_read(move |db| {
         crate::services::emails::get_entity_emails(db, &entity_id, &entity_type)
-    }) {
-        crate::state::DbTryRead::Ok(Ok(emails)) => Ok(emails),
-        crate::state::DbTryRead::Ok(Err(e)) => Err(e),
-        crate::state::DbTryRead::Busy => Err("Database busy".to_string()),
-        crate::state::DbTryRead::Unavailable => Err("Database not available".to_string()),
-        crate::state::DbTryRead::Poisoned => Err("Database lock poisoned".to_string()),
-    }
+    }).await
 }
 
 /// Refresh emails independently without re-running the full /today pipeline (I20).
@@ -1296,7 +1285,7 @@ pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Res
 
 /// Set user profile (customer-success or general)
 #[tauri::command]
-pub fn set_profile(profile: String, state: State<Arc<AppState>>) -> Result<Config, String> {
+pub fn set_profile(profile: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     // Validate profile value
     if profile != "customer-success" && profile != "general" {
         return Err(format!(
@@ -1315,19 +1304,21 @@ pub fn set_profile(profile: String, state: State<Arc<AppState>>) -> Result<Confi
 /// Also derives the correct profile for backend compatibility.
 /// Creates Accounts/ dir if switching to account/both mode.
 #[tauri::command]
-pub fn set_entity_mode(mode: String, state: State<Arc<AppState>>) -> Result<Config, String> {
-    crate::services::settings::set_entity_mode(&mode, &state)
+pub fn set_entity_mode(mode: String, state: State<'_, Arc<AppState>>, app_handle: tauri::AppHandle) -> Result<Config, String> {
+    let config = crate::services::settings::set_entity_mode(&mode, &state)?;
+    let _ = app_handle.emit("config-updated", ());
+    Ok(config)
 }
 
 /// Set workspace path and scaffold directory structure
 #[tauri::command]
-pub fn set_workspace_path(path: String, state: State<Arc<AppState>>) -> Result<Config, String> {
-    crate::services::settings::set_workspace_path(&path, &state)
+pub async fn set_workspace_path(path: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
+    crate::services::settings::set_workspace_path(&path, &state).await
 }
 
 /// Toggle developer mode (shows/hides devtools panel)
 #[tauri::command]
-pub fn set_developer_mode(enabled: bool, state: State<Arc<AppState>>) -> Result<Config, String> {
+pub fn set_developer_mode(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     crate::state::create_or_update_config(&state, |config| {
         config.developer_mode = enabled;
     })
@@ -1335,7 +1326,7 @@ pub fn set_developer_mode(enabled: bool, state: State<Arc<AppState>>) -> Result<
 
 /// Set UI personality tone (professional, friendly, playful)
 #[tauri::command]
-pub fn set_personality(personality: String, state: State<Arc<AppState>>) -> Result<Config, String> {
+pub fn set_personality(personality: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     let normalized = personality.to_lowercase();
     crate::types::validate_personality(&normalized)?;
     crate::state::create_or_update_config(&state, |config| {
@@ -1348,7 +1339,7 @@ pub fn set_personality(personality: String, state: State<Arc<AppState>>) -> Resu
 pub fn set_ai_model(
     tier: String,
     model: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
     crate::services::settings::set_ai_model(&tier, &model, &state)
 }
@@ -1359,7 +1350,7 @@ pub fn set_hygiene_config(
     scan_interval_hours: Option<u32>,
     ai_budget: Option<u32>,
     pre_meeting_hours: Option<u32>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
     crate::services::settings::set_hygiene_config(scan_interval_hours, ai_budget, pre_meeting_hours, &state)
 }
@@ -1371,23 +1362,23 @@ pub fn set_schedule(
     hour: u32,
     minute: u32,
     timezone: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
     crate::services::settings::set_schedule(&workflow, hour, minute, &timezone, &state)
 }
 
 /// Save user profile fields (name, company, title, focus, domains)
 #[tauri::command]
-pub fn set_user_profile(
+pub async fn set_user_profile(
     name: Option<String>,
     company: Option<String>,
     title: Option<String>,
     focus: Option<String>,
     domain: Option<String>,
     domains: Option<Vec<String>>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::services::settings::set_user_profile(name, company, title, focus, domain, domains, &state)
+    crate::services::settings::set_user_profile(name, company, title, focus, domain, domains, &state).await
 }
 
 // =============================================================================
@@ -1396,58 +1387,58 @@ pub fn set_user_profile(
 
 /// Get the user entity (creates from config on first call).
 #[tauri::command]
-pub fn get_user_entity(
-    state: State<Arc<AppState>>,
+pub async fn get_user_entity(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::UserEntity, String> {
-    crate::services::user_entity::get_user_entity(&state)
+    crate::services::user_entity::get_user_entity(&state).await
 }
 
 /// Update a single field on the user entity.
 #[tauri::command]
-pub fn update_user_entity_field(
+pub async fn update_user_entity_field(
     field: String,
     value: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::user_entity::update_user_entity_field(&field, &value, &state)
+    crate::services::user_entity::update_user_entity_field(&field, &value, &state).await
 }
 
 /// Get all user context entries.
 #[tauri::command]
-pub fn get_user_context_entries(
-    state: State<Arc<AppState>>,
+pub async fn get_user_context_entries(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::types::UserContextEntry>, String> {
-    crate::services::user_entity::get_user_context_entries(&state)
+    crate::services::user_entity::get_user_context_entries(&state).await
 }
 
 /// Create a new user context entry.
 #[tauri::command]
-pub fn create_user_context_entry(
+pub async fn create_user_context_entry(
     title: String,
     content: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::UserContextEntry, String> {
-    crate::services::user_entity::create_user_context_entry(&title, &content, &state)
+    crate::services::user_entity::create_user_context_entry(&title, &content, &state).await
 }
 
 /// Update an existing user context entry.
 #[tauri::command]
-pub fn update_user_context_entry(
+pub async fn update_user_context_entry(
     id: String,
     title: String,
     content: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::user_entity::update_user_context_entry(&id, &title, &content, &state)
+    crate::services::user_entity::update_user_context_entry(&id, &title, &content, &state).await
 }
 
 /// Delete a user context entry.
 #[tauri::command]
-pub fn delete_user_context_entry(
+pub async fn delete_user_context_entry(
     id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::user_entity::delete_user_context_entry(&id, &state)
+    crate::services::user_entity::delete_user_context_entry(&id, &state).await
 }
 
 /// Process a user attachment from the /me page dropzone.
@@ -1555,7 +1546,7 @@ pub async fn process_user_attachment(
 
 /// List available meeting prep files
 #[tauri::command]
-pub fn list_meeting_preps(state: State<Arc<AppState>>) -> Result<Vec<String>, String> {
+pub fn list_meeting_preps(state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
     crate::services::meetings::list_meeting_preps(&state)
 }
 
@@ -1578,122 +1569,125 @@ pub struct ActionListItem {
 /// with recently completed actions (last 48 hours) so the UI can show both
 /// active and done states. Account names are resolved from the accounts table.
 #[tauri::command]
-pub fn get_actions_from_db(
+pub async fn get_actions_from_db(
     days_ahead: Option<i32>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ActionListItem>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::get_actions_from_db(db, days_ahead.unwrap_or(7))
+    let days = days_ahead.unwrap_or(7);
+    state.db_read(move |db| {
+        crate::services::actions::get_actions_from_db(db, days)
+    }).await
 }
 
 /// Mark an action as completed in the SQLite database.
 ///
 /// Sets `status = 'completed'` and `completed_at` to the current UTC timestamp.
 #[tauri::command]
-pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::complete_action(db, &state.signals.engine, &id)
+pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    state.db_write(move |db| {
+        crate::services::actions::complete_action(db, &engine, &id)
+    }).await
 }
 
 /// Reopen a completed action, setting it back to pending.
 #[tauri::command]
-pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reopen_action(db, &state.signals.engine, &id)
+pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    state.db_write(move |db| {
+        crate::services::actions::reopen_action(db, &engine, &id)
+    }).await
 }
 
 /// Accept a proposed action, moving it to pending (I256).
 #[tauri::command]
-pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::accept_proposed_action(db, &state.signals.engine, &id)
+pub async fn accept_proposed_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    state.db_write(move |db| {
+        crate::services::actions::accept_proposed_action(db, &engine, &id)
+    }).await
 }
 
 /// Reject a proposed action by archiving it (I256).
 #[tauri::command]
-pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::reject_proposed_action(db, &state.signals.engine, &id)
+pub async fn reject_proposed_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    state.db_write(move |db| {
+        crate::services::actions::reject_proposed_action(db, &engine, &id)
+    }).await
 }
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
 /// The Correspondent. Records the dismissal in SQLite for relevance learning.
 #[tauri::command]
-pub fn dismiss_email_item(
+pub async fn dismiss_email_item(
     item_type: String,
     email_id: String,
     item_text: String,
     sender_domain: Option<String>,
     email_type: Option<String>,
     entity_id: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::emails::dismiss_email_item(
-        db, &item_type, &email_id, &item_text,
-        sender_domain.as_deref(), email_type.as_deref(), entity_id.as_deref(),
-    )
+    state.db_write(move |db| {
+        crate::services::emails::dismiss_email_item(
+            db, &item_type, &email_id, &item_text,
+            sender_domain.as_deref(), email_type.as_deref(), entity_id.as_deref(),
+        )
+    }).await
 }
 
 /// Get all dismissed email item keys for frontend filtering.
 #[tauri::command]
-pub fn list_dismissed_email_items(
-    state: State<Arc<AppState>>,
+pub async fn list_dismissed_email_items(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    match state.with_db_try_read(|db| {
-        db.list_dismissed_email_items().map(|set| set.into_iter().collect())
-    }) {
-        crate::state::DbTryRead::Ok(Ok(items)) => Ok(items),
-        crate::state::DbTryRead::Ok(Err(e)) => Err(e.to_string()),
-        crate::state::DbTryRead::Busy => Ok(Vec::new()), // Graceful degradation when DB busy
-        crate::state::DbTryRead::Unavailable => Err("Database not initialized".to_string()),
-        crate::state::DbTryRead::Poisoned => Err("Lock poisoned".to_string()),
-    }
+    state.db_read(|db| {
+        db.list_dismissed_email_items()
+            .map(|set| set.into_iter().collect())
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Reset all email dismissal learning data (I374).
 /// Truncates the email_dismissals table so classification starts fresh.
 #[tauri::command]
-pub fn reset_email_preferences(
-    state: State<Arc<AppState>>,
+pub async fn reset_email_preferences(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let count = db.reset_email_dismissals().map_err(|e| e.to_string())?;
-    log::info!("reset_email_preferences: cleared {} dismissal records", count);
-    Ok(format!("Cleared {} email dismissal records", count))
+    state.db_write(|db| {
+        let count = db.reset_email_dismissals().map_err(|e| e.to_string())?;
+        log::info!("reset_email_preferences: cleared {} dismissal records", count);
+        Ok(format!("Cleared {} email dismissal records", count))
+    }).await
 }
 
 /// Get all proposed (AI-suggested) actions (I256).
 #[tauri::command]
-pub fn get_proposed_actions(
-    state: State<Arc<AppState>>,
+pub async fn get_proposed_actions(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAction>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::get_proposed_actions(db)
+    state.db_read(|db| {
+        crate::services::actions::get_proposed_actions(db)
+    }).await
 }
 
 /// Get recent meeting history for an account from the SQLite database.
 ///
 /// Returns meetings within `lookback_days` (default 30), limited to `limit` results (default 3).
 #[tauri::command]
-pub fn get_meeting_history(
+pub async fn get_meeting_history(
     account_id: String,
     lookback_days: Option<i32>,
     limit: Option<i32>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbMeeting>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_meeting_history(&account_id, lookback_days.unwrap_or(30), limit.unwrap_or(3))
-        .map_err(|e| e.to_string())
+    let days = lookback_days.unwrap_or(30);
+    let lim = limit.unwrap_or(3);
+    state.db_read(move |db| {
+        db.get_meeting_history(&account_id, days, lim)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Assembled detail for a single past meeting: metadata + captures + actions.
@@ -1736,11 +1730,11 @@ pub struct PrepContext {
 ///
 /// Assembles the meeting row, its captures, actions, and resolves the account name.
 #[tauri::command]
-pub fn get_meeting_history_detail(
+pub async fn get_meeting_history_detail(
     meeting_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<MeetingHistoryDetail, String> {
-    crate::services::meetings::get_meeting_history_detail(&meeting_id, &state)
+    crate::services::meetings::get_meeting_history_detail(&meeting_id, &state).await
 }
 
 // =============================================================================
@@ -1761,11 +1755,11 @@ pub struct MeetingSearchResult {
 
 /// Search meetings by title, summary, or prep context (I183).
 #[tauri::command]
-pub fn search_meetings(
+pub async fn search_meetings(
     query: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<MeetingSearchResult>, String> {
-    crate::services::meetings::search_meetings(&query, &state)
+    crate::services::meetings::search_meetings(&query, &state).await
 }
 
 // =============================================================================
@@ -1784,13 +1778,13 @@ pub struct ActionDetail {
 
 /// Get full detail for a single action, with resolved relationships.
 #[tauri::command]
-pub fn get_action_detail(
+pub async fn get_action_detail(
     action_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<ActionDetail, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::get_action_detail(db, &action_id)
+    state.db_read(move |db| {
+        crate::services::actions::get_action_detail(db, &action_id)
+    }).await
 }
 
 // =============================================================================
@@ -1808,7 +1802,7 @@ struct GoogleAuthFailedPayload {
 /// Re-checks persisted auth storage when cached state is NotConfigured,
 /// so the UI picks up credentials written by external flows.
 #[tauri::command]
-pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
+pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStatus {
     let started = std::time::Instant::now();
     let cached = state
         .calendar.google_auth
@@ -1902,7 +1896,7 @@ pub async fn start_google_auth(
 /// Disconnect Google account
 #[tauri::command]
 pub fn disconnect_google(
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     crate::google::disconnect()?;
@@ -1931,7 +1925,7 @@ pub fn disconnect_google(
 
 /// Get calendar events from the polling cache
 #[tauri::command]
-pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
+pub fn get_calendar_events(state: State<'_, Arc<AppState>>) -> Vec<CalendarEvent> {
     state
         .calendar.events
         .read()
@@ -1941,7 +1935,7 @@ pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
 
 /// Get the currently active meeting (if any)
 #[tauri::command]
-pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
+pub fn get_current_meeting(state: State<'_, Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
     state.calendar.events.read().ok().and_then(|guard| {
         guard
@@ -1953,7 +1947,7 @@ pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent>
 
 /// Get the next upcoming meeting
 #[tauri::command]
-pub fn get_next_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
+pub fn get_next_meeting(state: State<'_, Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
     state.calendar.events.read().ok().and_then(|guard| {
         guard
@@ -1970,18 +1964,18 @@ pub fn get_next_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
 
 /// Capture meeting outcomes (wins, risks, actions)
 #[tauri::command]
-pub fn capture_meeting_outcome(
+pub async fn capture_meeting_outcome(
     outcome: CapturedOutcome,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::meetings::capture_meeting_outcome(&outcome, &state)
+    crate::services::meetings::capture_meeting_outcome(&outcome, &state).await
 }
 
 /// Dismiss a post-meeting capture prompt (skip)
 #[tauri::command]
 pub fn dismiss_meeting_prompt(
     meeting_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     if let Ok(mut guard) = state.capture.dismissed.lock() {
         guard.insert(meeting_id);
@@ -1991,7 +1985,7 @@ pub fn dismiss_meeting_prompt(
 
 /// Get post-meeting capture settings
 #[tauri::command]
-pub fn get_capture_settings(state: State<Arc<AppState>>) -> PostMeetingCaptureConfig {
+pub fn get_capture_settings(state: State<'_, Arc<AppState>>) -> PostMeetingCaptureConfig {
     state
         .config
         .read()
@@ -2003,7 +1997,7 @@ pub fn get_capture_settings(state: State<Arc<AppState>>) -> PostMeetingCaptureCo
 
 /// Toggle post-meeting capture on/off
 #[tauri::command]
-pub fn set_capture_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn set_capture_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.post_meeting_capture.enabled = enabled;
     })?;
@@ -2012,7 +2006,7 @@ pub fn set_capture_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result
 
 /// Set post-meeting capture delay (minutes before prompt appears)
 #[tauri::command]
-pub fn set_capture_delay(delay_minutes: u32, state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn set_capture_delay(delay_minutes: u32, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.post_meeting_capture.delay_minutes = delay_minutes;
     })?;
@@ -2042,37 +2036,37 @@ pub async fn attach_meeting_transcript(
 ///
 /// Returns `None` only when no outcomes/transcript metadata exist in SQLite.
 #[tauri::command]
-pub fn get_meeting_outcomes(
+pub async fn get_meeting_outcomes(
     meeting_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::types::MeetingOutcomeData>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let meeting = db
-        .get_meeting_intelligence_row(&meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
-    Ok(collect_meeting_outcomes_from_db(db, &meeting))
+    state.db_read(move |db| {
+        let meeting = db
+            .get_meeting_intelligence_row(&meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+        Ok(collect_meeting_outcomes_from_db(db, &meeting))
+    }).await
 }
 
 /// Update the content of a capture (win/risk/decision) — I45 inline editing.
 #[tauri::command]
-pub fn update_capture(
+pub async fn update_capture(
     id: String,
     content: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.update_capture(&id, &content).map_err(|e| e.to_string())
+    state.db_write(move |db| {
+        db.update_capture(&id, &content).map_err(|e| e.to_string())
+    }).await
 }
 
 /// Cycle an action's priority (P1→P2→P3→P1) — I45 interaction.
 #[tauri::command]
-pub fn update_action_priority(
+pub async fn update_action_priority(
     id: String,
     priority: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     // Validate priority
     if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
@@ -2081,9 +2075,10 @@ pub fn update_action_priority(
             priority
         ));
     }
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::actions::update_action_priority(db, &state.signals.engine, &id, &priority)
+    let engine = state.signals.engine.clone();
+    state.db_write(move |db| {
+        crate::services::actions::update_action_priority(db, &engine, &id, &priority)
+    }).await
 }
 
 // =============================================================================
@@ -2107,11 +2102,11 @@ pub struct CreateActionRequest {
 }
 
 #[tauri::command]
-pub fn create_action(
+pub async fn create_action(
     request: CreateActionRequest,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::services::actions::create_action(request, &state)
+    crate::services::actions::create_action(request, &state).await
 }
 
 /// Update arbitrary fields on an existing action (I128).
@@ -2139,11 +2134,11 @@ pub struct UpdateActionRequest {
 }
 
 #[tauri::command]
-pub fn update_action(
+pub async fn update_action(
     request: UpdateActionRequest,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::actions::update_action(request, &state)
+    crate::services::actions::update_action(request, &state).await
 }
 
 // =============================================================================
@@ -2154,14 +2149,15 @@ pub fn update_action(
 ///
 /// Returns recent inbox processing log entries for the History page.
 #[tauri::command]
-pub fn get_processing_history(
+pub async fn get_processing_history(
     limit: Option<i32>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbProcessingLog>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_processing_log(limit.unwrap_or(50))
-        .map_err(|e| e.to_string())
+    let lim = limit.unwrap_or(50);
+    state.db_read(move |db| {
+        db.get_processing_log(lim)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 // =============================================================================
@@ -2181,7 +2177,7 @@ pub struct FeatureDefinition {
 
 /// Get all features with their current enabled state.
 #[tauri::command]
-pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition>, String> {
+pub fn get_features(state: State<'_, Arc<AppState>>) -> Result<Vec<FeatureDefinition>, String> {
     let config = state
         .config
         .read()
@@ -2263,7 +2259,7 @@ pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition
 pub fn set_feature_enabled(
     feature: String,
     enabled: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
     crate::state::create_or_update_config(&state, |config| {
         config.features.insert(feature.clone(), enabled);
@@ -2280,7 +2276,7 @@ pub fn set_feature_enabled(
 /// with mock accounts, actions, and meeting history. The demo data is
 /// replaced on the first real briefing run.
 #[tauri::command]
-pub fn install_demo_data(state: State<Arc<AppState>>) -> Result<String, String> {
+pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state
         .config
         .read()
@@ -2300,10 +2296,9 @@ pub fn install_demo_data(state: State<Arc<AppState>>) -> Result<String, String> 
     let workspace = std::path::Path::new(&workspace_path);
     crate::devtools::write_fixtures(workspace)?;
 
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    if let Some(db) = db_guard.as_ref() {
-        crate::devtools::seed_database(db)?;
-    }
+    state.db_write(|db| {
+        crate::devtools::seed_database(db)
+    }).await?;
 
     Ok("Demo data installed".into())
 }
@@ -2319,10 +2314,10 @@ pub fn install_demo_data(state: State<Arc<AppState>>) -> Result<String, String> 
 /// For each project: creates `Projects/{name}/` (filesystem only, no SQLite — I50).
 /// DB errors are non-fatal; folder creation is the primary value.
 #[tauri::command]
-pub fn populate_workspace(
+pub async fn populate_workspace(
     accounts: Vec<String>,
     projects: Vec<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     // 1. Get workspace path
     let workspace_path = state
@@ -2336,8 +2331,8 @@ pub fn populate_workspace(
     let workspace = std::path::Path::new(&workspace_path);
     let now = chrono::Utc::now().to_rfc3339();
 
-    // 3. Process accounts
-    let mut account_count = 0;
+    // 3. Process accounts: filesystem first, collect valid names
+    let mut valid_account_names: Vec<String> = Vec::new();
     for name in &accounts {
         let name = match crate::util::validate_entity_name(name) {
             Ok(n) => n,
@@ -2356,41 +2351,12 @@ pub fn populate_workspace(
         if let Err(e) = crate::util::bootstrap_entity_directory(&account_dir, name, "account") {
             log::warn!("Failed to bootstrap account template '{}': {}", name, e);
         }
-
-        // Upsert to SQLite (non-fatal). Preserve existing account_type/archived.
-        let slug = crate::util::slugify(name);
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                let existing = db.get_account(&slug).ok().flatten();
-                let db_account = crate::db::DbAccount {
-                    id: slug,
-                    name: name.to_string(),
-                    lifecycle: existing.as_ref().and_then(|e| e.lifecycle.clone()),
-                    arr: existing.as_ref().and_then(|e| e.arr),
-                    health: existing.as_ref().and_then(|e| e.health.clone()),
-                    contract_start: existing.as_ref().and_then(|e| e.contract_start.clone()),
-                    contract_end: existing.as_ref().and_then(|e| e.contract_end.clone()),
-                    nps: existing.as_ref().and_then(|e| e.nps),
-                    tracker_path: Some(format!("Accounts/{}", name)),
-                    parent_id: existing.as_ref().and_then(|e| e.parent_id.clone()),
-                    account_type: existing.as_ref().map(|e| e.account_type.clone()).unwrap_or(crate::db::AccountType::Customer),
-                    updated_at: now.clone(),
-                    archived: existing.as_ref().map(|e| e.archived).unwrap_or(false),
-                    keywords: existing.as_ref().and_then(|e| e.keywords.clone()),
-                    keywords_extracted_at: existing.as_ref().and_then(|e| e.keywords_extracted_at.clone()),
-                    metadata: existing.as_ref().and_then(|e| e.metadata.clone()),
-                };
-                if let Err(e) = db.upsert_account(&db_account) {
-                    log::warn!("Failed to upsert account '{}': {}", name, e);
-                }
-            }
-        }
-
-        account_count += 1;
+        valid_account_names.push(name.to_string());
     }
+    let account_count = valid_account_names.len();
 
-    // 4. Process projects (I50: full dashboard.json + SQLite)
-    let mut project_count = 0;
+    // 4. Process projects: filesystem first, collect valid entries
+    let mut valid_projects: Vec<crate::db::DbProject> = Vec::new();
     for name in &projects {
         let name = match crate::util::validate_entity_name(name) {
             Ok(n) => n,
@@ -2400,8 +2366,17 @@ pub fn populate_workspace(
             }
         };
 
+        // Create folder + directory template (ADR-0059, idempotent)
+        let project_dir = workspace.join("Projects").join(name);
+        if let Err(e) = std::fs::create_dir_all(&project_dir) {
+            log::warn!("Failed to create project dir '{}': {}", name, e);
+        }
+        if let Err(e) = crate::util::bootstrap_entity_directory(&project_dir, name, "project") {
+            log::warn!("Failed to bootstrap project template '{}': {}", name, e);
+        }
+
         let slug = crate::util::slugify(name);
-        let db_project = crate::db::DbProject {
+        valid_projects.push(crate::db::DbProject {
             id: slug,
             name: name.to_string(),
             status: "active".to_string(),
@@ -2415,37 +2390,51 @@ pub fn populate_workspace(
             keywords: None,
             keywords_extracted_at: None,
             metadata: None,
-        };
+        });
+    }
+    let project_count = valid_projects.len();
 
-        // Create folder + directory template (ADR-0059, idempotent)
-        let project_dir = workspace.join("Projects").join(name);
-        if let Err(e) = std::fs::create_dir_all(&project_dir) {
-            log::warn!("Failed to create project dir '{}': {}", name, e);
-        }
-        if let Err(e) = crate::util::bootstrap_entity_directory(&project_dir, name, "project") {
-            log::warn!("Failed to bootstrap project template '{}': {}", name, e);
-        }
-
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                if let Err(e) = db.upsert_project(&db_project) {
-                    log::warn!("Failed to upsert project '{}': {}", name, e);
-                }
-                // Write dashboard.json + dashboard.md
-                let json = crate::projects::default_project_json(&db_project);
-                let _ =
-                    crate::projects::write_project_json(workspace, &db_project, Some(&json), db);
-                let _ = crate::projects::write_project_markdown(
-                    workspace,
-                    &db_project,
-                    Some(&json),
-                    db,
-                );
+    // Batch DB operations
+    let wp = workspace_path.clone();
+    let _ = state.db_write(move |db| {
+        let workspace = std::path::Path::new(&wp);
+        // Upsert accounts
+        for name in &valid_account_names {
+            let slug = crate::util::slugify(name);
+            let existing = db.get_account(&slug).ok().flatten();
+            let db_account = crate::db::DbAccount {
+                id: slug,
+                name: name.to_string(),
+                lifecycle: existing.as_ref().and_then(|e| e.lifecycle.clone()),
+                arr: existing.as_ref().and_then(|e| e.arr),
+                health: existing.as_ref().and_then(|e| e.health.clone()),
+                contract_start: existing.as_ref().and_then(|e| e.contract_start.clone()),
+                contract_end: existing.as_ref().and_then(|e| e.contract_end.clone()),
+                nps: existing.as_ref().and_then(|e| e.nps),
+                tracker_path: Some(format!("Accounts/{}", name)),
+                parent_id: existing.as_ref().and_then(|e| e.parent_id.clone()),
+                account_type: existing.as_ref().map(|e| e.account_type.clone()).unwrap_or(crate::db::AccountType::Customer),
+                updated_at: now.clone(),
+                archived: existing.as_ref().map(|e| e.archived).unwrap_or(false),
+                keywords: existing.as_ref().and_then(|e| e.keywords.clone()),
+                keywords_extracted_at: existing.as_ref().and_then(|e| e.keywords_extracted_at.clone()),
+                metadata: existing.as_ref().and_then(|e| e.metadata.clone()),
+            };
+            if let Err(e) = db.upsert_account(&db_account) {
+                log::warn!("Failed to upsert account '{}': {}", name, e);
             }
         }
-
-        project_count += 1;
-    }
+        // Upsert projects + write dashboard files
+        for db_project in &valid_projects {
+            if let Err(e) = db.upsert_project(db_project) {
+                log::warn!("Failed to upsert project '{}': {}", db_project.name, e);
+            }
+            let json = crate::projects::default_project_json(db_project);
+            let _ = crate::projects::write_project_json(workspace, db_project, Some(&json), db);
+            let _ = crate::projects::write_project_markdown(workspace, db_project, Some(&json), db);
+        }
+        Ok(())
+    }).await;
 
     Ok(format!(
         "Created {} accounts, {} projects",
@@ -2503,16 +2492,15 @@ pub async fn get_onboarding_priming_context(
         .await
         .map_err(|e| format!("Calendar fetch failed: {}", e))?;
 
-    let (hints, internal_root) = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        (
+    let (hints, internal_root) = state.db_read(|db| {
+        Ok((
             crate::helpers::build_entity_hints(db),
             db.get_internal_root_account().ok().flatten(),
-        )
-    };
+        ))
+    }).await?;
 
-    let mut cards = Vec::new();
+    // Pre-classify all meetings and collect account hints for batch DB lookup
+    let mut classified: Vec<(crate::google_api::classify::ClassifiedMeeting, crate::types::CalendarEvent, String, Option<String>)> = Vec::new();
     for raw in raw_events.iter().filter(|e| !e.is_all_day).take(8) {
         let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &hints);
         let event = cm.to_calendar_event();
@@ -2524,27 +2512,45 @@ pub async fn get_onboarding_priming_context(
         } else {
             start.format("%a").to_string()
         };
+        let account_hint = cm.account().map(|s| s.to_string());
+        classified.push((cm, event, day_label, account_hint));
+    }
 
+    // Batch-resolve account hints in a single DB read
+    let account_hints: Vec<Option<String>> = classified.iter().map(|(_, _, _, h)| h.clone()).collect();
+    let resolved_accounts = state.db_read(move |db| {
+        let mut results = Vec::new();
+        for hint in &account_hints {
+            if let Some(ref name) = hint {
+                if let Ok(Some(account)) = db.get_account_by_name(name) {
+                    results.push(Some((account.id.clone(), account.name.clone())));
+                } else {
+                    results.push(None);
+                }
+            } else {
+                results.push(None);
+            }
+        }
+        Ok(results)
+    }).await?;
+
+    let mut cards = Vec::new();
+    for (i, (_cm, event, day_label, _account_hint)) in classified.into_iter().enumerate() {
         let mut suggested_entity_id = None;
         let mut suggested_entity_name = None;
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                if let Some(account_hint) = cm.account() {
-                    if let Ok(Some(account)) = db.get_account_by_name(account_hint) {
-                        suggested_entity_id = Some(account.id.clone());
-                        suggested_entity_name = Some(account.name.clone());
-                    }
-                } else if matches!(
-                    event.meeting_type,
-                    crate::types::MeetingType::Internal
-                        | crate::types::MeetingType::TeamSync
-                        | crate::types::MeetingType::OneOnOne
-                ) {
-                    if let Some(ref root) = internal_root {
-                        suggested_entity_id = Some(root.id.clone());
-                        suggested_entity_name = Some(root.name.clone());
-                    }
-                }
+
+        if let Some(Some((ref id, ref name))) = resolved_accounts.get(i) {
+            suggested_entity_id = Some(id.clone());
+            suggested_entity_name = Some(name.clone());
+        } else if matches!(
+            event.meeting_type,
+            crate::types::MeetingType::Internal
+                | crate::types::MeetingType::TeamSync
+                | crate::types::MeetingType::OneOnOne
+        ) {
+            if let Some(ref root) = internal_root {
+                suggested_entity_id = Some(root.id.clone());
+                suggested_entity_name = Some(root.name.clone());
             }
         }
 
@@ -2565,7 +2571,7 @@ pub async fn get_onboarding_priming_context(
         cards.push(OnboardingPrimingCard {
             id: event.id,
             title: event.title,
-            start_time: Some(start.to_rfc3339()),
+            start_time: Some(event.start.with_timezone(&chrono::Local).to_rfc3339()),
             day_label,
             suggested_entity_id,
             suggested_entity_name,
@@ -2665,7 +2671,7 @@ pub async fn check_claude_status() -> ClaudeStatus {
 ///
 /// Returns the filename of the installed sample.
 #[tauri::command]
-pub fn install_inbox_sample(state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn install_inbox_sample(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state
         .config
         .read()
@@ -2719,7 +2725,7 @@ pub async fn get_frequent_correspondents(
 /// Returns an error in release builds. In debug builds, delegates to
 /// `devtools::apply_scenario` which orchestrates the scenario switch.
 #[tauri::command]
-pub fn dev_apply_scenario(scenario: String, state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn dev_apply_scenario(scenario: String, state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2731,7 +2737,7 @@ pub fn dev_apply_scenario(scenario: String, state: State<Arc<AppState>>) -> Resu
 /// Returns an error in release builds. In debug builds, returns counts
 /// and status for config, database, today data, and Google auth.
 #[tauri::command]
-pub fn dev_get_state(state: State<Arc<AppState>>) -> Result<crate::devtools::DevState, String> {
+pub fn dev_get_state(state: State<'_, Arc<AppState>>) -> Result<crate::devtools::DevState, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2743,7 +2749,7 @@ pub fn dev_get_state(state: State<Arc<AppState>>) -> Result<crate::devtools::Dev
 /// Requires `simulate_briefing` scenario first. Delivers schedule, actions,
 /// preps, emails, manifest from the seeded today-directive.json.
 #[tauri::command]
-pub fn dev_run_today_mechanical(state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn dev_run_today_mechanical(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2755,7 +2761,7 @@ pub fn dev_run_today_mechanical(state: State<Arc<AppState>>) -> Result<String, S
 /// Requires `simulate_briefing` scenario + Claude Code CLI installed.
 /// Mechanical delivery + enrich_emails, enrich_preps, enrich_briefing.
 #[tauri::command]
-pub fn dev_run_today_full(state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn dev_run_today_full(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2767,7 +2773,7 @@ pub fn dev_run_today_full(state: State<Arc<AppState>>) -> Result<String, String>
 /// Requires `simulate_briefing` scenario first. Delivers week-overview.json
 /// from the seeded week-directive.json.
 #[tauri::command]
-pub fn dev_run_week_mechanical(state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn dev_run_week_mechanical(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2779,7 +2785,7 @@ pub fn dev_run_week_mechanical(state: State<Arc<AppState>>) -> Result<String, St
 /// Requires `simulate_briefing` scenario + Claude Code CLI installed.
 /// Runs Claude /week then delivers week-overview.json.
 #[tauri::command]
-pub fn dev_run_week_full(state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn dev_run_week_full(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2791,7 +2797,7 @@ pub fn dev_run_week_full(state: State<Arc<AppState>>) -> Result<String, String> 
 /// Deactivates dev DB isolation, reopens the live database, and restores the
 /// original workspace path. Returns a confirmation message.
 #[tauri::command]
-pub fn dev_restore_live(state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn dev_restore_live(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2802,7 +2808,7 @@ pub fn dev_restore_live(state: State<Arc<AppState>>) -> Result<String, String> {
 ///
 /// Removes exact mock IDs seeded by devtools scenarios. Safe for the live DB.
 #[tauri::command]
-pub fn dev_purge_mock_data(state: State<Arc<AppState>>) -> Result<String, String> {
+pub fn dev_purge_mock_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2852,8 +2858,8 @@ pub fn build_outcome_data(
 
 /// Compute executive intelligence signals (I42).
 #[tauri::command]
-pub fn get_executive_intelligence(
-    state: State<Arc<AppState>>,
+pub async fn get_executive_intelligence(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::ExecutiveIntelligence, String> {
     let started = std::time::Instant::now();
     let result = crate::services::entities::get_executive_intelligence(&state);
@@ -2862,7 +2868,7 @@ pub fn get_executive_intelligence(
         started,
         READ_CMD_LATENCY_BUDGET_MS,
     );
-    result
+    result.await
 }
 
 // =============================================================================
@@ -2871,14 +2877,14 @@ pub fn get_executive_intelligence(
 
 /// Get all people with pre-computed signals, optionally filtered by relationship.
 #[tauri::command]
-pub fn get_people(
+pub async fn get_people(
     relationship: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::PersonListItem>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_people_with_signals(relationship.as_deref())
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_people_with_signals(relationship.as_deref())
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Person detail result including signals, linked entities, and recent meetings.
@@ -2929,87 +2935,90 @@ pub struct MeetingPreview {
 
 /// Get full detail for a person (person + signals + entities + recent meetings).
 #[tauri::command]
-pub fn get_person_detail(
+pub async fn get_person_detail(
     person_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<PersonDetailResult, String> {
-    crate::services::people::get_person_detail(&person_id, &state)
+    crate::services::people::get_person_detail(&person_id, &state).await
 }
 
 /// Search people by name, email, or organization.
 #[tauri::command]
-pub fn search_people(
+pub async fn search_people(
     query: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbPerson>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.search_people(&query, 50).map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.search_people(&query, 50).map_err(|e| e.to_string())
+    }).await
 }
 
 /// Update a single field on a person (role, organization, notes, relationship).
 /// Also updates the person's workspace files.
 #[tauri::command]
-pub fn update_person(
+pub async fn update_person(
     person_id: String,
     field: String,
     value: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::update_person_field(db, &state, &person_id, &field, &value)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::people::update_person_field(db, &app_state, &person_id, &field, &value)
+    }).await
 }
 
 /// Link a person to an entity (account/project).
 /// Regenerates person.json so the link persists in the filesystem (ADR-0048).
 #[tauri::command]
-pub fn link_person_entity(
+pub async fn link_person_entity(
     person_id: String,
     entity_id: String,
     relationship_type: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::link_person_entity(db, &state, &person_id, &entity_id, &relationship_type)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::people::link_person_entity(db, &app_state, &person_id, &entity_id, &relationship_type)
+    }).await
 }
 
 /// Unlink a person from an entity.
 /// Regenerates person.json so the removal persists in the filesystem (ADR-0048).
 #[tauri::command]
-pub fn unlink_person_entity(
+pub async fn unlink_person_entity(
     person_id: String,
     entity_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::unlink_person_entity(db, &state, &person_id, &entity_id)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::people::unlink_person_entity(db, &app_state, &person_id, &entity_id)
+    }).await
 }
 
 /// Get people linked to an entity.
 #[tauri::command]
-pub fn get_people_for_entity(
+pub async fn get_people_for_entity(
     entity_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbPerson>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_people_for_entity(&entity_id)
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_people_for_entity(&entity_id)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Get people who attended a specific meeting.
 #[tauri::command]
-pub fn get_meeting_attendees(
+pub async fn get_meeting_attendees(
     meeting_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbPerson>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_meeting_attendees(&meeting_id)
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_meeting_attendees(&meeting_id)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 // =========================================================================
@@ -3020,59 +3029,59 @@ pub fn get_meeting_attendees(
 /// ADR-0086: After relinking, clears prep_frozen_json and enqueues for
 /// mechanical re-assembly from the new entity's intelligence.
 #[tauri::command]
-pub fn link_meeting_entity(
+pub async fn link_meeting_entity(
     meeting_id: String,
     entity_id: String,
     entity_type: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::services::meetings::link_meeting_entity_with_prep_queue(
         &state, &meeting_id, &entity_id, &entity_type,
-    )
+    ).await
 }
 
 /// Remove a meeting-entity link from the junction table.
 /// ADR-0086: After unlinking, clears prep_frozen_json and enqueues for
 /// mechanical re-assembly without the removed entity's intelligence.
 #[tauri::command]
-pub fn unlink_meeting_entity(
+pub async fn unlink_meeting_entity(
     meeting_id: String,
     entity_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::services::meetings::unlink_meeting_entity_with_prep_queue(
         &state, &meeting_id, &entity_id,
-    )
+    ).await
 }
 
 /// Get all entities linked to a meeting via the junction table.
 #[tauri::command]
-pub fn get_meeting_entities(
+pub async fn get_meeting_entities(
     meeting_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::entity::DbEntity>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_meeting_entities(&meeting_id)
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_meeting_entities(&meeting_id)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Reassign a meeting's entity with full cascade to actions, captures, and intelligence.
 /// Clears existing entity links, sets the new one, and cascades to related tables.
 #[tauri::command]
-pub fn update_meeting_entity(
+pub async fn update_meeting_entity(
     meeting_id: String,
     entity_id: Option<String>,
     entity_type: String,
     meeting_title: String,
     start_time: String,
     meeting_type_str: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::services::meetings::update_meeting_entity(
         &state, &meeting_id, entity_id.as_deref(), &entity_type,
         &meeting_title, &start_time, &meeting_type_str,
-    )
+    ).await
 }
 
 // =========================================================================
@@ -3082,32 +3091,32 @@ pub fn update_meeting_entity(
 /// Add an entity link to a meeting with full cascade (people, intelligence).
 /// Unlike `update_meeting_entity` which clears-and-replaces, this is additive.
 #[tauri::command]
-pub fn add_meeting_entity(
+pub async fn add_meeting_entity(
     meeting_id: String,
     entity_id: String,
     entity_type: String,
     meeting_title: String,
     start_time: String,
     meeting_type_str: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::services::meetings::add_meeting_entity(
         &state, &meeting_id, &entity_id, &entity_type,
         &meeting_title, &start_time, &meeting_type_str,
-    )
+    ).await
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
 #[tauri::command]
-pub fn remove_meeting_entity(
+pub async fn remove_meeting_entity(
     meeting_id: String,
     entity_id: String,
     entity_type: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::services::meetings::remove_meeting_entity(
         &state, &meeting_id, &entity_id, &entity_type,
-    )
+    ).await
 }
 
 // =========================================================================
@@ -3116,28 +3125,28 @@ pub fn remove_meeting_entity(
 
 /// Remove a keyword from a project's auto-extracted keyword list.
 #[tauri::command]
-pub fn remove_project_keyword(
+pub async fn remove_project_keyword(
     project_id: String,
     keyword: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.with_db_write(|db| {
+    state.db_write(move |db| {
         db.remove_project_keyword(&project_id, &keyword)
             .map_err(|e| e.to_string())
-    })
+    }).await
 }
 
 /// Remove a keyword from an account's auto-extracted keyword list.
 #[tauri::command]
-pub fn remove_account_keyword(
+pub async fn remove_account_keyword(
     account_id: String,
     keyword: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.with_db_write(|db| {
+    state.db_write(move |db| {
         db.remove_account_keyword(&account_id, &keyword)
             .map_err(|e| e.to_string())
-    })
+    }).await
 }
 
 // =========================================================================
@@ -3146,41 +3155,43 @@ pub fn remove_account_keyword(
 
 /// Create a new person manually. Returns the generated person ID.
 #[tauri::command]
-pub fn create_person(
+pub async fn create_person(
     email: String,
     name: String,
     organization: Option<String>,
     role: Option<String>,
     relationship: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let email = crate::util::validate_email(&email)?;
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::create_person(
-        db, &email, &name, organization.as_deref(), role.as_deref(), relationship.as_deref(),
-    )
+    state.db_write(move |db| {
+        crate::services::people::create_person(
+            db, &email, &name, organization.as_deref(), role.as_deref(), relationship.as_deref(),
+        )
+    }).await
 }
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`, then delete the removed person.
 /// Also cleans up filesystem directories and regenerates the kept person's files.
 #[tauri::command]
-pub fn merge_people(
+pub async fn merge_people(
     keep_id: String,
     remove_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::merge_people(db, &state, &keep_id, &remove_id)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::people::merge_people(db, &app_state, &keep_id, &remove_id)
+    }).await
 }
 
 /// Delete a person and all their references. Also removes their filesystem directory.
 #[tauri::command]
-pub fn delete_person(person_id: String, state: State<Arc<AppState>>) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::delete_person(db, &state, &person_id)
+pub async fn delete_person(person_id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::people::delete_person(db, &app_state, &person_id)
+    }).await
 }
 
 /// Enrich a person with intelligence assessment (relationship intelligence).
@@ -3273,10 +3284,10 @@ pub struct AccountChildSummary {
 /// Returns only accounts where `parent_id IS NULL`. Each parent account
 /// includes a `child_count` so the UI can show an expand chevron.
 #[tauri::command]
-pub fn get_accounts_list(state: State<Arc<AppState>>) -> Result<Vec<AccountListItem>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::get_accounts_list(db)
+pub async fn get_accounts_list(state: State<'_, Arc<AppState>>) -> Result<Vec<AccountListItem>, String> {
+    state.db_read(|db| {
+        crate::services::accounts::get_accounts_list(db)
+    }).await
 }
 
 /// Lightweight list of ALL accounts (parents + children) for entity pickers.
@@ -3290,45 +3301,45 @@ pub struct PickerAccount {
 }
 
 #[tauri::command]
-pub fn get_accounts_for_picker(state: State<Arc<AppState>>) -> Result<Vec<PickerAccount>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::get_accounts_for_picker(db)
+pub async fn get_accounts_for_picker(state: State<'_, Arc<AppState>>) -> Result<Vec<PickerAccount>, String> {
+    state.db_read(|db| {
+        crate::services::accounts::get_accounts_for_picker(db)
+    }).await
 }
 
 /// Get child accounts for a parent (I114).
 #[tauri::command]
-pub fn get_child_accounts_list(
+pub async fn get_child_accounts_list(
     parent_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<AccountListItem>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::get_child_accounts_list(db, &parent_id)
+    state.db_read(move |db| {
+        crate::services::accounts::get_child_accounts_list(db, &parent_id)
+    }).await
 }
 
 /// I316: Get ancestor accounts for breadcrumb navigation.
 #[tauri::command]
-pub fn get_account_ancestors(
+pub async fn get_account_ancestors(
     account_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccount>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_account_ancestors(&account_id)
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_account_ancestors(&account_id)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// I316: Get all descendant accounts for a given ancestor.
 #[tauri::command]
-pub fn get_descendant_accounts(
+pub async fn get_descendant_accounts(
     ancestor_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccount>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_descendant_accounts(&ancestor_id)
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_descendant_accounts(&ancestor_id)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Convert a DbAccount to an AccountListItem with computed signals.
@@ -3342,88 +3353,93 @@ fn account_to_list_item(
 
 /// Get full detail for an account (DB fields + narrative JSON + computed data).
 #[tauri::command]
-pub fn get_account_detail(
+pub async fn get_account_detail(
     account_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<AccountDetailResult, String> {
-    crate::services::accounts::get_account_detail(&account_id, &state)
+    crate::services::accounts::get_account_detail(&account_id, &state).await
 }
 
 /// Get account-team members (I207).
 #[tauri::command]
-pub fn get_account_team(
+pub async fn get_account_team(
     account_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccountTeamMember>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_account_team(&account_id).map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_account_team(&account_id).map_err(|e| e.to_string())
+    }).await
 }
 
 /// Add a person-role pair to an account team (I207).
 #[tauri::command]
-pub fn add_account_team_member(
+pub async fn add_account_team_member(
     account_id: String,
     person_id: String,
     role: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::add_account_team_member(db, &state, &account_id, &person_id, &role)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::add_account_team_member(db, &app_state, &account_id, &person_id, &role)
+    }).await
 }
 
 /// Remove a person-role pair from an account team (I207).
 #[tauri::command]
-pub fn remove_account_team_member(
+pub async fn remove_account_team_member(
     account_id: String,
     person_id: String,
     role: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::remove_account_team_member(db, &state, &account_id, &person_id, &role)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::remove_account_team_member(db, &app_state, &account_id, &person_id, &role)
+    }).await
 }
 
 /// Update a single structured field on an account.
 /// Writes to SQLite, then regenerates dashboard.json + dashboard.md.
 #[tauri::command]
-pub fn update_account_field(
+pub async fn update_account_field(
     account_id: String,
     field: String,
     value: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::update_account_field(db, &state, &account_id, &field, &value)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::update_account_field(db, &app_state, &account_id, &field, &value)
+    }).await
 }
 
 /// Update account notes (narrative field — JSON only, not SQLite).
 /// Writes dashboard.json + regenerates dashboard.md.
 #[tauri::command]
-pub fn update_account_notes(
+pub async fn update_account_notes(
     account_id: String,
     notes: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::update_account_notes(db, &state, &account_id, &notes)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::update_account_notes(db, &app_state, &account_id, &notes)
+    }).await
 }
 
 /// Update account strategic programs (narrative field — JSON only).
 /// Writes dashboard.json + regenerates dashboard.md.
 #[tauri::command]
-pub fn update_account_programs(
+pub async fn update_account_programs(
     account_id: String,
     programs_json: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::update_account_programs(db, &state, &account_id, &programs_json)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::update_account_programs(db, &app_state, &account_id, &programs_json)
+    }).await
 }
 
 /// Create a new account. Creates SQLite record + workspace files.
@@ -3431,16 +3447,17 @@ pub fn update_account_programs(
 /// If `account_type` is provided, uses that type; otherwise defaults to `customer`
 /// (or inherits from parent for child accounts).
 #[tauri::command]
-pub fn create_account(
+pub async fn create_account(
     name: String,
     parent_id: Option<String>,
     account_type: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
     let acct_type = account_type.map(|s| crate::db::AccountType::from_db(&s));
-    crate::services::accounts::create_account(db, &state, &name, parent_id.as_deref(), acct_type)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::create_account(db, &app_state, &name, parent_id.as_deref(), acct_type)
+    }).await
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -3482,8 +3499,8 @@ pub struct CreateChildAccountResult {
 }
 
 #[tauri::command]
-pub fn get_internal_team_setup_status(
-    state: State<Arc<AppState>>,
+pub async fn get_internal_team_setup_status(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<InternalTeamSetupStatus, String> {
     let config = state
         .config
@@ -3502,20 +3519,20 @@ pub fn get_internal_team_setup_status(
         "Core Team".to_string()
     };
 
-    let suggested_colleagues = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let suggested_colleagues = state.db_read(|db| {
         db.get_people(Some("internal"))
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .take(5)
-            .map(|p| TeamColleagueInput {
-                name: p.name,
-                email: p.email,
-                title: p.role,
+            .map_err(|e| e.to_string())
+            .map(|people| {
+                people.into_iter()
+                    .take(5)
+                    .map(|p| TeamColleagueInput {
+                        name: p.name,
+                        email: p.email,
+                        title: p.role,
+                    })
+                    .collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>()
-    };
+    }).await?;
 
     Ok(InternalTeamSetupStatus {
         required: !config.internal_team_setup_completed,
@@ -3530,13 +3547,13 @@ pub fn get_internal_team_setup_status(
 }
 
 #[tauri::command]
-pub fn create_internal_organization(
+pub async fn create_internal_organization(
     company_name: String,
     domains: Vec<String>,
     team_name: String,
     colleagues: Vec<TeamColleagueInput>,
     existing_person_ids: Option<Vec<String>>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<CreateInternalOrganizationResult, String> {
     crate::services::accounts::create_internal_organization(
         &state,
@@ -3545,58 +3562,57 @@ pub fn create_internal_organization(
         &team_name,
         &colleagues,
         &existing_person_ids.unwrap_or_default(),
-    )
+    ).await
 }
 
 #[tauri::command]
-pub fn create_child_account(
+pub async fn create_child_account(
     parent_id: String,
     name: String,
     description: Option<String>,
     owner_person_id: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<CreateChildAccountResult, String> {
     crate::services::accounts::create_child_account_cmd(
         &state, &parent_id, &name, description.as_deref(), owner_person_id.as_deref(),
-    )
+    ).await
 }
 
 #[tauri::command]
-pub fn create_team(
+pub async fn create_team(
     name: String,
     description: Option<String>,
     owner_person_id: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<CreateChildAccountResult, String> {
-    let root_id = {
-        let cfg = state
-            .config
-            .read()
-            .map_err(|_| "Lock poisoned")?
-            .clone()
-            .ok_or("Config not loaded")?;
-        if let Some(id) = cfg.internal_org_account_id {
-            id
-        } else {
-            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let cfg = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("Config not loaded")?;
+
+    let root_id = if let Some(id) = cfg.internal_org_account_id {
+        id
+    } else {
+        state.db_read(|db| {
             db.get_internal_root_account()
                 .map_err(|e| e.to_string())?
                 .map(|a| a.id)
-                .ok_or("No internal organization configured")?
-        }
+                .ok_or("No internal organization configured".to_string())
+        }).await?
     };
 
-    create_child_account(root_id, name, description, owner_person_id, state)
+    create_child_account(root_id, name, description, owner_person_id, state).await
 }
 
 #[tauri::command]
-pub fn backfill_internal_meeting_associations(
-    state: State<Arc<AppState>>,
+pub async fn backfill_internal_meeting_associations(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::backfill_internal_meeting_associations(db)
+    state.db_write(|db| {
+        crate::services::accounts::backfill_internal_meeting_associations(db)
+    }).await
 }
 
 // =============================================================================
@@ -3605,13 +3621,13 @@ pub fn backfill_internal_meeting_associations(
 
 /// Get indexed files for an entity.
 #[tauri::command]
-pub fn get_entity_files(
+pub async fn get_entity_files(
     entity_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbContentFile>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_entity_files(&entity_id).map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_entity_files(&entity_id).map_err(|e| e.to_string())
+    }).await
 }
 
 /// Re-scan an entity's directory and return the updated file list.
@@ -3619,56 +3635,55 @@ pub fn get_entity_files(
 /// Supports accounts, projects, and people. The `entity_type` parameter
 /// determines which lookup and sync path to use.
 #[tauri::command]
-pub fn index_entity_files(
+pub async fn index_entity_files(
     entity_type: String,
     entity_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbContentFile>, String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let workspace_path = config
+    let workspace_path = state.config.read().map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
         .clone();
-    let workspace = Path::new(&workspace_path);
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    match entity_type.as_str() {
-        "account" => {
-            let account = db
-                .get_account(&entity_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Account not found: {}", entity_id))?;
-            crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
+    let et = entity_type.clone();
+    let eid = entity_id.clone();
+    let wp = workspace_path.clone();
+    let files = state.db_write(move |db| {
+        let workspace = Path::new(&wp);
+        match et.as_str() {
+            "account" => {
+                let account = db
+                    .get_account(&eid)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("Account not found: {}", eid))?;
+                crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
+            }
+            "project" => {
+                let project = db
+                    .get_project(&eid)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("Project not found: {}", eid))?;
+                crate::projects::sync_content_index_for_project(workspace, db, &project)?;
+            }
+            "person" => {
+                let person = db
+                    .get_person(&eid)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| format!("Person not found: {}", eid))?;
+                let dir = if let Some(ref tp) = person.tracker_path {
+                    workspace.join(tp)
+                } else {
+                    crate::people::person_dir(workspace, &person.name)
+                };
+                crate::entity_io::sync_content_index_for_entity(
+                    db, workspace, &person.id, "person", &dir,
+                )?;
+            }
+            _ => return Err(format!("Unknown entity type: {}", et)),
         }
-        "project" => {
-            let project = db
-                .get_project(&entity_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Project not found: {}", entity_id))?;
-            crate::projects::sync_content_index_for_project(workspace, db, &project)?;
-        }
-        "person" => {
-            let person = db
-                .get_person(&entity_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Person not found: {}", entity_id))?;
-            let dir = if let Some(ref tp) = person.tracker_path {
-                workspace.join(tp)
-            } else {
-                crate::people::person_dir(workspace, &person.name)
-            };
-            crate::entity_io::sync_content_index_for_entity(
-                db, workspace, &person.id, "person", &dir,
-            )?;
-        }
-        _ => return Err(format!("Unknown entity type: {}", entity_type)),
-    }
-
-    let files = db.get_entity_files(&entity_id).map_err(|e| e.to_string())?;
-    drop(db_guard);
+        db.get_entity_files(&eid).map_err(|e| e.to_string())
+    }).await?;
 
     state
         .embedding_queue
@@ -3695,7 +3710,7 @@ pub fn index_entity_files(
 #[tauri::command]
 pub fn reveal_in_finder(
     path: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let canonical = std::fs::canonicalize(&path)
         .map_err(|e| format!("Invalid path: {}", e))?;
@@ -3920,53 +3935,56 @@ fn append_chat_exchange(
 }
 
 #[tauri::command]
-pub fn chat_search_content(
+pub async fn chat_search_content(
     entity_id: String,
     query: String,
     top_k: Option<usize>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::queries::search::ContentMatch>, String> {
-    let query = query.trim();
-    if query.is_empty() {
+    let query_str = query.trim().to_string();
+    if query_str.is_empty() {
         return Ok(Vec::new());
     }
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let matches = crate::queries::search::search_entity_content(
-        db,
-        Some(state.embedding_model.as_ref()),
-        &entity_id,
-        query,
-        top_k.unwrap_or(10).clamp(1, 50),
-        0.7,
-        0.3,
-    )?;
+    let embedding_model = state.embedding_model.clone();
+    let k = top_k.unwrap_or(10).clamp(1, 50);
+    state.db_write(move |db| {
+        let matches = crate::queries::search::search_entity_content(
+            db,
+            Some(embedding_model.as_ref()),
+            &entity_id,
+            &query_str,
+            k,
+            0.7,
+            0.3,
+        )?;
 
-    let session = ensure_open_chat_session(db, Some(&entity_id), None)?;
-    let response = serde_json::json!({
-        "entityId": entity_id,
-        "query": query,
-        "matches": matches,
-    });
-    append_chat_exchange(db, &session.id, query, &response)?;
+        let session = ensure_open_chat_session(db, Some(&entity_id), None)?;
+        let response = serde_json::json!({
+            "entityId": entity_id,
+            "query": query_str,
+            "matches": matches,
+        });
+        append_chat_exchange(db, &session.id, &query_str, &response)?;
 
-    Ok(matches)
+        Ok(matches)
+    }).await
 }
 
 #[tauri::command]
-pub fn chat_query_entity(
+pub async fn chat_query_entity(
     entity_id: String,
     question: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<serde_json::Value, String> {
-    let question = question.trim();
-    if question.is_empty() {
+    let question_str = question.trim().to_string();
+    if question_str.is_empty() {
         return Err("question is required".to_string());
     }
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let embedding_model = state.embedding_model.clone();
+    state.db_write(move |db| {
+        let question = question_str.as_str();
 
     let (entity_type, entity_name, facts, open_actions, recent_meetings) =
         if let Some(account) = db.get_account(&entity_id).map_err(|e| e.to_string())? {
@@ -4028,7 +4046,7 @@ pub fn chat_query_entity(
 
     let semantic_matches = crate::queries::search::search_entity_content(
         db,
-        Some(state.embedding_model.as_ref()),
+        Some(embedding_model.as_ref()),
         &entity_id,
         question,
         8,
@@ -4053,14 +4071,12 @@ pub fn chat_query_entity(
     append_chat_exchange(db, &session.id, question, &response)?;
 
     Ok(response)
+    }).await
 }
 
 #[tauri::command]
-pub fn chat_get_briefing(state: State<Arc<AppState>>) -> Result<serde_json::Value, String> {
-    let dashboard = get_dashboard_data(state.clone());
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let session = ensure_open_chat_session(db, None, None)?;
+pub async fn chat_get_briefing(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
+    let dashboard = crate::services::dashboard::get_dashboard_data(&state).await;
 
     let response = match dashboard {
         DashboardResult::Success {
@@ -4079,22 +4095,25 @@ pub fn chat_get_briefing(state: State<Arc<AppState>>) -> Result<serde_json::Valu
             "message": message,
         }),
     };
-    append_chat_exchange(db, &session.id, "get briefing", &response)?;
-    Ok(response)
+
+    state.db_write(move |db| {
+        let session = ensure_open_chat_session(db, None, None)?;
+        append_chat_exchange(db, &session.id, "get briefing", &response)?;
+        Ok(response)
+    }).await
 }
 
 #[tauri::command]
-pub fn chat_list_entities(
+pub async fn chat_list_entities(
     entity_type: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ChatEntityListItem>, String> {
     let requested = entity_type
         .as_deref()
         .map(|s| s.to_lowercase())
         .unwrap_or_else(|| "all".to_string());
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    state.db_write(move |db| {
 
     let mut items = Vec::new();
     if requested == "all" || requested == "account" || requested == "accounts" {
@@ -4142,6 +4161,7 @@ pub fn chat_list_entities(
     append_chat_exchange(db, &session.id, "list entities", &response)?;
 
     Ok(items)
+    }).await
 }
 
 // ── I74/I131: Entity Intelligence Enrichment via Claude Code ────────
@@ -4224,69 +4244,69 @@ pub struct ProjectChildSummary {
 
 /// Get all projects with computed summary fields for the list page.
 #[tauri::command]
-pub fn get_projects_list(state: State<Arc<AppState>>) -> Result<Vec<ProjectListItem>, String> {
-    crate::services::projects::get_projects_list(&state)
+pub async fn get_projects_list(state: State<'_, Arc<AppState>>) -> Result<Vec<ProjectListItem>, String> {
+    crate::services::projects::get_projects_list(&state).await
 }
 
 /// Get full detail for a project.
 #[tauri::command]
-pub fn get_project_detail(
+pub async fn get_project_detail(
     project_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<ProjectDetailResult, String> {
-    crate::services::projects::get_project_detail(&project_id, &state)
+    crate::services::projects::get_project_detail(&project_id, &state).await
 }
 
 /// Get child projects for a parent project (I388).
 #[tauri::command]
-pub fn get_child_projects_list(
+pub async fn get_child_projects_list(
     parent_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ProjectListItem>, String> {
-    crate::services::projects::get_child_projects_list(&parent_id, &state)
+    crate::services::projects::get_child_projects_list(&parent_id, &state).await
 }
 
 /// I388: Get ancestor projects for breadcrumb navigation.
 #[tauri::command]
-pub fn get_project_ancestors(
+pub async fn get_project_ancestors(
     project_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbProject>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_project_ancestors(&project_id)
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_project_ancestors(&project_id)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Create a new project.
 #[tauri::command]
-pub fn create_project(
+pub async fn create_project(
     name: String,
     parent_id: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::services::projects::create_project(&name, parent_id, &state)
+    crate::services::projects::create_project(&name, parent_id, &state).await
 }
 
 /// Update a single structured field on a project.
 #[tauri::command]
-pub fn update_project_field(
+pub async fn update_project_field(
     project_id: String,
     field: String,
     value: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::projects::update_project_field(&project_id, &field, &value, &state)
+    crate::services::projects::update_project_field(&project_id, &field, &value, &state).await
 }
 
 /// Update the notes field on a project.
 #[tauri::command]
-pub fn update_project_notes(
+pub async fn update_project_notes(
     project_id: String,
     notes: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::projects::update_project_notes(&project_id, &notes, &state)
+    crate::services::projects::update_project_notes(&project_id, &notes, &state).await
 }
 
 /// Enrich a project via Claude Code intelligence enrichment.
@@ -4302,9 +4322,9 @@ pub async fn enrich_project(
 
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::db_backup::backup_database(db)
+    state.db_read(|db| {
+        crate::db_backup::backup_database(db)
+    }).await
 }
 
 #[tauri::command]
@@ -4320,13 +4340,13 @@ pub async fn rebuild_database(
         )
     };
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::db_backup::rebuild_from_filesystem(
-        std::path::Path::new(&workspace_path),
-        db,
-        &user_domains,
-    )
+    state.db_write(move |db| {
+        crate::db_backup::rebuild_from_filesystem(
+            std::path::Path::new(&workspace_path),
+            db,
+            &user_domains,
+        )
+    }).await
 }
 
 /// Helper: create a default AccountJson from a DbAccount.
@@ -4337,7 +4357,7 @@ fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::Acco
 /// Get the latest hygiene scan report
 #[tauri::command]
 pub fn get_hygiene_report(
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneReport>, String> {
     let guard = state
         .hygiene.report
@@ -4349,7 +4369,7 @@ pub fn get_hygiene_report(
 /// Get a prose narrative summarizing the last hygiene scan.
 #[tauri::command]
 pub fn get_hygiene_narrative(
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneNarrativeView>, String> {
     let report = state
         .hygiene.report
@@ -4363,7 +4383,7 @@ pub fn get_hygiene_narrative(
 /// Get the current Intelligence Hygiene status view model.
 #[tauri::command]
 pub fn get_intelligence_hygiene_status(
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<HygieneStatusView, String> {
     let report = state
         .hygiene.report
@@ -4375,7 +4395,7 @@ pub fn get_intelligence_hygiene_status(
 
 /// Run a hygiene scan immediately and return the updated status.
 #[tauri::command]
-pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatusView, String> {
+pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneStatusView, String> {
     if state
         .hygiene.scan_running
         .compare_exchange(
@@ -4442,27 +4462,27 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
 
 /// Detect potential duplicate people (I172).
 #[tauri::command]
-pub fn get_duplicate_people(
-    state: State<Arc<AppState>>,
+pub async fn get_duplicate_people(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::hygiene::detect_duplicate_people(db)
+    state.db_read(|db| {
+        crate::hygiene::detect_duplicate_people(db)
+    }).await
 }
 
 /// Detect potential duplicate people for a specific person (I172).
 #[tauri::command]
-pub fn get_duplicate_people_for_person(
+pub async fn get_duplicate_people_for_person(
     person_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let dupes = crate::hygiene::detect_duplicate_people(db)?;
-    Ok(dupes
-        .into_iter()
-        .filter(|d| d.person1_id == person_id || d.person2_id == person_id)
-        .collect())
+    state.db_read(move |db| {
+        let dupes = crate::hygiene::detect_duplicate_people(db)?;
+        Ok(dupes
+            .into_iter()
+            .filter(|d| d.person1_id == person_id || d.person2_id == person_id)
+            .collect())
+    }).await
 }
 
 // =============================================================================
@@ -4471,93 +4491,96 @@ pub fn get_duplicate_people_for_person(
 
 /// Archive or unarchive an account. Cascades to children when archiving.
 #[tauri::command]
-pub fn archive_account(
+pub async fn archive_account(
     id: String,
     archived: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::archive_account(db, &state, &id, archived)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::archive_account(db, &app_state, &id, archived)
+    }).await
 }
 
 /// Merge source account into target account.
 #[tauri::command]
-pub fn merge_accounts(
+pub async fn merge_accounts(
     from_id: String,
     into_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<crate::db::MergeResult, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::merge_accounts(db, &state, &from_id, &into_id)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::merge_accounts(db, &app_state, &from_id, &into_id)
+    }).await
 }
 
 /// Archive or unarchive a project.
 #[tauri::command]
-pub fn archive_project(
+pub async fn archive_project(
     id: String,
     archived: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::projects::archive_project(db, &id, archived)
+    state.db_write(move |db| {
+        crate::services::projects::archive_project(db, &id, archived)
+    }).await
 }
 
 /// Archive or unarchive a person.
 #[tauri::command]
-pub fn archive_person(
+pub async fn archive_person(
     id: String,
     archived: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::archive_person(db, &state, &id, archived)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::people::archive_person(db, &app_state, &id, archived)
+    }).await
 }
 
 /// Get archived accounts.
 #[tauri::command]
-pub fn get_archived_accounts(
-    state: State<Arc<AppState>>,
+pub async fn get_archived_accounts(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccount>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_archived_accounts().map_err(|e| e.to_string())
+    state.db_read(|db| {
+        db.get_archived_accounts().map_err(|e| e.to_string())
+    }).await
 }
 
 /// Get archived projects.
 #[tauri::command]
-pub fn get_archived_projects(
-    state: State<Arc<AppState>>,
+pub async fn get_archived_projects(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbProject>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_archived_projects().map_err(|e| e.to_string())
+    state.db_read(|db| {
+        db.get_archived_projects().map_err(|e| e.to_string())
+    }).await
 }
 
 /// Get archived people with signals.
 #[tauri::command]
-pub fn get_archived_people(
-    state: State<Arc<AppState>>,
+pub async fn get_archived_people(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::PersonListItem>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_archived_people_with_signals()
-        .map_err(|e| e.to_string())
+    state.db_read(|db| {
+        db.get_archived_people_with_signals()
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 /// Restore an archived account with optional child restoration (I199).
 #[tauri::command]
-pub fn restore_account(
+pub async fn restore_account(
     account_id: String,
     restore_children: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::restore_account(db, &account_id, restore_children)
+    state.db_write(move |db| {
+        crate::services::accounts::restore_account(db, &account_id, restore_children)
+    }).await
 }
 
 // =============================================================================
@@ -4566,8 +4589,8 @@ pub fn restore_account(
 
 /// Set multiple user domains for multi-org meeting classification.
 #[tauri::command]
-pub fn set_user_domains(domains: String, state: State<Arc<AppState>>) -> Result<Config, String> {
-    crate::services::settings::set_user_domains(&domains, &state)
+pub async fn set_user_domains(domains: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
+    crate::services::settings::set_user_domains(&domains, &state).await
 }
 
 // =============================================================================
@@ -4576,40 +4599,36 @@ pub fn set_user_domains(domains: String, state: State<Arc<AppState>>) -> Result<
 
 /// Bulk-create accounts from a list of names. Returns created account IDs.
 #[tauri::command]
-pub fn bulk_create_accounts(
+pub async fn bulk_create_accounts(
     names: Vec<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let workspace_path = config
+    let workspace_path = state.config.read().map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
         .clone();
-    let workspace = Path::new(&workspace_path);
-    crate::services::accounts::bulk_create_accounts(db, workspace, &names)
+    state.db_write(move |db| {
+        let workspace = Path::new(&workspace_path);
+        crate::services::accounts::bulk_create_accounts(db, workspace, &names)
+    }).await
 }
 
 /// Bulk-create projects from a list of names. Returns created project IDs.
 #[tauri::command]
-pub fn bulk_create_projects(
+pub async fn bulk_create_projects(
     names: Vec<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let workspace_path = config
+    let workspace_path = state.config.read().map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
         .clone();
-    let workspace = Path::new(&workspace_path);
-    let created_ids = crate::services::projects::bulk_create_projects(db, workspace, &names)?;
-
-    Ok(created_ids)
+    state.db_write(move |db| {
+        let workspace = Path::new(&workspace_path);
+        crate::services::projects::bulk_create_projects(db, workspace, &names)
+    }).await
 }
 
 // =============================================================================
@@ -4618,31 +4637,32 @@ pub fn bulk_create_projects(
 
 /// Record an account lifecycle event (expansion, downsell, churn, etc.)
 #[tauri::command]
-pub fn record_account_event(
+pub async fn record_account_event(
     account_id: String,
     event_type: String,
     event_date: String,
     arr_impact: Option<f64>,
     notes: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<i64, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::accounts::record_account_event(
-        db, &state, &account_id, &event_type, &event_date, arr_impact, notes.as_deref(),
-    )
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::accounts::record_account_event(
+            db, &app_state, &account_id, &event_type, &event_date, arr_impact, notes.as_deref(),
+        )
+    }).await
 }
 
 /// Get account events for a given account.
 #[tauri::command]
-pub fn get_account_events(
+pub async fn get_account_events(
     account_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccountEvent>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_account_events(&account_id)
-        .map_err(|e| e.to_string())
+    state.db_read(move |db| {
+        db.get_account_events(&account_id)
+            .map_err(|e| e.to_string())
+    }).await
 }
 
 // =============================================================================
@@ -4858,15 +4878,18 @@ fn build_agenda_draft_result(
 
 /// Apply AI-suggested prep additions in append + dedupe mode.
 #[tauri::command]
-pub fn apply_meeting_prep_prefill(
+pub async fn apply_meeting_prep_prefill(
     meeting_id: String,
     agenda_items: Vec<String>,
     notes_append: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<ApplyPrepPrefillResult, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let result = apply_meeting_prep_prefill_inner(db, &meeting_id, &agenda_items, &notes_append)?;
+    let mid = meeting_id.clone();
+    let ai = agenda_items.clone();
+    let na = notes_append.clone();
+    let result = state.db_write(move |db| {
+        apply_meeting_prep_prefill_inner(db, &mid, &ai, &na)
+    }).await?;
 
     // Mirror write to active prep JSON (best-effort) for immediate UI coherence.
     if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
@@ -4907,10 +4930,10 @@ pub fn apply_meeting_prep_prefill(
 
 /// Generate a draft agenda message from current prep context.
 #[tauri::command]
-pub fn generate_meeting_agenda_message_draft(
+pub async fn generate_meeting_agenda_message_draft(
     meeting_id: String,
     context_hint: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<AgendaDraftResult, String> {
     let config = state
         .config
@@ -4918,50 +4941,53 @@ pub fn generate_meeting_agenda_message_draft(
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
+    let workspace_path = config.workspace_path.clone();
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let meeting = db
-        .get_meeting_intelligence_row(&meeting_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
-    let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+    state.db_read(move |db| {
+        let workspace = Path::new(&workspace_path);
+        let today_dir = workspace.join("_today");
+        let meeting = db
+            .get_meeting_intelligence_row(&meeting_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+        let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
 
-    Ok(build_agenda_draft_result(
-        &meeting,
-        prep.as_ref(),
-        context_hint.as_deref(),
-    ))
+        Ok(build_agenda_draft_result(
+            &meeting,
+            prep.as_ref(),
+            context_hint.as_deref(),
+        ))
+    }).await
 }
 
 /// Update user-authored agenda items on a meeting prep file.
 #[tauri::command]
-pub fn update_meeting_user_agenda(
+pub async fn update_meeting_user_agenda(
     meeting_id: String,
     agenda: Option<Vec<String>>,
     dismissed_topics: Option<Vec<String>>,
     hidden_attendees: Option<Vec<String>>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::meetings::update_meeting_user_agenda(
-        db, &state, &meeting_id, agenda, dismissed_topics, hidden_attendees,
-    )
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::meetings::update_meeting_user_agenda(
+            db, &app_state, &meeting_id, agenda, dismissed_topics, hidden_attendees,
+        )
+    }).await
 }
 
 /// Update user-authored notes on a meeting prep file.
 #[tauri::command]
-pub fn update_meeting_user_notes(
+pub async fn update_meeting_user_notes(
     meeting_id: String,
     notes: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::meetings::update_meeting_user_notes(db, &state, &meeting_id, &notes)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::meetings::update_meeting_user_notes(db, &app_state, &meeting_id, &notes)
+    }).await
 }
 
 /// Resolve the on-disk path for a meeting's prep JSON file.
@@ -5381,16 +5407,16 @@ mod tests {
 ///
 /// Returns (meetings_created, meetings_skipped, errors).
 #[tauri::command]
-pub fn backfill_historical_meetings(
-    state: State<Arc<AppState>>,
+pub async fn backfill_historical_meetings(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(usize, usize, Vec<String>), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let config = state.config.read().map_err(|_| "Config lock poisoned")?
+        .clone()
+        .ok_or("Config not initialized")?;
 
-    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
-    let config = config_guard.as_ref().ok_or("Config not initialized")?;
-
-    crate::backfill_meetings::backfill_historical_meetings(db, config)
+    state.db_write(move |db| {
+        crate::backfill_meetings::backfill_historical_meetings(db, &config)
+    }).await
 }
 
 // ==================== Risk Briefing ====================
@@ -5409,25 +5435,27 @@ pub async fn generate_risk_briefing(
 
 /// Read a cached risk briefing for an account (fast, no AI).
 #[tauri::command]
-pub fn get_risk_briefing(
-    state: State<Arc<AppState>>,
+pub async fn get_risk_briefing(
+    state: State<'_, Arc<AppState>>,
     account_id: String,
 ) -> Result<crate::types::RiskBriefing, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::intelligence::get_risk_briefing(db, &state, &account_id)
+    let app_state = state.inner().clone();
+    state.db_read(move |db| {
+        crate::services::intelligence::get_risk_briefing(db, &app_state, &account_id)
+    }).await
 }
 
 /// Save an edited risk briefing back to disk (user corrections).
 #[tauri::command]
-pub fn save_risk_briefing(
-    state: State<Arc<AppState>>,
+pub async fn save_risk_briefing(
+    state: State<'_, Arc<AppState>>,
     account_id: String,
     briefing: crate::types::RiskBriefing,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::intelligence::save_risk_briefing(db, &state, &account_id, &briefing)
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::intelligence::save_risk_briefing(db, &app_state, &account_id, &briefing)
+    }).await
 }
 
 // =============================================================================
@@ -5595,28 +5623,28 @@ pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPlug
 /// UserEdit entry (protecting the field from AI overwrite), and writes back
 /// to filesystem + SQLite cache.
 #[tauri::command]
-pub fn update_intelligence_field(
+pub async fn update_intelligence_field(
     entity_id: String,
     entity_type: String,
     field_path: String,
     value: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::intelligence::update_intelligence_field(&entity_id, &entity_type, &field_path, &value, &state)
+    crate::services::intelligence::update_intelligence_field(&entity_id, &entity_type, &field_path, &value, &state).await
 }
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
 #[tauri::command]
-pub fn update_stakeholders(
+pub async fn update_stakeholders(
     entity_id: String,
     entity_type: String,
     stakeholders_json: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let stakeholders: Vec<crate::intelligence::StakeholderInsight> =
         serde_json::from_str(&stakeholders_json)
             .map_err(|e| format!("Invalid stakeholders JSON: {}", e))?;
-    crate::services::intelligence::update_stakeholders(&entity_id, &entity_type, stakeholders, &state)
+    crate::services::intelligence::update_stakeholders(&entity_id, &entity_type, stakeholders, &state).await
 }
 
 /// Create a person entity from a stakeholder name (no email required).
@@ -5624,18 +5652,19 @@ pub fn update_stakeholders(
 /// Used when a stakeholder card references someone who doesn't yet exist as
 /// a person entity. Creates with empty email, links to the parent entity.
 #[tauri::command]
-pub fn create_person_from_stakeholder(
+pub async fn create_person_from_stakeholder(
     entity_id: String,
     entity_type: String,
     name: String,
     role: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::services::people::create_person_from_stakeholder(
-        db, &state, &entity_id, &entity_type, &name, role.as_deref(),
-    )
+    let app_state = state.inner().clone();
+    state.db_write(move |db| {
+        crate::services::people::create_person_from_stakeholder(
+            db, &app_state, &entity_id, &entity_type, &name, role.as_deref(),
+        )
+    }).await
 }
 
 // =============================================================================
@@ -5661,7 +5690,7 @@ pub struct QuillStatus {
 
 /// Get the current status of the Quill integration.
 #[tauri::command]
-pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
+pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
     let config = state
         .config
         .read()
@@ -5749,7 +5778,7 @@ pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
 #[tauri::command]
 pub fn set_quill_enabled(
     enabled: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.quill.enabled = enabled;
@@ -5767,27 +5796,27 @@ pub struct QuillBackfillResult {
 
 /// Create Quill sync rows for past meetings that never had transcript sync.
 #[tauri::command]
-pub fn start_quill_backfill(state: State<Arc<AppState>>) -> Result<QuillBackfillResult, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let ids = db
-        .get_backfill_eligible_meeting_ids(90)
-        .map_err(|e| e.to_string())?;
-    let eligible = ids.len();
-    let mut created = 0;
-    for id in &ids {
-        if crate::quill::sync::create_sync_for_meeting(db, id).is_ok() {
-            created += 1;
+pub async fn start_quill_backfill(state: State<'_, Arc<AppState>>) -> Result<QuillBackfillResult, String> {
+    state.db_write(|db| {
+        let ids = db
+            .get_backfill_eligible_meeting_ids(90)
+            .map_err(|e| e.to_string())?;
+        let eligible = ids.len();
+        let mut created = 0;
+        for id in &ids {
+            if crate::quill::sync::create_sync_for_meeting(db, id).is_ok() {
+                created += 1;
+            }
         }
-    }
-    Ok(QuillBackfillResult { created, eligible })
+        Ok(QuillBackfillResult { created, eligible })
+    }).await
 }
 
 /// Set the Quill poll interval (1–60 minutes).
 #[tauri::command]
 pub fn set_quill_poll_interval(
     minutes: u32,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     if !(1..=60).contains(&minutes) {
         return Err("Poll interval must be between 1 and 60 minutes".to_string());
@@ -5824,14 +5853,13 @@ pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bo
 /// Trigger Quill transcript sync for a single meeting.
 /// Creates a sync row if none exists, or resets a failed/stale one to pending.
 #[tauri::command]
-pub fn trigger_quill_sync_for_meeting(
+pub async fn trigger_quill_sync_for_meeting(
     meeting_id: String,
     force: Option<bool>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
     let force = force.unwrap_or(false);
+    state.db_write(move |db| {
 
     // Check if a sync row already exists
     match db.get_quill_sync_state(&meeting_id).map_err(|e| e.to_string())? {
@@ -5872,30 +5900,28 @@ pub fn trigger_quill_sync_for_meeting(
             Ok("created".to_string())
         }
     }
+    }).await
 }
 
 /// Get Quill sync states, optionally filtered by meeting ID.
 #[tauri::command]
-pub fn get_quill_sync_states(
+pub async fn get_quill_sync_states(
     meeting_id: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbQuillSyncState>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned".to_string())?;
-    let db = db_guard
-        .as_ref()
-        .ok_or_else(|| "Database not initialized".to_string())?;
-
-    match meeting_id {
-        Some(mid) => {
-            let row = db
-                .get_quill_sync_state(&mid)
-                .map_err(|e| e.to_string())?;
-            Ok(row.into_iter().collect())
+    state.db_read(move |db| {
+        match meeting_id {
+            Some(ref mid) => {
+                let row = db
+                    .get_quill_sync_state(mid)
+                    .map_err(|e| e.to_string())?;
+                Ok(row.into_iter().collect())
+            }
+            None => db
+                .get_pending_quill_syncs()
+                .map_err(|e| e.to_string()),
         }
-        None => db
-            .get_pending_quill_syncs()
-            .map_err(|e| e.to_string()),
-    }
+    }).await
 }
 
 // =============================================================================
@@ -5919,7 +5945,7 @@ pub struct GranolaStatus {
 
 /// Get the current status of the Granola integration.
 #[tauri::command]
-pub fn get_granola_status(state: State<Arc<AppState>>) -> GranolaStatus {
+pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<GranolaStatus, String> {
     let config = state
         .config
         .read()
@@ -5937,40 +5963,32 @@ pub fn get_granola_status(state: State<Arc<AppState>>) -> GranolaStatus {
     };
 
     // Count sync states from DB (source='granola')
-    let (pending, failed, completed, last_sync) = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().map(|db| {
-                let (failed_count, completed_count, last, pending_count) = db
-                    .conn_ref()
-                    .prepare(
-                        "SELECT
-                            SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
-                            SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
-                            MAX(completed_at),
-                            SUM(CASE WHEN state IN ('pending', 'polling', 'processing') THEN 1 ELSE 0 END)
-                         FROM quill_sync_state WHERE source = 'granola'",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.query_row([], |row| {
-                            Ok((
-                                row.get::<_, i64>(0).unwrap_or(0) as usize,
-                                row.get::<_, i64>(1).unwrap_or(0) as usize,
-                                row.get::<_, Option<String>>(2)?,
-                                row.get::<_, i64>(3).unwrap_or(0) as usize,
-                            ))
-                        })
-                    })
-                    .unwrap_or((0, 0, None, 0));
-
-                (pending_count, failed_count, completed_count, last)
+    let (pending, failed, completed, last_sync) = state.db_read(|db| {
+        let (failed_count, completed_count, last, pending_count) = db
+            .conn_ref()
+            .prepare(
+                "SELECT
+                    SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                    MAX(completed_at),
+                    SUM(CASE WHEN state IN ('pending', 'polling', 'processing') THEN 1 ELSE 0 END)
+                 FROM quill_sync_state WHERE source = 'granola'",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_row([], |row| {
+                    Ok((
+                        row.get::<_, i64>(0).unwrap_or(0) as usize,
+                        row.get::<_, i64>(1).unwrap_or(0) as usize,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, i64>(3).unwrap_or(0) as usize,
+                    ))
+                })
             })
-        })
-        .unwrap_or((0, 0, 0, None));
+            .unwrap_or((0, 0, None, 0));
+        Ok((pending_count, failed_count, completed_count, last))
+    }).await.unwrap_or((0, 0, 0, None));
 
-    GranolaStatus {
+    Ok(GranolaStatus {
         enabled: granola_config.enabled,
         cache_exists,
         cache_path: granola_config.cache_path,
@@ -5980,14 +5998,14 @@ pub fn get_granola_status(state: State<Arc<AppState>>) -> GranolaStatus {
         completed_syncs: completed,
         last_sync_at: last_sync,
         poll_interval_minutes: granola_config.poll_interval_minutes,
-    }
+    })
 }
 
 /// Enable or disable Granola integration.
 #[tauri::command]
 pub fn set_granola_enabled(
     enabled: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.granola.enabled = enabled;
@@ -5999,7 +6017,7 @@ pub fn set_granola_enabled(
 #[tauri::command]
 pub fn set_granola_poll_interval(
     minutes: u32,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     if !(1..=60).contains(&minutes) {
         return Err("Poll interval must be between 1 and 60 minutes".to_string());
@@ -6021,7 +6039,7 @@ pub struct GranolaBackfillResult {
 /// Create Granola sync rows for past meetings found in the cache.
 #[tauri::command]
 pub fn start_granola_backfill(
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<GranolaBackfillResult, String> {
     let (created, eligible) = crate::granola::poller::run_granola_backfill(&state)?;
     Ok(GranolaBackfillResult { created, eligible })
@@ -6029,7 +6047,7 @@ pub fn start_granola_backfill(
 
 /// Test whether the Granola cache file exists and is valid.
 #[tauri::command]
-pub fn test_granola_cache(state: State<Arc<AppState>>) -> Result<usize, String> {
+pub fn test_granola_cache(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     let cache_path = state
         .config
         .read()
@@ -6061,7 +6079,7 @@ pub struct GravatarStatus {
 
 /// Get Gravatar integration status.
 #[tauri::command]
-pub fn get_gravatar_status(state: State<Arc<AppState>>) -> GravatarStatus {
+pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
     let config = state
         .config
         .read()
@@ -6091,7 +6109,7 @@ pub fn get_gravatar_status(state: State<Arc<AppState>>) -> GravatarStatus {
 #[tauri::command]
 pub fn set_gravatar_enabled(
     enabled: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.gravatar.enabled = enabled;
@@ -6103,7 +6121,7 @@ pub fn set_gravatar_enabled(
 #[tauri::command]
 pub fn set_gravatar_api_key(
     key: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.gravatar.api_key = key.filter(|k| !k.is_empty());
@@ -6118,26 +6136,22 @@ pub async fn fetch_gravatar(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     // Look up person's email
-    let (email, api_key) = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        let email: String = db
-            .conn_ref()
+    let pid = person_id.clone();
+    let email = state.db_read(move |db| {
+        db.conn_ref()
             .query_row(
                 "SELECT email FROM person_emails WHERE person_id = ?1 AND is_primary = 1 LIMIT 1",
-                [&person_id],
-                |row| row.get(0),
+                [&pid],
+                |row| row.get::<_, String>(0),
             )
-            .map_err(|_| format!("No email found for person {}", person_id))?;
+            .map_err(|_| format!("No email found for person {}", pid))
+    }).await?;
 
-        let api_key = state
-            .config
-            .read()
-            .ok()
-            .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
-
-        (email, api_key)
-    };
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
 
     // Connect and fetch
     let client = crate::gravatar::client::GravatarClient::connect(api_key.as_deref())
@@ -6194,9 +6208,9 @@ pub async fn fetch_gravatar(
         person_id: Some(person_id),
     };
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry)?;
+    state.db_write(move |db| {
+        crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry)
+    }).await?;
 
     Ok(())
 }
@@ -6212,11 +6226,9 @@ pub async fn bulk_fetch_gravatars(
         .ok()
         .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
 
-    let emails_to_fetch: Vec<(String, Option<String>)> = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        crate::gravatar::cache::get_stale_emails(db.conn_ref(), 100)?
-    };
+    let emails_to_fetch: Vec<(String, Option<String>)> = state.db_read(|db| {
+        crate::gravatar::cache::get_stale_emails(db.conn_ref(), 100)
+    }).await?;
 
     if emails_to_fetch.is_empty() {
         return Ok(0);
@@ -6272,11 +6284,9 @@ pub async fn bulk_fetch_gravatars(
             person_id: person_id.clone(),
         };
 
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                let _ = crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry);
-            }
-        }
+        let _ = state.db_write(move |db| {
+            crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry)
+        }).await;
 
         fetched += 1;
         // Rate limit: 1 req/sec
@@ -6290,16 +6300,22 @@ pub async fn bulk_fetch_gravatars(
 /// Get avatar for a person as a data URL (base64-encoded PNG).
 /// Returns None if no cached avatar exists.
 #[tauri::command]
-pub fn get_person_avatar(
+pub async fn get_person_avatar(
     person_id: String,
-    state: State<Arc<AppState>>,
-) -> Option<String> {
-    let db_guard = state.db.lock().ok()?;
-    let db = db_guard.as_ref()?;
-    let path = crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)?;
-    let bytes = std::fs::read(&path).ok()?;
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<String>, String> {
+    let path = match state.db_read(move |db| {
+        Ok(crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id))
+    }).await {
+        Ok(Some(p)) => p,
+        _ => return Ok(None),
+    };
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return Ok(None),
+    };
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
-    Some(format!("data:image/png;base64,{}", b64))
+    Ok(Some(format!("data:image/png;base64,{}", b64)))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -6321,7 +6337,7 @@ pub struct ClayStatusData {
 
 /// Get Clay integration status.
 #[tauri::command]
-pub fn get_clay_status(state: State<Arc<AppState>>) -> ClayStatusData {
+pub async fn get_clay_status(state: State<'_, Arc<AppState>>) -> Result<ClayStatusData, String> {
     let config = state
         .config
         .read()
@@ -6330,42 +6346,20 @@ pub fn get_clay_status(state: State<Arc<AppState>>) -> ClayStatusData {
 
     let clay_config = config.unwrap_or_default();
 
-    let (enriched_count, pending_count, last_enrichment) = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().map(|db| {
-                let enriched: i64 = db
-                    .conn_ref()
-                    .query_row(
-                        "SELECT COUNT(*) FROM people WHERE last_enriched_at IS NOT NULL",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-                let pending: i64 = db
-                    .conn_ref()
-                    .query_row(
-                        "SELECT COUNT(*) FROM clay_sync_state WHERE state = 'pending'",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-                let last: Option<String> = db
-                    .conn_ref()
-                    .query_row(
-                        "SELECT MAX(last_enriched_at) FROM people",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(None);
-                (enriched, pending, last)
-            })
-        })
-        .unwrap_or((0, 0, None));
+    let (enriched_count, pending_count, last_enrichment) = state.db_read(|db| {
+        let enriched: i64 = db.conn_ref()
+            .query_row("SELECT COUNT(*) FROM people WHERE last_enriched_at IS NOT NULL", [], |row| row.get(0))
+            .unwrap_or(0);
+        let pending: i64 = db.conn_ref()
+            .query_row("SELECT COUNT(*) FROM clay_sync_state WHERE state = 'pending'", [], |row| row.get(0))
+            .unwrap_or(0);
+        let last: Option<String> = db.conn_ref()
+            .query_row("SELECT MAX(last_enriched_at) FROM people", [], |row| row.get(0))
+            .unwrap_or(None);
+        Ok((enriched, pending, last))
+    }).await.unwrap_or((0, 0, None));
 
-    ClayStatusData {
+    Ok(ClayStatusData {
         enabled: clay_config.enabled,
         api_key_set: clay_config.api_key.is_some(),
         auto_enrich_on_create: clay_config.auto_enrich_on_create,
@@ -6373,14 +6367,14 @@ pub fn get_clay_status(state: State<Arc<AppState>>) -> ClayStatusData {
         enriched_count,
         pending_count,
         last_enrichment_at: last_enrichment,
-    }
+    })
 }
 
 /// Enable or disable Clay integration.
 #[tauri::command]
 pub fn set_clay_enabled(
     enabled: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.clay.enabled = enabled;
@@ -6392,7 +6386,7 @@ pub fn set_clay_enabled(
 #[tauri::command]
 pub fn set_clay_api_key(
     key: Option<String>,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.clay.api_key = key.filter(|k| !k.is_empty());
@@ -6404,7 +6398,7 @@ pub fn set_clay_api_key(
 #[tauri::command]
 pub fn set_clay_auto_enrich(
     enabled: bool,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.clay.auto_enrich_on_create = enabled;
@@ -6537,41 +6531,35 @@ pub struct BulkEnrichResult {
 
 /// Start bulk Clay enrichment for all unenriched people.
 #[tauri::command]
-pub fn start_clay_bulk_enrich(
-    state: State<Arc<AppState>>,
+pub async fn start_clay_bulk_enrich(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<BulkEnrichResult, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let unenriched: Vec<String> = {
+    let total = state.db_write(|db| {
         let mut stmt = db
             .conn_ref()
             .prepare(
                 "SELECT id FROM people WHERE last_enriched_at IS NULL AND archived = 0",
             )
             .map_err(|e| e.to_string())?;
-        let rows: Vec<String> = stmt
+        let unenriched: Vec<String> = stmt
             .query_map([], |row| row.get(0))
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
-        rows
-    };
 
-    let total = unenriched.len();
-    let now = chrono::Utc::now().to_rfc3339();
+        let total = unenriched.len();
+        let now = chrono::Utc::now().to_rfc3339();
 
-    for person_id in &unenriched {
-        let id = uuid::Uuid::new_v4().to_string();
-        let _ = db.conn_ref().execute(
-            "INSERT OR IGNORE INTO clay_sync_state (id, entity_type, entity_id, state, created_at, updated_at)
-             VALUES (?1, 'person', ?2, 'pending', ?3, ?3)",
-            rusqlite::params![id, person_id, now],
-        );
-    }
-
-    // Drop the DB lock before signaling
-    drop(db_guard);
+        for person_id in &unenriched {
+            let id = uuid::Uuid::new_v4().to_string();
+            let _ = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO clay_sync_state (id, entity_type, entity_id, state, created_at, updated_at)
+                 VALUES (?1, 'person', ?2, 'pending', ?3, ?3)",
+                rusqlite::params![id, person_id, now],
+            );
+        }
+        Ok(total)
+    }).await?;
 
     // Wake the enrichment processor immediately to process queued items
     state.integrations.enrichment_wake.notify_one();
@@ -6598,42 +6586,41 @@ pub struct EnrichmentLogEntry {
 
 /// Get enrichment log entries for an entity.
 #[tauri::command]
-pub fn get_enrichment_log(
+pub async fn get_enrichment_log(
     entity_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<EnrichmentLogEntry>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    state.db_read(move |db| {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT id, entity_type, entity_id, source, event_type, signal_type, fields_updated, created_at
+                 FROM enrichment_log
+                 WHERE entity_id = ?1
+                 ORDER BY created_at DESC
+                 LIMIT 50",
+            )
+            .map_err(|e| e.to_string())?;
 
-    let mut stmt = db
-        .conn_ref()
-        .prepare(
-            "SELECT id, entity_type, entity_id, source, event_type, signal_type, fields_updated, created_at
-             FROM enrichment_log
-             WHERE entity_id = ?1
-             ORDER BY created_at DESC
-             LIMIT 50",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let entries = stmt
-        .query_map([&entity_id], |row| {
-            Ok(EnrichmentLogEntry {
-                id: row.get(0)?,
-                entity_type: row.get(1)?,
-                entity_id: row.get(2)?,
-                source: row.get(3)?,
-                event_type: row.get(4)?,
-                signal_type: row.get(5)?,
-                fields_updated: row.get(6)?,
-                created_at: row.get(7)?,
+        let entries = stmt
+            .query_map([&entity_id], |row| {
+                Ok(EnrichmentLogEntry {
+                    id: row.get(0)?,
+                    entity_type: row.get(1)?,
+                    entity_id: row.get(2)?,
+                    source: row.get(3)?,
+                    event_type: row.get(4)?,
+                    signal_type: row.get(5)?,
+                    fields_updated: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
             })
-        })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
 
-    Ok(entries)
+        Ok(entries)
+    }).await
 }
 
 // ---------------------------------------------------------------------------
@@ -6720,7 +6707,7 @@ pub async fn save_smithery_api_key(key: String) -> Result<(), String> {
 pub fn set_smithery_connection(
     namespace: String,
     connection_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let ns = if namespace.trim().is_empty() { None } else { Some(namespace) };
     let conn = if connection_id.trim().is_empty() { None } else { Some(connection_id) };
@@ -6733,7 +6720,7 @@ pub fn set_smithery_connection(
 
 /// Disconnect Smithery — remove keychain entry and clear config fields.
 #[tauri::command]
-pub fn disconnect_smithery(state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn disconnect_smithery(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::clay::oauth::delete_smithery_api_key()?;
     crate::state::create_or_update_config(&state, |config| {
         config.clay.smithery_namespace = None;
@@ -6744,7 +6731,7 @@ pub fn disconnect_smithery(state: State<Arc<AppState>>) -> Result<(), String> {
 
 /// Get Smithery connection status.
 #[tauri::command]
-pub fn get_smithery_status(state: State<Arc<AppState>>) -> serde_json::Value {
+pub fn get_smithery_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
     let has_api_key = crate::clay::oauth::get_smithery_api_key().is_some();
     let (namespace, connection_id) = state
         .config
@@ -6788,7 +6775,7 @@ pub struct LinearStatusData {
 
 /// Get Linear integration status.
 #[tauri::command]
-pub fn get_linear_status(state: State<Arc<AppState>>) -> LinearStatusData {
+pub fn get_linear_status(state: State<'_, Arc<AppState>>) -> LinearStatusData {
     let config = state
         .config
         .read()
@@ -6836,7 +6823,7 @@ pub fn get_linear_status(state: State<Arc<AppState>>) -> LinearStatusData {
 
 /// Enable or disable Linear integration.
 #[tauri::command]
-pub fn set_linear_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn set_linear_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.linear.enabled = enabled;
     })?;
@@ -6845,7 +6832,7 @@ pub fn set_linear_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result<
 
 /// Set or clear the Linear API key.
 #[tauri::command]
-pub fn set_linear_api_key(key: Option<String>, state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn set_linear_api_key(key: Option<String>, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.linear.api_key = key.filter(|k| !k.is_empty());
     })?;
@@ -6871,17 +6858,17 @@ pub async fn test_linear_connection(
 
 /// Trigger an immediate Linear sync.
 #[tauri::command]
-pub fn start_linear_sync(state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn start_linear_sync(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state.integrations.linear_poller_wake.notify_one();
     Ok(())
 }
 
 /// I425: Get the 5 most recently synced Linear issues.
 #[tauri::command]
-pub fn get_linear_recent_issues(
-    state: State<Arc<AppState>>,
+pub async fn get_linear_recent_issues(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    state.with_db_read(|db| {
+    state.db_read(|db| {
         let mut stmt = db.conn_ref().prepare(
             "SELECT id, identifier, title, state_name, state_type, priority_label, due_date, synced_at
              FROM linear_issues
@@ -6903,15 +6890,15 @@ pub fn get_linear_recent_issues(
         .filter_map(|r| r.ok())
         .collect();
         Ok(issues)
-    })
+    }).await
 }
 
 /// I425: Get all Linear entity links with project and entity names.
 #[tauri::command]
-pub fn get_linear_entity_links(
-    state: State<Arc<AppState>>,
+pub async fn get_linear_entity_links(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    state.with_db_read(|db| {
+    state.db_read(|db| {
         let mut stmt = db.conn_ref().prepare(
             "SELECT lel.id, lel.linear_project_id, lp.name as project_name,
                     lel.entity_id, lel.entity_type, lel.confirmed,
@@ -6938,15 +6925,15 @@ pub fn get_linear_entity_links(
         .filter_map(|r| r.ok())
         .collect();
         Ok(links)
-    })
+    }).await
 }
 
 /// I425: Auto-detect entity links by fuzzy-matching Linear project names to entity names.
 #[tauri::command]
-pub fn run_linear_auto_link(
-    state: State<Arc<AppState>>,
+pub async fn run_linear_auto_link(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
-    state.with_db_write(|db| {
+    state.db_write(|db| {
         let conn = db.conn_ref();
         let mut linked = 0usize;
 
@@ -7001,30 +6988,30 @@ pub fn run_linear_auto_link(
         }
 
         Ok(linked)
-    })
+    }).await
 }
 
 /// I425: Delete a Linear entity link.
 #[tauri::command]
-pub fn delete_linear_entity_link(
-    state: State<Arc<AppState>>,
+pub async fn delete_linear_entity_link(
+    state: State<'_, Arc<AppState>>,
     link_id: String,
 ) -> Result<(), String> {
-    state.with_db_write(|db| {
+    state.db_write(move |db| {
         db.conn_ref().execute(
             "DELETE FROM linear_entity_links WHERE id = ?1",
             [&link_id],
         ).map_err(|e| e.to_string())?;
         Ok(())
-    })
+    }).await
 }
 
 /// List all Linear projects for the manual link picker.
 #[tauri::command]
-pub fn get_linear_projects(
-    state: State<Arc<AppState>>,
+pub async fn get_linear_projects(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    state.with_db_read(|db| {
+    state.db_read(|db| {
         let mut stmt = db.conn_ref().prepare(
             "SELECT id, name FROM linear_projects ORDER BY name ASC"
         ).map_err(|e| e.to_string())?;
@@ -7037,13 +7024,13 @@ pub fn get_linear_projects(
         .filter_map(|r| r.ok())
         .collect();
         Ok(projects)
-    })
+    }).await
 }
 
 /// Manually create a Linear entity link.
 #[tauri::command]
-pub fn create_linear_entity_link(
-    state: State<Arc<AppState>>,
+pub async fn create_linear_entity_link(
+    state: State<'_, Arc<AppState>>,
     linear_project_id: String,
     entity_id: String,
     entity_type: String,
@@ -7051,14 +7038,14 @@ pub fn create_linear_entity_link(
     if !["account", "project"].contains(&entity_type.as_str()) {
         return Err("entity_type must be 'account' or 'project'".to_string());
     }
-    state.with_db_write(|db| {
+    state.db_write(move |db| {
         db.conn_ref().execute(
             "INSERT OR IGNORE INTO linear_entity_links (id, linear_project_id, entity_id, entity_type, confirmed)
              VALUES (lower(hex(randomblob(16))), ?1, ?2, ?3, 1)",
             rusqlite::params![linear_project_id, entity_id, entity_type],
         ).map_err(|e| e.to_string())?;
         Ok(())
-    })
+    }).await
 }
 
 // =============================================================================
@@ -7070,6 +7057,7 @@ pub fn create_linear_entity_link(
 pub async fn set_role(
     role: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     let preset = crate::presets::loader::load_preset(&role)?;
 
@@ -7084,6 +7072,7 @@ pub async fn set_role(
         *guard = Some(preset);
     }
 
+    let _ = app_handle.emit("config-updated", ());
     Ok("ok".to_string())
 }
 
@@ -7119,7 +7108,7 @@ pub async fn update_entity_metadata(
 ) -> Result<String, String> {
     serde_json::from_str::<serde_json::Value>(&metadata)
         .map_err(|e| format!("Invalid JSON metadata: {}", e))?;
-    state.with_db_write(|db| db.update_entity_metadata(&entity_type, &entity_id, &metadata))?;
+    state.db_write(move |db| db.update_entity_metadata(&entity_type, &entity_id, &metadata)).await?;
     Ok("ok".to_string())
 }
 
@@ -7130,7 +7119,7 @@ pub async fn get_entity_metadata(
     entity_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    state.with_db_read(|db| db.get_entity_metadata(&entity_type, &entity_id))
+    state.db_read(move |db| db.get_entity_metadata(&entity_type, &entity_id)).await
 }
 
 // =============================================================================
@@ -7154,7 +7143,7 @@ pub async fn correct_email_disposition(
         ));
     }
 
-    state.with_db_write(|db| {
+    state.db_write(move |db| {
         // Emit a feedback signal for recalibration
         let signal_text = format!(
             "User corrected auto-archived email to {}",
@@ -7181,7 +7170,7 @@ pub async fn correct_email_disposition(
             corrected_priority
         );
         Ok(format!("Disposition corrected to {}", corrected_priority))
-    })
+    }).await
 }
 
 // =============================================================================
@@ -7200,7 +7189,7 @@ pub async fn get_meeting_timeline(
     days_after: Option<i64>,
 ) -> Result<Vec<crate::types::TimelineMeeting>, String> {
     let days_after_val = days_after.unwrap_or(7);
-    let result = crate::services::meetings::get_meeting_timeline(&state, days_before, days_after)?;
+    let result = crate::services::meetings::get_meeting_timeline(&state, days_before, days_after).await?;
 
     // Check if we have any meetings AFTER today (i.e., tomorrow or later)
     let tomorrow_str = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
@@ -7209,10 +7198,9 @@ pub async fn get_meeting_timeline(
     let has_future = result.iter().any(|m| m.start_time.as_str() >= tomorrow_str.as_str());
     if has_future || days_after_val == 0 {
         // Enqueue future meetings that have no prep_frozen_json yet
-        let needs_prep: Vec<String> = {
-            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-            let db = db_guard.as_ref().ok_or("Database not initialized")?;
-            db.conn_ref()
+        let ts = tomorrow_str.clone();
+        let needs_prep: Vec<String> = state.db_read(move |db| {
+            Ok(db.conn_ref()
                 .prepare(
                     "SELECT id FROM meetings_history
                      WHERE start_time >= ?1
@@ -7220,13 +7208,13 @@ pub async fn get_meeting_timeline(
                        AND meeting_type NOT IN ('personal', 'focus', 'blocked')",
                 )
                 .and_then(|mut stmt| {
-                    let rows = stmt.query_map(rusqlite::params![tomorrow_str], |row| {
+                    let rows = stmt.query_map(rusqlite::params![ts], |row| {
                         row.get::<_, String>(0)
                     })?;
                     Ok(rows.filter_map(|r| r.ok()).collect())
                 })
-                .unwrap_or_default()
-        };
+                .unwrap_or_default())
+        }).await.unwrap_or_default();
         if !needs_prep.is_empty() {
             log::info!("get_meeting_timeline: enqueuing {} future meetings without prep", needs_prep.len());
             for mid in needs_prep {
@@ -7274,14 +7262,12 @@ pub async fn get_meeting_timeline(
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
         .unwrap_or_default();
-    let entity_hints = {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        crate::helpers::build_entity_hints(db)
-    };
+    let entity_hints = state.db_read(|db| {
+        Ok(crate::helpers::build_entity_hints(db))
+    }).await?;
 
-    let mut upserted = 0u32;
-    let mut upserted_ids: Vec<String> = Vec::new();
+    // Classify events first (no DB needed)
+    let mut to_upsert: Vec<(crate::types::CalendarEvent, Vec<crate::google_api::classify::ResolvedMeetingEntity>)> = Vec::new();
     for raw in &raw_events {
         let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &entity_hints);
         let event = cm.to_calendar_event();
@@ -7290,63 +7276,69 @@ pub async fn get_meeting_timeline(
         if matches!(event.meeting_type, crate::types::MeetingType::Personal) {
             continue;
         }
-        let meeting_type_str = event.meeting_type.as_str();
-
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-        // Only insert if not already present
-        if db.get_meeting_by_calendar_event_id(&event.id).ok().flatten().is_some() {
-            continue;
-        }
-
-        let attendees_json = if event.attendees.is_empty() {
-            None
-        } else {
-            Some(serde_json::to_string(&event.attendees).unwrap_or_default())
-        };
-
-        let db_meeting = crate::db::DbMeeting {
-            id: event.id.clone(),
-            title: event.title.clone(),
-            meeting_type: meeting_type_str.to_string(),
-            start_time: event.start.to_rfc3339(),
-            end_time: Some(event.end.to_rfc3339()),
-            attendees: attendees_json,
-            notes_path: None,
-            summary: None,
-            created_at: chrono::Utc::now().to_rfc3339(),
-            calendar_event_id: Some(event.id.clone()),
-            description: None,
-            prep_context_json: None,
-            user_agenda_json: None,
-            user_notes: None,
-            prep_frozen_json: None,
-            prep_frozen_at: None,
-            prep_snapshot_path: None,
-            prep_snapshot_hash: None,
-            transcript_path: None,
-            transcript_processed_at: None,
-            intelligence_state: None,
-            intelligence_quality: None,
-            last_enriched_at: None,
-            signal_count: None,
-            has_new_signals: None,
-            last_viewed_at: None,
-        };
-        if let Err(e) = db.upsert_meeting(&db_meeting) {
-            log::warn!("get_meeting_timeline: failed to upsert '{}': {}", event.title, e);
-            continue;
-        }
-
-        // Link resolved entities (same pattern as prepare_week)
-        for re in &cm.resolved_entities {
-            let _ = db.link_meeting_entity(&event.id, &re.entity_id, &re.entity_type);
-        }
-
-        upserted_ids.push(event.id.clone());
-        upserted += 1;
+        let resolved = cm.resolved_entities.clone();
+        to_upsert.push((event, resolved));
     }
+
+    // Batch upsert in a single DB write
+    let upserted_ids = state.db_write(move |db| {
+        let mut ids: Vec<String> = Vec::new();
+        for (event, resolved_entities) in &to_upsert {
+            // Only insert if not already present
+            if db.get_meeting_by_calendar_event_id(&event.id).ok().flatten().is_some() {
+                continue;
+            }
+
+            let attendees_json = if event.attendees.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(&event.attendees).unwrap_or_default())
+            };
+
+            let db_meeting = crate::db::DbMeeting {
+                id: event.id.clone(),
+                title: event.title.clone(),
+                meeting_type: event.meeting_type.as_str().to_string(),
+                start_time: event.start.to_rfc3339(),
+                end_time: Some(event.end.to_rfc3339()),
+                attendees: attendees_json,
+                notes_path: None,
+                summary: None,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                calendar_event_id: Some(event.id.clone()),
+                description: None,
+                prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
+                intelligence_state: None,
+                intelligence_quality: None,
+                last_enriched_at: None,
+                signal_count: None,
+                has_new_signals: None,
+                last_viewed_at: None,
+            };
+            if let Err(e) = db.upsert_meeting(&db_meeting) {
+                log::warn!("get_meeting_timeline: failed to upsert '{}': {}", event.title, e);
+                continue;
+            }
+
+            // Link resolved entities (same pattern as prepare_week)
+            for re in resolved_entities {
+                let _ = db.link_meeting_entity(&event.id, &re.entity_id, &re.entity_type);
+            }
+
+            ids.push(event.id.clone());
+        }
+        Ok(ids)
+    }).await?;
+
+    let upserted = upserted_ids.len() as u32;
 
     if upserted > 0 {
         log::info!("get_meeting_timeline: upserted {} future meetings from Google Calendar", upserted);
@@ -7364,7 +7356,7 @@ pub async fn get_meeting_timeline(
         }
 
         // Re-query with the newly upserted meetings
-        return crate::services::meetings::get_meeting_timeline(&state, days_before, days_after);
+        return crate::services::meetings::get_meeting_timeline(&state, days_before, days_after).await;
     }
 
     Ok(result)
@@ -7397,93 +7389,94 @@ fn default_rel_confidence() -> f64 { 0.8 }
 fn default_rel_source() -> String { "user_confirmed".to_string() }
 
 #[tauri::command]
-pub fn upsert_person_relationship(
-    state: State<Arc<AppState>>,
+pub async fn upsert_person_relationship(
+    state: State<'_, Arc<AppState>>,
     payload: RelationshipPayload,
 ) -> Result<String, String> {
     // Validate relationship type parses
     payload.relationship_type.parse::<crate::db::person_relationships::RelationshipType>()
         .map_err(|e| format!("Invalid relationship type: {}", e))?;
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    let id = payload.id.unwrap_or_else(|| format!("rel-{}", uuid::Uuid::new_v4()));
-    db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
-        id: &id,
-        from_person_id: &payload.from_person_id,
-        to_person_id: &payload.to_person_id,
-        relationship_type: &payload.relationship_type,
-        direction: &payload.direction,
-        confidence: payload.confidence,
-        context_entity_id: payload.context_entity_id.as_deref(),
-        context_entity_type: payload.context_entity_type.as_deref(),
-        source: &payload.source,
-    }).map_err(|e| format!("Failed to upsert relationship: {}", e))?;
+    let engine = state.signals.engine.clone();
+    state.db_write(move |db| {
+        let id = payload.id.unwrap_or_else(|| format!("rel-{}", uuid::Uuid::new_v4()));
+        db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+            id: &id,
+            from_person_id: &payload.from_person_id,
+            to_person_id: &payload.to_person_id,
+            relationship_type: &payload.relationship_type,
+            direction: &payload.direction,
+            confidence: payload.confidence,
+            context_entity_id: payload.context_entity_id.as_deref(),
+            context_entity_type: payload.context_entity_type.as_deref(),
+            source: &payload.source,
+        }).map_err(|e| format!("Failed to upsert relationship: {}", e))?;
 
-    // Emit signal to re-enqueue both persons in intel_queue
-    let _ = crate::services::signals::emit_and_propagate(
-        db, &state.signals.engine,
-        "person", &payload.from_person_id,
-        "relationship_graph_changed", "user_action",
-        Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.to_person_id)),
-        0.9,
-    );
-    let _ = crate::services::signals::emit_and_propagate(
-        db, &state.signals.engine,
-        "person", &payload.to_person_id,
-        "relationship_graph_changed", "user_action",
-        Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.from_person_id)),
-        0.9,
-    );
+        // Emit signal to re-enqueue both persons in intel_queue
+        let _ = crate::services::signals::emit_and_propagate(
+            db, &engine,
+            "person", &payload.from_person_id,
+            "relationship_graph_changed", "user_action",
+            Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.to_person_id)),
+            0.9,
+        );
+        let _ = crate::services::signals::emit_and_propagate(
+            db, &engine,
+            "person", &payload.to_person_id,
+            "relationship_graph_changed", "user_action",
+            Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.from_person_id)),
+            0.9,
+        );
 
-    Ok(id)
+        Ok(id)
+    }).await
 }
 
 #[tauri::command]
-pub fn delete_person_relationship(
-    state: State<Arc<AppState>>,
+pub async fn delete_person_relationship(
+    state: State<'_, Arc<AppState>>,
     id: String,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let engine = state.signals.engine.clone();
+    state.db_write(move |db| {
+        // Capture person IDs before deleting for signal emission
+        let person_ids = db.get_person_relationship_by_id(&id)
+            .map_err(|e| format!("Failed to look up relationship: {}", e))?;
 
-    // Capture person IDs before deleting for signal emission
-    let person_ids = db.get_person_relationship_by_id(&id)
-        .map_err(|e| format!("Failed to look up relationship: {}", e))?;
+        db.delete_person_relationship(&id)
+            .map_err(|e| format!("Failed to delete relationship: {}", e))?;
 
-    db.delete_person_relationship(&id)
-        .map_err(|e| format!("Failed to delete relationship: {}", e))?;
+        // Emit signals on both persons to re-enqueue for intel enrichment
+        if let Some((from_id, to_id)) = person_ids {
+            let _ = crate::services::signals::emit_and_propagate(
+                db, &engine,
+                "person", &from_id,
+                "relationship_graph_changed", "user_action",
+                Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
+                0.7,
+            );
+            let _ = crate::services::signals::emit_and_propagate(
+                db, &engine,
+                "person", &to_id,
+                "relationship_graph_changed", "user_action",
+                Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
+                0.7,
+            );
+        }
 
-    // Emit signals on both persons to re-enqueue for intel enrichment
-    if let Some((from_id, to_id)) = person_ids {
-        let _ = crate::services::signals::emit_and_propagate(
-            db, &state.signals.engine,
-            "person", &from_id,
-            "relationship_graph_changed", "user_action",
-            Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
-            0.7,
-        );
-        let _ = crate::services::signals::emit_and_propagate(
-            db, &state.signals.engine,
-            "person", &to_id,
-            "relationship_graph_changed", "user_action",
-            Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
-            0.7,
-        );
-    }
-
-    Ok(())
+        Ok(())
+    }).await
 }
 
 #[tauri::command]
-pub fn get_person_relationships(
-    state: State<Arc<AppState>>,
+pub async fn get_person_relationships(
+    state: State<'_, Arc<AppState>>,
     person_id: String,
 ) -> Result<Vec<crate::db::person_relationships::PersonRelationship>, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_relationships_for_person(&person_id)
-        .map_err(|e| format!("Failed to get relationships: {}", e))
+    state.db_read(move |db| {
+        db.get_relationships_for_person(&person_id)
+            .map_err(|e| format!("Failed to get relationships: {}", e))
+    }).await
 }
 
 // =========================================================================
@@ -7520,7 +7513,7 @@ pub fn get_google_client_id() -> String {
 
 /// Get Google Drive integration status.
 #[tauri::command]
-pub fn get_google_drive_status(state: State<Arc<AppState>>) -> crate::commands::DriveStatusData {
+pub async fn get_google_drive_status(state: State<'_, Arc<AppState>>) -> Result<crate::commands::DriveStatusData, String> {
     let config = state
         .config
         .read()
@@ -7536,52 +7529,27 @@ pub fn get_google_drive_status(state: State<Arc<AppState>>) -> crate::commands::
         .map(|guard| matches!(*guard, crate::types::GoogleAuthStatus::Authenticated { .. }))
         .unwrap_or(false);
 
-    let (watched_count, synced_count, last_sync) = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().map(|db| {
-                let conn = db.conn_ref();
-                let watched: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM drive_watched_sources",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-                let synced: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM drive_watched_sources WHERE last_synced_at IS NOT NULL",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-                let last: Option<String> = conn
-                    .query_row(
-                        "SELECT MAX(last_synced_at) FROM drive_watched_sources",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(None);
-                (watched, synced, last)
-            })
-        })
-        .unwrap_or((0, 0, None));
+    let (watched_count, synced_count, last_sync) = state.db_read(|db| {
+        let conn = db.conn_ref();
+        let watched: i64 = conn.query_row("SELECT COUNT(*) FROM drive_watched_sources", [], |row| row.get(0)).unwrap_or(0);
+        let synced: i64 = conn.query_row("SELECT COUNT(*) FROM drive_watched_sources WHERE last_synced_at IS NOT NULL", [], |row| row.get(0)).unwrap_or(0);
+        let last: Option<String> = conn.query_row("SELECT MAX(last_synced_at) FROM drive_watched_sources", [], |row| row.get(0)).unwrap_or(None);
+        Ok((watched, synced, last))
+    }).await.unwrap_or((0, 0, None));
 
-    crate::commands::DriveStatusData {
+    Ok(crate::commands::DriveStatusData {
         enabled: drive_config.enabled,
         connected,
         watched_count,
         synced_count,
         last_sync_at: last_sync,
         poll_interval_minutes: drive_config.poll_interval_minutes,
-    }
+    })
 }
 
 /// Enable or disable Google Drive integration.
 #[tauri::command]
-pub fn set_google_drive_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn set_google_drive_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.drive.enabled = enabled;
     })?;
@@ -7590,7 +7558,7 @@ pub fn set_google_drive_enabled(enabled: bool, state: State<Arc<AppState>>) -> R
 
 /// Trigger an immediate Drive sync.
 #[tauri::command]
-pub fn trigger_drive_sync_now(state: State<Arc<AppState>>) -> Result<(), String> {
+pub fn trigger_drive_sync_now(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state.integrations.drive_poller_wake.notify_one();
     Ok(())
 }
@@ -7630,27 +7598,26 @@ pub async fn import_google_drive_file(
 
 /// Add a watched Drive source linked to an entity.
 #[tauri::command]
-pub fn add_google_drive_watch(
+pub async fn add_google_drive_watch(
     google_id: String,
     name: String,
     file_type: String,
     google_doc_url: Option<String>,
     entity_id: String,
     entity_type: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database unavailable")?;
-
-    let watch_id = crate::google_drive::sync::upsert_watched_source(
-        db,
-        &google_id,
-        &name,
-        &file_type,
-        google_doc_url.as_deref(),
-        &entity_id,
-        &entity_type,
-    )?;
+    let watch_id = state.db_write(move |db| {
+        crate::google_drive::sync::upsert_watched_source(
+            db,
+            &google_id,
+            &name,
+            &file_type,
+            google_doc_url.as_deref(),
+            &entity_id,
+            &entity_type,
+        )
+    }).await?;
 
     // Wake the poller so it does an initial sync
     state.integrations.drive_poller_wake.notify_one();
@@ -7660,24 +7627,23 @@ pub fn add_google_drive_watch(
 
 /// Remove a watched Drive source.
 #[tauri::command]
-pub fn remove_google_drive_watch(
+pub async fn remove_google_drive_watch(
     watch_id: String,
-    state: State<Arc<AppState>>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database unavailable")?;
-    crate::google_drive::sync::remove_watched_source(db, &watch_id)
+    state.db_write(move |db| {
+        crate::google_drive::sync::remove_watched_source(db, &watch_id)
+    }).await
 }
 
 /// Get all watched Drive sources.
 #[tauri::command]
-pub fn get_google_drive_watches(
-    state: State<Arc<AppState>>,
+pub async fn get_google_drive_watches(
+    state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<DriveWatchData>, String> {
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database unavailable")?;
-
-    let sources = crate::google_drive::sync::get_all_watched_sources(db)?;
+    let sources = state.db_read(|db| {
+        crate::google_drive::sync::get_all_watched_sources(db)
+    }).await?;
     Ok(sources
         .into_iter()
         .map(|s| DriveWatchData {

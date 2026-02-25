@@ -129,6 +129,11 @@ pub struct AppState {
     pub config: RwLock<Option<Config>>,
     pub workflow: WorkflowState,
     pub db: Mutex<Option<crate::db::ActionDb>>,
+    /// Async database service with read/write separation. Initialized async
+    /// in Tauri setup after `AppState::new()`. Use `db_read()` / `db_write()`
+    /// helpers for new code; old code can continue using `with_db_read()` etc.
+    /// during incremental migration.
+    pub db_service: tokio::sync::OnceCell<crate::db_service::DbService>,
     /// User activity monitor for throttling background work (I426).
     pub activity: Arc<crate::activity::ActivityMonitor>,
     /// Calendar subsystem state (I404).
@@ -223,6 +228,7 @@ impl AppState {
                 last_scheduled_run: RwLock::new(HashMap::new()),
             },
             db: Mutex::new(db),
+            db_service: tokio::sync::OnceCell::new(),
             activity: Arc::new(crate::activity::ActivityMonitor::new()),
             calendar: CalendarState {
                 google_auth: Mutex::new(google_auth),
@@ -380,6 +386,56 @@ impl AppState {
             .as_ref()
             .ok_or_else(|| "Database unavailable".to_string())?;
         f(db)
+    }
+
+    // -------------------------------------------------------------------------
+    // Async DbService helpers — use these for new/migrated command handlers.
+    // -------------------------------------------------------------------------
+
+    /// Initialize the async DbService. Called once from Tauri setup.
+    pub async fn init_db_service(&self) -> Result<(), String> {
+        let svc = crate::db_service::DbService::open()
+            .await
+            .map_err(|e| format!("Failed to open DbService: {e}"))?;
+        self.db_service
+            .set(svc)
+            .map_err(|_| "DbService already initialized".to_string())
+    }
+
+    /// Run a read-only closure on a reader connection. Never blocks writes.
+    ///
+    /// The closure receives `&ActionDb` and runs on a dedicated OS thread —
+    /// it never blocks the Tokio runtime.
+    pub async fn db_read<T, F>(&self, f: F) -> Result<T, String>
+    where
+        F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
+        T: Send + 'static,
+    {
+        let svc = self.db_service.get().ok_or("DbService not initialized")?;
+        svc.reader()
+            .call(move |conn| {
+                let db = crate::db::ActionDb::from_conn(conn);
+                Ok(f(db))
+            })
+            .await
+            .map_err(|e| format!("DB read error: {e}"))?
+    }
+
+    /// Run a mutating closure on the writer connection. Serialized — only one
+    /// write runs at a time, preventing WAL contention.
+    pub async fn db_write<T, F>(&self, f: F) -> Result<T, String>
+    where
+        F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
+        T: Send + 'static,
+    {
+        let svc = self.db_service.get().ok_or("DbService not initialized")?;
+        svc.writer()
+            .call(move |conn| {
+                let db = crate::db::ActionDb::from_conn(conn);
+                Ok(f(db))
+            })
+            .await
+            .map_err(|e| format!("DB write error: {e}"))?
     }
 
     /// Save execution history to disk
