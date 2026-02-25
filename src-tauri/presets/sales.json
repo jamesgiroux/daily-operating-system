@@ -1,7 +1,7 @@
 {
   "id": "sales",
   "name": "Sales",
-  "description": "For account executives managing a pipeline of deals. Tracks deal value, pipeline stages, close dates, and buyer engagement to surface deal risks and coaching opportunities.",
+  "description": "For account executives managing a pipeline of deals. Tracks deal value, pipeline stages, close dates, and buyer engagement to flag deal risks and coaching opportunities.",
   "defaultEntityMode": "account",
   "vocabulary": {
     "entityNoun": "deal",
