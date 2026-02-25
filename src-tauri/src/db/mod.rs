@@ -39,6 +39,7 @@ pub fn is_dev_db_mode() -> bool {
 pub mod types;
 pub use types::*;
 
+#[repr(transparent)]
 pub struct ActionDb {
     conn: Connection,
 }
@@ -47,6 +48,17 @@ impl ActionDb {
     /// Borrow the underlying connection for ad-hoc queries.
     pub fn conn_ref(&self) -> &Connection {
         &self.conn
+    }
+
+    /// Create an `&ActionDb` from a borrowed `Connection`. Used inside
+    /// `tokio_rusqlite::Connection::call()` closures to access all existing
+    /// `ActionDb` methods without converting them to free functions.
+    ///
+    /// SAFETY: `ActionDb` is `#[repr(transparent)]` over `rusqlite::Connection`,
+    /// so `&Connection` and `&ActionDb` have identical memory layouts.
+    pub fn from_conn(conn: &Connection) -> &Self {
+        // SAFETY: repr(transparent) guarantees layout equivalence.
+        unsafe { &*(conn as *const Connection as *const Self) }
     }
 
     /// Execute a closure within a SQLite transaction.
@@ -92,6 +104,15 @@ impl ActionDb {
         // Enable WAL mode for better concurrent read performance
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
+        // Retry for up to 5s on SQLITE_BUSY instead of failing immediately.
+        // Without this, background tasks opening their own connections cause
+        // immediate failures when the main connection holds a write lock.
+        conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+
+        // NORMAL sync is safe with WAL — only fsyncs on checkpoint, not every commit.
+        // ~3x write throughput improvement over the default FULL.
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+
         // Run schema migrations (ADR-0071)
         crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
 
@@ -122,6 +143,7 @@ impl ActionDb {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
         Ok(Self { conn })
     }
 
@@ -130,6 +152,12 @@ impl ActionDb {
     /// When dev-mode DB isolation is active (`set_dev_db_mode(true)`), returns
     /// `~/.dailyos/dailyos-dev.db` instead. Migration logic only applies to the
     /// live path — the dev DB is always created fresh.
+    /// Public accessor for the resolved DB path. Used by `DbService` to open
+    /// connections at the same path as `ActionDb::open()`.
+    pub fn db_path_public() -> Result<PathBuf, DbError> {
+        Self::db_path()
+    }
+
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
         let dailyos_dir = home.join(".dailyos");

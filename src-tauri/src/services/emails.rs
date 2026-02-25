@@ -12,7 +12,7 @@ use crate::types::{
 ///
 /// Tries to load emails from the DB first (I368). If the DB has active emails,
 /// uses those. Otherwise falls back to JSON loading for first-run compatibility.
-pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String> {
+pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String> {
     let config = state
         .config
         .read()
@@ -25,8 +25,8 @@ pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String
 
     // Try DB first (I368), fall back to JSON if empty
     let db_emails: Vec<crate::db::DbEmail> =
-        match state.with_db_try_read(|db| db.get_all_active_emails()) {
-            crate::state::DbTryRead::Ok(Ok(rows)) if !rows.is_empty() => rows,
+        match state.db_read(|db| db.get_all_active_emails().map_err(|e| e.to_string())).await {
+            Ok(rows) if !rows.is_empty() => rows,
             _ => Vec::new(),
         };
 
@@ -36,23 +36,27 @@ pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String
             .iter()
             .filter_map(|e| e.entity_id.clone())
             .collect();
+        // Build email context map outside DB closure for the person account lookup
+        let email_context_map: HashMap<String, String> = entity_ids.iter()
+            .map(|eid| {
+                let context: String = db_emails.iter()
+                    .filter(|e| e.entity_id.as_deref() == Some(eid.as_str()))
+                    .filter_map(|e| e.contextual_summary.as_deref()
+                        .or(e.subject.as_deref()))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .to_lowercase();
+                (eid.clone(), context)
+            })
+            .collect();
+
         let entity_names: HashMap<String, String> =
-            match state.with_db_try_read(|db| -> HashMap<String, String> {
+            state.db_read(move |db| {
                 let mut map = HashMap::new();
-                for eid in &entity_ids {
+                for (eid, email_context) in &email_context_map {
                     // Look up entity name, and for persons also find linked account
                     if let Ok(Some(p)) = db.get_person(eid) {
-                        // Find the linked account most relevant to this email's context.
-                        // Person may be linked to many accounts — pick the one whose name
-                        // or keywords best match the email subject/summary.
-                        let email_context: String = db_emails.iter()
-                            .filter(|e| e.entity_id.as_deref() == Some(eid.as_str()))
-                            .filter_map(|e| e.contextual_summary.as_deref()
-                                .or(e.subject.as_deref()))
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                            .to_lowercase();
-                        let account_name = best_account_for_person(db, eid, &email_context);
+                        let account_name = best_account_for_person(db, eid, email_context);
                         let display = account_name.unwrap_or(p.name);
                         map.insert(eid.clone(), display);
                     } else if let Ok(Some(a)) = db.get_account(eid) {
@@ -61,11 +65,8 @@ pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String
                         map.insert(eid.clone(), p.name);
                     }
                 }
-                map
-            }) {
-                crate::state::DbTryRead::Ok(names) => names,
-                _ => HashMap::new(),
-            };
+                Ok(map)
+            }).await.unwrap_or_default();
 
         db_emails
             .iter()
@@ -129,10 +130,8 @@ pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String
     let email_ids: Vec<String> = emails.iter().map(|e| e.id.clone()).collect();
 
     // Batch-query signals from DB
-    let db_signals = match state.with_db_try_read(|db| db.list_email_signals_by_email_ids(&email_ids)) {
-        crate::state::DbTryRead::Ok(Ok(sigs)) => sigs,
-        _ => Vec::new(),
-    };
+    let email_ids_clone = email_ids.clone();
+    let db_signals = state.db_read(move |db| db.list_email_signals_by_email_ids(&email_ids_clone).map_err(|e| e.to_string())).await.unwrap_or_default();
 
     let has_enrichment = !db_signals.is_empty()
         || emails.iter().any(|e| e.summary.is_some());
@@ -195,24 +194,36 @@ pub fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, String
         entry.2.insert(sig.email_id.clone());
     }
 
-    // Resolve entity names from DB
+    // Batch-resolve entity names from DB
+    let entity_lookup_keys: Vec<(String, String)> = entity_map
+        .keys()
+        .map(|eid| {
+            let etype = entity_map.get(eid).map(|(et, _, _)| et.clone()).unwrap_or_default();
+            (eid.clone(), etype)
+        })
+        .collect();
+
+    let resolved_names: HashMap<String, String> = state.db_read(move |db| {
+        let mut map = HashMap::new();
+        for (eid, etype) in &entity_lookup_keys {
+            let name = if etype == "account" {
+                db.get_account(eid).ok().flatten().map(|a| a.name)
+            } else {
+                db.get_project(eid).ok().flatten().map(|p| p.name)
+            };
+            if let Some(n) = name {
+                map.insert(eid.clone(), n);
+            }
+        }
+        Ok(map)
+    }).await.unwrap_or_default();
+
     let entity_threads: Vec<EntityEmailThread> = entity_map
         .into_iter()
         .map(|(entity_id, (entity_type, signals, email_set))| {
-            let entity_name: String = {
-                let eid = entity_id.clone();
-                let etype = entity_type.clone();
-                match state.with_db_try_read(|db| -> Result<String, crate::db::DbError> {
-                    if &etype == "account" {
-                        Ok(db.get_account(&eid)?.map(|a| a.name).unwrap_or_else(|| eid.clone()))
-                    } else {
-                        Ok(db.get_project(&eid)?.map(|p| p.name).unwrap_or_else(|| eid.clone()))
-                    }
-                }) {
-                    crate::state::DbTryRead::Ok(Ok(name)) => name,
-                    _ => entity_id.clone(),
-                }
-            };
+            let entity_name = resolved_names.get(&entity_id)
+                .cloned()
+                .unwrap_or_else(|| entity_id.clone());
 
             // Build editorial signal summary as a prose sentence
             let signal_summary =
