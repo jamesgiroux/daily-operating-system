@@ -214,7 +214,7 @@ pub fn load_meeting_prep_from_sources(
 
 /// Update a meeting entity with full cascade: clear existing links, set new one,
 /// cascade to actions/captures/people, invalidate prep, queue intelligence refresh.
-pub fn update_meeting_entity(
+pub async fn update_meeting_entity(
     state: &AppState,
     meeting_id: &str,
     entity_id: Option<&str>,
@@ -223,107 +223,109 @@ pub fn update_meeting_entity(
     start_time: &str,
     meeting_type_str: &str,
 ) -> Result<(), String> {
-    // Collect old entity IDs before modifying (for intelligence queue)
-    let old_entity_ids: Vec<(String, String)>;
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.map(|s| s.to_string());
+    let entity_type_s = entity_type.to_string();
+    let meeting_title_s = meeting_title.to_string();
+    let start_time_s = start_time.to_string();
+    let meeting_type_str_s = meeting_type_str.to_string();
 
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    // First DB write: main cascade
+    let old_entity_ids = state.db_write({
+        let meeting_id = meeting_id_s.clone();
+        let entity_id = entity_id_s.clone();
+        let entity_type = entity_type_s.clone();
+        let meeting_title = meeting_title_s.clone();
+        let start_time = start_time_s.clone();
+        let meeting_type_str = meeting_type_str_s.clone();
+        move |db| {
+            let old_entity_ids: Vec<(String, String)> = db
+                .get_meeting_entities(&meeting_id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|e| (e.id, e.entity_type.as_str().to_string()))
+                .collect();
 
-        old_entity_ids = db
-            .get_meeting_entities(meeting_id)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|e| (e.id, e.entity_type.as_str().to_string()))
-            .collect();
-
-        // Ensure meeting exists without clobbering existing metadata.
-        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-            id: meeting_id,
-            title: meeting_title,
-            meeting_type: meeting_type_str,
-            start_time,
-            end_time: None,
-            calendar_event_id: None,
-            attendees: None,
-            description: None,
-        })
-        .map_err(|e| e.to_string())?;
-
-        // Clear all existing entity links
-        db.clear_meeting_entities(meeting_id)
+            db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+                id: &meeting_id,
+                title: &meeting_title,
+                meeting_type: &meeting_type_str,
+                start_time: &start_time,
+                end_time: None,
+                calendar_event_id: None,
+                attendees: None,
+                description: None,
+            })
             .map_err(|e| e.to_string())?;
 
-        // Determine account_id and project_id for cascade
-        let (cascade_account, cascade_project) = match entity_type {
-            "account" => (entity_id, None),
-            "project" => (None, entity_id),
-            _ => (entity_id, None),
-        };
-
-        // Link new entity if provided
-        if let Some(eid) = entity_id {
-            db.link_meeting_entity(meeting_id, eid, entity_type)
+            db.clear_meeting_entities(&meeting_id)
                 .map_err(|e| e.to_string())?;
+
+            let (cascade_account, cascade_project) = match entity_type.as_str() {
+                "account" => (entity_id.as_deref(), None),
+                "project" => (None, entity_id.as_deref()),
+                _ => (entity_id.as_deref(), None),
+            };
+
+            if let Some(ref eid) = entity_id {
+                db.link_meeting_entity(&meeting_id, eid, &entity_type)
+                    .map_err(|e| e.to_string())?;
+            }
+
+            db.cascade_meeting_entity_to_actions(&meeting_id, cascade_account, cascade_project)
+                .map_err(|e| e.to_string())?;
+            db.cascade_meeting_entity_to_captures(&meeting_id, cascade_account, cascade_project)
+                .map_err(|e| e.to_string())?;
+            db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
+                .map_err(|e| e.to_string())?;
+
+            if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
+                let _ = std::fs::remove_file(&old_path);
+            }
+
+            Ok(old_entity_ids)
         }
+    }).await?;
 
-        // Cascade to actions and captures
-        db.cascade_meeting_entity_to_actions(meeting_id, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-        db.cascade_meeting_entity_to_captures(meeting_id, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-
-        // Cascade to people: link external attendees to the entity (I184)
-        db.cascade_meeting_entity_to_people(meeting_id, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-
-        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
-        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(meeting_id) {
-            let _ = std::fs::remove_file(&old_path);
-        }
-    }
-    // DB lock released
-
-    // I307: Record correction for learning when user changes entity assignment
-    if !old_entity_ids.is_empty() {
-        if let Some(new_id) = entity_id {
-            let differs = old_entity_ids.iter().all(|(id, _)| id != new_id);
-            if differs {
-                if let Ok(db_guard) = state.db.lock() {
-                    if let Some(db) = db_guard.as_ref() {
+    // Second DB write: correction recording + keyword extraction
+    let _ = state.db_write({
+        let meeting_id = meeting_id_s.clone();
+        let entity_id = entity_id_s.clone();
+        let entity_type = entity_type_s.clone();
+        let meeting_title = meeting_title_s.clone();
+        let old_ids = old_entity_ids.clone();
+        move |db| {
+            if !old_ids.is_empty() {
+                if let Some(ref new_id) = entity_id {
+                    let differs = old_ids.iter().all(|(id, _)| id != new_id);
+                    if differs {
                         let _ = crate::signals::feedback::record_correction(
-                            db, meeting_id, &old_entity_ids, new_id, entity_type,
+                            db, &meeting_id, &old_ids, new_id, &entity_type,
                         );
                     }
                 }
             }
-        }
-    }
-
-    // I307: Auto-extract title keywords for the corrected entity.
-    if let Some(new_id) = entity_id {
-        if entity_type == "account" || entity_type == "project" {
-            if let Ok(db_guard) = state.db.lock() {
-                if let Some(db) = db_guard.as_ref() {
+            if let Some(ref new_id) = entity_id {
+                if entity_type == "account" || entity_type == "project" {
                     let _ = crate::services::entities::auto_extract_title_keywords(
-                        db, new_id, entity_type, meeting_title,
+                        db, new_id, &entity_type, &meeting_title,
                     );
                 }
             }
+            Ok(())
         }
-    }
+    }).await;
 
     // I305: Queue prep regeneration
     if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
-        queue.push(meeting_id.to_string());
+        queue.push(meeting_id_s.clone());
     }
 
     // Queue intelligence refresh for old and new entities
     let mut entities_to_refresh: Vec<(String, String)> = old_entity_ids;
-    if let Some(eid) = entity_id {
-        entities_to_refresh.push((eid.to_string(), entity_type.to_string()));
+    if let Some(eid) = entity_id_s {
+        entities_to_refresh.push((eid, entity_type_s));
     }
-    // Dedup
     entities_to_refresh.sort();
     entities_to_refresh.dedup();
     for (eid, etype) in entities_to_refresh {
@@ -341,7 +343,7 @@ pub fn update_meeting_entity(
 
 /// Add an entity link to a meeting with full cascade (people, intelligence).
 /// Unlike `update_meeting_entity` which clears-and-replaces, this is additive.
-pub fn add_meeting_entity(
+pub async fn add_meeting_entity(
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
@@ -350,16 +352,19 @@ pub fn add_meeting_entity(
     start_time: &str,
     meeting_type_str: &str,
 ) -> Result<(), String> {
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    let entity_type_s = entity_type.to_string();
+    let meeting_title_s = meeting_title.to_string();
+    let start_time_s = start_time.to_string();
+    let meeting_type_str_s = meeting_type_str.to_string();
 
-        // Ensure meeting exists without clobbering existing metadata.
+    state.db_write(move |db| {
         db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-            id: meeting_id,
-            title: meeting_title,
-            meeting_type: meeting_type_str,
-            start_time,
+            id: &meeting_id_s,
+            title: &meeting_title_s,
+            meeting_type: &meeting_type_str_s,
+            start_time: &start_time_s,
             end_time: None,
             calendar_event_id: None,
             attendees: None,
@@ -367,32 +372,27 @@ pub fn add_meeting_entity(
         })
         .map_err(|e| e.to_string())?;
 
-        // Add entity link (idempotent)
-        db.link_meeting_entity(meeting_id, entity_id, entity_type)
+        db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
             .map_err(|e| e.to_string())?;
 
-        // Cascade people to this entity
-        let (cascade_account, cascade_project) = match entity_type {
-            "account" => (Some(entity_id), None),
-            "project" => (None, Some(entity_id)),
-            _ => (Some(entity_id), None),
+        let (cascade_account, cascade_project) = match entity_type_s.as_str() {
+            "account" => (Some(entity_id_s.as_str()), None),
+            "project" => (None, Some(entity_id_s.as_str())),
+            _ => (Some(entity_id_s.as_str()), None),
         };
-        db.cascade_meeting_entity_to_people(meeting_id, cascade_account, cascade_project)
+        db.cascade_meeting_entity_to_people(&meeting_id_s, cascade_account, cascade_project)
             .map_err(|e| e.to_string())?;
 
-        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
-        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(meeting_id) {
+        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id_s) {
             let _ = std::fs::remove_file(&old_path);
         }
-    }
-    // DB lock released
+        Ok(())
+    }).await?;
 
-    // I305: Queue prep regeneration
     if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
         queue.push(meeting_id.to_string());
     }
 
-    // Queue intelligence refresh
     state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
         entity_id: entity_id.to_string(),
         entity_type: entity_type.to_string(),
@@ -405,40 +405,37 @@ pub fn add_meeting_entity(
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
-pub fn remove_meeting_entity(
+pub async fn remove_meeting_entity(
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    let entity_type_s = entity_type.to_string();
 
-        // I307: Record removal as correction for learning
-        let _ = crate::signals::feedback::record_removal(
-            db, meeting_id, entity_id, entity_type,
-        );
-
-        db.unlink_meeting_entity(meeting_id, entity_id)
-            .map_err(|e| e.to_string())?;
-
-        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
-        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(meeting_id) {
-            let _ = std::fs::remove_file(&old_path);
+    state.db_write({
+        let meeting_id = meeting_id_s.clone();
+        let entity_id = entity_id_s.clone();
+        let entity_type = entity_type_s.clone();
+        move |db| {
+            let _ = crate::signals::feedback::record_removal(db, &meeting_id, &entity_id, &entity_type);
+            db.unlink_meeting_entity(&meeting_id, &entity_id).map_err(|e| e.to_string())?;
+            if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
+                let _ = std::fs::remove_file(&old_path);
+            }
+            Ok(())
         }
-    }
-    // DB lock released
+    }).await?;
 
-    // I305: Queue prep regeneration
     if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
-        queue.push(meeting_id.to_string());
+        queue.push(meeting_id_s);
     }
 
-    // Queue intelligence refresh for removed entity
     state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id: entity_id.to_string(),
-        entity_type: entity_type.to_string(),
+        entity_id: entity_id_s,
+        entity_type: entity_type_s,
         priority: crate::intel_queue::IntelPriority::CalendarChange,
         requested_at: std::time::Instant::now(),
     });
@@ -450,12 +447,13 @@ pub fn remove_meeting_entity(
 /// Get full detail for a single past meeting by ID.
 ///
 /// Assembles the meeting row, its captures, actions, and resolves the account name.
-pub fn get_meeting_history_detail(
+pub async fn get_meeting_history_detail(
     meeting_id: &str,
     state: &AppState,
 ) -> Result<MeetingHistoryDetail, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting_id = meeting_id.to_string();
+    state.db_read(move |db| {
+    let meeting_id = meeting_id.as_str();
 
     let meeting = db
         .get_meeting_by_id(meeting_id)
@@ -511,10 +509,11 @@ pub fn get_meeting_history_detail(
         actions,
         prep_context,
     })
+    }).await
 }
 
 /// Search meetings by title, summary, or prep context (I183).
-pub fn search_meetings(
+pub async fn search_meetings(
     query: &str,
     state: &AppState,
 ) -> Result<Vec<MeetingSearchResult>, String> {
@@ -522,10 +521,10 @@ pub fn search_meetings(
         return Ok(Vec::new());
     }
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let query = query.to_string();
+    state.db_read(move |db| {
 
-    let pattern = format!("%{}%", query.trim());
+    let pattern = format!("%{}%", query.as_str().trim());
     let mut stmt = db
         .conn_ref()
         .prepare(
@@ -587,10 +586,11 @@ pub fn search_meetings(
     }
 
     Ok(results)
+    }).await
 }
 
 /// Capture meeting outcomes (actions, wins, risks) from post-meeting capture UI.
-pub fn capture_meeting_outcome(
+pub async fn capture_meeting_outcome(
     outcome: &CapturedOutcome,
     state: &AppState,
 ) -> Result<(), String> {
@@ -608,12 +608,10 @@ pub fn capture_meeting_outcome(
         guard.insert(outcome.meeting_id.clone());
     }
 
-    // Persist actions to SQLite
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-
-    if let Some(db) = db_ref {
-        for action in &outcome.actions {
+    // Persist actions and captures to SQLite
+    let outcome_clone = outcome.clone();
+    let _ = state.db_write(move |db| {
+        for action in &outcome_clone.actions {
             let now = chrono::Utc::now().to_rfc3339();
             let db_action = crate::db::DbAction {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -623,11 +621,11 @@ pub fn capture_meeting_outcome(
                 created_at: now.clone(),
                 due_date: action.due_date.clone(),
                 completed_at: None,
-                account_id: outcome.account.clone(),
+                account_id: outcome_clone.account.clone(),
                 project_id: None,
                 source_type: Some("post_meeting".to_string()),
-                source_id: Some(outcome.meeting_id.clone()),
-                source_label: Some(outcome.meeting_title.clone()),
+                source_id: Some(outcome_clone.meeting_id.clone()),
+                source_label: Some(outcome_clone.meeting_title.clone()),
                 context: action.owner.clone(),
                 waiting_on: None,
                 updated_at: now,
@@ -640,29 +638,27 @@ pub fn capture_meeting_outcome(
                 log::warn!("Failed to save captured action: {}", e);
             }
         }
-    }
 
-    // Persist captures (wins + risks) to SQLite captures table
-    if let Some(db) = db_ref {
-        for win in &outcome.wins {
+        for win in &outcome_clone.wins {
             let _ = db.insert_capture(
-                &outcome.meeting_id,
-                &outcome.meeting_title,
-                outcome.account.as_deref(),
+                &outcome_clone.meeting_id,
+                &outcome_clone.meeting_title,
+                outcome_clone.account.as_deref(),
                 "win",
                 win,
             );
         }
-        for risk in &outcome.risks {
+        for risk in &outcome_clone.risks {
             let _ = db.insert_capture(
-                &outcome.meeting_id,
-                &outcome.meeting_title,
-                outcome.account.as_deref(),
+                &outcome_clone.meeting_id,
+                &outcome_clone.meeting_title,
+                outcome_clone.account.as_deref(),
                 "risk",
                 risk,
             );
         }
-    }
+        Ok(())
+    }).await;
 
     // Append wins to impact log
     let impact_log = workspace.join("_today").join("90-impact-log.md");
@@ -691,7 +687,7 @@ pub fn capture_meeting_outcome(
 }
 
 /// Get meeting timeline for the week view (past + upcoming meetings with intelligence quality).
-pub fn get_meeting_timeline(
+pub async fn get_meeting_timeline(
     state: &AppState,
     days_before: Option<i64>,
     days_after: Option<i64>,
@@ -706,8 +702,7 @@ pub fn get_meeting_timeline(
     let start_str = range_start.format("%Y-%m-%d").to_string();
     let end_str = format!("{}T23:59:59", range_end.format("%Y-%m-%d"));
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    state.db_read(move |db| {
     let conn = db.conn_ref();
 
     // Query meetings in the date range
@@ -868,6 +863,7 @@ pub fn get_meeting_timeline(
     }
 
     Ok(result)
+    }).await
 }
 
 /// Find the most recent past meeting that shares at least one entity with the current meeting.
@@ -991,7 +987,7 @@ pub fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path
 }
 
 /// Get full meeting intelligence for the detail page.
-pub fn get_meeting_intelligence(
+pub async fn get_meeting_intelligence(
     state: &AppState,
     meeting_id: &str,
 ) -> Result<MeetingIntelligence, String> {
@@ -1001,11 +997,12 @@ pub fn get_meeting_intelligence(
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
+
+    let meeting_id = meeting_id.to_string();
+    state.db_write(move |db| {
     let workspace = Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
-
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting_id = meeting_id.as_str();
 
     let meeting = if let Some(row) = db
         .get_meeting_intelligence_row(meeting_id)
@@ -1105,25 +1102,28 @@ pub fn get_meeting_intelligence(
         transcript_processed_at,
         intelligence_quality,
     })
+    }).await
 }
 
 /// Link meeting entity: DB link, clear prep, enqueue re-assembly.
-pub fn link_meeting_entity_with_prep_queue(
+pub async fn link_meeting_entity_with_prep_queue(
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        db.link_meeting_entity(meeting_id, entity_id, entity_type)
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    let entity_type_s = entity_type.to_string();
+    state.db_write(move |db| {
+        db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
             .map_err(|e| e.to_string())?;
         let _ = db.conn_ref().execute(
             "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
-            rusqlite::params![meeting_id],
+            rusqlite::params![meeting_id_s],
         );
-    }
+        Ok(())
+    }).await?;
     state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
         meeting_id: meeting_id.to_string(),
         priority: crate::meeting_prep_queue::PrepPriority::Manual,
@@ -1138,21 +1138,22 @@ pub fn link_meeting_entity_with_prep_queue(
 }
 
 /// Unlink meeting entity: DB unlink, clear prep, enqueue re-assembly.
-pub fn unlink_meeting_entity_with_prep_queue(
+pub async fn unlink_meeting_entity_with_prep_queue(
     state: &AppState,
     meeting_id: &str,
     entity_id: &str,
 ) -> Result<(), String> {
-    {
-        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        db.unlink_meeting_entity(meeting_id, entity_id)
+    let meeting_id_s = meeting_id.to_string();
+    let entity_id_s = entity_id.to_string();
+    state.db_write(move |db| {
+        db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
             .map_err(|e| e.to_string())?;
         let _ = db.conn_ref().execute(
             "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
-            rusqlite::params![meeting_id],
+            rusqlite::params![meeting_id_s],
         );
-    }
+        Ok(())
+    }).await?;
     state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
         meeting_id: meeting_id.to_string(),
         priority: crate::meeting_prep_queue::PrepPriority::Manual,
@@ -1349,40 +1350,39 @@ pub fn update_meeting_user_notes(
 // ── I453: Meeting handlers extracted from commands.rs ──────────
 
 /// Refresh all future meeting preps: clear frozen JSON and re-enqueue.
-pub fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
+    let meeting_ids: Vec<String> = state.db_write(|db| {
+        let now = chrono::Utc::now().to_rfc3339();
 
-    let now = chrono::Utc::now().to_rfc3339();
+        let meeting_ids: Vec<String> = db
+            .conn_ref()
+            .prepare(
+                "SELECT id FROM meetings_history
+                 WHERE start_time > ?1
+                   AND meeting_type NOT IN ('personal', 'focus', 'blocked')
+                   AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+            )
+            .and_then(|mut stmt| {
+                let rows = stmt.query_map(rusqlite::params![now], |row| {
+                    row.get::<_, String>(0)
+                })?;
+                Ok(rows.filter_map(|r| r.ok()).collect())
+            })
+            .map_err(|e| format!("Failed to query future meetings: {}", e))?;
 
-    let meeting_ids: Vec<String> = db
-        .conn_ref()
-        .prepare(
-            "SELECT id FROM meetings_history
-             WHERE start_time > ?1
-               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
-               AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
-        )
-        .and_then(|mut stmt| {
-            let rows = stmt.query_map(rusqlite::params![now], |row| {
-                row.get::<_, String>(0)
-            })?;
-            Ok(rows.filter_map(|r| r.ok()).collect())
-        })
-        .map_err(|e| format!("Failed to query future meetings: {}", e))?;
+        for mid in &meeting_ids {
+            let _ = db.conn_ref().execute(
+                "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+                rusqlite::params![mid],
+            );
+        }
+
+        Ok(meeting_ids)
+    }).await?;
 
     if meeting_ids.is_empty() {
         return Ok("No future meetings to refresh".to_string());
     }
-
-    for mid in &meeting_ids {
-        let _ = db.conn_ref().execute(
-            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
-            rusqlite::params![mid],
-        );
-    }
-
-    drop(db_guard);
 
     for mid in &meeting_ids {
         state
@@ -1439,7 +1439,6 @@ pub async fn attach_meeting_transcript(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    let state_clone = state.clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
     let ai_config = config.ai_models.clone();
@@ -1449,13 +1448,14 @@ pub async fn attach_meeting_transcript(
 
     let result = match tauri::async_runtime::spawn_blocking(move || {
         let workspace = std::path::Path::new(&workspace_path);
-        let db_guard = state_clone.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        // Open a dedicated connection instead of holding the shared mutex
+        // for the entire transcript processing duration (30-120s with PTY).
+        let db = crate::db::ActionDb::open().ok();
         crate::processor::transcript::process_transcript(
             workspace,
             &file_path,
             &meeting_clone,
-            db_ref,
+            db.as_ref(),
             &profile,
             Some(&ai_config),
         )
@@ -1498,17 +1498,19 @@ pub async fn attach_meeting_transcript(
             guard.insert(meeting_id.clone());
         }
 
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
+        {
+            let mid = meeting_id.clone();
+            let dest = transcript_destination.clone();
+            let at = processed_at.clone();
+            let summary = result.summary.clone();
+            let _ = state.db_write(move |db| {
                 if let Err(e) = db.update_meeting_transcript_metadata(
-                    &meeting_id,
-                    &transcript_destination,
-                    &processed_at,
-                    result.summary.as_deref(),
+                    &mid, &dest, &at, summary.as_deref(),
                 ) {
                     log::warn!("Failed to persist transcript metadata: {}", e);
                 }
-            }
+                Ok(())
+            }).await;
         }
 
         let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);

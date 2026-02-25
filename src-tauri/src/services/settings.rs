@@ -36,7 +36,7 @@ pub fn set_entity_mode(mode: &str, state: &AppState) -> Result<Config, String> {
 }
 
 /// Set workspace path, scaffold directory structure, and sync entities.
-pub fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, String> {
+pub async fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, String> {
     let workspace = std::path::Path::new(path);
 
     if !workspace.is_absolute() {
@@ -57,17 +57,19 @@ pub fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, String
         config.workspace_path = path.clone();
     })?;
 
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            let _ = crate::people::sync_people_from_workspace(
-                workspace,
-                db,
-                &config.resolved_user_domains(),
-            );
-            let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
-            let _ = crate::projects::sync_projects_from_workspace(workspace, db);
-        }
-    }
+    let workspace_path = config.workspace_path.clone();
+    let user_domains = config.resolved_user_domains();
+    let _ = state.db_write(move |db| {
+        let workspace = std::path::Path::new(&workspace_path);
+        let _ = crate::people::sync_people_from_workspace(
+            workspace,
+            db,
+            &user_domains,
+        );
+        let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
+        let _ = crate::projects::sync_projects_from_workspace(workspace, db);
+        Ok(())
+    }).await;
 
     Ok(config)
 }
@@ -191,7 +193,7 @@ pub fn set_schedule(
 }
 
 /// Save user profile fields with internal org entity sync.
-pub fn set_user_profile(
+pub async fn set_user_profile(
     name: Option<String>,
     company: Option<String>,
     title: Option<String>,
@@ -246,34 +248,33 @@ pub fn set_user_profile(
     }
 
     // Write identity fields to user_entity table only (I411 AC2: no dual storage)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            // Upsert: create row if missing, then update
-            let _ = db.conn_ref().execute(
-                "INSERT INTO user_entity (id) VALUES (1) ON CONFLICT(id) DO NOTHING",
-                [],
-            );
-            let _ = db.conn_ref().execute(
-                "UPDATE user_entity SET name = ?1, company = ?2, title = ?3, focus = ?4, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
-                rusqlite::params![uname, ucompany, utitle, ufocus],
-            );
+    let _ = state.db_write(move |db| {
+        // Upsert: create row if missing, then update
+        let _ = db.conn_ref().execute(
+            "INSERT INTO user_entity (id) VALUES (1) ON CONFLICT(id) DO NOTHING",
+            [],
+        );
+        let _ = db.conn_ref().execute(
+            "UPDATE user_entity SET name = ?1, company = ?2, title = ?3, focus = ?4, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+            rusqlite::params![uname, ucompany, utitle, ufocus],
+        );
 
-            // Sync company name to internal root account entity if it changed
-            if let Some(ref company_name) = ucompany {
-                if let Ok(Some(root)) = db.get_internal_root_account() {
-                    if root.name != *company_name {
-                        let _ = db.update_account_field(&root.id, "name", company_name);
-                    }
+        // Sync company name to internal root account entity if it changed
+        if let Some(ref company_name) = ucompany {
+            if let Ok(Some(root)) = db.get_internal_root_account() {
+                if root.name != *company_name {
+                    let _ = db.update_account_field(&root.id, "name", company_name);
                 }
             }
         }
-    }
+        Ok(())
+    }).await;
 
     Ok("ok".to_string())
 }
 
 /// Set multiple user domains with reclassification of people and meetings.
-pub fn set_user_domains(domains: &str, state: &AppState) -> Result<Config, String> {
+pub async fn set_user_domains(domains: &str, state: &AppState) -> Result<Config, String> {
     let parsed: Vec<String> = domains
         .split(',')
         .map(|s| s.trim().to_lowercase())
@@ -290,24 +291,23 @@ pub fn set_user_domains(domains: &str, state: &AppState) -> Result<Config, Strin
     })?;
 
     if !parsed.is_empty() {
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                match db.reclassify_people_for_domains(&parsed) {
-                    Ok(n) if n > 0 => {
-                        log::info!("Reclassified {} people after domain change", n);
-                        match db.reclassify_meeting_types_from_attendees() {
-                            Ok(m) if m > 0 => {
-                                log::info!("Reclassified {} meetings after domain change", m);
-                            }
-                            Ok(_) => {}
-                            Err(e) => log::warn!("Meeting reclassification failed: {}", e),
+        let _ = state.db_write(move |db| {
+            match db.reclassify_people_for_domains(&parsed) {
+                Ok(n) if n > 0 => {
+                    log::info!("Reclassified {} people after domain change", n);
+                    match db.reclassify_meeting_types_from_attendees() {
+                        Ok(m) if m > 0 => {
+                            log::info!("Reclassified {} meetings after domain change", m);
                         }
+                        Ok(_) => {}
+                        Err(e) => log::warn!("Meeting reclassification failed: {}", e),
                     }
-                    Ok(_) => {}
-                    Err(e) => log::warn!("People reclassification failed: {}", e),
                 }
+                Ok(_) => {}
+                Err(e) => log::warn!("People reclassification failed: {}", e),
             }
-        }
+            Ok(())
+        }).await;
     }
 
     Ok(config)

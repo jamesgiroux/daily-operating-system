@@ -248,7 +248,7 @@ pub fn auto_extract_title_keywords(
 ///
 /// Loads config, schedule, calendar events, and skip-today signals,
 /// then delegates to `crate::intelligence::compute_executive_intelligence`.
-pub fn get_executive_intelligence(
+pub async fn get_executive_intelligence(
     state: &AppState,
 ) -> Result<crate::intelligence::ExecutiveIntelligence, String> {
     // Load config for profile + workspace
@@ -286,16 +286,16 @@ pub fn get_executive_intelligence(
     // Load cached skip-today from AI enrichment (if available)
     let skip_today = load_skip_today(&today_dir);
 
+    let profile = config.profile.clone();
     // Compute intelligence from DB
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    Ok(crate::intelligence::compute_executive_intelligence(
-        db,
-        &meetings,
-        &config.profile,
-        skip_today,
-    ))
+    state.db_read(move |db| {
+        Ok(crate::intelligence::compute_executive_intelligence(
+            db,
+            &meetings,
+            &profile,
+            skip_today,
+        ))
+    }).await
 }
 
 /// Load cached SKIP TODAY results from `_today/data/intelligence.json`.

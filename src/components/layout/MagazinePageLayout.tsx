@@ -12,7 +12,7 @@
  * the dependency so the router doesn't need to import page internals.
  */
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import styles from './MagazinePageLayout.module.css';
 import AtmosphereLayer from './AtmosphereLayer';
@@ -21,6 +21,7 @@ import FloatingNavIsland from './FloatingNavIsland';
 import { UpdateBanner } from '@/components/notifications/UpdateBanner';
 import { useMagazineShellConfig } from '@/hooks/useMagazineShell';
 import { useChapterObserver } from '@/hooks/useChapterObserver';
+import { useTauriEvent } from '@/hooks/useTauriEvent';
 
 export interface MagazinePageLayoutProps {
   /** Main page content */
@@ -50,20 +51,40 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   const pageConfig = useMagazineShellConfig();
 
   // Entity mode from app config — controls nav ordering (accounts vs projects first).
-  // Re-fetched on every page navigation so preset changes in Settings take effect
-  // immediately without a full app restart (I389 acceptance criterion 4).
+  // Fetched once on mount and invalidated via config-updated event so preset changes
+  // in Settings take effect immediately (I389 acceptance criterion 4) without
+  // firing an IPC call on every page navigation.
   const [entityMode, setEntityMode] = useState<'account' | 'project' | 'both'>('account');
   const activePage = pageConfig?.activePage ?? 'today';
-  useEffect(() => {
+  const configCacheRef = useRef<{ entityMode: 'account' | 'project' | 'both' } | null>(null);
+
+  const fetchConfig = React.useCallback(() => {
     invoke<{ entityMode?: string }>('get_config')
       .then((c) => {
         const mode = c.entityMode;
         if (mode === 'account' || mode === 'project' || mode === 'both') {
+          configCacheRef.current = { entityMode: mode };
           setEntityMode(mode);
         }
       })
       .catch(() => { /* fallback to default 'account' */ });
-  }, [activePage]);
+  }, []);
+
+  useEffect(() => {
+    if (configCacheRef.current) {
+      setEntityMode(configCacheRef.current.entityMode);
+      return;
+    }
+    fetchConfig();
+  }, [fetchConfig]);
+
+  // Invalidate cache and re-fetch when config changes (e.g. Settings page).
+  // Wrapped in useCallback so useTauriEvent doesn't re-subscribe on every render.
+  const onConfigUpdated = React.useCallback(() => {
+    configCacheRef.current = null;
+    fetchConfig();
+  }, [fetchConfig]);
+  useTauriEvent('config-updated', onConfigUpdated);
 
   const atmosphereColor = pageConfig?.atmosphereColor ?? 'turmeric';
   const folioLabel = pageConfig?.folioLabel ?? 'Daily Briefing';
