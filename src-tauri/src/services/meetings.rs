@@ -1478,26 +1478,14 @@ pub async fn attach_meeting_transcript(
             || !result.decisions.is_empty()
             || !result.actions.is_empty());
 
-    if result.status == "success" && has_outcomes {
+    if result.status == "success" {
         let processed_at = chrono::Utc::now().to_rfc3339();
         let transcript_destination = result.destination.clone().unwrap_or_default();
-        let record = crate::types::TranscriptRecord {
-            meeting_id: meeting_id.clone(),
-            file_path: file_path_for_record,
-            destination: transcript_destination.clone(),
-            summary: result.summary.clone(),
-            processed_at: processed_at.clone(),
-        };
 
-        if let Ok(mut guard) = state.capture.transcript_processed.lock() {
-            guard.insert(meeting_id.clone(), record);
-            let _ = crate::state::save_transcript_records(&guard);
-        }
-
-        if let Ok(mut guard) = state.capture.captured.lock() {
-            guard.insert(meeting_id.clone());
-        }
-
+        // Always persist transcript metadata so the meeting is marked as having a
+        // transcript even when AI extraction produced no outcomes (e.g. AI timeout,
+        // empty response). Without this, reloading the page after a failed extraction
+        // shows no transcript at all — the attachment effectively vanishes.
         {
             let mid = meeting_id.clone();
             let dest = transcript_destination.clone();
@@ -1513,8 +1501,74 @@ pub async fn attach_meeting_transcript(
             }).await;
         }
 
-        let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);
-        let _ = app_handle.emit("transcript-processed", &outcome_data);
+        if has_outcomes {
+            let record = crate::types::TranscriptRecord {
+                meeting_id: meeting_id.clone(),
+                file_path: file_path_for_record,
+                destination: transcript_destination.clone(),
+                summary: result.summary.clone(),
+                processed_at: processed_at.clone(),
+            };
+
+            if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+                guard.insert(meeting_id.clone(), record);
+                let _ = crate::state::save_transcript_records(&guard);
+            }
+
+            if let Ok(mut guard) = state.capture.captured.lock() {
+                guard.insert(meeting_id.clone());
+            }
+
+            let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);
+            let _ = app_handle.emit("transcript-processed", &outcome_data);
+
+            // Emit transcript_outcomes signal via the main DB connection so the
+            // propagation engine can invalidate linked meeting preps. The signal
+            // emitted inside process_transcript uses a dedicated connection and the
+            // wrong entity fallback (meeting.id instead of account_id) — this
+            // corrects both issues.
+            {
+                let mid = meeting_id.clone();
+                let wins = result.wins.len();
+                let risks = result.risks.len();
+                let decisions = result.decisions.len();
+                let engine = std::sync::Arc::clone(&state.signals.engine);
+                let _ = state.db_write(move |db| {
+                    let account_id: Option<String> = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT account_id FROM meetings_history WHERE id = ?1",
+                            rusqlite::params![mid],
+                            |row| row.get(0),
+                        )
+                        .ok()
+                        .flatten();
+                    if let Some(aid) = account_id {
+                        let value = format!(
+                            "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
+                            mid, wins, risks, decisions
+                        );
+                        let _ = crate::signals::bus::emit_signal_and_propagate(
+                            db,
+                            &engine,
+                            "account",
+                            &aid,
+                            "transcript_outcomes",
+                            "transcript",
+                            Some(&value),
+                            0.75,
+                        );
+                    }
+                    Ok(())
+                }).await;
+            }
+        } else {
+            // No outcomes extracted — remove from guard so the user can retry.
+            if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+                guard.remove(&meeting_id);
+                let _ = crate::state::save_transcript_records(&guard);
+            }
+        }
     } else if let Ok(mut guard) = state.capture.transcript_processed.lock() {
         guard.remove(&meeting_id);
         let _ = crate::state::save_transcript_records(&guard);
