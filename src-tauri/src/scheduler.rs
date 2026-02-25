@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Datelike, Local, Utc};
 use chrono_tz::Tz;
 use cron::Schedule;
 use tokio::sync::mpsc;
@@ -72,6 +72,27 @@ impl Scheduler {
                 log::info!("Day changed: {} → {}", last_date, today);
                 let _ = self.app_handle.emit("day-changed", ());
                 crate::meeting_prep_queue::sweep_meetings_needing_prep(&self.state);
+
+                // I418: Auto-generate weekly impact on Monday
+                if today.weekday() == chrono::Weekday::Mon {
+                    let state = self.state.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = crate::services::reports::generate_weekly_impact_if_needed(&state).await {
+                            log::warn!("Scheduler: weekly impact generation failed: {}", e);
+                        }
+                    });
+                }
+
+                // I419: Auto-generate monthly wrapped on 1st of month
+                if today.day() == 1 {
+                    let state_month = self.state.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = crate::services::reports::generate_monthly_wrapped_if_needed(&state_month).await {
+                            log::warn!("Scheduler: monthly wrapped generation failed: {}", e);
+                        }
+                    });
+                }
+
                 last_date = today;
             }
 
