@@ -4,6 +4,43 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.15.0] - 2026-02-25
+
+Reports become meaningful when the system knows both sides of the equation. DailyOS generates two categories of reports: outward-facing reports (Account Health Review, EBR/QBR, SWOT) that reference the user's actual narrative, and inward-facing personal impact reports (Weekly Impact, Monthly Wrapped) that answer "what did I actually accomplish?" All stored in DB, invalidated when intelligence updates, exportable as PDF.
+
+### Added
+
+- **Report infrastructure** — `reports` table with `entity_id`, `entity_type`, `report_type`, `content_json`, `intel_hash`, `is_stale`. `generate_report` and `get_report` Tauri commands. Intel hash invalidation marks reports stale when underlying intelligence updates. ReportShell renderer with inline field editing (draft only, not persisted). PDF export via `@react-pdf/renderer` with editorial design system styling.
+- **SWOT report type** — Four-quadrant strategic analysis populated from entity intelligence signals. Items reference real signal types and meeting history.
+- **Account Health Review** — 5-slide internal briefing: health summary, score & trend, key risks, stakeholder coverage, engagement cadence, open commitments, renewal outlook. Accessible from account detail page via Reports button in folio bar.
+- **EBR/QBR report type** — 7-slide customer-facing quarterly review: partnership overview, goals recap, value delivered, success metrics, challenges & resolutions, strategic roadmap, customer asks, next period priorities. Value Delivered section cites specific real events with source references. Customer-presentable PDF export.
+- **Risk report migration** — Risk briefing reads from and writes to `reports` table instead of disk files. Fallback reads existing `risk-briefing.json` for migration grace period.
+- **Weekly Impact Report** — 5-slide personal operational look-back covering the prior 7 days. Priorities moved, wins, what you did, what to watch, what carries forward. Auto-generates every Monday. Renders on `/me` page under "My Impact" section.
+- **Monthly Wrapped** — Celebratory narrative impact report for the prior calendar month. Top wins, priority progress, honest miss, personality type, month-over-month comparison. Auto-generates on the 1st of each month. Bold editorial design with warm tone.
+- **Preset-aware report language** — All 9 role presets produce reports with role-specific vocabulary, framing, and emphasis. CS reports reference renewals and health; Sales reports reference pipeline and deal stage; Leadership reports reference portfolio and ARR.
+- **Entity context entries** — Structured knowledge entries (title + content + date + embeddings) replace static notes textareas on account, person, and project pages. Signal emission on create/update/delete. Semantic retrieval for intelligence prompt injection. Shared `ContextEntryList` component extracted from MePage.
+- **Entity context in intelligence prompts** — Entity-specific context entries injected as "User Notes About This Entity" section in enrichment prompts. All entries for the entity included (no semantic threshold — entity-scoped entries are always relevant).
+- **Legacy notes migration** — One-time startup migration converts existing people notes to entity context entries. Idempotent.
+
+### Changed
+
+- **Report access pattern** — Reports accessible from entity detail pages via "Reports" dropdown in folio bar. Personal reports on `/me` page. No separate reports page.
+- **Notes → Context on entity pages** — Account, person, and project appendix sections renamed from "Notes" to "Context" with structured entry UI replacing free-text textarea.
+- **Preset descriptions cleaned** — Removed vocabulary violations from preset description copy.
+- **Nav island icon weight** — `/me` page nav icon strokeWidth corrected from 1.5 to 1.8 to match global nav.
+- **Service layer async refactor** — State lifetime annotations and async service extraction for cleaner command handler patterns.
+
+### Fixed
+
+- **Stale email narrative in briefing** — Removed JSON fallback path; DB `resolved_at IS NULL` filtering is the only correct email source. Archived emails no longer appear in briefing.
+- **Hallucinated meeting relevance** — Entity-aware check ensures email's entity must have a meeting today. Embedding similarity threshold raised from 0.05 to 0.15.
+- **Meeting detail beachball** — Fixed blocking operation on meeting detail page load.
+- **Extraction tier default** — One-time config migration from sonnet to haiku for extraction tier on app boot when user never explicitly changed it.
+- **Transcript metadata persistence** — Transcript metadata now always persists with proper signal emission on attach.
+- **Transcript sync button gating** — Sync Transcript button gated on Quill/Granola enabled state.
+- **Monthly Wrapped + Weekly Impact polish** — Layout, typography, and content quality improvements across personal report slides.
+- **Entity context hook crash** — Fixed `useEntityContextEntries` hook placement after early returns that crashed entity pages.
+
 ## [0.14.3] - 2026-02-24
 
 Google Drive becomes a first-class connector. Import documents, spreadsheets, and presentations from Google Drive into entity intelligence — one-time or with ongoing sync via the Changes API.
