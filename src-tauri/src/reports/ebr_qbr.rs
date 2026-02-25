@@ -70,7 +70,32 @@ fn build_ebr_qbr_prompt(
     workspace: &std::path::Path,
     entity_id: &str,
     account: Option<&crate::db::DbAccount>,
+    active_preset: &str,
 ) -> String {
+    let entity_noun = match active_preset {
+        "sales" => "deal",
+        "agency" | "consulting" => "client",
+        "partnerships" => "partner",
+        "product" => "initiative",
+        "the-desk" => "project",
+        _ => "account",
+    };
+    let review_name = match active_preset {
+        "agency" => "Client Business Review",
+        "consulting" => "Executive Review",
+        "partnerships" => "Partner Business Review",
+        "sales" => "Business Review",
+        "leadership" => "Executive Briefing",
+        _ => "Executive Business Review",
+    };
+    let audience_framing = match active_preset {
+        "agency" => "client-facing",
+        "consulting" => "executive/steering committee-facing",
+        "partnerships" => "partner-facing",
+        "sales" => "customer-facing",
+        "leadership" => "executive-facing",
+        _ => "customer-facing",
+    };
     let prior = account.and_then(|a| {
         let dir = crate::accounts::resolve_account_dir(workspace, a);
         read_intelligence_json(&dir).ok()
@@ -104,6 +129,10 @@ fn build_ebr_qbr_prompt(
     let quarter_label = format!("Q{} {}", quarter, now.year());
 
     let mut prompt = build_report_preamble(entity_name, "ebr_qbr", "account");
+    prompt.push_str(&format!(
+        "Role preset: {} ({} vocabulary). This is a {} {} document — adapt language accordingly.\n\n",
+        active_preset, entity_noun, audience_framing, review_name
+    ));
     prompt.push_str(&format!("# Quarter: {}\n\n", quarter_label));
 
     if !user_context.is_empty() {
@@ -116,7 +145,10 @@ fn build_ebr_qbr_prompt(
     append_intel_context(&mut prompt, &ctx);
 
     prompt.push_str("# Output Format\n\n");
-    prompt.push_str("This is a CUSTOMER-FACING document. Never use internal jargon ('enrichment', 'signals', 'entity', 'intelligence'). Use business language.\n\n");
+    prompt.push_str(&format!(
+        "This is a {} document ({}). Never use internal jargon ('enrichment', 'signals', 'entity', 'intelligence'). Use business language.\n\n",
+        review_name, audience_framing
+    ));
     prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n");
     prompt.push_str(&format!(r#"{{
   "quarterLabel": "{quarter_label}",
@@ -168,7 +200,10 @@ fn build_ebr_qbr_prompt(
     prompt.push_str("- next_steps: 3–5 concrete actions. Mix CSM and customer owners.\n");
     prompt.push_str("- strategic_roadmap: Synthesis only — no promises not supported by data.\n");
     prompt.push_str("- customer_quote: Must be from actual transcript or email content. No paraphrasing — quote or null.\n");
-    prompt.push_str("- CUSTOMER-FACING: No mentions of AI, enrichment, or internal tooling.\n");
+    prompt.push_str(&format!(
+        "- AUDIENCE: This is a {} document. Use appropriate language for the audience. No internal jargon, no app mechanics.\n",
+        audience_framing
+    ));
     prompt.push_str("- INTERNAL CONTENT FILTER: Some meeting records and transcripts are internal team debriefs (Amy/CSM post-call discussions, internal strategy sessions). These are labeled as internal. Do NOT reference internal team assessments, pricing strategy, internal concerns, or CSM-only discussions in this document. Only use content from customer-facing meetings and customer statements.\n");
     prompt.push_str("- SPECIFICITY: Use the Entity Intelligence Assessment (if present) as your primary source. Extract the specific risks, wins, and strategic context from it. Generic statements like 'consistent meeting cadence' without specifics are not acceptable.\n");
 
@@ -184,6 +219,7 @@ pub fn gather_ebr_qbr_input(
     db: &ActionDb,
     entity_id: &str,
     ai_models: AiModelConfig,
+    active_preset: &str,
 ) -> Result<ReportGeneratorInput, String> {
     let account = db
         .get_account(entity_id)
@@ -192,7 +228,7 @@ pub fn gather_ebr_qbr_input(
 
     let entity_name = account.name.clone();
     let intel_hash = crate::reports::compute_intel_hash(entity_id, "account", db);
-    let prompt = build_ebr_qbr_prompt(&entity_name, db, workspace, entity_id, Some(&account));
+    let prompt = build_ebr_qbr_prompt(&entity_name, db, workspace, entity_id, Some(&account), active_preset);
 
     Ok(ReportGeneratorInput {
         entity_id: entity_id.to_string(),

@@ -54,7 +54,33 @@ fn build_account_health_prompt(
     workspace: &std::path::Path,
     entity_id: &str,
     account: Option<&crate::db::DbAccount>,
+    active_preset: &str,
 ) -> String {
+    let entity_noun = match active_preset {
+        "sales" => "deal",
+        "agency" | "consulting" => "client",
+        "partnerships" => "partner",
+        "product" => "initiative",
+        "the-desk" => "project",
+        _ => "account",
+    };
+    let close_concept = match active_preset {
+        "sales" => "close date and deal stage",
+        "agency" | "consulting" => "contract renewal or engagement end date",
+        "partnerships" => "agreement renewal",
+        "product" => "launch milestone or delivery date",
+        "the-desk" => "project deadline",
+        _ => "renewal date",
+    };
+    let relationship_framing = match active_preset {
+        "sales" => "prospect/client relationship",
+        "agency" | "consulting" => "client engagement",
+        "partnerships" => "partner relationship",
+        "leadership" => "strategic relationship",
+        "product" => "stakeholder relationship",
+        "the-desk" => "working relationship",
+        _ => "customer partnership",
+    };
     let prior = account.and_then(|a| {
         let dir = crate::accounts::resolve_account_dir(workspace, a);
         read_intelligence_json(&dir).ok()
@@ -104,6 +130,10 @@ fn build_account_health_prompt(
         .ok();
 
     let mut prompt = build_report_preamble(entity_name, "account_health", "account");
+    prompt.push_str(&format!(
+        "Role preset: {} ({} vocabulary). Use '{}' not 'account' where applicable. The close/renewal concept for this role is '{}'.\n\n",
+        active_preset, entity_noun, entity_noun, close_concept
+    ));
 
     // Add supplemental engagement data
     prompt.push_str("## Engagement Metrics\n");
@@ -119,24 +149,29 @@ fn build_account_health_prompt(
 
     prompt.push_str("# Output Format\n\n");
     prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n");
-    prompt.push_str(r#"{
-  "overallAssessment": "One sentence: current state of this account. Direct.",
-  "healthScoreNarrative": "If trend data exists, describe it. null if not.",
-  "relationshipSummary": "2 sentences on partnership quality and executive alignment.",
-  "engagementCadence": "Describe meeting rhythm and communication health. e.g. '8 meetings in 90 days, mostly CSM-led with VP present twice.'",
-  "customerQuote": "A direct quote from a meeting note or email signal that captures how the customer feels about the partnership. Use exact words if available. null if no clear quote.",
-  "whatIsWorking": ["2-4 specific things that are going well. Concrete, not generic."],
-  "whatIsStruggling": ["1-3 honest gaps or friction points. If nothing is struggling, 1 item minimum."],
-  "expansionSignals": ["Signals suggesting growth opportunity: new use cases mentioned, team growth, positive NPS, etc. Empty array if none."],
-  "valueDelivered": [
-    {"text": "Specific outcome, max 20 words", "source": "meeting-id or date or null"}
-  ],
-  "risks": [
-    {"risk": "Specific risk, max 15 words", "status": "open|mitigated|resolved"}
-  ],
-  "renewalContext": "Renewal date + confidence context if renewal_date is in the data. null otherwise.",
-  "recommendedActions": ["Action 1 (verb phrase, max 10 words)", "Action 2", "Action 3"]
-}"#);
+    prompt.push_str(&format!(
+        "{{\n\
+  \"overallAssessment\": \"One sentence: current state of this {entity_noun}. Direct.\",\n\
+  \"healthScoreNarrative\": \"If trend data exists, describe it. null if not.\",\n\
+  \"relationshipSummary\": \"2 sentences on {relationship_framing} quality and executive alignment.\",\n\
+  \"engagementCadence\": \"Describe meeting rhythm and communication health for this {entity_noun}. e.g. '8 meetings in 90 days, {relationship_framing} led, with decision-maker present twice.'\",\n\
+  \"customerQuote\": \"A direct quote from a meeting note or email signal that captures how the counterpart feels about the relationship. Use exact words if available. null if no clear quote.\",\n\
+  \"whatIsWorking\": [\"2-4 specific things that are going well. Concrete, not generic.\"],\n\
+  \"whatIsStruggling\": [\"1-3 honest gaps or friction points. If nothing is struggling, 1 item minimum.\"],\n\
+  \"expansionSignals\": [\"Signals suggesting growth opportunity for this {entity_noun}: new use cases, team growth, positive feedback, scope expansion interest. Empty array if none.\"],\n\
+  \"valueDelivered\": [\n\
+    {{\"text\": \"Specific outcome, max 20 words\", \"source\": \"meeting-id or date or null\"}}\n\
+  ],\n\
+  \"risks\": [\n\
+    {{\"risk\": \"Specific risk, max 15 words\", \"status\": \"open|mitigated|resolved\"}}\n\
+  ],\n\
+  \"renewalContext\": \"If a {close_concept} is known, describe context and confidence. null otherwise.\",\n\
+  \"recommendedActions\": [\"Action 1 (verb phrase, max 10 words)\", \"Action 2\", \"Action 3\"]\n\
+}}",
+        entity_noun = entity_noun,
+        relationship_framing = relationship_framing,
+        close_concept = close_concept,
+    ));
 
     prompt.push_str("\n\n# Rules\n");
     prompt.push_str("- customer_quote: Use real words from meeting notes or email signals. Quote format: \"They said X\" or just the quote itself. null if no real quote.\n");
@@ -158,6 +193,7 @@ pub fn gather_account_health_input(
     db: &ActionDb,
     entity_id: &str,
     ai_models: AiModelConfig,
+    active_preset: &str,
 ) -> Result<ReportGeneratorInput, String> {
     let account = db
         .get_account(entity_id)
@@ -166,7 +202,7 @@ pub fn gather_account_health_input(
 
     let entity_name = account.name.clone();
     let intel_hash = crate::reports::compute_intel_hash(entity_id, "account", db);
-    let prompt = build_account_health_prompt(&entity_name, db, workspace, entity_id, Some(&account));
+    let prompt = build_account_health_prompt(&entity_name, db, workspace, entity_id, Some(&account), active_preset);
 
     Ok(ReportGeneratorInput {
         entity_id: entity_id.to_string(),
