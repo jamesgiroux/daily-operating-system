@@ -47,7 +47,7 @@ const KEYWORD_WEIGHTS: &[(&str, f64)] = &[
 ///
 /// Scoring dimensions:
 /// - Entity linkage (0.0–0.30): signal_events count for entity
-/// - Meeting relevance (0.0–0.25): embedding cosine similarity to meeting context
+/// - Meeting relevance (0.0–0.25): entity must have a meeting today + embedding similarity
 /// - AI urgency (0.0–0.20): mapped from enrichment urgency field
 /// - Keyword relevance (0.0–0.15): business term matching
 /// - Recency (0.0–0.10): exponential decay with 14-day half-life
@@ -75,15 +75,26 @@ pub fn score_item(
         0.0
     };
 
-    // 2. Meeting relevance (0.0–0.25) — embedding similarity
+    // 2. Meeting relevance (0.0–0.25) — entity must have a meeting today (I449)
     let relevance_score = if !todays_meeting_context.is_empty() && !ctx.content_text.is_empty() {
-        if let Some(m) = model {
-            let sim = compute_embedding_similarity(m, ctx.content_text, todays_meeting_context);
-            let score = (sim.max(0.0) * 0.25).min(0.25);
-            if score > 0.05 {
+        // Only claim meeting relevance if the email's entity actually has a meeting today
+        let entity_has_meeting = ctx.entity_id
+            .map(|eid| entity_has_meeting_today(db, eid))
+            .unwrap_or(false);
+
+        if entity_has_meeting {
+            if let Some(m) = model {
+                let sim = compute_embedding_similarity(m, ctx.content_text, todays_meeting_context);
+                let score = (sim.max(0.0) * 0.25).min(0.25);
+                if score > 0.15 {
+                    reasons.push("relates to today's meetings".to_string());
+                }
+                score
+            } else {
+                // No embedding model, but entity has a meeting — give base score
                 reasons.push("relates to today's meetings".to_string());
+                0.10
             }
-            score
         } else {
             0.0
         }
@@ -145,6 +156,24 @@ pub fn score_item(
         recency_score,
         reason,
     }
+}
+
+/// Check whether an entity has a meeting scheduled today (I449).
+fn entity_has_meeting_today(db: &ActionDb, entity_id: &str) -> bool {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let start = format!("{}T00:00:00", today);
+    let end = format!("{}T23:59:59", today);
+
+    db.conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM meeting_entities me
+             JOIN meetings_history mh ON me.meeting_id = mh.id
+             WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
+            rusqlite::params![entity_id, start, end],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0
 }
 
 /// Count signal_events for a given entity.

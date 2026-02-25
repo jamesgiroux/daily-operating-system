@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_directive, load_emails_json,
-    load_emails_json_with_sync, load_schedule_json, DataFreshness,
+    check_data_freshness, load_actions_json, load_directive,
+    load_schedule_json, DataFreshness,
 };
 use crate::parser::count_inbox;
 use crate::state::AppState;
@@ -710,23 +710,12 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
             });
 
+            // I448: DB is source of truth — no JSON fallback (archived emails
+            // have resolved_at set and are correctly filtered by DB queries)
             if !db_emails.is_empty() {
                 (Some(db_emails), None)
             } else {
-                match load_emails_json_with_sync(&today_dir) {
-                    Ok(payload) => {
-                        let emails = if payload.emails.is_empty() {
-                            None
-                        } else {
-                            Some(payload.emails)
-                        };
-                        (emails, payload.sync)
-                    }
-                    Err(_) => (
-                        load_emails_json(&today_dir).ok().filter(|e| !e.is_empty()),
-                        None,
-                    ),
-                }
+                (None, None)
             }
         };
 
@@ -786,10 +775,49 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
 
         let freshness = check_data_freshness(&today_dir);
 
-        // Load email narrative + replies_needed from directive (I355)
-        let (email_narrative, replies_needed) = load_directive(&today_dir)
-            .map(|d| (d.emails.narrative, d.emails.replies_needed))
+        // Load replies_needed from directive (I355).
+        // I448: Directive narrative is baked into the file — build dynamically from real data.
+        let replies_needed = load_directive(&today_dir)
+            .map(|d| d.emails.replies_needed)
             .unwrap_or_default();
+
+        let email_narrative: Option<String> = {
+            let email_count = emails.as_ref().map(|v| v.len()).unwrap_or(0);
+            if email_count == 0 {
+                None
+            } else {
+                // Count entities with meetings today
+                let entity_ids: Vec<String> = emails.as_ref()
+                    .map(|v| v.iter().filter_map(|e| e.entity_id.clone()).collect::<std::collections::HashSet<_>>().into_iter().collect())
+                    .unwrap_or_default();
+                let meeting_linked = if entity_ids.is_empty() {
+                    0usize
+                } else {
+                    state.db_read(move |db| {
+                        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                        let start = format!("{}T00:00:00", today);
+                        let end = format!("{}T23:59:59", today);
+                        let count = entity_ids.iter().filter(|eid| {
+                            db.conn_ref()
+                                .query_row(
+                                    "SELECT COUNT(*) FROM meeting_entities me
+                                     JOIN meetings_history mh ON me.meeting_id = mh.id
+                                     WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
+                                    rusqlite::params![eid, start, end],
+                                    |row| row.get::<_, i64>(0),
+                                )
+                                .unwrap_or(0) > 0
+                        }).count();
+                        Ok::<usize, String>(count)
+                    }).await.unwrap_or(0)
+                };
+                if meeting_linked > 0 {
+                    Some(format!("{} threads in your inbox, {} linked to today's meetings.", email_count, meeting_linked))
+                } else {
+                    Some(format!("{} threads in your inbox.", email_count))
+                }
+            }
+        };
 
         // Fall back to DB enrichment stats when JSON sync status absent (I373)
         let email_sync_fallback: Option<EmailSyncStatus> = if email_sync.is_none() {

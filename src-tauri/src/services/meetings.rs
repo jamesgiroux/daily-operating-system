@@ -100,6 +100,47 @@ pub fn person_to_attendee_context(person: &crate::db::DbPerson) -> crate::types:
     }
 }
 
+/// Build outcomes from already-fetched captures + actions (avoids duplicate DB queries).
+fn build_outcomes_from_data(
+    meeting: &crate::db::DbMeeting,
+    captures: &[crate::db::DbCapture],
+    actions: &[crate::db::DbAction],
+) -> Option<crate::types::MeetingOutcomeData> {
+    let mut wins = Vec::new();
+    let mut risks = Vec::new();
+    let mut decisions = Vec::new();
+    for cap in captures {
+        match cap.capture_type.as_str() {
+            "win" => wins.push(cap.content.clone()),
+            "risk" => risks.push(cap.content.clone()),
+            "decision" => decisions.push(cap.content.clone()),
+            _ => {}
+        }
+    }
+
+    if meeting.summary.is_none()
+        && meeting.transcript_path.is_none()
+        && meeting.transcript_processed_at.is_none()
+        && wins.is_empty()
+        && risks.is_empty()
+        && decisions.is_empty()
+        && actions.is_empty()
+    {
+        return None;
+    }
+
+    Some(crate::types::MeetingOutcomeData {
+        meeting_id: meeting.id.clone(),
+        summary: meeting.summary.clone(),
+        wins,
+        risks,
+        decisions,
+        actions: actions.to_vec(),
+        transcript_path: meeting.transcript_path.clone(),
+        processed_at: meeting.transcript_processed_at.clone(),
+    })
+}
+
 /// Collect meeting outcomes (captures + actions) from DB for a meeting.
 pub fn collect_meeting_outcomes_from_db(
     db: &ActionDb,
@@ -987,6 +1028,11 @@ pub fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path
 }
 
 /// Get full meeting intelligence for the detail page.
+///
+/// Uses db_read for the heavy lifting (queries + prep loading), then a
+/// lightweight db_write only for the two trivial UPDATEs (mark_prep_reviewed,
+/// clear_meeting_new_signals). Disk I/O for prep files happens inside the
+/// read closure to avoid a second round-trip, but doesn't block the writer.
 pub async fn get_meeting_intelligence(
     state: &AppState,
     meeting_id: &str,
@@ -998,111 +1044,122 @@ pub async fn get_meeting_intelligence(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    let meeting_id = meeting_id.to_string();
-    state.db_write(move |db| {
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-    let meeting_id = meeting_id.as_str();
+    let meeting_id_owned = meeting_id.to_string();
 
-    let meeting = if let Some(row) = db
-        .get_meeting_intelligence_row(meeting_id)
-        .map_err(|e| e.to_string())?
-    {
-        row
-    } else {
-        let raw_calendar_id = meeting_id.replace("_at_", "@");
-        db.get_meeting_by_calendar_event_id(&raw_calendar_id)
+    // Phase 1: Read-only — all queries, prep loading, quality assessment
+    let intel = state.db_read(move |db| {
+        let workspace = Path::new(&config.workspace_path);
+        let today_dir = workspace.join("_today");
+        let meeting_id = meeting_id_owned.as_str();
+
+        let meeting = if let Some(row) = db
+            .get_meeting_intelligence_row(meeting_id)
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?
-    };
+        {
+            row
+        } else {
+            let raw_calendar_id = meeting_id.replace("_at_", "@");
+            db.get_meeting_by_calendar_event_id(&raw_calendar_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?
+        };
 
-    let agenda_layer = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
-    let user_agenda = if agenda_layer.items.is_empty() { None } else { Some(agenda_layer.items.clone()) };
-    let dismissed_topics = agenda_layer.dismissed_topics.clone();
-    let hidden_attendees = agenda_layer.hidden_attendees.clone();
-    let user_notes = meeting.user_notes.clone();
-    let mut prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+        let agenda_layer = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+        let user_agenda = if agenda_layer.items.is_empty() { None } else { Some(agenda_layer.items.clone()) };
+        let dismissed_topics = agenda_layer.dismissed_topics.clone();
+        let hidden_attendees = agenda_layer.hidden_attendees.clone();
+        let user_notes = meeting.user_notes.clone();
+        let mut prep = load_meeting_prep_from_sources(&today_dir, &meeting);
 
-    if let Some(ref mut prep_data) = prep {
-        prep_data.user_agenda = user_agenda.clone();
-        prep_data.user_notes = user_notes.clone();
-        let _ = db.mark_prep_reviewed(
-            &meeting.id,
-            prep_data.calendar_event_id.as_deref(),
-            &prep_data.title,
-        );
+        if let Some(ref mut prep_data) = prep {
+            prep_data.user_agenda = user_agenda.clone();
+            prep_data.user_notes = user_notes.clone();
 
-        // Hydrate attendee_context from people DB (I51)
-        if prep_data.attendee_context.is_none() {
-            let attendee_context = hydrate_attendee_context(db, &meeting);
-            if !attendee_context.is_empty() {
-                prep_data.attendee_context = Some(attendee_context);
+            // Hydrate attendee_context from people DB (I51)
+            if prep_data.attendee_context.is_none() {
+                let attendee_context = hydrate_attendee_context(db, &meeting);
+                if !attendee_context.is_empty() {
+                    prep_data.attendee_context = Some(attendee_context);
+                }
             }
         }
-    }
 
-    let now = chrono::Utc::now();
-    let start_dt = parse_meeting_datetime(&meeting.start_time);
-    let end_dt = meeting
-        .end_time
-        .as_deref()
-        .and_then(parse_meeting_datetime)
-        .or(start_dt.map(|s| s + chrono::Duration::hours(1)));
-    let is_current = start_dt
-        .zip(end_dt)
-        .is_some_and(|(s, e)| s <= now && now <= e);
-    let is_past = end_dt.is_some_and(|e| e < now);
-    let is_frozen = meeting.prep_frozen_at.is_some();
-    let can_edit_user_layer = !(is_past || is_frozen);
+        let now = chrono::Utc::now();
+        let start_dt = parse_meeting_datetime(&meeting.start_time);
+        let end_dt = meeting
+            .end_time
+            .as_deref()
+            .and_then(parse_meeting_datetime)
+            .or(start_dt.map(|s| s + chrono::Duration::hours(1)));
+        let is_current = start_dt
+            .zip(end_dt)
+            .is_some_and(|(s, e)| s <= now && now <= e);
+        let is_past = end_dt.is_some_and(|e| e < now);
+        let is_frozen = meeting.prep_frozen_at.is_some();
+        let can_edit_user_layer = !(is_past || is_frozen);
 
-    let captures = db
-        .get_captures_for_meeting(&meeting.id)
-        .map_err(|e| e.to_string())?;
-    let actions = db
-        .get_actions_for_meeting(&meeting.id)
-        .map_err(|e| e.to_string())?;
-    let linked_entities = db
-        .get_meeting_entities(&meeting.id)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|e| crate::types::LinkedEntity {
-            id: e.id,
-            name: e.name,
-            entity_type: e.entity_type.as_str().to_string(),
+        // Single query for captures, then split by type (avoids duplicate in outcomes)
+        let captures = db
+            .get_captures_for_meeting(&meeting.id)
+            .map_err(|e| e.to_string())?;
+        let actions = db
+            .get_actions_for_meeting(&meeting.id)
+            .map_err(|e| e.to_string())?;
+        let linked_entities = db
+            .get_meeting_entities(&meeting.id)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|e| crate::types::LinkedEntity {
+                id: e.id,
+                name: e.name,
+                entity_type: e.entity_type.as_str().to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        // Build outcomes from already-fetched captures + actions (no duplicate queries)
+        let outcomes = build_outcomes_from_data(&meeting, &captures, &actions);
+
+        let prep_snapshot_path = meeting.prep_snapshot_path.clone();
+        let prep_frozen_at = meeting.prep_frozen_at.clone();
+        let transcript_path = meeting.transcript_path.clone();
+        let transcript_processed_at = meeting.transcript_processed_at.clone();
+
+        let intelligence_quality = Some(crate::intelligence::assess_intelligence_quality(db, meeting_id));
+
+        Ok(MeetingIntelligence {
+            meeting,
+            prep,
+            is_past,
+            is_current,
+            is_frozen,
+            can_edit_user_layer,
+            user_agenda,
+            user_notes,
+            dismissed_topics,
+            hidden_attendees,
+            outcomes,
+            captures,
+            actions,
+            linked_entities,
+            prep_snapshot_path,
+            prep_frozen_at,
+            transcript_path,
+            transcript_processed_at,
+            intelligence_quality,
         })
-        .collect::<Vec<_>>();
+    }).await?;
 
-    let outcomes = collect_meeting_outcomes_from_db(db, &meeting);
-    let prep_snapshot_path = meeting.prep_snapshot_path.clone();
-    let prep_frozen_at = meeting.prep_frozen_at.clone();
-    let transcript_path = meeting.transcript_path.clone();
-    let transcript_processed_at = meeting.transcript_processed_at.clone();
+    // Phase 2: Lightweight writes — mark reviewed + clear new-signal flag
+    let write_meeting_id = intel.meeting.id.clone();
+    let write_prep_event_id = intel.prep.as_ref().and_then(|p| p.calendar_event_id.clone());
+    let write_prep_title = intel.prep.as_ref().map(|p| p.title.clone()).unwrap_or_default();
+    let _ = state.db_write(move |db| {
+        let _ = db.mark_prep_reviewed(&write_meeting_id, write_prep_event_id.as_deref(), &write_prep_title);
+        let _ = db.clear_meeting_new_signals(&write_meeting_id);
+        Ok::<(), String>(())
+    }).await;
 
-    let intelligence_quality = Some(crate::intelligence::assess_intelligence_quality(db, meeting_id));
-    let _ = db.clear_meeting_new_signals(meeting_id);
-
-    Ok(MeetingIntelligence {
-        meeting,
-        prep,
-        is_past,
-        is_current,
-        is_frozen,
-        can_edit_user_layer,
-        user_agenda,
-        user_notes,
-        dismissed_topics,
-        hidden_attendees,
-        outcomes,
-        captures,
-        actions,
-        linked_entities,
-        prep_snapshot_path,
-        prep_frozen_at,
-        transcript_path,
-        transcript_processed_at,
-        intelligence_quality,
-    })
-    }).await
+    Ok(intel)
 }
 
 /// Link meeting entity: DB link, clear prep, enqueue re-assembly.
