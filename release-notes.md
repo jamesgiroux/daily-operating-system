@@ -4,8 +4,9 @@ User-facing release notes. Written for the people who use DailyOS every day — 
 This file is the source of truth for the What's New modal. Each version gets one entry.
 
 Format: lead with the story of the release, then features as benefit-led bullets.
+Each feature should tell you what it is, where to find it, and what to do first.
 No internal jargon. No issue numbers. No "entity intelligence" or "enrichment."
-Write like you're telling a customer what got better.
+Write like you're telling a customer what got better and how to get started.
 
 ---
 
@@ -13,20 +14,18 @@ Write like you're telling a customer what got better.
 
 Your work, made presentable.
 
-DailyOS now generates reports — slide decks you can actually share. Account Health Reviews for your internal team, EBR/QBRs for your customers, SWOT analyses, and personal impact reports for yourself. All generated from the intelligence DailyOS has already been building.
+DailyOS now generates reports — slide decks you can actually share. Account Health Reviews for your internal team, EBR/QBRs for your customers, SWOT analyses, and personal impact reports for yourself. All generated from the intelligence DailyOS has already been building. Every report is a live document: click any field to edit it, and your changes save automatically.
 
-**Account Reports** (accessible from any account's Reports menu)
+**Account Reports** — open any account and click the **Reports ▾** button in the top bar.
 
-- **Account Health Review** — A 5-slide internal briefing covering the state of the relationship, what's working, what's struggling, value delivered, and what's coming. Built for your QBR prep or team updates.
-- **EBR / QBR** — A 7-slide customer-facing business review. Covers what happened, value delivered, metrics, challenges, the road ahead, and next steps. Clean, professional, ready to share.
-- **SWOT Analysis** — A 5-slide strategic view of any account: strengths, weaknesses, opportunities, and threats. Good for account planning and executive conversations.
+- **Account Health Review** — A 5-slide internal briefing: the state of the relationship, what's working, what's struggling, value delivered, and what's coming. Start here before your next QBR prep or team update. Hit *Generate* and you'll have a first draft in about a minute.
+- **EBR / QBR** — A 7-slide customer-facing business review covering what happened, value delivered, metrics, challenges, the road ahead, and next steps. When it's ready, use *Export PDF* to save a shareable version.
+- **SWOT Analysis** — A 5-slide strategic view: strengths, weaknesses, opportunities, and threats. Good for account planning before a big renewal conversation.
 
-**Personal Reports** (accessible from the Reports buttons on your /me page)
+**Personal Reports** — open the **Me** page (your portrait icon in the nav) and use the **Weekly Impact** or **Monthly Wrapped** buttons in the top bar.
 
-- **Weekly Impact** — A 5-slide editorial review of your week. Priorities moved, wins, what you did, what to watch, and what carries into next week.
-- **Monthly Wrapped** — Your month as a celebration, not a report. One insight per screen, bold colors, and a personality type from your role's vocabulary. Built to feel like something worth pausing on.
-
-**All reports are live documents** — click any field to edit it, and your changes save automatically. The AI gives you a first draft; you make it yours.
+- **Weekly Impact** — A 5-slide editorial review of your prior week: priorities moved, wins, what you did, what to watch, and what carries forward. Generates automatically every Monday morning so it's waiting for you.
+- **Monthly Wrapped** — Your prior month as a celebration, not a report. One insight per screen, bold colors, and a personality type matched to your role. Generates automatically on the 1st of each month. Worth scrolling all the way through.
 
 ---
 
@@ -36,9 +35,9 @@ Your docs, inside your briefings.
 
 Connect Google Drive and import documents, spreadsheets, and presentations directly into any account's workspace. Watch mode keeps files in sync automatically — when the Drive file changes, your account context updates too.
 
-- **Import from Drive** — Use the Google Picker to select files and link them to an account. Docs, Sheets, and Slides are all supported.
-- **Watch Mode** — Add a file to ongoing sync and DailyOS will check for changes hourly, updating your account context when the source file changes.
-- **Drive Settings** — Manage watched documents, see last sync times, and trigger a manual sync from the Connectors settings tab.
+- **Import from Drive** — Open an account, go to its Documents section, and use *Import from Drive* to pick files via Google Picker. Docs, Sheets, and Slides are all supported. The file lands in the account's workspace and starts informing its briefings immediately.
+- **Watch Mode** — Choose *Watch* instead of *Import Once* and DailyOS will check for changes hourly, updating account context when the source file changes.
+- **Drive Settings** — Go to **Settings → Connectors → Google Drive** to manage watched documents, see last sync times, and trigger a manual sync.
 
 ---
 
@@ -48,11 +47,11 @@ DailyOS speaks your language now.
 
 Every role preset — Customer Success, Sales, Partnerships, Product, Leadership, and more — now fully drives the language, labels, and priorities throughout the app. Your briefings, stakeholder cards, and account sorting all adapt to how your role actually works.
 
-- **Role-aware language everywhere** — Meeting prep, actions, loading states, and toast messages now reflect your role's vocabulary and personality setting.
-- **Stakeholder and team roles** — Role badges on stakeholder and team cards now draw from your preset's role definitions, not a generic list.
-- **Preset-driven account sorting** — Accounts sort by what matters to your role by default: renewal proximity for CS, deal stage for Sales, ARR for Leadership.
-- **1:1 meeting intelligence** — One-on-one meetings now surface the other person's relationship history, notes, and open actions — not just the account.
-- **Background task throttling** — The app is significantly quieter when you're actively working. Background enrichment and sync jobs back off when you're in the app and catch up when you're not.
+- **Role-aware language** — Meeting prep, actions, and notifications now use your role's vocabulary. If you haven't set your role yet, go to **Settings → You** and pick the preset that fits.
+- **Stakeholder and team roles** — Role badges on stakeholder cards now come from your preset's role definitions. Open any account and check the stakeholder section to see the updated options.
+- **Preset-driven account sorting** — Accounts now sort by what matters to your role: renewal proximity for CS, deal stage for Sales, ARR for Leadership. You can still override the sort manually.
+- **1:1 meeting intelligence** — When you have a one-on-one, the briefing now focuses on that person — their history, notes, and open actions — not just the account.
+- **Background task throttling** — The app is significantly quieter when you're actively working. No action needed; this just happens.
 
 ---
 
@@ -62,7 +61,7 @@ DailyOS now knows who you are.
 
 The new /me page is where DailyOS learns your professional context — your role, what you own, your annual and quarterly priorities, and the knowledge base that shapes how it thinks about your accounts and meetings. The more you put in, the more useful your briefings become.
 
-- **Your professional context** — Add your role, what you're measured on, your value proposition, and how you think about your work. This context flows into every briefing and report DailyOS generates.
-- **Two-layer priorities** — Annual bets and quarterly focus, stored as long as they're useful. No expiration, no nagging. Stale priorities are still useful context.
-- **Context entries** — A knowledge base of things DailyOS should know: product details, common objections, pricing context, internal processes. Semantically retrieved when relevant.
-- **File attachments** — Upload PDFs and documents to give DailyOS deeper product and domain knowledge.
+- **Your professional context** — Go to the **Me** page and fill in your role, what you're measured on, and your value proposition. This context flows into every briefing and report DailyOS generates.
+- **Two-layer priorities** — Add your annual bets and quarterly focus under **My Priorities**. No expiration, no nagging — they stay until you remove them.
+- **Context entries** — Under **Context**, add things DailyOS should know: product details, common objections, pricing context, internal processes. DailyOS retrieves these when relevant.
+- **File attachments** — Drag a PDF or document onto the **Attachments** section to give DailyOS deeper product and domain knowledge.
