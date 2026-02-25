@@ -22,7 +22,7 @@ use chrono::Utc;
 use crate::db::{ActionDb, DbProcessingLog};
 use classifier::{classify_file, Classification};
 use extract::SupportedFormat;
-use router::{move_file, resolve_destination};
+use router::{move_file, resolve_destination, RouteOutcome};
 
 /// Result of processing a single inbox file.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -35,6 +35,11 @@ pub enum ProcessingResult {
     },
     /// File needs AI enrichment — left in inbox.
     NeedsEnrichment,
+    /// Classification identified an entity not in DB — needs user assignment.
+    NeedsEntity {
+        classification: String,
+        suggested_name: String,
+    },
     /// Processing failed.
     Error { message: String },
 }
@@ -94,12 +99,12 @@ pub fn process_file(
 
     log::info!("Classified '{}' as '{}'", filename, class_label);
 
-    // Resolve destination
-    let destination =
-        resolve_destination(&classification, workspace, filename, entity_tracker_path);
+    // Resolve destination (pass db for entity validation)
+    let route_outcome =
+        resolve_destination(&classification, workspace, filename, entity_tracker_path, db);
 
-    let result = match destination {
-        Some(dest) => {
+    let result = match route_outcome {
+        RouteOutcome::Destination(dest) => {
             // Route the file
             match move_file(&file_path, &dest) {
                 Ok(route_result) => {
@@ -175,7 +180,18 @@ pub fn process_file(
                 },
             }
         }
-        None => {
+        RouteOutcome::NeedsEntity { suggested_name } => {
+            log::info!(
+                "'{}' needs entity assignment (suggested: '{}') — leaving in inbox",
+                filename,
+                suggested_name
+            );
+            ProcessingResult::NeedsEntity {
+                classification: class_label.clone(),
+                suggested_name,
+            }
+        }
+        RouteOutcome::NeedsEnrichment => {
             log::info!("'{}' needs AI enrichment — leaving in inbox", filename);
             ProcessingResult::NeedsEnrichment
         }
@@ -195,11 +211,13 @@ pub fn process_file(
             status: match &result {
                 ProcessingResult::Routed { .. } => "completed".to_string(),
                 ProcessingResult::NeedsEnrichment => "needs_enrichment".to_string(),
+                ProcessingResult::NeedsEntity { .. } => "needs_entity".to_string(),
                 ProcessingResult::Error { .. } => "error".to_string(),
             },
             processed_at: Some(Utc::now().to_rfc3339()),
             error_message: match &result {
                 ProcessingResult::Error { message } => Some(message.clone()),
+                ProcessingResult::NeedsEntity { suggested_name, .. } => Some(suggested_name.clone()),
                 _ => None,
             },
             created_at: Utc::now().to_rfc3339(),
