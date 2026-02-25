@@ -50,6 +50,7 @@ import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
+import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 
 /* ── Vitals assembly ── */
 
@@ -170,6 +171,7 @@ export default function PersonDetailEditorial() {
   }
 
   const { detail, intelligence } = person;
+  const entityCtx = useEntityContextEntries("person", detail?.id ?? null);
 
   return (
     <>
@@ -308,14 +310,16 @@ export default function PersonDetailEditorial() {
       <div className="editorial-reveal">
         <PersonAppendix
           detail={detail}
-          editNotes={person.editNotes}
-          setEditNotes={(v) => { person.setEditNotes(v); person.setDirty(true); }}
           onSave={person.handleSave}
           dirty={person.dirty}
           saving={person.saving}
           duplicateCandidates={person.duplicateCandidates}
           onMergeSuggested={person.handleOpenSuggestedMerge}
           merging={person.merging}
+          contextEntries={entityCtx.entries}
+          onCreateContextEntry={entityCtx.createEntry}
+          onUpdateContextEntry={entityCtx.updateEntry}
+          onDeleteContextEntry={entityCtx.deleteEntry}
           files={person.files}
           onIndexFiles={person.handleIndexFiles}
           indexing={person.indexing}

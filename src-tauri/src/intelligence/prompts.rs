@@ -59,6 +59,8 @@ pub struct IntelligenceContext {
     pub relationship_edges: Option<String>,
     /// User professional context block for personalized enrichment (I412).
     pub user_context: Option<String>,
+    /// Entity-specific context entries from entity_context_entries table.
+    pub entity_context: Option<String>,
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
@@ -649,6 +651,17 @@ pub fn build_intelligence_context(
     };
     ctx.user_context = build_user_context_block(db, embedding_model, entity_name_for_ctx);
 
+    // --- Entity-specific context entries ---
+    let entity_entries =
+        super::user_context::get_entity_context_for_prompt(db, entity_type, entity_id);
+    if !entity_entries.is_empty() {
+        let mut block = String::new();
+        for (title, content) in &entity_entries {
+            block.push_str(&format!("### {}\n{}\n\n", title, content));
+        }
+        ctx.entity_context = Some(block);
+    }
+
     ctx
 }
 
@@ -1142,6 +1155,12 @@ fn build_intelligence_prompt_inner(
     if let Some(ref user_ctx) = ctx.user_context {
         prompt.push_str("## Your Professional Context\n");
         prompt.push_str(&wrap_user_data(user_ctx));
+        prompt.push_str("\n\n");
+    }
+
+    if let Some(ref entity_ctx) = ctx.entity_context {
+        prompt.push_str("## User Notes About This Entity\n");
+        prompt.push_str(&wrap_user_data(entity_ctx));
         prompt.push_str("\n\n");
     }
 
@@ -2378,6 +2397,7 @@ mod tests {
             canonical_contacts: None,
             relationship_edges: None,
             user_context: None,
+            entity_context: None,
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);

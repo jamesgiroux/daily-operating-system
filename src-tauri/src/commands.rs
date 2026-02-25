@@ -849,7 +849,12 @@ pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxRes
         for file in &mut files {
             if let Some((status, error)) = status_map.get(&file.filename) {
                 file.processing_status = Some(status.clone());
-                file.processing_error = error.clone();
+                // For needs_entity, error_message stores the suggested name
+                if status == "needs_entity" {
+                    file.suggested_entity_name = error.clone();
+                } else {
+                    file.processing_error = error.clone();
+                }
             }
         }
     }
@@ -1441,6 +1446,48 @@ pub async fn delete_user_context_entry(
     crate::services::user_entity::delete_user_context_entry(&id, &state).await
 }
 
+/// Get all entity context entries for an entity.
+#[tauri::command]
+pub async fn get_entity_context_entries(
+    entity_type: String,
+    entity_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::types::EntityContextEntry>, String> {
+    crate::services::entity_context::get_entries(&entity_type, &entity_id, &state).await
+}
+
+/// Create a new entity context entry.
+#[tauri::command]
+pub async fn create_entity_context_entry(
+    entity_type: String,
+    entity_id: String,
+    title: String,
+    content: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::types::EntityContextEntry, String> {
+    crate::services::entity_context::create_entry(&entity_type, &entity_id, &title, &content, &state).await
+}
+
+/// Update an existing entity context entry.
+#[tauri::command]
+pub async fn update_entity_context_entry(
+    id: String,
+    title: String,
+    content: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::entity_context::update_entry(&id, &title, &content, &state).await
+}
+
+/// Delete an entity context entry.
+#[tauri::command]
+pub async fn delete_entity_context_entry(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::entity_context::delete_entry(&id, &state).await
+}
+
 /// Process a user attachment from the /me page dropzone.
 ///
 /// Copies the file into _user/attachments/ (if not already there), processes it
@@ -1538,7 +1585,8 @@ pub async fn process_user_attachment(
     match result {
         crate::processor::ProcessingResult::Routed { destination, .. } => Ok(destination),
         crate::processor::ProcessingResult::Error { message } => Err(message),
-        crate::processor::ProcessingResult::NeedsEnrichment => {
+        crate::processor::ProcessingResult::NeedsEnrichment
+        | crate::processor::ProcessingResult::NeedsEntity { .. } => {
             Ok(final_path.display().to_string())
         }
     }

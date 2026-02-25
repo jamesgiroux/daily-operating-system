@@ -19,7 +19,6 @@ export function useAccountFields(
   const [editNps, setEditNps] = useState("");
   const [editRenewal, setEditRenewal] = useState("");
   const [editParentId, setEditParentId] = useState("");
-  const [editNotes, setEditNotes] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -37,7 +36,6 @@ export function useAccountFields(
     setEditNps(detail.nps?.toString() ?? "");
     setEditRenewal(detail.renewalDate ?? "");
     setEditParentId(detail.parentId ?? "");
-    setEditNotes(detail.notes ?? "");
     setDirty(false);
   }, [detail]);
 
@@ -57,9 +55,6 @@ export function useAccountFields(
       for (const [field, value] of fieldUpdates) {
         await invoke("update_account_field", { accountId: detail.id, field, value });
       }
-      if (editNotes !== (detail.notes ?? "")) {
-        await invoke("update_account_notes", { accountId: detail.id, notes: editNotes });
-      }
       setDirty(false);
       setEditing(false);
       await reload();
@@ -68,7 +63,7 @@ export function useAccountFields(
     } finally {
       setSaving(false);
     }
-  }, [detail, editName, editHealth, editLifecycle, editArr, editNps, editRenewal, editParentId, editNotes, reload, setError]);
+  }, [detail, editName, editHealth, editLifecycle, editArr, editNps, editRenewal, editParentId, reload, setError]);
 
   // Save a single field immediately with the provided value.
   // Avoids the stale-state problem where setState hasn't flushed
@@ -105,7 +100,6 @@ export function useAccountFields(
     editNps, setEditNps,
     editRenewal, setEditRenewal,
     editParentId, setEditParentId,
-    editNotes, setEditNotes,
     dirty, setDirty,
     saving,
     handleSave,

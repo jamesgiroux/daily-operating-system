@@ -7,14 +7,16 @@
 import React from "react";
 import type { ProjectDetail, ContentFile } from "@/types";
 import { FileListSection } from "@/components/entity/FileListSection";
+import { ContextEntryList } from "@/components/entity/ContextEntryList";
 
 interface ProjectAppendixProps {
   detail: ProjectDetail;
   files: ContentFile[];
-  editNotes?: string;
-  setEditNotes?: (v: string) => void;
-  onSaveNotes?: () => void;
-  notesDirty?: boolean;
+  // Context entries
+  contextEntries?: { id: string; title: string; content: string; createdAt: string }[];
+  onCreateContextEntry?: (title: string, content: string) => void;
+  onUpdateContextEntry?: (id: string, title: string, content: string) => void;
+  onDeleteContextEntry?: (id: string) => void;
   onIndexFiles?: () => void;
   indexing?: boolean;
   indexFeedback?: string | null;
@@ -46,10 +48,10 @@ function milestoneStatusColor(status: string): string {
 export function ProjectAppendix({
   detail,
   files,
-  editNotes,
-  setEditNotes,
-  onSaveNotes,
-  notesDirty,
+  contextEntries,
+  onCreateContextEntry,
+  onUpdateContextEntry,
+  onDeleteContextEntry,
   onIndexFiles,
   indexing,
   indexFeedback,
@@ -130,55 +132,34 @@ export function ProjectAppendix({
           </div>
         )}
 
-        {/* Notes (editable) */}
+        {/* Context */}
         <div style={ruleStyle}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              marginBottom: 16,
-            }}
-          >
-            <div style={sectionLabelStyle}>Notes</div>
-            {notesDirty && onSaveNotes && (
-              <button
-                onClick={onSaveNotes}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-garden-olive)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  padding: 0,
-                }}
-              >
-                Save
-              </button>
-            )}
-          </div>
-          <textarea
-            value={editNotes ?? detail.notes ?? ""}
-            onChange={(e) => setEditNotes?.(e.target.value)}
-            placeholder="Notes about this project…"
-            rows={6}
-            style={{
-              width: "100%",
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              lineHeight: 1.65,
-              color: "var(--color-text-primary)",
-              background: "none",
-              border: "none",
-              borderBottom: "1px solid var(--color-rule-light)",
-              outline: "none",
-              resize: "vertical",
-              padding: "8px 0",
-            }}
-          />
+          <div style={sectionLabelStyle}>Context</div>
+          {onCreateContextEntry && onUpdateContextEntry && onDeleteContextEntry && contextEntries ? (
+            <ContextEntryList
+              entries={contextEntries}
+              onCreate={onCreateContextEntry}
+              onUpdate={onUpdateContextEntry}
+              onDelete={onDeleteContextEntry}
+              addLabel="+ Add context entry"
+              placeholders={{
+                title: "e.g., 'Architecture decision' or 'Risk identified'",
+                content: "What happened and why it matters...",
+              }}
+            />
+          ) : (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                color: "var(--color-text-tertiary)",
+                fontStyle: "italic",
+                margin: 0,
+              }}
+            >
+              No context entries.
+            </p>
+          )}
         </div>
 
         {/* Files */}

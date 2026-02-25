@@ -52,6 +52,7 @@ import { TheWork } from "@/components/entity/TheWork";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
+import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 
 /* ── Vitals assembly ── */
 
@@ -203,7 +204,7 @@ export default function ProjectDetailEditorial() {
   }
 
   const { detail, intelligence, files } = proj;
-  const notesDirty = proj.editNotes !== (detail.notes ?? "");
+  const entityCtx = useEntityContextEntries("project", detail?.id ?? null);
 
   return (
     <>
@@ -656,13 +657,10 @@ export default function ProjectDetailEditorial() {
         <ProjectAppendix
           detail={detail}
           files={files}
-          editNotes={proj.editNotes}
-          setEditNotes={(v) => {
-            proj.setEditNotes(v);
-            proj.setDirty(true);
-          }}
-          onSaveNotes={proj.handleSave}
-          notesDirty={notesDirty}
+          contextEntries={entityCtx.entries}
+          onCreateContextEntry={entityCtx.createEntry}
+          onUpdateContextEntry={entityCtx.updateEntry}
+          onDeleteContextEntry={entityCtx.deleteEntry}
           onIndexFiles={proj.handleIndexFiles}
           indexing={proj.indexing}
           indexFeedback={proj.indexFeedback}
