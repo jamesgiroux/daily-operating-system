@@ -2,6 +2,7 @@
 //!
 //! Covers the prior Mon–Sun work week. Gathers user priorities,
 //! signal events, meetings history, and completed actions.
+//! Personalized to the user's active role preset.
 //! Quality gate: priorities_moved must cite real event IDs.
 
 use chrono::{Datelike, Duration, NaiveDate, Utc};
@@ -17,22 +18,39 @@ use crate::types::AiModelConfig;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PriorityMove {
+pub struct WeeklyImpactMove {
     pub priority_text: String,
     pub what_happened: String,
-    pub source: String, // meeting ID or signal ID — MUST be non-null
+    /// meeting ID or date — required
+    pub source: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeeklyImpactItem {
+    pub text: String,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklyImpactContent {
-    pub week_label: String,        // e.g., "Feb 17–21, 2026"
-    pub headline_stat: String,     // e.g., "7 meetings, 3 actions closed"
-    pub priorities_moved: Vec<PriorityMove>,
-    pub wins: Vec<String>,
-    pub activity_summary: String,  // Volume: what you did in 2 sentences
-    pub watch: Vec<String>,        // Things to keep an eye on
-    pub carry_forward: Vec<String>, // Priority items with zero progress this week
+    /// e.g. "Feb 17 – 21, 2026"
+    pub week_label: String,
+    pub total_meetings: i32,
+    pub total_actions_closed: i32,
+    /// Punchy editorial one-liner: "7 meetings. 3 closes. 2 first impressions."
+    pub headline: String,
+    /// What actually moved — each item needs a source citation
+    pub priorities_moved: Vec<WeeklyImpactMove>,
+    /// Specific wins, 1-3
+    pub wins: Vec<WeeklyImpactItem>,
+    /// 2-sentence editorial summary of the week's activity
+    pub what_you_did: String,
+    /// Things to monitor, 1-3
+    pub watch: Vec<WeeklyImpactItem>,
+    /// 1-3 forward items into next week
+    pub into_next_week: Vec<String>,
 }
 
 // =============================================================================
@@ -52,6 +70,21 @@ pub fn prior_work_week() -> (NaiveDate, NaiveDate) {
 }
 
 // =============================================================================
+// Preset vocabulary helpers
+// =============================================================================
+
+fn entity_noun_for_preset(preset: &str) -> &'static str {
+    match preset {
+        "sales" => "deal",
+        "agency" | "consulting" => "client",
+        "partnerships" => "partner",
+        "product" => "initiative",
+        "the-desk" => "project",
+        _ => "account",
+    }
+}
+
+// =============================================================================
 // Prompt
 // =============================================================================
 
@@ -59,6 +92,7 @@ fn build_weekly_impact_prompt(
     db: &ActionDb,
     week_start: NaiveDate,
     week_end: NaiveDate,
+    active_preset: &str,
 ) -> String {
     let week_start_str = week_start.format("%Y-%m-%d").to_string();
     let week_end_str = format!("{} 23:59:59", week_end.format("%Y-%m-%d"));
@@ -67,6 +101,7 @@ fn build_weekly_impact_prompt(
         week_start.format("%b %-d"),
         week_end.format("%-d, %Y")
     );
+    let entity_noun = entity_noun_for_preset(active_preset);
 
     // Gather user priorities
     let priorities_json: String = db
@@ -78,11 +113,11 @@ fn build_weekly_impact_prompt(
         )
         .unwrap_or_default();
 
-    // Gather meetings for the week
+    // Gather meetings for the week (with IDs for citation)
     let meetings: String = db
         .conn_ref()
         .prepare(
-            "SELECT title, start_time, meeting_type FROM meetings_history
+            "SELECT id, title, start_time, meeting_type FROM meetings_history
              WHERE start_time >= ?1 AND start_time <= ?2
                AND meeting_type NOT IN ('personal', 'focus', 'blocked')
              ORDER BY start_time",
@@ -91,10 +126,11 @@ fn build_weekly_impact_prompt(
             let rows = s.query_map(
                 rusqlite::params![week_start_str, week_end_str],
                 |row| {
-                    let title: String = row.get(0)?;
-                    let time: String = row.get(1)?;
-                    let mtype: String = row.get(2)?;
-                    Ok(format!("- {} | {} | {}", time, mtype, title))
+                    let id: String = row.get(0)?;
+                    let title: String = row.get(1)?;
+                    let time: String = row.get(2)?;
+                    let mtype: String = row.get(3)?;
+                    Ok(format!("- [{}] {} | {} | {}", id, time, mtype, title))
                 },
             )?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
@@ -155,6 +191,12 @@ fn build_weekly_impact_prompt(
 
     let mut prompt = build_report_preamble("you", "weekly_impact", "user");
 
+    // Preset context line
+    prompt.push_str(&format!(
+        "Role preset: {} ({} vocabulary). Adapt all output to use '{}' not 'account' where applicable.\n\n",
+        active_preset, entity_noun, entity_noun
+    ));
+
     prompt.push_str(&format!("# Week: {}\n\n", week_label));
 
     if !priorities_json.trim().is_empty() && priorities_json.trim() != " " {
@@ -162,11 +204,11 @@ fn build_weekly_impact_prompt(
         prompt.push_str(&crate::util::wrap_user_data(&priorities_json));
         prompt.push_str("\n\n");
     } else {
-        prompt.push_str("## Your Priorities\n(No priorities set — skip priorities_moved, use carry_forward: [])\n\n");
+        prompt.push_str("## Your Priorities\n(No priorities set — priorities_moved: [], into_next_week: [])\n\n");
     }
 
     if !meetings.is_empty() {
-        prompt.push_str(&format!("## Meetings This Week ({} total)\n", meeting_count));
+        prompt.push_str(&format!("## Meetings This Week ({} total — IDs included for citations)\n", meeting_count));
         prompt.push_str(&crate::util::wrap_user_data(&meetings));
         prompt.push_str("\n\n");
     } else {
@@ -174,7 +216,7 @@ fn build_weekly_impact_prompt(
     }
 
     if !signals.is_empty() {
-        prompt.push_str("## Intelligence Signals\n");
+        prompt.push_str("## Updates Captured\n");
         prompt.push_str(&crate::util::wrap_user_data(&signals));
         prompt.push_str("\n\n");
     }
@@ -187,33 +229,54 @@ fn build_weekly_impact_prompt(
         prompt.push_str("## Completed Actions\n(none)\n\n");
     }
 
-    prompt.push_str("# Output Format\n\n");
-    prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n");
+    prompt.push_str("## Output Format\n\n");
+    prompt.push_str("Respond with ONLY valid JSON (no markdown fences) matching this schema exactly:\n\n");
     prompt.push_str(&format!(
         r#"{{
   "weekLabel": "{week_label}",
-  "headlineStat": "X meetings, Y actions closed — one phrase summary, max 10 words",
+  "totalMeetings": {meeting_count},
+  "totalActionsClosed": {action_count},
+  "headline": "Punchy editorial one-liner. Like a newspaper headline. E.g. '7 meetings. 3 closes. 2 first impressions.' Max 15 words.",
   "prioritiesMoved": [
     {{
       "priorityText": "The priority this relates to",
       "whatHappened": "What actually happened, max 20 words",
-      "source": "meeting-id or signal-id — REQUIRED, never null"
+      "source": "meeting-id from the meetings list above — REQUIRED, never null or fabricated"
     }}
   ],
-  "wins": ["Win 1, max 15 words", "Win 2"],
-  "activitySummary": "2 sentences on what you did volume-wise this week.",
-  "watch": ["Concern or pattern to monitor, max 15 words"],
-  "carryForward": ["Priority with zero activity this week — be honest. Max 15 words."]
+  "wins": [
+    {{
+      "text": "Specific win, max 15 words",
+      "source": "meeting-id or date, or null"
+    }}
+  ],
+  "whatYouDid": "2 editorial sentences summarizing the week's activity. Volume + character of the work.",
+  "watch": [
+    {{
+      "text": "Concern or pattern to monitor, max 15 words",
+      "source": null
+    }}
+  ],
+  "intoNextWeek": ["Forward item 1 — specific, max 15 words", "Forward item 2"]
 }}"#,
-        week_label = week_label
+        week_label = week_label,
+        meeting_count = meeting_count,
+        action_count = action_count,
     ));
 
-    prompt.push_str("\n\n# Rules\n");
-    prompt.push_str("- priorities_moved: ONLY include if there is a real meeting or signal that demonstrates progress. Set source to the meeting ID or signal ID. NEVER fabricate.\n");
-    prompt.push_str("- If no priorities are set: priorities_moved = [], carry_forward = [].\n");
-    prompt.push_str("- carry_forward: Show ALL priorities with zero activity, even if uncomfortable. Do NOT omit them.\n");
-    prompt.push_str("- wins: 1–3 concrete wins from the data. Not generic.\n");
-    prompt.push_str("- watch: 1–3 items. Patterns, risks, or things needing follow-up.\n");
+    prompt.push_str("\n\n## Rules\n");
+    prompt.push_str(&format!(
+        "- totalMeetings and totalActionsClosed: use the EXACT counts from the data. Do not change them.\n\
+         - headline: punchy editorial one-liner — make it feel like a headline, not a summary sentence.\n\
+         - prioritiesMoved: ONLY include if there is a real meeting or signal demonstrating progress. source must be a meeting ID from the list above. NEVER fabricate.\n\
+         - If no priorities are set: prioritiesMoved = [], intoNextWeek = [].\n\
+         - wins: 1-3 concrete wins from the data. Each needs to be specific — not 'had a good meeting'.\n\
+         - whatYouDid: editorial, not corporate. Describes the week's character, not just volume.\n\
+         - watch: 1-3 items — patterns, risks, follow-up gaps. Specific.\n\
+         - intoNextWeek: 1-3 forward items. What to carry in, what to start. Use '{}' vocabulary.\n\
+         - Do NOT mention AI, enrichment, or internal app mechanics in any output text. Use human language.\n",
+        entity_noun
+    ));
 
     prompt
 }
@@ -223,15 +286,15 @@ fn build_weekly_impact_prompt(
 // =============================================================================
 
 pub fn gather_weekly_impact_input(
-    _workspace: &std::path::Path,
+    workspace: &std::path::Path,
     db: &ActionDb,
     ai_models: AiModelConfig,
+    active_preset: &str,
 ) -> Result<ReportGeneratorInput, String> {
     let (week_start, week_end) = prior_work_week();
     let intel_hash = format!("week-{}", week_start.format("%Y-%m-%d"));
-    let prompt = build_weekly_impact_prompt(db, week_start, week_end);
+    let prompt = build_weekly_impact_prompt(db, week_start, week_end, active_preset);
 
-    // "user" entity — use the actual numeric ID as string
     let user_entity_id: String = db
         .conn_ref()
         .query_row(
@@ -246,7 +309,7 @@ pub fn gather_weekly_impact_input(
         entity_type: "user".to_string(),
         report_type: "weekly_impact".to_string(),
         entity_name: "Weekly Impact".to_string(),
-        workspace: _workspace.to_path_buf(),
+        workspace: workspace.to_path_buf(),
         prompt,
         ai_models,
         intel_hash,
