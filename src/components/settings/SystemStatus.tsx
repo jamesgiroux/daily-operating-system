@@ -234,16 +234,16 @@ const modelOptions = ["haiku", "sonnet", "opus"] as const;
 
 const tierDescriptions: Record<string, { label: string; description: string }> = {
   synthesis: {
-    label: "Synthesis",
-    description: "Intelligence, briefings, weekly narrative",
+    label: "Insights & Briefings",
+    description: "Account insights, meeting briefings, reports, daily narrative",
   },
   extraction: {
-    label: "Extraction",
-    description: "Emails, meeting preps",
+    label: "Reading & Summarizing",
+    description: "Emails, meeting transcripts, finding action items",
   },
   mechanical: {
-    label: "Mechanical",
-    description: "Inbox classification, transcripts",
+    label: "Sorting & Filing",
+    description: "Classifying inbox files",
   },
 };
 
@@ -254,7 +254,7 @@ function AiModelsSection() {
     invoke<{ aiModels?: AiModelConfig }>("get_config")
       .then((config) => {
         setAiModels(
-          config.aiModels ?? { synthesis: "sonnet", extraction: "sonnet", mechanical: "haiku" },
+          config.aiModels ?? { synthesis: "sonnet", extraction: "haiku", mechanical: "haiku" },
         );
       })
       .catch((err) => console.error("Settings load failed:", err));
@@ -275,7 +275,7 @@ function AiModelsSection() {
     <div>
       <p style={styles.subsectionLabel}>AI Models</p>
       <p style={{ ...styles.description, marginBottom: 16 }}>
-        Choose which Claude model handles each type of operation
+        Choose which Claude model handles each type of task
       </p>
       <div style={{ display: "flex", flexDirection: "column" }}>
         {(["synthesis", "extraction", "mechanical"] as const).map((tier) => {
