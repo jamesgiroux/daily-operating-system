@@ -23,12 +23,10 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     let workspace = std::path::Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
 
-    // Try DB first (I368), fall back to JSON if empty
+    // DB is the source of truth for active emails (I448: resolved_at IS NULL filtering)
     let db_emails: Vec<crate::db::DbEmail> =
-        match state.db_read(|db| db.get_all_active_emails().map_err(|e| e.to_string())).await {
-            Ok(rows) if !rows.is_empty() => rows,
-            _ => Vec::new(),
-        };
+        state.db_read(|db| db.get_all_active_emails().map_err(|e| e.to_string())).await
+            .unwrap_or_default();
 
     let emails = if !db_emails.is_empty() {
         // Batch-resolve entity names from IDs
@@ -101,7 +99,7 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
             })
             .collect()
     } else {
-        crate::json_loader::load_emails_json(&today_dir).unwrap_or_default()
+        Vec::new()
     };
 
     // I395: Sort by relevance score (highest first, nulls last)
@@ -121,9 +119,11 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         }
     }
 
-    // Load email narrative + replies_needed from directive (I355)
-    let (email_narrative, replies_needed) = crate::json_loader::load_directive(&today_dir)
-        .map(|d| (d.emails.narrative, d.emails.replies_needed))
+    // Load replies_needed from directive (I355).
+    // I448: The directive narrative is baked into the file at generation time with
+    // counts that go stale as emails are archived. Build it dynamically from real data.
+    let replies_needed = crate::json_loader::load_directive(&today_dir)
+        .map(|d| d.emails.replies_needed)
         .unwrap_or_default();
 
     // Collect email IDs for batch signal lookup
@@ -158,6 +158,11 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     let mut medium = Vec::new();
     let mut low = Vec::new();
     let mut needs_action = 0usize;
+
+    // Capture entity IDs before the loop consumes emails (used for narrative below)
+    let email_entity_ids: HashSet<String> = emails.iter()
+        .filter_map(|e| e.entity_id.clone())
+        .collect();
 
     for email in emails {
         let sigs = signals_by_email.remove(&email.id).unwrap_or_default();
@@ -241,6 +246,43 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         .collect();
 
     let total = high.len() + medium.len() + low.len();
+
+    // I448: Build narrative dynamically from real counts, not the stale directive.
+    // Count how many emails are linked to entities that have meetings today.
+    let meeting_linked = if email_entity_ids.is_empty() {
+        0usize
+    } else {
+        let ids: Vec<String> = email_entity_ids.into_iter().collect();
+        state.db_read(move |db| {
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let start = format!("{}T00:00:00", today);
+            let end = format!("{}T23:59:59", today);
+            let count = ids.iter().filter(|eid| {
+                db.conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*) FROM meeting_entities me
+                         JOIN meetings_history mh ON me.meeting_id = mh.id
+                         WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
+                        rusqlite::params![eid, start, end],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap_or(0) > 0
+            }).count();
+            Ok::<usize, String>(count)
+        }).await.unwrap_or(0)
+    };
+
+    let email_narrative: Option<String> = if total == 0 {
+        None
+    } else if meeting_linked > 0 {
+        Some(format!(
+            "{} threads in your inbox, {} linked to today's meetings.",
+            total, meeting_linked
+        ))
+    } else {
+        Some(format!("{} threads in your inbox.", total))
+    };
+
     Ok(EmailBriefingData {
         stats: EmailBriefingStats {
             total,
