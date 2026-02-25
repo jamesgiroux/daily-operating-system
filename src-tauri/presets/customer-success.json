@@ -1,7 +1,7 @@
 {
   "id": "customer-success",
   "name": "Customer Success",
-  "description": "For customer success managers who own a portfolio of accounts. Tracks ARR, health scores, renewal timelines, and stakeholder relationships to surface retention risks and expansion opportunities.",
+  "description": "For customer success managers who own a portfolio of accounts. Tracks ARR, health scores, renewal timelines, and stakeholder relationships to flag retention risks and expansion opportunities.",
   "defaultEntityMode": "account",
   "vocabulary": {
     "entityNoun": "account",

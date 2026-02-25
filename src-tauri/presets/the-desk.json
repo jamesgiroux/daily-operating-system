@@ -1,7 +1,7 @@
 {
   "id": "the-desk",
   "name": "The Desk",
-  "description": "A minimal, general-purpose preset for individual contributors and knowledge workers. No opinionated entity model or domain vocabulary. Tracks projects, meetings, and actions without role-specific assumptions.",
+  "description": "A minimal, general-purpose preset for individual contributors and knowledge workers. No assumptions about your industry or role. Tracks projects, meetings, and actions without role-specific assumptions.",
   "defaultEntityMode": "project",
   "vocabulary": {
     "entityNoun": "project",
