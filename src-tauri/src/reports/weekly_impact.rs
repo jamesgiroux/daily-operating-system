@@ -113,11 +113,11 @@ fn build_weekly_impact_prompt(
         )
         .unwrap_or_default();
 
-    // Gather meetings for the week (with IDs for citation)
+    // Gather meetings for the week. Citation format: date + title (not raw calendar IDs).
     let meetings: String = db
         .conn_ref()
         .prepare(
-            "SELECT id, title, start_time, meeting_type FROM meetings_history
+            "SELECT title, start_time, meeting_type FROM meetings_history
              WHERE start_time >= ?1 AND start_time <= ?2
                AND meeting_type NOT IN ('personal', 'focus', 'blocked')
              ORDER BY start_time",
@@ -126,11 +126,12 @@ fn build_weekly_impact_prompt(
             let rows = s.query_map(
                 rusqlite::params![week_start_str, week_end_str],
                 |row| {
-                    let id: String = row.get(0)?;
-                    let title: String = row.get(1)?;
-                    let time: String = row.get(2)?;
-                    let mtype: String = row.get(3)?;
-                    Ok(format!("- [{}] {} | {} | {}", id, time, mtype, title))
+                    let title: String = row.get(0)?;
+                    let time: String = row.get(1)?;
+                    let mtype: String = row.get(2)?;
+                    // Use only the date portion as the citation reference — readable and unambiguous
+                    let date = time.split('T').next().unwrap_or(&time).to_string();
+                    Ok(format!("- {} | {} | {}", date, mtype, title))
                 },
             )?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
@@ -208,7 +209,7 @@ fn build_weekly_impact_prompt(
     }
 
     if !meetings.is_empty() {
-        prompt.push_str(&format!("## Meetings This Week ({} total — IDs included for citations)\n", meeting_count));
+        prompt.push_str(&format!("## Meetings This Week ({} total — dates included for citations)\n", meeting_count));
         prompt.push_str(&crate::util::wrap_user_data(&meetings));
         prompt.push_str("\n\n");
     } else {
@@ -241,13 +242,13 @@ fn build_weekly_impact_prompt(
     {{
       "priorityText": "The priority this relates to",
       "whatHappened": "What actually happened, max 20 words",
-      "source": "meeting-id from the meetings list above — REQUIRED, never null or fabricated"
+      "source": "date from the meetings list above, e.g. '2026-02-17' — REQUIRED, never null or fabricated"
     }}
   ],
   "wins": [
     {{
       "text": "Specific win, max 15 words",
-      "source": "meeting-id or date, or null"
+      "source": "date from meetings list e.g. '2026-02-17', or null if not from a specific meeting"
     }}
   ],
   "whatYouDid": "2 editorial sentences summarizing the week's activity. Volume + character of the work.",
@@ -269,11 +270,11 @@ fn build_weekly_impact_prompt(
         "- totalMeetings and totalActionsClosed: use the EXACT counts from the data. Do not change them.\n\
          - headline: punchy editorial one-liner — make it feel like a headline, not a summary sentence.\n\
          - prioritiesMoved: ONLY include if there is a real meeting or signal demonstrating progress. source must be a meeting ID from the list above. NEVER fabricate.\n\
-         - If no priorities are set: prioritiesMoved = [], intoNextWeek = [].\n\
+         - If no priorities are set: prioritiesMoved = []. intoNextWeek still MUST have 2-3 items.\n\
          - wins: 1-3 concrete wins from the data. Each needs to be specific — not 'had a good meeting'.\n\
          - whatYouDid: editorial, not corporate. Describes the week's character, not just volume.\n\
          - watch: 1-3 items — patterns, risks, follow-up gaps. Specific.\n\
-         - intoNextWeek: 1-3 forward items. What to carry in, what to start. Use '{}' vocabulary.\n\
+         - intoNextWeek: ALWAYS 2-3 items — never empty. Derive from watch items, open threads from wins, or next logical steps from the week's work. If no priorities, infer from the meetings and what came up. E.g. 'Follow up with [name] on [thing]', 'Schedule [meeting]', 'Close [action]'. Use '{}' vocabulary.\n\
          - Do NOT mention AI, enrichment, or internal app mechanics in any output text. Use human language.\n",
         entity_noun
     ));
