@@ -13,7 +13,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { useMe } from "@/hooks/useMe";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { formatShortDate } from "@/lib/utils";
 import type { AnnualPriority, QuarterlyPriority } from "@/types";
 
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
@@ -23,6 +22,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { EditableText } from "@/components/ui/EditableText";
 import { EditableList } from "@/components/ui/EditableList";
 import { EntityPicker } from "@/components/ui/entity-picker";
+import { ContextEntryList } from "@/components/entity/ContextEntryList";
 
 import s from "./MePage.module.css";
 
@@ -179,137 +179,6 @@ function PrioritySection({
       ) : (
         <button className={s.priorityAdd} onClick={() => setAdding(true)}>
           + Add priority
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ─── Context entry sub-component ─────────────────────────────────────
-
-function ContextEntryList({
-  entries,
-  onUpdate,
-  onDelete,
-  onCreate,
-}: {
-  entries: { id: string; title: string; content: string; createdAt: string }[];
-  onUpdate: (id: string, title: string, content: string) => void;
-  onDelete: (id: string) => void;
-  onCreate: (title: string, content: string) => void;
-}) {
-  const [adding, setAdding] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newContent, setNewContent] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editContent, setEditContent] = useState("");
-
-  const handleCreate = () => {
-    if (!newTitle.trim() || !newContent.trim()) return;
-    onCreate(newTitle.trim(), newContent.trim());
-    setNewTitle("");
-    setNewContent("");
-    setAdding(false);
-  };
-
-  const startEdit = (entry: { id: string; title: string; content: string }) => {
-    setEditingId(entry.id);
-    setEditTitle(entry.title);
-    setEditContent(entry.content);
-  };
-
-  const commitEdit = () => {
-    if (editingId && editTitle.trim() && editContent.trim()) {
-      onUpdate(editingId, editTitle.trim(), editContent.trim());
-    }
-    setEditingId(null);
-  };
-
-  return (
-    <div>
-      <div className={s.entryList}>
-        {entries.map((entry) =>
-          editingId === entry.id ? (
-            <div key={entry.id} className={s.editEntryForm}>
-              <input
-                className={s.addEntryInput}
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="Title"
-                autoFocus
-              />
-              <textarea
-                className={s.addEntryTextarea}
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                placeholder="Content"
-                rows={3}
-              />
-              <div className={s.addEntryActions}>
-                <button className={s.addEntryCancel} onClick={() => setEditingId(null)}>
-                  Cancel
-                </button>
-                <button className={s.addEntrySave} onClick={commitEdit}>
-                  Save
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div key={entry.id} className={s.entryItem}>
-              <div className={s.entryHeader}>
-                <span className={s.entryTitle}>{entry.title}</span>
-                <span className={s.entryDate}>{formatShortDate(entry.createdAt)}</span>
-              </div>
-              <div className={s.entryContent}>{entry.content}</div>
-              <div className={s.entryActions}>
-                <button className={s.entryActionBtn} onClick={() => startEdit(entry)}>
-                  Edit
-                </button>
-                <button className={s.entryActionBtn} onClick={() => onDelete(entry.id)}>
-                  Delete
-                </button>
-              </div>
-            </div>
-          ),
-        )}
-      </div>
-
-      {adding ? (
-        <div className={s.addEntryForm}>
-          <input
-            className={s.addEntryInput}
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="e.g., 'Infrastructure scaling philosophy' or 'Customer success metrics'"
-            autoFocus
-          />
-          <textarea
-            className={s.addEntryTextarea}
-            value={newContent}
-            onChange={(e) => setNewContent(e.target.value)}
-            placeholder="Write 1–3 paragraphs about your approach, methodology, or key insight. This context will be retrieved during account/person enrichment when relevant."
-            rows={3}
-          />
-          <div className={s.addEntryActions}>
-            <button
-              className={s.addEntryCancel}
-              onClick={() => {
-                setAdding(false);
-                setNewTitle("");
-                setNewContent("");
-              }}
-            >
-              Cancel
-            </button>
-            <button className={s.addEntrySave} onClick={handleCreate}>
-              Save
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button className={s.priorityAdd} onClick={() => setAdding(true)}>
-          + Add context entry
         </button>
       )}
     </div>

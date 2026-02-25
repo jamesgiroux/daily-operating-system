@@ -11,4 +11,5 @@ pub mod settings;
 pub mod intelligence;
 pub mod signals;
 pub mod user_entity;
+pub mod entity_context;
 pub mod reports;
