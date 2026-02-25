@@ -870,6 +870,7 @@ pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
                 file_type,
                 processing_status: None,
                 processing_error: None,
+                suggested_entity_name: None,
             })
         })
         .collect();

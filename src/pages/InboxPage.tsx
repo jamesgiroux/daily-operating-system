@@ -33,10 +33,18 @@ const defaultFileState: FileState = {
 };
 
 interface ProcessingResultPayload {
-  status: "routed" | "needs_enrichment" | "error";
+  status: "routed" | "needs_enrichment" | "needs_entity" | "error";
   classification?: string;
   destination?: string;
   message?: string;
+  suggestedName?: string;
+}
+
+interface PickerAccount {
+  id: string;
+  name: string;
+  parentName?: string;
+  accountType: string;
 }
 
 // =============================================================================
@@ -152,6 +160,7 @@ function formatInboxStatus(value: string): string {
   if (value === "completed") return "Processed";
   if (value === "routed") return "Processed";
   if (value === "needs_enrichment") return "Needs AI";
+  if (value === "needs_entity") return "Needs assignment";
   if (value === "error") return "Error";
   if (value === "unprocessed") return "New";
   return value.replace(/_/g, " ");
@@ -160,6 +169,7 @@ function formatInboxStatus(value: string): string {
 function statusDotColor(value: string): string {
   if (value === "completed" || value === "routed") return "var(--color-garden-sage)";
   if (value === "needs_enrichment") return "var(--color-spice-turmeric)";
+  if (value === "needs_entity") return "var(--color-spice-turmeric)";
   if (value === "error") return "var(--color-spice-terracotta)";
   return "var(--color-text-tertiary)";
 }
@@ -366,6 +376,13 @@ export default function InboxPage() {
           return;
         }
 
+        if (result.status === "needs_entity") {
+          // Entity not found — leave in inbox for user to assign
+          updateFileState(filename, { status: "new" });
+          setTimeout(() => refresh(), 300);
+          return;
+        }
+
         if (result.status === "error") {
           updateFileState(filename, {
             status: "error",
@@ -391,6 +408,10 @@ export default function InboxPage() {
         if (enrichResult.status === "routed" || enrichResult.status === "archived") {
           updateFileState(filename, { status: "processed" });
           setTimeout(() => refresh(), 500);
+        } else if (enrichResult.status === "needs_entity") {
+          // AI identified an entity that doesn't exist — refresh to show picker
+          updateFileState(filename, { status: "new" });
+          setTimeout(() => refresh(), 300);
         } else {
           updateFileState(filename, {
             status: "error",
@@ -436,6 +457,9 @@ export default function InboxPage() {
           routed++;
         } else if (result.status === "needs_enrichment") {
           needsEnrichment.push(filename);
+        } else if (result.status === "needs_entity") {
+          // Entity not found — leave in inbox for user to assign via picker
+          updateFileState(filename, { status: "new" });
         } else {
           updateFileState(filename, {
             status: "error",
@@ -470,6 +494,8 @@ export default function InboxPage() {
           if (enrichResult.status === "routed" || enrichResult.status === "archived") {
             updateFileState(filename, { status: "processed" });
             routed++;
+          } else if (enrichResult.status === "needs_entity") {
+            updateFileState(filename, { status: "new" });
           } else {
             updateFileState(filename, {
               status: "error",
@@ -928,6 +954,16 @@ export default function InboxPage() {
               onToggleExpand={() => toggleExpand(file.filename)}
               onProcess={() => processFile(file.filename)}
               onCancel={() => cancelFile(file.filename)}
+              onAssignEntity={async (entityId: string) => {
+                updateFileState(file.filename, { status: "processing" });
+                try {
+                  await invoke("process_inbox_file", { filename: file.filename, entityId });
+                  updateFileState(file.filename, { status: "processed" });
+                  setTimeout(() => refresh(), 500);
+                } catch {
+                  updateFileState(file.filename, { status: "error", error: "Assignment failed" });
+                }
+              }}
             />
           ))}
         </div>
@@ -957,6 +993,7 @@ function InboxRow({
   onToggleExpand,
   onProcess,
   onCancel,
+  onAssignEntity,
 }: {
   file: InboxFile;
   state: FileState;
@@ -965,13 +1002,25 @@ function InboxRow({
   onToggleExpand: () => void;
   onProcess: () => void;
   onCancel: () => void;
+  onAssignEntity: (entityId: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [accounts, setAccounts] = useState<PickerAccount[]>([]);
   const isProcessing = state.status === "processing";
   const isError = state.status === "error";
+  const needsEntity = file.processingStatus === "needs_entity";
   const classification = classifyFile(file);
   const title = humanizeFilename(file.filename);
   const time = file.modified ? formatModified(file.modified) : "";
+
+  // Load accounts for entity picker when file needs entity assignment
+  useEffect(() => {
+    if (needsEntity && accounts.length === 0) {
+      invoke<PickerAccount[]>("get_accounts_for_picker")
+        .then(setAccounts)
+        .catch(() => {});
+    }
+  }, [needsEntity, accounts.length]);
 
   // Determine status display
   const displayStatus = isProcessing
@@ -1183,6 +1232,57 @@ function InboxRow({
           }}
         >
           {state.error}
+        </div>
+      )}
+
+      {/* Needs entity — inline picker */}
+      {needsEntity && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "6px 0 10px 20px",
+            borderBottom: !isLast ? "1px solid var(--color-rule-light)" : "none",
+          }}
+        >
+          {file.suggestedEntityName && (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                letterSpacing: "0.04em",
+                color: "var(--color-spice-turmeric)",
+              }}
+            >
+              Suggested: {file.suggestedEntityName}
+            </span>
+          )}
+          <select
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value) onAssignEntity(e.target.value);
+            }}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-secondary)",
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-rule-medium)",
+              borderRadius: 4,
+              padding: "3px 6px",
+              cursor: "pointer",
+            }}
+          >
+            <option value="" disabled>
+              Assign to account...
+            </option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.parentName ? `${a.parentName} › ${a.name}` : a.name}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 

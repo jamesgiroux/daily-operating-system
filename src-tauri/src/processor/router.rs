@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 
 use super::classifier::Classification;
+use crate::db::ActionDb;
 
 /// Result of routing a file to a destination.
 #[derive(Debug, Clone)]
@@ -18,24 +19,46 @@ pub struct RouteResult {
     pub description: String,
 }
 
+/// Outcome of route resolution.
+#[derive(Debug, Clone)]
+pub enum RouteOutcome {
+    /// File should be moved to this destination.
+    Destination(PathBuf),
+    /// File needs AI enrichment — stay in inbox.
+    NeedsEnrichment,
+    /// Classification identified an entity that doesn't exist in DB.
+    NeedsEntity { suggested_name: String },
+}
+
 /// Determine the destination path for a classified file.
 ///
-/// Returns None if the file should stay in _inbox/ (e.g., needs AI enrichment).
+/// When `db` is provided, validates that referenced accounts exist in the DB.
+/// If the account doesn't exist, returns `NeedsEntity` so the user can assign it.
+/// When `entity_tracker_path` is provided (explicit user assignment), skips the check.
 pub fn resolve_destination(
     classification: &Classification,
     workspace: &Path,
     filename: &str,
     entity_tracker_path: Option<&str>,
-) -> Option<PathBuf> {
+    db: Option<&ActionDb>,
+) -> RouteOutcome {
     match classification {
         Classification::MeetingNotes { account } => {
             if let Some(tp) = entity_tracker_path {
-                return Some(workspace.join(tp).join("Meeting-Notes").join(filename));
+                return RouteOutcome::Destination(
+                    workspace.join(tp).join("Meeting-Notes").join(filename),
+                );
             }
             if let Some(account) = account {
-                // Route to Accounts/<name>/Meeting-Notes/ (ADR-0059)
+                if let Some(db) = db {
+                    let exists = db.get_account_by_name(account).ok().flatten().is_some();
+                    if !exists {
+                        log::info!("Account '{}' not found in DB — needs entity assignment", account);
+                        return RouteOutcome::NeedsEntity { suggested_name: account.clone() };
+                    }
+                }
                 let account_dir = sanitize_dir_name(account);
-                Some(
+                RouteOutcome::Destination(
                     workspace
                         .join("Accounts")
                         .join(&account_dir)
@@ -43,19 +66,26 @@ pub fn resolve_destination(
                         .join(filename),
                 )
             } else {
-                // No account — route to archive
                 let date = Utc::now().format("%Y-%m-%d").to_string();
-                Some(workspace.join("_archive").join(&date).join(filename))
+                RouteOutcome::Destination(workspace.join("_archive").join(&date).join(filename))
             }
         }
 
         Classification::AccountUpdate { account } => {
             if let Some(tp) = entity_tracker_path {
-                return Some(workspace.join(tp).join("Documents").join(filename));
+                return RouteOutcome::Destination(
+                    workspace.join(tp).join("Documents").join(filename),
+                );
             }
-            // Route to Accounts/<name>/Documents/ (ADR-0059)
+            if let Some(db) = db {
+                let exists = db.get_account_by_name(account).ok().flatten().is_some();
+                if !exists {
+                    log::info!("Account '{}' not found in DB — needs entity assignment", account);
+                    return RouteOutcome::NeedsEntity { suggested_name: account.clone() };
+                }
+            }
             let account_dir = sanitize_dir_name(account);
-            Some(
+            RouteOutcome::Destination(
                 workspace
                     .join("Accounts")
                     .join(&account_dir)
@@ -65,30 +95,27 @@ pub fn resolve_destination(
         }
 
         Classification::ActionItems { .. } => {
-            // Actions get extracted to SQLite, original goes to archive
             let date = Utc::now().format("%Y-%m-%d").to_string();
-            Some(workspace.join("_archive").join(&date).join(filename))
+            RouteOutcome::Destination(workspace.join("_archive").join(&date).join(filename))
         }
 
         Classification::MeetingContext { .. } => {
             // Route to _today/ for upcoming meeting prep, or archive
             let today_dir = workspace.join("_today");
             if today_dir.exists() {
-                Some(today_dir.join(filename))
+                RouteOutcome::Destination(today_dir.join(filename))
             } else {
                 let date = Utc::now().format("%Y-%m-%d").to_string();
-                Some(workspace.join("_archive").join(&date).join(filename))
+                RouteOutcome::Destination(workspace.join("_archive").join(&date).join(filename))
             }
         }
 
         Classification::UserContext => {
-            // User context documents stay in _user/attachments/ — no move
-            None
+            RouteOutcome::NeedsEnrichment
         }
 
         Classification::Unknown => {
-            // Stay in inbox — needs AI enrichment
-            None
+            RouteOutcome::NeedsEnrichment
         }
     }
 }
@@ -183,24 +210,25 @@ mod tests {
         let classification = Classification::MeetingNotes {
             account: Some("acme corp".to_string()),
         };
-        let dest = resolve_destination(&classification, workspace, "notes.md", None);
-        assert!(dest.is_some());
-        let dest = dest.unwrap();
-        assert_eq!(
-            dest,
-            PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md")
-        );
+        let outcome = resolve_destination(&classification, workspace, "notes.md", None, None);
+        match outcome {
+            RouteOutcome::Destination(dest) => assert_eq!(dest, PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md")),
+            other => panic!("Expected Destination, got {:?}", other),
+        }
     }
 
     #[test]
     fn test_resolve_meeting_notes_no_account() {
         let workspace = Path::new("/workspace");
         let classification = Classification::MeetingNotes { account: None };
-        let dest = resolve_destination(&classification, workspace, "notes.md", None);
-        assert!(dest.is_some());
-        let dest = dest.unwrap();
-        assert!(dest.starts_with("/workspace/_archive/"));
-        assert!(dest.ends_with("notes.md"));
+        let outcome = resolve_destination(&classification, workspace, "notes.md", None, None);
+        match outcome {
+            RouteOutcome::Destination(dest) => {
+                assert!(dest.starts_with("/workspace/_archive/"));
+                assert!(dest.ends_with("notes.md"));
+            }
+            other => panic!("Expected Destination, got {:?}", other),
+        }
     }
 
     #[test]
@@ -209,13 +237,11 @@ mod tests {
         let classification = Classification::AccountUpdate {
             account: "acme corp".to_string(),
         };
-        let dest = resolve_destination(&classification, workspace, "update.md", None);
-        assert!(dest.is_some());
-        let dest = dest.unwrap();
-        assert_eq!(
-            dest,
-            PathBuf::from("/workspace/Accounts/Acme-Corp/Documents/update.md")
-        );
+        let outcome = resolve_destination(&classification, workspace, "update.md", None, None);
+        match outcome {
+            RouteOutcome::Destination(dest) => assert_eq!(dest, PathBuf::from("/workspace/Accounts/Acme-Corp/Documents/update.md")),
+            other => panic!("Expected Destination, got {:?}", other),
+        }
     }
 
     #[test]
@@ -243,25 +269,121 @@ mod tests {
     fn test_resolve_unknown_stays() {
         let workspace = Path::new("/workspace");
         let classification = Classification::Unknown;
-        let dest = resolve_destination(&classification, workspace, "mystery.md", None);
-        assert!(dest.is_none());
+        let outcome = resolve_destination(&classification, workspace, "mystery.md", None, None);
+        assert!(matches!(outcome, RouteOutcome::NeedsEnrichment));
+    }
+
+    #[test]
+    fn test_resolve_meeting_notes_needs_entity_when_account_not_in_db() {
+        let db = crate::db::test_utils::test_db();
+        let workspace = Path::new("/workspace");
+
+        // Account "Acme Corp" does NOT exist in DB
+        let classification = Classification::MeetingNotes {
+            account: Some("Acme Corp".to_string()),
+        };
+        let outcome = resolve_destination(&classification, workspace, "notes.md", None, Some(&db));
+        match outcome {
+            RouteOutcome::NeedsEntity { suggested_name } => {
+                assert_eq!(suggested_name, "Acme Corp");
+            }
+            other => panic!("Expected NeedsEntity, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resolve_meeting_notes_routes_when_account_exists_in_db() {
+        let db = crate::db::test_utils::test_db();
+        let workspace = Path::new("/workspace");
+
+        // Insert an account into the test DB
+        let account = crate::db::DbAccount {
+            id: "acme-corp".to_string(),
+            name: "Acme Corp".to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: Some("Accounts/Acme-Corp".to_string()),
+            parent_id: None,
+            account_type: crate::db::AccountType::Customer,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+        };
+        db.upsert_account(&account).unwrap();
+
+        let classification = Classification::MeetingNotes {
+            account: Some("Acme Corp".to_string()),
+        };
+        let outcome = resolve_destination(&classification, workspace, "notes.md", None, Some(&db));
+        match outcome {
+            RouteOutcome::Destination(dest) => {
+                assert_eq!(dest, PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md"));
+            }
+            other => panic!("Expected Destination, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resolve_account_update_needs_entity_when_not_in_db() {
+        let db = crate::db::test_utils::test_db();
+        let workspace = Path::new("/workspace");
+
+        let classification = Classification::AccountUpdate {
+            account: "Unknown Co".to_string(),
+        };
+        let outcome = resolve_destination(&classification, workspace, "update.md", None, Some(&db));
+        match outcome {
+            RouteOutcome::NeedsEntity { suggested_name } => {
+                assert_eq!(suggested_name, "Unknown Co");
+            }
+            other => panic!("Expected NeedsEntity, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resolve_entity_override_bypasses_db_check() {
+        let db = crate::db::test_utils::test_db();
+        let workspace = Path::new("/workspace");
+
+        // Account doesn't exist in DB, but entity_tracker_path is provided (user assignment)
+        let classification = Classification::MeetingNotes {
+            account: Some("Nonexistent Corp".to_string()),
+        };
+        let outcome = resolve_destination(
+            &classification,
+            workspace,
+            "notes.md",
+            Some("Accounts/Nonexistent-Corp"),
+            Some(&db),
+        );
+        match outcome {
+            RouteOutcome::Destination(dest) => {
+                assert_eq!(dest, PathBuf::from("/workspace/Accounts/Nonexistent-Corp/Meeting-Notes/notes.md"));
+            }
+            other => panic!("Expected Destination (entity override), got {:?}", other),
+        }
     }
 
     #[test]
     fn test_resolve_with_entity_override_uses_tracker_path() {
         let workspace = Path::new("/workspace");
         let classification = Classification::MeetingNotes { account: None };
-        let dest = resolve_destination(
+        let outcome = resolve_destination(
             &classification,
             workspace,
             "notes.md",
             Some("Internal/Acme/Core-Team"),
+            None,
         );
-        assert_eq!(
-            dest,
-            Some(PathBuf::from(
-                "/workspace/Internal/Acme/Core-Team/Meeting-Notes/notes.md"
-            ))
-        );
+        match outcome {
+            RouteOutcome::Destination(dest) => assert_eq!(dest, PathBuf::from("/workspace/Internal/Acme/Core-Team/Meeting-Notes/notes.md")),
+            other => panic!("Expected Destination, got {:?}", other),
+        }
     }
 }
