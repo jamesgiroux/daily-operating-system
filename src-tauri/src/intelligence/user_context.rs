@@ -82,6 +82,31 @@ pub fn search_user_context(
     matches
 }
 
+/// Get all entity context entries for injection into intelligence prompts.
+///
+/// Unlike user context entries (which use semantic search), entity-specific
+/// entries are always relevant to their entity, so we return all of them.
+pub fn get_entity_context_for_prompt(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Vec<(String, String)> {
+    match db.conn_ref().prepare(
+        "SELECT title, content FROM entity_context_entries
+         WHERE entity_type = ?1 AND entity_id = ?2
+         ORDER BY created_at DESC",
+    ) {
+        Ok(mut stmt) => stmt
+            .query_map(rusqlite::params![entity_type, entity_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .ok()
+            .map(|iter| iter.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Search user attachment files by semantic similarity to a query string (I413 AC4).
 ///
 /// Queries `content_embeddings` joined to `content_index` where `entity_type = 'user_context'`.
