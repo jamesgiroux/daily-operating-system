@@ -5,6 +5,7 @@ import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
+import { getAccountReports } from "@/lib/report-config";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -215,12 +216,7 @@ export default function AccountDetailEditorial() {
                   overflow: "hidden",
                 }}
               >
-                {[
-                  { label: "Account Health", reportType: "account_health" as const, dedicated: true },
-                  { label: "EBR / QBR", reportType: "ebr_qbr" as const, dedicated: true },
-                  { label: "SWOT", reportType: "swot" as const, dedicated: false },
-                  { label: "Risk Briefing", reportType: null, dedicated: false },
-                ].map((item) => (
+                {getAccountReports(preset?.id).map((item) => (
                   <button
                     key={item.label}
                     onClick={() => {
@@ -263,7 +259,7 @@ export default function AccountDetailEditorial() {
         </div>
       ),
     }),
-    [navigate, accountId, acct.detail, acct.setCreateChildOpen, reportsOpen, setReportsOpen],
+    [navigate, accountId, acct.detail, acct.setCreateChildOpen, reportsOpen, setReportsOpen, preset?.id],
   );
   useRegisterMagazineShell(shellConfig);
 
