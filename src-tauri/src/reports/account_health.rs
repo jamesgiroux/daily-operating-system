@@ -1,0 +1,193 @@
+//! Account Health Review report (I399).
+//!
+//! Produces a structured health assessment reading entity_intelligence
+//! fields plus meeting cadence and email signal data.
+
+use crate::db::ActionDb;
+use crate::intelligence::{build_intelligence_context, read_intelligence_json};
+use crate::reports::generator::ReportGeneratorInput;
+use crate::reports::prompts::{append_intel_context, build_report_preamble};
+use crate::types::AiModelConfig;
+use chrono::Utc;
+
+// =============================================================================
+// Output schema
+// =============================================================================
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountHealthSignal {
+    pub text: String,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountHealthRisk {
+    pub risk: String,
+    pub status: String, // "open" | "mitigated" | "resolved"
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountHealthContent {
+    pub overall_assessment: String,
+    pub health_score_narrative: Option<String>,
+    pub relationship_summary: String,       // 2 sentences
+    pub engagement_cadence: String,         // "X meetings in 90 days" style
+    pub customer_quote: Option<String>,     // Direct quote if available
+    pub what_is_working: Vec<String>,       // 2-4 items
+    pub what_is_struggling: Vec<String>,    // 1-3 items
+    pub expansion_signals: Vec<String>,     // Growth opportunities
+    pub value_delivered: Vec<AccountHealthSignal>,
+    pub risks: Vec<AccountHealthRisk>,
+    pub renewal_context: Option<String>,
+    pub recommended_actions: Vec<String>,
+}
+
+// =============================================================================
+// Prompt
+// =============================================================================
+
+fn build_account_health_prompt(
+    entity_name: &str,
+    db: &ActionDb,
+    workspace: &std::path::Path,
+    entity_id: &str,
+    account: Option<&crate::db::DbAccount>,
+) -> String {
+    let prior = account.and_then(|a| {
+        let dir = crate::accounts::resolve_account_dir(workspace, a);
+        read_intelligence_json(&dir).ok()
+    });
+
+    let ctx = build_intelligence_context(
+        workspace,
+        db,
+        entity_id,
+        "account",
+        account,
+        None,
+        prior.as_ref(),
+        None,
+    );
+
+    // Gather supplemental data: meeting count (90d), email signal count, renewal date
+    let ninety_days_ago = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+    let meeting_count_90d: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM meetings_history m
+             JOIN meeting_entities me ON me.meeting_id = m.id
+             WHERE me.entity_id = ?1 AND m.start_time > ?2
+               AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
+            rusqlite::params![entity_id, ninety_days_ago],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let email_signal_count: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM signal_events WHERE entity_id = ?1 AND signal_type LIKE 'email%'",
+            rusqlite::params![entity_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let renewal_date: Option<String> = db
+        .conn_ref()
+        .query_row(
+            "SELECT event_date FROM account_events WHERE account_id = ?1 AND event_type = 'renewal' ORDER BY event_date ASC LIMIT 1",
+            rusqlite::params![entity_id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let mut prompt = build_report_preamble(entity_name, "account_health", "account");
+
+    // Add supplemental engagement data
+    prompt.push_str("## Engagement Metrics\n");
+    prompt.push_str(&format!("- Meetings last 90 days: {}\n", meeting_count_90d));
+    prompt.push_str(&format!("- Email signals tracked: {}\n", email_signal_count));
+    if let Some(ref rd) = renewal_date {
+        prompt.push_str(&format!("- Next renewal date: {}\n", rd));
+    }
+    prompt.push('\n');
+
+    prompt.push_str("# Intelligence Data\n\n");
+    append_intel_context(&mut prompt, &ctx);
+
+    prompt.push_str("# Output Format\n\n");
+    prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n");
+    prompt.push_str(r#"{
+  "overallAssessment": "One sentence: current state of this account. Direct.",
+  "healthScoreNarrative": "If trend data exists, describe it. null if not.",
+  "relationshipSummary": "2 sentences on partnership quality and executive alignment.",
+  "engagementCadence": "Describe meeting rhythm and communication health. e.g. '8 meetings in 90 days, mostly CSM-led with VP present twice.'",
+  "customerQuote": "A direct quote from a meeting note or email signal that captures how the customer feels about the partnership. Use exact words if available. null if no clear quote.",
+  "whatIsWorking": ["2-4 specific things that are going well. Concrete, not generic."],
+  "whatIsStruggling": ["1-3 honest gaps or friction points. If nothing is struggling, 1 item minimum."],
+  "expansionSignals": ["Signals suggesting growth opportunity: new use cases mentioned, team growth, positive NPS, etc. Empty array if none."],
+  "valueDelivered": [
+    {"text": "Specific outcome, max 20 words", "source": "meeting-id or date or null"}
+  ],
+  "risks": [
+    {"risk": "Specific risk, max 15 words", "status": "open|mitigated|resolved"}
+  ],
+  "renewalContext": "Renewal date + confidence context if renewal_date is in the data. null otherwise.",
+  "recommendedActions": ["Action 1 (verb phrase, max 10 words)", "Action 2", "Action 3"]
+}"#);
+
+    prompt.push_str("\n\n# Rules\n");
+    prompt.push_str("- customer_quote: Use real words from meeting notes or email signals. Quote format: \"They said X\" or just the quote itself. null if no real quote.\n");
+    prompt.push_str("- what_is_struggling: Be honest. Even healthy accounts have at least one challenge.\n");
+    prompt.push_str("- expansion_signals: Only include if there's actual signal data — don't fabricate.\n");
+    prompt.push_str("- value_delivered: Must have real citations where possible.\n");
+    prompt.push_str("- recommended_actions: Exactly 3. Concrete verb phrases.\n");
+    prompt.push_str("- SPECIFICITY: The Entity Intelligence Assessment (if present above) is your primary source. Use the specific risks, named people, and strategic context it identifies. Generic observations from meeting metadata alone are not sufficient.\n");
+
+    prompt
+}
+
+// =============================================================================
+// Generation input (Phase 1 — called under brief DB lock)
+// =============================================================================
+
+pub fn gather_account_health_input(
+    workspace: &std::path::Path,
+    db: &ActionDb,
+    entity_id: &str,
+    ai_models: AiModelConfig,
+) -> Result<ReportGeneratorInput, String> {
+    let account = db
+        .get_account(entity_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Account not found: {}", entity_id))?;
+
+    let entity_name = account.name.clone();
+    let intel_hash = crate::reports::compute_intel_hash(entity_id, "account", db);
+    let prompt = build_account_health_prompt(&entity_name, db, workspace, entity_id, Some(&account));
+
+    Ok(ReportGeneratorInput {
+        entity_id: entity_id.to_string(),
+        entity_type: "account".to_string(),
+        report_type: "account_health".to_string(),
+        entity_name,
+        workspace: workspace.to_path_buf(),
+        prompt,
+        ai_models,
+        intel_hash,
+    })
+}
+
+// =============================================================================
+// Response parsing
+// =============================================================================
+
+pub fn parse_account_health_response(stdout: &str) -> Result<AccountHealthContent, String> {
+    let json_str = crate::risk_briefing::extract_json_object(stdout)
+        .ok_or_else(|| "No valid JSON object found in Account Health response".to_string())?;
+
+    serde_json::from_str::<AccountHealthContent>(&json_str)
+        .map_err(|e| format!("Failed to parse Account Health JSON: {}", e))
+}

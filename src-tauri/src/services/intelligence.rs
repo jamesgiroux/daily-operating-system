@@ -212,7 +212,18 @@ pub async fn generate_risk_briefing(
             )?
         };
 
-        crate::risk_briefing::run_risk_enrichment(&input)
+        let briefing = crate::risk_briefing::run_risk_enrichment(&input)?;
+
+        // Store in reports table for unified tracking (I398)
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let _ = crate::reports::risk::store_risk_briefing_in_reports(
+                &db,
+                &account_id,
+                &briefing,
+            );
+        }
+
+        Ok(briefing)
     });
 
     match task.await {
@@ -227,6 +238,12 @@ pub fn get_risk_briefing(
     state: &AppState,
     account_id: &str,
 ) -> Result<crate::types::RiskBriefing, String> {
+    // Try reports table first (I398 — DB-backed storage)
+    if let Some(briefing) = crate::reports::risk::load_risk_briefing_from_reports(db, account_id) {
+        return Ok(briefing);
+    }
+
+    // Fall back to disk (legacy path)
     let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
     let config = config_guard.as_ref().ok_or("Config not initialized")?;
 
