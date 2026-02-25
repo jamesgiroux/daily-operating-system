@@ -29,12 +29,12 @@ import s from "./MePage.module.css";
 // ─── Chapter definitions ──────────────────────────────────────────────
 
 const CHAPTERS = [
-  { id: "about-me", label: "About Me", icon: <User size={18} strokeWidth={1.5} /> },
-  { id: "what-i-deliver", label: "What I Deliver", icon: <Briefcase size={18} strokeWidth={1.5} /> },
-  { id: "my-priorities", label: "My Priorities", icon: <Target size={18} strokeWidth={1.5} /> },
-  { id: "my-playbooks", label: "My Playbooks", icon: <BookOpen size={18} strokeWidth={1.5} /> },
-  { id: "context-entries", label: "Context", icon: <FileText size={18} strokeWidth={1.5} /> },
-  { id: "attachments", label: "Attachments", icon: <Paperclip size={18} strokeWidth={1.5} /> },
+  { id: "about-me", label: "About Me", icon: <User size={18} strokeWidth={1.8} /> },
+  { id: "what-i-deliver", label: "What I Deliver", icon: <Briefcase size={18} strokeWidth={1.8} /> },
+  { id: "my-priorities", label: "My Priorities", icon: <Target size={18} strokeWidth={1.8} /> },
+  { id: "my-playbooks", label: "My Playbooks", icon: <BookOpen size={18} strokeWidth={1.8} /> },
+  { id: "context-entries", label: "Context", icon: <FileText size={18} strokeWidth={1.8} /> },
+  { id: "attachments", label: "Attachments", icon: <Paperclip size={18} strokeWidth={1.8} /> },
 ];
 
 // ─── JSON helpers ─────────────────────────────────────────────────────
