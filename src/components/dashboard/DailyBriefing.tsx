@@ -177,7 +177,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         if (readyCount === readiness.totalExternal) {
           stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
         } else if (buildingCount > 0) {
-          stats.push({ label: `${readyCount} ready, ${buildingCount} building`, color: "sage" });
+          stats.push({ label: `${readyCount} ready, ${buildingCount} limited`, color: "sage" });
         } else {
           stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
         }
