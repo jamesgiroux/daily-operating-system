@@ -10,6 +10,22 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v0.15.1 — Security
+
+Your data, locked down.
+
+DailyOS now encrypts everything on disk. Your database, your briefings, your relationship context — all protected with AES-256 encryption backed by your Mac's Keychain. The app locks itself when you step away and unlocks with Touch ID when you come back. And the AI pipeline that builds your briefings is now hardened against adversarial input — so a cleverly-crafted calendar invite or email subject can't trick the system.
+
+**Encryption** — happens automatically on first launch. Your existing data migrates in place. Nothing to configure, nothing to remember. If you ever need to verify: `file ~/.dailyos/dailyos.db` should show `data`, not `SQLite 3.x database`.
+
+**App Lock** — after 15 minutes of inactivity, the app locks and shows a full-screen overlay. Touch the fingerprint sensor to get back in. Change the timeout (or turn it off) in **Settings → System → Security**.
+
+**iCloud Warning** — if your workspace folder lives under iCloud Drive, Desktop, or Documents sync, you'll see a one-time heads-up. Local intelligence data and cloud sync don't mix well — the warning explains your options.
+
+**Meeting Briefing Refresh** — switching an account or project on a meeting now updates the briefing content automatically. No more clicking refresh after reassigning a meeting.
+
+---
+
 ## v0.15.0 — Reports
 
 Your work, made presentable.
