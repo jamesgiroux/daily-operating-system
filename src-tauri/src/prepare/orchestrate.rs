@@ -71,16 +71,19 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             None => {
                 // Fallback: build from filesystem (legacy)
                 let fs_hints = build_account_domain_hints(workspace);
-                fs_hints.into_iter().map(|slug| crate::google_api::classify::EntityHint {
-                    id: slug.clone(),
-                    entity_type: crate::entity::EntityType::Account,
-                    name: slug.clone(),
-                    slugs: vec![slug],
-                    domains: vec![],
-                    keywords: vec![],
-                    emails: vec![],
-                    account_type: None,
-                }).collect()
+                fs_hints
+                    .into_iter()
+                    .map(|slug| crate::google_api::classify::EntityHint {
+                        id: slug.clone(),
+                        entity_type: crate::entity::EntityType::Account,
+                        name: slug.clone(),
+                        slugs: vec![slug],
+                        domains: vec![],
+                        keywords: vec![],
+                        emails: vec![],
+                        account_type: None,
+                    })
+                    .collect()
             }
         }
     };
@@ -116,14 +119,26 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         .db
         .lock()
         .ok()
-        .and_then(|g| g.as_ref().map(|db| db.get_dismissed_domains(5).unwrap_or_default()))
+        .and_then(|g| {
+            g.as_ref()
+                .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
+        })
         .unwrap_or_default();
     if !dismissed_domains.is_empty() {
-        log::info!("prepare_today: {} dismissed domains loaded for classification penalty", dismissed_domains.len());
+        log::info!(
+            "prepare_today: {} dismissed domains loaded for classification penalty",
+            dismissed_domains.len()
+        );
     }
 
-    let mut email_result =
-        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords, &dismissed_domains).await;
+    let mut email_result = fetch_and_classify_emails(
+        &primary_user_domain,
+        &customer_domains,
+        &account_hints,
+        &preset_email_keywords,
+        &dismissed_domains,
+    )
+    .await;
     if let Some(ref sync_error) = email_result.sync_error {
         log::warn!(
             "prepare_today: email sync degraded [{}] {}",
@@ -148,10 +163,18 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             let mut new_all = Vec::new();
 
             for email_val in &email_result.all {
-                let priority = email_val.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
-                let from_email = email_val.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
+                let priority = email_val
+                    .get("priority")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("medium");
+                let from_email = email_val
+                    .get("from_email")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
 
-                if let Some(boost) = email_classify::boost_with_entity_context(from_email, priority, db) {
+                if let Some(boost) =
+                    email_classify::boost_with_entity_context(from_email, priority, db)
+                {
                     // Clone and update priority
                     let mut boosted = email_val.clone();
                     if let Some(obj) = boosted.as_object_mut() {
@@ -172,8 +195,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             if boosted_count > 0 {
                 email_result.all = new_all;
                 email_result.high = new_high;
-                email_result.medium_count = email_result.medium_count.saturating_sub(boosted_count as u64);
-                log::info!("prepare_today: boosted {} medium emails to high via entity signals", boosted_count);
+                email_result.medium_count = email_result
+                    .medium_count
+                    .saturating_sub(boosted_count as u64);
+                log::info!(
+                    "prepare_today: boosted {} medium emails to high via entity signals",
+                    boosted_count
+                );
             }
         }
     }
@@ -187,11 +215,17 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     let sender_email = email_classify::extract_email_address(&raw.from);
                     let sender_name = extract_display_name(&raw.from);
                     // Use boosted priority from all array if available
-                    let priority = email_result.all.iter()
+                    let priority = email_result
+                        .all
+                        .iter()
                         .find(|v| v.get("id").and_then(|i| i.as_str()) == Some(&raw.id))
                         .and_then(|v| v.get("priority").and_then(|p| p.as_str()))
                         .unwrap_or(
-                            email_result.priorities.get(&raw.id).map(|s| s.as_str()).unwrap_or("medium")
+                            email_result
+                                .priorities
+                                .get(&raw.id)
+                                .map(|s| s.as_str())
+                                .unwrap_or("medium"),
                         );
                     let db_email = crate::db::DbEmail {
                         email_id: raw.id.clone(),
@@ -240,8 +274,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // I370: Refresh thread positions from sent messages
     {
         let sent_thread_ids = google_api::gmail::fetch_recent_sent_thread_ids(
-            &google_api::get_valid_access_token().await.unwrap_or_default(),
-        ).await.unwrap_or_default();
+            &google_api::get_valid_access_token()
+                .await
+                .unwrap_or_default(),
+        )
+        .await
+        .unwrap_or_default();
         if !sent_thread_ids.is_empty() {
             if let Ok(guard) = state.db.lock() {
                 if let Some(db) = guard.as_ref() {
@@ -261,14 +299,18 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 .map(|c| c.ai_models.clone())
                 .unwrap_or_default()
         };
-        let enriched = super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+        let enriched =
+            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
         if enriched > 0 {
             log::info!("prepare_today: enriched {} emails", enriched);
         }
         // I372: Emit entity signals from enriched emails
         let signal_guard = state.db.lock().ok();
         if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
-            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db, &state.signals.engine);
+            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
+                db,
+                &state.signals.engine,
+            );
             if emitted > 0 {
                 log::info!("prepare_today: emitted {} email-entity signals", emitted);
             }
@@ -281,11 +323,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
             let model = state.embedding_model.clone();
             let active = db.get_all_active_emails().unwrap_or_default();
-            let scores = crate::signals::email_scoring::score_emails(
-                db,
-                Some(&model),
-                &active,
-            );
+            let scores = crate::signals::email_scoring::score_emails(db, Some(&model), &active);
             for (email_id, score, reason) in &scores {
                 let _ = db.set_relevance_score(email_id, *score, reason);
             }
@@ -312,10 +350,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 // Phase 1: Fetch bodies (async, no db lock held)
                 let mut fetched_bodies: Vec<(String, String, String, String)> = Vec::new();
                 for email_val in &email_result.high {
-                    let email_id =
-                        email_val.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    let subject =
-                        email_val.get("subject").and_then(|v| v.as_str()).unwrap_or("");
+                    let email_id = email_val.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let subject = email_val
+                        .get("subject")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     let from_email = email_val
                         .get("from_email")
                         .and_then(|v| v.as_str())
@@ -383,9 +422,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     {
         let bridge_guard = state.db.lock().ok();
         if let Some(db) = bridge_guard.as_ref().and_then(|g| g.as_ref()) {
-            match crate::signals::email_bridge::run_email_meeting_bridge(db, &state.signals.engine) {
+            match crate::signals::email_bridge::run_email_meeting_bridge(db, &state.signals.engine)
+            {
                 Ok(correlations) if !correlations.is_empty() => {
-                    log::info!("prepare_today: {} email-meeting correlations", correlations.len());
+                    log::info!(
+                        "prepare_today: {} email-meeting correlations",
+                        correlations.len()
+                    );
                 }
                 Err(e) => {
                     log::warn!("prepare_today: email-meeting bridge failed: {}", e);
@@ -399,9 +442,15 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let cadence_anomalies = {
         let cadence_guard = state.db.lock().ok();
         if let Some(db) = cadence_guard.as_ref().and_then(|g| g.as_ref()) {
-            let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies_with_engine(db, Some(&state.signals.engine));
+            let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies_with_engine(
+                db,
+                Some(&state.signals.engine),
+            );
             if !anomalies.is_empty() {
-                log::info!("prepare_today: {} cadence anomalies detected", anomalies.len());
+                log::info!(
+                    "prepare_today: {} cadence anomalies detected",
+                    anomalies.len()
+                );
             }
             anomalies
         } else {
@@ -458,11 +507,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                                     .join("_today")
                                     .join("data")
                                     .join("email-disposition.json");
-                                if let Ok(manifest_json) = serde_json::to_string_pretty(&manifest)
-                                {
-                                    if let Err(e) =
-                                        crate::util::atomic_write_str(&manifest_path, &manifest_json)
-                                    {
+                                if let Ok(manifest_json) = serde_json::to_string_pretty(&manifest) {
+                                    if let Err(e) = crate::util::atomic_write_str(
+                                        &manifest_path,
+                                        &manifest_json,
+                                    ) {
                                         log::warn!(
                                             "prepare_today: failed to write disposition manifest: {}",
                                             e
@@ -488,17 +537,18 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let replies_needed = {
         let thread_guard = state.db.lock().ok();
         if let Some(db) = thread_guard.as_ref().and_then(|g| g.as_ref()) {
-            let high_priority_emails: Vec<Value> = email_result.all
+            let high_priority_emails: Vec<Value> = email_result
+                .all
                 .iter()
                 .filter(|e| e.get("priority").and_then(|v| v.as_str()) == Some("high"))
                 .cloned()
                 .collect();
-            let tracked = track_thread_positions(
-                &high_priority_emails,
-                &primary_user_domain,
-                db,
+            let tracked = track_thread_positions(&high_priority_emails, &primary_user_domain, db);
+            log::info!(
+                "prepare_today: tracked {} high-priority threads, {} awaiting reply",
+                tracked.0,
+                tracked.1
             );
-            log::info!("prepare_today: tracked {} high-priority threads, {} awaiting reply", tracked.0, tracked.1);
             // Fetch threads awaiting reply for the directive
             let now = Utc::now();
             db.get_threads_awaiting_reply()
@@ -536,7 +586,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         if let Some(db) = ensure_guard.as_ref().and_then(|g| g.as_ref()) {
             let mut ensured = 0u32;
             for cm in &classified {
-                let tier = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+                let tier = cm
+                    .get("intelligence_tier")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("skip");
                 if tier == "skip" {
                     continue;
                 }
@@ -545,15 +598,32 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     None => continue,
                 };
                 // Only insert if not already present
-                if db.get_meeting_by_calendar_event_id(calendar_event_id).ok().flatten().is_some() {
+                if db
+                    .get_meeting_by_calendar_event_id(calendar_event_id)
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
                     continue;
                 }
-                let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
-                let meeting_type = cm.get("type").and_then(|v| v.as_str()).unwrap_or("external");
+                let title = cm
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(untitled)");
+                let meeting_type = cm
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("external");
                 let start = cm.get("start").and_then(|v| v.as_str()).unwrap_or("");
-                let end_time = cm.get("end").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let end_time = cm
+                    .get("end")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 let attendees_json = cm.get("attendees").map(|v| v.to_string());
-                let description = cm.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let description = cm
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
 
                 let db_meeting = crate::db::DbMeeting {
                     id: calendar_event_id.to_string(),
@@ -590,7 +660,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 ensured += 1;
             }
             if ensured > 0 {
-                log::info!("prepare_today: ensured {} new meetings in DB before intelligence check", ensured);
+                log::info!(
+                    "prepare_today: ensured {} new meetings in DB before intelligence check",
+                    ensured
+                );
             }
         }
     }
@@ -605,7 +678,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         let mut already_current = 0u32;
 
         for cm in &classified {
-            let tier_str = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+            let tier_str = cm
+                .get("intelligence_tier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("skip");
             if tier_str == "skip" || tier_str == "minimal" {
                 skipped += 1;
                 continue;
@@ -615,7 +691,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 Some(id) => id,
                 None => continue,
             };
-            let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(unknown)");
+            let title = cm
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(unknown)");
 
             // Look up the meeting row to check intelligence state
             let needs_refresh = {
@@ -625,9 +704,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     Some(db) => {
                         match db.get_meeting_by_calendar_event_id(calendar_event_id) {
                             Ok(Some(meeting)) => {
-                                let intel_state = meeting.intelligence_state.as_deref().unwrap_or("detected");
+                                let intel_state =
+                                    meeting.intelligence_state.as_deref().unwrap_or("detected");
                                 let has_signals = meeting.has_new_signals.unwrap_or(0) > 0;
-                                let is_stale = meeting.last_enriched_at.as_deref()
+                                let is_stale = meeting
+                                    .last_enriched_at
+                                    .as_deref()
                                     .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
                                     .map(|enriched_at| {
                                         let age = Utc::now() - enriched_at.with_timezone(&Utc);
@@ -644,7 +726,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                                 false
                             }
                             Err(e) => {
-                                log::warn!("prepare_today: intel check failed for {}: {}", title, e);
+                                log::warn!(
+                                    "prepare_today: intel check failed for {}: {}",
+                                    title,
+                                    e
+                                );
                                 false
                             }
                         }
@@ -655,14 +741,22 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
             if needs_refresh {
                 match crate::intelligence::generate_meeting_intelligence(
-                    state, calendar_event_id, false,
-                ).await {
+                    state,
+                    calendar_event_id,
+                    false,
+                )
+                .await
+                {
                     Ok(_quality) => {
                         log::info!("prepare_today: refreshed intelligence for {}", title);
                         refreshed += 1;
                     }
                     Err(e) => {
-                        log::warn!("prepare_today: failed to refresh intelligence for {}: {}", title, e);
+                        log::warn!(
+                            "prepare_today: failed to refresh intelligence for {}: {}",
+                            title,
+                            e
+                        );
                     }
                 }
             } else {
@@ -680,8 +774,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let db_guard = state.db.lock().ok();
     let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
     let embedding_ref = state.embedding_model.as_ref();
-    let mut meeting_contexts =
-        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref, Some(embedding_ref));
+    let mut meeting_contexts = meeting_context::gather_all_meeting_contexts(
+        &classified,
+        workspace,
+        db_ref,
+        Some(embedding_ref),
+    );
 
     // I331: Assembly model — inject pre-computed AI intelligence into meeting contexts.
     // Meetings that were enriched by generate_meeting_intelligence (Step 5b or weekly run)
@@ -698,19 +796,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     if let Ok(prep_val) = serde_json::from_str::<Value>(prep_json) {
                         if let Some(ai_intel) = prep_val.get("ai_intelligence") {
                             if let Some(obj) = ctx.as_object_mut() {
-                                obj.insert(
-                                    "ai_intelligence".to_string(),
-                                    ai_intel.clone(),
-                                );
+                                obj.insert("ai_intelligence".to_string(), ai_intel.clone());
                             }
                         }
                         // Also inject quality metadata
                         if let Some(quality) = prep_val.get("quality") {
                             if let Some(obj) = ctx.as_object_mut() {
-                                obj.insert(
-                                    "intelligence_quality".to_string(),
-                                    quality.clone(),
-                                );
+                                obj.insert("intelligence_quality".to_string(), quality.clone());
                             }
                         }
                     }
@@ -749,7 +841,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             Some(db) => {
                 let model_ref = state.embedding_model.as_ref();
                 let user_entity = crate::services::user_entity::get_user_entity_from_db(db).ok();
-                crate::signals::callouts::generate_callouts(db, Some(model_ref), &classified, user_entity.as_ref())
+                crate::signals::callouts::generate_callouts(
+                    db,
+                    Some(model_ref),
+                    &classified,
+                    user_entity.as_ref(),
+                )
             }
             None => Vec::new(),
         }
@@ -761,7 +858,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         if let Some(db) = person_guard.as_ref().and_then(|g| g.as_ref()) {
             let n = queue_person_intelligence(&meeting_contexts, workspace, db, &state.intel_queue);
             if n > 0 {
-                log::info!("prepare_today: queued {} person intelligence enrichments", n);
+                log::info!(
+                    "prepare_today: queued {} person intelligence enrichments",
+                    n
+                );
             }
         }
     }
@@ -906,7 +1006,10 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         let intel_guard = state.db.lock().ok();
         if let Some(db) = intel_guard.as_ref().and_then(|g| g.as_ref()) {
             for cm in &classified {
-                let tier = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+                let tier = cm
+                    .get("intelligence_tier")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("skip");
                 if tier == "skip" {
                     continue;
                 }
@@ -914,20 +1017,35 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     Some(id) => id,
                     None => continue,
                 };
-                let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
+                let title = cm
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(untitled)");
 
                 // Upsert meeting into meetings_history so intelligence lifecycle can find it
-                let existing = db.get_meeting_by_calendar_event_id(calendar_event_id).ok().flatten();
+                let existing = db
+                    .get_meeting_by_calendar_event_id(calendar_event_id)
+                    .ok()
+                    .flatten();
                 let meeting_id = if let Some(ref existing_meeting) = existing {
                     existing_meeting.id.clone()
                 } else {
                     // Insert a new meeting row from classified data
                     let new_id = calendar_event_id.to_string();
-                    let meeting_type = cm.get("type").and_then(|v| v.as_str()).unwrap_or("external");
+                    let meeting_type = cm
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("external");
                     let start = cm.get("start").and_then(|v| v.as_str()).unwrap_or("");
-                    let end_time = cm.get("end").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let end_time = cm
+                        .get("end")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     let attendees_json = cm.get("attendees").map(|v| v.to_string());
-                    let description = cm.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let description = cm
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
 
                     let db_meeting = crate::db::DbMeeting {
                         id: new_id.clone(),
@@ -967,22 +1085,35 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                 // Link meeting entities (I336)
                 if let Some(entities) = cm.get("entities").and_then(|v| v.as_array()) {
                     for entity in entities {
-                        let entity_type = entity.get("entity_type").and_then(|v| v.as_str()).unwrap_or("");
-                        let entity_id = entity.get("entity_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let entity_type = entity
+                            .get("entity_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let entity_id = entity
+                            .get("entity_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
                         if !entity_id.is_empty() {
                             let _ = db.link_meeting_entity(&meeting_id, entity_id, entity_type);
                         }
                     }
                 }
 
-                log::debug!("prepare_week: ensured meeting '{}' in DB (id={})", title, meeting_id);
+                log::debug!(
+                    "prepare_week: ensured meeting '{}' in DB (id={})",
+                    title,
+                    meeting_id
+                );
             }
         }
     }
 
     // Generate individual meeting intelligence (ADR-0081, Phase 2B)
     for cm in &classified {
-        let tier = cm.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("skip");
+        let tier = cm
+            .get("intelligence_tier")
+            .and_then(|v| v.as_str())
+            .unwrap_or("skip");
         if tier == "skip" {
             continue;
         }
@@ -990,14 +1121,18 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
             Some(id) => id,
             None => continue,
         };
-        let title = cm.get("title").and_then(|v| v.as_str()).unwrap_or("(untitled)");
+        let title = cm
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(untitled)");
 
         // Look up the DB meeting ID
         let meeting_id = {
             let guard = state.db.lock().ok();
             let db = guard.as_ref().and_then(|g| g.as_ref());
             match db {
-                Some(db) => db.get_meeting_by_calendar_event_id(calendar_event_id)
+                Some(db) => db
+                    .get_meeting_by_calendar_event_id(calendar_event_id)
                     .ok()
                     .flatten()
                     .map(|m| m.id),
@@ -1008,17 +1143,28 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         let meeting_id = match meeting_id {
             Some(id) => id,
             None => {
-                log::warn!("prepare_week: meeting '{}' not found in DB for intelligence", title);
+                log::warn!(
+                    "prepare_week: meeting '{}' not found in DB for intelligence",
+                    title
+                );
                 continue;
             }
         };
 
         match crate::intelligence::generate_meeting_intelligence(state, &meeting_id, false).await {
             Ok(quality) => {
-                log::info!("prepare_week: intelligence for '{}': {:?}", title, quality.level);
+                log::info!(
+                    "prepare_week: intelligence for '{}': {:?}",
+                    title,
+                    quality.level
+                );
             }
             Err(e) => {
-                log::warn!("prepare_week: failed to generate intelligence for '{}': {}", title, e);
+                log::warn!(
+                    "prepare_week: failed to generate intelligence for '{}': {}",
+                    title,
+                    e
+                );
             }
         }
     }
@@ -1033,16 +1179,19 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Meeting contexts (I305: thread embedding model for entity resolution)
     let embedding_ref_week = state.embedding_model.as_ref();
-    let meeting_contexts =
-        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref, Some(embedding_ref_week));
+    let meeting_contexts = meeting_context::gather_all_meeting_contexts(
+        &classified,
+        workspace,
+        db_ref,
+        Some(embedding_ref_week),
+    );
     drop(db_guard);
 
     // Gap analysis — resolve user timezone from schedule config for accurate UTC→local conversion
-    let user_tz: Option<chrono_tz::Tz> = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.schedules.today.timezone.parse().ok()));
+    let user_tz: Option<chrono_tz::Tz> = state.config.read().ok().and_then(|g| {
+        g.as_ref()
+            .and_then(|c| c.schedules.today.timezone.parse().ok())
+    });
     let gaps_by_day = gaps::compute_all_gaps(&events_by_day, monday, user_tz);
     let suggestions = gaps::suggest_focus_blocks(&gaps_by_day);
 
@@ -1091,7 +1240,12 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                 // Generate callouts
                 let model_ref = state.embedding_model.as_ref();
                 let user_entity = crate::services::user_entity::get_user_entity_from_db(db).ok();
-                crate::signals::callouts::generate_callouts(db, Some(model_ref), &classified, user_entity.as_ref())
+                crate::signals::callouts::generate_callouts(
+                    db,
+                    Some(model_ref),
+                    &classified,
+                    user_entity.as_ref(),
+                )
             }
             None => Vec::new(),
         }
@@ -1186,11 +1340,20 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         .db
         .lock()
         .ok()
-        .and_then(|g| g.as_ref().map(|db| db.get_dismissed_domains(5).unwrap_or_default()))
+        .and_then(|g| {
+            g.as_ref()
+                .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
+        })
         .unwrap_or_default();
 
-    let email_result =
-        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords, &dismissed_domains).await;
+    let email_result = fetch_and_classify_emails(
+        &primary_user_domain,
+        &customer_domains,
+        &account_hints,
+        &preset_email_keywords,
+        &dismissed_domains,
+    )
+    .await;
     if let Some(sync_error) = email_result.sync_error {
         return Err(ExecutionError::NetworkError(sync_error.message));
     }
@@ -1253,8 +1416,12 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
     // I370: Refresh thread positions from sent messages
     {
         let sent_thread_ids = google_api::gmail::fetch_recent_sent_thread_ids(
-            &google_api::get_valid_access_token().await.unwrap_or_default(),
-        ).await.unwrap_or_default();
+            &google_api::get_valid_access_token()
+                .await
+                .unwrap_or_default(),
+        )
+        .await
+        .unwrap_or_default();
         if !sent_thread_ids.is_empty() {
             if let Ok(guard) = state.db.lock() {
                 if let Some(db) = guard.as_ref() {
@@ -1274,14 +1441,18 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
                 .map(|c| c.ai_models.clone())
                 .unwrap_or_default()
         };
-        let enriched = super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+        let enriched =
+            super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
         if enriched > 0 {
             log::info!("refresh_emails: enriched {} emails", enriched);
         }
         // I372: Emit entity signals from enriched emails
         let signal_guard = state.db.lock().ok();
         if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
-            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(db, &state.signals.engine);
+            let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
+                db,
+                &state.signals.engine,
+            );
             if emitted > 0 {
                 log::info!("refresh_emails: emitted {} email-entity signals", emitted);
             }
@@ -1294,11 +1465,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
             let model = state.embedding_model.clone();
             let active = db.get_all_active_emails().unwrap_or_default();
-            let scores = crate::signals::email_scoring::score_emails(
-                db,
-                Some(&model),
-                &active,
-            );
+            let scores = crate::signals::email_scoring::score_emails(db, Some(&model), &active);
             for (email_id, score, reason) in &scores {
                 let _ = db.set_relevance_score(email_id, *score, reason);
             }
@@ -1450,7 +1617,10 @@ fn queue_person_intelligence(
         }
 
         // Check intelligence.json freshness
-        let entity_name = pe.get("entity_name").and_then(|v| v.as_str()).unwrap_or(&entity_id);
+        let entity_name = pe
+            .get("entity_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&entity_id);
         let person_dir = crate::people::person_dir(workspace, entity_name);
 
         if let Ok(intel) = crate::intelligence::read_intelligence_json(&person_dir) {
@@ -1943,7 +2113,11 @@ fn update_thread_positions_from_sent(
             let is_last = sent_thread_ids.contains(thread_id);
             if is_last != email.user_is_last_sender {
                 if let Err(e) = db.update_thread_position(thread_id, is_last) {
-                    log::warn!("I370: Failed to update thread position for {}: {}", thread_id, e);
+                    log::warn!(
+                        "I370: Failed to update thread position for {}: {}",
+                        thread_id,
+                        e
+                    );
                 } else {
                     updated += 1;
                 }
@@ -1961,10 +2135,7 @@ fn update_thread_positions_from_sent(
 /// Compares the current inbox email IDs against active (non-resolved) emails in the DB.
 /// Emails in DB but not in inbox are marked resolved. Emails in inbox but previously
 /// resolved are unmarked. Also deactivates signals for vanished emails.
-fn reconcile_inbox_emails(
-    raw_emails: &[google_api::gmail::RawEmail],
-    db: &crate::db::ActionDb,
-) {
+fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate::db::ActionDb) {
     let inbox_ids: std::collections::HashSet<String> =
         raw_emails.iter().map(|e| e.id.clone()).collect();
 
@@ -1972,26 +2143,25 @@ fn reconcile_inbox_emails(
     let active_db_emails = match db.get_all_active_emails() {
         Ok(emails) => emails,
         Err(e) => {
-            log::warn!("I366: Failed to get active emails for reconciliation: {}", e);
+            log::warn!(
+                "I366: Failed to get active emails for reconciliation: {}",
+                e
+            );
             return;
         }
     };
 
-    let db_ids: std::collections::HashSet<String> =
-        active_db_emails.iter().map(|e| e.email_id.clone()).collect();
+    let db_ids: std::collections::HashSet<String> = active_db_emails
+        .iter()
+        .map(|e| e.email_id.clone())
+        .collect();
 
     // Vanished: in DB but not in inbox
-    let vanished: Vec<String> = db_ids
-        .difference(&inbox_ids)
-        .cloned()
-        .collect();
+    let vanished: Vec<String> = db_ids.difference(&inbox_ids).cloned().collect();
 
     // Reappeared: in inbox but resolved in DB (need a separate query)
     // We check against all emails with resolved_at set
-    let reappeared: Vec<String> = inbox_ids
-        .difference(&db_ids)
-        .cloned()
-        .collect();
+    let reappeared: Vec<String> = inbox_ids.difference(&db_ids).cloned().collect();
 
     if !vanished.is_empty() {
         match db.mark_emails_resolved(&vanished) {
@@ -2059,14 +2229,23 @@ fn track_thread_positions(
     let mut threads: HashMap<String, (&Value, String, usize)> = HashMap::new(); // -> (email, date, count)
 
     for email in emails {
-        let thread_id = email.get("thread_id").and_then(|v| v.as_str()).unwrap_or("");
+        let thread_id = email
+            .get("thread_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         if thread_id.is_empty() {
             continue;
         }
-        let date = email.get("date").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let entry = threads.entry(thread_id.to_string()).or_insert((email, date.clone(), 0));
+        let date = email
+            .get("date")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let entry = threads
+            .entry(thread_id.to_string())
+            .or_insert((email, date.clone(), 0));
         entry.2 += 1; // increment message count
-        // Keep the email with the later date
+                      // Keep the email with the later date
         if date > entry.1 {
             entry.0 = email;
             entry.1 = date;
@@ -2078,7 +2257,10 @@ fn track_thread_positions(
 
     for (thread_id, (email, date, msg_count)) in &threads {
         let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("");
-        let from_email = email.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
+        let from_email = email
+            .get("from_email")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let sender_domain = from_email.split('@').nth(1).unwrap_or("");
         let user_is_last_sender = !sender_domain.is_empty()
             && !user_domain.is_empty()
@@ -2186,7 +2368,10 @@ fn synthesize_email_narrative(
     // 5. High-priority count alone
     // 6. Meeting-linked threads
     if spike_count > 0 {
-        let a = cadence_anomalies.iter().find(|a| a.anomaly_type == "activity_spike").unwrap();
+        let a = cadence_anomalies
+            .iter()
+            .find(|a| a.anomaly_type == "activity_spike")
+            .unwrap();
         return Some(format!("Email surge from {}.", a.entity_id));
     }
 
@@ -3377,8 +3562,7 @@ fn build_hygiene_alerts(directive: &Value) -> Vec<Value> {
             let arr_raw = account_data.get("arr");
             let narrative = ctx.get("narrative").and_then(|v| v.as_str()).unwrap_or("");
 
-            let needs_alert =
-                matches!(health, "yellow" | "red") || lifecycle == "churned";
+            let needs_alert = matches!(health, "yellow" | "red") || lifecycle == "churned";
 
             if needs_alert {
                 let severity = if health == "red" || lifecycle == "churned" {
@@ -3974,9 +4158,11 @@ mod tests {
         };
         let _ = db.upsert_person(&person);
 
-        let contexts = vec![
-            person_meeting_context("person_bob_example_com", "Bob Smith", 0.85),
-        ];
+        let contexts = vec![person_meeting_context(
+            "person_bob_example_com",
+            "Bob Smith",
+            0.85,
+        )];
 
         let n = queue_person_intelligence(&contexts, workspace.path(), &db, &queue);
         assert_eq!(n, 1, "should enqueue 1 person intelligence request");
@@ -3989,9 +4175,11 @@ mod tests {
         let queue = crate::intel_queue::IntelligenceQueue::new();
         let workspace = TempDir::new().unwrap();
 
-        let contexts = vec![
-            person_meeting_context("person_low_example_com", "Low Conf", 0.40),
-        ];
+        let contexts = vec![person_meeting_context(
+            "person_low_example_com",
+            "Low Conf",
+            0.40,
+        )];
 
         let n = queue_person_intelligence(&contexts, workspace.path(), &db, &queue);
         assert_eq!(n, 0, "should skip low-confidence person entities");
@@ -4017,9 +4205,11 @@ mod tests {
         let intel_str = serde_json::to_string_pretty(&intel_json).unwrap();
         crate::util::atomic_write_str(&person_dir.join("intelligence.json"), &intel_str).unwrap();
 
-        let contexts = vec![
-            person_meeting_context("person_fresh_example_com", "Fresh Person", 0.90),
-        ];
+        let contexts = vec![person_meeting_context(
+            "person_fresh_example_com",
+            "Fresh Person",
+            0.90,
+        )];
 
         let n = queue_person_intelligence(&contexts, workspace.path(), &db, &queue);
         assert_eq!(n, 0, "should skip freshly-enriched person entities");

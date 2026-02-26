@@ -22,7 +22,9 @@ pub fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
         let profile = config
             .map(|c| c.profile.clone())
             .unwrap_or_else(|| "general".to_string());
-        let domains = config.map(|c| c.resolved_user_domains()).unwrap_or_default();
+        let domains = config
+            .map(|c| c.resolved_user_domains())
+            .unwrap_or_default();
         (profile, domains)
     };
 

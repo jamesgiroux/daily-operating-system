@@ -100,11 +100,8 @@ pub fn compute_focus_capacity(input: FocusCapacityInput) -> FocusCapacityResult 
         input.day_date,
         input.work_hours_start as u32,
     );
-    let workday_end = resolve_local_datetime(
-        &input.timezone,
-        input.day_date,
-        input.work_hours_end as u32,
-    );
+    let workday_end =
+        resolve_local_datetime(&input.timezone, input.day_date, input.work_hours_end as u32);
 
     let mut raw_intervals: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
     let mut buffered_intervals: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();

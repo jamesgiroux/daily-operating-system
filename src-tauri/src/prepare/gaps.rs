@@ -30,7 +30,9 @@ fn parse_event_dt(time_str: &str, user_tz: Option<Tz>) -> Option<NaiveDateTime> 
                 return Some(local.naive_local());
             }
             // Also try ISO with offset but no fractional seconds
-            if let Ok(dt) = DateTime::<FixedOffset>::parse_from_str(time_str, "%Y-%m-%dT%H:%M:%S%:z") {
+            if let Ok(dt) =
+                DateTime::<FixedOffset>::parse_from_str(time_str, "%Y-%m-%dT%H:%M:%S%:z")
+            {
                 let local = dt.with_timezone(&tz);
                 return Some(local.naive_local());
             }
@@ -82,7 +84,10 @@ pub fn compute_gaps(events: &[Value], day_date: NaiveDate, user_tz: Option<Tz>) 
     for ev in events {
         let start_str = ev.get("start").and_then(|v| v.as_str()).unwrap_or_default();
         let end_str = ev.get("end").and_then(|v| v.as_str()).unwrap_or_default();
-        if let (Some(s), Some(e)) = (parse_event_dt(start_str, user_tz), parse_event_dt(end_str, user_tz)) {
+        if let (Some(s), Some(e)) = (
+            parse_event_dt(start_str, user_tz),
+            parse_event_dt(end_str, user_tz),
+        ) {
             // Skip all-day events: duration >= 24 hours or midnight-to-midnight
             let duration_hours = (e - s).num_hours();
             if duration_hours >= 24 {
@@ -362,7 +367,10 @@ mod tests {
         let gaps = compute_gaps(&events, day, None);
 
         // Should have gaps (all-day event skipped, 30-min meeting leaves gaps)
-        assert!(!gaps.is_empty(), "All-day events should be skipped in gap analysis");
+        assert!(
+            !gaps.is_empty(),
+            "All-day events should be skipped in gap analysis"
+        );
         let total: i64 = gaps
             .iter()
             .filter_map(|g| g.get("duration_minutes").and_then(|v| v.as_i64()))
