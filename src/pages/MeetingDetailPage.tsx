@@ -29,6 +29,7 @@ import { ActionRow } from "@/components/shared/ActionRow";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
@@ -74,6 +75,26 @@ interface UnifiedAttendee {
   meetingCount?: number;
   lastSeen?: string;
   notes?: string;
+}
+
+interface MeetingBriefingRefreshProgress {
+  meetingId: string;
+  stage: string;
+  message: string;
+  entityId?: string;
+  entityType?: string;
+  entityName?: string;
+  current?: number;
+  total?: number;
+}
+
+interface MeetingBriefingRefreshResult {
+  meetingId: string;
+  refreshedEntities: number;
+  failedEntities: number;
+  failedEntityIds: string[];
+  prepRebuiltSync: boolean;
+  prepQueued: boolean;
 }
 
 export default function MeetingDetailPage() {
@@ -284,18 +305,37 @@ export default function MeetingDetailPage() {
     setRefreshingIntel(true);
     toast("Refreshing briefing…", { duration: 10_000, id: "intel-refresh" });
     try {
-      await invoke("generate_meeting_intelligence", { meetingId, force: true });
-      // Mechanical prep reassembly happens synchronously via the prep queue.
-      // Give it a moment to complete, then reload.
-      await new Promise((r) => setTimeout(r, 2000));
+      const refreshed = await invoke<MeetingBriefingRefreshResult>(
+        "refresh_meeting_briefing",
+        { meetingId },
+      );
       await loadMeetingIntelligence();
-      toast.success("Briefing updated", { id: "intel-refresh" });
+      if (refreshed.failedEntities > 0) {
+        toast.success(
+          `Briefing updated (${refreshed.failedEntities} retries queued)`,
+          { id: "intel-refresh" },
+        );
+      } else {
+        toast.success("Briefing updated", { id: "intel-refresh" });
+      }
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Update failed", { id: "intel-refresh" });
     } finally {
       setRefreshingIntel(false);
     }
   }, [meetingId, loadMeetingIntelligence]);
+
+  const handleRefreshProgress = useCallback((progress: MeetingBriefingRefreshProgress) => {
+    if (!meetingId || progress.meetingId !== meetingId) return;
+    if (!refreshingIntel) return;
+    if (progress.stage === "completed") return;
+    toast(progress.message, { id: "intel-refresh", duration: 10_000 });
+  }, [meetingId, refreshingIntel]);
+
+  useTauriEvent<MeetingBriefingRefreshProgress>(
+    "meeting-briefing-refresh-progress",
+    handleRefreshProgress,
+  );
 
   const copyToClipboard = useCallback(async (text: string, action: string) => {
     await navigator.clipboard.writeText(text);

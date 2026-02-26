@@ -179,7 +179,7 @@ mod tests {
         let score = compute_enrichment_trigger_score(&db, "nonexistent", "account");
         // With no data: imminence=0, staleness=1, quality_deficit=0.5, importance=0, signals=0
         // Score = 0*0.35 + 1*0.25 + 0.5*0.20 + 0*0.10 + 0*0.10 = 0.35
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
         assert!((score - 0.35).abs() < 0.01);
     }
 
