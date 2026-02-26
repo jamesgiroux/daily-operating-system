@@ -208,13 +208,21 @@ pub fn classify_meeting_multi(
     // ---- Entity-aware type override ----
     // If the title matched a known account entity with high confidence,
     // treat this as an account meeting regardless of attendee domains.
-    let has_account_entity = result.resolved_entities.iter()
+    let has_account_entity = result
+        .resolved_entities
+        .iter()
         .any(|e| e.entity_type == "account" && e.confidence >= 0.50);
 
     // Check if best-matched account entity is a partner (I382)
-    let best_account_is_partner = result.resolved_entities.iter()
+    let best_account_is_partner = result
+        .resolved_entities
+        .iter()
         .filter(|e| e.entity_type == "account")
-        .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| {
+            a.confidence
+                .partial_cmp(&b.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .and_then(|best| entity_hints.iter().find(|h| h.id == best.entity_id))
         .and_then(|hint| hint.account_type.as_deref())
         == Some("partner");
@@ -332,7 +340,9 @@ fn resolve_entities(
     let desc_lower = result.description.to_lowercase();
 
     // Collect attendee emails for person matching
-    let attendee_emails: Vec<String> = result.attendees.iter()
+    let attendee_emails: Vec<String> = result
+        .attendees
+        .iter()
         .filter(|a| a.contains('@'))
         .map(|a| a.to_lowercase())
         .collect();
@@ -355,7 +365,9 @@ fn resolve_entities(
                     for ext_domain in external_domains {
                         let domain_base = ext_domain.split('.').next().unwrap_or(ext_domain);
                         for slug in &hint.slugs {
-                            if slug == domain_base || (slug.len() >= 4 && domain_base.contains(slug.as_str())) {
+                            if slug == domain_base
+                                || (slug.len() >= 4 && domain_base.contains(slug.as_str()))
+                            {
                                 confidence = 0.65;
                                 source = "domain".to_string();
                             }
@@ -416,7 +428,9 @@ fn resolve_entities(
                         // Find non-user attendee
                         for email in &attendee_emails {
                             let email_domain = email.split('@').nth(1).unwrap_or("");
-                            let is_user = user_domains.iter().any(|d| !d.is_empty() && email_domain == d);
+                            let is_user = user_domains
+                                .iter()
+                                .any(|d| !d.is_empty() && email_domain == d);
                             if !is_user && hint.emails.iter().any(|e| e.to_lowercase() == *email) {
                                 confidence = if result.is_recurring { 0.90 } else { 0.85 };
                                 source = "1:1".to_string();
@@ -449,7 +463,11 @@ fn resolve_entities(
     }
 
     let mut entities: Vec<ResolvedMeetingEntity> = best.into_values().collect();
-    entities.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    entities.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     result.resolved_entities = entities;
 }
 
@@ -465,7 +483,8 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 impl ClassifiedMeeting {
     /// Extract account name from resolved entities (backward compat helper). I336.
     pub fn account(&self) -> Option<&str> {
-        self.resolved_entities.iter()
+        self.resolved_entities
+            .iter()
             .find(|e| e.entity_type == "account")
             .map(|e| e.name.as_str())
     }
@@ -492,7 +511,9 @@ impl ClassifiedMeeting {
             super::calendar::parse_event_datetime(&self.start).unwrap_or_else(chrono::Utc::now);
         let end = super::calendar::parse_event_datetime(&self.end).unwrap_or_else(chrono::Utc::now);
 
-        let account = self.resolved_entities.iter()
+        let account = self
+            .resolved_entities
+            .iter()
             .find(|e| e.entity_type == "account")
             .map(|e| e.name.clone());
 
@@ -542,16 +563,19 @@ mod tests {
 
     /// Build account entity hints from slug names (backward compat with old tests).
     fn account_hints(names: &[&str]) -> Vec<EntityHint> {
-        names.iter().map(|s| EntityHint {
-            id: s.to_string(),
-            entity_type: EntityType::Account,
-            name: s.to_string(),
-            slugs: vec![s.to_string()],
-            domains: vec![],
-            keywords: vec![],
-            emails: vec![],
-            account_type: None,
-        }).collect()
+        names
+            .iter()
+            .map(|s| EntityHint {
+                id: s.to_string(),
+                entity_type: EntityType::Account,
+                name: s.to_string(),
+                slugs: vec![s.to_string()],
+                domains: vec![],
+                keywords: vec![],
+                emails: vec![],
+                account_type: None,
+            })
+            .collect()
     }
 
     fn project_hint(id: &str, name: &str, keywords: &[&str]) -> EntityHint {
@@ -559,7 +583,11 @@ mod tests {
             id: id.to_string(),
             entity_type: EntityType::Project,
             name: name.to_string(),
-            slugs: vec![name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()],
+            slugs: vec![name
+                .to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect()],
             domains: vec![],
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
             emails: vec![],
@@ -582,9 +610,17 @@ mod tests {
 
     fn account_hint_with_domain(id: &str, name: &str, domains: &[&str]) -> EntityHint {
         // Generate both full slug and individual word slugs (mirrors production DB behavior)
-        let mut slugs: Vec<String> = vec![name.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()];
+        let mut slugs: Vec<String> = vec![name
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect()];
         for word in name.split_whitespace() {
-            let slug: String = word.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+            let slug: String = word
+                .to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect();
             if slug.len() >= 4 && !slugs.contains(&slug) {
                 slugs.push(slug);
             }
@@ -786,7 +822,11 @@ mod tests {
 
     #[test]
     fn test_classify_account_domain_match() {
-        let hints = vec![account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"])];
+        let hints = vec![account_hint_with_domain(
+            "acme-id",
+            "Acme Corp",
+            &["acme.com"],
+        )];
         let event = make_event(
             "Kickoff call",
             vec!["me@co.com", "them@acme.com", "other@acme.com"],
@@ -801,14 +841,20 @@ mod tests {
 
     #[test]
     fn test_classify_project_keyword_match() {
-        let hints = vec![project_hint("proj-1", "Agentforce", &["agentforce", "agent force"])];
+        let hints = vec![project_hint(
+            "proj-1",
+            "Agentforce",
+            &["agentforce", "agent force"],
+        )];
         let event = make_event(
             "Agentforce Demo Prep",
             vec!["me@co.com", "them@client.com"],
             false,
         );
         let result = classify_meeting(&event, "co.com", &hints);
-        let project_entity = result.resolved_entities.iter()
+        let project_entity = result
+            .resolved_entities
+            .iter()
             .find(|e| e.entity_type == "project");
         assert!(project_entity.is_some(), "Should resolve to project entity");
         assert_eq!(project_entity.unwrap().name, "Agentforce");
@@ -818,30 +864,29 @@ mod tests {
     #[test]
     fn test_classify_1on1_person_detection() {
         let hints = vec![person_hint("person-1", "Jane Smith", &["jane@other.com"])];
-        let event = make_event(
-            "Weekly check-in",
-            vec!["me@co.com", "jane@other.com"],
-            true,
-        );
+        let event = make_event("Weekly check-in", vec!["me@co.com", "jane@other.com"], true);
         let result = classify_meeting(&event, "co.com", &hints);
-        let person_entity = result.resolved_entities.iter()
+        let person_entity = result
+            .resolved_entities
+            .iter()
             .find(|e| e.entity_type == "person");
         assert!(person_entity.is_some(), "Should resolve to person entity");
         assert_eq!(person_entity.unwrap().name, "Jane Smith");
         assert_eq!(person_entity.unwrap().source, "1:1");
-        assert!(person_entity.unwrap().confidence >= 0.90, "Recurring 1:1 should have high confidence");
+        assert!(
+            person_entity.unwrap().confidence >= 0.90,
+            "Recurring 1:1 should have high confidence"
+        );
     }
 
     #[test]
     fn test_classify_1on1_person_non_recurring_title_pattern() {
         let hints = vec![person_hint("person-1", "Jane Smith", &["jane@other.com"])];
-        let event = make_event(
-            "Jane / Me 1:1",
-            vec!["me@co.com", "jane@other.com"],
-            false,
-        );
+        let event = make_event("Jane / Me 1:1", vec!["me@co.com", "jane@other.com"], false);
         let result = classify_meeting(&event, "co.com", &hints);
-        let person_entity = result.resolved_entities.iter()
+        let person_entity = result
+            .resolved_entities
+            .iter()
             .find(|e| e.entity_type == "person");
         assert!(person_entity.is_some());
         assert!(person_entity.unwrap().confidence >= 0.85);
@@ -859,8 +904,15 @@ mod tests {
             false,
         );
         let result = classify_meeting(&event, "co.com", &hints);
-        assert!(result.resolved_entities.len() >= 2, "Should resolve both account and project");
-        let types: Vec<&str> = result.resolved_entities.iter().map(|e| e.entity_type.as_str()).collect();
+        assert!(
+            result.resolved_entities.len() >= 2,
+            "Should resolve both account and project"
+        );
+        let types: Vec<&str> = result
+            .resolved_entities
+            .iter()
+            .map(|e| e.entity_type.as_str())
+            .collect();
         assert!(types.contains(&"account"));
         assert!(types.contains(&"project"));
     }
@@ -871,11 +923,7 @@ mod tests {
             account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"]),
             project_hint("proj-1", "Acme Project", &["review"]),
         ];
-        let event = make_event(
-            "Acme review",
-            vec!["me@co.com", "them@acme.com"],
-            false,
-        );
+        let event = make_event("Acme review", vec!["me@co.com", "them@acme.com"], false);
         let result = classify_meeting(&event, "co.com", &hints);
         assert!(result.resolved_entities.len() >= 2);
         // Domain match (0.80) should come before keyword match (0.70)
@@ -886,7 +934,11 @@ mod tests {
 
     #[test]
     fn test_classify_internal_1on1_with_account_in_title() {
-        let hints = vec![account_hint_with_domain("janus-id", "Janus Henderson", &["janushenderson.com"])];
+        let hints = vec![account_hint_with_domain(
+            "janus-id",
+            "Janus Henderson",
+            &["janushenderson.com"],
+        )];
         // All attendees are internal — normally would be "one_on_one" with Person tier
         let event = make_event(
             "Janus Henderson 1:1",
@@ -904,7 +956,11 @@ mod tests {
 
     #[test]
     fn test_classify_internal_meeting_with_account_in_title() {
-        let hints = vec![account_hint_with_domain("acme-id", "Acme Corp", &["acme.com"])];
+        let hints = vec![account_hint_with_domain(
+            "acme-id",
+            "Acme Corp",
+            &["acme.com"],
+        )];
         // 3 internal attendees, "Acme" in title
         let event = make_event(
             "Acme Corp Planning Session",

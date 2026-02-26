@@ -52,11 +52,7 @@ pub fn merge_people(
 }
 
 /// Delete a person and all their references. Also removes their filesystem directory.
-pub fn delete_person(
-    db: &ActionDb,
-    state: &AppState,
-    person_id: &str,
-) -> Result<(), String> {
+pub fn delete_person(db: &ActionDb, state: &AppState, person_id: &str) -> Result<(), String> {
     // Get person info before delete (for filesystem cleanup)
     let person = db
         .get_person(person_id)
@@ -67,8 +63,19 @@ pub fn delete_person(
     db.delete_person(person_id).map_err(|e| e.to_string())?;
 
     // Emit deletion signal (I308)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "person", person_id, "entity_deleted", "user_action",
-        Some(&format!("{{\"name\":\"{}\"}}", person.name.replace('"', "\\\""))), 1.0);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "person",
+        person_id,
+        "entity_deleted",
+        "user_action",
+        Some(&format!(
+            "{{\"name\":\"{}\"}}",
+            person.name.replace('"', "\\\"")
+        )),
+        1.0,
+    );
 
     // Filesystem cleanup
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -95,81 +102,83 @@ pub async fn get_person_detail(
     let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
 
     let person_id = person_id.to_string();
-    state.db_read(move |db| {
-        let person = db
-            .get_person(&person_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Person not found: {}", person_id))?;
+    state
+        .db_read(move |db| {
+            let person = db
+                .get_person(&person_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Person not found: {}", person_id))?;
 
-        let signals = db.get_person_signals(&person_id).ok();
+            let signals = db.get_person_signals(&person_id).ok();
 
-        let entities = db
-            .get_entities_for_person(&person_id)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|e| EntitySummary {
-                id: e.id,
-                name: e.name,
-                entity_type: e.entity_type.as_str().to_string(),
+            let entities = db
+                .get_entities_for_person(&person_id)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|e| EntitySummary {
+                    id: e.id,
+                    name: e.name,
+                    entity_type: e.entity_type.as_str().to_string(),
+                })
+                .collect();
+
+            let recent_meetings = db
+                .get_person_meetings(&person_id, 10)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|m| MeetingSummary {
+                    id: m.id,
+                    title: m.title,
+                    start_time: m.start_time,
+                    meeting_type: m.meeting_type,
+                })
+                .collect();
+
+            let recent_captures = db
+                .get_captures_for_person(&person_id, 90)
+                .unwrap_or_default();
+            let recent_email_signals = db
+                .list_recent_email_signals_for_entity(&person_id, 12)
+                .unwrap_or_default();
+
+            // Load intelligence from person dir (if exists)
+            let intelligence = if let Some(ref config) = config {
+                let person_dir =
+                    crate::people::person_dir(Path::new(&config.workspace_path), &person.name);
+                crate::intelligence::read_intelligence_json(&person_dir).ok()
+            } else {
+                None
+            };
+
+            let open_actions = db
+                .get_person_actions(&person_id)
+                .map_err(|e| e.to_string())?;
+
+            let upcoming_meetings: Vec<MeetingSummary> = db
+                .get_upcoming_meetings_for_person(&person_id, 5)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|m| MeetingSummary {
+                    id: m.id,
+                    title: m.title,
+                    start_time: m.start_time,
+                    meeting_type: m.meeting_type,
+                })
+                .collect();
+
+            Ok(PersonDetailResult {
+                person,
+                signals,
+                entities,
+                recent_meetings,
+                recent_captures,
+                recent_email_signals,
+                intelligence,
+                open_actions,
+                upcoming_meetings,
             })
-            .collect();
-
-        let recent_meetings = db
-            .get_person_meetings(&person_id, 10)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|m| MeetingSummary {
-                id: m.id,
-                title: m.title,
-                start_time: m.start_time,
-                meeting_type: m.meeting_type,
-            })
-            .collect();
-
-        let recent_captures = db
-            .get_captures_for_person(&person_id, 90)
-            .unwrap_or_default();
-        let recent_email_signals = db
-            .list_recent_email_signals_for_entity(&person_id, 12)
-            .unwrap_or_default();
-
-        // Load intelligence from person dir (if exists)
-        let intelligence = if let Some(ref config) = config {
-            let person_dir =
-                crate::people::person_dir(Path::new(&config.workspace_path), &person.name);
-            crate::intelligence::read_intelligence_json(&person_dir).ok()
-        } else {
-            None
-        };
-
-        let open_actions = db
-            .get_person_actions(&person_id)
-            .map_err(|e| e.to_string())?;
-
-        let upcoming_meetings: Vec<MeetingSummary> = db
-            .get_upcoming_meetings_for_person(&person_id, 5)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|m| MeetingSummary {
-                id: m.id,
-                title: m.title,
-                start_time: m.start_time,
-                meeting_type: m.meeting_type,
-            })
-            .collect();
-
-        Ok(PersonDetailResult {
-            person,
-            signals,
-            entities,
-            recent_meetings,
-            recent_captures,
-            recent_email_signals,
-            intelligence,
-            open_actions,
-            upcoming_meetings,
         })
-    }).await
+        .await
 }
 
 /// Update a single field on a person, emit signal, and regenerate workspace files.
@@ -184,12 +193,27 @@ pub fn update_person_field(
         .map_err(|e| e.to_string())?;
 
     // Emit field update signal + self-healing evaluation (I377, I410)
-    let _ = crate::services::signals::emit_propagate_and_evaluate(db, &state.signals.engine, "person", person_id, "field_updated", "user_edit",
-        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8, &state.intel_queue);
+    let _ = crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "person",
+        person_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"{}\",\"value\":\"{}\"}}",
+            field,
+            value.replace('"', "\\\"")
+        )),
+        0.8,
+        &state.intel_queue,
+    );
 
     // Self-healing: record user correction for Clay-enrichable fields (I409)
     if matches!(field, "linkedin_url" | "title" | "company" | "name") {
-        crate::self_healing::feedback::record_enrichment_correction(db, person_id, "person", "clay");
+        crate::self_healing::feedback::record_enrichment_correction(
+            db, person_id, "person", "clay",
+        );
     }
 
     // Regenerate workspace files
@@ -217,8 +241,16 @@ pub fn link_person_entity(
         .map_err(|e| e.to_string())?;
 
     // Emit person linked signal (I308)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, relationship_type, entity_id, "person_linked", "user_action",
-        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.9);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        relationship_type,
+        entity_id,
+        "person_linked",
+        "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)),
+        0.9,
+    );
 
     // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
     if let Ok(Some(person)) = db.get_person(person_id) {
@@ -244,8 +276,16 @@ pub fn unlink_person_entity(
         .map_err(|e| e.to_string())?;
 
     // Emit person unlinked signal (I308)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "entity", entity_id, "person_unlinked", "user_action",
-        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)), 0.7);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "entity",
+        entity_id,
+        "person_unlinked",
+        "user_action",
+        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)),
+        0.7,
+    );
 
     // Regenerate person.json so linked_entities reflects removal (ADR-0048)
     if let Ok(Some(person)) = db.get_person(person_id) {
@@ -314,11 +354,23 @@ pub fn archive_person(
     id: &str,
     archived: bool,
 ) -> Result<(), String> {
-    db.archive_person(id, archived)
-        .map_err(|e| e.to_string())?;
+    db.archive_person(id, archived).map_err(|e| e.to_string())?;
 
-    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "person", id, signal_type, "user_action", None, 0.9);
+    let signal_type = if archived {
+        "entity_archived"
+    } else {
+        "entity_unarchived"
+    };
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "person",
+        id,
+        signal_type,
+        "user_action",
+        None,
+        0.9,
+    );
 
     Ok(())
 }
@@ -384,7 +436,10 @@ pub fn create_person_from_stakeholder(
 
     log::info!(
         "Created person '{}' (id={}) from stakeholder, linked to {} '{}'",
-        name, id, entity_type, entity_id,
+        name,
+        id,
+        entity_type,
+        entity_id,
     );
 
     Ok(id)

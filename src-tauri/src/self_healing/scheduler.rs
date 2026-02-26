@@ -46,8 +46,7 @@ pub fn evaluate_on_signal(
     entity_type: &str,
     queue: &IntelligenceQueue,
 ) -> Result<bool, String> {
-    let score =
-        super::remediation::compute_enrichment_trigger_score(db, entity_id, entity_type);
+    let score = super::remediation::compute_enrichment_trigger_score(db, entity_id, entity_type);
 
     if score > 0.7 && !check_circuit_breaker(db, entity_id) {
         queue.enqueue(crate::intel_queue::IntelRequest {
@@ -123,7 +122,13 @@ fn manage_circuit_breaker(
             "SELECT coherence_retry_count, coherence_window_start, coherence_blocked
              FROM entity_quality WHERE entity_id = ?1",
             rusqlite::params![entity_id],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, i64>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
         )
         .unwrap_or((0, None, 0));
 

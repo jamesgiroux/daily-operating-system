@@ -215,10 +215,7 @@ impl AppState {
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
 
-        let hygiene_budget_limit = config
-            .as_ref()
-            .map(|c| c.hygiene_ai_budget)
-            .unwrap_or(10);
+        let hygiene_budget_limit = config.as_ref().map(|c| c.hygiene_ai_budget).unwrap_or(10);
 
         // I309: Load active role preset from config
         let active_preset = config.as_ref().and_then(|c| {
@@ -298,7 +295,8 @@ impl AppState {
 
     /// Get current status of a workflow
     pub fn get_workflow_status(&self, workflow: WorkflowId) -> WorkflowStatus {
-        self.workflow.status
+        self.workflow
+            .status
             .read()
             .map(|guard| guard.get(&workflow).cloned().unwrap_or_default())
             .unwrap_or_default()
@@ -340,7 +338,8 @@ impl AppState {
 
     /// Get execution history
     pub fn get_execution_history(&self, limit: usize) -> Vec<ExecutionRecord> {
-        self.workflow.history
+        self.workflow
+            .history
             .lock()
             .map(|guard| guard.iter().take(limit).cloned().collect())
             .unwrap_or_default()
@@ -355,7 +354,8 @@ impl AppState {
 
     /// Get when a workflow last ran on schedule
     pub fn get_last_scheduled_run(&self, workflow: WorkflowId) -> Option<DateTime<Utc>> {
-        self.workflow.last_scheduled_run
+        self.workflow
+            .last_scheduled_run
             .read()
             .ok()
             .and_then(|guard| guard.get(&workflow).cloned())
@@ -463,7 +463,8 @@ impl AppState {
     /// Save execution history to disk
     fn save_execution_history(&self) -> Result<(), String> {
         let history = self
-            .workflow.history
+            .workflow
+            .history
             .lock()
             .map_err(|_| "Lock poisoned")?
             .clone();
@@ -509,7 +510,10 @@ pub fn run_startup_sync(state: &AppState) {
 
     // Refresh managed workspace files if version changed (I275)
     if let Err(e) = crate::util::write_managed_workspace_files(workspace) {
-        log::warn!("Startup sync: failed to write managed workspace files: {}", e);
+        log::warn!(
+            "Startup sync: failed to write managed workspace files: {}",
+            e
+        );
     }
 
     let db = match crate::db::ActionDb::open() {
