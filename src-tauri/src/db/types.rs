@@ -18,6 +18,12 @@ pub enum DbError {
 
     #[error("Schema migration failed: {0}")]
     Migration(String),
+
+    #[error("Encryption error: {0}")]
+    Encryption(String),
+
+    #[error("Encryption key missing: database at {db_path} is encrypted but the Keychain entry was not found")]
+    KeyMissing { db_path: String },
 }
 
 /// A row from the `actions` table.
@@ -588,7 +594,9 @@ pub(crate) fn map_sync_row(row: &rusqlite::Row) -> rusqlite::Result<DbQuillSyncS
         transcript_path: row.get(11)?,
         created_at: row.get(12)?,
         updated_at: row.get(13)?,
-        source: row.get::<_, String>(14).unwrap_or_else(|_| "quill".to_string()),
+        source: row
+            .get::<_, String>(14)
+            .unwrap_or_else(|_| "quill".to_string()),
     })
 }
 

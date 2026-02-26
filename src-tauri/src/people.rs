@@ -274,7 +274,10 @@ pub fn write_person_markdown(
                 let account_part = db
                     .get_meeting_entities(&m.id)
                     .ok()
-                    .and_then(|ents| ents.into_iter().find(|e| e.entity_type == crate::entity::EntityType::Account))
+                    .and_then(|ents| {
+                        ents.into_iter()
+                            .find(|e| e.entity_type == crate::entity::EntityType::Account)
+                    })
                     .map(|e| format!(" ({})", e.name))
                     .unwrap_or_default();
                 md.push_str(&format!(
@@ -595,7 +598,10 @@ mod tests {
 
         let dir = person_dir(workspace.path(), &person.name);
         assert!(dir.join("person.json").exists(), "person.json missing");
-        assert!(dir.join("dashboard.json").exists(), "dashboard.json missing");
+        assert!(
+            dir.join("dashboard.json").exists(),
+            "dashboard.json missing"
+        );
         assert!(dir.join("person.md").exists(), "person.md missing");
     }
 

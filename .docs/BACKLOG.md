@@ -138,6 +138,8 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I456** | In-app markdown reader for entity documents — view .md files from account/project/person Documents/ without leaving app | P2 | Frontend / UX |
 | **I457** | Background task throttling — ActivityMonitor, HeavyWorkSemaphore, adaptive polling intervals | P1 | Backend / Performance |
 | **I475** | Inbox entity-gating follow-ups — transcript NeedsEntity path, onAssignEntity result check, enrich.rs redundant DB, action account validation | P2 | Backend / Pipeline + Frontend / UX |
+| **I477** | Meeting entity switch should hot-swap briefing content — stale disk fallback guard + single mutation-and-refresh service | P1 | Backend / Meeting + Frontend / UX |
+| **I478** | Remove feature toggle section from Advanced Settings — internal dev knobs, not user-facing | P1 | Frontend / Settings + Backend / Config |
 | **I458** | Renewal Readiness report type — CS report for accounts renewing in the next 90 days; risk rating, champion alignment, recommended actions | P1 | Backend / Reports |
 | **I459** | Stakeholder Map report type — relationship network, coverage gaps, engagement levels; uses people relationship network (v0.13.5) | P1 | Backend / Reports |
 | **I460** | Success Plan report type — mutual objectives, success metrics, responsibilities; requires user entity context (v0.14.0) to be meaningful | P1 | Backend / Reports |
@@ -450,8 +452,10 @@ See `.docs/research/glean-integration-analysis.md` and `.docs/research/cs-report
 | I470 | Output schema validation + anomaly detection — reject malformed AI output before DB write; log injection anomaly events | P1 | Backend / Security |
 | I474 | Inbox document → historical meeting matching — score MeetingNotes-classified inbox files against `meetings_history` using Quill/Granola algorithm; link and run transcript pipeline on confident match | P2 | Backend / Pipeline |
 | I475 | Inbox entity-gating follow-ups — transcript NeedsEntity path, onAssignEntity result check, enrich.rs redundant DB, action account validation | P2 | Backend / Pipeline + Frontend / UX |
+| I476 | Granola cache auto-detection — scan for `cache-v*.json` instead of hardcoded filename; handle v4 format (direct JSON, transcript segment arrays) | P1 | Backend / Integrations |
+| I477 | Meeting entity switch should hot-swap briefing content — stale disk fallback guard + single mutation-and-refresh service | P1 | Backend / Meeting + Frontend / UX |
 
-Issue specs: `i462.md` (SQLCipher), `i465.md` (app lock), `i469.md` (sanitize utilities), `i474.md` (inbox matching), `i475.md` (inbox entity-gating follow-ups). ADRs: `.docs/decisions/0092-data-security-at-rest-and-operational-hardening.md`, `.docs/decisions/0093-prompt-injection-hardening.md`.
+Issue specs: `i462.md` (SQLCipher), `i465.md` (app lock), `i469.md` (sanitize utilities), `i474.md` (inbox matching), `i475.md` (inbox entity-gating follow-ups), `i477.md` (meeting entity switch hot-swap). ADRs: `.docs/decisions/0092-data-security-at-rest-and-operational-hardening.md`, `.docs/decisions/0093-prompt-injection-hardening.md`.
 
 ---
 
@@ -479,6 +483,7 @@ Issue spec: `i471.md` (AuditLogger core). ADR: `.docs/decisions/0094-audit-log-a
 | I57 | First-run wizard — 6-step setup: Claude Code, Google, role preset, user domains, first account, user entity basics | P0 | Frontend / Onboarding |
 | I437 | Empty state redesign — every surface guides action; role-preset-aware copy | P1 | Frontend / UX |
 | I438 | Prime DailyOS — first content ingestion step in wizard; manual (drop file) or connector (Quill/Granola/Drive) | P0 | Frontend / Onboarding |
+| I478 | Remove feature toggle section from Advanced Settings — internal dev knobs, not user-facing | P1 | Frontend / Settings + Backend / Config |
 
 ---
 

@@ -51,8 +51,8 @@ pub struct EbrQbrAction {
 pub struct EbrQbrContent {
     pub quarter_label: String,
     pub executive_summary: String,
-    pub story_bullets: Vec<String>,              // 3 strategic bullets for The Story slide
-    pub customer_quote: Option<String>,          // Direct quote from transcript
+    pub story_bullets: Vec<String>, // 3 strategic bullets for The Story slide
+    pub customer_quote: Option<String>, // Direct quote from transcript
     pub value_delivered: Vec<EbrQbrValueItem>,
     pub success_metrics: Vec<EbrQbrMetric>,
     pub challenges_and_resolutions: Vec<EbrQbrRisk>,
@@ -149,7 +149,9 @@ fn build_ebr_qbr_prompt(
         "This is a {} document ({}). Never use internal jargon ('enrichment', 'signals', 'entity', 'intelligence'). Use business language.\n\n",
         review_name, audience_framing
     ));
-    prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n");
+    prompt.push_str(
+        "Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n",
+    );
     prompt.push_str(&format!(r#"{{
   "quarterLabel": "{quarter_label}",
   "executiveSummary": "1 strategic paragraph (max 60 words). State of the partnership.",
@@ -228,7 +230,14 @@ pub fn gather_ebr_qbr_input(
 
     let entity_name = account.name.clone();
     let intel_hash = crate::reports::compute_intel_hash(entity_id, "account", db);
-    let prompt = build_ebr_qbr_prompt(&entity_name, db, workspace, entity_id, Some(&account), active_preset);
+    let prompt = build_ebr_qbr_prompt(
+        &entity_name,
+        db,
+        workspace,
+        entity_id,
+        Some(&account),
+        active_preset,
+    );
 
     Ok(ReportGeneratorInput {
         entity_id: entity_id.to_string(),

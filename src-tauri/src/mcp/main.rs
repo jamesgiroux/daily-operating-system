@@ -169,7 +169,9 @@ impl DailyOsMcp {
         }
     }
 
-    #[tool(description = "Get the daily briefing for DailyOS. Returns today's schedule, actions, emails, and AI-generated narrative briefing. Use this when the user asks about their day, schedule, meetings, or what they need to focus on.")]
+    #[tool(
+        description = "Get the daily briefing for DailyOS. Returns today's schedule, actions, emails, and AI-generated narrative briefing. Use this when the user asks about their day, schedule, meetings, or what they need to focus on."
+    )]
     fn get_briefing(&self, #[tool(aggr)] params: GetBriefingParams) -> String {
         let today_dir = PathBuf::from(&self.config.workspace_path).join("_today");
 
@@ -188,7 +190,9 @@ impl DailyOsMcp {
         serde_json::to_string_pretty(&response).unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Look up a specific account, project, or person in the DailyOS workspace. Returns entity details, intelligence summary, open actions, and upcoming meetings. Use this when the user asks about a specific customer, project, or contact.")]
+    #[tool(
+        description = "Look up a specific account, project, or person in the DailyOS workspace. Returns entity details, intelligence summary, open actions, and upcoming meetings. Use this when the user asks about a specific customer, project, or contact."
+    )]
     fn query_entity(&self, #[tool(aggr)] params: QueryEntityParams) -> String {
         let db = match self.db.lock() {
             Ok(db) => db,
@@ -204,20 +208,24 @@ impl DailyOsMcp {
         if entity_type == "all" || entity_type == "account" {
             if let Ok(accounts) = db.get_all_accounts() {
                 for acct in &accounts {
-                    if acct.id == params.query
-                        || acct.name.to_lowercase().contains(&query_lower)
-                    {
+                    if acct.id == params.query || acct.name.to_lowercase().contains(&query_lower) {
                         let actions = db.get_account_actions(&acct.id).unwrap_or_default();
                         let meetings = db
                             .get_upcoming_meetings_for_account(&acct.id, 5)
                             .unwrap_or_default();
-                        let intel = read_entity_intelligence(workspace, acct.tracker_path.as_deref());
+                        let intel =
+                            read_entity_intelligence(workspace, acct.tracker_path.as_deref());
 
                         result = Some(build_entity_result(
-                            &acct.id, &acct.name, "account",
-                            acct.health.as_deref(), None,
-                            acct.lifecycle.as_deref(), intel.as_deref(),
-                            &actions, &meetings,
+                            &acct.id,
+                            &acct.name,
+                            "account",
+                            acct.health.as_deref(),
+                            None,
+                            acct.lifecycle.as_deref(),
+                            intel.as_deref(),
+                            &actions,
+                            &meetings,
                         ));
                         break;
                     }
@@ -229,19 +237,22 @@ impl DailyOsMcp {
         if result.is_none() && (entity_type == "all" || entity_type == "project") {
             if let Ok(projects) = db.get_all_projects() {
                 for proj in &projects {
-                    if proj.id == params.query
-                        || proj.name.to_lowercase().contains(&query_lower)
-                    {
+                    if proj.id == params.query || proj.name.to_lowercase().contains(&query_lower) {
                         let actions = db.get_project_actions(&proj.id).unwrap_or_default();
-                        let meetings =
-                            db.get_meetings_for_project(&proj.id, 5).unwrap_or_default();
-                        let intel = read_entity_intelligence(workspace, proj.tracker_path.as_deref());
+                        let meetings = db.get_meetings_for_project(&proj.id, 5).unwrap_or_default();
+                        let intel =
+                            read_entity_intelligence(workspace, proj.tracker_path.as_deref());
 
                         result = Some(build_entity_result(
-                            &proj.id, &proj.name, "project",
-                            None, Some(&proj.status),
-                            None, intel.as_deref(),
-                            &actions, &meetings,
+                            &proj.id,
+                            &proj.name,
+                            "project",
+                            None,
+                            Some(&proj.status),
+                            None,
+                            intel.as_deref(),
+                            &actions,
+                            &meetings,
                         ));
                         break;
                     }
@@ -257,7 +268,8 @@ impl DailyOsMcp {
                         || person.name.to_lowercase().contains(&query_lower)
                         || person.email.to_lowercase().contains(&query_lower)
                     {
-                        let intel = read_entity_intelligence(workspace, person.tracker_path.as_deref());
+                        let intel =
+                            read_entity_intelligence(workspace, person.tracker_path.as_deref());
                         result = Some(EntityResult {
                             id: person.id.clone(),
                             name: person.name.clone(),
@@ -285,7 +297,9 @@ impl DailyOsMcp {
         }
     }
 
-    #[tool(description = "List all accounts, projects, or people in the DailyOS workspace. Use this when the user asks to see their portfolio, customer list, project list, or contacts.")]
+    #[tool(
+        description = "List all accounts, projects, or people in the DailyOS workspace. Use this when the user asks to see their portfolio, customer list, project list, or contacts."
+    )]
     fn list_entities(&self, #[tool(aggr)] params: ListEntitiesParams) -> String {
         let db = match self.db.lock() {
             Ok(db) => db,
@@ -297,9 +311,11 @@ impl DailyOsMcp {
         if entity_type == "all" || entity_type == "account" {
             if let Ok(accounts) = db.get_all_accounts() {
                 items.extend(accounts.into_iter().map(|a| EntityListItem {
-                    id: a.id, name: a.name,
+                    id: a.id,
+                    name: a.name,
                     entity_type: "account".to_string(),
-                    health: a.health, status: a.lifecycle,
+                    health: a.health,
+                    status: a.lifecycle,
                 }));
             }
         }
@@ -307,9 +323,11 @@ impl DailyOsMcp {
         if entity_type == "all" || entity_type == "project" {
             if let Ok(projects) = db.get_all_projects() {
                 items.extend(projects.into_iter().map(|p| EntityListItem {
-                    id: p.id, name: p.name,
+                    id: p.id,
+                    name: p.name,
                     entity_type: "project".to_string(),
-                    health: None, status: Some(p.status),
+                    health: None,
+                    status: Some(p.status),
                 }));
             }
         }
@@ -317,9 +335,11 @@ impl DailyOsMcp {
         if entity_type == "all" || entity_type == "person" {
             if let Ok(people) = db.get_people(None) {
                 items.extend(people.into_iter().map(|p| EntityListItem {
-                    id: p.id, name: p.name,
+                    id: p.id,
+                    name: p.name,
                     entity_type: "person".to_string(),
-                    health: None, status: Some(p.relationship),
+                    health: None,
+                    status: Some(p.relationship),
                 }));
             }
         }
@@ -327,7 +347,9 @@ impl DailyOsMcp {
         serde_json::to_string_pretty(&items).unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Search past meetings in DailyOS by title, summary, or prep content. Use this when the user asks about past meetings, what was discussed, or wants to find a specific meeting.")]
+    #[tool(
+        description = "Search past meetings in DailyOS by title, summary, or prep content. Use this when the user asks about past meetings, what was discussed, or wants to find a specific meeting."
+    )]
     fn search_meetings(&self, #[tool(aggr)] params: SearchMeetingsParams) -> String {
         if params.query.trim().is_empty() {
             return "[]".to_string();
@@ -392,7 +414,11 @@ impl DailyOsMcp {
                 .map(|a| a.name);
 
             results.push(MeetingSearchItem {
-                id, title, meeting_type, start_time, account_name,
+                id,
+                title,
+                meeting_type,
+                start_time,
+                account_name,
                 summary: match_snippet,
             });
         }
@@ -400,7 +426,9 @@ impl DailyOsMcp {
         serde_json::to_string_pretty(&results).unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Semantic search over workspace files for an entity. Returns the most relevant text passages from documents, transcripts, and notes. Use when the user asks about specific details, information, or topics within their files for a particular account, project, or person.")]
+    #[tool(
+        description = "Semantic search over workspace files for an entity. Returns the most relevant text passages from documents, transcripts, and notes. Use when the user asks about specific details, information, or topics within their files for a particular account, project, or person."
+    )]
     fn search_content(&self, #[tool(aggr)] params: SearchContentParams) -> String {
         if params.query.trim().is_empty() {
             return "[]".to_string();
@@ -423,10 +451,19 @@ impl DailyOsMcp {
         };
 
         match dailyos_lib::queries::search::search_entity_content(
-            &db, model_ref, entity_id, &params.query, top_k, 0.7, 0.3,
+            &db,
+            model_ref,
+            entity_id,
+            &params.query,
+            top_k,
+            0.7,
+            0.3,
         ) {
             Ok(matches) if matches.is_empty() => {
-                format!("No content found for entity '{}' matching '{}'.", params.entity_id, params.query)
+                format!(
+                    "No content found for entity '{}' matching '{}'.",
+                    params.entity_id, params.query
+                )
             }
             Ok(matches) => {
                 let mut output = String::new();
@@ -543,9 +580,13 @@ fn read_entity_intelligence(workspace: &str, tracker_path: Option<&str>) -> Opti
 
 #[allow(clippy::too_many_arguments)]
 fn build_entity_result(
-    id: &str, name: &str, entity_type: &str,
-    health: Option<&str>, status: Option<&str>,
-    lifecycle: Option<&str>, intelligence_summary: Option<&str>,
+    id: &str,
+    name: &str,
+    entity_type: &str,
+    health: Option<&str>,
+    status: Option<&str>,
+    lifecycle: Option<&str>,
+    intelligence_summary: Option<&str>,
     actions: &[dailyos_lib::db::DbAction],
     meetings: &[dailyos_lib::db::DbMeeting],
 ) -> EntityResult {
@@ -557,19 +598,25 @@ fn build_entity_result(
         status: status.map(str::to_string),
         lifecycle: lifecycle.map(str::to_string),
         intelligence_summary: intelligence_summary.map(str::to_string),
-        open_actions: actions.iter()
+        open_actions: actions
+            .iter()
             .filter(|a| a.status == "pending")
             .take(10)
             .map(|a| ActionSummary {
-                id: a.id.clone(), title: a.title.clone(),
-                priority: a.priority.clone(), due_date: a.due_date.clone(),
+                id: a.id.clone(),
+                title: a.title.clone(),
+                priority: a.priority.clone(),
+                due_date: a.due_date.clone(),
             })
             .collect(),
-        upcoming_meetings: meetings.iter()
+        upcoming_meetings: meetings
+            .iter()
             .take(5)
             .map(|m| MeetingSummary {
-                id: m.id.clone(), title: m.title.clone(),
-                start_time: m.start_time.clone(), meeting_type: m.meeting_type.clone(),
+                id: m.id.clone(),
+                title: m.title.clone(),
+                start_time: m.start_time.clone(),
+                meeting_type: m.meeting_type.clone(),
             })
             .collect(),
     }

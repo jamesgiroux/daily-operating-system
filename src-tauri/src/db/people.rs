@@ -171,7 +171,8 @@ impl ActionDb {
         }
 
         // Path B: user_domains — if this domain is among user's configured domains
-        let user_domains_lower: Vec<String> = user_domains.iter().map(|d| d.to_lowercase()).collect();
+        let user_domains_lower: Vec<String> =
+            user_domains.iter().map(|d| d.to_lowercase()).collect();
         if user_domains_lower.contains(&domain) {
             for d in &user_domains_lower {
                 if *d != domain {
@@ -790,61 +791,81 @@ impl ActionDb {
 
         self.with_transaction(|tx| {
             // 1. Transfer meeting_attendees (INSERT OR IGNORE handles shared meetings)
-            tx.conn.execute(
-                "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id)
+            tx.conn
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id)
                  SELECT meeting_id, ?1 FROM meeting_attendees WHERE person_id = ?2",
-                params![keep_id, remove_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "DELETE FROM meeting_attendees WHERE person_id = ?1",
-                params![remove_id],
-            ).map_err(|e| e.to_string())?;
+                    params![keep_id, remove_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM meeting_attendees WHERE person_id = ?1",
+                    params![remove_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // 2. Transfer entity_people links
-            tx.conn.execute(
-                "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
+            tx.conn
+                .execute(
+                    "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
                  SELECT entity_id, ?1, relationship_type FROM entity_people WHERE person_id = ?2",
-                params![keep_id, remove_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "DELETE FROM entity_people WHERE person_id = ?1",
-                params![remove_id],
-            ).map_err(|e| e.to_string())?;
+                    params![keep_id, remove_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entity_people WHERE person_id = ?1",
+                    params![remove_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // 3. Transfer actions
-            tx.conn.execute(
-                "UPDATE actions SET person_id = ?1 WHERE person_id = ?2",
-                params![keep_id, remove_id],
-            ).map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "UPDATE actions SET person_id = ?1 WHERE person_id = ?2",
+                    params![keep_id, remove_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // 4. Delete removed person's intelligence cache
-            tx.conn.execute(
-                "DELETE FROM entity_intelligence WHERE entity_id = ?1",
-                params![remove_id],
-            ).map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entity_intelligence WHERE entity_id = ?1",
+                    params![remove_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // 5. Delete removed person's entity row
-            tx.conn.execute(
-                "DELETE FROM entities WHERE id = ?1 AND entity_type = 'person'",
-                params![remove_id],
-            ).map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entities WHERE id = ?1 AND entity_type = 'person'",
+                    params![remove_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // 6. Delete removed person's content_index rows
-            tx.conn.execute(
-                "DELETE FROM content_index WHERE entity_id = ?1",
-                params![remove_id],
-            ).map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM content_index WHERE entity_id = ?1",
+                    params![remove_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // 6b. Transfer email aliases from removed person to kept person
-            tx.conn.execute(
-                "UPDATE OR IGNORE person_emails SET person_id = ?1 WHERE person_id = ?2",
-                params![keep_id, remove_id],
-            ).map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "UPDATE OR IGNORE person_emails SET person_id = ?1 WHERE person_id = ?2",
+                    params![keep_id, remove_id],
+                )
+                .map_err(|e| e.to_string())?;
             // Clean up any that couldn't be transferred (duplicate email for same person)
-            tx.conn.execute(
-                "DELETE FROM person_emails WHERE person_id = ?1",
-                params![remove_id],
-            ).map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM person_emails WHERE person_id = ?1",
+                    params![remove_id],
+                )
+                .map_err(|e| e.to_string())?;
             // Ensure the removed person's primary email is recorded as an alias of the kept person
             tx.add_person_email(keep_id, &_remove.email, false)
                 .map_err(|e| e.to_string())?;
@@ -871,15 +892,18 @@ impl ActionDb {
                         _ => format!("--- Merged from {} ---\n{}", _remove.name, remove_notes),
                     };
                     let now = Utc::now().to_rfc3339();
-                    tx.conn.execute(
-                        "UPDATE people SET notes = ?1, updated_at = ?2 WHERE id = ?3",
-                        params![merged_notes, now, keep_id],
-                    ).map_err(|e| e.to_string())?;
+                    tx.conn
+                        .execute(
+                            "UPDATE people SET notes = ?1, updated_at = ?2 WHERE id = ?3",
+                            params![merged_notes, now, keep_id],
+                        )
+                        .map_err(|e| e.to_string())?;
                 }
             }
 
             Ok(())
-        }).map_err(DbError::Migration)
+        })
+        .map_err(DbError::Migration)
     }
 
     /// Delete a person and all their references (attendance, entity links, actions, intelligence).
@@ -892,40 +916,55 @@ impl ActionDb {
 
         self.with_transaction(|tx| {
             // Cascade deletes
-            tx.conn.execute(
-                "DELETE FROM meeting_attendees WHERE person_id = ?1",
-                params![person_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "DELETE FROM entity_people WHERE person_id = ?1",
-                params![person_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "UPDATE actions SET person_id = NULL WHERE person_id = ?1",
-                params![person_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "DELETE FROM entity_intelligence WHERE entity_id = ?1",
-                params![person_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "DELETE FROM entities WHERE id = ?1 AND entity_type = 'person'",
-                params![person_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "DELETE FROM content_index WHERE entity_id = ?1",
-                params![person_id],
-            ).map_err(|e| e.to_string())?;
-            tx.conn.execute(
-                "DELETE FROM person_emails WHERE person_id = ?1",
-                params![person_id],
-            ).map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM meeting_attendees WHERE person_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entity_people WHERE person_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "UPDATE actions SET person_id = NULL WHERE person_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entity_intelligence WHERE entity_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entities WHERE id = ?1 AND entity_type = 'person'",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM content_index WHERE entity_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM person_emails WHERE person_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
             tx.conn
                 .execute("DELETE FROM people WHERE id = ?1", params![person_id])
                 .map_err(|e| e.to_string())?;
 
             Ok(())
-        }).map_err(DbError::Migration)
+        })
+        .map_err(DbError::Migration)
     }
 
     /// Unified person profile update — single write path for all enrichment sources.
@@ -1007,8 +1046,7 @@ impl ActionDb {
         }
 
         // Always update enrichment_sources, last_enriched_at, updated_at
-        let sources_json =
-            serde_json::to_string(&sources).unwrap_or_else(|_| "{}".to_string());
+        let sources_json = serde_json::to_string(&sources).unwrap_or_else(|_| "{}".to_string());
         set_clauses.push("enrichment_sources = ?".to_string());
         params.push(Box::new(sources_json));
         set_clauses.push("last_enriched_at = ?".to_string());
@@ -1019,10 +1057,7 @@ impl ActionDb {
         // WHERE clause
         params.push(Box::new(person_id.to_string()));
 
-        let sql = format!(
-            "UPDATE people SET {} WHERE id = ?",
-            set_clauses.join(", ")
-        );
+        let sql = format!("UPDATE people SET {} WHERE id = ?", set_clauses.join(", "));
 
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
@@ -1030,11 +1065,9 @@ impl ActionDb {
         conn.execute(&sql, param_refs.as_slice())
             .map_err(|e| DbError::Migration(format!("update_person_profile: {}", e)))?;
 
-
         // Audit trail
         let log_id = format!("el-{}", uuid::Uuid::new_v4());
-        let fields_json =
-            serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
+        let fields_json = serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
 
         let _ = conn.execute(
             "INSERT INTO enrichment_log

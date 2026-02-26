@@ -82,8 +82,8 @@ pub struct MonthlyWrappedContent {
 /// Returns (first_day, last_day) of the prior calendar month.
 pub fn prior_calendar_month() -> (NaiveDate, NaiveDate) {
     let today = Utc::now().date_naive();
-    let first_of_this_month = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)
-        .unwrap_or(today);
+    let first_of_this_month =
+        NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today);
     let last_of_prior = first_of_this_month.pred_opt().unwrap_or(today);
     let first_of_prior = NaiveDate::from_ymd_opt(last_of_prior.year(), last_of_prior.month(), 1)
         .unwrap_or(last_of_prior);
@@ -211,15 +211,12 @@ fn build_monthly_wrapped_prompt(
              ORDER BY start_time",
         )
         .and_then(|mut s| {
-            let rows = s.query_map(
-                rusqlite::params![month_start_str, month_end_str],
-                |row| {
-                    let id: String = row.get(0)?;
-                    let title: String = row.get(1)?;
-                    let time: String = row.get(2)?;
-                    Ok(format!("- [{}] {} | {}", id, time, title))
-                },
-            )?;
+            let rows = s.query_map(rusqlite::params![month_start_str, month_end_str], |row| {
+                let id: String = row.get(0)?;
+                let title: String = row.get(1)?;
+                let time: String = row.get(2)?;
+                Ok(format!("- [{}] {} | {}", id, time, title))
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
         })
         .unwrap_or_default();
@@ -242,14 +239,11 @@ fn build_monthly_wrapped_prompt(
              ORDER BY completed_at",
         )
         .and_then(|mut s| {
-            let rows = s.query_map(
-                rusqlite::params![month_start_str, month_end_str],
-                |row| {
-                    let title: String = row.get(0)?;
-                    let completed: String = row.get(1)?;
-                    Ok(format!("- {} (completed {})", title, completed))
-                },
-            )?;
+            let rows = s.query_map(rusqlite::params![month_start_str, month_end_str], |row| {
+                let title: String = row.get(0)?;
+                let completed: String = row.get(1)?;
+                Ok(format!("- {} (completed {})", title, completed))
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
         })
         .unwrap_or_default();
@@ -276,15 +270,12 @@ fn build_monthly_wrapped_prompt(
              LIMIT 30",
         )
         .and_then(|mut s| {
-            let rows = s.query_map(
-                rusqlite::params![month_start_str, month_end_str],
-                |row| {
-                    let stype: String = row.get(0)?;
-                    let val: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
-                    let entity: String = row.get(2)?;
-                    Ok(format!("- [{}] {} — {}", stype, entity, val))
-                },
-            )?;
+            let rows = s.query_map(rusqlite::params![month_start_str, month_end_str], |row| {
+                let stype: String = row.get(0)?;
+                let val: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+                let entity: String = row.get(2)?;
+                Ok(format!("- [{}] {} — {}", stype, entity, val))
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
         })
         .unwrap_or_default();
@@ -354,10 +345,15 @@ fn build_monthly_wrapped_prompt(
          Unique {}s touched: {}\n\
          Unique people met: {}\n\
          Top {}: {} ({} engagements)\n\n",
-        meeting_count, action_count, signal_count,
-        entity_noun, entities_touched,
+        meeting_count,
+        action_count,
+        signal_count,
+        entity_noun,
+        entities_touched,
         people_met,
-        entity_noun, top_entity_name, top_entity_touches
+        entity_noun,
+        top_entity_name,
+        top_entity_touches
     ));
 
     if !priorities_json.trim().is_empty() {
@@ -385,7 +381,9 @@ fn build_monthly_wrapped_prompt(
     }
 
     prompt.push_str("## Output Format\n\n");
-    prompt.push_str("Respond with ONLY valid JSON (no markdown fences) matching this schema exactly:\n\n");
+    prompt.push_str(
+        "Respond with ONLY valid JSON (no markdown fences) matching this schema exactly:\n\n",
+    );
     prompt.push_str(&format!(
         r#"{{
   "monthLabel": "{month_label}",

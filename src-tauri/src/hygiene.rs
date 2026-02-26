@@ -24,7 +24,6 @@ const STARTUP_DELAY_SECS: u64 = 30;
 /// Interval between scans (4 hours).
 const SCAN_INTERVAL_SECS: u64 = 4 * 60 * 60;
 
-
 /// Max people per domain for pairwise duplicate detection (prevents O(n²) explosion).
 const MAX_DOMAIN_GROUP_SIZE: usize = 200;
 
@@ -225,7 +224,10 @@ pub fn run_hygiene_scan(
     // --- Phase 2e: Email cadence monitoring (I319) ---
     let cadence_anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies(db);
     if !cadence_anomalies.is_empty() {
-        log::info!("Hygiene: {} email cadence anomalies detected", cadence_anomalies.len());
+        log::info!(
+            "Hygiene: {} email cadence anomalies detected",
+            cadence_anomalies.len()
+        );
     }
 
     // --- Phase 3: AI-budgeted gap filling (self-healing portfolio evaluation) ---
@@ -252,14 +254,18 @@ pub fn run_hygiene_scan(
     report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
     report.empty_shell_accounts = count_empty_shell_accounts(db);
     report.low_quality_entities = crate::self_healing::quality::get_low_quality_count(db);
-    report.coherence_blocked_entities = crate::self_healing::quality::get_coherence_blocked_count(db);
+    report.coherence_blocked_entities =
+        crate::self_healing::quality::get_coherence_blocked_count(db);
 
     report.scan_duration_ms = scan_start.elapsed().as_millis() as u64;
     report
 }
 
 /// Reclassify people with "unknown" relationship using the user's domains (I171).
-fn fix_unknown_relationships(db: &ActionDb, user_domains: &[String]) -> (usize, Vec<HygieneFixDetail>) {
+fn fix_unknown_relationships(
+    db: &ActionDb,
+    user_domains: &[String],
+) -> (usize, Vec<HygieneFixDetail>) {
     if user_domains.is_empty() {
         return (0, Vec::new());
     }
@@ -277,7 +283,10 @@ fn fix_unknown_relationships(db: &ActionDb, user_domains: &[String]) -> (usize, 
             details.push(HygieneFixDetail {
                 fix_type: "relationship_reclassified".to_string(),
                 entity_name: Some(person.name.clone()),
-                description: format!("Reclassified {} ({}) as {}", person.name, person.email, new_rel),
+                description: format!(
+                    "Reclassified {} ({}) as {}",
+                    person.name, person.email, new_rel
+                ),
             });
             fixed += 1;
         }
@@ -376,7 +385,10 @@ fn fix_meeting_counts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             details.push(HygieneFixDetail {
                 fix_type: "meeting_count_updated".to_string(),
                 entity_name: Some(name.clone()),
-                description: format!("Updated meeting count for {}: {} \u{2192} {}", name, old_count, new_count),
+                description: format!(
+                    "Updated meeting count for {}: {} \u{2192} {}",
+                    name, old_count, new_count
+                ),
             });
             fixed += 1;
         }
@@ -442,7 +454,10 @@ fn fix_renewal_rollovers(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
         details.push(HygieneFixDetail {
             fix_type: "renewal_rolled_over".to_string(),
             entity_name: Some(account.name.clone()),
-            description: format!("Rolled over {} renewal: {} \u{2192} {}", account.name, renewal_date, next_str),
+            description: format!(
+                "Rolled over {} renewal: {} \u{2192} {}",
+                account.name, renewal_date, next_str
+            ),
         });
         fixed += 1;
     }
@@ -656,7 +671,10 @@ fn count_empty_shell_accounts(db: &ActionDb) -> usize {
 ///
 /// Reads `_today/data/emails.json` (created by daily briefing), extracts display
 /// names from From headers, and updates people who only have email-derived names.
-pub fn resolve_names_from_emails(db: &ActionDb, workspace: &Path) -> (usize, Vec<HygieneFixDetail>) {
+pub fn resolve_names_from_emails(
+    db: &ActionDb,
+    workspace: &Path,
+) -> (usize, Vec<HygieneFixDetail>) {
     let emails_path = workspace.join("_today").join("data").join("emails.json");
     let raw = match std::fs::read_to_string(&emails_path) {
         Ok(r) => r,
@@ -788,7 +806,10 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail
                 details.push(HygieneFixDetail {
                     fix_type: "person_linked_by_domain".to_string(),
                     entity_name: Some(person.name.clone()),
-                    description: format!("Linked {} to {} via {}", person.name, account_name, domain),
+                    description: format!(
+                        "Linked {} to {} via {}",
+                        person.name, account_name, domain
+                    ),
                 });
                 linked += 1;
                 break; // One link per person
@@ -1048,10 +1069,7 @@ fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
                 person_id,
                 "account_linked",
                 "hygiene",
-                Some(&format!(
-                    "{} meetings with {}",
-                    shared_count, account_name
-                )),
+                Some(&format!("{} meetings with {}", shared_count, account_name)),
                 confidence,
             );
 
@@ -1112,10 +1130,7 @@ fn resolve_names_from_calendar(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) 
             details.push(HygieneFixDetail {
                 fix_type: "name_resolved_calendar".to_string(),
                 entity_name: Some(display_name.clone()),
-                description: format!(
-                    "Resolved {}'s name from calendar: {}",
-                    email, display_name
-                ),
+                description: format!("Resolved {}'s name from calendar: {}", email, display_name),
             });
             resolved += 1;
         }
@@ -1344,6 +1359,7 @@ fn enqueue_ai_enrichments(
                 entity_type,
                 priority: IntelPriority::ProactiveHygiene,
                 requested_at: Instant::now(),
+                retry_count: 0,
             });
             enqueued += 1;
         }
@@ -1364,6 +1380,7 @@ fn enqueue_ai_enrichments(
                 entity_type,
                 priority: IntelPriority::ProactiveHygiene,
                 requested_at: Instant::now(),
+                retry_count: 0,
             });
             enqueued += 1;
         }
@@ -1477,6 +1494,7 @@ pub fn check_upcoming_meeting_readiness(
                     entity_type,
                     priority: IntelPriority::CalendarChange,
                     requested_at: Instant::now(),
+                    retry_count: 0,
                 });
                 enqueued_ids.push(entity.id.clone());
                 log::debug!(
@@ -1518,10 +1536,21 @@ pub fn run_overnight_scan(
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> OvernightReport {
     // Use expanded overnight budget (2x daytime from config)
-    let overnight_limit = config.hygiene_ai_budget.saturating_mul(2).max(OVERNIGHT_AI_BUDGET);
+    let overnight_limit = config
+        .hygiene_ai_budget
+        .saturating_mul(2)
+        .max(OVERNIGHT_AI_BUDGET);
     let overnight_budget = crate::state::HygieneBudget::new(overnight_limit);
 
-    let report = run_hygiene_scan(db, config, workspace, Some(&overnight_budget), Some(queue), false, None);
+    let report = run_hygiene_scan(
+        db,
+        config,
+        workspace,
+        Some(&overnight_budget),
+        Some(queue),
+        false,
+        None,
+    );
 
     let overnight = OvernightReport {
         ran_at: Utc::now().to_rfc3339(),
@@ -1546,7 +1575,11 @@ pub fn run_overnight_scan(
 /// Check if current time is in the overnight window (2-3 AM local time).
 fn is_overnight_window() -> bool {
     use chrono::Local;
-    let hour = Local::now().format("%H").to_string().parse::<u32>().unwrap_or(12);
+    let hour = Local::now()
+        .format("%H")
+        .to_string()
+        .parse::<u32>()
+        .unwrap_or(12);
     (2..=3).contains(&hour)
 }
 
@@ -1563,12 +1596,16 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             .config
             .read()
             .ok()
-            .and_then(|g| g.as_ref().map(|c| c.hygiene_scan_interval_hours as u64 * 3600))
+            .and_then(|g| {
+                g.as_ref()
+                    .map(|c| c.hygiene_scan_interval_hours as u64 * 3600)
+            })
             .unwrap_or(SCAN_INTERVAL_SECS);
 
         // Prevent overlap with manual scan runs.
         let began_scan = state
-            .hygiene.scan_running
+            .hygiene
+            .scan_running
             .compare_exchange(
                 false,
                 true,
@@ -1590,7 +1627,8 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
         if permit.is_err() {
             log::debug!("HygieneLoop: skipping scan — heavy work in progress");
             state
-                .hygiene.scan_running
+                .hygiene
+                .scan_running
                 .store(false, std::sync::atomic::Ordering::Release);
             tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
             continue;
@@ -1674,12 +1712,11 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
         }
 
         if let Ok(mut guard) = state.hygiene.next_scan_at.lock() {
-            *guard = Some(
-                (Utc::now() + chrono::Duration::seconds(interval as i64)).to_rfc3339(),
-            );
+            *guard = Some((Utc::now() + chrono::Duration::seconds(interval as i64)).to_rfc3339());
         }
         state
-            .hygiene.scan_running
+            .hygiene
+            .scan_running
             .store(false, std::sync::atomic::Ordering::Release);
 
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
@@ -1711,7 +1748,8 @@ fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
 
     // First run does a full orphan scan (no lookback limit)
     let first_run = !state
-        .hygiene.full_orphan_scan_done
+        .hygiene
+        .full_orphan_scan_done
         .swap(true, std::sync::atomic::Ordering::AcqRel);
 
     let workspace = std::path::Path::new(&config.workspace_path);
@@ -1821,91 +1859,143 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
         fix_parts.push(format!(
             "resolved {} unnamed {}",
             fixes.names_resolved,
-            if fixes.names_resolved == 1 { "person" } else { "people" }
+            if fixes.names_resolved == 1 {
+                "person"
+            } else {
+                "people"
+            }
         ));
     }
     if fixes.relationships_reclassified > 0 {
         fix_parts.push(format!(
             "reclassified {} {}",
             fixes.relationships_reclassified,
-            if fixes.relationships_reclassified == 1 { "relationship" } else { "relationships" }
+            if fixes.relationships_reclassified == 1 {
+                "relationship"
+            } else {
+                "relationships"
+            }
         ));
     }
     if fixes.summaries_extracted > 0 {
         fix_parts.push(format!(
             "extracted {} {}",
             fixes.summaries_extracted,
-            if fixes.summaries_extracted == 1 { "summary" } else { "summaries" }
+            if fixes.summaries_extracted == 1 {
+                "summary"
+            } else {
+                "summaries"
+            }
         ));
     }
     if fixes.meeting_counts_updated > 0 {
         fix_parts.push(format!(
             "updated {} meeting {}",
             fixes.meeting_counts_updated,
-            if fixes.meeting_counts_updated == 1 { "count" } else { "counts" }
+            if fixes.meeting_counts_updated == 1 {
+                "count"
+            } else {
+                "counts"
+            }
         ));
     }
     if fixes.people_linked_by_domain > 0 {
         fix_parts.push(format!(
             "linked {} {} by domain",
             fixes.people_linked_by_domain,
-            if fixes.people_linked_by_domain == 1 { "person" } else { "people" }
+            if fixes.people_linked_by_domain == 1 {
+                "person"
+            } else {
+                "people"
+            }
         ));
     }
     if fixes.renewals_rolled_over > 0 {
         fix_parts.push(format!(
             "rolled over {} {}",
             fixes.renewals_rolled_over,
-            if fixes.renewals_rolled_over == 1 { "renewal" } else { "renewals" }
+            if fixes.renewals_rolled_over == 1 {
+                "renewal"
+            } else {
+                "renewals"
+            }
         ));
     }
     if fixes.ai_enrichments_enqueued > 0 {
         fix_parts.push(format!(
             "queued {} intelligence {}",
             fixes.ai_enrichments_enqueued,
-            if fixes.ai_enrichments_enqueued == 1 { "refresh" } else { "refreshes" }
+            if fixes.ai_enrichments_enqueued == 1 {
+                "refresh"
+            } else {
+                "refreshes"
+            }
         ));
     }
     if fixes.phantom_accounts_archived > 0 {
         fix_parts.push(format!(
             "archived {} phantom {}",
             fixes.phantom_accounts_archived,
-            if fixes.phantom_accounts_archived == 1 { "account" } else { "accounts" }
+            if fixes.phantom_accounts_archived == 1 {
+                "account"
+            } else {
+                "accounts"
+            }
         ));
     }
     if fixes.orphan_internals_relinked > 0 {
         fix_parts.push(format!(
             "re-linked {} orphan internal {}",
             fixes.orphan_internals_relinked,
-            if fixes.orphan_internals_relinked == 1 { "account" } else { "accounts" }
+            if fixes.orphan_internals_relinked == 1 {
+                "account"
+            } else {
+                "accounts"
+            }
         ));
     }
     if fixes.empty_shells_archived > 0 {
         fix_parts.push(format!(
             "archived {} empty shell {}",
             fixes.empty_shells_archived,
-            if fixes.empty_shells_archived == 1 { "account" } else { "accounts" }
+            if fixes.empty_shells_archived == 1 {
+                "account"
+            } else {
+                "accounts"
+            }
         ));
     }
     if fixes.people_auto_merged > 0 {
         fix_parts.push(format!(
             "merged {} duplicate {}",
             fixes.people_auto_merged,
-            if fixes.people_auto_merged == 1 { "person" } else { "people" }
+            if fixes.people_auto_merged == 1 {
+                "person"
+            } else {
+                "people"
+            }
         ));
     }
     if fixes.names_resolved_calendar > 0 {
         fix_parts.push(format!(
             "resolved {} {} from calendar",
             fixes.names_resolved_calendar,
-            if fixes.names_resolved_calendar == 1 { "name" } else { "names" }
+            if fixes.names_resolved_calendar == 1 {
+                "name"
+            } else {
+                "names"
+            }
         ));
     }
     if fixes.people_linked_co_attendance > 0 {
         fix_parts.push(format!(
             "linked {} {} by co-attendance",
             fixes.people_linked_co_attendance,
-            if fixes.people_linked_co_attendance == 1 { "person" } else { "people" }
+            if fixes.people_linked_co_attendance == 1 {
+                "person"
+            } else {
+                "people"
+            }
         ));
     }
 
@@ -1914,8 +2004,16 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
     let gap_rows: Vec<(&str, usize, &str)> = vec![
         ("unnamed people", report.unnamed_people, "critical"),
         ("duplicate people", report.duplicate_people, "critical"),
-        ("unknown relationships", report.unknown_relationships, "medium"),
-        ("missing intelligence", report.missing_intelligence, "medium"),
+        (
+            "unknown relationships",
+            report.unknown_relationships,
+            "medium",
+        ),
+        (
+            "missing intelligence",
+            report.missing_intelligence,
+            "medium",
+        ),
         ("stale intelligence", report.stale_intelligence, "low"),
         ("unsummarized files", report.unsummarized_files, "medium"),
         ("empty shell accounts", report.empty_shell_accounts, "low"),
@@ -1970,7 +2068,11 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
         narrative.push_str(&format!(
             "{} {} remaining.",
             total_remaining_gaps,
-            if total_remaining_gaps == 1 { "gap" } else { "gaps" }
+            if total_remaining_gaps == 1 {
+                "gap"
+            } else {
+                "gaps"
+            }
         ));
     } else if !narrative.is_empty() {
         narrative.push_str(" All clear.");
@@ -2162,7 +2264,8 @@ pub fn build_intelligence_hygiene_status(
         .unwrap_or(0);
 
     let is_running = state
-        .hygiene.scan_running
+        .hygiene
+        .scan_running
         .load(std::sync::atomic::Ordering::Acquire);
 
     let (status, status_label) = if is_running {
@@ -2181,20 +2284,20 @@ pub fn build_intelligence_hygiene_status(
         .unwrap_or(0);
 
     let last_scan_time = state
-        .hygiene.last_scan_at
+        .hygiene
+        .last_scan_at
         .lock()
         .ok()
         .and_then(|g| g.clone())
         .or_else(|| report.map(|r| r.scanned_at.clone()));
     let next_scan_time = state
-        .hygiene.next_scan_at
+        .hygiene
+        .next_scan_at
         .lock()
         .ok()
         .and_then(|g| g.clone());
 
-    let fix_details = report
-        .map(|r| r.fix_details.clone())
-        .unwrap_or_default();
+    let fix_details = report.map(|r| r.fix_details.clone()).unwrap_or_default();
 
     HygieneStatusView {
         status,
@@ -2348,7 +2451,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -2483,7 +2586,15 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
+        let report = run_hygiene_scan(
+            &db,
+            &config,
+            Path::new("/tmp/nonexistent"),
+            None,
+            None,
+            false,
+            None,
+        );
 
         assert_eq!(report.unnamed_people, 0);
         assert_eq!(report.unknown_relationships, 0);
@@ -2505,7 +2616,15 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
+        let report = run_hygiene_scan(
+            &db,
+            &config,
+            Path::new("/tmp/nonexistent"),
+            None,
+            None,
+            false,
+            None,
+        );
 
         // Fixes applied
         assert_eq!(report.fixes.relationships_reclassified, 2);
@@ -2731,7 +2850,11 @@ mod tests {
         link_meeting_entity(&db, "m1", "acme");
 
         let enqueued = check_upcoming_meeting_readiness(&db, &queue, None);
-        assert_eq!(enqueued.len(), 1, "fresh entity with imminent meeting should be enqueued (trigger score driven)");
+        assert_eq!(
+            enqueued.len(),
+            1,
+            "fresh entity with imminent meeting should be enqueued (trigger score driven)"
+        );
     }
 
     #[test]
@@ -3008,7 +3131,15 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
+        let report = run_hygiene_scan(
+            &db,
+            &config,
+            Path::new("/tmp/nonexistent"),
+            None,
+            None,
+            false,
+            None,
+        );
         // After auto-merge of high-confidence duplicates (>=0.95), the re-count should be 0
         assert_eq!(report.duplicate_people, 0);
         assert_eq!(report.fixes.people_auto_merged, 1);
@@ -3061,7 +3192,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -3160,7 +3291,15 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
+        let report = run_hygiene_scan(
+            &db,
+            &config,
+            Path::new("/tmp/nonexistent"),
+            None,
+            None,
+            false,
+            None,
+        );
         assert_eq!(report.fixes.renewals_rolled_over, 1);
     }
 
@@ -3269,6 +3408,8 @@ mod tests {
             embeddings: crate::types::EmbeddingConfig::default(),
             role: "customer-success".to_string(),
             custom_preset_path: None,
+            app_lock_timeout_minutes: Some(15),
+            icloud_warning_dismissed: None,
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,

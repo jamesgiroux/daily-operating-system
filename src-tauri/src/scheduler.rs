@@ -47,8 +47,16 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new(state: Arc<AppState>, sender: mpsc::Sender<SchedulerMessage>, app_handle: AppHandle) -> Self {
-        Self { state, sender, app_handle }
+    pub fn new(
+        state: Arc<AppState>,
+        sender: mpsc::Sender<SchedulerMessage>,
+        app_handle: AppHandle,
+    ) -> Self {
+        Self {
+            state,
+            sender,
+            app_handle,
+        }
     }
 
     /// Start the scheduler loop
@@ -77,7 +85,9 @@ impl Scheduler {
                 if today.weekday() == chrono::Weekday::Mon {
                     let state = self.state.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = crate::services::reports::generate_weekly_impact_if_needed(&state).await {
+                        if let Err(e) =
+                            crate::services::reports::generate_weekly_impact_if_needed(&state).await
+                        {
                             log::warn!("Scheduler: weekly impact generation failed: {}", e);
                         }
                     });
@@ -87,7 +97,12 @@ impl Scheduler {
                 if today.day() == 1 {
                     let state_month = self.state.clone();
                     tauri::async_runtime::spawn(async move {
-                        if let Err(e) = crate::services::reports::generate_monthly_wrapped_if_needed(&state_month).await {
+                        if let Err(e) =
+                            crate::services::reports::generate_monthly_wrapped_if_needed(
+                                &state_month,
+                            )
+                            .await
+                        {
                             log::warn!("Scheduler: monthly wrapped generation failed: {}", e);
                         }
                     });
@@ -194,7 +209,7 @@ impl Scheduler {
                      AND intelligence_state != 'archived'
                      AND (has_new_signals = 1
                           OR last_enriched_at IS NULL
-                          OR last_enriched_at < datetime('now', '-12 hours'))"
+                          OR last_enriched_at < datetime('now', '-12 hours'))",
                 ) {
                     Ok(s) => s,
                     Err(e) => {
@@ -224,7 +239,9 @@ impl Scheduler {
         let mut refreshed = 0usize;
         for meeting_id in meetings_to_refresh {
             match crate::intelligence::generate_meeting_intelligence(
-                &self.state, &meeting_id, false,
+                &self.state,
+                &meeting_id,
+                false,
             )
             .await
             {
@@ -251,12 +268,20 @@ impl Scheduler {
     fn run_post_meeting_email_correlation(&self) {
         match crate::db::ActionDb::open() {
             Ok(db) => {
-                if let Err(e) = crate::signals::post_meeting::correlate_post_meeting_emails_with_engine(&db, Some(&self.state.signals.engine)) {
+                if let Err(e) =
+                    crate::signals::post_meeting::correlate_post_meeting_emails_with_engine(
+                        &db,
+                        Some(&self.state.signals.engine),
+                    )
+                {
                     log::warn!("Post-meeting email correlation failed: {}", e);
                 }
             }
             Err(e) => {
-                log::warn!("Failed to open DB for post-meeting email correlation: {}", e);
+                log::warn!(
+                    "Failed to open DB for post-meeting email correlation: {}",
+                    e
+                );
             }
         }
     }

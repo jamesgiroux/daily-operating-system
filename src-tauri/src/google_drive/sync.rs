@@ -52,8 +52,11 @@ pub fn upsert_watched_source(
 /// Remove a watched Drive source.
 pub fn remove_watched_source(db: &ActionDb, watch_id: &str) -> Result<(), String> {
     let conn = db.conn_ref();
-    conn.execute("DELETE FROM drive_watched_sources WHERE id = ?", rusqlite::params![watch_id])
-        .map_err(|e| format!("Failed to remove watched source: {}", e))?;
+    conn.execute(
+        "DELETE FROM drive_watched_sources WHERE id = ?",
+        rusqlite::params![watch_id],
+    )
+    .map_err(|e| format!("Failed to remove watched source: {}", e))?;
 
     Ok(())
 }

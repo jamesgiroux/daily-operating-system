@@ -127,16 +127,12 @@ impl EmbeddingModel {
             .lock()
             .map(|s| match &*s {
                 EmbeddingModelInner::Fastembed { dimension, .. }
-                | EmbeddingModelInner::HashFallback { dimension } => {
-                    EmbeddingModelStatus::Ready {
-                        dimension: *dimension,
-                    }
-                }
-                EmbeddingModelInner::Unavailable { reason } => {
-                    EmbeddingModelStatus::Unavailable {
-                        reason: reason.clone(),
-                    }
-                }
+                | EmbeddingModelInner::HashFallback { dimension } => EmbeddingModelStatus::Ready {
+                    dimension: *dimension,
+                },
+                EmbeddingModelInner::Unavailable { reason } => EmbeddingModelStatus::Unavailable {
+                    reason: reason.clone(),
+                },
             })
             .unwrap_or(EmbeddingModelStatus::Unavailable {
                 reason: "embedding model lock poisoned".to_string(),
@@ -328,7 +324,11 @@ mod tests {
     fn test_hash_embed_normalized() {
         let v = hash_embed("some test text here", 768);
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 1e-5, "expected unit norm, got {}", norm);
+        assert!(
+            (norm - 1.0).abs() < 1e-5,
+            "expected unit norm, got {}",
+            norm
+        );
     }
 
     #[test]

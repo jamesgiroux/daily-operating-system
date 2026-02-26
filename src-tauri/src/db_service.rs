@@ -35,7 +35,14 @@ pub struct DbService {
 
 /// Apply standard pragmas to a connection. Both readers and writers get
 /// busy_timeout and WAL mode; readers additionally get query_only.
-fn apply_pragmas(conn: &rusqlite::Connection, read_only: bool) -> Result<(), rusqlite::Error> {
+/// PRAGMA key is set first for SQLCipher (ADR-0092).
+fn apply_pragmas(
+    conn: &rusqlite::Connection,
+    read_only: bool,
+    hex_key: &str,
+) -> Result<(), rusqlite::Error> {
+    // PRAGMA key MUST be first — before any other PRAGMA (ADR-0092)
+    conn.execute_batch(&crate::db::encryption::key_to_pragma(hex_key))?;
     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
     conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
@@ -65,7 +72,19 @@ impl DbService {
             }
         }
 
+        // Get or create encryption key from Keychain (ADR-0092)
+        let hex_key =
+            crate::db::encryption::get_or_create_db_key(&path).map_err(DbError::Encryption)?;
+
+        // Migrate plaintext DB if it exists
+        if path.exists() && crate::db::encryption::is_database_plaintext(&path) {
+            log::info!("DbService: Detected plaintext database, migrating to encrypted...");
+            crate::db::encryption::migrate_to_encrypted(&path, &hex_key)
+                .map_err(DbError::Encryption)?;
+        }
+
         let path_str = path.to_string_lossy().to_string();
+        let writer_key = hex_key.clone();
 
         // Open the writer connection — this is where migrations run.
         let writer = Connection::open(&path_str)
@@ -74,8 +93,8 @@ impl DbService {
 
         // Apply pragmas and run migrations on the writer.
         writer
-            .call(|conn| {
-                apply_pragmas(conn, false)?;
+            .call(move |conn| {
+                apply_pragmas(conn, false, &writer_key)?;
                 crate::migrations::run_migrations(conn)
                     .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
                 Ok(())
@@ -90,8 +109,9 @@ impl DbService {
                 .await
                 .map_err(|e| DbError::Migration(format!("Failed to open reader: {e}")))?;
 
-            r.call(|conn| {
-                apply_pragmas(conn, true)?;
+            let reader_key = hex_key.clone();
+            r.call(move |conn| {
+                apply_pragmas(conn, true, &reader_key)?;
                 Ok(())
             })
             .await

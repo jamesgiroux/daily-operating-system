@@ -59,17 +59,15 @@ pub async fn set_workspace_path(path: &str, state: &AppState) -> Result<Config, 
 
     let workspace_path = config.workspace_path.clone();
     let user_domains = config.resolved_user_domains();
-    let _ = state.db_write(move |db| {
-        let workspace = std::path::Path::new(&workspace_path);
-        let _ = crate::people::sync_people_from_workspace(
-            workspace,
-            db,
-            &user_domains,
-        );
-        let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
-        let _ = crate::projects::sync_projects_from_workspace(workspace, db);
-        Ok(())
-    }).await;
+    let _ = state
+        .db_write(move |db| {
+            let workspace = std::path::Path::new(&workspace_path);
+            let _ = crate::people::sync_people_from_workspace(workspace, db, &user_domains);
+            let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
+            let _ = crate::projects::sync_projects_from_workspace(workspace, db);
+            Ok(())
+        })
+        .await;
 
     Ok(config)
 }
@@ -95,13 +93,11 @@ pub fn set_ai_model(tier: &str, model: &str, state: &AppState) -> Result<Config,
     }
 
     let model = model.to_string();
-    crate::state::create_or_update_config(state, |config| {
-        match tier {
-            "synthesis" => config.ai_models.synthesis = model.clone(),
-            "extraction" => config.ai_models.extraction = model.clone(),
-            "mechanical" => config.ai_models.mechanical = model.clone(),
-            _ => {}
-        }
+    crate::state::create_or_update_config(state, |config| match tier {
+        "synthesis" => config.ai_models.synthesis = model.clone(),
+        "extraction" => config.ai_models.extraction = model.clone(),
+        "mechanical" => config.ai_models.mechanical = model.clone(),
+        _ => {}
     })
 }
 
@@ -291,23 +287,25 @@ pub async fn set_user_domains(domains: &str, state: &AppState) -> Result<Config,
     })?;
 
     if !parsed.is_empty() {
-        let _ = state.db_write(move |db| {
-            match db.reclassify_people_for_domains(&parsed) {
-                Ok(n) if n > 0 => {
-                    log::info!("Reclassified {} people after domain change", n);
-                    match db.reclassify_meeting_types_from_attendees() {
-                        Ok(m) if m > 0 => {
-                            log::info!("Reclassified {} meetings after domain change", m);
+        let _ = state
+            .db_write(move |db| {
+                match db.reclassify_people_for_domains(&parsed) {
+                    Ok(n) if n > 0 => {
+                        log::info!("Reclassified {} people after domain change", n);
+                        match db.reclassify_meeting_types_from_attendees() {
+                            Ok(m) if m > 0 => {
+                                log::info!("Reclassified {} meetings after domain change", m);
+                            }
+                            Ok(_) => {}
+                            Err(e) => log::warn!("Meeting reclassification failed: {}", e),
                         }
-                        Ok(_) => {}
-                        Err(e) => log::warn!("Meeting reclassification failed: {}", e),
                     }
+                    Ok(_) => {}
+                    Err(e) => log::warn!("People reclassification failed: {}", e),
                 }
-                Ok(_) => {}
-                Err(e) => log::warn!("People reclassification failed: {}", e),
-            }
-            Ok(())
-        }).await;
+                Ok(())
+            })
+            .await;
     }
 
     Ok(config)
