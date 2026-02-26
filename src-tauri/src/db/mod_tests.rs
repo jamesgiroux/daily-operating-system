@@ -834,8 +834,8 @@
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("idempotent.db");
 
-        let _db1 = ActionDb::open_at(path.clone()).expect("first open");
-        let _db2 = ActionDb::open_at(path).expect("second open should not fail");
+        let _db1 = ActionDb::open_at_unencrypted(path.clone()).expect("first open");
+        let _db2 = ActionDb::open_at_unencrypted(path).expect("second open should not fail");
     }
 
     // =========================================================================
