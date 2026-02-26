@@ -4895,12 +4895,24 @@ fn build_agenda_draft_result(
         }
         if agenda_items.is_empty() {
             if let Some(ref proposed) = prep.proposed_agenda {
-                agenda_items.extend(
-                    proposed
-                        .iter()
-                        .map(|item| item.topic.trim().to_string())
-                        .filter(|item| !item.is_empty()),
-                );
+                // Filter out talking_point source items to match frontend "Your Plan" display.
+                // Fall back to all items if filtering leaves nothing.
+                let non_talking: Vec<String> = proposed
+                    .iter()
+                    .filter(|item| item.source.as_deref() != Some("talking_point"))
+                    .map(|item| item.topic.trim().to_string())
+                    .filter(|item| !item.is_empty())
+                    .collect();
+                if non_talking.is_empty() {
+                    agenda_items.extend(
+                        proposed
+                            .iter()
+                            .map(|item| item.topic.trim().to_string())
+                            .filter(|item| !item.is_empty()),
+                    );
+                } else {
+                    agenda_items.extend(non_talking);
+                }
             }
         }
     }
