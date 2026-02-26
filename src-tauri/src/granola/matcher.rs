@@ -132,7 +132,12 @@ mod tests {
     use super::*;
     use crate::granola::cache::{EventTime, GoogleCalendarEvent};
 
-    fn make_doc(id: &str, title: &str, cal_id: Option<&str>, start: Option<&str>) -> GranolaDocument {
+    fn make_doc(
+        id: &str,
+        title: &str,
+        cal_id: Option<&str>,
+        start: Option<&str>,
+    ) -> GranolaDocument {
         GranolaDocument {
             id: id.to_string(),
             title: title.to_string(),
@@ -155,10 +160,17 @@ mod tests {
 
     #[test]
     fn test_calendar_id_match() {
-        let doc = make_doc("g1", "Weekly Sync", Some("cal-123"), Some("2026-02-17T14:00:00Z"));
-        let meetings = vec![
-            ("cal-123".to_string(), "Weekly Sync".to_string(), "2026-02-17T14:00:00Z".to_string()),
-        ];
+        let doc = make_doc(
+            "g1",
+            "Weekly Sync",
+            Some("cal-123"),
+            Some("2026-02-17T14:00:00Z"),
+        );
+        let meetings = vec![(
+            "cal-123".to_string(),
+            "Weekly Sync".to_string(),
+            "2026-02-17T14:00:00Z".to_string(),
+        )];
 
         let result = match_to_meeting(&doc, &meetings);
         assert!(result.is_some());
@@ -169,10 +181,17 @@ mod tests {
 
     #[test]
     fn test_title_time_fallback() {
-        let doc = make_doc("g1", "Weekly Sync", Some("cal-999"), Some("2026-02-17T14:00:00Z"));
-        let meetings = vec![
-            ("meeting-1".to_string(), "Weekly Sync".to_string(), "2026-02-17T14:00:00Z".to_string()),
-        ];
+        let doc = make_doc(
+            "g1",
+            "Weekly Sync",
+            Some("cal-999"),
+            Some("2026-02-17T14:00:00Z"),
+        );
+        let meetings = vec![(
+            "meeting-1".to_string(),
+            "Weekly Sync".to_string(),
+            "2026-02-17T14:00:00Z".to_string(),
+        )];
 
         let result = match_to_meeting(&doc, &meetings);
         assert!(result.is_some());
@@ -183,10 +202,17 @@ mod tests {
 
     #[test]
     fn test_no_match() {
-        let doc = make_doc("g1", "Completely Different", Some("cal-999"), Some("2026-02-17T14:00:00Z"));
-        let meetings = vec![
-            ("meeting-1".to_string(), "Unrelated Meeting".to_string(), "2026-02-17T20:00:00Z".to_string()),
-        ];
+        let doc = make_doc(
+            "g1",
+            "Completely Different",
+            Some("cal-999"),
+            Some("2026-02-17T14:00:00Z"),
+        );
+        let meetings = vec![(
+            "meeting-1".to_string(),
+            "Unrelated Meeting".to_string(),
+            "2026-02-17T20:00:00Z".to_string(),
+        )];
 
         let result = match_to_meeting(&doc, &meetings);
         assert!(result.is_none());
@@ -194,10 +220,23 @@ mod tests {
 
     #[test]
     fn test_calendar_id_preferred_over_title() {
-        let doc = make_doc("g1", "Wrong Title", Some("cal-123"), Some("2026-02-17T14:00:00Z"));
+        let doc = make_doc(
+            "g1",
+            "Wrong Title",
+            Some("cal-123"),
+            Some("2026-02-17T14:00:00Z"),
+        );
         let meetings = vec![
-            ("cal-123".to_string(), "Correct Title".to_string(), "2026-02-17T14:00:00Z".to_string()),
-            ("cal-456".to_string(), "Wrong Title".to_string(), "2026-02-17T14:00:00Z".to_string()),
+            (
+                "cal-123".to_string(),
+                "Correct Title".to_string(),
+                "2026-02-17T14:00:00Z".to_string(),
+            ),
+            (
+                "cal-456".to_string(),
+                "Wrong Title".to_string(),
+                "2026-02-17T14:00:00Z".to_string(),
+            ),
         ];
 
         let result = match_to_meeting(&doc, &meetings);

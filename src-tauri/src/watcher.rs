@@ -213,7 +213,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             }) {
                                 let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
-                        } else if event.paths.iter().any(|p| p.starts_with(&user_attachments_dir_clone)) {
+                        } else if event
+                            .paths
+                            .iter()
+                            .any(|p| p.starts_with(&user_attachments_dir_clone))
+                        {
                             for path in &event.paths {
                                 if path.starts_with(&user_attachments_dir_clone) && path.is_file() {
                                     let _ = tx.try_send(WatchSource::UserAttachments(path.clone()));
@@ -273,7 +277,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     e
                 );
             } else {
-                log::info!("Watcher: watching {} for changes", user_attachments_dir.display());
+                log::info!(
+                    "Watcher: watching {} for changes",
+                    user_attachments_dir.display()
+                );
             }
         }
 
@@ -764,13 +771,13 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
             crate::processor::ProcessingResult::Routed { .. } => {
                 log::info!("Watcher: processed user attachment {}", path.display());
                 // Queue embedding generation
-                state.embedding_queue.enqueue(
-                    crate::processor::embeddings::EmbeddingRequest {
+                state
+                    .embedding_queue
+                    .enqueue(crate::processor::embeddings::EmbeddingRequest {
                         entity_id: "user_context".to_string(),
                         entity_type: "user_context".to_string(),
                         requested_at: std::time::Instant::now(),
-                    },
-                );
+                    });
                 state.integrations.embedding_queue_wake.notify_one();
             }
             crate::processor::ProcessingResult::Error { message } => {
@@ -781,13 +788,13 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
                 );
                 // I413 AC5: Enqueue for retry — the next hygiene/embedding cycle will
                 // re-attempt processing when the embedding worker picks up this request.
-                state.embedding_queue.enqueue(
-                    crate::processor::embeddings::EmbeddingRequest {
+                state
+                    .embedding_queue
+                    .enqueue(crate::processor::embeddings::EmbeddingRequest {
                         entity_id: "user_context".to_string(),
                         entity_type: "user_context".to_string(),
                         requested_at: std::time::Instant::now(),
-                    },
-                );
+                    });
                 state.integrations.embedding_queue_wake.notify_one();
             }
             _ => {}

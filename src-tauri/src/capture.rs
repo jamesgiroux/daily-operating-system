@@ -145,7 +145,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Get current events
         let current_events = state
-            .calendar.events
+            .calendar
+            .events
             .read()
             .map(|guard| guard.clone())
             .unwrap_or_default();
@@ -171,12 +172,14 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Find meetings that just ended (were in progress, now aren't)
         let dismissed = state
-            .capture.dismissed
+            .capture
+            .dismissed
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
         let captured = state
-            .capture.captured
+            .capture
+            .captured
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
@@ -261,7 +264,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
                         // Check immutability before processing
                         let already_processed = state
-                            .capture.transcript_processed
+                            .capture
+                            .transcript_processed
                             .lock()
                             .map(|g| g.contains_key(&prompt.meeting.id))
                             .unwrap_or(false);
@@ -379,7 +383,8 @@ fn build_auto_outcome(
         .unwrap_or_default();
 
     let transcript_path = state
-        .capture.transcript_processed
+        .capture
+        .transcript_processed
         .lock()
         .ok()
         .and_then(|guard| guard.get(meeting_id).map(|r| r.destination.clone()));

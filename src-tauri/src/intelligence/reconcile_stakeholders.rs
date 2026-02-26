@@ -91,8 +91,7 @@ fn find_best_match<'a>(
 
         // Role match bonus: +0.1 if both have roles and they're similar
         if let (Some(ref s_role), Some(ref p_role)) = (&stakeholder.role, &person.role) {
-            let role_sim =
-                strsim::jaro_winkler(&s_role.to_lowercase(), &p_role.to_lowercase());
+            let role_sim = strsim::jaro_winkler(&s_role.to_lowercase(), &p_role.to_lowercase());
             if role_sim >= 0.7 {
                 score += 0.1;
             }
@@ -185,8 +184,8 @@ mod tests {
 
         // "James G." vs "James Giroux" — Jaro-Winkler should be high enough
         // with meeting bonus to cross 0.6 at minimum
-        let has_link = stakeholders[0].person_id.is_some()
-            || stakeholders[0].suggested_person_id.is_some();
+        let has_link =
+            stakeholders[0].person_id.is_some() || stakeholders[0].suggested_person_id.is_some();
         assert!(has_link, "Should have either a link or suggestion");
     }
 

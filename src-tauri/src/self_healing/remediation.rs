@@ -15,18 +15,18 @@ use crate::db::ActionDb;
 /// corrections) rank higher than merely stale ones.
 ///
 /// Returns a value in [0.0, 1.0]. Higher = more urgent.
-pub fn compute_enrichment_trigger_score(
-    db: &ActionDb,
-    entity_id: &str,
-    _entity_type: &str,
-) -> f64 {
+pub fn compute_enrichment_trigger_score(db: &ActionDb, entity_id: &str, _entity_type: &str) -> f64 {
     let imminence = meeting_imminence_score(db, entity_id);
     let staleness = staleness_score(db, entity_id);
     let quality_deficit = quality_deficit_score(db, entity_id);
     let importance = entity_importance_score(db, entity_id);
     let signal_delta = signal_delta_score(db, entity_id);
 
-    imminence * 0.35 + staleness * 0.25 + quality_deficit * 0.20 + importance * 0.10 + signal_delta * 0.10
+    imminence * 0.35
+        + staleness * 0.25
+        + quality_deficit * 0.20
+        + importance * 0.10
+        + signal_delta * 0.10
 }
 
 /// 1.0 if next meeting <24h, 0.5 if <7d, 0.1 if >7d, 0.0 if none.
@@ -124,9 +124,10 @@ fn signal_delta_score(db: &ActionDb, entity_id: &str) -> f64 {
 /// Prioritize all entities for enrichment based on trigger scores.
 /// Returns (entity_id, entity_type, score) sorted descending, filtered >= 0.25.
 pub fn prioritize_enrichment_queue(db: &ActionDb) -> Vec<(String, String, f64)> {
-    let mut stmt = match db.conn_ref().prepare(
-        "SELECT entity_id, entity_type FROM entity_quality WHERE coherence_blocked = 0",
-    ) {
+    let mut stmt = match db
+        .conn_ref()
+        .prepare("SELECT entity_id, entity_type FROM entity_quality WHERE coherence_blocked = 0")
+    {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };

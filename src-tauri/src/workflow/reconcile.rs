@@ -399,7 +399,9 @@ fn freeze_meeting_snapshot(
     let frozen_at = Utc::now().to_rfc3339();
     // Look up linked account from junction table instead of removed account_id field
     let linked_entities = db.get_meeting_entities(&persisted.id).unwrap_or_default();
-    let linked_account = linked_entities.iter().find(|e| e.entity_type == crate::entity::EntityType::Account);
+    let linked_account = linked_entities
+        .iter()
+        .find(|e| e.entity_type == crate::entity::EntityType::Account);
     let account_id = linked_account.map(|a| a.id.clone());
     let account_name = linked_account.map(|a| a.name.clone());
     let base_snapshot = serde_json::json!({

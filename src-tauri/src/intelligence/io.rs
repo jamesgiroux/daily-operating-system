@@ -418,7 +418,11 @@ pub fn intelligence_exists(dir: &Path) -> bool {
 /// - `"stakeholderInsights[0].name"` → array index + field
 /// - `"currentState.working[0]"` → nested field + array index
 /// - `"risks[2].text"` → array index + field
-fn set_json_path(root: &mut serde_json::Value, path: &str, value: serde_json::Value) -> Result<(), String> {
+fn set_json_path(
+    root: &mut serde_json::Value,
+    path: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
     let segments = parse_path_segments(path)?;
     let mut current = root;
 
@@ -442,7 +446,12 @@ fn set_json_path(root: &mut serde_json::Value, path: &str, value: serde_json::Va
                     .as_array_mut()
                     .ok_or_else(|| format!("Field '{}' is not an array", name))?;
                 if *idx >= arr.len() {
-                    return Err(format!("Index {} out of bounds for '{}' (len {})", idx, name, arr.len()));
+                    return Err(format!(
+                        "Index {} out of bounds for '{}' (len {})",
+                        idx,
+                        name,
+                        arr.len()
+                    ));
                 }
                 if is_last {
                     arr[*idx] = value;
@@ -501,9 +510,7 @@ pub fn apply_intelligence_field_update(
     set_json_path(&mut json_val, field_path, new_value)?;
 
     // Record user edit (dedup: replace existing edit for same path)
-    let edits = json_val
-        .get_mut("userEdits")
-        .and_then(|v| v.as_array_mut());
+    let edits = json_val.get_mut("userEdits").and_then(|v| v.as_array_mut());
     let edit_entry = serde_json::json!({
         "fieldPath": field_path,
         "editedAt": Utc::now().to_rfc3339(),
@@ -516,8 +523,8 @@ pub fn apply_intelligence_field_update(
     }
 
     // Validate by re-parsing into typed struct
-    let intel: IntelligenceJson = serde_json::from_value(json_val)
-        .map_err(|e| format!("Updated JSON is invalid: {}", e))?;
+    let intel: IntelligenceJson =
+        serde_json::from_value(json_val).map_err(|e| format!("Updated JSON is invalid: {}", e))?;
 
     // Write back
     write_intelligence_json(dir, &intel)?;
@@ -535,7 +542,9 @@ pub fn apply_stakeholders_update(
 
     // Record user edit
     let now = Utc::now().to_rfc3339();
-    intel.user_edits.retain(|e| e.field_path != "stakeholderInsights");
+    intel
+        .user_edits
+        .retain(|e| e.field_path != "stakeholderInsights");
     intel.user_edits.push(UserEdit {
         field_path: "stakeholderInsights".to_string(),
         edited_at: now,
@@ -795,14 +804,15 @@ impl ActionDb {
                     .unwrap_or_default(),
                 next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),
                 company_context: company_json.and_then(|j| serde_json::from_str(&j).ok()),
-                portfolio: None, // Not cached in DB (stored in file only)
-                network: None,  // Not cached in DB (stored in file only)
+                portfolio: None,        // Not cached in DB (stored in file only)
+                network: None,          // Not cached in DB (stored in file only)
                 user_edits: Vec::new(), // Not cached in DB (stored in file only)
                 health_score: row.get(11)?,
                 health_trend: health_trend_json.and_then(|j| serde_json::from_str(&j).ok()),
                 success_metrics: success_metrics_json.and_then(|j| serde_json::from_str(&j).ok()),
                 open_commitments: open_commitments_json.and_then(|j| serde_json::from_str(&j).ok()),
-                relationship_depth: relationship_depth_json.and_then(|j| serde_json::from_str(&j).ok()),
+                relationship_depth: relationship_depth_json
+                    .and_then(|j| serde_json::from_str(&j).ok()),
             })
         });
 
@@ -1395,18 +1405,20 @@ pub(crate) fn sync_content_index_for_entity(
 pub fn extract_keywords_from_response(response: &str) -> Option<String> {
     // Try to find JSON block in the response
     let json_str = if let Some(start) = response.find('{') {
-        let depth_track = response[start..].chars().fold((0i32, 0usize), |(depth, end), ch| {
-            let new_depth = match ch {
-                '{' => depth + 1,
-                '}' => depth - 1,
-                _ => depth,
-            };
-            if new_depth == 0 && depth > 0 {
-                (0, end + 1)
-            } else {
-                (new_depth, end + ch.len_utf8())
-            }
-        });
+        let depth_track = response[start..]
+            .chars()
+            .fold((0i32, 0usize), |(depth, end), ch| {
+                let new_depth = match ch {
+                    '{' => depth + 1,
+                    '}' => depth - 1,
+                    _ => depth,
+                };
+                if new_depth == 0 && depth > 0 {
+                    (0, end + 1)
+                } else {
+                    (new_depth, end + ch.len_utf8())
+                }
+            });
         &response[start..start + depth_track.1]
     } else {
         return None;
@@ -1585,7 +1597,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
 
         let overview = CompanyOverview {
@@ -1638,7 +1650,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
 
         let overview = CompanyOverview {
@@ -1721,7 +1733,6 @@ mod tests {
         );
         assert_eq!(fetched.risks.len(), 2);
     }
-
 
     // =========================================================================
     // I134: format_intelligence_markdown
@@ -2110,5 +2121,4 @@ mod tests {
         assert_eq!(files[1].content_type, "notes"); // priority 7
         assert_eq!(files[2].content_type, "general"); // priority 5
     }
-
 }

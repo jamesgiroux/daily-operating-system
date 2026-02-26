@@ -96,7 +96,8 @@ pub fn generate_callouts(
     // I414: Apply user-context relevance weighting and persist to entity_intelligence
     if user_entity.is_some() {
         for (signal, relevance) in &mut scored_signals {
-            let entity_name = helpers::resolve_entity_name(db, &signal.entity_type, &signal.entity_id);
+            let entity_name =
+                helpers::resolve_entity_name(db, &signal.entity_type, &signal.entity_id);
             let weight = super::user_relevance::compute_user_relevance_weight(
                 &signal.entity_id,
                 &entity_name,
@@ -121,7 +122,11 @@ pub fn generate_callouts(
         .map(|(signal, relevance)| {
             let severity = classify_severity(signal.confidence);
             let (headline, detail) = build_callout_text(&signal);
-            let entity_name = Some(helpers::resolve_entity_name(db, &signal.entity_type, &signal.entity_id));
+            let entity_name = Some(helpers::resolve_entity_name(
+                db,
+                &signal.entity_type,
+                &signal.entity_id,
+            ));
 
             let callout = BriefingCallout {
                 id: format!("bc-{}", Uuid::new_v4()),
@@ -192,7 +197,10 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 .get("detail")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Role or title change detected");
-            ("Stakeholder change detected".to_string(), detail.to_string())
+            (
+                "Stakeholder change detected".to_string(),
+                detail.to_string(),
+            )
         }
         "champion_risk" => {
             let detail = parsed
@@ -208,10 +216,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 .unwrap_or("departure");
             (
                 "Renewal risk: champion departure".to_string(),
-                format!(
-                    "Key contact {} detected near renewal window",
-                    change_type
-                ),
+                format!("Key contact {} detected near renewal window", change_type),
             )
         }
         "engagement_warning" => {
@@ -245,16 +250,31 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             )
         }
         "proactive_renewal_gap" => {
-            let name = parsed.get("account_name").and_then(|v| v.as_str()).unwrap_or("Account");
-            let days = parsed.get("days_until_renewal").and_then(|v| v.as_i64()).unwrap_or(0);
-            let gap = parsed.get("last_contact_days").and_then(|v| v.as_i64()).unwrap_or(0);
+            let name = parsed
+                .get("account_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Account");
+            let days = parsed
+                .get("days_until_renewal")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let gap = parsed
+                .get("last_contact_days")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             (
                 "Renewal approaching with no QBR".to_string(),
-                format!("{} renews in {}d — no executive contact in {}d", name, days, gap),
+                format!(
+                    "{} renews in {}d — no executive contact in {}d",
+                    name, days, gap
+                ),
             )
         }
         "proactive_relationship_drift" => {
-            let name = parsed.get("person_name").and_then(|v| v.as_str()).unwrap_or("Contact");
+            let name = parsed
+                .get("person_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Contact");
             let drop = parsed.get("drop_pct").and_then(|v| v.as_i64()).unwrap_or(0);
             (
                 "Meeting frequency declining".to_string(),
@@ -262,52 +282,106 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             )
         }
         "proactive_email_spike" => {
-            let name = parsed.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Entity");
+            let name = parsed
+                .get("entity_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Entity");
             let count = parsed.get("count_7d").and_then(|v| v.as_i64()).unwrap_or(0);
-            let avg = parsed.get("avg_weekly").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let avg = parsed
+                .get("avg_weekly")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             (
                 "Email activity spike".to_string(),
-                format!("{} emails from {} contacts this week (vs {:.1}/week)", count, name, avg),
+                format!(
+                    "{} emails from {} contacts this week (vs {:.1}/week)",
+                    count, name, avg
+                ),
             )
         }
         "proactive_meeting_load" => {
-            let next = parsed.get("next_week_count").and_then(|v| v.as_i64()).unwrap_or(0);
-            let this = parsed.get("this_week_count").and_then(|v| v.as_i64()).unwrap_or(0);
+            let next = parsed
+                .get("next_week_count")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let this = parsed
+                .get("this_week_count")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             (
                 "Heavy week ahead".to_string(),
                 format!("{} meetings next week vs {} this week", next, this),
             )
         }
         "proactive_stale_champion" => {
-            let person = parsed.get("person_name").and_then(|v| v.as_str()).unwrap_or("Champion");
-            let days = parsed.get("days_since_contact").and_then(|v| v.as_i64()).unwrap_or(0);
-            let account = parsed.get("account_name").and_then(|v| v.as_str()).unwrap_or("Account");
-            let renewal = parsed.get("renewal_days").and_then(|v| v.as_i64()).unwrap_or(0);
+            let person = parsed
+                .get("person_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Champion");
+            let days = parsed
+                .get("days_since_contact")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let account = parsed
+                .get("account_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Account");
+            let renewal = parsed
+                .get("renewal_days")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             (
                 "Champion going cold".to_string(),
-                format!("No contact with {} in {}d — {} renewal in {}d", person, days, account, renewal),
+                format!(
+                    "No contact with {} in {}d — {} renewal in {}d",
+                    person, days, account, renewal
+                ),
             )
         }
         "proactive_prep_gap" => {
-            let total = parsed.get("total_external").and_then(|v| v.as_i64()).unwrap_or(0);
-            let with_intel = parsed.get("with_intel").and_then(|v| v.as_i64()).unwrap_or(0);
+            let total = parsed
+                .get("total_external")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let with_intel = parsed
+                .get("with_intel")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             let unprepped = total - with_intel;
             (
                 "Prep coverage gap".to_string(),
-                format!("{}/{} external meetings tomorrow without intelligence", unprepped, total),
+                format!(
+                    "{}/{} external meetings tomorrow without intelligence",
+                    unprepped, total
+                ),
             )
         }
         "proactive_action_cluster" => {
-            let name = parsed.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Entity");
-            let pending = parsed.get("pending_count").and_then(|v| v.as_i64()).unwrap_or(0);
-            let overdue = parsed.get("overdue_count").and_then(|v| v.as_i64()).unwrap_or(0);
+            let name = parsed
+                .get("entity_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Entity");
+            let pending = parsed
+                .get("pending_count")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let overdue = parsed
+                .get("overdue_count")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             (
                 "Action overload".to_string(),
-                format!("{} pending actions on {} ({} overdue)", pending, name, overdue),
+                format!(
+                    "{} pending actions on {} ({} overdue)",
+                    pending, name, overdue
+                ),
             )
         }
         "proactive_no_contact" => {
-            let name = parsed.get("account_name").and_then(|v| v.as_str()).unwrap_or("Account");
+            let name = parsed
+                .get("account_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Account");
             (
                 "Account going dark".to_string(),
                 format!("No meeting or email with {} in 30+ days", name),
@@ -329,7 +403,10 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             match anomaly_type {
                 "gone_quiet" => (
                     "Email activity dropped".to_string(),
-                    format!("Significant decrease in email volume from {}", signal.entity_id),
+                    format!(
+                        "Significant decrease in email volume from {}",
+                        signal.entity_id
+                    ),
                 ),
                 "activity_spike" => (
                     "Email activity surge".to_string(),
@@ -361,7 +438,6 @@ fn build_meeting_context_string(meetings: &[Value]) -> String {
         .collect::<Vec<_>>()
         .join(". ")
 }
-
 
 // ---------------------------------------------------------------------------
 // ActionDb methods
@@ -396,8 +472,7 @@ impl ActionDb {
         );
 
         let hours_param = format!("-{} hours", hours);
-        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(hours_param)];
+        let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(hours_param)];
         for st in signal_types {
             all_params.push(Box::new(st.to_string()));
         }
@@ -443,7 +518,6 @@ impl ActionDb {
         )?;
         Ok(())
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -499,5 +573,4 @@ mod tests {
         assert_eq!(callouts[0].severity, "critical");
         assert_eq!(callouts[0].entity_name.as_deref(), Some("Acme Corp"));
     }
-
 }

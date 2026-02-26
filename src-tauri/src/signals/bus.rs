@@ -89,14 +89,26 @@ pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError
     let half_life = default_half_life(signal.source);
     if signal.source_context.is_some() {
         db.insert_signal_event_with_context(
-            &id, signal.entity_type, signal.entity_id, signal.signal_type,
-            signal.source, signal.value, signal.confidence, half_life,
+            &id,
+            signal.entity_type,
+            signal.entity_id,
+            signal.signal_type,
+            signal.source,
+            signal.value,
+            signal.confidence,
+            half_life,
             signal.source_context,
         )?;
     } else {
         db.insert_signal_event(
-            &id, signal.entity_type, signal.entity_id, signal.signal_type,
-            signal.source, signal.value, signal.confidence, half_life,
+            &id,
+            signal.entity_type,
+            signal.entity_id,
+            signal.signal_type,
+            signal.source,
+            signal.value,
+            signal.confidence,
+            half_life,
         )?;
     }
 
@@ -133,7 +145,16 @@ pub fn emit_signal(
 ) -> Result<String, DbError> {
     let id = format!("sig-{}", Uuid::new_v4());
     let half_life = default_half_life(source);
-    db.insert_signal_event(&id, entity_type, entity_id, signal_type, source, value, confidence, half_life)?;
+    db.insert_signal_event(
+        &id,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+        half_life,
+    )?;
 
     // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
     // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
@@ -164,7 +185,15 @@ pub fn emit_signal_and_propagate(
     value: Option<&str>,
     confidence: f64,
 ) -> Result<(String, Vec<String>), DbError> {
-    let id = emit_signal(db, entity_type, entity_id, signal_type, source, value, confidence)?;
+    let id = emit_signal(
+        db,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )?;
 
     // Read back the signal for propagation
     let signal = SignalEvent {
@@ -208,7 +237,16 @@ pub fn emit_signal_propagate_and_evaluate(
     confidence: f64,
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> Result<(String, Vec<String>), DbError> {
-    let result = emit_signal_and_propagate(db, engine, entity_type, entity_id, signal_type, source, value, confidence)?;
+    let result = emit_signal_and_propagate(
+        db,
+        engine,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )?;
 
     // Self-healing: event-driven trigger evaluation (I410)
     let _ = crate::self_healing::scheduler::evaluate_on_signal(db, entity_id, entity_type, queue);
@@ -218,17 +256,14 @@ pub fn emit_signal_propagate_and_evaluate(
 
 /// When a signal is emitted for an entity, flag all future meetings
 /// linked to that entity as having new signals.
-pub fn propagate_signal_to_meetings(
-    db: &ActionDb,
-    entity_id: &str,
-) -> Result<usize, DbError> {
+pub fn propagate_signal_to_meetings(db: &ActionDb, entity_id: &str) -> Result<usize, DbError> {
     let conn = db.conn_ref();
     let mut stmt = conn.prepare(
         "SELECT me.meeting_id FROM meeting_entities me
          INNER JOIN meetings_history mh ON mh.id = me.meeting_id
          WHERE me.entity_id = ?1
          AND mh.start_time > datetime('now')
-         AND mh.intelligence_state != 'archived'"
+         AND mh.intelligence_state != 'archived'",
     )?;
 
     let meeting_ids: Vec<String> = stmt
@@ -407,7 +442,8 @@ impl ActionDb {
         };
 
         let mut stmt = self.conn_ref().prepare(sql)?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(param_refs.as_slice(), Self::map_signal_event_row)?;
 
         let mut events = Vec::new();
@@ -437,7 +473,13 @@ impl ActionDb {
             "SELECT alpha, beta, update_count FROM signal_weights
              WHERE source = ?1 AND entity_type = ?2 AND signal_type = ?3",
             params![source, entity_type, signal_type],
-            |row| Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?, row.get::<_, i32>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, f64>(0)?,
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, i32>(2)?,
+                ))
+            },
         ) {
             Ok(triple) => Ok(Some(triple)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -476,8 +518,16 @@ mod tests {
     #[test]
     fn test_emit_and_get_signals() {
         let db = test_db();
-        let id = emit_signal(&db, "account", "acme-1", "entity_resolution", "keyword", Some("name match"), 0.8)
-            .expect("emit");
+        let id = emit_signal(
+            &db,
+            "account",
+            "acme-1",
+            "entity_resolution",
+            "keyword",
+            Some("name match"),
+            0.8,
+        )
+        .expect("emit");
         assert!(id.starts_with("sig-"));
 
         let signals = get_active_signals(&db, "account", "acme-1").expect("get");
@@ -490,8 +540,10 @@ mod tests {
     #[test]
     fn test_supersede_excludes_old() {
         let db = test_db();
-        let old_id = emit_signal(&db, "person", "p1", "profile_update", "clay", None, 0.7).expect("emit old");
-        let new_id = emit_signal(&db, "person", "p1", "profile_update", "clay", None, 0.85).expect("emit new");
+        let old_id = emit_signal(&db, "person", "p1", "profile_update", "clay", None, 0.7)
+            .expect("emit old");
+        let new_id = emit_signal(&db, "person", "p1", "profile_update", "clay", None, 0.85)
+            .expect("emit new");
 
         supersede_signal(&db, &old_id, &new_id).expect("supersede");
 
@@ -503,10 +555,29 @@ mod tests {
     #[test]
     fn test_get_signals_by_type() {
         let db = test_db();
-        emit_signal(&db, "account", "a1", "entity_resolution", "keyword", None, 0.8).expect("emit 1");
-        emit_signal(&db, "account", "a1", "pre_meeting_context", "email_thread", None, 0.7).expect("emit 2");
+        emit_signal(
+            &db,
+            "account",
+            "a1",
+            "entity_resolution",
+            "keyword",
+            None,
+            0.8,
+        )
+        .expect("emit 1");
+        emit_signal(
+            &db,
+            "account",
+            "a1",
+            "pre_meeting_context",
+            "email_thread",
+            None,
+            0.7,
+        )
+        .expect("emit 2");
 
-        let resolution_only = get_active_signals_by_type(&db, "account", "a1", "entity_resolution").expect("get");
+        let resolution_only =
+            get_active_signals_by_type(&db, "account", "a1", "entity_resolution").expect("get");
         assert_eq!(resolution_only.len(), 1);
         assert_eq!(resolution_only[0].signal_type, "entity_resolution");
     }
@@ -515,6 +586,9 @@ mod tests {
     fn test_learned_reliability_default() {
         let db = test_db();
         let reliability = get_learned_reliability(&db, "clay", "person", "profile_update");
-        assert!((reliability - 0.5).abs() < 0.01, "uninformative prior should be 0.5");
+        assert!(
+            (reliability - 0.5).abs() < 0.01,
+            "uninformative prior should be 0.5"
+        );
     }
 }

@@ -60,7 +60,6 @@ pub struct ResolvedEntity {
     pub source: String,
 }
 
-
 // ---------------------------------------------------------------------------
 // Confidence thresholds
 // ---------------------------------------------------------------------------
@@ -131,7 +130,9 @@ pub fn resolve_meeting_entities(
     // Gate 2: No junction links — run full signal cascade
     let mut all_signals: Vec<ResolutionSignal> = Vec::new();
     all_signals.extend(signal_attendee_inference(db, meeting));
-    all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(db, meeting));
+    all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(
+        db, meeting,
+    ));
     all_signals.extend(signal_keyword_match(db, meeting));
     if let Some(model) = embedding_model {
         all_signals.extend(signal_embedding_similarity(db, meeting, model));
@@ -209,7 +210,6 @@ pub fn resolve_meeting_entities(
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Signal producers
 // ---------------------------------------------------------------------------
@@ -224,8 +224,7 @@ fn signal_junction_lookup(
     let mut signals = Vec::new();
 
     // Try lookup by calendar_event_id
-    let meeting_id =
-        crate::workflow::deliver::meeting_primary_id(Some(event_id), "", "", "");
+    let meeting_id = crate::workflow::deliver::meeting_primary_id(Some(event_id), "", "", "");
     let meeting_row = if !event_id.is_empty() {
         db.get_meeting_by_calendar_event_id(event_id).ok().flatten()
     } else {
@@ -233,7 +232,11 @@ fn signal_junction_lookup(
     };
 
     let lookup_ids: Vec<String> = [
-        if !meeting_id.is_empty() { Some(meeting_id) } else { None },
+        if !meeting_id.is_empty() {
+            Some(meeting_id)
+        } else {
+            None
+        },
         meeting_row.map(|m| m.id),
     ]
     .into_iter()
@@ -636,7 +639,9 @@ fn fuse_signals(
                             source: signal.source.clone(),
                             value: None,
                             confidence: signal.confidence,
-                            decay_half_life_days: crate::signals::bus::default_half_life(&signal.source),
+                            decay_half_life_days: crate::signals::bus::default_half_life(
+                                &signal.source,
+                            ),
                             created_at: chrono::Utc::now().to_rfc3339(),
                             superseded_by: None,
                             source_context: None,
@@ -654,7 +659,11 @@ fn fuse_signals(
         // Track dominant source (highest raw confidence)
         let best_source = group
             .iter()
-            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.confidence
+                    .partial_cmp(&b.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|s| s.source.clone())
             .unwrap_or_default();
 
@@ -724,7 +733,10 @@ mod tests {
 
     #[test]
     fn test_normalize_key() {
-        assert_eq!(normalize_key("Digital-Marketing-Technology"), "digitalmarketingtechnology");
+        assert_eq!(
+            normalize_key("Digital-Marketing-Technology"),
+            "digitalmarketingtechnology"
+        );
         assert_eq!(normalize_key("Acme Corp"), "acmecorp");
         assert_eq!(normalize_key(""), "");
     }
@@ -748,7 +760,9 @@ mod tests {
             source: "keyword".to_string(),
         }];
         let result = fuse_signals(&signals, None);
-        let (conf, source) = result.get(&("acme".to_string(), EntityType::Account)).unwrap();
+        let (conf, source) = result
+            .get(&("acme".to_string(), EntityType::Account))
+            .unwrap();
         assert!((conf - 0.80).abs() < 0.01);
         assert_eq!(source, "keyword");
     }
@@ -777,7 +791,9 @@ mod tests {
             },
         ];
         let result = fuse_signals(&signals, None);
-        let (conf, _) = result.get(&("acme".to_string(), EntityType::Account)).unwrap();
+        let (conf, _) = result
+            .get(&("acme".to_string(), EntityType::Account))
+            .unwrap();
         // Three signals at 0.4: log_odds each = ln(0.4/0.6) ≈ -0.405
         // Sum ≈ -1.216, combined = 1/(1+exp(1.216)) ≈ 0.229
         // Wait, that's compounding DOWN. Let me verify:
@@ -808,11 +824,17 @@ mod tests {
             },
         ];
         let result = fuse_signals(&signals, None);
-        let (conf, _) = result.get(&("acme".to_string(), EntityType::Account)).unwrap();
+        let (conf, _) = result
+            .get(&("acme".to_string(), EntityType::Account))
+            .unwrap();
         // p=0.7, log_odds = ln(0.7/0.3) = ln(2.333) ≈ 0.847
         // Sum of 2 = 1.694
         // combined = 1/(1+exp(-1.694)) = 1/(1+0.184) = 0.844
-        assert!(*conf > 0.80, "two 0.7s should give high confidence: {}", conf);
+        assert!(
+            *conf > 0.80,
+            "two 0.7s should give high confidence: {}",
+            conf
+        );
     }
 
     #[test]

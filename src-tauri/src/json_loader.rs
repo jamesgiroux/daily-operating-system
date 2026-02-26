@@ -436,7 +436,12 @@ pub fn load_emails_json_with_sync(today_dir: &Path) -> Result<LoadedEmailsData, 
                 commitments: e.commitments,
                 questions: e.questions,
                 sentiment: e.sentiment,
-                urgency: e.urgency, entity_id: None, entity_type: None, entity_name: None, relevance_score: None, score_reason: None,
+                urgency: e.urgency,
+                entity_id: None,
+                entity_type: None,
+                entity_name: None,
+                relevance_score: None,
+                score_reason: None,
             }
         })
         .collect();

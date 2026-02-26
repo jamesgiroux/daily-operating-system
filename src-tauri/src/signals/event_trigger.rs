@@ -38,11 +38,7 @@ pub async fn run_entity_resolution_trigger(state: Arc<AppState>) {
 /// Find meetings created in the last 30 minutes without entity resolution
 /// signals and run resolution on them.
 fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
-    let config = state
-        .config
-        .read()
-        .ok()
-        .and_then(|g| g.clone());
+    let config = state.config.read().ok().and_then(|g| g.clone());
     let workspace = match config.as_ref() {
         Some(c) => std::path::PathBuf::from(&c.workspace_path),
         None => return Ok(()),
@@ -88,7 +84,8 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
         let mut linked = 0;
         for outcome in &outcomes {
             if let crate::prepare::entity_resolver::ResolutionOutcome::Resolved(entity)
-                | crate::prepare::entity_resolver::ResolutionOutcome::ResolvedWithFlag(entity) = outcome
+            | crate::prepare::entity_resolver::ResolutionOutcome::ResolvedWithFlag(entity) =
+                outcome
             {
                 let _ = db.link_meeting_entity_if_absent(
                     &meeting.id,

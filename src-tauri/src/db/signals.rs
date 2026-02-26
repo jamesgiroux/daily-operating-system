@@ -386,14 +386,20 @@ impl ActionDb {
 
     /// Dismiss a single email signal by setting `deactivated_at`.
     /// Returns (entity_id, entity_type, signal_type, email_id) for signal bus emission.
-    pub fn dismiss_email_signal(&self, signal_id: i64) -> Result<Option<(String, String, String, String)>, DbError> {
+    pub fn dismiss_email_signal(
+        &self,
+        signal_id: i64,
+    ) -> Result<Option<(String, String, String, String)>, DbError> {
         // Look up signal context before deactivating
-        let context: Option<(String, String, String, String)> = self.conn.query_row(
-            "SELECT entity_id, entity_type, signal_type, email_id FROM email_signals
+        let context: Option<(String, String, String, String)> = self
+            .conn
+            .query_row(
+                "SELECT entity_id, entity_type, signal_type, email_id FROM email_signals
              WHERE id = ?1 AND deactivated_at IS NULL",
-            params![signal_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        ).ok();
+                params![signal_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .ok();
 
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
@@ -515,9 +521,9 @@ impl ActionDb {
 
     /// Get all dismissed item texts for filtering (keyed by item_type + item_text).
     pub fn list_dismissed_email_items(&self) -> Result<std::collections::HashSet<String>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT item_type || ':' || item_text FROM email_dismissals"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT item_type || ':' || item_text FROM email_dismissals")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut dismissed = std::collections::HashSet::new();
         for row in rows {
@@ -528,12 +534,15 @@ impl ActionDb {
 
     /// Get sender domains with dismissal count >= threshold (I374).
     /// Returns a set of domains that the user has repeatedly dismissed items from.
-    pub fn get_dismissed_domains(&self, threshold: u32) -> Result<std::collections::HashSet<String>, DbError> {
+    pub fn get_dismissed_domains(
+        &self,
+        threshold: u32,
+    ) -> Result<std::collections::HashSet<String>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT sender_domain FROM email_dismissals
              WHERE sender_domain IS NOT NULL
              GROUP BY sender_domain
-             HAVING COUNT(*) >= ?1"
+             HAVING COUNT(*) >= ?1",
         )?;
         let rows = stmt.query_map(params![threshold], |row| row.get::<_, String>(0))?;
         let mut domains = std::collections::HashSet::new();
@@ -587,7 +596,9 @@ impl ActionDb {
     }
 
     /// Get threads awaiting the user's reply (ball in your court).
-    pub fn get_threads_awaiting_reply(&self) -> Result<Vec<(String, String, String, String)>, DbError> {
+    pub fn get_threads_awaiting_reply(
+        &self,
+    ) -> Result<Vec<(String, String, String, String)>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT thread_id, subject, last_sender_email, last_message_date
              FROM email_threads
@@ -633,7 +644,6 @@ impl ActionDb {
         Ok(())
     }
 
-
     /// Query all captures (wins/risks/decisions) recorded on a given date.
     ///
     /// Used by the daily impact rollup (I36) to aggregate outcomes into
@@ -678,13 +688,14 @@ impl ActionDb {
             now,
             placeholders.join(", ")
         );
-        let param_values: Vec<&dyn rusqlite::types::ToSql> =
-            email_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+        let param_values: Vec<&dyn rusqlite::types::ToSql> = email_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
         let rows = self
             .conn
             .execute(&sql, param_values.as_slice())
             .map_err(|e| format!("Failed to deactivate email signals: {e}"))?;
         Ok(rows)
     }
-
 }

@@ -3,10 +3,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::state::AppState;
-use crate::activity::adaptive_network_interval;
 use super::client;
 use super::sync;
+use crate::activity::adaptive_network_interval;
+use crate::state::AppState;
 
 /// Run the Google Drive poller background task.
 ///
@@ -89,7 +89,10 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
 }
 
 /// Sync a single watched source from Google Drive.
-async fn sync_watched_source(state: &Arc<AppState>, source: &sync::WatchedSource) -> Result<(), String> {
+async fn sync_watched_source(
+    state: &Arc<AppState>,
+    source: &sync::WatchedSource,
+) -> Result<(), String> {
     if source.changes_token.is_none() {
         // Initial sync: download the file directly and get a start page token
         // for subsequent change-based polling.
@@ -101,7 +104,11 @@ async fn sync_watched_source(state: &Arc<AppState>, source: &sync::WatchedSource
 
         let content = client::download_file_as_markdown(&source.google_id).await?;
         let path = save_content_to_entity(state, source, &source.name, &content)?;
-        log::info!("GoogleDrivePoller: initial sync saved {} to {}", source.name, path.display());
+        log::info!(
+            "GoogleDrivePoller: initial sync saved {} to {}",
+            source.name,
+            path.display()
+        );
 
         // Get a start page token so future polls use the Changes API
         let start_token = client::get_start_page_token().await?;
@@ -131,7 +138,10 @@ async fn sync_watched_source(state: &Arc<AppState>, source: &sync::WatchedSource
     // Download and save files to entity Documents/ folder
     for change in changes {
         if change.removed {
-            log::info!("GoogleDrivePoller: file {} removed in Drive", change.file_id);
+            log::info!(
+                "GoogleDrivePoller: file {} removed in Drive",
+                change.file_id
+            );
             continue;
         }
 
@@ -172,7 +182,10 @@ pub fn save_to_entity_docs(
     content: &str,
 ) -> Result<std::path::PathBuf, String> {
     let base_path = std::path::Path::new(workspace);
-    let docs_dir = base_path.join(entity_type).join(entity_id).join("Documents");
+    let docs_dir = base_path
+        .join(entity_type)
+        .join(entity_id)
+        .join("Documents");
 
     std::fs::create_dir_all(&docs_dir)
         .map_err(|e| format!("Failed to create Documents directory: {}", e))?;
@@ -183,8 +196,7 @@ pub fn save_to_entity_docs(
     );
     let file_path = docs_dir.join(&filename);
 
-    std::fs::write(&file_path, content)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    std::fs::write(&file_path, content).map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(file_path)
 }
@@ -203,7 +215,13 @@ fn save_content_to_entity(
         .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
         .ok_or("Workspace not configured")?;
 
-    save_to_entity_docs(&workspace, &source.entity_type, &source.entity_id, name, content)
+    save_to_entity_docs(
+        &workspace,
+        &source.entity_type,
+        &source.entity_id,
+        name,
+        content,
+    )
 }
 
 /// Download a file and save it to the entity's Documents/ folder.

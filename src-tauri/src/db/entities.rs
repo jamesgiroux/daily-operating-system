@@ -103,6 +103,4 @@ impl ActionDb {
         };
         self.upsert_entity(&entity)
     }
-
-
 }

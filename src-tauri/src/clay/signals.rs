@@ -196,8 +196,16 @@ mod tests {
 
     #[test]
     fn detects_company_change() {
-        let signals =
-            detect_changes(None, None, Some("OldCo"), Some("NewCo"), None, None, None, None);
+        let signals = detect_changes(
+            None,
+            None,
+            Some("OldCo"),
+            Some("NewCo"),
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(signals.len(), 1);
         assert_eq!(signals[0].signal_type, "company_change");
     }
@@ -229,8 +237,7 @@ mod tests {
 
     #[test]
     fn detects_company_identified_from_none() {
-        let signals =
-            detect_changes(None, None, None, Some("Acme Corp"), None, None, None, None);
+        let signals = detect_changes(None, None, None, Some("Acme Corp"), None, None, None, None);
         assert_eq!(signals.len(), 1);
         assert_eq!(signals[0].signal_type, "company_change");
         assert!(signals[0].description.contains("identified"));

@@ -12,8 +12,8 @@ pub fn load_preset(role: &str) -> Result<RolePreset, String> {
 
 /// Load a custom preset from a file path.
 pub fn load_custom_preset(path: &std::path::Path) -> Result<RolePreset, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read preset file: {}", e))?;
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read preset file: {}", e))?;
     let preset: RolePreset =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse preset: {}", e))?;
     validate_preset(&preset)?;
@@ -105,11 +105,21 @@ mod tests {
             "the-desk",
         ];
         for id in all_ids {
-            let preset = load_preset(id).unwrap_or_else(|e| panic!("Failed to load '{}': {}", id, e));
-            validate_preset(&preset).unwrap_or_else(|e| panic!("Validation failed for '{}': {}", id, e));
+            let preset =
+                load_preset(id).unwrap_or_else(|e| panic!("Failed to load '{}': {}", id, e));
+            validate_preset(&preset)
+                .unwrap_or_else(|e| panic!("Validation failed for '{}': {}", id, e));
             assert_eq!(preset.id, id);
-            assert!(!preset.name.is_empty(), "preset '{}' should have a name", id);
-            assert!(!preset.description.is_empty(), "preset '{}' should have a description", id);
+            assert!(
+                !preset.name.is_empty(),
+                "preset '{}' should have a name",
+                id
+            );
+            assert!(
+                !preset.description.is_empty(),
+                "preset '{}' should have a description",
+                id
+            );
         }
     }
 }

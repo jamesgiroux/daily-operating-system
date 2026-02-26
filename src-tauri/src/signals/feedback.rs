@@ -57,9 +57,7 @@ pub fn record_correction(
 
     // Reward sources that pointed to the correct entity
     for signal in &resolution_signals {
-        if signal.entity_id == new_entity_id
-            && signal.entity_type == new_entity_type
-        {
+        if signal.entity_id == new_entity_id && signal.entity_type == new_entity_type {
             // This source was correct — increment alpha
             db.upsert_signal_weight(
                 &signal.source,
@@ -206,14 +204,24 @@ mod tests {
     #[test]
     fn test_insert_resolution_feedback() {
         let db = test_db();
-        db.insert_resolution_feedback("m1", Some("a1"), Some("account"), Some("a2"), Some("account"), Some("keyword"))
-            .expect("insert feedback");
+        db.insert_resolution_feedback(
+            "m1",
+            Some("a1"),
+            Some("account"),
+            Some("a2"),
+            Some("account"),
+            Some("keyword"),
+        )
+        .expect("insert feedback");
 
-        let count: i32 = db.conn_ref().query_row(
-            "SELECT COUNT(*) FROM entity_resolution_feedback WHERE meeting_id = 'm1'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let count: i32 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM entity_resolution_feedback WHERE meeting_id = 'm1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -262,17 +270,27 @@ mod tests {
 
         // Emit a resolution signal that pointed to the wrong entity
         crate::signals::bus::emit_signal(
-            &db, "account", "wrong-acme", "entity_resolution", "keyword",
+            &db,
+            "account",
+            "wrong-acme",
+            "entity_resolution",
+            "keyword",
             Some("{\"event_id\":\"m1\",\"source\":\"keyword\",\"outcome\":\"resolved\"}"),
             0.8,
-        ).expect("emit");
+        )
+        .expect("emit");
 
         // Also emit one that pointed to the correct entity
         crate::signals::bus::emit_signal(
-            &db, "account", "correct-acme", "entity_resolution", "attendee_vote",
+            &db,
+            "account",
+            "correct-acme",
+            "entity_resolution",
+            "attendee_vote",
             Some("{\"event_id\":\"m1\",\"source\":\"attendee_vote\",\"outcome\":\"resolved\"}"),
             0.7,
-        ).expect("emit correct");
+        )
+        .expect("emit correct");
 
         // Record correction: wrong-acme was wrong, correct-acme is right
         let old_entities = vec![("wrong-acme".to_string(), "account".to_string())];
@@ -280,31 +298,52 @@ mod tests {
             .expect("record correction");
 
         // Verify feedback was recorded
-        let count: i32 = db.conn_ref().query_row(
-            "SELECT COUNT(*) FROM entity_resolution_feedback WHERE meeting_id = 'm1'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let count: i32 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM entity_resolution_feedback WHERE meeting_id = 'm1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 1);
 
         // Verify keyword source was penalized (beta incremented)
-        let (alpha, beta, _): (f64, f64, i32) = db.conn_ref().query_row(
-            "SELECT alpha, beta, update_count FROM signal_weights
+        let (alpha, beta, _): (f64, f64, i32) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta, update_count FROM signal_weights
              WHERE source = 'keyword' AND entity_type = 'account'",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).unwrap();
-        assert!((alpha - 1.0).abs() < 0.01, "keyword alpha should stay at prior: {}", alpha);
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert!(
+            (alpha - 1.0).abs() < 0.01,
+            "keyword alpha should stay at prior: {}",
+            alpha
+        );
         assert!(beta > 1.5, "keyword beta should be incremented: {}", beta);
 
         // Verify attendee_vote source was rewarded (alpha incremented)
-        let (alpha2, beta2, _): (f64, f64, i32) = db.conn_ref().query_row(
-            "SELECT alpha, beta, update_count FROM signal_weights
+        let (alpha2, beta2, _): (f64, f64, i32) = db
+            .conn_ref()
+            .query_row(
+                "SELECT alpha, beta, update_count FROM signal_weights
              WHERE source = 'attendee_vote' AND entity_type = 'account'",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).unwrap();
-        assert!(alpha2 > 1.5, "attendee_vote alpha should be incremented: {}", alpha2);
-        assert!((beta2 - 1.0).abs() < 0.01, "attendee_vote beta should stay at prior: {}", beta2);
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert!(
+            alpha2 > 1.5,
+            "attendee_vote alpha should be incremented: {}",
+            alpha2
+        );
+        assert!(
+            (beta2 - 1.0).abs() < 0.01,
+            "attendee_vote beta should stay at prior: {}",
+            beta2
+        );
     }
 }

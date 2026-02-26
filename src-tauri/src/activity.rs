@@ -127,9 +127,9 @@ pub fn adaptive_poll_interval(activity: &ActivityMonitor, queue_empty: bool) -> 
 /// larger batches when idle/background to maximize throughput per API call.
 pub fn adaptive_batch_size(activity: &ActivityMonitor) -> usize {
     match activity.level() {
-        ActivityLevel::Active => 1,      // Process one at a time to stay responsive
-        ActivityLevel::Idle => 2,        // Moderate batch size
-        ActivityLevel::Background => 3,  // Max batch for throughput
+        ActivityLevel::Active => 1, // Process one at a time to stay responsive
+        ActivityLevel::Idle => 2,   // Moderate batch size
+        ActivityLevel::Background => 3, // Max batch for throughput
     }
 }
 

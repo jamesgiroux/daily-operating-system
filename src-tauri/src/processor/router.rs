@@ -53,8 +53,13 @@ pub fn resolve_destination(
                 if let Some(db) = db {
                     let exists = db.get_account_by_name(account).ok().flatten().is_some();
                     if !exists {
-                        log::info!("Account '{}' not found in DB — needs entity assignment", account);
-                        return RouteOutcome::NeedsEntity { suggested_name: account.clone() };
+                        log::info!(
+                            "Account '{}' not found in DB — needs entity assignment",
+                            account
+                        );
+                        return RouteOutcome::NeedsEntity {
+                            suggested_name: account.clone(),
+                        };
                     }
                 }
                 let account_dir = sanitize_dir_name(account);
@@ -80,8 +85,13 @@ pub fn resolve_destination(
             if let Some(db) = db {
                 let exists = db.get_account_by_name(account).ok().flatten().is_some();
                 if !exists {
-                    log::info!("Account '{}' not found in DB — needs entity assignment", account);
-                    return RouteOutcome::NeedsEntity { suggested_name: account.clone() };
+                    log::info!(
+                        "Account '{}' not found in DB — needs entity assignment",
+                        account
+                    );
+                    return RouteOutcome::NeedsEntity {
+                        suggested_name: account.clone(),
+                    };
                 }
             }
             let account_dir = sanitize_dir_name(account);
@@ -110,13 +120,9 @@ pub fn resolve_destination(
             }
         }
 
-        Classification::UserContext => {
-            RouteOutcome::NeedsEnrichment
-        }
+        Classification::UserContext => RouteOutcome::NeedsEnrichment,
 
-        Classification::Unknown => {
-            RouteOutcome::NeedsEnrichment
-        }
+        Classification::Unknown => RouteOutcome::NeedsEnrichment,
     }
 }
 
@@ -212,7 +218,10 @@ mod tests {
         };
         let outcome = resolve_destination(&classification, workspace, "notes.md", None, None);
         match outcome {
-            RouteOutcome::Destination(dest) => assert_eq!(dest, PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md")),
+            RouteOutcome::Destination(dest) => assert_eq!(
+                dest,
+                PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md")
+            ),
             other => panic!("Expected Destination, got {:?}", other),
         }
     }
@@ -239,7 +248,10 @@ mod tests {
         };
         let outcome = resolve_destination(&classification, workspace, "update.md", None, None);
         match outcome {
-            RouteOutcome::Destination(dest) => assert_eq!(dest, PathBuf::from("/workspace/Accounts/Acme-Corp/Documents/update.md")),
+            RouteOutcome::Destination(dest) => assert_eq!(
+                dest,
+                PathBuf::from("/workspace/Accounts/Acme-Corp/Documents/update.md")
+            ),
             other => panic!("Expected Destination, got {:?}", other),
         }
     }
@@ -323,7 +335,10 @@ mod tests {
         let outcome = resolve_destination(&classification, workspace, "notes.md", None, Some(&db));
         match outcome {
             RouteOutcome::Destination(dest) => {
-                assert_eq!(dest, PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md"));
+                assert_eq!(
+                    dest,
+                    PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md")
+                );
             }
             other => panic!("Expected Destination, got {:?}", other),
         }
@@ -364,7 +379,10 @@ mod tests {
         );
         match outcome {
             RouteOutcome::Destination(dest) => {
-                assert_eq!(dest, PathBuf::from("/workspace/Accounts/Nonexistent-Corp/Meeting-Notes/notes.md"));
+                assert_eq!(
+                    dest,
+                    PathBuf::from("/workspace/Accounts/Nonexistent-Corp/Meeting-Notes/notes.md")
+                );
             }
             other => panic!("Expected Destination (entity override), got {:?}", other),
         }
@@ -382,7 +400,10 @@ mod tests {
             None,
         );
         match outcome {
-            RouteOutcome::Destination(dest) => assert_eq!(dest, PathBuf::from("/workspace/Internal/Acme/Core-Team/Meeting-Notes/notes.md")),
+            RouteOutcome::Destination(dest) => assert_eq!(
+                dest,
+                PathBuf::from("/workspace/Internal/Acme/Core-Team/Meeting-Notes/notes.md")
+            ),
             other => panic!("Expected Destination, got {:?}", other),
         }
     }

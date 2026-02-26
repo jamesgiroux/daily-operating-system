@@ -279,7 +279,7 @@ fn find_source_file(workspace: &Path, filename: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{DbAccount, test_utils::test_db};
+    use crate::db::{test_utils::test_db, DbAccount};
 
     fn base_context(account: Option<String>, profile: &str) -> EnrichmentContext {
         EnrichmentContext {
@@ -318,7 +318,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
 
@@ -372,7 +372,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert");
 
