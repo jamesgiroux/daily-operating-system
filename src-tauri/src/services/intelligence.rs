@@ -22,6 +22,7 @@ pub async fn enrich_entity(
         entity_type,
         priority: IntelPriority::Manual,
         requested_at: std::time::Instant::now(),
+        retry_count: 0,
     };
 
     // Manual refresh: clear circuit breaker so enrichment proceeds (I410)
@@ -39,7 +40,21 @@ pub async fn enrich_entity(
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
-    let intel = run_enrichment(&input, &ai_config)?;
+
+    // Run PTY enrichment on a blocking thread and gate heavy work so UI-facing
+    // manual refreshes cannot monopolize the async runtime.
+    let _permit = state
+        .heavy_work_semaphore
+        .acquire()
+        .await
+        .map_err(|_| "Heavy work semaphore closed".to_string())?;
+    let input_for_enrichment = input.clone();
+    let ai_config_for_enrichment = ai_config.clone();
+    let intel = tauri::async_runtime::spawn_blocking(move || {
+        run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
+    })
+    .await
+    .map_err(|e| format!("Enrichment task panicked: {}", e))??;
 
     write_enrichment_results(state, &input, &intel)?;
 

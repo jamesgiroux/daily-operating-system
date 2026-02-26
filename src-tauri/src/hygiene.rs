@@ -1344,6 +1344,7 @@ fn enqueue_ai_enrichments(
                 entity_type,
                 priority: IntelPriority::ProactiveHygiene,
                 requested_at: Instant::now(),
+                retry_count: 0,
             });
             enqueued += 1;
         }
@@ -1364,6 +1365,7 @@ fn enqueue_ai_enrichments(
                 entity_type,
                 priority: IntelPriority::ProactiveHygiene,
                 requested_at: Instant::now(),
+                retry_count: 0,
             });
             enqueued += 1;
         }
@@ -1477,6 +1479,7 @@ pub fn check_upcoming_meeting_readiness(
                     entity_type,
                     priority: IntelPriority::CalendarChange,
                     requested_at: Instant::now(),
+                    retry_count: 0,
                 });
                 enqueued_ids.push(entity.id.clone());
                 log::debug!(
@@ -3269,6 +3272,8 @@ mod tests {
             embeddings: crate::types::EmbeddingConfig::default(),
             role: "customer-success".to_string(),
             custom_preset_path: None,
+            app_lock_timeout_minutes: Some(15),
+            icloud_warning_dismissed: None,
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,

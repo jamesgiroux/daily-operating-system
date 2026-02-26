@@ -417,6 +417,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             entity_type: "account".to_string(),
                             priority: crate::intel_queue::IntelPriority::ContentChange,
                             requested_at: std::time::Instant::now(),
+                            retry_count: 0,
                         });
                     }
                     state.integrations.embedding_queue_wake.notify_one();
@@ -452,6 +453,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             entity_type: "project".to_string(),
                             priority: crate::intel_queue::IntelPriority::ContentChange,
                             requested_at: std::time::Instant::now(),
+                            retry_count: 0,
                         });
                     }
                     state.integrations.embedding_queue_wake.notify_one();

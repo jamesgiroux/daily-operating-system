@@ -12,7 +12,7 @@ use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{CalendarEvent, CapturedAction, TranscriptResult};
-use crate::util::wrap_user_data;
+use crate::util::{encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 use super::enrich::parse_enrichment_response;
 use super::hooks;
@@ -463,13 +463,13 @@ pub fn build_transcript_prompt(meeting: &CalendarEvent, content: &str) -> String
         &meeting.title
     };
     let account_line = match meeting.account.as_deref() {
-        Some(a) if !a.trim().is_empty() => format!("Account: {}\n", wrap_user_data(a)),
+        Some(a) if !a.trim().is_empty() => format!("Account: {}\n", sanitize_external_field(a)),
         _ => String::new(),
     };
     let date = meeting.end.format("%Y-%m-%d").to_string();
 
     format!(
-        r#"You are analyzing a transcript from a {meeting_type} meeting.
+        r#"{preamble}You are analyzing a transcript from a {meeting_type} meeting.
 
 Meeting: "{title}"
 {account_line}Date: {date}
@@ -531,7 +531,8 @@ Rules for decisions:
 Transcript:
 {content}
 "#,
-        title = wrap_user_data(title),
+        preamble = INJECTION_PREAMBLE,
+        title = encode_high_risk_field(title),
         account_line = account_line,
         meeting_type = meeting_type,
         date = date,
@@ -651,8 +652,10 @@ mod tests {
         let meeting = test_meeting();
         let prompt = build_transcript_prompt(&meeting, "Hello world transcript");
 
-        assert!(prompt.contains("Acme QBR"));
-        assert!(prompt.contains("Acme Corp"));
+        // Title is base64-encoded (I469 high-risk field)
+        assert!(prompt.contains("<user_data encoding=\"base64\">"));
+        // Account name is sanitize_external_field wrapped
+        assert!(prompt.contains("<user_data>Acme Corp</user_data>"));
         assert!(prompt.contains("customer"));
         assert!(prompt.contains("Hello world transcript"));
         assert!(prompt.contains("DECISIONS:"));
@@ -673,7 +676,8 @@ mod tests {
         meeting.title = "".to_string();
         let prompt = build_transcript_prompt(&meeting, "Some transcript");
 
-        assert!(prompt.contains("Untitled meeting"));
+        // "Untitled meeting" is now base64-encoded (I469)
+        assert!(prompt.contains("<user_data encoding=\"base64\">"));
         // Account line should be omitted entirely
         assert!(!prompt.contains("Account:"));
         assert!(prompt.contains("Some transcript"));

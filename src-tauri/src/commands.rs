@@ -1360,6 +1360,185 @@ pub fn set_developer_mode(enabled: bool, state: State<'_, Arc<AppState>>) -> Res
     })
 }
 
+/// Check if workspace is under iCloud sync and warning hasn't been dismissed (I464).
+#[tauri::command]
+pub fn check_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<Option<String>, String> {
+    let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = guard
+        .clone()
+        .ok_or_else(|| "No configuration loaded".to_string())?;
+
+    if config.icloud_warning_dismissed.unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let workspace_path = &config.workspace_path;
+    if crate::util::is_under_icloud_scope(workspace_path) {
+        Ok(Some(workspace_path.clone()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Dismiss the iCloud workspace warning permanently (I464).
+#[tauri::command]
+pub fn dismiss_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.icloud_warning_dismissed = Some(true);
+    })?;
+    Ok(())
+}
+
+// =============================================================================
+// App Lock (I465)
+// =============================================================================
+
+/// Get whether the app is currently locked.
+#[tauri::command]
+pub fn get_lock_status(state: State<'_, Arc<AppState>>) -> bool {
+    state
+        .is_locked
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Check if the encryption key is missing (I462 recovery screen).
+#[tauri::command]
+pub fn get_encryption_key_status(state: State<'_, Arc<AppState>>) -> bool {
+    state
+        .encryption_key_missing
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Lock the app immediately.
+#[tauri::command]
+pub async fn lock_app(
+    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    state
+        .is_locked
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = app.emit("app-locked", ());
+    Ok(())
+}
+
+/// Attempt to unlock the app via system authentication (Touch ID / password).
+#[tauri::command]
+pub async fn unlock_app(
+    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+
+    // Check cooldown: 30s after 3 consecutive failures
+    let failed_count = state.failed_unlock_count.load(Ordering::Relaxed);
+    if failed_count >= 3 {
+        if let Ok(guard) = state.last_failed_unlock.lock() {
+            if let Some(last) = *guard {
+                if last.elapsed().as_secs() < 30 {
+                    let remaining = 30 - last.elapsed().as_secs();
+                    return Err(format!(
+                        "Too many failed attempts. Try again in {} seconds.",
+                        remaining
+                    ));
+                }
+            }
+        }
+        // Cooldown expired, reset counter
+        state.failed_unlock_count.store(0, Ordering::Relaxed);
+    }
+
+    // Attempt system authentication (Touch ID / password)
+    match attempt_system_auth().await {
+        Ok(true) => {
+            state
+                .is_locked
+                .store(false, Ordering::Relaxed);
+            state.failed_unlock_count.store(0, Ordering::Relaxed);
+            let _ = app.emit("app-unlocked", ());
+            Ok(())
+        }
+        Ok(false) => {
+            let new_count = state
+                .failed_unlock_count
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
+            if let Ok(mut guard) = state.last_failed_unlock.lock() {
+                *guard = Some(std::time::Instant::now());
+            }
+            if new_count >= 3 {
+                Err(
+                    "Authentication failed. Too many attempts — please wait 30 seconds."
+                        .to_string(),
+                )
+            } else {
+                Err("Authentication failed.".to_string())
+            }
+        }
+        Err(e) => Err(format!("Authentication error: {}", e)),
+    }
+}
+
+/// Set the app lock idle timeout in minutes (None = disabled).
+#[tauri::command]
+pub fn set_lock_timeout(
+    minutes: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
+    if let Some(v) = minutes {
+        if ![5, 15, 30].contains(&v) {
+            return Err(format!(
+                "Invalid lock timeout: {}. Must be 5, 15, or 30.",
+                v
+            ));
+        }
+    }
+    crate::state::create_or_update_config(&state, |config| {
+        config.app_lock_timeout_minutes = minutes;
+    })
+}
+
+/// Attempt system-level authentication using macOS LocalAuthentication via osascript.
+/// Triggers Touch ID if available, falls back to password.
+async fn attempt_system_auth() -> Result<bool, String> {
+    let script = r#"
+use framework "LocalAuthentication"
+set context to current application's LAContext's new()
+set {canEvaluate, theError} to context's canEvaluatePolicy:1 |error|:(reference)
+if canEvaluate then
+    set {authResult, authError} to context's evaluatePolicy:1 localizedReason:"DailyOS requires authentication to unlock." |error|:(reference)
+    if authResult then
+        return "ok"
+    else
+        return "fail"
+    end if
+else
+    return "unavailable"
+end if
+"#;
+
+    let output = tokio::process::Command::new("osascript")
+        .args(["-l", "AppleScript", "-e", script])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to launch auth: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    match stdout.as_str() {
+        "ok" => Ok(true),
+        "fail" => Ok(false),
+        "unavailable" => {
+            // No biometric available — skip lock requirement
+            log::warn!("Biometric authentication unavailable, auto-unlocking");
+            Ok(true)
+        }
+        _ => {
+            // osascript failed (user cancelled, etc.)
+            Ok(false)
+        }
+    }
+}
+
 /// Set UI personality tone (professional, friendly, playful)
 #[tauri::command]
 pub fn set_personality(personality: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
@@ -3147,6 +3326,8 @@ pub async fn get_meeting_entities(
 
 /// Reassign a meeting's entity with full cascade to actions, captures, and intelligence.
 /// Clears existing entity links, sets the new one, and cascades to related tables.
+/// Emits `prep-ready` event on successful rebuild (I477).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn update_meeting_entity(
     meeting_id: String,
@@ -3156,9 +3337,13 @@ pub async fn update_meeting_entity(
     start_time: String,
     meeting_type_str: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let ctx = crate::services::meetings::MeetingMutationCtx {
+        state: &state, meeting_id: &meeting_id, app_handle: Some(&app_handle),
+    };
     crate::services::meetings::update_meeting_entity(
-        &state, &meeting_id, entity_id.as_deref(), &entity_type,
+        ctx, entity_id.as_deref(), &entity_type,
         &meeting_title, &start_time, &meeting_type_str,
     ).await
 }
@@ -3169,6 +3354,8 @@ pub async fn update_meeting_entity(
 
 /// Add an entity link to a meeting with full cascade (people, intelligence).
 /// Unlike `update_meeting_entity` which clears-and-replaces, this is additive.
+/// Emits `prep-ready` event on successful rebuild (I477).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn add_meeting_entity(
     meeting_id: String,
@@ -3178,23 +3365,32 @@ pub async fn add_meeting_entity(
     start_time: String,
     meeting_type_str: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let ctx = crate::services::meetings::MeetingMutationCtx {
+        state: &state, meeting_id: &meeting_id, app_handle: Some(&app_handle),
+    };
     crate::services::meetings::add_meeting_entity(
-        &state, &meeting_id, &entity_id, &entity_type,
+        ctx, &entity_id, &entity_type,
         &meeting_title, &start_time, &meeting_type_str,
     ).await
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
+/// Emits `prep-ready` event on successful rebuild (I477).
 #[tauri::command]
 pub async fn remove_meeting_entity(
     meeting_id: String,
     entity_id: String,
     entity_type: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let ctx = crate::services::meetings::MeetingMutationCtx {
+        state: &state, meeting_id: &meeting_id, app_handle: Some(&app_handle),
+    };
     crate::services::meetings::remove_meeting_entity(
-        &state, &meeting_id, &entity_id, &entity_type,
+        ctx, &entity_id, &entity_type,
     ).await
 }
 
@@ -3777,6 +3973,7 @@ pub async fn index_entity_files(
         entity_type,
         priority: crate::intel_queue::IntelPriority::ContentChange,
         requested_at: std::time::Instant::now(),
+        retry_count: 0,
     });
     state.integrations.intel_queue_wake.notify_one();
 
@@ -5196,7 +5393,7 @@ mod tests {
     fn test_backfill_db_prep_contexts_apply_updates_rows() {
         let dir = tempdir().expect("tempdir");
         let db_path = dir.path().join("test.db");
-        let db = ActionDb::open_at(db_path).expect("open db");
+        let db = ActionDb::open_at_unencrypted(db_path).expect("open db");
 
         let meeting = DbMeeting {
             id: "mtg-1".to_string(),
@@ -5263,7 +5460,7 @@ mod tests {
     fn test_apply_meeting_prep_prefill_additive_and_idempotent() {
         let dir = tempdir().expect("tempdir");
         let db_path = dir.path().join("test.db");
-        let db = ActionDb::open_at(db_path).expect("open db");
+        let db = ActionDb::open_at_unencrypted(db_path).expect("open db");
 
         let meeting = DbMeeting {
             id: "mtg-prefill".to_string(),
@@ -5332,7 +5529,7 @@ mod tests {
     fn test_apply_meeting_prep_prefill_blocks_past_or_frozen() {
         let dir = tempdir().expect("tempdir");
         let db_path = dir.path().join("test.db");
-        let db = ActionDb::open_at(db_path).expect("open db");
+        let db = ActionDb::open_at_unencrypted(db_path).expect("open db");
 
         let past = DbMeeting {
             id: "mtg-past".to_string(),

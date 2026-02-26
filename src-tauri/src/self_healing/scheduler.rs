@@ -55,6 +55,7 @@ pub fn evaluate_on_signal(
             entity_type: entity_type.to_string(),
             priority: crate::intel_queue::IntelPriority::ContentChange,
             requested_at: std::time::Instant::now(),
+            retry_count: 0,
         });
         Ok(true)
     } else {
@@ -208,6 +209,7 @@ fn enqueue_retry(queue: &IntelligenceQueue, entity_id: &str, entity_type: &str) 
         entity_type: entity_type.to_string(),
         priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
         requested_at: std::time::Instant::now(),
+        retry_count: 0,
     });
 }
 

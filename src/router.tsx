@@ -60,6 +60,10 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { PersonalityProvider } from "@/hooks/usePersonality";
 import { UpdateBanner } from "@/components/notifications/UpdateBanner";
 import { WhatsNewModal, useWhatsNewAutoShow } from "@/components/notifications/WhatsNewModal";
+import { ICloudWarningModal } from "@/components/ICloudWarningModal";
+import { LockOverlay } from "@/components/LockOverlay";
+import { useAppLock } from "@/hooks/useAppLock";
+import { EncryptionRecovery, useEncryptionStatus } from "@/components/EncryptionRecovery";
 
 const settingsTabs = new Set([
   "you",
@@ -90,6 +94,8 @@ function RootLayout() {
   const [checkingConfig, setCheckingConfig] = useState(true);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const { autoShowOpen, dismissAutoShow } = useWhatsNewAutoShow();
+  const { isLocked, setIsLocked } = useAppLock();
+  const encryptionKeyMissing = useEncryptionStatus();
 
   // Magazine shell context — pages register their config, layout consumes it
   const magazineShell = useMagazineShellProvider();
@@ -148,6 +154,24 @@ function RootLayout() {
     );
   }
 
+  // Encryption key missing — recovery screen (I462)
+  if (encryptionKeyMissing) {
+    return (
+      <ThemeProvider>
+        <EncryptionRecovery />
+      </ThemeProvider>
+    );
+  }
+
+  // App lock renders INSTEAD of content, not on top (I465)
+  if (isLocked) {
+    return (
+      <ThemeProvider>
+        <LockOverlay onUnlock={() => setIsLocked(false)} />
+      </ThemeProvider>
+    );
+  }
+
   if (needsOnboarding) {
     return (
       <ThemeProvider>
@@ -181,6 +205,7 @@ function RootLayout() {
           <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
           <PostMeetingPrompt />
           <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
+          <ICloudWarningModal />
           <Toaster position="bottom-right" />
           <DevToolsPanel />
         </PersonalityProvider>
@@ -202,6 +227,7 @@ function RootLayout() {
         </SidebarProvider>
         <PostMeetingPrompt />
         <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
+        <ICloudWarningModal />
         <Toaster position="bottom-right" />
         <DevToolsPanel />
       </PersonalityProvider>
