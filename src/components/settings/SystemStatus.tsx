@@ -1038,6 +1038,73 @@ function DataManagementSection() {
 }
 
 // ---------------------------------------------------------------------------
+// SecuritySection — app lock timeout config (I465)
+// ---------------------------------------------------------------------------
+
+const lockTimeoutOptions = [
+  { value: 5, label: "5 minutes" },
+  { value: 15, label: "15 minutes" },
+  { value: 30, label: "30 minutes" },
+  { value: 0, label: "Never" },
+] as const;
+
+function SecuritySection() {
+  const [lockTimeout, setLockTimeout] = useState<number>(15);
+
+  useEffect(() => {
+    invoke<{ appLockTimeoutMinutes?: number | null }>("get_config")
+      .then((config) => {
+        setLockTimeout(config.appLockTimeoutMinutes ?? 15);
+      })
+      .catch((err) => console.error("Failed to load lock config:", err));
+  }, []);
+
+  async function handleChange(value: number) {
+    const minutes = value === 0 ? null : value;
+    try {
+      await invoke("set_lock_timeout", { minutes });
+      setLockTimeout(value);
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to set lock timeout");
+    }
+  }
+
+  return (
+    <div>
+      <h3 style={styles.subsectionLabel}>Security</h3>
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>
+            Lock after idle
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            Require Touch ID or password after a period of inactivity
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {lockTimeoutOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleChange(opt.value)}
+              style={{
+                ...styles.btn,
+                ...(lockTimeout === opt.value
+                  ? styles.btnPrimary
+                  : styles.btnGhost),
+                fontSize: 10,
+                padding: "3px 10px",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SystemStatus — main exported component
 // ---------------------------------------------------------------------------
 
@@ -1049,6 +1116,10 @@ export default function SystemStatus() {
       {/* Always visible: version, last briefing, health one-liner */}
       <UpdateSection />
       <HealthOneLiner />
+
+      <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
+
+      <SecuritySection />
 
       <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
 

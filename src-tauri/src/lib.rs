@@ -68,7 +68,7 @@ use state::AppState;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 use tokio::sync::mpsc;
 
@@ -96,6 +96,14 @@ pub fn run() {
         .setup(|app| {
             // Create shared state
             let state = Arc::new(AppState::new());
+
+            // One-time filesystem hardening: permissions + Time Machine exclusion (I463)
+            if let Some(home) = dirs::home_dir() {
+                let dailyos_dir = home.join(".dailyos");
+                if dailyos_dir.is_dir() {
+                    db::hardening::harden_data_directory(&dailyos_dir);
+                }
+            }
 
             // Initialize async DbService (read/write separated connections).
             // Runs in background — command handlers fall back to the sync mutex
@@ -306,16 +314,71 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Handle window close: hide instead of quit
+            // Track last focused time for app lock (I465)
+            let last_focused = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+
+            // Handle window close: hide instead of quit + track focus for lock (I465)
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
+                let focus_tracker = last_focused.clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = window_clone.hide();
+                    match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            let _ = window_clone.hide();
+                        }
+                        tauri::WindowEvent::Focused(true) => {
+                            if let Ok(mut guard) = focus_tracker.lock() {
+                                *guard = std::time::Instant::now();
+                            }
+                        }
+                        _ => {}
                     }
                 });
             }
+
+            // Spawn app lock idle timer (I465)
+            let lock_state_timer = state.clone();
+            let lock_handle_timer = app.handle().clone();
+            let last_focused_timer = last_focused.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+                    let timeout_mins = {
+                        let config = lock_state_timer.config.read().ok();
+                        config
+                            .as_ref()
+                            .and_then(|c| c.as_ref())
+                            .and_then(|c| c.app_lock_timeout_minutes)
+                            .unwrap_or(0)
+                    };
+
+                    if timeout_mins == 0 {
+                        continue; // Disabled
+                    }
+
+                    if lock_state_timer
+                        .is_locked
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        continue; // Already locked
+                    }
+
+                    let elapsed = {
+                        let guard = last_focused_timer.lock().unwrap();
+                        guard.elapsed()
+                    };
+
+                    if elapsed >= std::time::Duration::from_secs(u64::from(timeout_mins) * 60) {
+                        lock_state_timer
+                            .is_locked
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        let _ = lock_handle_timer.emit("app-locked", ());
+                        log::info!("App locked after {} minutes idle", timeout_mins);
+                    }
+                }
+            });
 
             Ok(())
         })
@@ -629,6 +692,15 @@ pub fn run() {
             commands::add_google_drive_watch,
             commands::remove_google_drive_watch,
             commands::get_google_drive_watches,
+            // I464: iCloud Workspace Warning
+            commands::check_icloud_warning,
+            commands::dismiss_icloud_warning,
+            // I465: App Lock
+            commands::get_lock_status,
+            commands::get_encryption_key_status,
+            commands::lock_app,
+            commands::unlock_app,
+            commands::set_lock_timeout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -114,6 +114,9 @@ export default function MeetingDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
 
+  // Entity mutation in progress — shows "Updating briefing..." (I477)
+  const [briefingUpdating, setBriefingUpdating] = useState(false);
+
   // Transcript attach
   const [attaching, setAttaching] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -343,10 +346,21 @@ export default function MeetingDetailPage() {
 
   const handlePrepReady = useCallback((payload: PrepReadyPayload) => {
     if (!meetingId || payload.meetingId !== meetingId) return;
+    setBriefingUpdating(false);
     void loadMeetingIntelligence();
   }, [meetingId, loadMeetingIntelligence]);
 
   useTauriEvent<PrepReadyPayload>("prep-ready", handlePrepReady);
+
+  // Safety timeout: clear updating banner after 15s if prep-ready never arrives (I477)
+  useEffect(() => {
+    if (!briefingUpdating) return;
+    const timer = setTimeout(() => {
+      setBriefingUpdating(false);
+      void loadMeetingIntelligence();
+    }, 15_000);
+    return () => clearTimeout(timer);
+  }, [briefingUpdating, loadMeetingIntelligence]);
 
   const copyToClipboard = useCallback(async (text: string, action: string) => {
     await navigator.clipboard.writeText(text);
@@ -564,6 +578,7 @@ Thanks!`;
     (data.proposedAgenda && data.proposedAgenda.length > 0) ||
     data.stakeholderSignals
   );
+  const hasLinkedEntities = linkedEntities.length > 0;
 
   // Derived data
   const topRisks = [
@@ -629,9 +644,17 @@ Thanks!`;
         )}
 
         {!hasAnyContent && !outcomes && (
-          <div className={styles.emptyState}>
-            <Clock className={styles.emptyIcon} />
-            {isPastMeeting ? (
+          <div className={clsx(styles.emptyState, !hasLinkedEntities && styles.emptyStateActionable)}>
+            {hasLinkedEntities && <Clock className={styles.emptyIcon} />}
+            {!hasLinkedEntities ? (
+              <>
+                <p className={styles.emptyGenerating}>No linked account or project</p>
+                <p className={styles.emptyText}>
+                  We don&apos;t have enough context to build this briefing yet.
+                  Link this meeting to an account or project.
+                </p>
+              </>
+            ) : isPastMeeting ? (
               <>
                 <p className={styles.emptyGenerating}>No briefing available</p>
                 <p className={styles.emptyText}>This meeting&apos;s context wasn&apos;t captured before it started.</p>
@@ -642,6 +665,26 @@ Thanks!`;
                 <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
               </>
             )}
+            {meetingId && (
+              <div className={styles.entityChipsWrap}>
+                <MeetingEntityChips
+                  meetingId={meetingId}
+                  meetingTitle={meetingMeta?.title ?? data.title}
+                  meetingStartTime={meetingMeta?.startTime ?? new Date().toISOString()}
+                  meetingType={meetingMeta?.meetingType ?? "internal"}
+                  linkedEntities={linkedEntities}
+                  onEntitiesChanged={() => { setBriefingUpdating(true); }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Briefing updating banner (I477) — shown during entity mutation */}
+        {briefingUpdating && (
+          <div className={styles.updatingBanner}>
+            <Loader2 size={14} />
+            <span>Updating briefing...</span>
           </div>
         )}
 
@@ -691,15 +734,15 @@ Thanks!`;
               </div>
 
               {/* Entity chips */}
-              {meetingId && meetingMeta && (
+              {meetingId && (
                 <div className={styles.entityChipsWrap}>
                   <MeetingEntityChips
                     meetingId={meetingId}
-                    meetingTitle={meetingMeta.title}
-                    meetingStartTime={meetingMeta.startTime ?? new Date().toISOString()}
-                    meetingType={meetingMeta.meetingType ?? "internal"}
+                    meetingTitle={meetingMeta?.title ?? data.title}
+                    meetingStartTime={meetingMeta?.startTime ?? new Date().toISOString()}
+                    meetingType={meetingMeta?.meetingType ?? "internal"}
                     linkedEntities={linkedEntities}
-                    onEntitiesChanged={() => loadMeetingIntelligence()}
+                    onEntitiesChanged={() => { setBriefingUpdating(true); }}
                   />
                 </div>
               )}

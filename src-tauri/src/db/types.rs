@@ -18,6 +18,12 @@ pub enum DbError {
 
     #[error("Schema migration failed: {0}")]
     Migration(String),
+
+    #[error("Encryption error: {0}")]
+    Encryption(String),
+
+    #[error("Encryption key missing: database at {db_path} is encrypted but the Keychain entry was not found")]
+    KeyMissing { db_path: String },
 }
 
 /// A row from the `actions` table.
