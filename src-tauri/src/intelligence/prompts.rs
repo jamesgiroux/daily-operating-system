@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use chrono::Utc;
+use chrono::{Local, TimeZone, Utc};
 use serde::Deserialize;
 
 use crate::db::{ActionDb, DbAccount, DbProject};
@@ -174,15 +174,16 @@ pub fn build_intelligence_context(
         let lines: Vec<String> = meetings
             .iter()
             .map(|m| {
+                let meeting_time = format_meeting_time_for_prompt(&m.start_time);
                 let doc = match (&m.summary, &m.transcript_path) {
                     (Some(s), _) if !s.is_empty() => s.clone(),
                     (_, Some(p)) if !p.is_empty() => "transcript available".to_string(),
                     _ => String::new(),
                 };
                 if doc.is_empty() {
-                    format!("- {} | {}", m.start_time, m.title)
+                    format!("- {} | {}", meeting_time, m.title)
                 } else {
-                    format!("- {} | {} | {}", m.start_time, m.title, doc)
+                    format!("- {} | {} | {}", meeting_time, m.title, doc)
                 }
             })
             .collect();
@@ -619,7 +620,8 @@ pub fn build_intelligence_context(
     if entity_type == "account" {
         if let Ok(upcoming) = db.get_upcoming_meetings_for_account(entity_id, 1) {
             if let Some(m) = upcoming.first() {
-                let mut next = format!("{} — {}", m.start_time, m.title);
+                let local_start = format_meeting_time_for_prompt(&m.start_time);
+                let mut next = format!("{} — {}", local_start, m.title);
                 if let Some(ref desc) = m.description {
                     let cleaned = strip_conferencing_noise(desc);
                     if !cleaned.trim().is_empty() {
@@ -1073,6 +1075,34 @@ fn semantic_gap_query(prior: Option<&IntelligenceJson>) -> String {
     terms.join(" ")
 }
 
+fn format_meeting_time_for_prompt(raw: &str) -> String {
+    let value = raw.trim();
+    if value.is_empty() {
+        return raw.to_string();
+    }
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return dt
+            .with_timezone(&Local)
+            .format("%Y-%m-%d %-I:%M %p %Z")
+            .to_string();
+    }
+
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(value, fmt) {
+            if let Some(local_dt) = Local.from_local_datetime(&ndt).single() {
+                return local_dt.format("%Y-%m-%d %-I:%M %p %Z").to_string();
+            }
+            return Local
+                .from_utc_datetime(&ndt)
+                .format("%Y-%m-%d %-I:%M %p %Z")
+                .to_string();
+        }
+    }
+
+    raw.to_string()
+}
+
 // =============================================================================
 // Prompt Builder (I131)
 // =============================================================================
@@ -1140,6 +1170,10 @@ fn build_intelligence_prompt_inner(
         "You are building an intelligence assessment for the {label} \"{name}\".\n\n",
         label = entity_label,
         name = sanitize_external_field(entity_name)
+    ));
+    prompt.push_str(&format!(
+        "System timezone: {}. Interpret all meeting times in this timezone.\n\n",
+        Local::now().format("%Z"),
     ));
 
     // I313: Inject full vocabulary context for domain-specific framing
@@ -1327,6 +1361,8 @@ fn build_intelligence_prompt_inner(
          - Do NOT include footnotes, reference numbers, or source citations in prose.\n\
          - Do NOT embed filenames or source references inline in prose.\n\
          - Do NOT narrate chronologically. Synthesize themes and conclusions.\n\
+         - Avoid relative time words (tonight, tomorrow, yesterday, this morning). \
+           Use explicit local dates and times instead.\n\
          - Write for a busy executive who has 60 seconds to understand this {}.\n\n",
         entity_label,
     ));

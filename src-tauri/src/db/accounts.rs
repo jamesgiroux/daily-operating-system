@@ -587,7 +587,7 @@ impl ActionDb {
              FROM meetings_history m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
-               AND m.start_time >= datetime('now')
+               AND julianday(m.start_time) >= julianday('now')
              ORDER BY m.start_time ASC
              LIMIT ?2",
         )?;
