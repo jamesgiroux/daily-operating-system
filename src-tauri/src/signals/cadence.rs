@@ -4,8 +4,8 @@
 //! average, and flags anomalies (gone_quiet <50%, activity_spike >200%).
 //! Runs cheaply via SQL aggregation during hygiene or after email fetch.
 
-use crate::db::ActionDb;
 use super::propagation::PropagationEngine;
+use crate::db::ActionDb;
 
 /// A cadence anomaly for a single entity.
 #[derive(Debug, Clone)]

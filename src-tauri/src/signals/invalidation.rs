@@ -35,7 +35,7 @@ pub fn check_and_invalidate_preps(
         "engagement_warning",
         "project_health_warning",
         "title_change",
-        "company_change",   // person_departed removed — no emitter exists
+        "company_change", // person_departed removed — no emitter exists
         "pre_meeting_context",
         "stakeholders_updated",
         "team_member_added",
@@ -47,17 +47,14 @@ pub fn check_and_invalidate_preps(
         return;
     }
 
-    let meeting_ids = match db.get_upcoming_meetings_for_entity(
-        &signal.entity_type,
-        &signal.entity_id,
-        48,
-    ) {
-        Ok(ids) => ids,
-        Err(e) => {
-            log::warn!("Prep invalidation: failed to query meetings: {}", e);
-            return;
-        }
-    };
+    let meeting_ids =
+        match db.get_upcoming_meetings_for_entity(&signal.entity_type, &signal.entity_id, 48) {
+            Ok(ids) => ids,
+            Err(e) => {
+                log::warn!("Prep invalidation: failed to query meetings: {}", e);
+                return;
+            }
+        };
 
     if meeting_ids.is_empty() {
         return;
@@ -101,9 +98,10 @@ impl ActionDb {
                AND mh.start_time <= datetime('now', ?3)",
         )?;
 
-        let rows = stmt.query_map(rusqlite::params![entity_id, entity_type, hours_param], |row| {
-            row.get::<_, String>(0)
-        })?;
+        let rows = stmt.query_map(
+            rusqlite::params![entity_id, entity_type, hours_param],
+            |row| row.get::<_, String>(0),
+        )?;
 
         let mut ids = Vec::new();
         for row in rows {
@@ -116,8 +114,8 @@ impl ActionDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use crate::db::test_utils::test_db;
+    use std::sync::Mutex;
 
     fn make_signal(signal_type: &str, confidence: f64) -> SignalEvent {
         SignalEvent {

@@ -305,9 +305,8 @@ impl ClayClient {
             .map_err(|e| ClayError::ToolCallFailed(format!("Read response: {}", e)))?;
 
         let json_text = extract_json_from_response(&body);
-        let resp: JsonRpcResponse = serde_json::from_str(&json_text).map_err(|e| {
-            ClayError::ParseError(format!("JSON-RPC parse: {}: {}", e, body))
-        })?;
+        let resp: JsonRpcResponse = serde_json::from_str(&json_text)
+            .map_err(|e| ClayError::ParseError(format!("JSON-RPC parse: {}: {}", e, body)))?;
 
         if let Some(err) = resp.error {
             return Err(ClayError::ToolCallFailed(err.message));
@@ -337,46 +336,55 @@ impl ClayClient {
 
         // Smithery Clay returns: {"total": N, "results": [...]}
         let val: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-            ClayError::ParseError(format!("searchContacts: {}: {}", e, &text[..text.len().min(200)]))
+            ClayError::ParseError(format!(
+                "searchContacts: {}: {}",
+                e,
+                &text[..text.len().min(200)]
+            ))
         })?;
 
-        let arr = val.get("results").and_then(|r| r.as_array())
+        let arr = val
+            .get("results")
+            .and_then(|r| r.as_array())
             .or_else(|| val.as_array());
 
         let contacts = match arr {
-            Some(arr) => arr.iter().filter_map(|v| {
-                match serde_json::from_value::<ClayContact>(v.clone()) {
-                    Ok(mut contact) => {
-                        // Smithery search results don't have an email field — but if
-                        // displayName looks like an email, use it
-                        if contact.email.is_none() {
-                            if let Some(name) = &contact.name {
-                                if name.contains('@') {
-                                    contact.email = Some(name.clone());
+            Some(arr) => arr
+                .iter()
+                .filter_map(|v| {
+                    match serde_json::from_value::<ClayContact>(v.clone()) {
+                        Ok(mut contact) => {
+                            // Smithery search results don't have an email field — but if
+                            // displayName looks like an email, use it
+                            if contact.email.is_none() {
+                                if let Some(name) = &contact.name {
+                                    if name.contains('@') {
+                                        contact.email = Some(name.clone());
+                                    }
                                 }
                             }
+                            // Skip contacts with empty IDs rather than silently defaulting
+                            if contact.id_str().is_empty() {
+                                log::warn!(
+                                    "Enrichment: skipping Clay contact with empty id: {:?}",
+                                    v.get("displayName").or_else(|| v.get("name"))
+                                );
+                                None
+                            } else {
+                                Some(contact)
+                            }
                         }
-                        // Skip contacts with empty IDs rather than silently defaulting
-                        if contact.id_str().is_empty() {
+                        Err(e) => {
                             log::warn!(
-                                "Enrichment: skipping Clay contact with empty id: {:?}",
-                                v.get("displayName").or_else(|| v.get("name"))
+                                "Enrichment: failed to parse Clay contact row: {} — {}",
+                                e,
+                                &v.to_string()[..v.to_string().len().min(100)]
                             );
-                            None
-                        } else {
-                            Some(contact)
+                            None // Skip bad rows, never silently default
                         }
                     }
-                    Err(e) => {
-                        log::warn!(
-                            "Enrichment: failed to parse Clay contact row: {} — {}",
-                            e,
-                            &v.to_string()[..v.to_string().len().min(100)]
-                        );
-                        None // Skip bad rows, never silently default
-                    }
-                }
-            }).collect(),
+                })
+                .collect(),
             None => vec![],
         };
 
@@ -404,45 +412,65 @@ impl ClayClient {
             .await?;
 
         let raw: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
-            ClayError::ParseError(format!("getContact JSON: {}: {}", e, &text[..text.len().min(200)]))
+            ClayError::ParseError(format!(
+                "getContact JSON: {}: {}",
+                e,
+                &text[..text.len().min(200)]
+            ))
         })?;
 
         // Extract first email from emails array
-        let email = raw.get("emails")
+        let email = raw
+            .get("emails")
             .and_then(|e| e.as_array())
             .and_then(|arr| arr.first())
             .and_then(|v| v.as_str())
             .map(String::from);
 
         // Extract first phone from phone_numbers array
-        let phone = raw.get("phone_numbers")
+        let phone = raw
+            .get("phone_numbers")
             .and_then(|p| p.as_array())
             .and_then(|arr| arr.first())
             .and_then(|v| v.as_str())
             .map(String::from);
 
         // Extract linkedin/twitter from social_links array
-        let social_links: Vec<&str> = raw.get("social_links")
+        let social_links: Vec<&str> = raw
+            .get("social_links")
             .and_then(|s| s.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
             .unwrap_or_default();
 
-        let linkedin_url = social_links.iter()
+        let linkedin_url = social_links
+            .iter()
             .find(|u| u.contains("linkedin.com"))
             .map(|u| u.to_string());
-        let twitter_handle = social_links.iter()
+        let twitter_handle = social_links
+            .iter()
             .find(|u| u.contains("twitter.com") || u.contains("x.com"))
             .map(|u| u.to_string());
 
         // Extract work history and derive current title/company
-        let work_history: Vec<TitleHistoryEntry> = raw.get("work_history")
+        let work_history: Vec<TitleHistoryEntry> = raw
+            .get("work_history")
             .and_then(|w| w.as_array())
-            .map(|arr| arr.iter().map(|entry| TitleHistoryEntry {
-                title: entry.get("title").and_then(|t| t.as_str()).map(String::from),
-                company: entry.get("company").and_then(|c| c.as_str()).map(String::from),
-                start_date: entry.get("start_year").map(|y| y.to_string()),
-                end_date: entry.get("end_year").map(|y| y.to_string()),
-            }).collect())
+            .map(|arr| {
+                arr.iter()
+                    .map(|entry| TitleHistoryEntry {
+                        title: entry
+                            .get("title")
+                            .and_then(|t| t.as_str())
+                            .map(String::from),
+                        company: entry
+                            .get("company")
+                            .and_then(|c| c.as_str())
+                            .map(String::from),
+                        start_date: entry.get("start_year").map(|y| y.to_string()),
+                        end_date: entry.get("end_year").map(|y| y.to_string()),
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         let current_job = work_history.first();
@@ -451,12 +479,18 @@ impl ClayClient {
 
         Ok(ClayContactDetail {
             id: serde_json::Value::String(contact_id.to_string()),
-            name: raw.get("displayName").or_else(|| raw.get("name"))
-                .and_then(|n| n.as_str()).map(String::from),
+            name: raw
+                .get("displayName")
+                .or_else(|| raw.get("name"))
+                .and_then(|n| n.as_str())
+                .map(String::from),
             email,
             title,
             company,
-            photo_url: raw.get("avatarURL").and_then(|u| u.as_str()).map(String::from),
+            photo_url: raw
+                .get("avatarURL")
+                .and_then(|u| u.as_str())
+                .map(String::from),
             linkedin_url,
             twitter_handle,
             bio: raw.get("bio").and_then(|b| b.as_str()).map(String::from),
@@ -465,7 +499,10 @@ impl ClayClient {
             // Firmographics not available from Smithery getContact
             company_industry: None,
             company_size: None,
-            company_hq: raw.get("location").and_then(|l| l.as_str()).map(String::from),
+            company_hq: raw
+                .get("location")
+                .and_then(|l| l.as_str())
+                .map(String::from),
             company_funding: None,
         })
     }

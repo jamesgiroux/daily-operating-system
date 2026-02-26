@@ -242,7 +242,6 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-
     // =========================================================================
     // Chat Sessions (Sprint 26)
     // =========================================================================
@@ -385,5 +384,4 @@ impl ActionDb {
     pub(crate) fn compute_trend(freq_30d: i32, freq_90d: i32) -> String {
         compute_trend(freq_30d, freq_90d)
     }
-
 }

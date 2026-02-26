@@ -123,17 +123,14 @@ fn build_weekly_impact_prompt(
              ORDER BY start_time",
         )
         .and_then(|mut s| {
-            let rows = s.query_map(
-                rusqlite::params![week_start_str, week_end_str],
-                |row| {
-                    let title: String = row.get(0)?;
-                    let time: String = row.get(1)?;
-                    let mtype: String = row.get(2)?;
-                    // Use only the date portion as the citation reference — readable and unambiguous
-                    let date = time.split('T').next().unwrap_or(&time).to_string();
-                    Ok(format!("- {} | {} | {}", date, mtype, title))
-                },
-            )?;
+            let rows = s.query_map(rusqlite::params![week_start_str, week_end_str], |row| {
+                let title: String = row.get(0)?;
+                let time: String = row.get(1)?;
+                let mtype: String = row.get(2)?;
+                // Use only the date portion as the citation reference — readable and unambiguous
+                let date = time.split('T').next().unwrap_or(&time).to_string();
+                Ok(format!("- {} | {} | {}", date, mtype, title))
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
         })
         .unwrap_or_default();
@@ -152,16 +149,16 @@ fn build_weekly_impact_prompt(
              LIMIT 20",
         )
         .and_then(|mut s| {
-            let rows = s.query_map(
-                rusqlite::params![week_start_str, week_end_str],
-                |row| {
-                    let stype: String = row.get(0)?;
-                    let val: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
-                    let src: String = row.get(2)?;
-                    let entity: String = row.get(5)?;
-                    Ok(format!("- [{}] {} — {} (source: {})", stype, entity, val, src))
-                },
-            )?;
+            let rows = s.query_map(rusqlite::params![week_start_str, week_end_str], |row| {
+                let stype: String = row.get(0)?;
+                let val: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+                let src: String = row.get(2)?;
+                let entity: String = row.get(5)?;
+                Ok(format!(
+                    "- [{}] {} — {} (source: {})",
+                    stype, entity, val, src
+                ))
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
         })
         .unwrap_or_default();
@@ -175,20 +172,25 @@ fn build_weekly_impact_prompt(
              ORDER BY completed_at",
         )
         .and_then(|mut s| {
-            let rows = s.query_map(
-                rusqlite::params![week_start_str, week_end_str],
-                |row| {
-                    let title: String = row.get(0)?;
-                    let completed: String = row.get(1)?;
-                    Ok(format!("- {} (completed {})", title, completed))
-                },
-            )?;
+            let rows = s.query_map(rusqlite::params![week_start_str, week_end_str], |row| {
+                let title: String = row.get(0)?;
+                let completed: String = row.get(1)?;
+                Ok(format!("- {} (completed {})", title, completed))
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
         })
         .unwrap_or_default();
 
-    let meeting_count = if meetings.is_empty() { 0 } else { meetings.lines().count() };
-    let action_count = if completed_actions.is_empty() { 0 } else { completed_actions.lines().count() };
+    let meeting_count = if meetings.is_empty() {
+        0
+    } else {
+        meetings.lines().count()
+    };
+    let action_count = if completed_actions.is_empty() {
+        0
+    } else {
+        completed_actions.lines().count()
+    };
 
     let mut prompt = build_report_preamble("you", "weekly_impact", "user");
 
@@ -209,7 +211,10 @@ fn build_weekly_impact_prompt(
     }
 
     if !meetings.is_empty() {
-        prompt.push_str(&format!("## Meetings This Week ({} total — dates included for citations)\n", meeting_count));
+        prompt.push_str(&format!(
+            "## Meetings This Week ({} total — dates included for citations)\n",
+            meeting_count
+        ));
         prompt.push_str(&crate::util::wrap_user_data(&meetings));
         prompt.push_str("\n\n");
     } else {
@@ -231,7 +236,9 @@ fn build_weekly_impact_prompt(
     }
 
     prompt.push_str("## Output Format\n\n");
-    prompt.push_str("Respond with ONLY valid JSON (no markdown fences) matching this schema exactly:\n\n");
+    prompt.push_str(
+        "Respond with ONLY valid JSON (no markdown fences) matching this schema exactly:\n\n",
+    );
     prompt.push_str(&format!(
         r#"{{
   "weekLabel": "{week_label}",
