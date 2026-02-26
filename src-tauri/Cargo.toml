@@ -1,6 +1,6 @@
 [package]
 name = "dailyos"
-version = "0.15.0"
+version = "0.15.1"
 default-run = "dailyos"
 description = "Operational intelligence for your workday. Open the app, your day is ready."
 authors = ["DailyOS"]
@@ -35,7 +35,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["sync", "time", "process", "rt", "fs", "macros", "rt-multi-thread"] }
 log = "0.4"
 env_logger = "0.11"
-rusqlite = { version = "0.31", features = ["bundled", "backup"] }
+rusqlite = { version = "0.31", features = ["bundled-sqlcipher", "backup"] }
 tokio-rusqlite = "0.5"
 notify = { version = "7", features = ["macos_fsevent"] }
 regex = "1"

@@ -73,7 +73,11 @@ mod tests {
     fn test_age_days_from_recent() {
         let now = Utc::now().to_rfc3339();
         let age = age_days_from_now(&now);
-        assert!(age < 0.01, "just-created should be ~0 days old, got {}", age);
+        assert!(
+            age < 0.01,
+            "just-created should be ~0 days old, got {}",
+            age
+        );
     }
 
     #[test]
@@ -81,6 +85,10 @@ mod tests {
         // SQLite datetime('now') format
         let ts = "2020-01-01 00:00:00";
         let age = age_days_from_now(ts);
-        assert!(age > 365.0, "2020 timestamp should be >365 days old, got {}", age);
+        assert!(
+            age > 365.0,
+            "2020 timestamp should be >365 days old, got {}",
+            age
+        );
     }
 }

@@ -43,7 +43,8 @@ pub async fn enrich_person_from_clay_with_client(
     let (email, name, org, old_title_history, old_org, old_linkedin, old_twitter) = {
         let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        let person = db.get_person(person_id)
+        let person = db
+            .get_person(person_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Person not found: {}", person_id))?;
         (
@@ -58,12 +59,18 @@ pub async fn enrich_person_from_clay_with_client(
     };
 
     // Phase 2: Async Clay calls (no lock held)
-    let mut search_results = client.search_contact(&email).await.map_err(|e| e.to_string())?;
+    let mut search_results = client
+        .search_contact(&email)
+        .await
+        .map_err(|e| e.to_string())?;
     if search_results.is_empty() {
         if let Some(ref org_name) = org {
             if !org_name.is_empty() {
                 let query = format!("{} {}", name, org_name);
-                search_results = client.search_contact(&query).await.map_err(|e| e.to_string())?;
+                search_results = client
+                    .search_contact(&query)
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
         }
     }
@@ -79,13 +86,28 @@ pub async fn enrich_person_from_clay_with_client(
     // Match: email in email/name field, then by actual name, then first result
     let best = search_results
         .iter()
-        .find(|r| r.email.as_deref().map(|e| e.eq_ignore_ascii_case(&email)).unwrap_or(false))
-        .or_else(|| search_results.iter().find(|r| {
-            r.name.as_deref().map(|n| n.eq_ignore_ascii_case(&email)).unwrap_or(false)
-        }))
-        .or_else(|| search_results.iter().find(|r| {
-            r.name.as_deref().map(|n| n.eq_ignore_ascii_case(&name)).unwrap_or(false)
-        }))
+        .find(|r| {
+            r.email
+                .as_deref()
+                .map(|e| e.eq_ignore_ascii_case(&email))
+                .unwrap_or(false)
+        })
+        .or_else(|| {
+            search_results.iter().find(|r| {
+                r.name
+                    .as_deref()
+                    .map(|n| n.eq_ignore_ascii_case(&email))
+                    .unwrap_or(false)
+            })
+        })
+        .or_else(|| {
+            search_results.iter().find(|r| {
+                r.name
+                    .as_deref()
+                    .map(|n| n.eq_ignore_ascii_case(&name))
+                    .unwrap_or(false)
+            })
+        })
         .or_else(|| search_results.first())
         .ok_or("No contact selected")?;
     let clay_id = best.id_str();
@@ -93,12 +115,17 @@ pub async fn enrich_person_from_clay_with_client(
     if clay_id.is_empty() {
         return Err(format!(
             "Clay search returned contact with empty id. person={}, best_name={:?}, results={}",
-            person_id, best.name, search_results.len()
+            person_id,
+            best.name,
+            search_results.len()
         ));
     }
 
     let detail = client.get_contact_detail(&clay_id).await.map_err(|e| {
-        format!("getContact failed for clay_id='{}' person={}: {}", clay_id, person_id, e)
+        format!(
+            "getContact failed for clay_id='{}' person={}: {}",
+            clay_id, person_id, e
+        )
     })?;
 
     // Build title history JSON
@@ -138,7 +165,8 @@ pub async fn enrich_person_from_clay_with_client(
     let fields_updated = {
         let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        let result = db.update_person_profile(person_id, &update, "clay")
+        let result = db
+            .update_person_profile(person_id, &update, "clay")
             .map_err(|e| e.to_string())?;
         result.fields_updated
     };

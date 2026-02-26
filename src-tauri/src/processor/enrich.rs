@@ -10,7 +10,7 @@ use chrono::Utc;
 use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
-use crate::util::wrap_user_data;
+use crate::util::{sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 use super::classifier::Classification;
 use super::router::{move_file, resolve_destination, RouteOutcome};
@@ -185,6 +185,25 @@ pub fn enrich_file(
                         log::warn!("Failed to write companion .md for '{}': {}", filename, e);
                     }
                 }
+                // I474: Match meeting_notes to historical meetings
+                if file_type == "meeting_notes" {
+                    if let Some(state) = state {
+                        if let Ok(db_guard) = state.db.lock() {
+                            if let Some(db) = db_guard.as_ref() {
+                                let classification = Classification::MeetingNotes {
+                                    account: account.clone(),
+                                };
+                                super::try_match_to_meeting(
+                                    &classification,
+                                    filename,
+                                    &route_result.destination,
+                                    db,
+                                );
+                            }
+                        }
+                    }
+                }
+
                 EnrichResult::Routed {
                     classification: file_type.clone(),
                     destination: route_result.destination.display().to_string(),
@@ -233,38 +252,40 @@ pub fn enrich_file(
 
     // Run post-enrichment hooks (skip for NeedsEntity — file hasn't been routed yet)
     if !matches!(result, EnrichResult::NeedsEntity { .. }) {
-    if let Some(state) = state {
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                let ctx = super::hooks::EnrichmentContext {
-                    workspace: workspace.to_path_buf(),
-                    filename: filename.to_string(),
-                    classification: file_type.clone(),
-                    account: account.clone(),
-                    summary: summary.clone(),
-                    actions: Vec::new(), // actions already extracted by extract_actions_from_ai
-                    destination_path: match &result {
-                        EnrichResult::Routed { destination, .. }
-                        | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
-                        _ => None,
-                    },
-                    profile: profile.to_string(),
-                    wins: wins.clone(),
-                    risks: risks.clone(),
-                    entity_type: None,
-                };
-                let hook_results = super::hooks::run_post_enrichment_hooks(&ctx, db);
-                for hr in &hook_results {
-                    log::info!(
-                        "Post-enrichment hook '{}': {} — {}",
-                        hr.hook_name,
-                        if hr.success { "OK" } else { "FAILED" },
-                        hr.message.as_deref().unwrap_or("")
-                    );
+        if let Some(state) = state {
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    let ctx = super::hooks::EnrichmentContext {
+                        workspace: workspace.to_path_buf(),
+                        filename: filename.to_string(),
+                        classification: file_type.clone(),
+                        account: account.clone(),
+                        summary: summary.clone(),
+                        actions: Vec::new(), // actions already extracted by extract_actions_from_ai
+                        destination_path: match &result {
+                            EnrichResult::Routed { destination, .. }
+                            | EnrichResult::Archived { destination, .. } => {
+                                Some(destination.clone())
+                            }
+                            _ => None,
+                        },
+                        profile: profile.to_string(),
+                        wins: wins.clone(),
+                        risks: risks.clone(),
+                        entity_type: None,
+                    };
+                    let hook_results = super::hooks::run_post_enrichment_hooks(&ctx, db);
+                    for hr in &hook_results {
+                        log::info!(
+                            "Post-enrichment hook '{}': {} — {}",
+                            hr.hook_name,
+                            if hr.success { "OK" } else { "FAILED" },
+                            hr.message.as_deref().unwrap_or("")
+                        );
+                    }
                 }
             }
         }
-    }
     } // end !NeedsEntity guard
 
     // Log to database
@@ -291,7 +312,9 @@ pub fn enrich_file(
                     processed_at: Some(Utc::now().to_rfc3339()),
                     error_message: match &result {
                         EnrichResult::Error { message } => Some(message.clone()),
-                        EnrichResult::NeedsEntity { suggested_name, .. } => Some(suggested_name.clone()),
+                        EnrichResult::NeedsEntity { suggested_name, .. } => {
+                            Some(suggested_name.clone())
+                        }
                         _ => None,
                     },
                     created_at: Utc::now().to_rfc3339(),
@@ -354,9 +377,7 @@ fn build_enrichment_prompt(
     let health_label = vocabulary
         .map(|v| v.health_label.as_str())
         .unwrap_or("health");
-    let risk_label = vocabulary
-        .map(|v| v.risk_label.as_str())
-        .unwrap_or("risk");
+    let risk_label = vocabulary.map(|v| v.risk_label.as_str()).unwrap_or("risk");
     let success_verb = vocabulary
         .map(|v| v.success_verb.as_str())
         .unwrap_or("customer win");
@@ -365,7 +386,13 @@ fn build_enrichment_prompt(
         .unwrap_or("check-in");
 
     format!(
-        r#"{user_fragment}Analyze this inbox file and respond in exactly this format:
+        r#"{preamble}{user_fragment}Analyze the following inbox file.
+
+Filename: {filename}
+Content:
+{truncated}
+
+Respond in exactly this format:
 
 FILE_TYPE: <one of: meeting_notes, account_update, action_items, meeting_context, general>
 ACCOUNT: <account name if relevant, or NONE>
@@ -411,12 +438,9 @@ Rules for decisions:
 - Only include if clear decisions or commitments were made
 - Each item should state what was decided and who is responsible (if clear)
 - If no decisions are apparent, leave the section empty (just the markers)
-
-Filename: {filename}
-Content:
-{truncated}
 "#,
-        filename = wrap_user_data(filename),
+        preamble = INJECTION_PREAMBLE,
+        filename = sanitize_external_field(filename),
         truncated = wrap_user_data(truncated),
     )
 }
@@ -702,7 +726,10 @@ pub fn extract_actions_from_ai(
         } else {
             count += 1;
             if count >= max_actions {
-                log::info!("extract_actions_from_ai: hit max {} actions, stopping", max_actions);
+                log::info!(
+                    "extract_actions_from_ai: hit max {} actions, stopping",
+                    max_actions
+                );
                 break;
             }
         }
@@ -902,7 +929,8 @@ Next renewal: March 2026
 
     #[test]
     fn test_non_transcript_prompt_no_discussion() {
-        let prompt = build_enrichment_prompt("acme-update.md", "# Account Update\nAll good.", None, None);
+        let prompt =
+            build_enrichment_prompt("acme-update.md", "# Account Update\nAll good.", None, None);
         assert!(!prompt.contains("DISCUSSION:"));
         assert!(!prompt.contains("END_DISCUSSION"));
         assert!(prompt.contains("one-line summary"));

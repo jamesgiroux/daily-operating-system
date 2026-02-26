@@ -3,8 +3,8 @@
 //! Wires user corrections back to source reliability via the signal bus
 //! and quality scoring system.
 
-use crate::db::ActionDb;
 use super::quality;
+use crate::db::ActionDb;
 
 /// Record that a user corrected an entity's intelligence.
 ///

@@ -8,9 +8,9 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 use crate::db::{ActionDb, DbError};
+use crate::entity::EntityType;
 use crate::helpers;
 use crate::prepare::entity_resolver::ResolutionSignal;
-use crate::entity::EntityType;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -105,7 +105,6 @@ pub fn signal_attendee_group_pattern(
 // Helpers
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // ActionDb methods
 // ---------------------------------------------------------------------------
@@ -144,12 +143,14 @@ impl ActionDb {
              FROM attendee_group_patterns
              WHERE group_hash = ?1",
             params![group_hash],
-            |row| Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i32>(2)?,
-                row.get::<_, f64>(3)?,
-            )),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i32>(2)?,
+                    row.get::<_, f64>(3)?,
+                ))
+            },
         ) {
             Ok(result) => Ok(Some(result)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -183,7 +184,11 @@ mod tests {
 
     #[test]
     fn test_compute_group_hash_deduplicates() {
-        let emails_a = vec!["alice@acme.com".to_string(), "alice@acme.com".to_string(), "bob@acme.com".to_string()];
+        let emails_a = vec![
+            "alice@acme.com".to_string(),
+            "alice@acme.com".to_string(),
+            "bob@acme.com".to_string(),
+        ];
         let emails_b = vec!["alice@acme.com".to_string(), "bob@acme.com".to_string()];
         assert_eq!(compute_group_hash(&emails_a), compute_group_hash(&emails_b));
     }
@@ -247,8 +252,13 @@ mod tests {
         let hash = compute_group_hash(&emails);
 
         // Insert a pattern
-        db.upsert_attendee_group_pattern(&hash, "[\"alice@acme.com\",\"bob@partner.com\"]", "acme-1", "account")
-            .expect("insert pattern");
+        db.upsert_attendee_group_pattern(
+            &hash,
+            "[\"alice@acme.com\",\"bob@partner.com\"]",
+            "acme-1",
+            "account",
+        )
+        .expect("insert pattern");
 
         // Create meeting JSON with matching attendees
         let meeting = serde_json::json!({
@@ -277,19 +287,23 @@ mod tests {
 
             // Create entity if not exists (only once)
             if i == 1 {
-                db.conn_ref().execute(
-                    "INSERT OR IGNORE INTO entities (id, name, entity_type, updated_at)
+                db.conn_ref()
+                    .execute(
+                        "INSERT OR IGNORE INTO entities (id, name, entity_type, updated_at)
                      VALUES ('acme-1', 'Acme Corp', 'account', datetime('now'))",
-                    [],
-                ).expect("insert entity");
+                        [],
+                    )
+                    .expect("insert entity");
             }
 
             // Link meeting to entity
-            db.conn_ref().execute(
-                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
                  VALUES (?1, 'acme-1', 'account')",
-                params![meeting_id],
-            ).expect("link entity");
+                    params![meeting_id],
+                )
+                .expect("link entity");
         }
 
         let updated = mine_attendee_patterns(&db).expect("mine patterns");
