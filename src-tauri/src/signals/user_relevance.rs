@@ -118,10 +118,7 @@ mod tests {
 
     #[test]
     fn test_no_user_returns_neutral() {
-        assert_eq!(
-            compute_user_relevance_weight("e1", "Acme Corp", None),
-            1.0
-        );
+        assert_eq!(compute_user_relevance_weight("e1", "Acme Corp", None), 1.0);
     }
 
     #[test]

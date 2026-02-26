@@ -30,7 +30,10 @@ pub struct BridgeCorrelation {
 /// - `meetings_history` table for upcoming meetings + attendee CSV
 /// - `email_signals` table for sender_email matching
 /// - `emit_signal()` to write correlations to signal_events
-pub fn run_email_meeting_bridge(db: &ActionDb, engine: &super::propagation::PropagationEngine) -> Result<Vec<BridgeCorrelation>, String> {
+pub fn run_email_meeting_bridge(
+    db: &ActionDb,
+    engine: &super::propagation::PropagationEngine,
+) -> Result<Vec<BridgeCorrelation>, String> {
     let conn = db.conn_ref();
     let mut correlations = Vec::new();
 
@@ -171,7 +174,10 @@ pub fn run_email_meeting_bridge(db: &ActionDb, engine: &super::propagation::Prop
 ///
 /// Source: `email_enrichment`. Signals compound with existing entity signals
 /// via the propagation engine.
-pub fn emit_enriched_email_signals(db: &ActionDb, engine: &super::propagation::PropagationEngine) -> usize {
+pub fn emit_enriched_email_signals(
+    db: &ActionDb,
+    engine: &super::propagation::PropagationEngine,
+) -> usize {
     // Get enriched emails with resolved entities
     let mut stmt = match db.conn_ref().prepare(
         "SELECT email_id, entity_id, entity_type, sentiment, urgency, subject, sender_email
@@ -190,24 +196,31 @@ pub fn emit_enriched_email_signals(db: &ActionDb, engine: &super::propagation::P
         }
     };
 
-    let rows: Vec<(String, String, String, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        match stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-            ))
-        }) {
-            Ok(r) => r.filter_map(|r| r.ok()).collect(),
-            Err(e) => {
-                log::warn!("I372: Failed to query enriched emails: {}", e);
-                return 0;
-            }
-        };
+    let rows: Vec<(
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = match stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<String>>(6)?,
+        ))
+    }) {
+        Ok(r) => r.filter_map(|r| r.ok()).collect(),
+        Err(e) => {
+            log::warn!("I372: Failed to query enriched emails: {}", e);
+            return 0;
+        }
+    };
 
     if rows.is_empty() {
         return 0;
@@ -282,7 +295,8 @@ pub fn emit_enriched_email_signals(db: &ActionDb, engine: &super::propagation::P
 
             // Emit email_commitment when contextual summary contains commitment language (I372 AC2)
             {
-                let summary: Option<String> = db.conn_ref()
+                let summary: Option<String> = db
+                    .conn_ref()
                     .prepare("SELECT contextual_summary FROM emails WHERE email_id = ?1")
                     .and_then(|mut s| s.query_row([email_id.as_str()], |row| row.get(0)))
                     .ok()
@@ -307,10 +321,17 @@ pub fn emit_enriched_email_signals(db: &ActionDb, engine: &super::propagation::P
                         })
                         .to_string();
                         if bus::emit_signal_and_propagate(
-                            db, engine, entity_type, entity_id,
-                            "email_commitment", "email_enrichment",
-                            Some(&value), 0.65,
-                        ).is_ok() {
+                            db,
+                            engine,
+                            entity_type,
+                            entity_id,
+                            "email_commitment",
+                            "email_enrichment",
+                            Some(&value),
+                            0.65,
+                        )
+                        .is_ok()
+                        {
                             emitted += 1;
                         }
                     }
@@ -356,9 +377,8 @@ pub fn emit_enriched_email_signals(db: &ActionDb, engine: &super::propagation::P
                      WHERE ep.person_id = ?1",
                 )
                 .and_then(|mut stmt| {
-                    let rows = stmt.query_map([entity_id.as_str()], |row| {
-                        row.get::<_, String>(0)
-                    })?;
+                    let rows =
+                        stmt.query_map([entity_id.as_str()], |row| row.get::<_, String>(0))?;
                     Ok(rows.filter_map(|r| r.ok()).collect())
                 })
                 .unwrap_or_default();

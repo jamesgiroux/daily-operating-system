@@ -205,6 +205,13 @@ details[open] .detailsChevron {
   padding: 60px 0;
 }
 
+.emptyStateActionable {
+  text-align: left;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
 .emptyIcon {
   width: 32px;
   height: 32px;
@@ -1077,4 +1084,25 @@ details[open] .detailsChevron {
   font-family: var(--font-sans);
   font-size: 13px;
   color: var(--color-text-tertiary);
+}
+
+/* I477 — Briefing updating banner during entity mutation */
+.updatingBanner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  padding: var(--space-xs) var(--space-md);
+  margin-bottom: var(--space-md);
+  border-left: 2px solid var(--color-turmeric, #d4a853);
+  background: var(--color-cream-wash, rgba(245, 240, 230, 0.3));
+}
+
+.updatingBanner svg {
+  animation: spin 1s linear infinite;
 }
