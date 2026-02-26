@@ -12,7 +12,9 @@ use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{CalendarEvent, CapturedAction, TranscriptResult};
-use crate::util::{encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
+use crate::util::{
+    encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE,
+};
 
 use super::enrich::parse_enrichment_response;
 use super::hooks;
@@ -371,12 +373,7 @@ fn extract_transcript_actions(
         let account_id = meta
             .account
             .as_deref()
-            .and_then(|tag| {
-                db.get_account_by_name(tag)
-                    .ok()
-                    .flatten()
-                    .map(|a| a.id)
-            })
+            .and_then(|tag| db.get_account_by_name(tag).ok().flatten().map(|a| a.id))
             .or_else(|| account_fallback.map(String::from));
 
         let action = crate::db::DbAction {

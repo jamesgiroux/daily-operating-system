@@ -140,8 +140,14 @@ impl ActionDb {
                 updated_at = datetime('now'),
                 last_reinforced_at = datetime('now')",
             params![
-                rel.id, rel.from_person_id, rel.to_person_id, rel.relationship_type,
-                rel.direction, rel.confidence, rel.context_entity_id, rel.context_entity_type,
+                rel.id,
+                rel.from_person_id,
+                rel.to_person_id,
+                rel.relationship_type,
+                rel.direction,
+                rel.confidence,
+                rel.context_entity_id,
+                rel.context_entity_type,
                 rel.source
             ],
         )?;
@@ -149,7 +155,10 @@ impl ActionDb {
     }
 
     /// Get a single relationship by ID (used before delete to capture person IDs for signaling).
-    pub fn get_person_relationship_by_id(&self, id: &str) -> Result<Option<(String, String)>, DbError> {
+    pub fn get_person_relationship_by_id(
+        &self,
+        id: &str,
+    ) -> Result<Option<(String, String)>, DbError> {
         let mut stmt = self.conn_ref().prepare(
             "SELECT from_person_id, to_person_id FROM person_relationships WHERE id = ?1",
         )?;
@@ -289,16 +298,12 @@ mod tests {
     #[test]
     fn test_effective_confidence_user_confirmed() {
         let c = effective_confidence(0.9, "user_confirmed", None, "2020-01-01T00:00:00Z");
-        assert!(
-            (c - 0.9).abs() < 0.001,
-            "user_confirmed should not decay"
-        );
+        assert!((c - 0.9).abs() < 0.001, "user_confirmed should not decay");
     }
 
     #[test]
     fn test_effective_confidence_decays() {
-        let ninety_days_ago =
-            (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+        let ninety_days_ago = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
         let c = effective_confidence(1.0, "inferred", None, &ninety_days_ago);
         assert!(
             (c - 0.5).abs() < 0.05,
@@ -324,9 +329,15 @@ mod tests {
         .unwrap();
 
         db.upsert_person_relationship(&UpsertRelationship {
-            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "manager", direction: "directed", confidence: 0.9,
-            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
+            id: "rel-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "manager",
+            direction: "directed",
+            confidence: 0.9,
+            context_entity_id: None,
+            context_entity_type: None,
+            source: "user_confirmed",
         })
         .expect("upsert");
 
@@ -362,9 +373,15 @@ mod tests {
         .unwrap();
 
         db.upsert_person_relationship(&UpsertRelationship {
-            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "peer", direction: "symmetric", confidence: 0.7,
-            context_entity_id: None, context_entity_type: None, source: "inferred",
+            id: "rel-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "peer",
+            direction: "symmetric",
+            confidence: 0.7,
+            context_entity_id: None,
+            context_entity_type: None,
+            source: "inferred",
         })
         .unwrap();
         assert_eq!(db.get_relationships_for_person("p1").unwrap().len(), 1);
@@ -389,9 +406,14 @@ mod tests {
         .unwrap();
 
         db.upsert_person_relationship(&UpsertRelationship {
-            id: "rel-ctx", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "collaborator", direction: "symmetric", confidence: 0.8,
-            context_entity_id: Some("proj-1"), context_entity_type: Some("project"),
+            id: "rel-ctx",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "collaborator",
+            direction: "symmetric",
+            confidence: 0.8,
+            context_entity_id: Some("proj-1"),
+            context_entity_type: Some("project"),
             source: "inferred",
         })
         .unwrap();

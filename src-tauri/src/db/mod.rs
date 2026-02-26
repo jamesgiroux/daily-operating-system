@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::Utc;
-use rusqlite::{params, Connection, OpenFlags};
 use crate::entity::{DbEntity, EntityType};
 use crate::types::LinkedEntity;
+use chrono::Utc;
+use rusqlite::{params, Connection, OpenFlags};
 
 // ---------------------------------------------------------------------------
 // Dev DB isolation (I298)
@@ -102,7 +102,9 @@ impl ActionDb {
         // Get or create encryption key from Keychain
         let hex_key = encryption::get_or_create_db_key(&path).map_err(|e| {
             if e.starts_with("KEY_MISSING:") {
-                DbError::KeyMissing { db_path: e.trim_start_matches("KEY_MISSING:").to_string() }
+                DbError::KeyMissing {
+                    db_path: e.trim_start_matches("KEY_MISSING:").to_string(),
+                }
             } else {
                 DbError::Encryption(e)
             }
@@ -188,7 +190,9 @@ impl ActionDb {
     pub fn open_readonly_at(path: &std::path::Path) -> Result<Self, DbError> {
         let hex_key = encryption::get_or_create_db_key(path).map_err(|e| {
             if e.starts_with("KEY_MISSING:") {
-                DbError::KeyMissing { db_path: e.trim_start_matches("KEY_MISSING:").to_string() }
+                DbError::KeyMissing {
+                    db_path: e.trim_start_matches("KEY_MISSING:").to_string(),
+                }
             } else {
                 DbError::Encryption(e)
             }
@@ -486,21 +490,20 @@ impl ActionDb {
         }
         Ok(())
     }
-
 }
 
-pub mod actions;
 pub mod accounts;
-pub mod people;
-pub mod meetings;
-pub mod projects;
-pub mod entities;
-pub mod signals;
-pub mod emails;
+pub mod actions;
 pub mod content;
-pub mod person_relationships;
+pub mod emails;
 pub mod encryption;
+pub mod entities;
 pub mod hardening;
+pub mod meetings;
+pub mod people;
+pub mod person_relationships;
+pub mod projects;
+pub mod signals;
 
 // =============================================================================
 // Shared test utilities

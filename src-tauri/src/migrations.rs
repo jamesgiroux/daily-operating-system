@@ -14,160 +14,212 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/001_baseline.sql"),
-}, Migration {
-    version: 2,
-    sql: include_str!("migrations/002_internal_teams.sql"),
-}, Migration {
-    version: 3,
-    sql: include_str!("migrations/003_account_team.sql"),
-}, Migration {
-    version: 4,
-    sql: include_str!("migrations/004_account_team_role_index.sql"),
-}, Migration {
-    version: 5,
-    sql: include_str!("migrations/005_email_signals.sql"),
-}, Migration {
-    version: 6,
-    sql: include_str!("migrations/006_content_embeddings.sql"),
-}, Migration {
-    version: 7,
-    sql: include_str!("migrations/007_chat_interface.sql"),
-}, Migration {
-    version: 8,
-    sql: include_str!("migrations/008_missing_indexes.sql"),
-}, Migration {
-    version: 9,
-    sql: include_str!("migrations/009_fix_embeddings_column.sql"),
-}, Migration {
-    version: 10,
-    sql: include_str!("migrations/010_foreign_keys.sql"),
-}, Migration {
-    version: 11,
-    sql: include_str!("migrations/011_proposed_actions.sql"),
-}, Migration {
-    version: 12,
-    sql: include_str!("migrations/012_person_emails.sql"),
-}, Migration {
-    version: 13,
-    sql: include_str!("migrations/013_quill_sync.sql"),
-}, Migration {
-    version: 14,
-    sql: include_str!("migrations/014_granola_sync.sql"),
-}, Migration {
-    version: 15,
-    sql: include_str!("migrations/015_gravatar_cache.sql"),
-}, Migration {
-    version: 16,
-    sql: include_str!("migrations/016_clay_enrichment.sql"),
-}, Migration {
-    version: 17,
-    sql: include_str!("migrations/017_entity_keywords.sql"),
-}, Migration {
-    version: 18,
-    sql: include_str!("migrations/018_signal_bus.sql"),
-}, Migration {
-    version: 19,
-    sql: include_str!("migrations/019_correction_learning.sql"),
-}, Migration {
-    version: 20,
-    sql: include_str!("migrations/020_signal_propagation.sql"),
-}, Migration {
-    version: 21,
-    sql: include_str!("migrations/021_proactive_surfacing.sql"),
-}, Migration {
-    version: 22,
-    sql: include_str!("migrations/022_rejection_signals.sql"),
-}, Migration {
-    version: 23,
-    sql: include_str!("migrations/023_drop_meeting_account_id.sql"),
-}, Migration {
-    version: 24,
-    sql: include_str!("migrations/024_linear_sync.sql"),
-}, Migration {
-    version: 25,
-    sql: include_str!("migrations/025_entity_metadata.sql"),
-}, Migration {
-    version: 26,
-    sql: include_str!("migrations/026_attendee_display_names.sql"),
-}, Migration {
-    version: 27,
-    sql: include_str!("migrations/027_email_threads.sql"),
-}, Migration {
-    version: 28,
-    sql: include_str!("migrations/028_entity_email_cadence.sql"),
-}, Migration {
-    version: 29,
-    sql: include_str!("migrations/029_hygiene_actions_log.sql"),
-}, Migration {
-    version: 30,
-    sql: include_str!("migrations/030_email_dismissals.sql"),
-}, Migration {
-    version: 31,
-    sql: include_str!("migrations/031_intelligence_lifecycle.sql"),
-}, Migration {
-    version: 32,
-    sql: include_str!("migrations/032_junction_fks_and_expr_indexes.sql"),
-}, Migration {
-    version: 33,
-    sql: include_str!("migrations/033_people_last_seen_index.sql"),
-}, Migration {
-    version: 34,
-    sql: include_str!("migrations/034_emails.sql"),
-}, Migration {
-    version: 35,
-    sql: include_str!("migrations/035_email_relevance_score.sql"),
-}, Migration {
-    version: 36,
-    sql: include_str!("migrations/036_account_type.sql"),
-}, Migration {
-    version: 37,
-    sql: include_str!("migrations/037_project_hierarchy.sql"),
-}, Migration {
-    version: 38,
-    sql: include_str!("migrations/038_person_relationships.sql"),
-}, Migration {
-    version: 39,
-    sql: include_str!("migrations/039_person_relationships_types.sql"),
-}, Migration {
-    version: 40,
-    sql: include_str!("migrations/040_entity_quality.sql"),
-}, Migration {
-    version: 41,
-    sql: include_str!("migrations/041_linear_entity_links.sql"),
-}, Migration {
-    version: 42,
-    sql: include_str!("migrations/042_placeholder.sql"),
-}, Migration {
-    version: 43,
-    sql: include_str!("migrations/043_placeholder.sql"),
-}, Migration {
-    version: 44,
-    sql: include_str!("migrations/044_user_entity.sql"),
-}, Migration {
-    version: 45,
-    sql: include_str!("migrations/045_intelligence_report_fields.sql"),
-}, Migration {
-    version: 46,
-    sql: include_str!("migrations/046_user_context_embedding.sql"),
-}, Migration {
-    version: 47,
-    sql: include_str!("migrations/047_entity_intel_user_relevance.sql"),
-}, Migration {
-    version: 48,
-    sql: include_str!("migrations/048_google_drive_sync.sql"),
-}, Migration {
-    version: 49,
-    sql: include_str!("migrations/049_drive_rename_type_column.sql"),
-}, Migration {
-    version: 50,
-    sql: include_str!("migrations/050_reports.sql"),
-}, Migration {
-    version: 51,
-    sql: include_str!("migrations/051_entity_context_entries.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/001_baseline.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/002_internal_teams.sql"),
+    },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/003_account_team.sql"),
+    },
+    Migration {
+        version: 4,
+        sql: include_str!("migrations/004_account_team_role_index.sql"),
+    },
+    Migration {
+        version: 5,
+        sql: include_str!("migrations/005_email_signals.sql"),
+    },
+    Migration {
+        version: 6,
+        sql: include_str!("migrations/006_content_embeddings.sql"),
+    },
+    Migration {
+        version: 7,
+        sql: include_str!("migrations/007_chat_interface.sql"),
+    },
+    Migration {
+        version: 8,
+        sql: include_str!("migrations/008_missing_indexes.sql"),
+    },
+    Migration {
+        version: 9,
+        sql: include_str!("migrations/009_fix_embeddings_column.sql"),
+    },
+    Migration {
+        version: 10,
+        sql: include_str!("migrations/010_foreign_keys.sql"),
+    },
+    Migration {
+        version: 11,
+        sql: include_str!("migrations/011_proposed_actions.sql"),
+    },
+    Migration {
+        version: 12,
+        sql: include_str!("migrations/012_person_emails.sql"),
+    },
+    Migration {
+        version: 13,
+        sql: include_str!("migrations/013_quill_sync.sql"),
+    },
+    Migration {
+        version: 14,
+        sql: include_str!("migrations/014_granola_sync.sql"),
+    },
+    Migration {
+        version: 15,
+        sql: include_str!("migrations/015_gravatar_cache.sql"),
+    },
+    Migration {
+        version: 16,
+        sql: include_str!("migrations/016_clay_enrichment.sql"),
+    },
+    Migration {
+        version: 17,
+        sql: include_str!("migrations/017_entity_keywords.sql"),
+    },
+    Migration {
+        version: 18,
+        sql: include_str!("migrations/018_signal_bus.sql"),
+    },
+    Migration {
+        version: 19,
+        sql: include_str!("migrations/019_correction_learning.sql"),
+    },
+    Migration {
+        version: 20,
+        sql: include_str!("migrations/020_signal_propagation.sql"),
+    },
+    Migration {
+        version: 21,
+        sql: include_str!("migrations/021_proactive_surfacing.sql"),
+    },
+    Migration {
+        version: 22,
+        sql: include_str!("migrations/022_rejection_signals.sql"),
+    },
+    Migration {
+        version: 23,
+        sql: include_str!("migrations/023_drop_meeting_account_id.sql"),
+    },
+    Migration {
+        version: 24,
+        sql: include_str!("migrations/024_linear_sync.sql"),
+    },
+    Migration {
+        version: 25,
+        sql: include_str!("migrations/025_entity_metadata.sql"),
+    },
+    Migration {
+        version: 26,
+        sql: include_str!("migrations/026_attendee_display_names.sql"),
+    },
+    Migration {
+        version: 27,
+        sql: include_str!("migrations/027_email_threads.sql"),
+    },
+    Migration {
+        version: 28,
+        sql: include_str!("migrations/028_entity_email_cadence.sql"),
+    },
+    Migration {
+        version: 29,
+        sql: include_str!("migrations/029_hygiene_actions_log.sql"),
+    },
+    Migration {
+        version: 30,
+        sql: include_str!("migrations/030_email_dismissals.sql"),
+    },
+    Migration {
+        version: 31,
+        sql: include_str!("migrations/031_intelligence_lifecycle.sql"),
+    },
+    Migration {
+        version: 32,
+        sql: include_str!("migrations/032_junction_fks_and_expr_indexes.sql"),
+    },
+    Migration {
+        version: 33,
+        sql: include_str!("migrations/033_people_last_seen_index.sql"),
+    },
+    Migration {
+        version: 34,
+        sql: include_str!("migrations/034_emails.sql"),
+    },
+    Migration {
+        version: 35,
+        sql: include_str!("migrations/035_email_relevance_score.sql"),
+    },
+    Migration {
+        version: 36,
+        sql: include_str!("migrations/036_account_type.sql"),
+    },
+    Migration {
+        version: 37,
+        sql: include_str!("migrations/037_project_hierarchy.sql"),
+    },
+    Migration {
+        version: 38,
+        sql: include_str!("migrations/038_person_relationships.sql"),
+    },
+    Migration {
+        version: 39,
+        sql: include_str!("migrations/039_person_relationships_types.sql"),
+    },
+    Migration {
+        version: 40,
+        sql: include_str!("migrations/040_entity_quality.sql"),
+    },
+    Migration {
+        version: 41,
+        sql: include_str!("migrations/041_linear_entity_links.sql"),
+    },
+    Migration {
+        version: 42,
+        sql: include_str!("migrations/042_placeholder.sql"),
+    },
+    Migration {
+        version: 43,
+        sql: include_str!("migrations/043_placeholder.sql"),
+    },
+    Migration {
+        version: 44,
+        sql: include_str!("migrations/044_user_entity.sql"),
+    },
+    Migration {
+        version: 45,
+        sql: include_str!("migrations/045_intelligence_report_fields.sql"),
+    },
+    Migration {
+        version: 46,
+        sql: include_str!("migrations/046_user_context_embedding.sql"),
+    },
+    Migration {
+        version: 47,
+        sql: include_str!("migrations/047_entity_intel_user_relevance.sql"),
+    },
+    Migration {
+        version: 48,
+        sql: include_str!("migrations/048_google_drive_sync.sql"),
+    },
+    Migration {
+        version: 49,
+        sql: include_str!("migrations/049_drive_rename_type_column.sql"),
+    },
+    Migration {
+        version: 50,
+        sql: include_str!("migrations/050_reports.sql"),
+    },
+    Migration {
+        version: 51,
+        sql: include_str!("migrations/051_entity_context_entries.sql"),
+    },
+];
 
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
@@ -295,7 +347,8 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
             if msg.contains("duplicate column name") || msg.contains("no such column") {
                 log::info!(
                     "Migration v{}: benign schema conflict ({}), continuing",
-                    migration.version, msg
+                    migration.version,
+                    msg
                 );
             } else {
                 return Err(format!("Migration v{} failed: {}", migration.version, e));
@@ -674,7 +727,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("account_type column should exist");
-        assert_eq!(acct_type, "customer", "default account_type should be 'customer'");
+        assert_eq!(
+            acct_type, "customer",
+            "default account_type should be 'customer'"
+        );
 
         // Verify is_internal backfill sets account_type = 'internal'
         conn.execute(
@@ -858,7 +914,10 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v50 (49 pending migrations)
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 50, "bootstrap should mark v1, then apply 50 pending migrations (v2-v51)");
+        assert_eq!(
+            applied, 50,
+            "bootstrap should mark v1, then apply 50 pending migrations (v2-v51)"
+        );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
