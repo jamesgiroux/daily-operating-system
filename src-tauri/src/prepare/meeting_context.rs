@@ -54,7 +54,12 @@ pub fn gather_all_meeting_contexts(
         if should_skip {
             continue;
         }
-        contexts.push(gather_meeting_context(meeting, workspace, db, embedding_model));
+        contexts.push(gather_meeting_context(
+            meeting,
+            workspace,
+            db,
+            embedding_model,
+        ));
     }
     contexts
 }
@@ -74,8 +79,8 @@ fn resolve_primary_entity(
     workspace: &Path,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> Option<EntityContextMatch> {
-    use crate::entity::EntityType;
     use super::entity_resolver::{resolve_meeting_entities, ResolutionOutcome};
+    use crate::entity::EntityType;
 
     let db = db?;
     let accounts_dir = workspace.join("Accounts");
@@ -83,9 +88,8 @@ fn resolve_primary_entity(
     // Entity resolver handles junction-is-definitive gate internally.
     // If junction table has entries, it returns those immediately
     // without running attendee/keyword/embedding resolution.
-    let resolver_outcomes = resolve_meeting_entities(
-        db, event_id, meeting, &accounts_dir, embedding_model,
-    );
+    let resolver_outcomes =
+        resolve_meeting_entities(db, event_id, meeting, &accounts_dir, embedding_model);
 
     // Build candidates from resolver outcomes only.
     // Classification entities are NOT merged — the resolver already
@@ -104,25 +108,23 @@ fn resolve_primary_entity(
             .ok()
             .flatten()
             .map(|e| e.name)
-            .or_else(|| {
-                match entity.entity_type {
-                    EntityType::Account => db
-                        .get_account(&entity.entity_id)
-                        .ok()
-                        .flatten()
-                        .map(|a| a.name),
-                    EntityType::Project => db
-                        .get_project(&entity.entity_id)
-                        .ok()
-                        .flatten()
-                        .map(|p| p.name),
-                    EntityType::Person => db
-                        .get_person(&entity.entity_id)
-                        .ok()
-                        .flatten()
-                        .map(|p| p.name),
-                    _ => None,
-                }
+            .or_else(|| match entity.entity_type {
+                EntityType::Account => db
+                    .get_account(&entity.entity_id)
+                    .ok()
+                    .flatten()
+                    .map(|a| a.name),
+                EntityType::Project => db
+                    .get_project(&entity.entity_id)
+                    .ok()
+                    .flatten()
+                    .map(|p| p.name),
+                EntityType::Person => db
+                    .get_person(&entity.entity_id)
+                    .ok()
+                    .flatten()
+                    .map(|p| p.name),
+                _ => None,
             })
             .unwrap_or_default();
         candidates.insert(
@@ -489,8 +491,13 @@ fn gather_meeting_context(
     }
 
     // Skip meetings that don't benefit from prep (I328: check tier first)
-    let tier = meeting.get("intelligence_tier").and_then(|v| v.as_str()).unwrap_or("");
-    if tier == "skip" || (tier.is_empty() && (meeting_type == "personal" || meeting_type == "all_hands")) {
+    let tier = meeting
+        .get("intelligence_tier")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if tier == "skip"
+        || (tier.is_empty() && (meeting_type == "personal" || meeting_type == "all_hands"))
+    {
         return ctx;
     }
 
@@ -540,12 +547,9 @@ fn gather_meeting_context(
 
         // Account fallback: try resolve_account_for_meeting (internal + external)
         if let Some(db) = db {
-            if let Some(resolved_account) = resolve_account_for_meeting(
-                db,
-                event_id,
-                title,
-                meeting.get("attendees"),
-            ) {
+            if let Some(resolved_account) =
+                resolve_account_for_meeting(db, event_id, title, meeting.get("attendees"))
+            {
                 ctx["account"] = json!(resolved_account.name.clone());
                 ctx["entity_id"] = json!(resolved_account.id.clone());
                 let account_path =
@@ -557,8 +561,7 @@ fn gather_meeting_context(
                     ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
                 }
                 ctx["open_actions"] = get_account_actions(db, &resolved_account.id);
-                ctx["meeting_history"] =
-                    get_meeting_history(db, &resolved_account.id, 30, 3);
+                ctx["meeting_history"] = get_meeting_history(db, &resolved_account.id, 30, 3);
             }
         }
 
@@ -671,12 +674,8 @@ fn gather_meeting_context(
                         .collect()
                 })
                 .unwrap_or_default();
-            let email_ctx = crate::signals::email_context::gather_email_context(
-                db,
-                &attendees,
-                &entity_id,
-                8,
-            );
+            let email_ctx =
+                crate::signals::email_context::gather_email_context(db, &attendees, &entity_id, 8);
             if let Some(arr) = email_ctx.as_array() {
                 if !arr.is_empty() {
                     ctx["pre_meeting_email_context"] = email_ctx;
@@ -744,25 +743,30 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
 fn inject_linear_issues(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Value) {
     let issues: Vec<Value> = (|| {
         let conn = db.conn_ref();
-        let mut stmt = conn.prepare(
-            "SELECT li.identifier, li.title, li.state_name, li.priority_label, li.due_date
+        let mut stmt = conn
+            .prepare(
+                "SELECT li.identifier, li.title, li.state_name, li.priority_label, li.due_date
              FROM linear_issues li
              JOIN linear_entity_links lel ON lel.linear_project_id = li.project_id
              WHERE lel.entity_id = ?1 AND li.state_type NOT IN ('completed', 'cancelled')
              ORDER BY li.priority ASC, li.due_date ASC
-             LIMIT 10"
-        ).ok()?;
-        let rows = stmt.query_map([entity_id], |row| {
-            Ok(json!({
-                "identifier": row.get::<_, Option<String>>(0)?,
-                "title": row.get::<_, Option<String>>(1)?,
-                "state": row.get::<_, Option<String>>(2)?,
-                "priority": row.get::<_, Option<String>>(3)?,
-                "due_date": row.get::<_, Option<String>>(4)?,
-            }))
-        }).ok()?;
+             LIMIT 10",
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map([entity_id], |row| {
+                Ok(json!({
+                    "identifier": row.get::<_, Option<String>>(0)?,
+                    "title": row.get::<_, Option<String>>(1)?,
+                    "state": row.get::<_, Option<String>>(2)?,
+                    "priority": row.get::<_, Option<String>>(3)?,
+                    "due_date": row.get::<_, Option<String>>(4)?,
+                }))
+            })
+            .ok()?;
         Some(rows.flatten().collect())
-    })().unwrap_or_default();
+    })()
+    .unwrap_or_default();
 
     if !issues.is_empty() {
         ctx["linear_issues"] = json!(issues);
@@ -807,13 +811,11 @@ fn resolve_1on1_person(
     }
 
     // Determine user email from Google OAuth token
-    let user_email = crate::google_api::token_store::peek_account_email()
-        .map(|e| e.to_lowercase())?;
+    let user_email =
+        crate::google_api::token_store::peek_account_email().map(|e| e.to_lowercase())?;
 
     // Find the non-user attendee
-    let other_email = attendees
-        .iter()
-        .find(|email| **email != user_email)?;
+    let other_email = attendees.iter().find(|email| **email != user_email)?;
 
     // Look up the person in DB
     let person = db
@@ -1879,7 +1881,8 @@ mod tests {
         entity_type: crate::entity::EntityType,
         event_id: &str,
     ) -> crate::db::ActionDb {
-        let db = crate::db::ActionDb::open_at(dir.join("test.db")).expect("open test db");
+        let db =
+            crate::db::ActionDb::open_at_unencrypted(dir.join("test.db")).expect("open test db");
         let now = chrono::Utc::now().to_rfc3339();
 
         db.upsert_entity(&crate::entity::DbEntity {
@@ -1908,7 +1911,7 @@ mod tests {
                 archived: false,
                 keywords: None,
                 keywords_extracted_at: None,
-            metadata: None,
+                metadata: None,
             })
             .expect("upsert account");
         }
@@ -1935,7 +1938,10 @@ mod tests {
         if entity_type == crate::entity::EntityType::Person {
             db.upsert_person(&crate::db::DbPerson {
                 id: entity_id.to_string(),
-                email: format!("{}@example.com", entity_name.to_lowercase().replace(' ', ".")),
+                email: format!(
+                    "{}@example.com",
+                    entity_name.to_lowercase().replace(' ', ".")
+                ),
                 name: entity_name.to_string(),
                 organization: Some("Acme Corp".to_string()),
                 role: Some("VP Engineering".to_string()),
@@ -2003,7 +2009,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Accounts").join("Acme")).unwrap();
         std::fs::write(
-            dir.path().join("Accounts").join("Acme").join("dashboard.md"),
+            dir.path()
+                .join("Accounts")
+                .join("Acme")
+                .join("dashboard.md"),
             "# Acme\n## Quick View\nARR: $500K\nHealth: Green\n",
         )
         .unwrap();
@@ -2104,10 +2113,7 @@ mod tests {
             ctx["primary_entity"]["entity_type"].as_str(),
             Some("person")
         );
-        assert_eq!(
-            ctx["primary_entity"]["name"].as_str(),
-            Some("Jane Smith")
-        );
+        assert_eq!(ctx["primary_entity"]["name"].as_str(), Some("Jane Smith"));
         // Should have person_data
         assert!(ctx.get("person_data").is_some());
         assert_eq!(

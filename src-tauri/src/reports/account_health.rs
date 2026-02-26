@@ -32,12 +32,12 @@ pub struct AccountHealthRisk {
 pub struct AccountHealthContent {
     pub overall_assessment: String,
     pub health_score_narrative: Option<String>,
-    pub relationship_summary: String,       // 2 sentences
-    pub engagement_cadence: String,         // "X meetings in 90 days" style
-    pub customer_quote: Option<String>,     // Direct quote if available
-    pub what_is_working: Vec<String>,       // 2-4 items
-    pub what_is_struggling: Vec<String>,    // 1-3 items
-    pub expansion_signals: Vec<String>,     // Growth opportunities
+    pub relationship_summary: String,    // 2 sentences
+    pub engagement_cadence: String,      // "X meetings in 90 days" style
+    pub customer_quote: Option<String>,  // Direct quote if available
+    pub what_is_working: Vec<String>,    // 2-4 items
+    pub what_is_struggling: Vec<String>, // 1-3 items
+    pub expansion_signals: Vec<String>,  // Growth opportunities
     pub value_delivered: Vec<AccountHealthSignal>,
     pub risks: Vec<AccountHealthRisk>,
     pub renewal_context: Option<String>,
@@ -138,7 +138,10 @@ fn build_account_health_prompt(
     // Add supplemental engagement data
     prompt.push_str("## Engagement Metrics\n");
     prompt.push_str(&format!("- Meetings last 90 days: {}\n", meeting_count_90d));
-    prompt.push_str(&format!("- Email signals tracked: {}\n", email_signal_count));
+    prompt.push_str(&format!(
+        "- Email signals tracked: {}\n",
+        email_signal_count
+    ));
     if let Some(ref rd) = renewal_date {
         prompt.push_str(&format!("- Next renewal date: {}\n", rd));
     }
@@ -148,7 +151,9 @@ fn build_account_health_prompt(
     append_intel_context(&mut prompt, &ctx);
 
     prompt.push_str("# Output Format\n\n");
-    prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n");
+    prompt.push_str(
+        "Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n",
+    );
     prompt.push_str(&format!(
         "{{\n\
   \"overallAssessment\": \"One sentence: current state of this {entity_noun}. Direct.\",\n\
@@ -175,8 +180,12 @@ fn build_account_health_prompt(
 
     prompt.push_str("\n\n# Rules\n");
     prompt.push_str("- customer_quote: Use real words from meeting notes or email signals. Quote format: \"They said X\" or just the quote itself. null if no real quote.\n");
-    prompt.push_str("- what_is_struggling: Be honest. Even healthy accounts have at least one challenge.\n");
-    prompt.push_str("- expansion_signals: Only include if there's actual signal data — don't fabricate.\n");
+    prompt.push_str(
+        "- what_is_struggling: Be honest. Even healthy accounts have at least one challenge.\n",
+    );
+    prompt.push_str(
+        "- expansion_signals: Only include if there's actual signal data — don't fabricate.\n",
+    );
     prompt.push_str("- value_delivered: Must have real citations where possible.\n");
     prompt.push_str("- recommended_actions: Exactly 3. Concrete verb phrases.\n");
     prompt.push_str("- SPECIFICITY: The Entity Intelligence Assessment (if present above) is your primary source. Use the specific risks, named people, and strategic context it identifies. Generic observations from meeting metadata alone are not sufficient.\n");
@@ -202,7 +211,14 @@ pub fn gather_account_health_input(
 
     let entity_name = account.name.clone();
     let intel_hash = crate::reports::compute_intel_hash(entity_id, "account", db);
-    let prompt = build_account_health_prompt(&entity_name, db, workspace, entity_id, Some(&account), active_preset);
+    let prompt = build_account_health_prompt(
+        &entity_name,
+        db,
+        workspace,
+        entity_id,
+        Some(&account),
+        active_preset,
+    );
 
     Ok(ReportGeneratorInput {
         entity_id: entity_id.to_string(),

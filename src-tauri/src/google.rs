@@ -199,7 +199,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         let mut enriched = 0usize;
                         for mid in &new_ids {
                             match crate::intelligence::generate_meeting_intelligence(
-                                &state_clone, mid, false,
+                                &state_clone,
+                                mid,
+                                false,
                             )
                             .await
                             {
@@ -212,13 +214,16 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 }
                                 Err(e) => log::warn!(
                                     "Calendar poll: intelligence generation failed for '{}': {}",
-                                    mid, e
+                                    mid,
+                                    e
                                 ),
                             }
                         }
                         for mid in &changed_ids {
                             match crate::intelligence::generate_meeting_intelligence(
-                                &state_clone, mid, true,
+                                &state_clone,
+                                mid,
+                                true,
                             )
                             .await
                             {
@@ -231,7 +236,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 }
                                 Err(e) => log::warn!(
                                     "Calendar poll: intelligence refresh failed for '{}': {}",
-                                    mid, e
+                                    mid,
+                                    e
                                 ),
                             }
                         }
@@ -307,7 +313,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 fn should_poll(state: &AppState) -> bool {
     // Only gate: must be authenticated with Google
     state
-        .calendar.google_auth
+        .calendar
+        .google_auth
         .lock()
         .map(|guard| matches!(*guard, GoogleAuthStatus::Authenticated { .. }))
         .unwrap_or(false)
@@ -522,12 +529,21 @@ struct CalendarSyncIntelligence {
 /// - Auto-link to entity if meeting has an account field
 ///
 /// Returns sync intelligence for new/changed meetings that need intelligence triggers.
-fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) -> CalendarSyncIntelligence {
+fn populate_people_from_events(
+    events: &[CalendarEvent],
+    state: &AppState,
+    workspace: &Path,
+) -> CalendarSyncIntelligence {
     // Acquire config/auth locks first (short-lived), then DB lock
-    let self_email = state.calendar.google_auth.lock().ok().and_then(|g| match &*g {
-        GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
-        _ => None,
-    });
+    let self_email = state
+        .calendar
+        .google_auth
+        .lock()
+        .ok()
+        .and_then(|g| match &*g {
+            GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
+            _ => None,
+        });
 
     let user_domains = state
         .config
@@ -779,10 +795,8 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
     };
 
     // Build set of current calendar event IDs from this poll
-    let current_ids: std::collections::HashSet<&str> = current_events
-        .iter()
-        .map(|e| e.id.as_str())
-        .collect();
+    let current_ids: std::collections::HashSet<&str> =
+        current_events.iter().map(|e| e.id.as_str()).collect();
 
     // Query meetings in the polled range from DB that have a calendar_event_id (I386)
     let mut stmt = match db.conn_ref().prepare(
@@ -797,10 +811,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
 
     let cancelled: Vec<String> = stmt
         .query_map(rusqlite::params![range_start, range_end], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-            ))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .ok()
         .into_iter()
@@ -825,8 +836,14 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
         }
         // Emit cancellation signal (I308) with propagation
         let _ = crate::services::signals::emit_and_propagate(
-            db, &state.signals.engine, "meeting", meeting_id, "meeting_cancelled", "calendar",
-            None, 0.9,
+            db,
+            &state.signals.engine,
+            "meeting",
+            meeting_id,
+            "meeting_cancelled",
+            "calendar",
+            None,
+            0.9,
         );
     }
 }
@@ -875,7 +892,10 @@ pub fn deliver_from_refresh_directive(
     let refresh_data: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| format!("Failed to parse refresh directive: {}", e))?;
 
-    let emails_section = refresh_data.get("emails").cloned().unwrap_or(serde_json::json!({}));
+    let emails_section = refresh_data
+        .get("emails")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
 
     let map_email = |e: &serde_json::Value, default_priority: &str| -> serde_json::Value {
         serde_json::json!({
@@ -1017,7 +1037,8 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let workspace = match get_workspace(&state) {
             Some(p) => p,
             None => {
-                tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
+                tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity))
+                    .await;
                 continue;
             }
         };
@@ -1063,27 +1084,39 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             );
 
                             // Reuse Executor's enrichment pipeline (same as manual refresh)
-                            let executor = crate::executor::Executor::new(
-                                state.clone(), app_handle.clone()
-                            );
-                            let user_ctx = state.config.read().ok()
-                                .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+                            let executor =
+                                crate::executor::Executor::new(state.clone(), app_handle.clone());
+                            let user_ctx = state
+                                .config
+                                .read()
+                                .ok()
+                                .and_then(|g| {
+                                    g.as_ref().map(crate::types::UserContext::from_config)
+                                })
                                 .unwrap_or_default();
                             let ai_config = executor.ai_model_config();
-                            let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config);
-                            let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+                            let extraction_pty =
+                                PtyManager::for_tier(ModelTier::Extraction, &ai_config);
+                            let synthesis_pty =
+                                PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
 
                             // AI enrichment (fault-tolerant, same as execute_email_refresh)
                             match executor.enrich_emails_with_fallback(
-                                &data_dir, &workspace, &user_ctx,
-                                &extraction_pty, &synthesis_pty,
+                                &data_dir,
+                                &workspace,
+                                &user_ctx,
+                                &extraction_pty,
+                                &synthesis_pty,
                             ) {
                                 Ok(()) => {
                                     log::info!("Email poll: AI enrichment succeeded");
                                     let _ = app_handle.emit("emails-updated", ());
                                 }
                                 Err(e) => {
-                                    log::warn!("Email poll: AI enrichment failed (non-fatal): {}", e);
+                                    log::warn!(
+                                        "Email poll: AI enrichment failed (non-fatal): {}",
+                                        e
+                                    );
                                 }
                             }
 
@@ -1104,7 +1137,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             // Holding the DB lock during inference blocks all UI commands (I457).
                             let scores = {
                                 let active = if let Ok(guard) = state.db.lock() {
-                                    guard.as_ref().and_then(|db| db.get_all_active_emails().ok()).unwrap_or_default()
+                                    guard
+                                        .as_ref()
+                                        .and_then(|db| db.get_all_active_emails().ok())
+                                        .unwrap_or_default()
                                 } else {
                                     Vec::new()
                                 };
@@ -1115,11 +1151,16 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                         Ok(scoring_db) => {
                                             let model = state.embedding_model.clone();
                                             crate::signals::email_scoring::score_emails(
-                                                &scoring_db, Some(&model), &active,
+                                                &scoring_db,
+                                                Some(&model),
+                                                &active,
                                             )
                                         }
                                         Err(e) => {
-                                            log::warn!("Email poll: failed to open scoring DB: {}", e);
+                                            log::warn!(
+                                                "Email poll: failed to open scoring DB: {}",
+                                                e
+                                            );
                                             Vec::new()
                                         }
                                     }
@@ -1132,7 +1173,8 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 if let Ok(guard) = state.db.lock() {
                                     if let Some(db) = guard.as_ref() {
                                         for (email_id, score, reason) in &scores {
-                                            let _ = db.set_relevance_score(email_id, *score, reason);
+                                            let _ =
+                                                db.set_relevance_score(email_id, *score, reason);
                                         }
                                     }
                                 }
@@ -1174,7 +1216,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{DbAccount, test_utils::test_db};
+    use crate::db::{test_utils::test_db, DbAccount};
 
     fn sample_event(
         id: &str,
@@ -1264,7 +1306,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&account).unwrap();
 

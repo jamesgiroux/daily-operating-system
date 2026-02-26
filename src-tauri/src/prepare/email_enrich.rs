@@ -65,21 +65,28 @@ fn build_enrichment_prompt(
     entity_id: Option<&str>,
     entity_type: Option<&str>,
 ) -> String {
-    let sender = email.sender_email.as_deref().unwrap_or("unknown");
-    let sender_name = email.sender_name.as_deref().unwrap_or("");
-    let subject = email.subject.as_deref().unwrap_or("(no subject)");
-    let snippet = email.snippet.as_deref().unwrap_or("");
+    let sender =
+        crate::util::sanitize_external_field(email.sender_email.as_deref().unwrap_or("unknown"));
+    let sender_name =
+        crate::util::sanitize_external_field(email.sender_name.as_deref().unwrap_or(""));
+    let subject =
+        crate::util::encode_high_risk_field(email.subject.as_deref().unwrap_or("(no subject)"));
+    let snippet = crate::util::sanitize_external_field(email.snippet.as_deref().unwrap_or(""));
 
     // I369: Gather relationship context for the resolved entity
     let relationship_context = build_relationship_context(db, entity_id, entity_type);
 
     let mut prompt = format!(
-        "You are a chief of staff reading an email for your executive. \
+        "{}You are a chief of staff reading an email for your executive. \
          Analyze this email and connect it to what you know about the relationship.\n\n\
          From: {} {}\n\
          Subject: {}\n\
          Preview: {}\n",
-        sender, sender_name, subject, snippet
+        crate::util::INJECTION_PREAMBLE,
+        sender,
+        sender_name,
+        subject,
+        snippet
     );
 
     if !relationship_context.is_empty() {
@@ -154,7 +161,10 @@ fn build_relationship_context(
                 if val.is_empty() {
                     format!("- {} (confidence: {:.1})", s.signal_type, s.confidence)
                 } else {
-                    format!("- {}: {} (confidence: {:.1})", s.signal_type, val, s.confidence)
+                    format!(
+                        "- {}: {} (confidence: {:.1})",
+                        s.signal_type, val, s.confidence
+                    )
                 }
             })
             .collect();
@@ -188,6 +198,13 @@ fn parse_enrichment_response(output: &str) -> (Option<String>, Option<String>, O
     }
 
     let json_str = &trimmed[start..=end];
+
+    // I470: Validate structure and run anomaly detection
+    if let Err(e) = crate::intelligence::validation::validate_email_enrichment_response(json_str) {
+        log::debug!("email_enrich: validation failed: {e}");
+        return (None, None, None);
+    }
+
     let parsed: serde_json::Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(e) => {
@@ -291,9 +308,7 @@ pub fn enrich_pending_emails_two_phase(
             match ai_result {
                 Ok(result) => {
                     let update = result.as_db_update();
-                    if let Err(e) =
-                        db.set_enrichment_state(&email.email_id, "enriched", update)
-                    {
+                    if let Err(e) = db.set_enrichment_state(&email.email_id, "enriched", update) {
                         log::warn!(
                             "email_enrich: failed to persist enrichment for {}: {e}",
                             email.email_id

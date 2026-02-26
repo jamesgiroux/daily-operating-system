@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use crate::reports::{get_report, get_reports_for_entity, upsert_report, ReportRow};
 use crate::reports::generator::run_report_generation;
 use crate::reports::swot::gather_swot_input;
+use crate::reports::{get_report, get_reports_for_entity, upsert_report, ReportRow};
 use crate::state::AppState;
 
 /// Generate a report for an entity.
@@ -35,19 +35,41 @@ pub async fn generate_report(
                 "swot" => gather_swot_input(workspace, db, &entity_id, &entity_type, ai_models)?,
                 "account_health" => {
                     let active_preset = config.role.clone();
-                    crate::reports::account_health::gather_account_health_input(workspace, db, &entity_id, ai_models, &active_preset)?
+                    crate::reports::account_health::gather_account_health_input(
+                        workspace,
+                        db,
+                        &entity_id,
+                        ai_models,
+                        &active_preset,
+                    )?
                 }
                 "weekly_impact" => {
                     let active_preset = config.role.clone();
-                    crate::reports::weekly_impact::gather_weekly_impact_input(workspace, db, ai_models, &active_preset)?
+                    crate::reports::weekly_impact::gather_weekly_impact_input(
+                        workspace,
+                        db,
+                        ai_models,
+                        &active_preset,
+                    )?
                 }
                 "monthly_wrapped" => {
                     let active_preset = config.role.clone();
-                    crate::reports::monthly_wrapped::gather_monthly_wrapped_input(workspace, db, ai_models, &active_preset)?
+                    crate::reports::monthly_wrapped::gather_monthly_wrapped_input(
+                        workspace,
+                        db,
+                        ai_models,
+                        &active_preset,
+                    )?
                 }
                 "ebr_qbr" => {
                     let active_preset = config.role.clone();
-                    crate::reports::ebr_qbr::gather_ebr_qbr_input(workspace, db, &entity_id, ai_models, &active_preset)?
+                    crate::reports::ebr_qbr::gather_ebr_qbr_input(
+                        workspace,
+                        db,
+                        &entity_id,
+                        ai_models,
+                        &active_preset,
+                    )?
                 }
                 _ => return Err(format!("Unknown report type: {}", report_type_str)),
             }
@@ -76,7 +98,8 @@ pub async fn generate_report(
                     .map_err(|e| format!("Failed to serialize SWOT: {}", e))?
             }
             "account_health" => {
-                let health = crate::reports::account_health::parse_account_health_response(&stdout)?;
+                let health =
+                    crate::reports::account_health::parse_account_health_response(&stdout)?;
                 serde_json::to_string(&health)
                     .map_err(|e| format!("Failed to serialize Account Health: {}", e))?
             }
@@ -86,7 +109,8 @@ pub async fn generate_report(
                     .map_err(|e| format!("Failed to serialize Weekly Impact: {}", e))?
             }
             "monthly_wrapped" => {
-                let wrapped = crate::reports::monthly_wrapped::parse_monthly_wrapped_response(&stdout)?;
+                let wrapped =
+                    crate::reports::monthly_wrapped::parse_monthly_wrapped_response(&stdout)?;
                 serde_json::to_string(&wrapped)
                     .map_err(|e| format!("Failed to serialize Monthly Wrapped: {}", e))?
             }
@@ -168,11 +192,17 @@ pub async fn generate_monthly_wrapped_if_needed(
     };
 
     if already_exists {
-        log::debug!("Scheduler: monthly wrapped already generated for {}", intel_hash_key);
+        log::debug!(
+            "Scheduler: monthly wrapped already generated for {}",
+            intel_hash_key
+        );
         return Ok(());
     }
 
-    log::info!("Scheduler: auto-generating monthly wrapped for {}", intel_hash_key);
+    log::info!(
+        "Scheduler: auto-generating monthly wrapped for {}",
+        intel_hash_key
+    );
     generate_report(state, "user", "user", "monthly_wrapped").await?;
     Ok(())
 }
@@ -218,11 +248,17 @@ pub async fn generate_weekly_impact_if_needed(
     };
 
     if already_exists {
-        log::debug!("Scheduler: weekly impact already generated for {}", intel_hash_key);
+        log::debug!(
+            "Scheduler: weekly impact already generated for {}",
+            intel_hash_key
+        );
         return Ok(());
     }
 
-    log::info!("Scheduler: auto-generating weekly impact for {}", intel_hash_key);
+    log::info!(
+        "Scheduler: auto-generating weekly impact for {}",
+        intel_hash_key
+    );
     generate_report(state, "user", "user", "weekly_impact").await?;
     Ok(())
 }

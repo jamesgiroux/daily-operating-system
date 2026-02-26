@@ -46,7 +46,20 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let poll_interval = Duration::from_secs((config.poll_interval_minutes as u64) * 60);
 
         // Read and process the cache
-        if let Err(e) = poll_once(&state, &app_handle, &config.cache_path) {
+        let cache_path = match super::resolve_cache_path(&config) {
+            Some(p) => p,
+            None => {
+                log::debug!("Granola poller: no cache file found");
+                tokio::select! {
+                    _ = tokio::time::sleep(poll_interval) => {}
+                    _ = state.integrations.granola_poller_wake.notified() => {
+                        log::info!("Granola poller: woken by signal (meeting ended)");
+                    }
+                }
+                continue;
+            }
+        };
+        if let Err(e) = poll_once(&state, &app_handle, &cache_path) {
             log::warn!("Granola poller: {}", e);
         }
 
@@ -60,13 +73,12 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
 }
 
 /// Single poll cycle: read cache, match documents, sync new ones.
-fn poll_once(state: &AppState, app_handle: &AppHandle, cache_path: &str) -> Result<(), String> {
-    let path = std::path::Path::new(cache_path);
-    if !path.exists() {
-        return Ok(()); // Cache not present — Granola may not be installed
-    }
-
-    let documents = cache::read_cache(path)?;
+fn poll_once(
+    state: &AppState,
+    app_handle: &AppHandle,
+    cache_path: &std::path::Path,
+) -> Result<(), String> {
+    let documents = cache::read_cache(cache_path)?;
     if documents.is_empty() {
         return Ok(());
     }
@@ -132,11 +144,7 @@ fn poll_once(state: &AppState, app_handle: &AppHandle, cache_path: &str) -> Resu
         let _ = app_handle.emit("transcript-processed", &matched.meeting_id);
 
         if result.is_ok() {
-            let _ = crate::notification::notify_transcript_ready(
-                app_handle,
-                &doc.title,
-                None,
-            );
+            let _ = crate::notification::notify_transcript_ready(app_handle, &doc.title, None);
         }
     }
 
@@ -216,20 +224,29 @@ fn process_granola_document(
             let account = calendar_event.account.as_deref();
             for win in &tr.wins {
                 let _ = db.insert_capture(
-                    &calendar_event.id, &calendar_event.title,
-                    account, "win", win,
+                    &calendar_event.id,
+                    &calendar_event.title,
+                    account,
+                    "win",
+                    win,
                 );
             }
             for risk in &tr.risks {
                 let _ = db.insert_capture(
-                    &calendar_event.id, &calendar_event.title,
-                    account, "risk", risk,
+                    &calendar_event.id,
+                    &calendar_event.title,
+                    account,
+                    "risk",
+                    risk,
                 );
             }
             for decision in &tr.decisions {
                 let _ = db.insert_capture(
-                    &calendar_event.id, &calendar_event.title,
-                    account, "decision", decision,
+                    &calendar_event.id,
+                    &calendar_event.title,
+                    account,
+                    "decision",
+                    decision,
                 );
             }
 
@@ -244,13 +261,15 @@ fn process_granola_document(
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
-                    account_id: account.map(|a| {
-                        db.get_account_by_name(a)
-                            .ok()
-                            .flatten()
-                            .map(|acc| acc.id)
-                            .unwrap_or_default()
-                    }).filter(|s| !s.is_empty()),
+                    account_id: account
+                        .map(|a| {
+                            db.get_account_by_name(a)
+                                .ok()
+                                .flatten()
+                                .map(|acc| acc.id)
+                                .unwrap_or_default()
+                        })
+                        .filter(|s| !s.is_empty()),
                     project_id: None,
                     source_type: Some("transcript".to_string()),
                     source_id: Some(calendar_event.id.clone()),
@@ -268,7 +287,13 @@ fn process_granola_document(
 
             // Transition sync state to completed
             let _ = crate::quill::sync::transition_state(
-                db, sync_id, "completed", None, None, Some(dest), None,
+                db,
+                sync_id,
+                "completed",
+                None,
+                None,
+                Some(dest),
+                None,
             );
 
             Ok(dest.to_string())
@@ -277,7 +302,13 @@ fn process_granola_document(
             if let Ok(db_guard) = state.db.lock() {
                 if let Some(db) = db_guard.as_ref() {
                     let _ = crate::quill::sync::transition_state(
-                        db, sync_id, "failed", None, None, None, Some(&error),
+                        db,
+                        sync_id,
+                        "failed",
+                        None,
+                        None,
+                        None,
+                        Some(&error),
                     );
                 }
             }
@@ -296,20 +327,18 @@ fn get_recent_meetings_for_matching(
 
 /// Run a one-time backfill: match all Granola cache documents to meetings_history.
 pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> {
-    let cache_path = state
+    let granola_config = state
         .config
         .read()
         .map_err(|_| "Lock poisoned")?
         .as_ref()
-        .map(|c| c.granola.cache_path.clone())
+        .map(|c| c.granola.clone())
         .unwrap_or_default();
 
-    let path = std::path::Path::new(&cache_path);
-    if !path.exists() {
-        return Err("Granola cache file not found".to_string());
-    }
+    let cache_path =
+        super::resolve_cache_path(&granola_config).ok_or("Granola cache file not found")?;
 
-    let documents = cache::read_cache(path)?;
+    let documents = cache::read_cache(&cache_path)?;
     let eligible = documents.len();
 
     let meetings_for_matching = {

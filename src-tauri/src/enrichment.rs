@@ -104,7 +104,13 @@ async fn process_clay_queue(state: &AppState) -> u32 {
         }
     };
 
-    let client = match crate::clay::client::ClayClient::connect(&api_key, &namespace, &connection_id).await {
+    let client = match crate::clay::client::ClayClient::connect(
+        &api_key,
+        &namespace,
+        &connection_id,
+    )
+    .await
+    {
         Ok(c) => c,
         Err(e) => {
             log::warn!("Enrichment: Clay connection failed: {}", e);
@@ -124,7 +130,9 @@ async fn process_clay_queue(state: &AppState) -> u32 {
 
     for person_id in &pending_ids {
         attempted += 1;
-        match crate::clay::enricher::enrich_person_from_clay_with_client(state, person_id, &client).await {
+        match crate::clay::enricher::enrich_person_from_clay_with_client(state, person_id, &client)
+            .await
+        {
             Ok(result) => {
                 mark_clay_completed(state, person_id).await;
                 log::info!(
@@ -150,7 +158,11 @@ async fn process_clay_queue(state: &AppState) -> u32 {
         for person_id in &unenriched {
             insert_clay_sync(state, person_id).await;
             attempted += 1;
-            match crate::clay::enricher::enrich_person_from_clay_with_client(state, person_id, &client).await {
+            match crate::clay::enricher::enrich_person_from_clay_with_client(
+                state, person_id, &client,
+            )
+            .await
+            {
                 Ok(result) => {
                     mark_clay_completed(state, person_id).await;
                     log::info!(
@@ -191,8 +203,7 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
 
     let emails_to_fetch: Vec<(String, Option<String>)> = state
         .db_read(move |db| {
-            Ok(crate::gravatar::cache::get_stale_emails(db.conn_ref(), 50)
-                .unwrap_or_default())
+            Ok(crate::gravatar::cache::get_stale_emails(db.conn_ref(), 50).unwrap_or_default())
         })
         .await
         .unwrap_or_default();
@@ -201,7 +212,10 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
         return 0;
     }
 
-    log::info!("Enrichment: {} gravatar profiles to fetch", emails_to_fetch.len());
+    log::info!(
+        "Enrichment: {} gravatar profiles to fetch",
+        emails_to_fetch.len()
+    );
 
     let client = match crate::gravatar::client::GravatarClient::connect(api_key.as_deref()).await {
         Ok(c) => c,
@@ -302,7 +316,10 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
     }
 
     client.disconnect().await;
-    log::info!("Enrichment: Gravatar batch complete, {} attempted", attempted);
+    log::info!(
+        "Enrichment: Gravatar batch complete, {} attempted",
+        attempted
+    );
     attempted
 }
 
@@ -313,14 +330,19 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
 async fn get_pending_clay_ids(state: &AppState, limit: usize) -> Vec<String> {
     state
         .db_read(move |db| {
-            let mut stmt = db.conn_ref().prepare(
-                "SELECT entity_id FROM clay_sync_state
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT entity_id FROM clay_sync_state
                  WHERE state = 'pending' AND attempts < max_attempts
                  ORDER BY created_at ASC LIMIT ?1",
-            ).map_err(|e| format!("failed to query pending syncs: {}", e))?;
+                )
+                .map_err(|e| format!("failed to query pending syncs: {}", e))?;
 
             let rows = stmt
-                .query_map(rusqlite::params![limit as i64], |row| row.get::<_, String>(0))
+                .query_map(rusqlite::params![limit as i64], |row| {
+                    row.get::<_, String>(0)
+                })
                 .map_err(|e| format!("query_map failed: {}", e))?
                 .filter_map(|r| r.ok())
                 .collect();
@@ -338,14 +360,19 @@ async fn get_unenriched_people(state: &AppState, limit: usize) -> Vec<String> {
 
     state
         .db_read(move |db| {
-            let mut stmt = db.conn_ref().prepare(
-                "SELECT id FROM people
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT id FROM people
                  WHERE last_enriched_at IS NULL OR last_enriched_at < ?1
                  ORDER BY last_enriched_at ASC NULLS FIRST LIMIT ?2",
-            ).map_err(|e| format!("failed to query unenriched people: {}", e))?;
+                )
+                .map_err(|e| format!("failed to query unenriched people: {}", e))?;
 
             let rows = stmt
-                .query_map(rusqlite::params![cutoff, limit as i64], |row| row.get::<_, String>(0))
+                .query_map(rusqlite::params![cutoff, limit as i64], |row| {
+                    row.get::<_, String>(0)
+                })
                 .map_err(|e| format!("query_map failed: {}", e))?
                 .filter_map(|r| r.ok())
                 .collect();

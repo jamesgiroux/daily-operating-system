@@ -15,7 +15,8 @@ pub fn compute_signal_weight(db: &ActionDb, event: &SignalEvent) -> f64 {
     let tier_weight = bus::source_base_weight(&event.source);
     let age_days = decay::age_days_from_now(&event.created_at);
     let decayed = decay::decayed_weight(tier_weight, age_days, event.decay_half_life_days as f64);
-    let reliability = bus::get_learned_reliability(db, &event.source, &event.entity_type, &event.signal_type);
+    let reliability =
+        bus::get_learned_reliability(db, &event.source, &event.entity_type, &event.signal_type);
     decayed * reliability
 }
 
@@ -56,7 +57,11 @@ mod tests {
     fn test_fuse_high_confidence_weighted() {
         // Two strong signals (0.8 conf, 1.0 weight) and (0.9 conf, 0.9 weight)
         let result = fuse_confidence(&[(0.8, 1.0), (0.9, 0.9)]);
-        assert!(result > 0.95, "weighted compounding should exceed 0.95, got {}", result);
+        assert!(
+            result > 0.95,
+            "weighted compounding should exceed 0.95, got {}",
+            result
+        );
     }
 
     #[test]
@@ -86,7 +91,11 @@ mod tests {
         // Three 0.7-confidence signals with equal weight 1.0
         let result = fuse_confidence(&[(0.7, 1.0), (0.7, 1.0), (0.7, 1.0)]);
         // log_odds(0.7) ≈ 0.847, sum = 2.541, combined ≈ 0.927
-        assert!(result > 0.90, "three 0.7s should compound above 0.90, got {}", result);
+        assert!(
+            result > 0.90,
+            "three 0.7s should compound above 0.90, got {}",
+            result
+        );
     }
 
     #[test]

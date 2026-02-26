@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
@@ -54,6 +54,7 @@ export default function EmailsPage() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
   const [, startTransition] = useTransition();
+  const inboxSyncInFlight = useRef(false);
 
   const loadEmails = useCallback(async (silent = false) => {
     try {
@@ -87,6 +88,44 @@ export default function EmailsPage() {
   useEffect(() => {
     loadEmails();
   }, [loadEmails]);
+
+  const syncInboxPresence = useCallback(async () => {
+    if (inboxSyncInFlight.current) return;
+    inboxSyncInFlight.current = true;
+    try {
+      await invoke<boolean>("sync_email_inbox_presence");
+    } catch (err) {
+      console.debug("sync_email_inbox_presence failed:", err);
+    } finally {
+      inboxSyncInFlight.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    void syncInboxPresence();
+
+    const handleFocus = () => { void syncInboxPresence(); };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void syncInboxPresence();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void syncInboxPresence();
+      }
+    }, 20000);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [syncInboxPresence]);
 
   // Silent refresh on backend email events — uses transition to avoid blink
   const silentRefresh = useCallback(() => { loadEmails(true); }, [loadEmails]);

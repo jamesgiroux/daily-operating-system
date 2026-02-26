@@ -22,14 +22,17 @@ pub async fn enrich_entity(
         entity_type,
         priority: IntelPriority::Manual,
         requested_at: std::time::Instant::now(),
+        retry_count: 0,
     };
 
     // Manual refresh: clear circuit breaker so enrichment proceeds (I410)
     let entity_id_for_reset = request.entity_id.clone();
-    let _ = state.db_write(move |db| {
-        crate::self_healing::scheduler::reset_circuit_breaker(db, &entity_id_for_reset);
-        Ok(())
-    }).await;
+    let _ = state
+        .db_write(move |db| {
+            crate::self_healing::scheduler::reset_circuit_breaker(db, &entity_id_for_reset);
+            Ok(())
+        })
+        .await;
 
     let input = gather_enrichment_input(state, &request)?;
 
@@ -39,7 +42,21 @@ pub async fn enrich_entity(
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
-    let intel = run_enrichment(&input, &ai_config)?;
+
+    // Run PTY enrichment on a blocking thread and gate heavy work so UI-facing
+    // manual refreshes cannot monopolize the async runtime.
+    let _permit = state
+        .heavy_work_semaphore
+        .acquire()
+        .await
+        .map_err(|_| "Heavy work semaphore closed".to_string())?;
+    let input_for_enrichment = input.clone();
+    let ai_config_for_enrichment = ai_config.clone();
+    let intel = tauri::async_runtime::spawn_blocking(move || {
+        run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
+    })
+    .await
+    .map_err(|e| format!("Enrichment task panicked: {}", e))??;
 
     write_enrichment_results(state, &input, &intel)?;
 
@@ -62,55 +79,63 @@ pub async fn update_intelligence_field(
     let entity_type = entity_type.to_string();
     let field_path = field_path.to_string();
     let value = value.to_string();
-    state.db_write(move |db| {
-        let workspace = Path::new(&workspace_path);
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
 
-        let account = if entity_type == "account" {
-            db.get_account(&entity_id).map_err(|e| e.to_string())?
-        } else {
-            None
-        };
+            let account = if entity_type == "account" {
+                db.get_account(&entity_id).map_err(|e| e.to_string())?
+            } else {
+                None
+            };
 
-        let entity_name = match entity_type.as_str() {
-            "account" => account.as_ref().map(|a| a.name.clone()),
-            "project" => db
-                .get_project(&entity_id)
-                .map_err(|e| e.to_string())?
-                .map(|p| p.name),
-            "person" => db
-                .get_person(&entity_id)
-                .map_err(|e| e.to_string())?
-                .map(|p| p.name),
-            _ => return Err(format!("Unsupported entity type: {}", entity_type)),
-        }
-        .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+            let entity_name = match entity_type.as_str() {
+                "account" => account.as_ref().map(|a| a.name.clone()),
+                "project" => db
+                    .get_project(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                "person" => db
+                    .get_person(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+            }
+            .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
 
-        let dir = crate::intelligence::resolve_entity_dir(
-            workspace,
-            &entity_type,
-            &entity_name,
-            account.as_ref(),
-        )?;
+            let dir = crate::intelligence::resolve_entity_dir(
+                workspace,
+                &entity_type,
+                &entity_name,
+                account.as_ref(),
+            )?;
 
-        let intel = crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?;
+            let intel =
+                crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?;
 
-        let _ = db.upsert_entity_intelligence(&intel);
+            let _ = db.upsert_entity_intelligence(&intel);
 
-        let _ = crate::services::signals::emit(
-            db,
-            &entity_type,
-            &entity_id,
-            "user_correction",
-            "user_edit",
-            Some(&format!("{{\"field\":\"{}\"}}", field_path)),
-            1.0,
-        );
+            let _ = crate::services::signals::emit(
+                db,
+                &entity_type,
+                &entity_id,
+                "user_correction",
+                "user_edit",
+                Some(&format!("{{\"field\":\"{}\"}}", field_path)),
+                1.0,
+            );
 
-        // Self-healing: record user correction to lower quality score (I409)
-        crate::self_healing::feedback::record_enrichment_correction(db, &entity_id, &entity_type, "intel_queue");
+            // Self-healing: record user correction to lower quality score (I409)
+            crate::self_healing::feedback::record_enrichment_correction(
+                db,
+                &entity_id,
+                &entity_type,
+                "intel_queue",
+            );
 
-        Ok(())
-    }).await
+            Ok(())
+        })
+        .await
 }
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
@@ -127,53 +152,55 @@ pub async fn update_stakeholders(
     let engine = state.signals.engine.clone();
     let entity_id = entity_id.to_string();
     let entity_type = entity_type.to_string();
-    state.db_write(move |db| {
-        let workspace = Path::new(&workspace_path);
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
 
-        let account = if entity_type == "account" {
-            db.get_account(&entity_id).map_err(|e| e.to_string())?
-        } else {
-            None
-        };
+            let account = if entity_type == "account" {
+                db.get_account(&entity_id).map_err(|e| e.to_string())?
+            } else {
+                None
+            };
 
-        let entity_name = match entity_type.as_str() {
-            "account" => account.as_ref().map(|a| a.name.clone()),
-            "project" => db
-                .get_project(&entity_id)
-                .map_err(|e| e.to_string())?
-                .map(|p| p.name),
-            "person" => db
-                .get_person(&entity_id)
-                .map_err(|e| e.to_string())?
-                .map(|p| p.name),
-            _ => return Err(format!("Unsupported entity type: {}", entity_type)),
-        }
-        .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+            let entity_name = match entity_type.as_str() {
+                "account" => account.as_ref().map(|a| a.name.clone()),
+                "project" => db
+                    .get_project(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                "person" => db
+                    .get_person(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+            }
+            .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
 
-        let dir = crate::intelligence::resolve_entity_dir(
-            workspace,
-            &entity_type,
-            &entity_name,
-            account.as_ref(),
-        )?;
+            let dir = crate::intelligence::resolve_entity_dir(
+                workspace,
+                &entity_type,
+                &entity_name,
+                account.as_ref(),
+            )?;
 
-        let intel = crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?;
+            let intel = crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?;
 
-        let _ = db.upsert_entity_intelligence(&intel);
+            let _ = db.upsert_entity_intelligence(&intel);
 
-        let _ = crate::services::signals::emit_and_propagate(
-            db,
-            &engine,
-            &entity_type,
-            &entity_id,
-            "stakeholders_updated",
-            "user_edit",
-            None,
-            0.9,
-        );
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                &entity_type,
+                &entity_id,
+                "stakeholders_updated",
+                "user_edit",
+                None,
+                0.9,
+            );
 
-        Ok(())
-    }).await
+            Ok(())
+        })
+        .await
 }
 
 /// Generate a risk briefing for an account (async, PTY enrichment).
@@ -216,11 +243,8 @@ pub async fn generate_risk_briefing(
 
         // Store in reports table for unified tracking (I398)
         if let Ok(db) = crate::db::ActionDb::open() {
-            let _ = crate::reports::risk::store_risk_briefing_in_reports(
-                &db,
-                &account_id,
-                &briefing,
-            );
+            let _ =
+                crate::reports::risk::store_risk_briefing_in_reports(&db, &account_id, &briefing);
         }
 
         Ok(briefing)

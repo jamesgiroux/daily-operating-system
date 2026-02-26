@@ -76,7 +76,11 @@ impl ProactiveEngine {
 
         for entry in &self.detectors {
             // Filter by profile
-            if !entry.profiles.iter().any(|p| p == PROFILE_ALL || p == &ctx.profile) {
+            if !entry
+                .profiles
+                .iter()
+                .any(|p| p == PROFILE_ALL || p == &ctx.profile)
+            {
                 continue;
             }
 

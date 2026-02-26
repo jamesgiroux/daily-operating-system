@@ -25,6 +25,13 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
     let mut backup_conn = rusqlite::Connection::open(&backup_path)
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
 
+    // Apply encryption key to backup destination so .bak is also encrypted (I462)
+    let hex_key = crate::db::encryption::get_or_create_db_key(&backup_path)
+        .map_err(|e| format!("Failed to get encryption key for backup: {e}"))?;
+    backup_conn
+        .execute_batch(&crate::db::encryption::key_to_pragma(&hex_key))
+        .map_err(|e| format!("Failed to set backup encryption key: {e}"))?;
+
     let backup = rusqlite::backup::Backup::new(db.conn_ref(), &mut backup_conn)
         .map_err(|e| format!("Failed to initialize backup: {}", e))?;
 
@@ -32,6 +39,9 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
     backup
         .step(-1)
         .map_err(|e| format!("Backup failed: {}", e))?;
+
+    // Restrict backup file permissions (I463)
+    crate::db::hardening::set_file_permissions(&backup_path);
 
     log::info!("Database backed up to {}", backup_path.display());
     Ok(backup_path.to_string_lossy().to_string())
@@ -81,7 +91,7 @@ mod tests {
     fn test_backup_creates_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("test.db");
-        let db = ActionDb::open_at(db_path).expect("open db");
+        let db = ActionDb::open_at_unencrypted(db_path).expect("open db");
 
         // The backup function uses a hardcoded path (~/.dailyos/dailyos.db.bak),
         // so we test the Backup API directly with a custom path.
@@ -100,7 +110,7 @@ mod tests {
     fn test_rebuild_empty_workspace() {
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("test.db");
-        let db = ActionDb::open_at(db_path).expect("open db");
+        let db = ActionDb::open_at_unencrypted(db_path).expect("open db");
 
         let workspace = dir.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
