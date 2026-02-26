@@ -183,9 +183,8 @@ pub fn assess_intelligence_quality(
 /// Generate or refresh intelligence for a single meeting (ADR-0086).
 ///
 /// Idempotent: calling twice does incremental update, not duplicate work.
-/// Performs mechanical quality assessment and enqueues for mechanical prep
-/// assembly via MeetingPrepQueue. No meeting-level AI call is made — entity
-/// intelligence is enriched separately via intel_queue.
+/// `force_full=true` delegates to the single-service full briefing refresh
+/// (`services::meetings::refresh_meeting_briefing_full`).
 pub async fn generate_meeting_intelligence(
     state: &AppState,
     meeting_id: &str,
@@ -215,8 +214,19 @@ pub async fn generate_meeting_intelligence(
         (intel_state, has_new)
     };
 
+    if force_full {
+        let refreshed = crate::services::meetings::refresh_meeting_briefing_full(
+            state,
+            meeting_id,
+            None,
+        )
+        .await
+        .map_err(ExecutionError::ConfigurationError)?;
+        return Ok(refreshed.quality);
+    }
+
     // 2. Decide whether work is needed
-    if meeting_state.as_deref() == Some("enriched") && !force_full {
+    if meeting_state.as_deref() == Some("enriched") {
         if has_new == 0 {
             // No new signals — return current quality without extra work
             let quality = {
@@ -238,8 +248,8 @@ pub async fn generate_meeting_intelligence(
             ExecutionError::ConfigurationError("Database not initialized".to_string())
         })?;
         let _ = db.update_intelligence_state(meeting_id, "refreshing", None, None);
-    } else if meeting_state.as_deref() != Some("enriched") || force_full {
-        // No intelligence exists (detected) or force_full: set state to "enriching"
+    } else if meeting_state.as_deref() != Some("enriched") {
+        // No intelligence exists (detected): set state to "enriching"
         let guard = state.db.lock().map_err(|_| {
             ExecutionError::ConfigurationError("DB lock poisoned".to_string())
         })?;
@@ -260,58 +270,7 @@ pub async fn generate_meeting_intelligence(
         assess_intelligence_quality(db, meeting_id)
     };
 
-    // 4. Clear frozen prep and enqueue for mechanical reassembly.
-    if force_full {
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-        let _ = db.conn_ref().execute(
-            "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
-            rusqlite::params![meeting_id],
-        );
-
-        // Also enqueue linked entities for background AI re-enrichment.
-        // The intel processor will write fresh intelligence.json and then
-        // call invalidate_and_requeue_meeting_preps() which re-assembles
-        // the meeting prep a second time with fully updated data.
-        if let Ok(entities) = db.get_meeting_entities(meeting_id) {
-            for entity in &entities {
-                state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-                    entity_id: entity.id.clone(),
-                    entity_type: entity.entity_type.as_str().to_string(),
-                    priority: crate::intel_queue::IntelPriority::Manual,
-                    requested_at: std::time::Instant::now(),
-                });
-            }
-            if !entities.is_empty() {
-                state.integrations.intel_queue_wake.notify_one();
-                log::info!(
-                    "generate_meeting_intelligence: enqueued {} linked entities for background AI re-enrichment",
-                    entities.len(),
-                );
-            }
-        }
-    }
-
-    // Always enqueue for immediate mechanical prep assembly from existing
-    // intelligence.json files. For force_full this gives the user instant
-    // feedback (stale prep cleared, rebuilt with fixed prompts); the background
-    // entity re-enrichment will later produce a second, richer update.
-    if force_full {
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-        let _ = db.conn_ref().execute(
-            "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
-            rusqlite::params![meeting_id],
-        );
-    }
+    // 4. Enqueue meeting prep regeneration.
     state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
         meeting_id: meeting_id.to_string(),
         priority: crate::meeting_prep_queue::PrepPriority::Manual,

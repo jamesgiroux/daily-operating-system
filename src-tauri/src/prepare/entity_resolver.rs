@@ -736,7 +736,7 @@ mod tests {
         assert!(keywords_match_text(&keywords, "review af platform design"));
         assert!(!keywords_match_text(&keywords, "quarterly review"));
         // Short keywords (< 3 chars) are ignored to avoid false positives
-        assert!(!keywords_match_text(&vec!["af".to_string()], "af meeting"));
+        assert!(!keywords_match_text(&["af".to_string()], "af meeting"));
     }
 
     #[test]
