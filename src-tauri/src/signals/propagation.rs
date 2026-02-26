@@ -123,6 +123,7 @@ impl PropagationEngine {
                     entity_type: etype.clone(),
                     priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
                     requested_at: std::time::Instant::now(),
+                    retry_count: 0,
                 });
             }
         }

@@ -31,6 +31,9 @@ const CONTENT_DEBOUNCE_SECS: u64 = 30;
 /// How often the background processor checks for work.
 const POLL_INTERVAL_SECS: u64 = 5;
 
+/// Maximum retry attempts for entities that fail validation (I470).
+const MAX_VALIDATION_RETRIES: u8 = 2;
+
 /// TTL for enrichment results — skip entities enriched within this window (I287).
 const ENRICHMENT_TTL_SECS: u64 = 7200;
 
@@ -55,6 +58,21 @@ pub struct IntelRequest {
     pub entity_type: String,
     pub priority: IntelPriority,
     pub requested_at: Instant,
+    /// Number of times this entity has been retried after validation failure (I470).
+    pub retry_count: u8,
+}
+
+impl IntelRequest {
+    /// Create a new request with zero retries.
+    pub fn new(entity_id: String, entity_type: String, priority: IntelPriority) -> Self {
+        Self {
+            entity_id,
+            entity_type,
+            priority,
+            requested_at: Instant::now(),
+            retry_count: 0,
+        }
+    }
 }
 
 /// Thread-safe intelligence enrichment queue with deduplication and debounce.
@@ -217,6 +235,7 @@ pub struct IntelligenceUpdatedPayload {
 
 /// Context gathered from the DB (held briefly, then released before PTY).
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+#[derive(Clone)]
 pub struct EnrichmentInput {
     pub workspace: PathBuf,
     pub entity_dir: PathBuf,
@@ -329,6 +348,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
             .unwrap_or_default();
 
+        // Track original requests so we can detect failures and re-enqueue (I470)
+        let original_requests: Vec<IntelRequest> = inputs.iter().map(|(r, _)| r.clone()).collect();
+
         let results: Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> = if inputs.len() == 1 {
             // Single entity — use existing direct path (no batching overhead)
             let (request, input) = inputs.pop().unwrap();
@@ -347,6 +369,40 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             // Multi-entity batch — combined prompt with delimiters (I289)
             run_batch_enrichment(inputs, &ai_config)
         };
+
+        // I470: Re-enqueue entities that failed validation (up to MAX_VALIDATION_RETRIES)
+        {
+            let succeeded: std::collections::HashSet<&str> = results
+                .iter()
+                .map(|(r, _, _)| r.entity_id.as_str())
+                .collect();
+
+            for original in &original_requests {
+                if !succeeded.contains(original.entity_id.as_str())
+                    && original.retry_count < MAX_VALIDATION_RETRIES
+                {
+                    log::info!(
+                        "IntelProcessor: re-enqueuing {} for retry (attempt {}/{})",
+                        original.entity_id,
+                        original.retry_count + 1,
+                        MAX_VALIDATION_RETRIES,
+                    );
+                    state.intel_queue.enqueue(IntelRequest {
+                        entity_id: original.entity_id.clone(),
+                        entity_type: original.entity_type.clone(),
+                        priority: original.priority,
+                        requested_at: Instant::now(),
+                        retry_count: original.retry_count + 1,
+                    });
+                } else if !succeeded.contains(original.entity_id.as_str()) {
+                    log::warn!(
+                        "IntelProcessor: {} failed after {} retries, dropping from queue",
+                        original.entity_id,
+                        original.retry_count,
+                    );
+                }
+            }
+        }
 
         // Release permit before Phase 3 — writing results is cheap, doesn't need it
         drop(_permit);
@@ -883,6 +939,7 @@ pub fn write_enrichment_results(
                     entity_type: "account".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
+                    retry_count: 0,
                 });
                 _state.integrations.intel_queue_wake.notify_one();
                 log::info!(
@@ -901,6 +958,7 @@ pub fn write_enrichment_results(
                     entity_type: "project".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
+                    retry_count: 0,
                 });
                 _state.integrations.intel_queue_wake.notify_one();
                 log::info!(
@@ -1008,6 +1066,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         assert_eq!(queue.len(), 1);
@@ -1027,6 +1086,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         // Same entity, higher priority → should upgrade
@@ -1035,6 +1095,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         assert_eq!(queue.len(), 1);
@@ -1051,6 +1112,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         // Same entity, lower priority → should be ignored
@@ -1059,6 +1121,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         assert_eq!(queue.len(), 1);
@@ -1075,6 +1138,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         queue.enqueue(IntelRequest {
@@ -1082,6 +1146,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         queue.enqueue(IntelRequest {
@@ -1089,6 +1154,7 @@ mod tests {
             entity_type: "project".to_string(),
             priority: IntelPriority::CalendarChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         assert_eq!(queue.len(), 3);
@@ -1115,6 +1181,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         // Dequeue it (so queue is empty)
@@ -1127,6 +1194,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         // Should be debounced (queue still empty)
@@ -1143,6 +1211,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         // Dequeue it
@@ -1154,6 +1223,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         assert_eq!(queue.len(), 1);
@@ -1194,6 +1264,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         queue.enqueue(IntelRequest {
@@ -1201,6 +1272,7 @@ mod tests {
             entity_type: "project".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         assert_eq!(queue.len(), 2);
@@ -1220,6 +1292,7 @@ mod tests {
                 entity_type: "account".to_string(),
                 priority: IntelPriority::ContentChange,
                 requested_at: Instant::now(),
+                retry_count: 0,
             });
         }
 
@@ -1240,18 +1313,21 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
         queue.enqueue(IntelRequest {
             entity_id: "high".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
         queue.enqueue(IntelRequest {
             entity_id: "mid".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::CalendarChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         let batch = queue.dequeue_batch(3);
@@ -1277,6 +1353,7 @@ mod tests {
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
+            retry_count: 0,
         });
 
         let batch = queue.dequeue_batch(3);
@@ -1300,6 +1377,7 @@ mod tests {
                     entity_type: "account".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: Instant::now(),
+                    retry_count: 0,
                 },
                 EnrichmentInput {
                     workspace: PathBuf::from("/tmp"),
@@ -1317,6 +1395,7 @@ mod tests {
                     entity_type: "project".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: Instant::now(),
+                    retry_count: 0,
                 },
                 EnrichmentInput {
                     workspace: PathBuf::from("/tmp"),
@@ -1371,6 +1450,7 @@ mod tests {
                 entity_type: "account".to_string(),
                 priority: IntelPriority::ContentChange,
                 requested_at: Instant::now(),
+            retry_count: 0,
             },
             EnrichmentInput {
                 workspace: PathBuf::from("/tmp"),
@@ -1401,6 +1481,7 @@ mod tests {
                     entity_type: "account".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: Instant::now(),
+                    retry_count: 0,
                 },
                 EnrichmentInput {
                     workspace: PathBuf::from("/tmp"),
@@ -1418,6 +1499,7 @@ mod tests {
                     entity_type: "project".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: Instant::now(),
+                    retry_count: 0,
                 },
                 EnrichmentInput {
                     workspace: PathBuf::from("/tmp"),
