@@ -58,14 +58,20 @@ pub async fn get_changes(page_token: &str) -> Result<(Vec<DriveChange>, String),
         .iter()
         .filter_map(|change| {
             let file_id = change.get("fileId")?.as_str()?;
-            let removed = change.get("removed").and_then(|r| r.as_bool()).unwrap_or(false);
+            let removed = change
+                .get("removed")
+                .and_then(|r| r.as_bool())
+                .unwrap_or(false);
             let file = if !removed {
                 change.get("file").and_then(|f| {
                     Some(DriveFile {
                         id: f.get("id")?.as_str()?.to_string(),
                         name: f.get("name")?.as_str()?.to_string(),
                         mime_type: f.get("mimeType")?.as_str()?.to_string(),
-                        web_view_link: f.get("webViewLink").and_then(|w| w.as_str()).map(String::from),
+                        web_view_link: f
+                            .get("webViewLink")
+                            .and_then(|w| w.as_str())
+                            .map(String::from),
                     })
                 })
             } else {
@@ -110,7 +116,10 @@ pub async fn get_start_page_token() -> Result<String, String> {
         .map_err(|e| format!("Failed to get start page token: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Drive API error getting start token: {}", response.status()));
+        return Err(format!(
+            "Drive API error getting start token: {}",
+            response.status()
+        ));
     }
 
     let body: serde_json::Value = response
@@ -211,6 +220,9 @@ pub async fn download_file_as_markdown(file_id: &str) -> Result<String, String> 
         Ok(format!("# {}\n\n{}", name, content))
     } else {
         // For files we can't export, just add metadata
-        Ok(format!("# {}\n\n*File type: {}*\n\n(Binary or unsupported format)", name, mime_type))
+        Ok(format!(
+            "# {}\n\n*File type: {}*\n\n(Binary or unsupported format)",
+            name, mime_type
+        ))
     }
 }

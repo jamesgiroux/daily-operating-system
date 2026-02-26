@@ -35,7 +35,9 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
     if let Ok(accounts) = db.get_all_accounts() {
         for acct in accounts.iter().filter(|a| !a.archived) {
             let domains = db.get_account_domains(&acct.id).unwrap_or_default();
-            let keywords = acct.keywords.as_deref()
+            let keywords = acct
+                .keywords
+                .as_deref()
                 .and_then(|k| serde_json::from_str::<Vec<String>>(k).ok())
                 .unwrap_or_default();
             let slug = normalize_key(&acct.name);
@@ -57,7 +59,9 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
     // 2. Projects: name slugs + keywords
     if let Ok(projects) = db.get_all_projects() {
         for proj in projects.iter().filter(|p| !p.archived) {
-            let keywords = proj.keywords.as_deref()
+            let keywords = proj
+                .keywords
+                .as_deref()
                 .and_then(|k| serde_json::from_str::<Vec<String>>(k).ok())
                 .unwrap_or_default();
             let slug = normalize_key(&proj.name);
@@ -107,7 +111,8 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
 /// Build account hint set for email classification (backward compat). I336.
 /// Extracts account slugs from entity hints for use by email_classify.
 pub fn account_hints_from_entity_hints(entity_hints: &[EntityHint]) -> HashSet<String> {
-    entity_hints.iter()
+    entity_hints
+        .iter()
         .filter(|h| matches!(h.entity_type, EntityType::Account))
         .flat_map(|h| h.slugs.iter().cloned())
         .collect()
@@ -239,9 +244,7 @@ fn is_conferencing_noise_line(trimmed: &str) -> bool {
     let lower = trimmed.to_lowercase();
 
     // Pure URL lines
-    if (lower.starts_with("http://") || lower.starts_with("https://"))
-        && !trimmed.contains(' ')
-    {
+    if (lower.starts_with("http://") || lower.starts_with("https://")) && !trimmed.contains(' ') {
         return true;
     }
 

@@ -526,7 +526,6 @@ impl ActionDb {
         Ok(changed)
     }
 
-
     /// Query actions extracted from a transcript for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
@@ -677,7 +676,6 @@ impl ActionDb {
         Ok(())
     }
 
-
     /// Helper: map a row to `DbAction`. Reduces repetition across queries.
     ///
     /// Maps the standard 17-column action SELECT. The `next_meeting_title` and
@@ -706,5 +704,4 @@ impl ActionDb {
             next_meeting_start: None,
         })
     }
-
 }

@@ -116,15 +116,27 @@ async fn process_sync_row(
         let meeting = match db.get_meeting_by_id(&row.meeting_id) {
             Ok(Some(m)) => m,
             Ok(None) => {
-                log::warn!("Quill sync: meeting {} not found, abandoning", row.meeting_id);
+                log::warn!(
+                    "Quill sync: meeting {} not found, abandoning",
+                    row.meeting_id
+                );
                 let _ = sync::transition_state(
-                    db, &row.id, "abandoned", None, None, None,
+                    db,
+                    &row.id,
+                    "abandoned",
+                    None,
+                    None,
+                    None,
                     Some("Meeting not found in database"),
                 );
                 return;
             }
             Err(e) => {
-                log::warn!("Quill sync: failed to get meeting {}: {}", row.meeting_id, e);
+                log::warn!(
+                    "Quill sync: failed to get meeting {}: {}",
+                    row.meeting_id,
+                    e
+                );
                 let _ = sync::advance_attempt(db, &row.id);
                 return;
             }
@@ -153,7 +165,12 @@ async fn process_sync_row(
             if let Ok(g) = state.db.lock() {
                 if let Some(db) = g.as_ref() {
                     let _ = sync::transition_state(
-                        db, &row.id, "failed", None, None, None,
+                        db,
+                        &row.id,
+                        "failed",
+                        None,
+                        None,
+                        None,
                         Some(&format!("Connection failed: {}", e)),
                     );
                 }
@@ -162,10 +179,17 @@ async fn process_sync_row(
         }
     };
 
-    let search_after = (start_time - chrono::Duration::hours(12)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let search_before = (start_time + chrono::Duration::hours(12)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let search_after = (start_time - chrono::Duration::hours(12))
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    let search_before = (start_time + chrono::Duration::hours(12))
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
 
-    let quill_meetings = match client.search_meetings("", &search_after, &search_before).await {
+    let quill_meetings = match client
+        .search_meetings("", &search_after, &search_before)
+        .await
+    {
         Ok(meetings) => meetings,
         Err(e) => {
             log::warn!("Quill sync: search_meetings failed: {}", e);
@@ -239,7 +263,9 @@ async fn process_sync_row(
             if let Ok(g) = state.db.lock() {
                 if let Some(db) = g.as_ref() {
                     let _ = sync::transition_state(
-                        db, &row.id, "polling",
+                        db,
+                        &row.id,
+                        "polling",
                         Some(&matched.quill_meeting_id),
                         Some(matched.confidence),
                         None,
@@ -271,7 +297,9 @@ async fn process_sync_row(
                 if let Ok(g) = state.db.lock() {
                     if let Some(db) = g.as_ref() {
                         let _ = sync::transition_state(
-                            db, &row.id, "failed",
+                            db,
+                            &row.id,
+                            "failed",
                             Some(&matched.quill_meeting_id),
                             Some(matched.confidence),
                             None,
@@ -329,20 +357,29 @@ async fn process_sync_row(
                     let account = calendar_event.account.as_deref();
                     for win in &tr.wins {
                         let _ = db.insert_capture(
-                            &calendar_event.id, &calendar_event.title,
-                            account, "win", win,
+                            &calendar_event.id,
+                            &calendar_event.title,
+                            account,
+                            "win",
+                            win,
                         );
                     }
                     for risk in &tr.risks {
                         let _ = db.insert_capture(
-                            &calendar_event.id, &calendar_event.title,
-                            account, "risk", risk,
+                            &calendar_event.id,
+                            &calendar_event.title,
+                            account,
+                            "risk",
+                            risk,
                         );
                     }
                     for decision in &tr.decisions {
                         let _ = db.insert_capture(
-                            &calendar_event.id, &calendar_event.title,
-                            account, "decision", decision,
+                            &calendar_event.id,
+                            &calendar_event.title,
+                            account,
+                            "decision",
+                            decision,
                         );
                     }
 
@@ -357,14 +394,16 @@ async fn process_sync_row(
                             created_at: now.clone(),
                             due_date: action.due_date.clone(),
                             completed_at: None,
-                            account_id: account.map(|a| {
-                                // Try to resolve account name to ID
-                                db.get_account_by_name(a)
-                                    .ok()
-                                    .flatten()
-                                    .map(|acc| acc.id)
-                                    .unwrap_or_default()
-                            }).filter(|s| !s.is_empty()),
+                            account_id: account
+                                .map(|a| {
+                                    // Try to resolve account name to ID
+                                    db.get_account_by_name(a)
+                                        .ok()
+                                        .flatten()
+                                        .map(|acc| acc.id)
+                                        .unwrap_or_default()
+                                })
+                                .filter(|s| !s.is_empty()),
                             project_id: None,
                             source_type: Some("transcript".to_string()),
                             source_id: Some(calendar_event.id.clone()),
@@ -380,18 +419,36 @@ async fn process_sync_row(
                         let _ = db.upsert_action_if_not_completed(&db_action);
                     }
 
-                    let capture_count = tr.wins.len() + tr.risks.len() + tr.decisions.len() + tr.actions.len();
+                    let capture_count =
+                        tr.wins.len() + tr.risks.len() + tr.decisions.len() + tr.actions.len();
                     if capture_count > 0 {
                         log::info!(
                             "Quill sync: wrote {} captures for '{}'",
-                            capture_count, calendar_event.title
+                            capture_count,
+                            calendar_event.title
                         );
                     }
 
-                    let _ = sync::transition_state(db, &row.id, "completed", None, None, Some(dest), None);
+                    let _ = sync::transition_state(
+                        db,
+                        &row.id,
+                        "completed",
+                        None,
+                        None,
+                        Some(dest),
+                        None,
+                    );
                 }
                 Err(error) => {
-                    let _ = sync::transition_state(db, &row.id, "failed", None, None, None, Some(error));
+                    let _ = sync::transition_state(
+                        db,
+                        &row.id,
+                        "failed",
+                        None,
+                        None,
+                        None,
+                        Some(error),
+                    );
                 }
             }
         }
@@ -420,11 +477,7 @@ async fn process_sync_row(
 
     // Send native notification on success
     if result.is_ok() {
-        let _ = crate::notification::notify_transcript_ready(
-            app_handle,
-            &meeting.title,
-            None,
-        );
+        let _ = crate::notification::notify_transcript_ready(app_handle, &meeting.title, None);
     }
 }
 

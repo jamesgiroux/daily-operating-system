@@ -49,15 +49,8 @@ fn run_security_cmd(args: &[&str]) -> Result<std::process::Output, String> {
 
 /// Retrieve Smithery API key from keychain.
 pub fn get_smithery_api_key() -> Option<String> {
-    let output = run_security_cmd(&[
-        "find-generic-password",
-        "-a",
-        ACCOUNT,
-        "-s",
-        SERVICE,
-        "-w",
-    ])
-    .ok()?;
+    let output =
+        run_security_cmd(&["find-generic-password", "-a", ACCOUNT, "-s", SERVICE, "-w"]).ok()?;
 
     if !output.status.success() {
         return None;
@@ -96,13 +89,7 @@ pub fn save_smithery_api_key(key: &str) -> Result<(), String> {
 
 /// Delete Smithery API key from keychain.
 pub fn delete_smithery_api_key() -> Result<(), String> {
-    let output = run_security_cmd(&[
-        "delete-generic-password",
-        "-a",
-        ACCOUNT,
-        "-s",
-        SERVICE,
-    ])?;
+    let output = run_security_cmd(&["delete-generic-password", "-a", ACCOUNT, "-s", SERVICE])?;
 
     if output.status.success() {
         return Ok(());

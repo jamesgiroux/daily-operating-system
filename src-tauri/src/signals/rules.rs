@@ -69,13 +69,23 @@ pub fn rule_meeting_frequency_drop(signal: &SignalEvent, _db: &ActionDb) -> Vec<
     }
 
     // Parse the value JSON for current/previous counts
-    let value_json: serde_json::Value = match signal.value.as_deref().and_then(|v| serde_json::from_str(v).ok()) {
+    let value_json: serde_json::Value = match signal
+        .value
+        .as_deref()
+        .and_then(|v| serde_json::from_str(v).ok())
+    {
         Some(v) => v,
         None => return Vec::new(),
     };
 
-    let current = value_json.get("current_count").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let previous = value_json.get("previous_count").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let current = value_json
+        .get("current_count")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let previous = value_json
+        .get("previous_count")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
 
     if previous <= 0.0 || current >= previous * 0.5 {
         return Vec::new();
@@ -154,17 +164,19 @@ pub fn rule_champion_sentiment(signal: &SignalEvent, db: &ActionDb) -> Vec<Deriv
     };
 
     let mut derived = Vec::new();
-    for entity in entities.iter().filter(|e| matches!(e.entity_type, EntityType::Account)) {
+    for entity in entities
+        .iter()
+        .filter(|e| matches!(e.entity_type, EntityType::Account))
+    {
         // Check if person is champion on this account
         let team = match db.get_account_team(&entity.id) {
             Ok(t) => t,
             Err(_) => continue,
         };
 
-        let is_champion = team.iter().any(|m| {
-            m.person_id == signal.entity_id
-                && m.role.to_lowercase() == "champion"
-        });
+        let is_champion = team
+            .iter()
+            .any(|m| m.person_id == signal.entity_id && m.role.to_lowercase() == "champion");
 
         if is_champion {
             let value = serde_json::json!({
@@ -217,17 +229,19 @@ pub fn rule_departure_renewal(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
     let mut derived = Vec::new();
-    for entity in entities.iter().filter(|e| matches!(e.entity_type, EntityType::Account)) {
+    for entity in entities
+        .iter()
+        .filter(|e| matches!(e.entity_type, EntityType::Account))
+    {
         // Check champion role
         let team = match db.get_account_team(&entity.id) {
             Ok(t) => t,
             Err(_) => continue,
         };
 
-        let is_champion = team.iter().any(|m| {
-            m.person_id == signal.entity_id
-                && m.role.to_lowercase() == "champion"
-        });
+        let is_champion = team
+            .iter()
+            .any(|m| m.person_id == signal.entity_id && m.role.to_lowercase() == "champion");
 
         if !is_champion {
             continue;
@@ -352,10 +366,8 @@ pub fn rule_person_network(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSi
                 }
                 RelationshipType::IntroducedBy => 0.5,
             };
-            let derived_confidence = signal.confidence
-                * edge.effective_confidence
-                * base_multiplier
-                * type_multiplier;
+            let derived_confidence =
+                signal.confidence * edge.effective_confidence * base_multiplier * type_multiplier;
             let target_id = if edge.from_person_id == signal.entity_id {
                 edge.to_person_id.clone()
             } else {
@@ -492,12 +504,18 @@ pub fn rule_hierarchy_down(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSi
     // Get children based on entity type
     let child_ids_and_types: Vec<(String, String)> = if signal.entity_type == "account" {
         match db.get_child_accounts(&signal.entity_id) {
-            Ok(c) => c.into_iter().map(|a| (a.id, "account".to_string())).collect(),
+            Ok(c) => c
+                .into_iter()
+                .map(|a| (a.id, "account".to_string()))
+                .collect(),
             Err(_) => return Vec::new(),
         }
     } else {
         match db.get_child_projects(&signal.entity_id) {
-            Ok(c) => c.into_iter().map(|p| (p.id, "project".to_string())).collect(),
+            Ok(c) => c
+                .into_iter()
+                .map(|p| (p.id, "project".to_string()))
+                .collect(),
             Err(_) => return Vec::new(),
         }
     };
@@ -591,21 +609,24 @@ impl ActionDb {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
-        let rows = stmt.query_map(rusqlite::params![entity_id, signal_type, hours_str], |row| {
-            Ok(super::bus::SignalEvent {
-                id: row.get(0)?,
-                entity_type: row.get(1)?,
-                entity_id: row.get(2)?,
-                signal_type: row.get(3)?,
-                source: row.get(4)?,
-                value: row.get(5)?,
-                confidence: row.get(6)?,
-                decay_half_life_days: row.get(7)?,
-                created_at: row.get(8)?,
-                superseded_by: row.get(9)?,
-                source_context: row.get(10)?,
-            })
-        });
+        let rows = stmt.query_map(
+            rusqlite::params![entity_id, signal_type, hours_str],
+            |row| {
+                Ok(super::bus::SignalEvent {
+                    id: row.get(0)?,
+                    entity_type: row.get(1)?,
+                    entity_id: row.get(2)?,
+                    signal_type: row.get(3)?,
+                    source: row.get(4)?,
+                    value: row.get(5)?,
+                    confidence: row.get(6)?,
+                    decay_half_life_days: row.get(7)?,
+                    created_at: row.get(8)?,
+                    superseded_by: row.get(9)?,
+                    source_context: row.get(10)?,
+                })
+            },
+        );
         match rows {
             Ok(r) => r.filter_map(|r| r.ok()).collect(),
             Err(_) => Vec::new(),
@@ -647,12 +668,11 @@ impl ActionDb {
              WHERE {} = ?1 AND status = 'pending' AND due_date IS NOT NULL AND due_date < ?2",
             id_column
         );
-        let count: i32 = self
-            .conn_ref()
-            .query_row(&sql, rusqlite::params![entity_id, today], |row| row.get(0))?;
+        let count: i32 =
+            self.conn_ref()
+                .query_row(&sql, rusqlite::params![entity_id, today], |row| row.get(0))?;
         Ok(count)
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -733,12 +753,19 @@ fn hygiene_check_person_duplicate(signal: &SignalEvent, db: &ActionDb) -> Option
                 Ok(_) => {
                     log::info!(
                         "I353: auto-merged duplicate person {} into {} (signal: {})",
-                        merge_id, keep_id, signal.id
+                        merge_id,
+                        keep_id,
+                        signal.id
                     );
                     return Some(format!("merged {} into {}", merge_id, keep_id));
                 }
                 Err(e) => {
-                    log::warn!("I353: auto-merge failed for {} → {}: {}", merge_id, keep_id, e);
+                    log::warn!(
+                        "I353: auto-merge failed for {} → {}: {}",
+                        merge_id,
+                        keep_id,
+                        e
+                    );
                     return Some(format!("merge_failed: {}", e));
                 }
             }
@@ -766,7 +793,9 @@ fn hygiene_resolve_person_name(signal: &SignalEvent, db: &ActionDb) -> Option<St
         Ok(_) => {
             log::info!(
                 "I353: resolved person name '{}' → '{}' (signal: {})",
-                person.name, sender_name, signal.id
+                person.name,
+                sender_name,
+                signal.id
             );
             Some(format!("renamed '{}' → '{}'", person.name, sender_name))
         }
@@ -796,7 +825,11 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
         return None;
     }
 
-    let attendees: Vec<&str> = attendees_csv.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let attendees: Vec<&str> = attendees_csv
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
     if attendees.len() < 2 {
         return None;
     }
@@ -809,7 +842,11 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
             if let Ok(existing) = db.get_entities_for_person(&person.id) {
                 let already_linked = existing.iter().any(|e| e.id == signal.entity_id);
                 if !already_linked {
-                    let _ = db.link_person_to_entity(&person.id, &signal.entity_id, &signal.entity_type);
+                    let _ = db.link_person_to_entity(
+                        &person.id,
+                        &signal.entity_id,
+                        &signal.entity_type,
+                    );
                     linked += 1;
                 }
             }
@@ -819,7 +856,9 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
     if linked > 0 {
         log::info!(
             "I353: linked {} attendees to entity {} via co-attendance (signal: {})",
-            linked, signal.entity_id, signal.id
+            linked,
+            signal.entity_id,
+            signal.id
         );
         Some(format!("linked {} people", linked))
     } else {
@@ -836,7 +875,12 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
 
-    fn make_signal(entity_type: &str, entity_id: &str, signal_type: &str, value: Option<&str>) -> SignalEvent {
+    fn make_signal(
+        entity_type: &str,
+        entity_id: &str,
+        signal_type: &str,
+        value: Option<&str>,
+    ) -> SignalEvent {
         SignalEvent {
             id: format!("sig-test-{}", uuid::Uuid::new_v4()),
             entity_type: entity_type.to_string(),
@@ -879,7 +923,12 @@ mod tests {
         )
         .unwrap();
 
-        let signal = make_signal("person", "p1", "title_change", Some("{\"new_value\": \"CRO\"}"));
+        let signal = make_signal(
+            "person",
+            "p1",
+            "title_change",
+            Some("{\"new_value\": \"CRO\"}"),
+        );
         let derived = rule_person_job_change(&signal, &db);
 
         assert_eq!(derived.len(), 1);
@@ -923,7 +972,10 @@ mod tests {
         .to_string();
         let signal = make_signal("account", "a1", "meeting_frequency", Some(&value));
         let derived = rule_meeting_frequency_drop(&signal, &db);
-        assert!(derived.is_empty(), "25% drop should not trigger (need >50%)");
+        assert!(
+            derived.is_empty(),
+            "25% drop should not trigger (need >50%)"
+        );
     }
 
     #[test]
@@ -1001,7 +1053,12 @@ mod tests {
         )
         .unwrap();
 
-        let signal = make_signal("person", "p1", "company_change", Some("{\"new_value\": \"NewCo\"}"));
+        let signal = make_signal(
+            "person",
+            "p1",
+            "company_change",
+            Some("{\"new_value\": \"NewCo\"}"),
+        );
         let derived = rule_departure_renewal(&signal, &db);
 
         assert_eq!(derived.len(), 1);
@@ -1017,9 +1074,15 @@ mod tests {
         conn.execute(
             "INSERT INTO accounts (id, name, updated_at) VALUES ('a1', 'RenewalCo', '2026-01-01')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
-        let signal = make_signal("account", "a1", "renewal_proximity", Some("{\"days_until_renewal\": 25}"));
+        let signal = make_signal(
+            "account",
+            "a1",
+            "renewal_proximity",
+            Some("{\"days_until_renewal\": 25}"),
+        );
         let derived = rule_renewal_engagement_compound(&signal, &db);
 
         assert_eq!(derived.len(), 1);
@@ -1035,7 +1098,8 @@ mod tests {
         conn.execute(
             "INSERT INTO accounts (id, name, updated_at) VALUES ('a1', 'ActiveCo', '2026-01-01')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Recent meeting
         conn.execute(
@@ -1047,11 +1111,15 @@ mod tests {
             "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
              VALUES ('m1', 'a1', 'account')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let signal = make_signal("account", "a1", "renewal_proximity", None);
         let derived = rule_renewal_engagement_compound(&signal, &db);
-        assert!(derived.is_empty(), "Should not fire when recent meeting exists");
+        assert!(
+            derived.is_empty(),
+            "Should not fire when recent meeting exists"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1072,7 +1140,12 @@ mod tests {
             [],
         ).unwrap();
 
-        let signal = make_signal("account", "child1", "health_change", Some("{\"new\": \"red\"}"));
+        let signal = make_signal(
+            "account",
+            "child1",
+            "health_change",
+            Some("{\"new\": \"red\"}"),
+        );
         let derived = rule_hierarchy_up(&signal, &db);
 
         assert_eq!(derived.len(), 1);
@@ -1090,11 +1163,15 @@ mod tests {
         conn.execute(
             "INSERT INTO accounts (id, name, updated_at) VALUES ('top1', 'TopCo', '2026-01-01')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let signal = make_signal("account", "top1", "health_change", None);
         let derived = rule_hierarchy_up(&signal, &db);
-        assert!(derived.is_empty(), "Top-level account should not propagate up");
+        assert!(
+            derived.is_empty(),
+            "Top-level account should not propagate up"
+        );
     }
 
     #[test]
@@ -1115,7 +1192,10 @@ mod tests {
         let mut signal = make_signal("account", "child1", "health_change", None);
         signal.source = "propagation:hierarchy_down".to_string();
         let derived = rule_hierarchy_up(&signal, &db);
-        assert!(derived.is_empty(), "Hierarchy-derived signals must not re-propagate");
+        assert!(
+            derived.is_empty(),
+            "Hierarchy-derived signals must not re-propagate"
+        );
     }
 
     #[test]
@@ -1148,7 +1228,12 @@ mod tests {
             [],
         ).unwrap();
 
-        let signal = make_signal("account", "parent1", "strategy_shift", Some("{\"detail\": \"pivot\"}"));
+        let signal = make_signal(
+            "account",
+            "parent1",
+            "strategy_shift",
+            Some("{\"detail\": \"pivot\"}"),
+        );
         let derived = rule_hierarchy_down(&signal, &db);
 
         assert_eq!(derived.len(), 2);
@@ -1168,7 +1253,8 @@ mod tests {
         conn.execute(
             "INSERT INTO accounts (id, name, updated_at) VALUES ('leaf1', 'LeafCo', '2026-01-01')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let signal = make_signal("account", "leaf1", "health_change", None);
         let derived = rule_hierarchy_down(&signal, &db);
@@ -1193,7 +1279,10 @@ mod tests {
         let mut signal = make_signal("account", "parent1", "health_change", None);
         signal.confidence = 0.5;
         let derived = rule_hierarchy_down(&signal, &db);
-        assert!(derived.is_empty(), "Low-confidence signals should not fan out downward");
+        assert!(
+            derived.is_empty(),
+            "Low-confidence signals should not fan out downward"
+        );
     }
 
     #[test]
@@ -1213,7 +1302,10 @@ mod tests {
         let mut signal = make_signal("account", "parent1", "health_change", None);
         signal.source = "propagation:hierarchy_up".to_string();
         let derived = rule_hierarchy_down(&signal, &db);
-        assert!(derived.is_empty(), "Hierarchy-derived signals must not re-propagate");
+        assert!(
+            derived.is_empty(),
+            "Hierarchy-derived signals must not re-propagate"
+        );
     }
 
     #[test]
@@ -1272,7 +1364,12 @@ mod tests {
         ).unwrap();
 
         // Now fire rule_hierarchy_up from child1
-        let signal = make_signal("account", "child1", "health_change", Some("{\"new\": \"red\"}"));
+        let signal = make_signal(
+            "account",
+            "child1",
+            "health_change",
+            Some("{\"new\": \"red\"}"),
+        );
         let derived_with_sibling = rule_hierarchy_up(&signal, &db);
 
         // With a sibling, the accumulated confidence should be higher than solo (0.85 * 0.6 = 0.51)
@@ -1336,10 +1433,17 @@ mod tests {
         let db = test_db();
         setup_person_pair(&db);
         db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
-            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "manager", direction: "directed", confidence: 0.8,
-            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
-        }).unwrap();
+            id: "rel-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "manager",
+            direction: "directed",
+            confidence: 0.8,
+            context_entity_id: None,
+            context_entity_type: None,
+            source: "user_confirmed",
+        })
+        .unwrap();
 
         let signal = make_signal("person", "p1", "sentiment_shift", None);
         let derived = rule_person_network(&signal, &db);
@@ -1357,15 +1461,25 @@ mod tests {
         let db = test_db();
         setup_person_pair(&db);
         db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
-            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "peer", direction: "symmetric", confidence: 0.8,
-            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
-        }).unwrap();
+            id: "rel-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "peer",
+            direction: "symmetric",
+            confidence: 0.8,
+            context_entity_id: None,
+            context_entity_type: None,
+            source: "user_confirmed",
+        })
+        .unwrap();
 
         let mut signal = make_signal("person", "p1", "sentiment_shift", None);
         signal.source = "propagation:network".to_string();
         let derived = rule_person_network(&signal, &db);
-        assert!(derived.is_empty(), "Network-derived signals must not re-propagate");
+        assert!(
+            derived.is_empty(),
+            "Network-derived signals must not re-propagate"
+        );
     }
 
     #[test]
@@ -1373,15 +1487,25 @@ mod tests {
         let db = test_db();
         setup_person_pair(&db);
         db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
-            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "manager", direction: "directed", confidence: 0.9,
-            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
-        }).unwrap();
+            id: "rel-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "manager",
+            direction: "directed",
+            confidence: 0.9,
+            context_entity_id: None,
+            context_entity_type: None,
+            source: "user_confirmed",
+        })
+        .unwrap();
 
         let mut signal = make_signal("person", "p1", "sentiment_shift", None);
         signal.confidence = 0.5; // Below 0.65 threshold
         let derived = rule_person_network(&signal, &db);
-        assert!(derived.is_empty(), "Low-confidence signals should not propagate via network");
+        assert!(
+            derived.is_empty(),
+            "Low-confidence signals should not propagate via network"
+        );
     }
 
     #[test]
@@ -1389,10 +1513,17 @@ mod tests {
         let db = test_db();
         setup_person_pair(&db);
         db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
-            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "mentor", direction: "directed", confidence: 0.8,
-            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
-        }).unwrap();
+            id: "rel-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "mentor",
+            direction: "directed",
+            confidence: 0.8,
+            context_entity_id: None,
+            context_entity_type: None,
+            source: "user_confirmed",
+        })
+        .unwrap();
 
         let signal = make_signal("person", "p1", "sentiment_shift", None);
         let derived = rule_person_network(&signal, &db);
@@ -1408,10 +1539,17 @@ mod tests {
         let db = test_db();
         setup_person_pair(&db);
         db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
-            id: "rel-1", from_person_id: "p1", to_person_id: "p2",
-            relationship_type: "introduced_by", direction: "directed", confidence: 0.9,
-            context_entity_id: None, context_entity_type: None, source: "user_confirmed",
-        }).unwrap();
+            id: "rel-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "introduced_by",
+            direction: "directed",
+            confidence: 0.9,
+            context_entity_id: None,
+            context_entity_type: None,
+            source: "user_confirmed",
+        })
+        .unwrap();
 
         let signal = make_signal("person", "p1", "status_change", None);
         let derived = rule_person_network(&signal, &db);

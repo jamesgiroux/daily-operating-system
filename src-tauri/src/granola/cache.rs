@@ -272,7 +272,10 @@ mod tests {
     #[test]
     fn test_extract_transcript_text_string() {
         let val = serde_json::json!("Hello world");
-        assert_eq!(extract_transcript_text(&val), Some("Hello world".to_string()));
+        assert_eq!(
+            extract_transcript_text(&val),
+            Some("Hello world".to_string())
+        );
     }
 
     #[test]
@@ -350,7 +353,12 @@ mod tests {
         assert_eq!(docs[0].attendee_emails.len(), 2);
         assert!(docs[0].google_calendar_event.is_some());
         assert_eq!(
-            docs[0].google_calendar_event.as_ref().unwrap().id.as_deref(),
+            docs[0]
+                .google_calendar_event
+                .as_ref()
+                .unwrap()
+                .id
+                .as_deref(),
             Some("cal-event-123")
         );
     }
