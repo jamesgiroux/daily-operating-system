@@ -97,6 +97,10 @@ interface MeetingBriefingRefreshResult {
   prepQueued: boolean;
 }
 
+interface PrepReadyPayload {
+  meetingId: string;
+}
+
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -336,6 +340,13 @@ export default function MeetingDetailPage() {
     "meeting-briefing-refresh-progress",
     handleRefreshProgress,
   );
+
+  const handlePrepReady = useCallback((payload: PrepReadyPayload) => {
+    if (!meetingId || payload.meetingId !== meetingId) return;
+    void loadMeetingIntelligence();
+  }, [meetingId, loadMeetingIntelligence]);
+
+  useTauriEvent<PrepReadyPayload>("prep-ready", handlePrepReady);
 
   const copyToClipboard = useCallback(async (text: string, action: string) => {
     await navigator.clipboard.writeText(text);
