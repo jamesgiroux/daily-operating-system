@@ -229,6 +229,26 @@ pub async fn get_meeting_intelligence(
     crate::services::meetings::get_meeting_intelligence(&state, &meeting_id).await
 }
 
+/// Single-service full refresh for a meeting briefing.
+///
+/// Clears existing briefing, refreshes linked entity intelligence, and rebuilds
+/// meeting prep. Emits `meeting-briefing-refresh-progress` events as it runs.
+#[tauri::command]
+pub async fn refresh_meeting_briefing(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+    meeting_id: String,
+) -> Result<crate::services::meetings::MeetingBriefingRefreshResult, String> {
+    let result = crate::services::meetings::refresh_meeting_briefing_full(
+        &state,
+        &meeting_id,
+        Some(&app_handle),
+    )
+    .await?;
+    let _ = app_handle.emit("entity-updated", ());
+    Ok(result)
+}
+
 /// Generate or refresh intelligence for a single meeting (ADR-0081).
 /// Pass `force: true` to clear existing intelligence and regenerate from scratch.
 #[tauri::command]
@@ -239,6 +259,17 @@ pub async fn generate_meeting_intelligence(
     force: Option<bool>,
 ) -> Result<crate::types::IntelligenceQuality, String> {
     let force_full = force.unwrap_or(false);
+    if force_full {
+        let result = crate::services::meetings::refresh_meeting_briefing_full(
+            &state,
+            &meeting_id,
+            Some(&app_handle),
+        )
+        .await?;
+        let _ = app_handle.emit("entity-updated", ());
+        return Ok(result.quality);
+    }
+
     let result = crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, force_full)
         .await
         .map_err(|e| e.to_string())?;
@@ -6067,13 +6098,12 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
         .and_then(|g| g.as_ref().map(|c| c.granola.clone()));
 
     let granola_config = config.unwrap_or_default();
-    let cache_path = std::path::Path::new(&granola_config.cache_path);
-    let cache_exists = cache_path.exists();
+    let resolved_path = crate::granola::resolve_cache_path(&granola_config);
+    let cache_exists = resolved_path.is_some();
 
-    let document_count = if cache_exists {
-        crate::granola::cache::count_documents(cache_path).unwrap_or(0)
-    } else {
-        0
+    let document_count = match &resolved_path {
+        Some(p) => crate::granola::cache::count_documents(p).unwrap_or(0),
+        None => 0,
     };
 
     // Count sync states from DB (source='granola')
@@ -6105,7 +6135,10 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
     Ok(GranolaStatus {
         enabled: granola_config.enabled,
         cache_exists,
-        cache_path: granola_config.cache_path,
+        cache_path: resolved_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
         document_count,
         pending_syncs: pending,
         failed_syncs: failed,
@@ -6162,20 +6195,18 @@ pub fn start_granola_backfill(
 /// Test whether the Granola cache file exists and is valid.
 #[tauri::command]
 pub fn test_granola_cache(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
-    let cache_path = state
+    let granola_config = state
         .config
         .read()
         .map_err(|_| "Lock poisoned".to_string())?
         .as_ref()
-        .map(|c| c.granola.cache_path.clone())
+        .map(|c| c.granola.clone())
         .unwrap_or_default();
 
-    let path = std::path::Path::new(&cache_path);
-    if !path.exists() {
-        return Err("Granola cache file not found".to_string());
-    }
+    let path = crate::granola::resolve_cache_path(&granola_config)
+        .ok_or("Granola cache file not found")?;
 
-    crate::granola::cache::count_documents(path)
+    crate::granola::cache::count_documents(&path)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
