@@ -54,14 +54,19 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
             let value = serde_json::json!({
                 "identifier": issue.identifier,
                 "title": issue.title,
-            }).to_string();
+            })
+            .to_string();
 
             // Signal: issue completed
             if new_state == Some("completed") && old_state_type.as_deref() != Some("completed") {
                 let _ = crate::signals::bus::emit_signal(
-                    db, entity_type, entity_id,
-                    "linear_issue_completed", "linear",
-                    Some(&value), 0.7,
+                    db,
+                    entity_type,
+                    entity_id,
+                    "linear_issue_completed",
+                    "linear",
+                    Some(&value),
+                    0.7,
                 );
             }
 
@@ -71,9 +76,13 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                     && old_state_type.as_deref() != new_state
                 {
                     let _ = crate::signals::bus::emit_signal(
-                        db, entity_type, entity_id,
-                        "linear_issue_blocked", "linear",
-                        Some(&value), 0.6,
+                        db,
+                        entity_type,
+                        entity_id,
+                        "linear_issue_blocked",
+                        "linear",
+                        Some(&value),
+                        0.6,
                     );
                 }
             }
@@ -81,11 +90,16 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
             // Signal: issue overdue
             if let Some(due) = &issue.due_date {
                 let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-                if due < &today && new_state != Some("completed") && new_state != Some("cancelled") {
+                if due < &today && new_state != Some("completed") && new_state != Some("cancelled")
+                {
                     let _ = crate::signals::bus::emit_signal(
-                        db, entity_type, entity_id,
-                        "linear_issue_overdue", "linear",
-                        Some(&value), 0.5,
+                        db,
+                        entity_type,
+                        entity_id,
+                        "linear_issue_overdue",
+                        "linear",
+                        Some(&value),
+                        0.5,
                     );
                 }
             }

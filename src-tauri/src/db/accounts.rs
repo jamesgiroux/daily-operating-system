@@ -254,7 +254,10 @@ impl ActionDb {
                     nps: row.get(7)?,
                     tracker_path: row.get(8)?,
                     parent_id: row.get(9)?,
-                    account_type: AccountType::from_db(&row.get::<_, String>(10).unwrap_or_else(|_| "customer".to_string())),
+                    account_type: AccountType::from_db(
+                        &row.get::<_, String>(10)
+                            .unwrap_or_else(|_| "customer".to_string()),
+                    ),
                     updated_at: row.get(11)?,
                     archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
                     keywords: row.get(13).unwrap_or(None),
@@ -583,11 +586,11 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, m.summary, m.created_at,
-                    m.calendar_event_id
+                    m.calendar_event_id, m.description
              FROM meetings_history m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
-               AND m.start_time >= datetime('now')
+               AND julianday(m.start_time) >= julianday('now')
              ORDER BY m.start_time ASC
              LIMIT ?2",
         )?;
@@ -603,7 +606,7 @@ impl ActionDb {
                 summary: row.get(7)?,
                 created_at: row.get(8)?,
                 calendar_event_id: row.get(9)?,
-                description: None,
+                description: row.get(10)?,
                 prep_context_json: None,
                 user_agenda_json: None,
                 user_notes: None,
@@ -654,11 +657,14 @@ impl ActionDb {
                 )?;
 
                 // Propagate account_type: if the child is internal, the parent should be too
-                let child_type: String = self.conn.query_row(
-                    "SELECT account_type FROM accounts WHERE id = ?1",
-                    params![id],
-                    |row| row.get(0),
-                ).unwrap_or_else(|_| "customer".to_string());
+                let child_type: String = self
+                    .conn
+                    .query_row(
+                        "SELECT account_type FROM accounts WHERE id = ?1",
+                        params![id],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or_else(|_| "customer".to_string());
                 if child_type == "internal" {
                     self.conn.execute(
                         "UPDATE accounts SET account_type = 'internal', is_internal = 1, updated_at = ?2 WHERE id = ?1 AND account_type != 'internal'",
@@ -735,7 +741,6 @@ impl ActionDb {
             .query_row(&sql, params![entity_id], |row| row.get(0))
             .map_err(|e| format!("Failed to get metadata: {}", e))
     }
-
 
     // =========================================================================
     // Domain reclassification (I184 — reclassify on domain change)
@@ -954,7 +959,6 @@ impl ActionDb {
         })
     }
 
-
     /// Helper: map a row to `DbAccount`.
     pub(crate) fn map_account_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbAccount> {
         Ok(DbAccount {
@@ -968,7 +972,10 @@ impl ActionDb {
             nps: row.get(7)?,
             tracker_path: row.get(8)?,
             parent_id: row.get(9)?,
-            account_type: AccountType::from_db(&row.get::<_, String>(10).unwrap_or_else(|_| "customer".to_string())),
+            account_type: AccountType::from_db(
+                &row.get::<_, String>(10)
+                    .unwrap_or_else(|_| "customer".to_string()),
+            ),
             updated_at: row.get(11)?,
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
             keywords: row.get(13).unwrap_or(None),
@@ -1069,95 +1076,116 @@ impl ActionDb {
             let conn = tx.conn_ref();
 
             // Reassign actions
-            let actions_moved = conn.execute(
-                "UPDATE actions SET account_id = ?2 WHERE account_id = ?1",
-                params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            let actions_moved = conn
+                .execute(
+                    "UPDATE actions SET account_id = ?2 WHERE account_id = ?1",
+                    params![from_id, into_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // Reassign meeting_entities (ignore dupes)
             conn.execute(
                 "UPDATE OR IGNORE meeting_entities SET entity_id = ?2
                  WHERE entity_id = ?1 AND entity_type = 'account'",
                 params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             // Clean up remaining dupes
-            let meetings_moved = conn.execute(
-                "DELETE FROM meeting_entities WHERE entity_id = ?1 AND entity_type = 'account'",
-                params![from_id],
-            ).map_err(|e| e.to_string())?;
+            let meetings_moved = conn
+                .execute(
+                    "DELETE FROM meeting_entities WHERE entity_id = ?1 AND entity_type = 'account'",
+                    params![from_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // Reassign entity_people (ignore dupes)
             conn.execute(
                 "UPDATE OR IGNORE entity_people SET entity_id = ?2
                  WHERE entity_id = ?1",
                 params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
-            let people_moved = conn.execute(
-                "DELETE FROM entity_people WHERE entity_id = ?1",
-                params![from_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
+            let people_moved = conn
+                .execute(
+                    "DELETE FROM entity_people WHERE entity_id = ?1",
+                    params![from_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // Reassign account_team (ignore dupes)
             conn.execute(
                 "UPDATE OR IGNORE account_team SET account_id = ?2
                  WHERE account_id = ?1",
                 params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             conn.execute(
                 "DELETE FROM account_team WHERE account_id = ?1",
                 params![from_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             // Reassign account_events
-            let events_moved = conn.execute(
-                "UPDATE account_events SET account_id = ?2 WHERE account_id = ?1",
-                params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            let events_moved = conn
+                .execute(
+                    "UPDATE account_events SET account_id = ?2 WHERE account_id = ?1",
+                    params![from_id, into_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // Reassign signal_events
             conn.execute(
                 "UPDATE OR IGNORE signal_events SET entity_id = ?2
                  WHERE entity_id = ?1 AND entity_type = 'account'",
                 params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             conn.execute(
                 "DELETE FROM signal_events WHERE entity_id = ?1 AND entity_type = 'account'",
                 params![from_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             // Reassign content_index
             conn.execute(
                 "UPDATE OR IGNORE content_index SET entity_id = ?2
                  WHERE entity_id = ?1 AND entity_type = 'account'",
                 params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             conn.execute(
                 "DELETE FROM content_index WHERE entity_id = ?1 AND entity_type = 'account'",
                 params![from_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             // Reassign account_domains (ignore dupes)
             conn.execute(
                 "UPDATE OR IGNORE account_domains SET account_id = ?2
                  WHERE account_id = ?1",
                 params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             conn.execute(
                 "DELETE FROM account_domains WHERE account_id = ?1",
                 params![from_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             // Reassign children
-            let children_moved = conn.execute(
-                "UPDATE accounts SET parent_id = ?2 WHERE parent_id = ?1",
-                params![from_id, into_id],
-            ).map_err(|e| e.to_string())?;
+            let children_moved = conn
+                .execute(
+                    "UPDATE accounts SET parent_id = ?2 WHERE parent_id = ?1",
+                    params![from_id, into_id],
+                )
+                .map_err(|e| e.to_string())?;
 
             // Archive source account
             conn.execute(
                 "UPDATE accounts SET archived = 1 WHERE id = ?1",
                 params![from_id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             Ok(MergeResult {
                 actions_moved,
@@ -1166,7 +1194,8 @@ impl ActionDb {
                 events_moved,
                 children_moved,
             })
-        }).map_err(DbError::Migration)
+        })
+        .map_err(DbError::Migration)
     }
 
     /// Get archived accounts (top-level + children).
@@ -1254,7 +1283,6 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-
     // =========================================================================
     // Account Events (I143 — renewal tracking)
     // =========================================================================
@@ -1333,6 +1361,4 @@ impl ActionDb {
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
-
-
 }

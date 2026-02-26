@@ -76,10 +76,11 @@ pub fn gather_email_context(
                 continue;
             }
 
-            // Only include if sender is in attendees or if from entity
+            // Only include if sender is an attendee of this meeting, or if no
+            // attendee list was provided (entity-level context, not meeting-level)
             let sender_lower = sender.to_lowercase();
-            let relevant = attendees.iter().any(|a| a.to_lowercase() == sender_lower)
-                || !entity_id.is_empty();
+            let relevant =
+                attendees.is_empty() || attendees.iter().any(|a| a.to_lowercase() == sender_lower);
 
             if relevant {
                 context_items.push(json!({

@@ -8,11 +8,12 @@
 
 use std::path::Path;
 
-use chrono::Utc;
+use chrono::{Local, TimeZone, Utc};
 use serde::Deserialize;
 
 use crate::db::{ActionDb, DbAccount, DbProject};
-use crate::util::wrap_user_data;
+use crate::helpers::strip_conferencing_noise;
+use crate::util::{sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 use super::io::*;
 
@@ -173,12 +174,17 @@ pub fn build_intelligence_context(
         let lines: Vec<String> = meetings
             .iter()
             .map(|m| {
+                let meeting_time = format_meeting_time_for_prompt(&m.start_time);
                 let doc = match (&m.summary, &m.transcript_path) {
                     (Some(s), _) if !s.is_empty() => s.clone(),
                     (_, Some(p)) if !p.is_empty() => "transcript available".to_string(),
-                    _ => "no documented summary".to_string(),
+                    _ => String::new(),
                 };
-                format!("- {} | {} | {}", m.start_time, m.title, doc)
+                if doc.is_empty() {
+                    format!("- {} | {}", meeting_time, m.title)
+                } else {
+                    format!("- {} | {} | {}", meeting_time, m.title, doc)
+                }
             })
             .collect();
         ctx.meeting_history = lines.join("\n");
@@ -255,8 +261,7 @@ pub fn build_intelligence_context(
                             match db.get_person(pid) {
                                 Ok(Some(person)) => {
                                     let role = person.role.as_deref().unwrap_or("");
-                                    let email =
-                                        s.sender_email.as_deref().unwrap_or(&person.email);
+                                    let email = s.sender_email.as_deref().unwrap_or(&person.email);
                                     if role.is_empty() {
                                         format!("{} <{}>", person.name, email)
                                     } else {
@@ -364,7 +369,10 @@ pub fn build_intelligence_context(
             .map(|p| {
                 format!(
                     "- \"{}\" (role: {}, id: {}, email: {})",
-                    p.name, p.role.as_deref().unwrap_or("unknown"), p.id, p.email
+                    p.name,
+                    p.role.as_deref().unwrap_or("unknown"),
+                    p.id,
+                    p.email
                 )
             })
             .collect();
@@ -438,9 +446,17 @@ pub fn build_intelligence_context(
                     };
                     lines.push(format!(
                         "- {} {} {} ({}, confidence: {:.2}, source: {}){}",
-                        if edge.from_person_id == entity_id { "self" } else { &other_name },
+                        if edge.from_person_id == entity_id {
+                            "self"
+                        } else {
+                            &other_name
+                        },
                         direction_label,
-                        if edge.to_person_id == entity_id { "self" } else { &other_name },
+                        if edge.to_person_id == entity_id {
+                            "self"
+                        } else {
+                            &other_name
+                        },
                         edge.relationship_type,
                         edge.effective_confidence,
                         edge.source,
@@ -614,7 +630,15 @@ pub fn build_intelligence_context(
     if entity_type == "account" {
         if let Ok(upcoming) = db.get_upcoming_meetings_for_account(entity_id, 1) {
             if let Some(m) = upcoming.first() {
-                ctx.next_meeting = Some(format!("{} — {}", m.start_time, m.title));
+                let local_start = format_meeting_time_for_prompt(&m.start_time);
+                let mut next = format!("{} — {}", local_start, m.title);
+                if let Some(ref desc) = m.description {
+                    let cleaned = strip_conferencing_noise(desc);
+                    if !cleaned.trim().is_empty() {
+                        next.push_str(&format!("\nMeeting Description:\n{}", cleaned.trim()));
+                    }
+                }
+                ctx.next_meeting = Some(next);
             }
         }
     }
@@ -768,7 +792,7 @@ fn build_user_context_block(
             embedding_model,
             name,
             2,    // top-2 results
-            0.70, // similarity threshold (I413 AC4: raised from 0.50 to reduce noise)
+            0.82, // similarity threshold — raised from 0.70 to prevent cross-entity bleed
         );
 
         // Search user attachments (file embeddings)
@@ -777,7 +801,7 @@ fn build_user_context_block(
             embedding_model,
             name,
             2,    // top-2 attachment chunks
-            0.70, // same threshold for consistency
+            0.82, // same threshold for consistency
         );
 
         // Combine both sources, sort by score, keep top-4 total
@@ -792,7 +816,11 @@ fn build_user_context_block(
         if !matches.is_empty() {
             let mut knowledge = String::from("Professional knowledge:");
             for m in &matches {
-                let source_label = if m.source == "attachment" { " (document)" } else { "" };
+                let source_label = if m.source == "attachment" {
+                    " (document)"
+                } else {
+                    ""
+                };
                 knowledge.push_str(&format!("\n- {}{}: {}", m.title, source_label, m.content));
             }
             parts.push(knowledge);
@@ -824,23 +852,20 @@ const MAX_PORTFOLIO_CONTEXT_BYTES: usize = 20_000;
 /// Gathers each child's intelligence.json (from DB cache) and active signals,
 /// then formats them as a context block for the parent's enrichment prompt.
 /// Sorted by signal recency so the most active children get full detail.
-fn build_portfolio_children_context(
-    db: &ActionDb,
-    children: &[DbAccount],
-) -> String {
+fn build_portfolio_children_context(db: &ActionDb, children: &[DbAccount]) -> String {
     // Collect child data: (name, id, health, intel, signal_count, latest_signal_time)
     let mut child_data: Vec<(
-        &str,           // name
-        &str,           // id
-        Option<&str>,   // health
+        &str,         // name
+        &str,         // id
+        Option<&str>, // health
         Option<IntelligenceJson>,
         Vec<crate::signals::bus::SignalEvent>,
     )> = Vec::new();
 
     for child in children {
         let intel = db.get_entity_intelligence(&child.id).ok().flatten();
-        let signals = crate::signals::bus::get_active_signals(db, "account", &child.id)
-            .unwrap_or_default();
+        let signals =
+            crate::signals::bus::get_active_signals(db, "account", &child.id).unwrap_or_default();
         child_data.push((
             &child.name,
             &child.id,
@@ -852,8 +877,16 @@ fn build_portfolio_children_context(
 
     // Sort by signal recency (most recent first), then by name
     child_data.sort_by(|a, b| {
-        let a_latest = a.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
-        let b_latest = b.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
+        let a_latest =
+            a.4.iter()
+                .map(|s| s.created_at.as_str())
+                .max()
+                .unwrap_or("");
+        let b_latest =
+            b.4.iter()
+                .map(|s| s.created_at.as_str())
+                .max()
+                .unwrap_or("");
         b_latest.cmp(a_latest).then(a.0.cmp(b.0))
     });
 
@@ -895,7 +928,9 @@ fn build_portfolio_children_context(
 
             // Risks summary
             if !intel_json.risks.is_empty() {
-                let risk_lines: Vec<String> = intel_json.risks.iter()
+                let risk_lines: Vec<String> = intel_json
+                    .risks
+                    .iter()
                     .take(3)
                     .map(|r| format!("  - [{}] {}", r.urgency, r.text))
                     .collect();
@@ -907,9 +942,17 @@ fn build_portfolio_children_context(
 
         // Active signals (up to 5)
         if !signals.is_empty() {
-            let signal_lines: Vec<String> = signals.iter()
+            let signal_lines: Vec<String> = signals
+                .iter()
                 .take(5)
-                .map(|s| format!("  - [{}] {} ({})", s.signal_type, s.value.as_deref().unwrap_or(""), s.created_at))
+                .map(|s| {
+                    format!(
+                        "  - [{}] {} ({})",
+                        s.signal_type,
+                        s.value.as_deref().unwrap_or(""),
+                        s.created_at
+                    )
+                })
                 .collect();
             block.push_str("Signals:\n");
             block.push_str(&signal_lines.join("\n"));
@@ -936,36 +979,35 @@ fn build_portfolio_children_context(
 ///
 /// Mirrors `build_portfolio_children_context` but uses project-appropriate vocabulary
 /// (status instead of health, no ARR).
-fn build_project_portfolio_children_context(
-    db: &ActionDb,
-    children: &[DbProject],
-) -> String {
+fn build_project_portfolio_children_context(db: &ActionDb, children: &[DbProject]) -> String {
     // Collect child data: (name, id, status, intel, signals)
     let mut child_data: Vec<(
-        &str,           // name
-        &str,           // id
-        &str,           // status
+        &str, // name
+        &str, // id
+        &str, // status
         Option<IntelligenceJson>,
         Vec<crate::signals::bus::SignalEvent>,
     )> = Vec::new();
 
     for child in children {
         let intel = db.get_entity_intelligence(&child.id).ok().flatten();
-        let signals = crate::signals::bus::get_active_signals(db, "project", &child.id)
-            .unwrap_or_default();
-        child_data.push((
-            &child.name,
-            &child.id,
-            &child.status,
-            intel,
-            signals,
-        ));
+        let signals =
+            crate::signals::bus::get_active_signals(db, "project", &child.id).unwrap_or_default();
+        child_data.push((&child.name, &child.id, &child.status, intel, signals));
     }
 
     // Sort by signal recency (most recent first), then by name
     child_data.sort_by(|a, b| {
-        let a_latest = a.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
-        let b_latest = b.4.iter().map(|s| s.created_at.as_str()).max().unwrap_or("");
+        let a_latest =
+            a.4.iter()
+                .map(|s| s.created_at.as_str())
+                .max()
+                .unwrap_or("");
+        let b_latest =
+            b.4.iter()
+                .map(|s| s.created_at.as_str())
+                .max()
+                .unwrap_or("");
         b_latest.cmp(a_latest).then(a.0.cmp(b.0))
     });
 
@@ -1005,7 +1047,9 @@ fn build_project_portfolio_children_context(
 
             // Risks summary
             if !intel_json.risks.is_empty() {
-                let risk_lines: Vec<String> = intel_json.risks.iter()
+                let risk_lines: Vec<String> = intel_json
+                    .risks
+                    .iter()
                     .take(3)
                     .map(|r| format!("  - [{}] {}", r.urgency, r.text))
                     .collect();
@@ -1017,9 +1061,17 @@ fn build_project_portfolio_children_context(
 
         // Active signals (up to 5)
         if !signals.is_empty() {
-            let signal_lines: Vec<String> = signals.iter()
+            let signal_lines: Vec<String> = signals
+                .iter()
                 .take(5)
-                .map(|s| format!("  - [{}] {} ({})", s.signal_type, s.value.as_deref().unwrap_or(""), s.created_at))
+                .map(|s| {
+                    format!(
+                        "  - [{}] {} ({})",
+                        s.signal_type,
+                        s.value.as_deref().unwrap_or(""),
+                        s.created_at
+                    )
+                })
                 .collect();
             block.push_str("Signals:\n");
             block.push_str(&signal_lines.join("\n"));
@@ -1061,6 +1113,34 @@ fn semantic_gap_query(prior: Option<&IntelligenceJson>) -> String {
     terms.join(" ")
 }
 
+fn format_meeting_time_for_prompt(raw: &str) -> String {
+    let value = raw.trim();
+    if value.is_empty() {
+        return raw.to_string();
+    }
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return dt
+            .with_timezone(&Local)
+            .format("%Y-%m-%d %-I:%M %p %Z")
+            .to_string();
+    }
+
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(value, fmt) {
+            if let Some(local_dt) = Local.from_local_datetime(&ndt).single() {
+                return local_dt.format("%Y-%m-%d %-I:%M %p %Z").to_string();
+            }
+            return Local
+                .from_utc_datetime(&ndt)
+                .format("%Y-%m-%d %-I:%M %p %Z")
+                .to_string();
+        }
+    }
+
+    raw.to_string()
+}
+
 // =============================================================================
 // Prompt Builder (I131)
 // =============================================================================
@@ -1076,7 +1156,14 @@ pub fn build_intelligence_prompt(
     relationship: Option<&str>,
     vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
 ) -> String {
-    build_intelligence_prompt_inner(entity_name, entity_type, ctx, relationship, vocabulary, None)
+    build_intelligence_prompt_inner(
+        entity_name,
+        entity_type,
+        ctx,
+        relationship,
+        vocabulary,
+        None,
+    )
 }
 
 /// Build the intelligence prompt with full preset context including briefing_emphasis.
@@ -1089,7 +1176,14 @@ pub fn build_intelligence_prompt_with_preset(
 ) -> String {
     let vocabulary = preset.map(|p| &p.vocabulary);
     let briefing_emphasis = preset.map(|p| p.briefing_emphasis.as_str());
-    build_intelligence_prompt_inner(entity_name, entity_type, ctx, relationship, vocabulary, briefing_emphasis)
+    build_intelligence_prompt_inner(
+        entity_name,
+        entity_type,
+        ctx,
+        relationship,
+        vocabulary,
+        briefing_emphasis,
+    )
 }
 
 fn build_intelligence_prompt_inner(
@@ -1120,11 +1214,18 @@ fn build_intelligence_prompt_inner(
 
     let mut prompt = String::with_capacity(4096);
 
+    // I468: Injection resistance preamble
+    prompt.push_str(INJECTION_PREAMBLE);
+
     // System context
     prompt.push_str(&format!(
         "You are building an intelligence assessment for the {label} \"{name}\".\n\n",
         label = entity_label,
-        name = wrap_user_data(entity_name)
+        name = sanitize_external_field(entity_name)
+    ));
+    prompt.push_str(&format!(
+        "System timezone: {}. Interpret all meeting times in this timezone.\n\n",
+        Local::now().format("%Z"),
     ));
 
     // I313: Inject full vocabulary context for domain-specific framing
@@ -1143,10 +1244,7 @@ fn build_intelligence_prompt_inner(
             cadence = vocab.cadence_noun,
         ));
         if let Some(emphasis) = briefing_emphasis {
-            prompt.push_str(&format!(
-                "Assessment emphasis: {}\n",
-                emphasis,
-            ));
+            prompt.push_str(&format!("Assessment emphasis: {}\n", emphasis,));
         }
         prompt.push('\n');
     }
@@ -1252,7 +1350,7 @@ fn build_intelligence_prompt_inner(
             let ct = f.content_type.as_deref().unwrap_or("general");
             prompt.push_str(&format!(
                 "- {} [{}] ({}, {})\n",
-                wrap_user_data(&f.filename),
+                sanitize_external_field(&f.filename),
                 ct,
                 f.format.as_deref().unwrap_or("unknown"),
                 f.modified_at
@@ -1276,7 +1374,8 @@ fn build_intelligence_prompt_inner(
     if let Some(ref portfolio_ctx) = ctx.portfolio_children_context {
         prompt.push_str("## Portfolio: Child Account Intelligence\n");
         prompt.push_str("This is a PARENT account with child business units. ");
-        prompt.push_str("Use the intelligence data below to synthesize a portfolio-level view.\n\n");
+        prompt
+            .push_str("Use the intelligence data below to synthesize a portfolio-level view.\n\n");
         prompt.push_str(&wrap_user_data(portfolio_ctx));
         prompt.push_str("\n\n");
     }
@@ -1312,6 +1411,8 @@ fn build_intelligence_prompt_inner(
          - Do NOT include footnotes, reference numbers, or source citations in prose.\n\
          - Do NOT embed filenames or source references inline in prose.\n\
          - Do NOT narrate chronologically. Synthesize themes and conclusions.\n\
+         - Avoid relative time words (tonight, tomorrow, yesterday, this morning). \
+           Use explicit local dates and times instead.\n\
          - Write for a busy executive who has 60 seconds to understand this {}.\n\n",
         entity_label,
     ));
@@ -1767,14 +1868,26 @@ pub fn parse_intelligence_response(
     source_file_count: usize,
     manifest: Vec<SourceManifestEntry>,
 ) -> Result<IntelligenceJson, String> {
-    // Try JSON first
-    let mut intel = if let Some(parsed) =
-        try_parse_json_response(response, entity_id, entity_type, source_file_count, &manifest)
-    {
+    // Try JSON first (includes I470 validation + anomaly detection)
+    let mut intel = if let Some(parsed) = try_parse_json_response(
+        response,
+        entity_id,
+        entity_type,
+        source_file_count,
+        &manifest,
+    ) {
         parsed
     } else {
-        // Fall back to pipe-delimited format (backwards compat)
-        parse_pipe_delimited_response(response, entity_id, entity_type, source_file_count, manifest)?
+        // Fall back to pipe-delimited format (backwards compat).
+        // Run anomaly detection on the raw response even for non-JSON (I470).
+        crate::intelligence::validation::check_anomalies_public(response);
+        parse_pipe_delimited_response(
+            response,
+            entity_id,
+            entity_type,
+            source_file_count,
+            manifest,
+        )?
     };
 
     // Cap array sizes to prevent oversized output (I296)
@@ -1822,7 +1935,10 @@ pub fn extract_inferred_relationships(response: &str) -> Vec<InferredRelationshi
         Ok(v) => v,
         Err(_) => return Vec::new(),
     };
-    let arr = match parsed.get("inferredRelationships").and_then(|v| v.as_array()) {
+    let arr = match parsed
+        .get("inferredRelationships")
+        .and_then(|v| v.as_array())
+    {
         Some(a) => a,
         None => return Vec::new(),
     };
@@ -1832,7 +1948,10 @@ pub fn extract_inferred_relationships(response: &str) -> Vec<InferredRelationshi
             let to = entry.get("toPersonId")?.as_str()?.to_string();
             let rel_type = entry.get("relationshipType")?.as_str()?.to_string();
             // Validate relationship type
-            if rel_type.parse::<crate::db::person_relationships::RelationshipType>().is_err() {
+            if rel_type
+                .parse::<crate::db::person_relationships::RelationshipType>()
+                .is_err()
+            {
                 return None;
             }
             if from.is_empty() || to.is_empty() {
@@ -1920,6 +2039,17 @@ fn try_parse_json_response(
     manifest: &[SourceManifestEntry],
 ) -> Option<IntelligenceJson> {
     let json_str = extract_json_from_response(response)?;
+
+    // I470: Validate structure and run anomaly detection before deserialization
+    if let Err(e) = super::validation::validate_intelligence_response(json_str) {
+        log::warn!(
+            "Intelligence response validation failed for {}: {}",
+            entity_id,
+            e
+        );
+        return None;
+    }
+
     let ai_resp: AiIntelResponse = serde_json::from_str(json_str).ok()?;
 
     let current_state = ai_resp.current_state.map(|cs| CurrentState {
@@ -1950,11 +2080,15 @@ fn try_parse_json_response(
 
     let portfolio = ai_resp.portfolio.map(|p| PortfolioIntelligence {
         health_summary: p.health_summary,
-        hotspots: p.hotspots.into_iter().map(|h| PortfolioHotspot {
-            child_id: h.child_id,
-            child_name: h.child_name,
-            reason: h.reason,
-        }).collect(),
+        hotspots: p
+            .hotspots
+            .into_iter()
+            .map(|h| PortfolioHotspot {
+                child_id: h.child_id,
+                child_name: h.child_name,
+                reason: h.reason,
+            })
+            .collect(),
         cross_bu_patterns: p.cross_bu_patterns,
         portfolio_narrative: p.portfolio_narrative,
     });
@@ -2014,13 +2148,17 @@ fn try_parse_json_response(
         portfolio,
         network: ai_resp.network.map(|n| NetworkIntelligence {
             health: n.health,
-            key_relationships: n.key_relationships.into_iter().map(|kr| NetworkKeyRelationship {
-                person_id: kr.person_id,
-                name: kr.name,
-                relationship_type: kr.relationship_type,
-                confidence: kr.confidence,
-                signal_summary: kr.signal_summary,
-            }).collect(),
+            key_relationships: n
+                .key_relationships
+                .into_iter()
+                .map(|kr| NetworkKeyRelationship {
+                    person_id: kr.person_id,
+                    name: kr.name,
+                    relationship_type: kr.relationship_type,
+                    confidence: kr.confidence,
+                    signal_summary: kr.signal_summary,
+                })
+                .collect(),
             risks: n.risks,
             opportunities: n.opportunities,
             influence_radius: n.influence_radius,
@@ -2033,29 +2171,37 @@ fn try_parse_json_response(
             rationale: ht.rationale,
         }),
         success_metrics: ai_resp.success_metrics.map(|metrics| {
-            metrics.into_iter().map(|m| super::io::SuccessMetric {
-                name: m.name,
-                target: m.target,
-                current: m.current,
-                status: m.status,
-                owner: m.owner,
-            }).collect()
+            metrics
+                .into_iter()
+                .map(|m| super::io::SuccessMetric {
+                    name: m.name,
+                    target: m.target,
+                    current: m.current,
+                    status: m.status,
+                    owner: m.owner,
+                })
+                .collect()
         }),
         open_commitments: ai_resp.open_commitments.map(|commits| {
-            commits.into_iter().map(|c| super::io::OpenCommitment {
-                description: c.description,
-                owner: c.owner,
-                due_date: c.due_date,
-                source: c.source,
-                status: c.status,
-            }).collect()
+            commits
+                .into_iter()
+                .map(|c| super::io::OpenCommitment {
+                    description: c.description,
+                    owner: c.owner,
+                    due_date: c.due_date,
+                    source: c.source,
+                    status: c.status,
+                })
+                .collect()
         }),
-        relationship_depth: ai_resp.relationship_depth.map(|rd| super::io::RelationshipDepth {
-            champion_strength: rd.champion_strength,
-            executive_access: rd.executive_access,
-            stakeholder_coverage: rd.stakeholder_coverage,
-            coverage_gaps: rd.coverage_gaps,
-        }),
+        relationship_depth: ai_resp
+            .relationship_depth
+            .map(|rd| super::io::RelationshipDepth {
+                champion_strength: rd.champion_strength,
+                executive_access: rd.executive_access,
+                stakeholder_coverage: rd.stakeholder_coverage,
+                coverage_gaps: rd.coverage_gaps,
+            }),
     })
 }
 
@@ -2458,8 +2604,7 @@ mod tests {
             ..Default::default()
         };
 
-        let prompt =
-            build_intelligence_prompt("Bob Kim", "person", &ctx, Some("internal"), None);
+        let prompt = build_intelligence_prompt("Bob Kim", "person", &ctx, Some("internal"), None);
 
         assert!(prompt.contains("internal teammate / colleague"));
         assert!(prompt.contains("INTERNAL TEAMMATE"));
@@ -2474,8 +2619,7 @@ mod tests {
     fn test_build_intelligence_prompt_person_unknown() {
         let ctx = IntelligenceContext::default();
 
-        let prompt =
-            build_intelligence_prompt("Unknown Person", "person", &ctx, None, None);
+        let prompt = build_intelligence_prompt("Unknown Person", "person", &ctx, None, None);
 
         assert!(prompt.contains("professional contact"));
         assert!(prompt.contains("Relationship type is unknown"));
@@ -2498,8 +2642,7 @@ mod tests {
             ..Default::default()
         };
 
-        let prompt =
-            build_intelligence_prompt("Acme Corp", "account", &ctx, None, Some(&vocab));
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, Some(&vocab));
 
         // Should use vocabulary noun instead of default "customer account"
         assert!(prompt.contains("partner"));
@@ -2622,7 +2765,9 @@ Some trailing text"#;
         let response = "Just some random text with no structured block.";
         let result = parse_intelligence_response(response, "x", "account", 0, vec![]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("No INTELLIGENCE block or JSON"));
+        assert!(result
+            .unwrap_err()
+            .contains("No INTELLIGENCE block or JSON"));
     }
 
     #[test]
@@ -2665,17 +2810,26 @@ Some trailing text"#;
             .expect("should parse JSON");
 
         assert_eq!(intel.entity_id, "acme");
-        assert!(intel.executive_assessment.unwrap().contains("strong position"));
+        assert!(intel
+            .executive_assessment
+            .unwrap()
+            .contains("strong position"));
         assert_eq!(intel.risks.len(), 2);
         assert_eq!(intel.risks[0].urgency, "critical");
         assert_eq!(intel.recent_wins.len(), 1);
-        assert_eq!(intel.recent_wins[0].impact.as_deref(), Some("20% seat growth"));
+        assert_eq!(
+            intel.recent_wins[0].impact.as_deref(),
+            Some("20% seat growth")
+        );
         let state = intel.current_state.unwrap();
         assert_eq!(state.working.len(), 1);
         assert_eq!(state.not_working.len(), 1);
         assert_eq!(state.unknowns.len(), 1);
         assert_eq!(intel.stakeholder_insights.len(), 1);
-        assert_eq!(intel.stakeholder_insights[0].engagement.as_deref(), Some("high"));
+        assert_eq!(
+            intel.stakeholder_insights[0].engagement.as_deref(),
+            Some("high")
+        );
         assert_eq!(intel.value_delivered.len(), 1);
         let readiness = intel.next_meeting_readiness.unwrap();
         assert_eq!(readiness.prep_items.len(), 2);
@@ -2704,7 +2858,10 @@ Hope this helps!"#;
         let intel = parse_intelligence_response(response, "gamma", "account", 0, vec![])
             .expect("should parse embedded JSON");
 
-        assert_eq!(intel.executive_assessment.as_deref(), Some("Assessment text."));
+        assert_eq!(
+            intel.executive_assessment.as_deref(),
+            Some("Assessment text.")
+        );
         assert_eq!(intel.current_state.unwrap().working.len(), 1);
     }
 
@@ -2772,7 +2929,7 @@ Hope this helps!"#;
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert");
 

@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::Utc;
-use rusqlite::{params, Connection, OpenFlags};
 use crate::entity::{DbEntity, EntityType};
 use crate::types::LinkedEntity;
+use chrono::Utc;
+use rusqlite::{params, Connection, OpenFlags};
 
 // ---------------------------------------------------------------------------
 // Dev DB isolation (I298)
@@ -99,7 +99,37 @@ impl ActionDb {
             }
         }
 
+        // Get or create encryption key from Keychain
+        let hex_key = encryption::get_or_create_db_key(&path).map_err(|e| {
+            if e.starts_with("KEY_MISSING:") {
+                DbError::KeyMissing {
+                    db_path: e.trim_start_matches("KEY_MISSING:").to_string(),
+                }
+            } else {
+                DbError::Encryption(e)
+            }
+        })?;
+
+        // Migrate plaintext DB if it exists (ADR-0092)
+        if path.exists() && encryption::is_database_plaintext(&path) {
+            log::info!("Detected plaintext database, migrating to encrypted...");
+            encryption::migrate_to_encrypted(&path, &hex_key).map_err(DbError::Encryption)?;
+        }
+
         let conn = Connection::open(&path)?;
+
+        // PRAGMA key MUST be first — before any other PRAGMA (ADR-0092)
+        conn.execute_batch(&encryption::key_to_pragma(&hex_key))?;
+
+        // Verify encryption is active
+        let cipher_version: String = conn
+            .query_row("SELECT sqlcipher_version()", [], |row| row.get(0))
+            .map_err(|e| {
+                DbError::Encryption(format!(
+                    "SQLCipher verification failed (key may be wrong): {e}"
+                ))
+            })?;
+        log::info!("SQLCipher version: {cipher_version}");
 
         // Enable WAL mode for better concurrent read performance
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
@@ -129,6 +159,26 @@ impl ActionDb {
         Ok(Self { conn })
     }
 
+    /// Open without encryption. Used for tests only.
+    #[cfg(test)]
+    pub(crate) fn open_at_unencrypted(path: PathBuf) -> Result<Self, DbError> {
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
+            }
+        }
+        let conn = Connection::open(&path)?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+        crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        let _ = Self::normalize_reviewed_prep_keys(&conn);
+        let _ = Self::backfill_meeting_identity(&conn);
+        let _ = Self::backfill_meeting_user_layer(&conn);
+        Ok(Self { conn })
+    }
+
     /// Open the database in read-only mode. Used by the MCP binary for safe
     /// concurrent reads while the Tauri app owns writes.
     pub fn open_readonly() -> Result<Self, DbError> {
@@ -138,10 +188,24 @@ impl ActionDb {
 
     /// Open a database at an explicit path in read-only mode.
     pub fn open_readonly_at(path: &std::path::Path) -> Result<Self, DbError> {
+        let hex_key = encryption::get_or_create_db_key(path).map_err(|e| {
+            if e.starts_with("KEY_MISSING:") {
+                DbError::KeyMissing {
+                    db_path: e.trim_start_matches("KEY_MISSING:").to_string(),
+                }
+            } else {
+                DbError::Encryption(e)
+            }
+        })?;
+
         let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
+
+        // PRAGMA key MUST be first
+        conn.execute_batch(&encryption::key_to_pragma(&hex_key))?;
+
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
         Ok(Self { conn })
@@ -426,19 +490,20 @@ impl ActionDb {
         }
         Ok(())
     }
-
 }
 
-pub mod actions;
 pub mod accounts;
-pub mod people;
-pub mod meetings;
-pub mod projects;
-pub mod entities;
-pub mod signals;
-pub mod emails;
+pub mod actions;
 pub mod content;
+pub mod emails;
+pub mod encryption;
+pub mod entities;
+pub mod hardening;
+pub mod meetings;
+pub mod people;
 pub mod person_relationships;
+pub mod projects;
+pub mod signals;
 
 // =============================================================================
 // Shared test utilities
@@ -457,7 +522,7 @@ pub mod test_utils {
         let dir = tempfile::tempdir().expect("Failed to create temp dir");
         let path = dir.path().join("test.db");
         std::mem::forget(dir);
-        let db = ActionDb::open_at(path).expect("Failed to open test database");
+        let db = ActionDb::open_at_unencrypted(path).expect("Failed to open test database");
         db.conn_ref()
             .execute_batch("PRAGMA foreign_keys = OFF;")
             .expect("disable FK for tests");

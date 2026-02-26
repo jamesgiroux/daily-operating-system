@@ -108,7 +108,10 @@ pub fn get_avatar_url_for_person(conn: &Connection, person_id: &str) -> Option<S
 
 /// Get emails that need fetching: no cache entry or stale cache.
 /// Returns (email, person_id) pairs, limited to `max_count`.
-pub fn get_stale_emails(conn: &Connection, max_count: usize) -> Result<Vec<(String, Option<String>)>, String> {
+pub fn get_stale_emails(
+    conn: &Connection,
+    max_count: usize,
+) -> Result<Vec<(String, Option<String>)>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT pe.email, pe.person_id

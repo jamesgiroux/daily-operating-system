@@ -136,8 +136,7 @@ fn compute_text_scores(chunks: &[DbContentEmbedding], query: &str) -> HashMap<St
     let avgdl = if tokenized_docs.is_empty() {
         200.0
     } else {
-        tokenized_docs.values().map(|t| t.len()).sum::<usize>() as f32
-            / tokenized_docs.len() as f32
+        tokenized_docs.values().map(|t| t.len()).sum::<usize>() as f32 / tokenized_docs.len() as f32
     };
     let mut raw_scores: HashMap<String, f32> = HashMap::new();
     let mut max_score = 0.0_f32;
@@ -237,7 +236,10 @@ mod tests {
         let score_b = *scores.get("b").unwrap_or(&0.0);
         let score_a = *scores.get("a").unwrap_or(&0.0);
         let score_c = *scores.get("c").unwrap_or(&0.0);
-        assert!(score_b > 0.0, "chunk containing query term should score > 0");
+        assert!(
+            score_b > 0.0,
+            "chunk containing query term should score > 0"
+        );
         assert_eq!(score_a, 0.0, "chunk without query term should score 0");
         assert_eq!(score_c, 0.0, "chunk without query term should score 0");
     }

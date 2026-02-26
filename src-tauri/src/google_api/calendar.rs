@@ -195,9 +195,9 @@ pub async fn fetch_events(
             let attendee_rsvp: std::collections::HashMap<String, String> = non_resource
                 .iter()
                 .filter_map(|a| {
-                    a.response_status.as_ref().map(|status| {
-                        (a.email.to_lowercase(), status.clone())
-                    })
+                    a.response_status
+                        .as_ref()
+                        .map(|status| (a.email.to_lowercase(), status.clone()))
                 })
                 .collect();
 
