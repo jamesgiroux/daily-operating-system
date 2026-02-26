@@ -20,7 +20,7 @@ DailyOS now encrypts everything on disk. Your database, your briefings, your rel
 
 **App Lock** — after 15 minutes of inactivity, the app locks and shows a full-screen overlay. Touch the fingerprint sensor to get back in. Change the timeout (or turn it off) in **Settings → System → Security**.
 
-**iCloud Warning** — if your workspace folder lives under iCloud Drive, Desktop, or Documents sync, you'll see a one-time heads-up. Local intelligence data and cloud sync don't mix well — the warning explains your options.
+**iCloud Warning** — if your workspace folder lives under iCloud Drive, Desktop, or Documents sync, you'll see a one-time heads-up. Local data and cloud sync don't mix well — the warning explains your options.
 
 **Meeting Briefing Refresh** — switching an account or project on a meeting now updates the briefing content automatically. No more clicking refresh after reassigning a meeting.
 
