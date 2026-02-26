@@ -22,6 +22,7 @@ use chrono_tz::Tz;
 use regex::Regex;
 use serde_json::{json, Value};
 
+use crate::helpers::strip_conferencing_noise;
 use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
 };
@@ -1877,8 +1878,12 @@ fn push_unique_agenda_item(
 }
 
 fn split_inline_agenda_candidates(value: &str) -> Vec<String> {
+    let input = value.trim();
+    if input.is_empty() {
+        return Vec::new();
+    }
     // Use null byte as sentinel — pipes appear in real agenda text (e.g. "Review pipeline | Discuss metrics").
-    let numbered = inline_numbered_agenda_regex().replace_all(value.trim(), "\x00");
+    let numbered = inline_numbered_agenda_regex().replace_all(input, "\x00");
     let mut out = Vec::new();
     for segment in numbered.split('\x00') {
         for item in segment.split(';') {
@@ -1889,7 +1894,7 @@ fn split_inline_agenda_candidates(value: &str) -> Vec<String> {
         }
     }
     if out.is_empty() {
-        out.push(value.trim().to_string());
+        out.push(input.to_string());
     }
     out
 }
@@ -1915,37 +1920,72 @@ fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
         return Vec::new();
     };
 
+    // Step 1: Strip conferencing noise (Zoom, Teams, Meet, WebEx blocks)
+    let cleaned = strip_conferencing_noise(calendar_notes);
+    if cleaned.trim().is_empty() {
+        return Vec::new();
+    }
+
     let mut agenda = Vec::new();
     let mut seen = HashSet::new();
-    let mut in_agenda_section = false;
 
-    for line in calendar_notes.lines() {
+    // --- Priority 1: Explicit "agenda" keyword section (most precise) ---
+    let mut in_agenda_section = false;
+    let mut found_agenda_keyword = false;
+
+    for line in cleaned.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
+            // A blank line after we've collected agenda items ends the section.
+            // This prevents trailing prose from leaking in.
+            if in_agenda_section && !agenda.is_empty() {
+                in_agenda_section = false;
+            }
             continue;
         }
 
         let lower = trimmed.to_lowercase();
-        let agenda_prefix_len = if lower.starts_with("proposed agenda") {
-            "proposed agenda".len()
+
+        // Detect agenda section headers. Two patterns:
+        //
+        // Pattern A — "agenda" at the start: "Agenda:", "Agenda -", "Proposed agenda:"
+        //   Must be followed immediately by a delimiter (`:`, `-`) or end-of-line
+        //   to reject prose like "Agenda items were discussed".
+        //
+        // Pattern B — "agenda" anywhere + line ends with `:`:
+        //   "Here's the planned agenda:", "The agenda for this meeting:",
+        //   "Our agenda for today:", "Meeting agenda for Friday:"
+        //   No byte-index arithmetic needed — the colon terminator is the signal.
+        // Pattern A: "agenda" or "proposed agenda" at start, immediately followed
+        // by a delimiter (`:`, `-`) or end-of-line. Rejects prose like
+        // "Agenda items were discussed".
+        let pattern_a = if lower.starts_with("proposed agenda") {
+            let remainder = trimmed["proposed agenda".len()..].trim_start();
+            remainder.is_empty() || remainder.starts_with(':') || remainder.starts_with('-')
         } else if lower.starts_with("agenda") {
-            "agenda".len()
+            let remainder = trimmed["agenda".len()..].trim_start();
+            remainder.is_empty() || remainder.starts_with(':') || remainder.starts_with('-')
         } else {
-            0
+            false
         };
-        if agenda_prefix_len > 0 {
-            let remainder = trimmed[agenda_prefix_len..].trim_start();
-            // Require delimiter or end-of-line after keyword — reject prose like
-            // "Agenda items were discussed" which is not a section header.
-            if remainder.is_empty() || remainder.starts_with(':') || remainder.starts_with('-') {
-                in_agenda_section = true;
-                if let Some((_, rest)) = trimmed.split_once(':') {
-                    push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
-                }
-                continue;
+
+        // Pattern B: "agenda" anywhere in a line ending with `:`.
+        // Catches "Here's the planned agenda:", "The agenda for this meeting:",
+        // "Proposed agenda for the QBR:", "Our agenda for today:", etc.
+        let pattern_b = !pattern_a && lower.contains("agenda") && trimmed.ends_with(':');
+
+        let is_agenda_header = pattern_a || pattern_b;
+
+        if is_agenda_header {
+            in_agenda_section = true;
+            found_agenda_keyword = true;
+            if let Some((_, rest)) = trimmed.split_once(':') {
+                push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
             }
+            continue;
         }
 
+        // A new section header (non-list line ending with `:`) ends the agenda section
         if in_agenda_section
             && trimmed.ends_with(':')
             && !trimmed.starts_with('-')
@@ -1971,9 +2011,27 @@ fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
         }
     }
 
-    // No fallback pass needed — the first pass already matches `lower.starts_with("agenda")`
-    // which covers "agenda:", "agenda -", and any other "agenda" prefix.
+    if found_agenda_keyword && !agenda.is_empty() {
+        return agenda;
+    }
 
+    // --- Priority 2: Structured list items (numbered or bulleted) without keyword ---
+    agenda.clear();
+    seen.clear();
+
+    for line in cleaned.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(caps) = agenda_list_item_regex().captures(trimmed) {
+            if let Some(item) = caps.get(1) {
+                push_calendar_agenda_candidate(item.as_str(), &mut agenda, &mut seen);
+            }
+        }
+    }
+
+    // Return structured items if found; otherwise no mechanical agenda
     agenda
 }
 
@@ -5247,6 +5305,118 @@ END_AGENDA
         });
         let agenda = extract_calendar_agenda_items(&prep);
         assert!(agenda.is_empty());
+    }
+
+    #[test]
+    fn test_extract_heres_the_planned_agenda() {
+        // The exact Salesforce DMT format that triggered this fix.
+        let prep = json!({
+            "calendarNotes": "Here's the planned agenda:\n1. Salesforce DMT overview and current status\n2. Review Q1 pipeline coverage\n3. Discuss expansion into Enterprise segment\n4. Action items and next steps",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 4);
+        assert_eq!(agenda[0], "Salesforce DMT overview and current status");
+        assert_eq!(agenda[1], "Review Q1 pipeline coverage");
+        assert_eq!(agenda[2], "Discuss expansion into Enterprise segment");
+        assert_eq!(agenda[3], "Action items and next steps");
+    }
+
+    #[test]
+    fn test_extract_agenda_with_zoom_block() {
+        let prep = json!({
+            "calendarNotes": "Agenda:\n1. Review proposal\n2. Timeline discussion\n\nJoin Zoom Meeting\nhttps://zoom.us/j/12345\nMeeting ID: 123 456\nPasscode: abc",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Timeline discussion");
+    }
+
+    #[test]
+    fn test_extract_agenda_with_teams_block() {
+        let prep = json!({
+            "calendarNotes": "Discussion Topics:\n- Pipeline review\n- Budget alignment\n\nJoin Microsoft Teams Meeting\nhttps://teams.microsoft.com/l/meetup\n+1 234-567-8901,,12345#",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Pipeline review");
+        assert_eq!(agenda[1], "Budget alignment");
+    }
+
+    #[test]
+    fn test_extract_numbered_list_no_header() {
+        // Numbered items without any "agenda" keyword should still be extracted.
+        let prep = json!({
+            "calendarNotes": "1. Review Q1 numbers\n2. Plan Q2 targets\n3. Assign owners",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 3);
+        assert_eq!(agenda[0], "Review Q1 numbers");
+        assert_eq!(agenda[1], "Plan Q2 targets");
+        assert_eq!(agenda[2], "Assign owners");
+    }
+
+    #[test]
+    fn test_extract_pure_zoom_description() {
+        // Description is ONLY Zoom info → empty agenda (correct).
+        let prep = json!({
+            "calendarNotes": "Join Zoom Meeting\nhttps://zoom.us/j/12345\nMeeting ID: 123 456\nPasscode: abc",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert!(agenda.is_empty());
+    }
+
+    #[test]
+    fn test_extract_agenda_for_this_meeting() {
+        // "The agenda for this meeting:" — agenda keyword mid-sentence with colon at end.
+        let prep = json!({
+            "calendarNotes": "The agenda for this meeting:\n- Pipeline review\n- Budget alignment\n- Next steps",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 3);
+        assert_eq!(agenda[0], "Pipeline review");
+        assert_eq!(agenda[1], "Budget alignment");
+        assert_eq!(agenda[2], "Next steps");
+    }
+
+    #[test]
+    fn test_extract_proposed_agenda_for_qbr() {
+        // "Proposed agenda for the QBR:" — proposed agenda with intervening words.
+        let prep = json!({
+            "calendarNotes": "Proposed agenda for the QBR:\n1. Health score review\n2. Expansion opportunities\n3. Risk items",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 3);
+        assert_eq!(agenda[0], "Health score review");
+        assert_eq!(agenda[1], "Expansion opportunities");
+        assert_eq!(agenda[2], "Risk items");
+    }
+
+    #[test]
+    fn test_extract_our_agenda_for_today() {
+        // "Our agenda for today:" — another real-world pattern.
+        let prep = json!({
+            "calendarNotes": "Our agenda for today:\n- Standup updates\n- Sprint planning\nQuestions:\n- Who owns the migration?",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        // Should get standup + sprint, NOT the question (it's after a new section header)
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Standup updates");
+        assert_eq!(agenda[1], "Sprint planning");
+    }
+
+    #[test]
+    fn test_extract_full_real_world_invite() {
+        // Realistic calendar invite: agenda + Zoom + discussion context.
+        let prep = json!({
+            "calendarNotes": "Hi team,\n\nHere's the planned agenda:\n1. Salesforce DMT overview and current status\n2. Review Q1 pipeline coverage\n3. Discuss expansion into Enterprise segment\n4. Action items and next steps\n\nPlease review the attached deck before the call.\n\nJoin Zoom Meeting\nhttps://zoom.us/j/98765432\nMeeting ID: 987 6543 2100\nPasscode: DmT2024\n\nOne tap mobile\n+16465588656,,98765432#,,,,*123456# US (New York)\n+13017158592,,98765432#,,,,*123456# US (Washington DC)\n\nFind your local number: https://zoom.us/u/abc123",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 4);
+        assert_eq!(agenda[0], "Salesforce DMT overview and current status");
+        assert_eq!(agenda[1], "Review Q1 pipeline coverage");
+        assert_eq!(agenda[2], "Discuss expansion into Enterprise segment");
+        assert_eq!(agenda[3], "Action items and next steps");
     }
 
     #[test]

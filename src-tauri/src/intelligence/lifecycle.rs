@@ -260,9 +260,46 @@ pub async fn generate_meeting_intelligence(
         assess_intelligence_quality(db, meeting_id)
     };
 
-    // 4. ADR-0086: Enqueue for mechanical prep assembly instead of AI enrichment.
-    // MeetingPrepQueue reads from entity intelligence.json files — no PTY call.
-    // Clear existing prep_frozen_json if force_full so it gets regenerated.
+    // 4. Clear frozen prep and enqueue for mechanical reassembly.
+    if force_full {
+        let guard = state.db.lock().map_err(|_| {
+            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
+        })?;
+        let db = guard.as_ref().ok_or_else(|| {
+            ExecutionError::ConfigurationError("Database not initialized".to_string())
+        })?;
+        let _ = db.conn_ref().execute(
+            "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
+            rusqlite::params![meeting_id],
+        );
+
+        // Also enqueue linked entities for background AI re-enrichment.
+        // The intel processor will write fresh intelligence.json and then
+        // call invalidate_and_requeue_meeting_preps() which re-assembles
+        // the meeting prep a second time with fully updated data.
+        if let Ok(entities) = db.get_meeting_entities(meeting_id) {
+            for entity in &entities {
+                state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+                    entity_id: entity.id.clone(),
+                    entity_type: entity.entity_type.as_str().to_string(),
+                    priority: crate::intel_queue::IntelPriority::Manual,
+                    requested_at: std::time::Instant::now(),
+                });
+            }
+            if !entities.is_empty() {
+                state.integrations.intel_queue_wake.notify_one();
+                log::info!(
+                    "generate_meeting_intelligence: enqueued {} linked entities for background AI re-enrichment",
+                    entities.len(),
+                );
+            }
+        }
+    }
+
+    // Always enqueue for immediate mechanical prep assembly from existing
+    // intelligence.json files. For force_full this gives the user instant
+    // feedback (stale prep cleared, rebuilt with fixed prompts); the background
+    // entity re-enrichment will later produce a second, richer update.
     if force_full {
         let guard = state.db.lock().map_err(|_| {
             ExecutionError::ConfigurationError("DB lock poisoned".to_string())
@@ -275,7 +312,6 @@ pub async fn generate_meeting_intelligence(
             rusqlite::params![meeting_id],
         );
     }
-
     state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
         meeting_id: meeting_id.to_string(),
         priority: crate::meeting_prep_queue::PrepPriority::Manual,
@@ -284,8 +320,9 @@ pub async fn generate_meeting_intelligence(
     state.integrations.prep_queue_wake.notify_one();
 
     log::info!(
-        "generate_meeting_intelligence: enqueued {} for mechanical prep assembly (quality={:?})",
+        "generate_meeting_intelligence: processed {} (force={}, quality={:?})",
         meeting_id,
+        force_full,
         quality.level,
     );
 
