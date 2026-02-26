@@ -282,9 +282,12 @@ export default function MeetingDetailPage() {
   const handleRefreshIntelligence = useCallback(async () => {
     if (!meetingId) return;
     setRefreshingIntel(true);
-    toast("Checking for updates…", { duration: 10000, id: "intel-refresh" });
+    toast("Refreshing briefing…", { duration: 10_000, id: "intel-refresh" });
     try {
       await invoke("generate_meeting_intelligence", { meetingId, force: true });
+      // Mechanical prep reassembly happens synchronously via the prep queue.
+      // Give it a moment to complete, then reload.
+      await new Promise((r) => setTimeout(r, 2000));
       await loadMeetingIntelligence();
       toast.success("Briefing updated", { id: "intel-refresh" });
     } catch (err) {
@@ -325,13 +328,18 @@ export default function MeetingDetailPage() {
       lines.push("");
     }
 
-    const points = (data.talkingPoints ?? [])
-      .map((p) => sanitizeInlineText(p))
-      .filter((p) => p.length > 0)
-      .slice(0, 5);
-    if (points.length > 0) {
-      lines.push("Discussion Points");
-      points.forEach((p) => lines.push(`\u2022 ${p}`));
+    // Plan items — match the filtered proposedAgenda displayed in "Your Plan"
+    const planItems = (data.proposedAgenda ?? [])
+      .map((item) => sanitizeInlineText(item.topic))
+      .filter((t) => t.length > 0);
+    const planNonWin = (data.proposedAgenda ?? [])
+      .filter((item) => item.source !== "talking_point")
+      .map((item) => sanitizeInlineText(item.topic))
+      .filter((t) => t.length > 0);
+    const sharePlanItems = planNonWin.length > 0 ? planNonWin : planItems;
+    if (sharePlanItems.length > 0) {
+      lines.push("Your Plan");
+      sharePlanItems.forEach((p) => lines.push(`\u2022 ${p}`));
       lines.push("");
     }
 

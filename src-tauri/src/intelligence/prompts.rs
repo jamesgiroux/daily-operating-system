@@ -12,6 +12,7 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::db::{ActionDb, DbAccount, DbProject};
+use crate::helpers::strip_conferencing_noise;
 use crate::util::wrap_user_data;
 
 use super::io::*;
@@ -176,9 +177,13 @@ pub fn build_intelligence_context(
                 let doc = match (&m.summary, &m.transcript_path) {
                     (Some(s), _) if !s.is_empty() => s.clone(),
                     (_, Some(p)) if !p.is_empty() => "transcript available".to_string(),
-                    _ => "no documented summary".to_string(),
+                    _ => String::new(),
                 };
-                format!("- {} | {} | {}", m.start_time, m.title, doc)
+                if doc.is_empty() {
+                    format!("- {} | {}", m.start_time, m.title)
+                } else {
+                    format!("- {} | {} | {}", m.start_time, m.title, doc)
+                }
             })
             .collect();
         ctx.meeting_history = lines.join("\n");
@@ -614,7 +619,14 @@ pub fn build_intelligence_context(
     if entity_type == "account" {
         if let Ok(upcoming) = db.get_upcoming_meetings_for_account(entity_id, 1) {
             if let Some(m) = upcoming.first() {
-                ctx.next_meeting = Some(format!("{} — {}", m.start_time, m.title));
+                let mut next = format!("{} — {}", m.start_time, m.title);
+                if let Some(ref desc) = m.description {
+                    let cleaned = strip_conferencing_noise(desc);
+                    if !cleaned.trim().is_empty() {
+                        next.push_str(&format!("\nMeeting Description:\n{}", cleaned.trim()));
+                    }
+                }
+                ctx.next_meeting = Some(next);
             }
         }
     }
@@ -768,7 +780,7 @@ fn build_user_context_block(
             embedding_model,
             name,
             2,    // top-2 results
-            0.70, // similarity threshold (I413 AC4: raised from 0.50 to reduce noise)
+            0.82, // similarity threshold — raised from 0.70 to prevent cross-entity bleed
         );
 
         // Search user attachments (file embeddings)
@@ -777,7 +789,7 @@ fn build_user_context_block(
             embedding_model,
             name,
             2,    // top-2 attachment chunks
-            0.70, // same threshold for consistency
+            0.82, // same threshold for consistency
         );
 
         // Combine both sources, sort by score, keep top-4 total
