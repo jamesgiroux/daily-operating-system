@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use crate::db::{ActionDb, DbAccount, DbProject};
 use crate::helpers::strip_conferencing_noise;
-use crate::util::wrap_user_data;
+use crate::util::{sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 use super::io::*;
 
@@ -1132,11 +1132,14 @@ fn build_intelligence_prompt_inner(
 
     let mut prompt = String::with_capacity(4096);
 
+    // I468: Injection resistance preamble
+    prompt.push_str(INJECTION_PREAMBLE);
+
     // System context
     prompt.push_str(&format!(
         "You are building an intelligence assessment for the {label} \"{name}\".\n\n",
         label = entity_label,
-        name = wrap_user_data(entity_name)
+        name = sanitize_external_field(entity_name)
     ));
 
     // I313: Inject full vocabulary context for domain-specific framing
@@ -1264,7 +1267,7 @@ fn build_intelligence_prompt_inner(
             let ct = f.content_type.as_deref().unwrap_or("general");
             prompt.push_str(&format!(
                 "- {} [{}] ({}, {})\n",
-                wrap_user_data(&f.filename),
+                sanitize_external_field(&f.filename),
                 ct,
                 f.format.as_deref().unwrap_or("unknown"),
                 f.modified_at
@@ -1779,13 +1782,15 @@ pub fn parse_intelligence_response(
     source_file_count: usize,
     manifest: Vec<SourceManifestEntry>,
 ) -> Result<IntelligenceJson, String> {
-    // Try JSON first
+    // Try JSON first (includes I470 validation + anomaly detection)
     let mut intel = if let Some(parsed) =
         try_parse_json_response(response, entity_id, entity_type, source_file_count, &manifest)
     {
         parsed
     } else {
-        // Fall back to pipe-delimited format (backwards compat)
+        // Fall back to pipe-delimited format (backwards compat).
+        // Run anomaly detection on the raw response even for non-JSON (I470).
+        crate::intelligence::validation::check_anomalies_public(response);
         parse_pipe_delimited_response(response, entity_id, entity_type, source_file_count, manifest)?
     };
 
@@ -1932,6 +1937,13 @@ fn try_parse_json_response(
     manifest: &[SourceManifestEntry],
 ) -> Option<IntelligenceJson> {
     let json_str = extract_json_from_response(response)?;
+
+    // I470: Validate structure and run anomaly detection before deserialization
+    if let Err(e) = super::validation::validate_intelligence_response(json_str) {
+        log::warn!("Intelligence response validation failed for {}: {}", entity_id, e);
+        return None;
+    }
+
     let ai_resp: AiIntelResponse = serde_json::from_str(json_str).ok()?;
 
     let current_state = ai_resp.current_state.map(|cs| CurrentState {

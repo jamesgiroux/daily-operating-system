@@ -15,7 +15,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::db::{ActionDb, DbAccount};
-use crate::util::{slugify, wrap_user_data};
+use crate::util::{sanitize_external_field, slugify, wrap_user_data};
 
 // =============================================================================
 // JSON Schema
@@ -972,7 +972,7 @@ pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) ->
 
         context_parts.push(format!(
             "--- {} [{}] ---\n{}",
-            wrap_user_data(&file.filename),
+            sanitize_external_field(&file.filename),
             file.content_type,
             wrap_user_data(truncated),
         ));

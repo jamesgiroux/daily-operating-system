@@ -306,11 +306,13 @@ fn cascade_targets<'a>(
 ///
 /// Performs mutation, prep invalidation, immediate mechanical rebuild, and
 /// async entity intelligence refresh queuing. Falls back to prep queue when
-/// immediate rebuild fails.
+/// immediate rebuild fails. Emits `prep-ready` event on successful rebuild
+/// so the frontend auto-refreshes (I477).
 async fn mutate_meeting_entities_and_refresh_briefing(
     state: &AppState,
     meeting_id: &str,
     mutation: MeetingEntityMutation,
+    app_handle: Option<&tauri::AppHandle>,
 ) -> Result<(), String> {
     let meeting_id_s = meeting_id.to_string();
 
@@ -496,6 +498,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                 entity_type,
                 priority: crate::intel_queue::IntelPriority::CalendarChange,
                 requested_at: std::time::Instant::now(),
+                retry_count: 0,
             });
         }
         state.integrations.intel_queue_wake.notify_one();
@@ -530,7 +533,19 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                 Ok::<(), String>(())
             })
             .await;
+
+        // Emit prep-ready so MeetingDetailPage auto-refreshes (I477).
+        if let Some(app) = app_handle {
+            let _ = app.emit(
+                "prep-ready",
+                crate::meeting_prep_queue::PrepReadyPayload {
+                    meeting_id: meeting_id_s,
+                },
+            );
+        }
     } else {
+        // Fallback: enqueue for background rebuild. The background processor
+        // will emit prep-ready when it completes.
         state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
             meeting_id: meeting_id_s,
             priority: crate::meeting_prep_queue::PrepPriority::Manual,
@@ -542,11 +557,20 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     Ok(())
 }
 
+/// Context for meeting-entity mutation commands (I477).
+///
+/// Groups common meeting metadata fields to keep function signatures
+/// within clippy's 7-argument limit.
+pub struct MeetingMutationCtx<'a> {
+    pub state: &'a AppState,
+    pub meeting_id: &'a str,
+    pub app_handle: Option<&'a tauri::AppHandle>,
+}
+
 /// Update a meeting entity with full cascade: clear existing links, set new one,
 /// cascade to actions/captures/people, invalidate prep, then rebuild prep.
 pub async fn update_meeting_entity(
-    state: &AppState,
-    meeting_id: &str,
+    ctx: MeetingMutationCtx<'_>,
     entity_id: Option<&str>,
     entity_type: &str,
     meeting_title: &str,
@@ -554,8 +578,8 @@ pub async fn update_meeting_entity(
     meeting_type_str: &str,
 ) -> Result<(), String> {
     mutate_meeting_entities_and_refresh_briefing(
-        state,
-        meeting_id,
+        ctx.state,
+        ctx.meeting_id,
         MeetingEntityMutation::Replace {
             entity_id: entity_id.map(|s| s.to_string()),
             entity_type: entity_type.to_string(),
@@ -563,6 +587,7 @@ pub async fn update_meeting_entity(
             start_time: start_time.to_string(),
             meeting_type: meeting_type_str.to_string(),
         },
+        ctx.app_handle,
     )
     .await
 }
@@ -570,8 +595,7 @@ pub async fn update_meeting_entity(
 /// Add an entity link to a meeting with full cascade (people, intelligence).
 /// Unlike `update_meeting_entity` which clears-and-replaces, this is additive.
 pub async fn add_meeting_entity(
-    state: &AppState,
-    meeting_id: &str,
+    ctx: MeetingMutationCtx<'_>,
     entity_id: &str,
     entity_type: &str,
     meeting_title: &str,
@@ -579,8 +603,8 @@ pub async fn add_meeting_entity(
     meeting_type_str: &str,
 ) -> Result<(), String> {
     mutate_meeting_entities_and_refresh_briefing(
-        state,
-        meeting_id,
+        ctx.state,
+        ctx.meeting_id,
         MeetingEntityMutation::Add {
             entity_id: entity_id.to_string(),
             entity_type: entity_type.to_string(),
@@ -588,24 +612,25 @@ pub async fn add_meeting_entity(
             start_time: start_time.to_string(),
             meeting_type: meeting_type_str.to_string(),
         },
+        ctx.app_handle,
     )
     .await
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
 pub async fn remove_meeting_entity(
-    state: &AppState,
-    meeting_id: &str,
+    ctx: MeetingMutationCtx<'_>,
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
     mutate_meeting_entities_and_refresh_briefing(
-        state,
-        meeting_id,
+        ctx.state,
+        ctx.meeting_id,
         MeetingEntityMutation::Remove {
             entity_id: entity_id.to_string(),
             entity_type: entity_type.to_string(),
         },
+        ctx.app_handle,
     )
     .await
 }
@@ -1731,6 +1756,7 @@ pub async fn refresh_meeting_briefing_full(
                 entity_type: entity_type.clone(),
                 priority: crate::intel_queue::IntelPriority::Manual,
                 requested_at: std::time::Instant::now(),
+                retry_count: 0,
             });
         }
         state.integrations.intel_queue_wake.notify_one();
