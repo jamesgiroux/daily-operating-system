@@ -364,7 +364,11 @@ mod tests {
         )];
 
         let attendees: Vec<String> = vec![
-            "a@test.com", "b@test.com", "c@test.com", "d@test.com", "e@test.com",
+            "a@test.com",
+            "b@test.com",
+            "c@test.com",
+            "d@test.com",
+            "e@test.com",
         ]
         .into_iter()
         .map(String::from)
@@ -399,17 +403,11 @@ mod tests {
 
         assert_eq!(time_proximity_score(&base, &base), 80);
         assert_eq!(
-            time_proximity_score(
-                &base,
-                &Utc.with_ymd_and_hms(2026, 2, 17, 14, 5, 0).unwrap()
-            ),
+            time_proximity_score(&base, &Utc.with_ymd_and_hms(2026, 2, 17, 14, 5, 0).unwrap()),
             80
         );
         assert_eq!(
-            time_proximity_score(
-                &base,
-                &Utc.with_ymd_and_hms(2026, 2, 17, 14, 6, 0).unwrap()
-            ),
+            time_proximity_score(&base, &Utc.with_ymd_and_hms(2026, 2, 17, 14, 6, 0).unwrap()),
             60
         );
         assert_eq!(

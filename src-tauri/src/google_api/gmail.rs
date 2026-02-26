@@ -5,6 +5,7 @@
 //! format=metadata including labelIds to detect unread status.
 
 use serde::Deserialize;
+use std::collections::HashSet;
 
 use super::{send_with_retry, GoogleApiError, RetryPolicy};
 
@@ -167,6 +168,63 @@ pub async fn fetch_inbox_emails(
     }
 
     Ok(emails)
+}
+
+/// Fetch IDs of all messages currently in the inbox.
+///
+/// This is a lightweight listing call used for fast inbox reconciliation.
+/// Unlike `fetch_inbox_emails`, it does not fetch per-message metadata.
+pub async fn fetch_inbox_message_ids(
+    access_token: &str,
+    max_results: u32,
+) -> Result<HashSet<String>, GoogleApiError> {
+    let client = reqwest::Client::new();
+    let mut all_ids: HashSet<String> = HashSet::new();
+    let mut page_token: Option<String> = None;
+    const MAX_PAGES: usize = 5;
+
+    for _ in 0..MAX_PAGES {
+        let mut query_params: Vec<(&str, String)> = vec![
+            ("q", "in:inbox".to_string()),
+            ("maxResults", max_results.to_string()),
+        ];
+        if let Some(ref token) = page_token {
+            query_params.push(("pageToken", token.clone()));
+        }
+
+        let resp = send_with_retry(
+            client
+                .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+                .bearer_auth(access_token)
+                .query(&query_params),
+            &RetryPolicy::default(),
+        )
+        .await?;
+
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(GoogleApiError::AuthExpired);
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(GoogleApiError::ApiError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+
+        let list: MessageListResponse = resp.json().await?;
+        for stub in &list.messages {
+            all_ids.insert(stub.id.clone());
+        }
+
+        match list.next_page_token {
+            Some(token) => page_token = Some(token),
+            None => break,
+        }
+    }
+
+    Ok(all_ids)
 }
 
 /// Fetch metadata headers for a single message.
@@ -472,11 +530,7 @@ pub async fn fetch_frequent_correspondents(
     user_email: &str,
     limit: usize,
 ) -> Result<Vec<FrequentCorrespondent>, GoogleApiError> {
-    let user_domain = user_email
-        .split('@')
-        .nth(1)
-        .unwrap_or("")
-        .to_lowercase();
+    let user_domain = user_email.split('@').nth(1).unwrap_or("").to_lowercase();
     let user_email_lower = user_email.to_lowercase();
 
     let client = reqwest::Client::new();
@@ -514,14 +568,11 @@ pub async fn fetch_frequent_correspondents(
                 msg.id
             );
             let detail_resp = match send_with_retry(
-                client
-                    .get(&detail_url)
-                    .bearer_auth(access_token)
-                    .query(&[
-                        ("format", "metadata"),
-                        ("metadataHeaders", "To"),
-                        ("metadataHeaders", "Cc"),
-                    ]),
+                client.get(&detail_url).bearer_auth(access_token).query(&[
+                    ("format", "metadata"),
+                    ("metadataHeaders", "To"),
+                    ("metadataHeaders", "Cc"),
+                ]),
                 &RetryPolicy::default(),
             )
             .await
@@ -568,11 +619,7 @@ pub async fn fetch_frequent_correspondents(
     let mut results: Vec<FrequentCorrespondent> = counts
         .into_iter()
         .map(|(email, (name, count))| FrequentCorrespondent {
-            name: if name.is_empty() {
-                email.clone()
-            } else {
-                name
-            },
+            name: if name.is_empty() { email.clone() } else { name },
             email,
             message_count: count,
         })

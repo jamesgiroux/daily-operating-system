@@ -38,8 +38,7 @@ fn backup_config() -> Result<(), String> {
     let config = crate::state::config_path()?;
     if config.exists() {
         let backup = config.with_extension("json.dev-backup");
-        std::fs::copy(&config, &backup)
-            .map_err(|e| format!("Config backup failed: {}", e))?;
+        std::fs::copy(&config, &backup).map_err(|e| format!("Config backup failed: {}", e))?;
     }
     Ok(())
 }
@@ -49,8 +48,7 @@ fn restore_config_backup() -> Result<(), String> {
     let config = crate::state::config_path()?;
     let backup = config.with_extension("json.dev-backup");
     if backup.exists() {
-        std::fs::copy(&backup, &config)
-            .map_err(|e| format!("Config restore failed: {}", e))?;
+        std::fs::copy(&backup, &config).map_err(|e| format!("Config restore failed: {}", e))?;
         let _ = std::fs::remove_file(&backup);
     }
     Ok(())
@@ -226,7 +224,9 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
         Ok(token) => {
             let email = token.account.unwrap_or_else(|| "unknown".to_string());
             if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = GoogleAuthStatus::Authenticated { email: email.clone() };
+                *guard = GoogleAuthStatus::Authenticated {
+                    email: email.clone(),
+                };
             }
         }
         Err(_) => {
@@ -311,10 +311,12 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     // --- Junction tables ---
 
     let n = delete_like("meeting_entities", entity_id_like_sql);
-    let n2 = conn.execute(
-        "DELETE FROM meeting_entities WHERE meeting_id LIKE 'mh-%' OR meeting_id LIKE 'mtg-%'",
-        [],
-    ).unwrap_or(0);
+    let n2 = conn
+        .execute(
+            "DELETE FROM meeting_entities WHERE meeting_id LIKE 'mh-%' OR meeting_id LIKE 'mtg-%'",
+            [],
+        )
+        .unwrap_or(0);
     summary.push(format!("meeting_entities: {}", n + n2));
 
     let n = conn.execute(
@@ -359,10 +361,12 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     summary.push(format!("actions: {}", n));
 
     // Meetings: by known prefixes
-    let n = conn.execute(
-        "DELETE FROM meetings_history WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
-        [],
-    ).unwrap_or(0);
+    let n = conn
+        .execute(
+            "DELETE FROM meetings_history WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
+            [],
+        )
+        .unwrap_or(0);
     summary.push(format!("meetings_history: {}", n));
 
     // Captures: by known prefixes
@@ -510,7 +514,8 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         };
 
     let google_auth_status = state
-        .calendar.google_auth
+        .calendar
+        .google_auth
         .lock()
         .map(|g| match &*g {
             GoogleAuthStatus::NotConfigured => "not_configured".to_string(),
@@ -886,8 +891,13 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     let mut enriched = Vec::new();
 
     let known_domains = std::collections::HashSet::new(); // devtools: no domain filter
-    match crate::workflow::deliver::enrich_emails(&data_dir, &extraction_pty, &workspace, &user_ctx, &known_domains)
-    {
+    match crate::workflow::deliver::enrich_emails(
+        &data_dir,
+        &extraction_pty,
+        &workspace,
+        &user_ctx,
+        &known_domains,
+    ) {
         Ok(()) => enriched.push("emails"),
         Err(e) => log::warn!("Email enrichment failed (non-fatal): {}", e),
     }
@@ -1270,9 +1280,21 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // I298: Today's meetings → account junction (date-aligned IDs matching schedule.json.tmpl)
     let today_str = date_only(0);
     let today_meeting_entities: Vec<(String, &str, &str)> = vec![
-        (format!("mtg-acme-weekly-{}", today_str), "acme-corp", "account"),
-        (format!("mtg-initech-kickoff-{}", today_str), "initech", "account"),
-        (format!("mtg-globex-qbr-{}", today_str), "globex-industries", "account"),
+        (
+            format!("mtg-acme-weekly-{}", today_str),
+            "acme-corp",
+            "account",
+        ),
+        (
+            format!("mtg-initech-kickoff-{}", today_str),
+            "initech",
+            "account",
+        ),
+        (
+            format!("mtg-globex-qbr-{}", today_str),
+            "globex-industries",
+            "account",
+        ),
     ];
     for (meeting_id, entity_id, entity_type) in &today_meeting_entities {
         conn.execute(
@@ -1298,13 +1320,55 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             .unwrap_or_default()
     };
     let today_meetings_history: Vec<(String, &str, &str, String, Option<&str>)> = vec![
-        (format!("mtg-acme-weekly-{}", today_str), "Acme Corp Weekly Sync", "customer", make_iso(8, 0), Some("acme-corp")),
-        (format!("mtg-eng-standup-{}", today_str), "Engineering Standup", "team_sync", make_iso(9, 30), None),
-        (format!("mtg-initech-kickoff-{}", today_str), "Initech Phase 2 Kickoff", "customer", make_iso(10, 0), Some("initech")),
-        (format!("mtg-1on1-sarah-{}", today_str), "1:1 with Sarah (Manager)", "one_on_one", make_iso(11, 0), None),
-        (format!("mtg-globex-qbr-{}", today_str), "Globex Industries QBR", "qbr", make_iso(13, 0), Some("globex-industries")),
-        (format!("mtg-sprint-review-{}", today_str), "Product Team Sprint Review", "internal", make_iso(14, 30), None),
-        (format!("mtg-all-hands-{}", today_str), "Company All Hands", "all_hands", make_iso(16, 30), None),
+        (
+            format!("mtg-acme-weekly-{}", today_str),
+            "Acme Corp Weekly Sync",
+            "customer",
+            make_iso(8, 0),
+            Some("acme-corp"),
+        ),
+        (
+            format!("mtg-eng-standup-{}", today_str),
+            "Engineering Standup",
+            "team_sync",
+            make_iso(9, 30),
+            None,
+        ),
+        (
+            format!("mtg-initech-kickoff-{}", today_str),
+            "Initech Phase 2 Kickoff",
+            "customer",
+            make_iso(10, 0),
+            Some("initech"),
+        ),
+        (
+            format!("mtg-1on1-sarah-{}", today_str),
+            "1:1 with Sarah (Manager)",
+            "one_on_one",
+            make_iso(11, 0),
+            None,
+        ),
+        (
+            format!("mtg-globex-qbr-{}", today_str),
+            "Globex Industries QBR",
+            "qbr",
+            make_iso(13, 0),
+            Some("globex-industries"),
+        ),
+        (
+            format!("mtg-sprint-review-{}", today_str),
+            "Product Team Sprint Review",
+            "internal",
+            make_iso(14, 30),
+            None,
+        ),
+        (
+            format!("mtg-all-hands-{}", today_str),
+            "Company All Hands",
+            "all_hands",
+            make_iso(16, 30),
+            None,
+        ),
     ];
     for (id, title, mtype, start_time, account_id) in &today_meetings_history {
         conn.execute(
@@ -1825,11 +1889,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "pat-reynolds-globex-com",
             "decision_maker",
         ),
-        (
-            "globex-industries",
-            "jamie-morrison-globex-com",
-            "champion",
-        ),
+        ("globex-industries", "jamie-morrison-globex-com", "champion"),
         ("globex-industries", "casey-lee-globex-com", "power_user"),
         ("initech", "dana-patel-initech-com", "primary_contact"),
         ("initech", "priya-sharma-initech-com", "technical_contact"),

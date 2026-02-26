@@ -1,0 +1,66 @@
+.lock-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-paper-cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-lock);
+}
+
+.lock-content {
+  text-align: center;
+  max-width: 360px;
+  padding: 48px 32px;
+}
+
+.lock-icon {
+  font-family: var(--font-mark);
+  font-size: 64px;
+  font-weight: 800;
+  color: var(--color-spice-terracotta);
+  margin-bottom: 16px;
+}
+
+.lock-title {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  margin: 0 0 4px;
+  color: var(--color-text-primary);
+}
+
+.lock-subtitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 0 0 32px;
+}
+
+.lock-unlock-btn {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  padding: 12px 28px;
+  border-radius: 8px;
+  border: 1px solid var(--color-rule-heavy);
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.lock-unlock-btn:hover:not(:disabled) {
+  background: var(--color-paper-linen);
+}
+
+.lock-unlock-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.lock-error {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-spice-terracotta);
+  margin-top: 16px;
+}

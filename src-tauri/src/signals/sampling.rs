@@ -41,7 +41,11 @@ mod tests {
         // alpha=28, beta=2 → mean ≈ 0.93, samples should cluster near there
         let samples: Vec<f64> = (0..100).map(|_| sample_reliability(28.0, 2.0)).collect();
         let mean: f64 = samples.iter().sum::<f64>() / samples.len() as f64;
-        assert!(mean > 0.85, "mean of samples with alpha=28, beta=2 should be > 0.85, got {}", mean);
+        assert!(
+            mean > 0.85,
+            "mean of samples with alpha=28, beta=2 should be > 0.85, got {}",
+            mean
+        );
         assert!(mean < 0.99, "mean should be < 0.99, got {}", mean);
     }
 
@@ -50,7 +54,11 @@ mod tests {
         // alpha=3, beta=7 → mean ≈ 0.30, samples should cluster near there
         let samples: Vec<f64> = (0..100).map(|_| sample_reliability(3.0, 7.0)).collect();
         let mean: f64 = samples.iter().sum::<f64>() / samples.len() as f64;
-        assert!(mean > 0.15, "mean of samples with alpha=3, beta=7 should be > 0.15, got {}", mean);
+        assert!(
+            mean > 0.15,
+            "mean of samples with alpha=3, beta=7 should be > 0.15, got {}",
+            mean
+        );
         assert!(mean < 0.45, "mean should be < 0.45, got {}", mean);
     }
 

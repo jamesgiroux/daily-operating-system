@@ -99,7 +99,12 @@ pub fn classify_email_priority(
 
 /// Urgency keywords that override dismissal penalty (I374).
 const URGENCY_OVERRIDE_KEYWORDS: &[&str] = &[
-    "urgent", "asap", "critical", "deadline", "emergency", "immediately",
+    "urgent",
+    "asap",
+    "critical",
+    "deadline",
+    "emergency",
+    "immediately",
 ];
 
 /// Classify email priority with optional role-preset keywords and dismissal penalty.
@@ -351,11 +356,7 @@ pub fn boost_with_entity_context(
         for (signal_type, value, confidence) in &signals {
             if BOOST_SIGNAL_TYPES.contains(&signal_type.as_str()) {
                 let reason = match value {
-                    Some(v) => format!(
-                        "elevated: {} (confidence {:.0}%)",
-                        v,
-                        confidence * 100.0
-                    ),
+                    Some(v) => format!("elevated: {} (confidence {:.0}%)", v, confidence * 100.0),
                     None => format!(
                         "elevated: {} (confidence {:.0}%)",
                         signal_type,
