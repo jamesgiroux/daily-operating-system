@@ -450,6 +450,7 @@ See `.docs/research/glean-integration-analysis.md` and `.docs/research/cs-report
 | I470 | Output schema validation + anomaly detection — reject malformed AI output before DB write; log injection anomaly events | P1 | Backend / Security |
 | I474 | Inbox document → historical meeting matching — score MeetingNotes-classified inbox files against `meetings_history` using Quill/Granola algorithm; link and run transcript pipeline on confident match | P2 | Backend / Pipeline |
 | I475 | Inbox entity-gating follow-ups — transcript NeedsEntity path, onAssignEntity result check, enrich.rs redundant DB, action account validation | P2 | Backend / Pipeline + Frontend / UX |
+| I476 | Granola cache auto-detection — scan for `cache-v*.json` instead of hardcoded filename; handle v4 format (direct JSON, transcript segment arrays) | P1 | Backend / Integrations |
 
 Issue specs: `i462.md` (SQLCipher), `i465.md` (app lock), `i469.md` (sanitize utilities), `i474.md` (inbox matching), `i475.md` (inbox entity-gating follow-ups). ADRs: `.docs/decisions/0092-data-security-at-rest-and-operational-hardening.md`, `.docs/decisions/0093-prompt-injection-hardening.md`.
 
