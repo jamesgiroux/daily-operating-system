@@ -100,11 +100,7 @@ impl PropagationEngine {
                     half_life,
                 )?;
 
-                db.insert_signal_derivation(
-                    &source_signal.id,
-                    &id,
-                    rule_name,
-                )?;
+                db.insert_signal_derivation(&source_signal.id, &id, rule_name)?;
 
                 // I385: Track cross-entity targets for intel enrichment
                 if ds.entity_id != source_signal.entity_id {
@@ -144,16 +140,31 @@ impl PropagationEngine {
 pub fn default_engine() -> PropagationEngine {
     let mut engine = PropagationEngine::new();
 
-    engine.register("rule_person_job_change", super::rules::rule_person_job_change);
+    engine.register(
+        "rule_person_job_change",
+        super::rules::rule_person_job_change,
+    );
     // NOTE: rule_meeting_frequency_drop removed — no code emits "meeting_frequency" signals (I377 audit)
     engine.register("rule_overdue_actions", super::rules::rule_overdue_actions);
-    engine.register("rule_champion_sentiment", super::rules::rule_champion_sentiment);
-    engine.register("rule_departure_renewal", super::rules::rule_departure_renewal);
-    engine.register("rule_renewal_engagement_compound", super::rules::rule_renewal_engagement_compound);
+    engine.register(
+        "rule_champion_sentiment",
+        super::rules::rule_champion_sentiment,
+    );
+    engine.register(
+        "rule_departure_renewal",
+        super::rules::rule_departure_renewal,
+    );
+    engine.register(
+        "rule_renewal_engagement_compound",
+        super::rules::rule_renewal_engagement_compound,
+    );
     engine.register("rule_person_network", super::rules::rule_person_network);
     engine.register("rule_hierarchy_up", super::rules::rule_hierarchy_up);
     engine.register("rule_hierarchy_down", super::rules::rule_hierarchy_down);
-    engine.register("rule_person_profile_discovered", super::rules::rule_person_profile_discovered);
+    engine.register(
+        "rule_person_profile_discovered",
+        super::rules::rule_person_profile_discovered,
+    );
 
     engine
 }
@@ -232,10 +243,9 @@ mod tests {
         engine.register("test_rule", test_rule);
 
         // Insert source signal first
-        let _ = super::super::bus::emit_signal(
-            &db, "person", "p1", "title_change", "clay", None, 0.85,
-        )
-        .expect("emit");
+        let _ =
+            super::super::bus::emit_signal(&db, "person", "p1", "title_change", "clay", None, 0.85)
+                .expect("emit");
 
         let signal = SignalEvent {
             id: "sig-source".to_string(),

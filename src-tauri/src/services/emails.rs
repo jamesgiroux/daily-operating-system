@@ -2,6 +2,7 @@
 // Business logic for email enrichment and retrieval.
 
 use std::collections::{HashMap, HashSet};
+use tauri::Emitter;
 
 use crate::state::AppState;
 use crate::types::{
@@ -24,23 +25,28 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     let today_dir = workspace.join("_today");
 
     // DB is the source of truth for active emails (I448: resolved_at IS NULL filtering)
-    let db_emails: Vec<crate::db::DbEmail> =
-        state.db_read(|db| db.get_all_active_emails().map_err(|e| e.to_string())).await
-            .unwrap_or_default();
+    let db_emails: Vec<crate::db::DbEmail> = state
+        .db_read(|db| db.get_all_active_emails().map_err(|e| e.to_string()))
+        .await
+        .unwrap_or_default();
+    // Gmail inbox is thread-based in most clients. Collapse to one row per thread
+    // so counts and listing align with what users see in Gmail.
+    let thread_emails = collapse_to_latest_thread_emails(&db_emails);
 
-    let emails = if !db_emails.is_empty() {
+    let emails = if !thread_emails.is_empty() {
         // Batch-resolve entity names from IDs
-        let entity_ids: HashSet<String> = db_emails
+        let entity_ids: HashSet<String> = thread_emails
             .iter()
             .filter_map(|e| e.entity_id.clone())
             .collect();
         // Build email context map outside DB closure for the person account lookup
-        let email_context_map: HashMap<String, String> = entity_ids.iter()
+        let email_context_map: HashMap<String, String> = entity_ids
+            .iter()
             .map(|eid| {
-                let context: String = db_emails.iter()
+                let context: String = thread_emails
+                    .iter()
                     .filter(|e| e.entity_id.as_deref() == Some(eid.as_str()))
-                    .filter_map(|e| e.contextual_summary.as_deref()
-                        .or(e.subject.as_deref()))
+                    .filter_map(|e| e.contextual_summary.as_deref().or(e.subject.as_deref()))
                     .collect::<Vec<_>>()
                     .join(" ")
                     .to_lowercase();
@@ -48,8 +54,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
             })
             .collect();
 
-        let entity_names: HashMap<String, String> =
-            state.db_read(move |db| {
+        let entity_names: HashMap<String, String> = state
+            .db_read(move |db| {
                 let mut map = HashMap::new();
                 for (eid, email_context) in &email_context_map {
                     // Look up entity name, and for persons also find linked account
@@ -64,12 +70,17 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                     }
                 }
                 Ok(map)
-            }).await.unwrap_or_default();
+            })
+            .await
+            .unwrap_or_default();
 
-        db_emails
+        thread_emails
             .iter()
             .map(|dbe| {
-                let entity_name = dbe.entity_id.as_ref().and_then(|eid| entity_names.get(eid).cloned());
+                let entity_name = dbe
+                    .entity_id
+                    .as_ref()
+                    .and_then(|eid| entity_names.get(eid).cloned());
                 crate::types::Email {
                     id: dbe.email_id.clone(),
                     sender: dbe.sender_name.clone().unwrap_or_default(),
@@ -111,7 +122,7 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     });
 
     // I368 AC3: Write emails.json from DB so it stays current even without a Gmail fetch
-    if !db_emails.is_empty() {
+    if !thread_emails.is_empty() {
         let json_path = today_dir.join("data").join("emails.json");
         if let Ok(json) = serde_json::to_string_pretty(&emails) {
             let _ = std::fs::create_dir_all(today_dir.join("data"));
@@ -131,10 +142,15 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
 
     // Batch-query signals from DB
     let email_ids_clone = email_ids.clone();
-    let db_signals = state.db_read(move |db| db.list_email_signals_by_email_ids(&email_ids_clone).map_err(|e| e.to_string())).await.unwrap_or_default();
+    let db_signals = state
+        .db_read(move |db| {
+            db.list_email_signals_by_email_ids(&email_ids_clone)
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .unwrap_or_default();
 
-    let has_enrichment = !db_signals.is_empty()
-        || emails.iter().any(|e| e.summary.is_some());
+    let has_enrichment = !db_signals.is_empty() || emails.iter().any(|e| e.summary.is_some());
 
     // Index signals by email_id
     let mut signals_by_email: HashMap<String, Vec<EmailSignal>> = HashMap::new();
@@ -160,9 +176,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     let mut needs_action = 0usize;
 
     // Capture entity IDs before the loop consumes emails (used for narrative below)
-    let email_entity_ids: HashSet<String> = emails.iter()
-        .filter_map(|e| e.entity_id.clone())
-        .collect();
+    let email_entity_ids: HashSet<String> =
+        emails.iter().filter_map(|e| e.entity_id.clone()).collect();
 
     for email in emails {
         let sigs = signals_by_email.remove(&email.id).unwrap_or_default();
@@ -203,30 +218,37 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     let entity_lookup_keys: Vec<(String, String)> = entity_map
         .keys()
         .map(|eid| {
-            let etype = entity_map.get(eid).map(|(et, _, _)| et.clone()).unwrap_or_default();
+            let etype = entity_map
+                .get(eid)
+                .map(|(et, _, _)| et.clone())
+                .unwrap_or_default();
             (eid.clone(), etype)
         })
         .collect();
 
-    let resolved_names: HashMap<String, String> = state.db_read(move |db| {
-        let mut map = HashMap::new();
-        for (eid, etype) in &entity_lookup_keys {
-            let name = if etype == "account" {
-                db.get_account(eid).ok().flatten().map(|a| a.name)
-            } else {
-                db.get_project(eid).ok().flatten().map(|p| p.name)
-            };
-            if let Some(n) = name {
-                map.insert(eid.clone(), n);
+    let resolved_names: HashMap<String, String> = state
+        .db_read(move |db| {
+            let mut map = HashMap::new();
+            for (eid, etype) in &entity_lookup_keys {
+                let name = if etype == "account" {
+                    db.get_account(eid).ok().flatten().map(|a| a.name)
+                } else {
+                    db.get_project(eid).ok().flatten().map(|p| p.name)
+                };
+                if let Some(n) = name {
+                    map.insert(eid.clone(), n);
+                }
             }
-        }
-        Ok(map)
-    }).await.unwrap_or_default();
+            Ok(map)
+        })
+        .await
+        .unwrap_or_default();
 
     let entity_threads: Vec<EntityEmailThread> = entity_map
         .into_iter()
         .map(|(entity_id, (entity_type, signals, email_set))| {
-            let entity_name = resolved_names.get(&entity_id)
+            let entity_name = resolved_names
+                .get(&entity_id)
                 .cloned()
                 .unwrap_or_else(|| entity_id.clone());
 
@@ -253,23 +275,30 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         0usize
     } else {
         let ids: Vec<String> = email_entity_ids.into_iter().collect();
-        state.db_read(move |db| {
-            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-            let start = format!("{}T00:00:00", today);
-            let end = format!("{}T23:59:59", today);
-            let count = ids.iter().filter(|eid| {
-                db.conn_ref()
-                    .query_row(
-                        "SELECT COUNT(*) FROM meeting_entities me
+        state
+            .db_read(move |db| {
+                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                let start = format!("{}T00:00:00", today);
+                let end = format!("{}T23:59:59", today);
+                let count = ids
+                    .iter()
+                    .filter(|eid| {
+                        db.conn_ref()
+                            .query_row(
+                                "SELECT COUNT(*) FROM meeting_entities me
                          JOIN meetings_history mh ON me.meeting_id = mh.id
                          WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
-                        rusqlite::params![eid, start, end],
-                        |row| row.get::<_, i64>(0),
-                    )
-                    .unwrap_or(0) > 0
-            }).count();
-            Ok::<usize, String>(count)
-        }).await.unwrap_or(0)
+                                rusqlite::params![eid, start, end],
+                                |row| row.get::<_, i64>(0),
+                            )
+                            .unwrap_or(0)
+                            > 0
+                    })
+                    .count();
+                Ok::<usize, String>(count)
+            })
+            .await
+            .unwrap_or(0)
     };
 
     let email_narrative: Option<String> = if total == 0 {
@@ -301,6 +330,25 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     })
 }
 
+fn collapse_to_latest_thread_emails(db_emails: &[crate::db::DbEmail]) -> Vec<crate::db::DbEmail> {
+    let mut seen_threads: HashSet<String> = HashSet::new();
+    let mut collapsed = Vec::new();
+
+    for email in db_emails {
+        let thread_key = email
+            .thread_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .unwrap_or(&email.email_id)
+            .to_string();
+        if seen_threads.insert(thread_key) {
+            collapsed.push(email.clone());
+        }
+    }
+
+    collapsed
+}
+
 /// Find the most relevant account linked to a person, given email context.
 ///
 /// When a person is linked to multiple accounts, simple `LIMIT 1` grabs a random one.
@@ -314,7 +362,7 @@ pub(crate) fn best_account_for_person(
     let mut stmt = match db.conn_ref().prepare(
         "SELECT a.id, a.name, a.keywords FROM accounts a
          JOIN entity_people ep ON a.id = ep.entity_id
-         WHERE ep.person_id = ?1"
+         WHERE ep.person_id = ?1",
     ) {
         Ok(s) => s,
         Err(_) => return None,
@@ -538,10 +586,7 @@ pub fn update_email_entity(
 }
 
 /// Dismiss a single email signal by ID with relevance learning signal.
-pub fn dismiss_email_signal(
-    db: &crate::db::ActionDb,
-    signal_id: i64,
-) -> Result<(), String> {
+pub fn dismiss_email_signal(db: &crate::db::ActionDb, signal_id: i64) -> Result<(), String> {
     let context = db
         .dismiss_email_signal(signal_id)
         .map_err(|e| e.to_string())?;
@@ -574,8 +619,15 @@ pub fn dismiss_email_item(
     email_type: Option<&str>,
     entity_id: Option<&str>,
 ) -> Result<(), String> {
-    db.dismiss_email_item(item_type, email_id, item_text, sender_domain, email_type, entity_id)
-        .map_err(|e| e.to_string())?;
+    db.dismiss_email_item(
+        item_type,
+        email_id,
+        item_text,
+        sender_domain,
+        email_type,
+        entity_id,
+    )
+    .map_err(|e| e.to_string())?;
 
     let etype = entity_id.map(|_| "account").unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
@@ -595,10 +647,92 @@ pub fn dismiss_email_item(
     Ok(())
 }
 
+struct InboxPresenceReconcileResult {
+    changed: bool,
+    reappeared_or_new_count: usize,
+}
+
+fn reconcile_inbox_presence_from_ids(
+    db: &crate::db::ActionDb,
+    inbox_ids: &HashSet<String>,
+) -> Result<InboxPresenceReconcileResult, String> {
+    let active_db_emails = db.get_all_active_emails().map_err(|e| e.to_string())?;
+    let db_ids: HashSet<String> = active_db_emails
+        .iter()
+        .map(|e| e.email_id.clone())
+        .collect();
+
+    let vanished: Vec<String> = db_ids.difference(inbox_ids).cloned().collect();
+    let reappeared_or_new: Vec<String> = inbox_ids.difference(&db_ids).cloned().collect();
+
+    let mut changed = false;
+
+    if !vanished.is_empty() {
+        let resolved = db.mark_emails_resolved(&vanished)?;
+        let deactivated = db
+            .deactivate_signals_for_emails(&vanished)
+            .map_err(|e| e.to_string())?;
+        if resolved > 0 || deactivated > 0 {
+            changed = true;
+            log::info!(
+                "Email inbox reconcile: resolved {} vanished emails, deactivated {} signals",
+                resolved,
+                deactivated
+            );
+        }
+    }
+
+    if !reappeared_or_new.is_empty() {
+        let reopened = db.unmark_resolved(&reappeared_or_new)?;
+        if reopened > 0 {
+            changed = true;
+            log::info!(
+                "Email inbox reconcile: unmarked {} reappeared emails",
+                reopened
+            );
+        }
+    }
+
+    Ok(InboxPresenceReconcileResult {
+        changed,
+        reappeared_or_new_count: reappeared_or_new.len(),
+    })
+}
+
+/// Fast inbox-presence sync for the /emails page.
+///
+/// Reconciles local active emails against current Gmail inbox IDs without
+/// triggering enrichment PTY work. This keeps archived emails from lingering.
+pub async fn sync_email_inbox_presence(
+    state: &std::sync::Arc<AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    let access_token = crate::google_api::get_valid_access_token()
+        .await
+        .map_err(|e| format!("Gmail auth failed: {}", e))?;
+    let inbox_ids = crate::google_api::gmail::fetch_inbox_message_ids(&access_token, 100)
+        .await
+        .map_err(|e| format!("Gmail inbox sync failed: {}", e))?;
+
+    let result = state
+        .db_write(move |db| reconcile_inbox_presence_from_ids(db, &inbox_ids))
+        .await?;
+
+    if result.changed {
+        let _ = app_handle.emit("emails-updated", ());
+    }
+
+    // If Gmail has IDs we don't have active locally, wake the poller to ingest
+    // those messages and classify/enrich in the normal pipeline.
+    if result.reappeared_or_new_count > 0 {
+        state.integrations.email_poller_wake.notify_one();
+    }
+
+    Ok(result.changed)
+}
+
 /// Archive low-priority emails in Gmail and remove from local data (I144).
-pub async fn archive_low_priority_emails(
-    state: &AppState,
-) -> Result<usize, String> {
+pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, String> {
     let config = state
         .config
         .read()

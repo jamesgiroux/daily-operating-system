@@ -25,7 +25,15 @@ pub fn emit(
     value: Option<&str>,
     confidence: f64,
 ) -> Result<String, crate::db::DbError> {
-    bus::emit_signal(db, entity_type, entity_id, signal_type, source, value, confidence)
+    bus::emit_signal(
+        db,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )
 }
 
 /// Emit a signal and run cross-entity propagation rules.
@@ -40,7 +48,16 @@ pub fn emit_and_propagate(
     value: Option<&str>,
     confidence: f64,
 ) -> Result<(String, Vec<String>), crate::db::DbError> {
-    bus::emit_signal_and_propagate(db, engine, entity_type, entity_id, signal_type, source, value, confidence)
+    bus::emit_signal_and_propagate(
+        db,
+        engine,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )
 }
 
 /// Emit a signal, propagate, and evaluate for self-healing re-enrichment.
@@ -56,7 +73,17 @@ pub fn emit_propagate_and_evaluate(
     confidence: f64,
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> Result<(String, Vec<String>), crate::db::DbError> {
-    bus::emit_signal_propagate_and_evaluate(db, engine, entity_type, entity_id, signal_type, source, value, confidence, queue)
+    bus::emit_signal_propagate_and_evaluate(
+        db,
+        engine,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+        queue,
+    )
 }
 
 /// Get all active (non-superseded) signals for an entity.

@@ -323,7 +323,9 @@ pub fn read_project_json(path: &Path) -> Result<ReadProjectResult, String> {
     let project_dir = path.parent().ok_or("No parent dir")?;
     let json: ProjectJson = crate::entity_io::read_entity_json(
         project_dir,
-        path.file_name().and_then(|n| n.to_str()).unwrap_or("dashboard.json"),
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("dashboard.json"),
     )?;
 
     let name = project_dir

@@ -16,18 +16,16 @@ use crate::parser::list_inbox_files;
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
-    CalendarEvent, CapturedOutcome, Config,
-    EmailBriefingData,
-    ExecutionRecord, FullMeetingPrep, GoogleAuthStatus, InboxFile,
-    LiveProactiveSuggestion, MeetingIntelligence,
+    CalendarEvent, CapturedOutcome, Config, EmailBriefingData, ExecutionRecord, FullMeetingPrep,
+    GoogleAuthStatus, InboxFile, LiveProactiveSuggestion, MeetingIntelligence,
     PostMeetingCaptureConfig, SourceReference, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
 // Result types now in services
+pub use crate::services::actions::ActionsResult;
 pub use crate::services::dashboard::DashboardResult;
 pub use crate::services::dashboard::WeekResult;
-pub use crate::services::actions::ActionsResult;
 
 /// p95 latency budgets for hot read commands.
 const READ_CMD_LATENCY_BUDGET_MS: u128 = 100;
@@ -67,7 +65,9 @@ pub fn reload_configuration(state: State<'_, Arc<AppState>>) -> Result<Config, S
 
 /// Get dashboard data from workspace _today/data/ JSON files
 #[tauri::command]
-pub async fn get_dashboard_data(state: State<'_, Arc<AppState>>) -> Result<DashboardResult, String> {
+pub async fn get_dashboard_data(
+    state: State<'_, Arc<AppState>>,
+) -> Result<DashboardResult, String> {
     Ok(crate::services::dashboard::get_dashboard_data(&state).await)
 }
 
@@ -189,21 +189,30 @@ struct UserAgendaLayer {
 }
 
 fn parse_user_agenda_layer(value: Option<&str>) -> UserAgendaLayer {
-    let Some(json) = value else { return UserAgendaLayer::default() };
+    let Some(json) = value else {
+        return UserAgendaLayer::default();
+    };
     // Try rich format first
     if let Ok(layer) = serde_json::from_str::<UserAgendaLayer>(json) {
         return layer;
     }
     // Fall back to legacy Vec<String>
     if let Ok(items) = serde_json::from_str::<Vec<String>>(json) {
-        return UserAgendaLayer { items, ..Default::default() };
+        return UserAgendaLayer {
+            items,
+            ..Default::default()
+        };
     }
     UserAgendaLayer::default()
 }
 
 fn parse_user_agenda_json(value: Option<&str>) -> Option<Vec<String>> {
     let layer = parse_user_agenda_layer(value);
-    if layer.items.is_empty() { None } else { Some(layer.items) }
+    if layer.items.is_empty() {
+        None
+    } else {
+        Some(layer.items)
+    }
 }
 
 fn load_meeting_prep_from_sources(
@@ -270,9 +279,10 @@ pub async fn generate_meeting_intelligence(
         return Ok(result.quality);
     }
 
-    let result = crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, force_full)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result =
+        crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, force_full)
+            .await
+            .map_err(|e| e.to_string())?;
     let _ = app_handle.emit("entity-updated", ());
     Ok(result)
 }
@@ -302,7 +312,10 @@ pub async fn enrich_meeting_background(
 
 /// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
 #[tauri::command]
-pub async fn get_meeting_prep(meeting_id: String, state: State<'_, Arc<AppState>>) -> Result<MeetingPrepResult, String> {
+pub async fn get_meeting_prep(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<MeetingPrepResult, String> {
     Ok(match get_meeting_intelligence(meeting_id, state).await {
         Ok(intel) => match intel.prep {
             Some(data) => MeetingPrepResult::Success { data },
@@ -703,9 +716,9 @@ pub async fn backfill_prep_semantics(
     report.skipped_file_count = file_counts.skipped;
     report.parse_error_file_count = file_counts.parse_errors;
 
-    let db_counts = state.db_write(move |db| {
-        backfill_db_prep_contexts(db, dry_run)
-    }).await?;
+    let db_counts = state
+        .db_write(move |db| backfill_db_prep_contexts(db, dry_run))
+        .await?;
     report.candidate_db_row_count = db_counts.candidate;
     report.transformed_db_row_count = db_counts.transformed;
     report.skipped_db_row_count = db_counts.skipped;
@@ -874,9 +887,10 @@ pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxRes
     let count = files.len();
 
     // Enrich files with persistent processing status from DB
-    if let Ok(status_map) = state.db_read(|db| {
-        db.get_latest_processing_status().map_err(|e| e.to_string())
-    }).await {
+    if let Ok(status_map) = state
+        .db_read(|db| db.get_latest_processing_status().map_err(|e| e.to_string()))
+        .await
+    {
         for file in &mut files {
             if let Some((status, error)) = status_map.get(&file.filename) {
                 file.processing_status = Some(status.clone());
@@ -1252,7 +1266,9 @@ pub fn get_all_emails(state: State<'_, Arc<AppState>>) -> EmailsResult {
 ///
 /// Get enriched email briefing data with signals and entity threads.
 #[tauri::command]
-pub async fn get_emails_enriched(state: State<'_, Arc<AppState>>) -> Result<EmailBriefingData, String> {
+pub async fn get_emails_enriched(
+    state: State<'_, Arc<AppState>>,
+) -> Result<EmailBriefingData, String> {
     crate::services::emails::get_emails_enriched(&state).await
 }
 
@@ -1265,9 +1281,16 @@ pub async fn update_email_entity(
     entity_id: Option<String>,
     entity_type: Option<String>,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        crate::services::emails::update_email_entity(db, &email_id, entity_id.as_deref(), entity_type.as_deref())
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::emails::update_email_entity(
+                db,
+                &email_id,
+                entity_id.as_deref(),
+                entity_type.as_deref(),
+            )
+        })
+        .await
 }
 
 /// Dismiss a single email signal by ID. Sets `deactivated_at` to now.
@@ -1277,9 +1300,9 @@ pub async fn dismiss_email_signal(
     state: State<'_, Arc<AppState>>,
     signal_id: i64,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        crate::services::emails::dismiss_email_signal(db, signal_id)
-    }).await
+    state
+        .db_write(move |db| crate::services::emails::dismiss_email_signal(db, signal_id))
+        .await
 }
 
 /// Get email sync status: last fetch time, enrichment progress, failure count (I373).
@@ -1287,9 +1310,7 @@ pub async fn dismiss_email_signal(
 pub async fn get_email_sync_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::db::EmailSyncStats, String> {
-    state.db_read(|db| {
-        db.get_email_sync_stats()
-    }).await
+    state.db_read(|db| db.get_email_sync_stats()).await
 }
 
 /// Get emails linked to a specific entity for entity detail pages (I368 AC5).
@@ -1299,9 +1320,9 @@ pub async fn get_entity_emails(
     entity_id: String,
     entity_type: String,
 ) -> Result<Vec<crate::db::DbEmail>, String> {
-    state.db_read(move |db| {
-        crate::services::emails::get_entity_emails(db, &entity_id, &entity_type)
-    }).await
+    state
+        .db_read(move |db| crate::services::emails::get_entity_emails(db, &entity_id, &entity_type))
+        .await
 }
 
 /// Refresh emails independently without re-running the full /today pipeline (I20).
@@ -1311,6 +1332,16 @@ pub async fn refresh_emails(
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     crate::services::emails::refresh_emails(state.inner(), app_handle).await
+}
+
+/// Reconcile local inbox presence with Gmail inbox in lightweight mode.
+/// Marks archived/removed emails resolved without running full enrichment.
+#[tauri::command]
+pub async fn sync_email_inbox_presence(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    crate::services::emails::sync_email_inbox_presence(state.inner(), app_handle).await
 }
 
 /// Archive low-priority emails in Gmail and remove them from local data (I144).
@@ -1340,7 +1371,11 @@ pub fn set_profile(profile: String, state: State<'_, Arc<AppState>>) -> Result<C
 /// Also derives the correct profile for backend compatibility.
 /// Creates Accounts/ dir if switching to account/both mode.
 #[tauri::command]
-pub fn set_entity_mode(mode: String, state: State<'_, Arc<AppState>>, app_handle: tauri::AppHandle) -> Result<Config, String> {
+pub fn set_entity_mode(
+    mode: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<Config, String> {
     let config = crate::services::settings::set_entity_mode(&mode, &state)?;
     let _ = app_handle.emit("config-updated", ());
     Ok(config)
@@ -1348,13 +1383,19 @@ pub fn set_entity_mode(mode: String, state: State<'_, Arc<AppState>>, app_handle
 
 /// Set workspace path and scaffold directory structure
 #[tauri::command]
-pub async fn set_workspace_path(path: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
+pub async fn set_workspace_path(
+    path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
     crate::services::settings::set_workspace_path(&path, &state).await
 }
 
 /// Toggle developer mode (shows/hides devtools panel)
 #[tauri::command]
-pub fn set_developer_mode(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
+pub fn set_developer_mode(
+    enabled: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
     crate::state::create_or_update_config(&state, |config| {
         config.developer_mode = enabled;
     })
@@ -1396,9 +1437,7 @@ pub fn dismiss_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<(), Str
 /// Get whether the app is currently locked.
 #[tauri::command]
 pub fn get_lock_status(state: State<'_, Arc<AppState>>) -> bool {
-    state
-        .is_locked
-        .load(std::sync::atomic::Ordering::Relaxed)
+    state.is_locked.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Check if the encryption key is missing (I462 recovery screen).
@@ -1451,18 +1490,13 @@ pub async fn unlock_app(
     // Attempt system authentication (Touch ID / password)
     match attempt_system_auth().await {
         Ok(true) => {
-            state
-                .is_locked
-                .store(false, Ordering::Relaxed);
+            state.is_locked.store(false, Ordering::Relaxed);
             state.failed_unlock_count.store(0, Ordering::Relaxed);
             let _ = app.emit("app-unlocked", ());
             Ok(())
         }
         Ok(false) => {
-            let new_count = state
-                .failed_unlock_count
-                .fetch_add(1, Ordering::Relaxed)
-                + 1;
+            let new_count = state.failed_unlock_count.fetch_add(1, Ordering::Relaxed) + 1;
             if let Ok(mut guard) = state.last_failed_unlock.lock() {
                 *guard = Some(std::time::Instant::now());
             }
@@ -1552,7 +1586,10 @@ else {
 
 /// Set UI personality tone (professional, friendly, playful)
 #[tauri::command]
-pub fn set_personality(personality: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
+pub fn set_personality(
+    personality: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
     let normalized = personality.to_lowercase();
     crate::types::validate_personality(&normalized)?;
     crate::state::create_or_update_config(&state, |config| {
@@ -1578,7 +1615,12 @@ pub fn set_hygiene_config(
     pre_meeting_hours: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::services::settings::set_hygiene_config(scan_interval_hours, ai_budget, pre_meeting_hours, &state)
+    crate::services::settings::set_hygiene_config(
+        scan_interval_hours,
+        ai_budget,
+        pre_meeting_hours,
+        &state,
+    )
 }
 
 /// Set schedule for a workflow
@@ -1604,7 +1646,10 @@ pub async fn set_user_profile(
     domains: Option<Vec<String>>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    crate::services::settings::set_user_profile(name, company, title, focus, domain, domains, &state).await
+    crate::services::settings::set_user_profile(
+        name, company, title, focus, domain, domains, &state,
+    )
+    .await
 }
 
 // =============================================================================
@@ -1686,7 +1731,14 @@ pub async fn create_entity_context_entry(
     content: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::EntityContextEntry, String> {
-    crate::services::entity_context::create_entry(&entity_type, &entity_id, &title, &content, &state).await
+    crate::services::entity_context::create_entry(
+        &entity_type,
+        &entity_id,
+        &title,
+        &content,
+        &state,
+    )
+    .await
 }
 
 /// Update an existing entity context entry.
@@ -1740,9 +1792,7 @@ pub async fn process_user_attachment(
     }
 
     // Determine final path in _user/attachments/
-    let filename = source
-        .file_name()
-        .ok_or("Invalid filename")?;
+    let filename = source.file_name().ok_or("Invalid filename")?;
     let dest = attachments_dir.join(filename);
 
     // Copy if not already in _user/attachments/
@@ -1769,8 +1819,7 @@ pub async fn process_user_attachment(
             dest
         };
 
-        std::fs::copy(source, &final_dest)
-            .map_err(|e| format!("Failed to copy file: {}", e))?;
+        std::fs::copy(source, &final_dest).map_err(|e| format!("Failed to copy file: {}", e))?;
         final_dest
     };
 
@@ -1789,13 +1838,13 @@ pub async fn process_user_attachment(
 
         // Queue embedding generation
         if matches!(result, crate::processor::ProcessingResult::Routed { .. }) {
-            state_inner.embedding_queue.enqueue(
-                crate::processor::embeddings::EmbeddingRequest {
+            state_inner
+                .embedding_queue
+                .enqueue(crate::processor::embeddings::EmbeddingRequest {
                     entity_id: "user_context".to_string(),
                     entity_type: "user_context".to_string(),
                     requested_at: std::time::Instant::now(),
-                },
-            );
+                });
         }
 
         result
@@ -1843,9 +1892,9 @@ pub async fn get_actions_from_db(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ActionListItem>, String> {
     let days = days_ahead.unwrap_or(7);
-    state.db_read(move |db| {
-        crate::services::actions::get_actions_from_db(db, days)
-    }).await
+    state
+        .db_read(move |db| crate::services::actions::get_actions_from_db(db, days))
+        .await
 }
 
 /// Mark an action as completed in the SQLite database.
@@ -1854,36 +1903,42 @@ pub async fn get_actions_from_db(
 #[tauri::command]
 pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
-    state.db_write(move |db| {
-        crate::services::actions::complete_action(db, &engine, &id)
-    }).await
+    state
+        .db_write(move |db| crate::services::actions::complete_action(db, &engine, &id))
+        .await
 }
 
 /// Reopen a completed action, setting it back to pending.
 #[tauri::command]
 pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
-    state.db_write(move |db| {
-        crate::services::actions::reopen_action(db, &engine, &id)
-    }).await
+    state
+        .db_write(move |db| crate::services::actions::reopen_action(db, &engine, &id))
+        .await
 }
 
 /// Accept a proposed action, moving it to pending (I256).
 #[tauri::command]
-pub async fn accept_proposed_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn accept_proposed_action(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     let engine = state.signals.engine.clone();
-    state.db_write(move |db| {
-        crate::services::actions::accept_proposed_action(db, &engine, &id)
-    }).await
+    state
+        .db_write(move |db| crate::services::actions::accept_proposed_action(db, &engine, &id))
+        .await
 }
 
 /// Reject a proposed action by archiving it (I256).
 #[tauri::command]
-pub async fn reject_proposed_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn reject_proposed_action(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     let engine = state.signals.engine.clone();
-    state.db_write(move |db| {
-        crate::services::actions::reject_proposed_action(db, &engine, &id)
-    }).await
+    state
+        .db_write(move |db| crate::services::actions::reject_proposed_action(db, &engine, &id))
+        .await
 }
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
@@ -1898,12 +1953,19 @@ pub async fn dismiss_email_item(
     entity_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        crate::services::emails::dismiss_email_item(
-            db, &item_type, &email_id, &item_text,
-            sender_domain.as_deref(), email_type.as_deref(), entity_id.as_deref(),
-        )
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::emails::dismiss_email_item(
+                db,
+                &item_type,
+                &email_id,
+                &item_text,
+                sender_domain.as_deref(),
+                email_type.as_deref(),
+                entity_id.as_deref(),
+            )
+        })
+        .await
 }
 
 /// Get all dismissed email item keys for frontend filtering.
@@ -1911,24 +1973,29 @@ pub async fn dismiss_email_item(
 pub async fn list_dismissed_email_items(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    state.db_read(|db| {
-        db.list_dismissed_email_items()
-            .map(|set| set.into_iter().collect())
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(|db| {
+            db.list_dismissed_email_items()
+                .map(|set| set.into_iter().collect())
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Reset all email dismissal learning data (I374).
 /// Truncates the email_dismissals table so classification starts fresh.
 #[tauri::command]
-pub async fn reset_email_preferences(
-    state: State<'_, Arc<AppState>>,
-) -> Result<String, String> {
-    state.db_write(|db| {
-        let count = db.reset_email_dismissals().map_err(|e| e.to_string())?;
-        log::info!("reset_email_preferences: cleared {} dismissal records", count);
-        Ok(format!("Cleared {} email dismissal records", count))
-    }).await
+pub async fn reset_email_preferences(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    state
+        .db_write(|db| {
+            let count = db.reset_email_dismissals().map_err(|e| e.to_string())?;
+            log::info!(
+                "reset_email_preferences: cleared {} dismissal records",
+                count
+            );
+            Ok(format!("Cleared {} email dismissal records", count))
+        })
+        .await
 }
 
 /// Get all proposed (AI-suggested) actions (I256).
@@ -1936,9 +2003,9 @@ pub async fn reset_email_preferences(
 pub async fn get_proposed_actions(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAction>, String> {
-    state.db_read(|db| {
-        crate::services::actions::get_proposed_actions(db)
-    }).await
+    state
+        .db_read(|db| crate::services::actions::get_proposed_actions(db))
+        .await
 }
 
 /// Get recent meeting history for an account from the SQLite database.
@@ -1953,10 +2020,12 @@ pub async fn get_meeting_history(
 ) -> Result<Vec<crate::db::DbMeeting>, String> {
     let days = lookback_days.unwrap_or(30);
     let lim = limit.unwrap_or(3);
-    state.db_read(move |db| {
-        db.get_meeting_history(&account_id, days, lim)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_meeting_history(&account_id, days, lim)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Assembled detail for a single past meeting: metadata + captures + actions.
@@ -2051,9 +2120,9 @@ pub async fn get_action_detail(
     action_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ActionDetail, String> {
-    state.db_read(move |db| {
-        crate::services::actions::get_action_detail(db, &action_id)
-    }).await
+    state
+        .db_read(move |db| crate::services::actions::get_action_detail(db, &action_id))
+        .await
 }
 
 // =============================================================================
@@ -2074,7 +2143,8 @@ struct GoogleAuthFailedPayload {
 pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStatus {
     let started = std::time::Instant::now();
     let cached = state
-        .calendar.google_auth
+        .calendar
+        .google_auth
         .lock()
         .map(|guard| guard.clone())
         .unwrap_or(GoogleAuthStatus::NotConfigured);
@@ -2196,7 +2266,8 @@ pub fn disconnect_google(
 #[tauri::command]
 pub fn get_calendar_events(state: State<'_, Arc<AppState>>) -> Vec<CalendarEvent> {
     state
-        .calendar.events
+        .calendar
+        .events
         .read()
         .map(|guard| guard.clone())
         .unwrap_or_default()
@@ -2275,7 +2346,10 @@ pub fn set_capture_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Re
 
 /// Set post-meeting capture delay (minutes before prompt appears)
 #[tauri::command]
-pub fn set_capture_delay(delay_minutes: u32, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub fn set_capture_delay(
+    delay_minutes: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.post_meeting_capture.delay_minutes = delay_minutes;
     })?;
@@ -2298,7 +2372,13 @@ pub async fn attach_meeting_transcript(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
-    crate::services::meetings::attach_meeting_transcript(file_path, meeting, state.inner(), app_handle).await
+    crate::services::meetings::attach_meeting_transcript(
+        file_path,
+        meeting,
+        state.inner(),
+        app_handle,
+    )
+    .await
 }
 
 /// Get meeting outcomes (from transcript processing or manual capture).
@@ -2309,13 +2389,15 @@ pub async fn get_meeting_outcomes(
     meeting_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::types::MeetingOutcomeData>, String> {
-    state.db_read(move |db| {
-        let meeting = db
-            .get_meeting_intelligence_row(&meeting_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
-        Ok(collect_meeting_outcomes_from_db(db, &meeting))
-    }).await
+    state
+        .db_read(move |db| {
+            let meeting = db
+                .get_meeting_intelligence_row(&meeting_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+            Ok(collect_meeting_outcomes_from_db(db, &meeting))
+        })
+        .await
 }
 
 /// Update the content of a capture (win/risk/decision) — I45 inline editing.
@@ -2325,9 +2407,9 @@ pub async fn update_capture(
     content: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        db.update_capture(&id, &content).map_err(|e| e.to_string())
-    }).await
+    state
+        .db_write(move |db| db.update_capture(&id, &content).map_err(|e| e.to_string()))
+        .await
 }
 
 /// Cycle an action's priority (P1→P2→P3→P1) — I45 interaction.
@@ -2345,9 +2427,11 @@ pub async fn update_action_priority(
         ));
     }
     let engine = state.signals.engine.clone();
-    state.db_write(move |db| {
-        crate::services::actions::update_action_priority(db, &engine, &id, &priority)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::actions::update_action_priority(db, &engine, &id, &priority)
+        })
+        .await
 }
 
 // =============================================================================
@@ -2423,10 +2507,9 @@ pub async fn get_processing_history(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbProcessingLog>, String> {
     let lim = limit.unwrap_or(50);
-    state.db_read(move |db| {
-        db.get_processing_log(lim)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| db.get_processing_log(lim).map_err(|e| e.to_string()))
+        .await
 }
 
 // =============================================================================
@@ -2565,9 +2648,9 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
     let workspace = std::path::Path::new(&workspace_path);
     crate::devtools::write_fixtures(workspace)?;
 
-    state.db_write(|db| {
-        crate::devtools::seed_database(db)
-    }).await?;
+    state
+        .db_write(|db| crate::devtools::seed_database(db))
+        .await?;
 
     Ok("Demo data installed".into())
 }
@@ -2665,45 +2748,53 @@ pub async fn populate_workspace(
 
     // Batch DB operations
     let wp = workspace_path.clone();
-    let _ = state.db_write(move |db| {
-        let workspace = std::path::Path::new(&wp);
-        // Upsert accounts
-        for name in &valid_account_names {
-            let slug = crate::util::slugify(name);
-            let existing = db.get_account(&slug).ok().flatten();
-            let db_account = crate::db::DbAccount {
-                id: slug,
-                name: name.to_string(),
-                lifecycle: existing.as_ref().and_then(|e| e.lifecycle.clone()),
-                arr: existing.as_ref().and_then(|e| e.arr),
-                health: existing.as_ref().and_then(|e| e.health.clone()),
-                contract_start: existing.as_ref().and_then(|e| e.contract_start.clone()),
-                contract_end: existing.as_ref().and_then(|e| e.contract_end.clone()),
-                nps: existing.as_ref().and_then(|e| e.nps),
-                tracker_path: Some(format!("Accounts/{}", name)),
-                parent_id: existing.as_ref().and_then(|e| e.parent_id.clone()),
-                account_type: existing.as_ref().map(|e| e.account_type.clone()).unwrap_or(crate::db::AccountType::Customer),
-                updated_at: now.clone(),
-                archived: existing.as_ref().map(|e| e.archived).unwrap_or(false),
-                keywords: existing.as_ref().and_then(|e| e.keywords.clone()),
-                keywords_extracted_at: existing.as_ref().and_then(|e| e.keywords_extracted_at.clone()),
-                metadata: existing.as_ref().and_then(|e| e.metadata.clone()),
-            };
-            if let Err(e) = db.upsert_account(&db_account) {
-                log::warn!("Failed to upsert account '{}': {}", name, e);
+    let _ = state
+        .db_write(move |db| {
+            let workspace = std::path::Path::new(&wp);
+            // Upsert accounts
+            for name in &valid_account_names {
+                let slug = crate::util::slugify(name);
+                let existing = db.get_account(&slug).ok().flatten();
+                let db_account = crate::db::DbAccount {
+                    id: slug,
+                    name: name.to_string(),
+                    lifecycle: existing.as_ref().and_then(|e| e.lifecycle.clone()),
+                    arr: existing.as_ref().and_then(|e| e.arr),
+                    health: existing.as_ref().and_then(|e| e.health.clone()),
+                    contract_start: existing.as_ref().and_then(|e| e.contract_start.clone()),
+                    contract_end: existing.as_ref().and_then(|e| e.contract_end.clone()),
+                    nps: existing.as_ref().and_then(|e| e.nps),
+                    tracker_path: Some(format!("Accounts/{}", name)),
+                    parent_id: existing.as_ref().and_then(|e| e.parent_id.clone()),
+                    account_type: existing
+                        .as_ref()
+                        .map(|e| e.account_type.clone())
+                        .unwrap_or(crate::db::AccountType::Customer),
+                    updated_at: now.clone(),
+                    archived: existing.as_ref().map(|e| e.archived).unwrap_or(false),
+                    keywords: existing.as_ref().and_then(|e| e.keywords.clone()),
+                    keywords_extracted_at: existing
+                        .as_ref()
+                        .and_then(|e| e.keywords_extracted_at.clone()),
+                    metadata: existing.as_ref().and_then(|e| e.metadata.clone()),
+                };
+                if let Err(e) = db.upsert_account(&db_account) {
+                    log::warn!("Failed to upsert account '{}': {}", name, e);
+                }
             }
-        }
-        // Upsert projects + write dashboard files
-        for db_project in &valid_projects {
-            if let Err(e) = db.upsert_project(db_project) {
-                log::warn!("Failed to upsert project '{}': {}", db_project.name, e);
+            // Upsert projects + write dashboard files
+            for db_project in &valid_projects {
+                if let Err(e) = db.upsert_project(db_project) {
+                    log::warn!("Failed to upsert project '{}': {}", db_project.name, e);
+                }
+                let json = crate::projects::default_project_json(db_project);
+                let _ = crate::projects::write_project_json(workspace, db_project, Some(&json), db);
+                let _ =
+                    crate::projects::write_project_markdown(workspace, db_project, Some(&json), db);
             }
-            let json = crate::projects::default_project_json(db_project);
-            let _ = crate::projects::write_project_json(workspace, db_project, Some(&json), db);
-            let _ = crate::projects::write_project_markdown(workspace, db_project, Some(&json), db);
-        }
-        Ok(())
-    }).await;
+            Ok(())
+        })
+        .await;
 
     Ok(format!(
         "Created {} accounts, {} projects",
@@ -2761,15 +2852,22 @@ pub async fn get_onboarding_priming_context(
         .await
         .map_err(|e| format!("Calendar fetch failed: {}", e))?;
 
-    let (hints, internal_root) = state.db_read(|db| {
-        Ok((
-            crate::helpers::build_entity_hints(db),
-            db.get_internal_root_account().ok().flatten(),
-        ))
-    }).await?;
+    let (hints, internal_root) = state
+        .db_read(|db| {
+            Ok((
+                crate::helpers::build_entity_hints(db),
+                db.get_internal_root_account().ok().flatten(),
+            ))
+        })
+        .await?;
 
     // Pre-classify all meetings and collect account hints for batch DB lookup
-    let mut classified: Vec<(crate::google_api::classify::ClassifiedMeeting, crate::types::CalendarEvent, String, Option<String>)> = Vec::new();
+    let mut classified: Vec<(
+        crate::google_api::classify::ClassifiedMeeting,
+        crate::types::CalendarEvent,
+        String,
+        Option<String>,
+    )> = Vec::new();
     for raw in raw_events.iter().filter(|e| !e.is_all_day).take(8) {
         let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &hints);
         let event = cm.to_calendar_event();
@@ -2786,22 +2884,25 @@ pub async fn get_onboarding_priming_context(
     }
 
     // Batch-resolve account hints in a single DB read
-    let account_hints: Vec<Option<String>> = classified.iter().map(|(_, _, _, h)| h.clone()).collect();
-    let resolved_accounts = state.db_read(move |db| {
-        let mut results = Vec::new();
-        for hint in &account_hints {
-            if let Some(ref name) = hint {
-                if let Ok(Some(account)) = db.get_account_by_name(name) {
-                    results.push(Some((account.id.clone(), account.name.clone())));
+    let account_hints: Vec<Option<String>> =
+        classified.iter().map(|(_, _, _, h)| h.clone()).collect();
+    let resolved_accounts = state
+        .db_read(move |db| {
+            let mut results = Vec::new();
+            for hint in &account_hints {
+                if let Some(ref name) = hint {
+                    if let Ok(Some(account)) = db.get_account_by_name(name) {
+                        results.push(Some((account.id.clone(), account.name.clone())));
+                    } else {
+                        results.push(None);
+                    }
                 } else {
                     results.push(None);
                 }
-            } else {
-                results.push(None);
             }
-        }
-        Ok(results)
-    }).await?;
+            Ok(results)
+        })
+        .await?;
 
     let mut cards = Vec::new();
     for (i, (_cm, event, day_label, _account_hint)) in classified.into_iter().enumerate() {
@@ -2973,16 +3074,12 @@ pub async fn get_frequent_correspondents(
     user_email: String,
     _state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::google_api::gmail::FrequentCorrespondent>, String> {
-    let token = crate::google_api::load_token()
-        .map_err(|e| format!("Google not connected: {}", e))?;
+    let token =
+        crate::google_api::load_token().map_err(|e| format!("Google not connected: {}", e))?;
 
-    crate::google_api::gmail::fetch_frequent_correspondents(
-        &token.token,
-        &user_email,
-        10,
-    )
-    .await
-    .map_err(|e| format!("Failed to fetch correspondents: {}", e))
+    crate::google_api::gmail::fetch_frequent_correspondents(&token.token, &user_email, 10)
+        .await
+        .map_err(|e| format!("Failed to fetch correspondents: {}", e))
 }
 
 // =============================================================================
@@ -2994,7 +3091,10 @@ pub async fn get_frequent_correspondents(
 /// Returns an error in release builds. In debug builds, delegates to
 /// `devtools::apply_scenario` which orchestrates the scenario switch.
 #[tauri::command]
-pub fn dev_apply_scenario(scenario: String, state: State<'_, Arc<AppState>>) -> Result<String, String> {
+pub fn dev_apply_scenario(
+    scenario: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -3150,10 +3250,12 @@ pub async fn get_people(
     relationship: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::PersonListItem>, String> {
-    state.db_read(move |db| {
-        db.get_people_with_signals(relationship.as_deref())
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_people_with_signals(relationship.as_deref())
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Person detail result including signals, linked entities, and recent meetings.
@@ -3217,9 +3319,9 @@ pub async fn search_people(
     query: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbPerson>, String> {
-    state.db_read(move |db| {
-        db.search_people(&query, 50).map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| db.search_people(&query, 50).map_err(|e| e.to_string()))
+        .await
 }
 
 /// Update a single field on a person (role, organization, notes, relationship).
@@ -3232,9 +3334,11 @@ pub async fn update_person(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::people::update_person_field(db, &app_state, &person_id, &field, &value)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::people::update_person_field(db, &app_state, &person_id, &field, &value)
+        })
+        .await
 }
 
 /// Link a person to an entity (account/project).
@@ -3247,9 +3351,17 @@ pub async fn link_person_entity(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::people::link_person_entity(db, &app_state, &person_id, &entity_id, &relationship_type)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::people::link_person_entity(
+                db,
+                &app_state,
+                &person_id,
+                &entity_id,
+                &relationship_type,
+            )
+        })
+        .await
 }
 
 /// Unlink a person from an entity.
@@ -3261,9 +3373,11 @@ pub async fn unlink_person_entity(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::people::unlink_person_entity(db, &app_state, &person_id, &entity_id)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::people::unlink_person_entity(db, &app_state, &person_id, &entity_id)
+        })
+        .await
 }
 
 /// Get people linked to an entity.
@@ -3272,10 +3386,12 @@ pub async fn get_people_for_entity(
     entity_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbPerson>, String> {
-    state.db_read(move |db| {
-        db.get_people_for_entity(&entity_id)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_people_for_entity(&entity_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Get people who attended a specific meeting.
@@ -3284,10 +3400,12 @@ pub async fn get_meeting_attendees(
     meeting_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbPerson>, String> {
-    state.db_read(move |db| {
-        db.get_meeting_attendees(&meeting_id)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_meeting_attendees(&meeting_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 // =========================================================================
@@ -3305,8 +3423,12 @@ pub async fn link_meeting_entity(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::services::meetings::link_meeting_entity_with_prep_queue(
-        &state, &meeting_id, &entity_id, &entity_type,
-    ).await
+        &state,
+        &meeting_id,
+        &entity_id,
+        &entity_type,
+    )
+    .await
 }
 
 /// Remove a meeting-entity link from the junction table.
@@ -3319,8 +3441,11 @@ pub async fn unlink_meeting_entity(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     crate::services::meetings::unlink_meeting_entity_with_prep_queue(
-        &state, &meeting_id, &entity_id,
-    ).await
+        &state,
+        &meeting_id,
+        &entity_id,
+    )
+    .await
 }
 
 /// Get all entities linked to a meeting via the junction table.
@@ -3329,10 +3454,12 @@ pub async fn get_meeting_entities(
     meeting_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::entity::DbEntity>, String> {
-    state.db_read(move |db| {
-        db.get_meeting_entities(&meeting_id)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_meeting_entities(&meeting_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Reassign a meeting's entity with full cascade to actions, captures, and intelligence.
@@ -3351,12 +3478,19 @@ pub async fn update_meeting_entity(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let ctx = crate::services::meetings::MeetingMutationCtx {
-        state: &state, meeting_id: &meeting_id, app_handle: Some(&app_handle),
+        state: &state,
+        meeting_id: &meeting_id,
+        app_handle: Some(&app_handle),
     };
     crate::services::meetings::update_meeting_entity(
-        ctx, entity_id.as_deref(), &entity_type,
-        &meeting_title, &start_time, &meeting_type_str,
-    ).await
+        ctx,
+        entity_id.as_deref(),
+        &entity_type,
+        &meeting_title,
+        &start_time,
+        &meeting_type_str,
+    )
+    .await
 }
 
 // =========================================================================
@@ -3379,12 +3513,19 @@ pub async fn add_meeting_entity(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let ctx = crate::services::meetings::MeetingMutationCtx {
-        state: &state, meeting_id: &meeting_id, app_handle: Some(&app_handle),
+        state: &state,
+        meeting_id: &meeting_id,
+        app_handle: Some(&app_handle),
     };
     crate::services::meetings::add_meeting_entity(
-        ctx, &entity_id, &entity_type,
-        &meeting_title, &start_time, &meeting_type_str,
-    ).await
+        ctx,
+        &entity_id,
+        &entity_type,
+        &meeting_title,
+        &start_time,
+        &meeting_type_str,
+    )
+    .await
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
@@ -3398,11 +3539,11 @@ pub async fn remove_meeting_entity(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let ctx = crate::services::meetings::MeetingMutationCtx {
-        state: &state, meeting_id: &meeting_id, app_handle: Some(&app_handle),
+        state: &state,
+        meeting_id: &meeting_id,
+        app_handle: Some(&app_handle),
     };
-    crate::services::meetings::remove_meeting_entity(
-        ctx, &entity_id, &entity_type,
-    ).await
+    crate::services::meetings::remove_meeting_entity(ctx, &entity_id, &entity_type).await
 }
 
 // =========================================================================
@@ -3416,10 +3557,12 @@ pub async fn remove_project_keyword(
     keyword: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        db.remove_project_keyword(&project_id, &keyword)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_write(move |db| {
+            db.remove_project_keyword(&project_id, &keyword)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Remove a keyword from an account's auto-extracted keyword list.
@@ -3429,10 +3572,12 @@ pub async fn remove_account_keyword(
     keyword: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        db.remove_account_keyword(&account_id, &keyword)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_write(move |db| {
+            db.remove_account_keyword(&account_id, &keyword)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 // =========================================================================
@@ -3450,11 +3595,18 @@ pub async fn create_person(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let email = crate::util::validate_email(&email)?;
-    state.db_write(move |db| {
-        crate::services::people::create_person(
-            db, &email, &name, organization.as_deref(), role.as_deref(), relationship.as_deref(),
-        )
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::people::create_person(
+                db,
+                &email,
+                &name,
+                organization.as_deref(),
+                role.as_deref(),
+                relationship.as_deref(),
+            )
+        })
+        .await
 }
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`, then delete the removed person.
@@ -3466,18 +3618,23 @@ pub async fn merge_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::people::merge_people(db, &app_state, &keep_id, &remove_id)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::people::merge_people(db, &app_state, &keep_id, &remove_id)
+        })
+        .await
 }
 
 /// Delete a person and all their references. Also removes their filesystem directory.
 #[tauri::command]
-pub async fn delete_person(person_id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub async fn delete_person(
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::people::delete_person(db, &app_state, &person_id)
-    }).await
+    state
+        .db_write(move |db| crate::services::people::delete_person(db, &app_state, &person_id))
+        .await
 }
 
 /// Enrich a person with intelligence assessment (relationship intelligence).
@@ -3570,10 +3727,12 @@ pub struct AccountChildSummary {
 /// Returns only accounts where `parent_id IS NULL`. Each parent account
 /// includes a `child_count` so the UI can show an expand chevron.
 #[tauri::command]
-pub async fn get_accounts_list(state: State<'_, Arc<AppState>>) -> Result<Vec<AccountListItem>, String> {
-    state.db_read(|db| {
-        crate::services::accounts::get_accounts_list(db)
-    }).await
+pub async fn get_accounts_list(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<AccountListItem>, String> {
+    state
+        .db_read(|db| crate::services::accounts::get_accounts_list(db))
+        .await
 }
 
 /// Lightweight list of ALL accounts (parents + children) for entity pickers.
@@ -3587,10 +3746,12 @@ pub struct PickerAccount {
 }
 
 #[tauri::command]
-pub async fn get_accounts_for_picker(state: State<'_, Arc<AppState>>) -> Result<Vec<PickerAccount>, String> {
-    state.db_read(|db| {
-        crate::services::accounts::get_accounts_for_picker(db)
-    }).await
+pub async fn get_accounts_for_picker(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<PickerAccount>, String> {
+    state
+        .db_read(|db| crate::services::accounts::get_accounts_for_picker(db))
+        .await
 }
 
 /// Get child accounts for a parent (I114).
@@ -3599,9 +3760,9 @@ pub async fn get_child_accounts_list(
     parent_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<AccountListItem>, String> {
-    state.db_read(move |db| {
-        crate::services::accounts::get_child_accounts_list(db, &parent_id)
-    }).await
+    state
+        .db_read(move |db| crate::services::accounts::get_child_accounts_list(db, &parent_id))
+        .await
 }
 
 /// I316: Get ancestor accounts for breadcrumb navigation.
@@ -3610,10 +3771,12 @@ pub async fn get_account_ancestors(
     account_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccount>, String> {
-    state.db_read(move |db| {
-        db.get_account_ancestors(&account_id)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_account_ancestors(&account_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// I316: Get all descendant accounts for a given ancestor.
@@ -3622,10 +3785,12 @@ pub async fn get_descendant_accounts(
     ancestor_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccount>, String> {
-    state.db_read(move |db| {
-        db.get_descendant_accounts(&ancestor_id)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_descendant_accounts(&ancestor_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Convert a DbAccount to an AccountListItem with computed signals.
@@ -3652,9 +3817,9 @@ pub async fn get_account_team(
     account_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccountTeamMember>, String> {
-    state.db_read(move |db| {
-        db.get_account_team(&account_id).map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| db.get_account_team(&account_id).map_err(|e| e.to_string()))
+        .await
 }
 
 /// Add a person-role pair to an account team (I207).
@@ -3666,9 +3831,17 @@ pub async fn add_account_team_member(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::add_account_team_member(db, &app_state, &account_id, &person_id, &role)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::add_account_team_member(
+                db,
+                &app_state,
+                &account_id,
+                &person_id,
+                &role,
+            )
+        })
+        .await
 }
 
 /// Remove a person-role pair from an account team (I207).
@@ -3680,9 +3853,17 @@ pub async fn remove_account_team_member(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::remove_account_team_member(db, &app_state, &account_id, &person_id, &role)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::remove_account_team_member(
+                db,
+                &app_state,
+                &account_id,
+                &person_id,
+                &role,
+            )
+        })
+        .await
 }
 
 /// Update a single structured field on an account.
@@ -3695,9 +3876,17 @@ pub async fn update_account_field(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::update_account_field(db, &app_state, &account_id, &field, &value)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_account_field(
+                db,
+                &app_state,
+                &account_id,
+                &field,
+                &value,
+            )
+        })
+        .await
 }
 
 /// Update account notes (narrative field — JSON only, not SQLite).
@@ -3709,9 +3898,11 @@ pub async fn update_account_notes(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::update_account_notes(db, &app_state, &account_id, &notes)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_account_notes(db, &app_state, &account_id, &notes)
+        })
+        .await
 }
 
 /// Update account strategic programs (narrative field — JSON only).
@@ -3723,9 +3914,16 @@ pub async fn update_account_programs(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::update_account_programs(db, &app_state, &account_id, &programs_json)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::update_account_programs(
+                db,
+                &app_state,
+                &account_id,
+                &programs_json,
+            )
+        })
+        .await
 }
 
 /// Create a new account. Creates SQLite record + workspace files.
@@ -3741,9 +3939,17 @@ pub async fn create_account(
 ) -> Result<String, String> {
     let acct_type = account_type.map(|s| crate::db::AccountType::from_db(&s));
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::create_account(db, &app_state, &name, parent_id.as_deref(), acct_type)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::create_account(
+                db,
+                &app_state,
+                &name,
+                parent_id.as_deref(),
+                acct_type,
+            )
+        })
+        .await
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -3805,20 +4011,23 @@ pub async fn get_internal_team_setup_status(
         "Core Team".to_string()
     };
 
-    let suggested_colleagues = state.db_read(|db| {
-        db.get_people(Some("internal"))
-            .map_err(|e| e.to_string())
-            .map(|people| {
-                people.into_iter()
-                    .take(5)
-                    .map(|p| TeamColleagueInput {
-                        name: p.name,
-                        email: p.email,
-                        title: p.role,
-                    })
-                    .collect::<Vec<_>>()
-            })
-    }).await?;
+    let suggested_colleagues = state
+        .db_read(|db| {
+            db.get_people(Some("internal"))
+                .map_err(|e| e.to_string())
+                .map(|people| {
+                    people
+                        .into_iter()
+                        .take(5)
+                        .map(|p| TeamColleagueInput {
+                            name: p.name,
+                            email: p.email,
+                            title: p.role,
+                        })
+                        .collect::<Vec<_>>()
+                })
+        })
+        .await?;
 
     Ok(InternalTeamSetupStatus {
         required: !config.internal_team_setup_completed,
@@ -3848,7 +4057,8 @@ pub async fn create_internal_organization(
         &team_name,
         &colleagues,
         &existing_person_ids.unwrap_or_default(),
-    ).await
+    )
+    .await
 }
 
 #[tauri::command]
@@ -3860,8 +4070,13 @@ pub async fn create_child_account(
     state: State<'_, Arc<AppState>>,
 ) -> Result<CreateChildAccountResult, String> {
     crate::services::accounts::create_child_account_cmd(
-        &state, &parent_id, &name, description.as_deref(), owner_person_id.as_deref(),
-    ).await
+        &state,
+        &parent_id,
+        &name,
+        description.as_deref(),
+        owner_person_id.as_deref(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -3881,12 +4096,14 @@ pub async fn create_team(
     let root_id = if let Some(id) = cfg.internal_org_account_id {
         id
     } else {
-        state.db_read(|db| {
-            db.get_internal_root_account()
-                .map_err(|e| e.to_string())?
-                .map(|a| a.id)
-                .ok_or("No internal organization configured".to_string())
-        }).await?
+        state
+            .db_read(|db| {
+                db.get_internal_root_account()
+                    .map_err(|e| e.to_string())?
+                    .map(|a| a.id)
+                    .ok_or("No internal organization configured".to_string())
+            })
+            .await?
     };
 
     create_child_account(root_id, name, description, owner_person_id, state).await
@@ -3896,9 +4113,9 @@ pub async fn create_team(
 pub async fn backfill_internal_meeting_associations(
     state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
-    state.db_write(|db| {
-        crate::services::accounts::backfill_internal_meeting_associations(db)
-    }).await
+    state
+        .db_write(|db| crate::services::accounts::backfill_internal_meeting_associations(db))
+        .await
 }
 
 // =============================================================================
@@ -3911,9 +4128,9 @@ pub async fn get_entity_files(
     entity_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbContentFile>, String> {
-    state.db_read(move |db| {
-        db.get_entity_files(&entity_id).map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| db.get_entity_files(&entity_id).map_err(|e| e.to_string()))
+        .await
 }
 
 /// Re-scan an entity's directory and return the updated file list.
@@ -3926,7 +4143,10 @@ pub async fn index_entity_files(
     entity_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbContentFile>, String> {
-    let workspace_path = state.config.read().map_err(|_| "Lock poisoned")?
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
@@ -3935,41 +4155,43 @@ pub async fn index_entity_files(
     let et = entity_type.clone();
     let eid = entity_id.clone();
     let wp = workspace_path.clone();
-    let files = state.db_write(move |db| {
-        let workspace = Path::new(&wp);
-        match et.as_str() {
-            "account" => {
-                let account = db
-                    .get_account(&eid)
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| format!("Account not found: {}", eid))?;
-                crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
+    let files = state
+        .db_write(move |db| {
+            let workspace = Path::new(&wp);
+            match et.as_str() {
+                "account" => {
+                    let account = db
+                        .get_account(&eid)
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| format!("Account not found: {}", eid))?;
+                    crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
+                }
+                "project" => {
+                    let project = db
+                        .get_project(&eid)
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| format!("Project not found: {}", eid))?;
+                    crate::projects::sync_content_index_for_project(workspace, db, &project)?;
+                }
+                "person" => {
+                    let person = db
+                        .get_person(&eid)
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| format!("Person not found: {}", eid))?;
+                    let dir = if let Some(ref tp) = person.tracker_path {
+                        workspace.join(tp)
+                    } else {
+                        crate::people::person_dir(workspace, &person.name)
+                    };
+                    crate::entity_io::sync_content_index_for_entity(
+                        db, workspace, &person.id, "person", &dir,
+                    )?;
+                }
+                _ => return Err(format!("Unknown entity type: {}", et)),
             }
-            "project" => {
-                let project = db
-                    .get_project(&eid)
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| format!("Project not found: {}", eid))?;
-                crate::projects::sync_content_index_for_project(workspace, db, &project)?;
-            }
-            "person" => {
-                let person = db
-                    .get_person(&eid)
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| format!("Person not found: {}", eid))?;
-                let dir = if let Some(ref tp) = person.tracker_path {
-                    workspace.join(tp)
-                } else {
-                    crate::people::person_dir(workspace, &person.name)
-                };
-                crate::entity_io::sync_content_index_for_entity(
-                    db, workspace, &person.id, "person", &dir,
-                )?;
-            }
-            _ => return Err(format!("Unknown entity type: {}", et)),
-        }
-        db.get_entity_files(&eid).map_err(|e| e.to_string())
-    }).await?;
+            db.get_entity_files(&eid).map_err(|e| e.to_string())
+        })
+        .await?;
 
     state
         .embedding_queue
@@ -3995,12 +4217,8 @@ pub async fn index_entity_files(
 ///
 /// Path must resolve to within the workspace directory or ~/.dailyos/ (I293).
 #[tauri::command]
-pub fn reveal_in_finder(
-    path: String,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let canonical = std::fs::canonicalize(&path)
-        .map_err(|e| format!("Invalid path: {}", e))?;
+pub fn reveal_in_finder(path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let canonical = std::fs::canonicalize(&path).map_err(|e| format!("Invalid path: {}", e))?;
     let canonical_str = canonical.to_string_lossy();
 
     // Allow workspace directory
@@ -4041,19 +4259,22 @@ pub fn reveal_in_finder(
 /// Export a meeting briefing as a styled HTML file and open in the default browser.
 /// The user can then Print > Save as PDF from the browser.
 #[tauri::command]
-pub fn export_briefing_html(
-    meeting_id: String,
-    markdown: String,
-) -> Result<(), String> {
+pub fn export_briefing_html(meeting_id: String, markdown: String) -> Result<(), String> {
     let tmp_dir = std::env::temp_dir().join("dailyos-export");
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
 
     let safe_id = meeting_id
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
         .collect::<String>();
-    let filename = format!("briefing-{}.html", if safe_id.is_empty() { "export" } else { &safe_id });
+    let filename = format!(
+        "briefing-{}.html",
+        if safe_id.is_empty() {
+            "export"
+        } else {
+            &safe_id
+        }
+    );
     let path = tmp_dir.join(&filename);
 
     // Convert markdown to simple HTML
@@ -4088,8 +4309,7 @@ pub fn export_briefing_html(
         body_html
     );
 
-    std::fs::write(&path, &html)
-        .map_err(|e| format!("Failed to write HTML: {}", e))?;
+    std::fs::write(&path, &html).map_err(|e| format!("Failed to write HTML: {}", e))?;
 
     std::process::Command::new("open")
         .arg(path.to_str().unwrap_or(""))
@@ -4118,35 +4338,65 @@ fn markdown_to_simple_html(md: &str) -> String {
 
         // Headings
         if let Some(rest) = trimmed.strip_prefix("# ") {
-            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
             html.push_str(&format!("<h1>{}</h1>\n", rest));
         } else if let Some(rest) = trimmed.strip_prefix("## ") {
-            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
             html.push_str(&format!("<h2>{}</h2>\n", rest));
         } else if let Some(rest) = trimmed.strip_prefix("### ") {
-            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
             html.push_str(&format!("<h3>{}</h3>\n", rest));
         }
         // Unordered list
         else if let Some(rest) = trimmed.strip_prefix("- ") {
-            if !in_list { html.push_str("<ul>\n"); in_list = true; list_type = "ul"; }
+            if !in_list {
+                html.push_str("<ul>\n");
+                in_list = true;
+                list_type = "ul";
+            }
             html.push_str(&format!("<li>{}</li>\n", rest));
         }
         // Ordered list
-        else if trimmed.len() > 2 && trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && trimmed.contains(". ") {
+        else if trimmed.len() > 2
+            && trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            && trimmed.contains(". ")
+        {
             if let Some(pos) = trimmed.find(". ") {
-                if !in_list { html.push_str("<ol>\n"); in_list = true; list_type = "ol"; }
+                if !in_list {
+                    html.push_str("<ol>\n");
+                    in_list = true;
+                    list_type = "ol";
+                }
                 html.push_str(&format!("<li>{}</li>\n", &trimmed[pos + 2..]));
             }
         }
         // Horizontal rule
         else if trimmed == "---" || trimmed == "***" {
-            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
             html.push_str("<hr>\n");
         }
         // Paragraph
         else {
-            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
             html.push_str(&format!("<p>{}</p>\n", trimmed));
         }
     }
@@ -4162,7 +4412,7 @@ fn markdown_to_simple_html(md: &str) -> String {
 // Sprint 26: Chat Tool Commands
 // =============================================================================
 
-use crate::types::{ChatEntityListItem, meetings_to_json};
+use crate::types::{meetings_to_json, ChatEntityListItem};
 
 fn ensure_open_chat_session(
     db: &crate::db::ActionDb,
@@ -4235,27 +4485,29 @@ pub async fn chat_search_content(
 
     let embedding_model = state.embedding_model.clone();
     let k = top_k.unwrap_or(10).clamp(1, 50);
-    state.db_write(move |db| {
-        let matches = crate::queries::search::search_entity_content(
-            db,
-            Some(embedding_model.as_ref()),
-            &entity_id,
-            &query_str,
-            k,
-            0.7,
-            0.3,
-        )?;
+    state
+        .db_write(move |db| {
+            let matches = crate::queries::search::search_entity_content(
+                db,
+                Some(embedding_model.as_ref()),
+                &entity_id,
+                &query_str,
+                k,
+                0.7,
+                0.3,
+            )?;
 
-        let session = ensure_open_chat_session(db, Some(&entity_id), None)?;
-        let response = serde_json::json!({
-            "entityId": entity_id,
-            "query": query_str,
-            "matches": matches,
-        });
-        append_chat_exchange(db, &session.id, &query_str, &response)?;
+            let session = ensure_open_chat_session(db, Some(&entity_id), None)?;
+            let response = serde_json::json!({
+                "entityId": entity_id,
+                "query": query_str,
+                "matches": matches,
+            });
+            append_chat_exchange(db, &session.id, &query_str, &response)?;
 
-        Ok(matches)
-    }).await
+            Ok(matches)
+        })
+        .await
 }
 
 #[tauri::command]
@@ -4270,99 +4522,105 @@ pub async fn chat_query_entity(
     }
 
     let embedding_model = state.embedding_model.clone();
-    state.db_write(move |db| {
-        let question = question_str.as_str();
+    state
+        .db_write(move |db| {
+            let question = question_str.as_str();
 
-    let (entity_type, entity_name, facts, open_actions, recent_meetings) =
-        if let Some(account) = db.get_account(&entity_id).map_err(|e| e.to_string())? {
-            let meetings = db
-                .get_meetings_for_account(&entity_id, 10)
-                .map_err(|e| e.to_string())?;
-            let meetings_json = meetings_to_json(&meetings);
-            (
-                "account",
-                account.name.clone(),
-                serde_json::json!({
-                    "health": account.health,
-                    "lifecycle": account.lifecycle,
-                    "arr": account.arr,
-                    "renewal": account.contract_end,
-                    "nps": account.nps,
-                }),
-                db.get_account_actions(&entity_id).unwrap_or_default(),
-                meetings_json,
-            )
-        } else if let Some(project) = db.get_project(&entity_id).map_err(|e| e.to_string())? {
-            let meetings = db
-                .get_meetings_for_project(&entity_id, 10)
-                .map_err(|e| e.to_string())?;
-            let meetings_json = meetings_to_json(&meetings);
-            (
-                "project",
-                project.name.clone(),
-                serde_json::json!({
-                    "status": project.status,
-                    "milestone": project.milestone,
-                    "owner": project.owner,
-                    "targetDate": project.target_date,
-                }),
-                db.get_project_actions(&entity_id).unwrap_or_default(),
-                meetings_json,
-            )
-        } else if let Some(person) = db.get_person(&entity_id).map_err(|e| e.to_string())? {
-            let meetings = db
-                .get_person_meetings(&entity_id, 10)
-                .map_err(|e| e.to_string())?;
-            let meetings_json = meetings_to_json(&meetings);
-            (
-                "person",
-                person.name.clone(),
-                serde_json::json!({
-                    "organization": person.organization,
-                    "role": person.role,
-                    "relationship": person.relationship,
-                    "meetingCount": person.meeting_count,
-                    "lastSeen": person.last_seen,
-                }),
-                Vec::new(),
-                meetings_json,
-            )
-        } else {
-            return Err(format!("Entity not found: {}", entity_id));
-        };
+            let (entity_type, entity_name, facts, open_actions, recent_meetings) =
+                if let Some(account) = db.get_account(&entity_id).map_err(|e| e.to_string())? {
+                    let meetings = db
+                        .get_meetings_for_account(&entity_id, 10)
+                        .map_err(|e| e.to_string())?;
+                    let meetings_json = meetings_to_json(&meetings);
+                    (
+                        "account",
+                        account.name.clone(),
+                        serde_json::json!({
+                            "health": account.health,
+                            "lifecycle": account.lifecycle,
+                            "arr": account.arr,
+                            "renewal": account.contract_end,
+                            "nps": account.nps,
+                        }),
+                        db.get_account_actions(&entity_id).unwrap_or_default(),
+                        meetings_json,
+                    )
+                } else if let Some(project) =
+                    db.get_project(&entity_id).map_err(|e| e.to_string())?
+                {
+                    let meetings = db
+                        .get_meetings_for_project(&entity_id, 10)
+                        .map_err(|e| e.to_string())?;
+                    let meetings_json = meetings_to_json(&meetings);
+                    (
+                        "project",
+                        project.name.clone(),
+                        serde_json::json!({
+                            "status": project.status,
+                            "milestone": project.milestone,
+                            "owner": project.owner,
+                            "targetDate": project.target_date,
+                        }),
+                        db.get_project_actions(&entity_id).unwrap_or_default(),
+                        meetings_json,
+                    )
+                } else if let Some(person) = db.get_person(&entity_id).map_err(|e| e.to_string())? {
+                    let meetings = db
+                        .get_person_meetings(&entity_id, 10)
+                        .map_err(|e| e.to_string())?;
+                    let meetings_json = meetings_to_json(&meetings);
+                    (
+                        "person",
+                        person.name.clone(),
+                        serde_json::json!({
+                            "organization": person.organization,
+                            "role": person.role,
+                            "relationship": person.relationship,
+                            "meetingCount": person.meeting_count,
+                            "lastSeen": person.last_seen,
+                        }),
+                        Vec::new(),
+                        meetings_json,
+                    )
+                } else {
+                    return Err(format!("Entity not found: {}", entity_id));
+                };
 
-    let semantic_matches = crate::queries::search::search_entity_content(
-        db,
-        Some(embedding_model.as_ref()),
-        &entity_id,
-        question,
-        8,
-        0.7,
-        0.3,
-    )?;
-    let intelligence = db.get_entity_intelligence(&entity_id).ok().flatten();
+            let semantic_matches = crate::queries::search::search_entity_content(
+                db,
+                Some(embedding_model.as_ref()),
+                &entity_id,
+                question,
+                8,
+                0.7,
+                0.3,
+            )?;
+            let intelligence = db.get_entity_intelligence(&entity_id).ok().flatten();
 
-    let session = ensure_open_chat_session(db, Some(&entity_id), Some(entity_type))?;
-    let response = serde_json::json!({
-        "sessionId": session.id,
-        "entityId": entity_id,
-        "entityType": entity_type,
-        "entityName": entity_name,
-        "question": question,
-        "facts": facts,
-        "intelligence": intelligence,
-        "openActions": open_actions,
-        "recentMeetings": recent_meetings,
-        "semanticMatches": semantic_matches,
-    });
-    append_chat_exchange(db, &session.id, question, &response)?;
+            let session = ensure_open_chat_session(db, Some(&entity_id), Some(entity_type))?;
+            let response = serde_json::json!({
+                "sessionId": session.id,
+                "entityId": entity_id,
+                "entityType": entity_type,
+                "entityName": entity_name,
+                "question": question,
+                "facts": facts,
+                "intelligence": intelligence,
+                "openActions": open_actions,
+                "recentMeetings": recent_meetings,
+                "semanticMatches": semantic_matches,
+            });
+            append_chat_exchange(db, &session.id, question, &response)?;
 
-    Ok(response)
-    }).await
+            Ok(response)
+        })
+        .await
 }
 
 #[tauri::command]
-pub async fn chat_get_briefing(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
+pub async fn chat_get_briefing(
+    state: State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
     let dashboard = crate::services::dashboard::get_dashboard_data(&state).await;
 
     let response = match dashboard {
@@ -4383,11 +4641,13 @@ pub async fn chat_get_briefing(state: State<'_, Arc<AppState>>) -> Result<serde_
         }),
     };
 
-    state.db_write(move |db| {
-        let session = ensure_open_chat_session(db, None, None)?;
-        append_chat_exchange(db, &session.id, "get briefing", &response)?;
-        Ok(response)
-    }).await
+    state
+        .db_write(move |db| {
+            let session = ensure_open_chat_session(db, None, None)?;
+            append_chat_exchange(db, &session.id, "get briefing", &response)?;
+            Ok(response)
+        })
+        .await
 }
 
 #[tauri::command]
@@ -4400,55 +4660,56 @@ pub async fn chat_list_entities(
         .map(|s| s.to_lowercase())
         .unwrap_or_else(|| "all".to_string());
 
-    state.db_write(move |db| {
+    state
+        .db_write(move |db| {
+            let mut items = Vec::new();
+            if requested == "all" || requested == "account" || requested == "accounts" {
+                let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
+                for account in accounts.into_iter().filter(|a| !a.archived) {
+                    let open_action_count = db
+                        .get_account_actions(&account.id)
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    items.push(ChatEntityListItem {
+                        id: account.id,
+                        name: account.name,
+                        entity_type: "account".to_string(),
+                        status: account.lifecycle,
+                        health: account.health,
+                        open_action_count,
+                    });
+                }
+            }
 
-    let mut items = Vec::new();
-    if requested == "all" || requested == "account" || requested == "accounts" {
-        let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
-        for account in accounts.into_iter().filter(|a| !a.archived) {
-            let open_action_count = db
-                .get_account_actions(&account.id)
-                .map(|a| a.len())
-                .unwrap_or(0);
-            items.push(ChatEntityListItem {
-                id: account.id,
-                name: account.name,
-                entity_type: "account".to_string(),
-                status: account.lifecycle,
-                health: account.health,
-                open_action_count,
+            if requested == "all" || requested == "project" || requested == "projects" {
+                let projects = db.get_all_projects().map_err(|e| e.to_string())?;
+                for project in projects.into_iter().filter(|p| !p.archived) {
+                    let open_action_count = db
+                        .get_project_actions(&project.id)
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    items.push(ChatEntityListItem {
+                        id: project.id,
+                        name: project.name,
+                        entity_type: "project".to_string(),
+                        status: Some(project.status),
+                        health: None,
+                        open_action_count,
+                    });
+                }
+            }
+
+            let session = ensure_open_chat_session(db, None, None)?;
+            let response = serde_json::json!({
+                "entityType": requested,
+                "count": items.len(),
+                "items": items,
             });
-        }
-    }
+            append_chat_exchange(db, &session.id, "list entities", &response)?;
 
-    if requested == "all" || requested == "project" || requested == "projects" {
-        let projects = db.get_all_projects().map_err(|e| e.to_string())?;
-        for project in projects.into_iter().filter(|p| !p.archived) {
-            let open_action_count = db
-                .get_project_actions(&project.id)
-                .map(|a| a.len())
-                .unwrap_or(0);
-            items.push(ChatEntityListItem {
-                id: project.id,
-                name: project.name,
-                entity_type: "project".to_string(),
-                status: Some(project.status),
-                health: None,
-                open_action_count,
-            });
-        }
-    }
-
-    let session = ensure_open_chat_session(db, None, None)?;
-    let response = serde_json::json!({
-        "entityType": requested,
-        "count": items.len(),
-        "items": items,
-    });
-    append_chat_exchange(db, &session.id, "list entities", &response)?;
-
-    Ok(items)
-    }).await
+            Ok(items)
+        })
+        .await
 }
 
 // ── I74/I131: Entity Intelligence Enrichment via Claude Code ────────
@@ -4531,7 +4792,9 @@ pub struct ProjectChildSummary {
 
 /// Get all projects with computed summary fields for the list page.
 #[tauri::command]
-pub async fn get_projects_list(state: State<'_, Arc<AppState>>) -> Result<Vec<ProjectListItem>, String> {
+pub async fn get_projects_list(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<ProjectListItem>, String> {
     crate::services::projects::get_projects_list(&state).await
 }
 
@@ -4559,10 +4822,12 @@ pub async fn get_project_ancestors(
     project_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbProject>, String> {
-    state.db_read(move |db| {
-        db.get_project_ancestors(&project_id)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_project_ancestors(&project_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Create a new project.
@@ -4609,9 +4874,9 @@ pub async fn enrich_project(
 
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
-    state.db_read(|db| {
-        crate::db_backup::backup_database(db)
-    }).await
+    state
+        .db_read(|db| crate::db_backup::backup_database(db))
+        .await
 }
 
 #[tauri::command]
@@ -4627,13 +4892,15 @@ pub async fn rebuild_database(
         )
     };
 
-    state.db_write(move |db| {
-        crate::db_backup::rebuild_from_filesystem(
-            std::path::Path::new(&workspace_path),
-            db,
-            &user_domains,
-        )
-    }).await
+    state
+        .db_write(move |db| {
+            crate::db_backup::rebuild_from_filesystem(
+                std::path::Path::new(&workspace_path),
+                db,
+                &user_domains,
+            )
+        })
+        .await
 }
 
 /// Helper: create a default AccountJson from a DbAccount.
@@ -4647,7 +4914,8 @@ pub fn get_hygiene_report(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneReport>, String> {
     let guard = state
-        .hygiene.report
+        .hygiene
+        .report
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?;
     Ok(guard.clone())
@@ -4658,10 +4926,7 @@ pub fn get_hygiene_report(
 pub fn get_hygiene_narrative(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<crate::hygiene::HygieneNarrativeView>, String> {
-    let report = state
-        .hygiene.report
-        .lock()
-        .map_err(|_| "Lock poisoned")?;
+    let report = state.hygiene.report.lock().map_err(|_| "Lock poisoned")?;
     Ok(report
         .as_ref()
         .and_then(crate::hygiene::build_hygiene_narrative))
@@ -4673,7 +4938,8 @@ pub fn get_intelligence_hygiene_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<HygieneStatusView, String> {
     let report = state
-        .hygiene.report
+        .hygiene
+        .report
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?
         .clone();
@@ -4684,7 +4950,8 @@ pub fn get_intelligence_hygiene_status(
 #[tauri::command]
 pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneStatusView, String> {
     if state
-        .hygiene.scan_running
+        .hygiene
+        .scan_running
         .compare_exchange(
             false,
             true,
@@ -4731,7 +4998,9 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
         if let Ok(mut guard) = state.hygiene.next_scan_at.lock() {
             *guard = Some(
                 (chrono::Utc::now()
-                    + chrono::Duration::seconds(crate::hygiene::scan_interval_secs(Some(&config)) as i64))
+                    + chrono::Duration::seconds(
+                        crate::hygiene::scan_interval_secs(Some(&config)) as i64
+                    ))
                 .to_rfc3339(),
             );
         }
@@ -4740,7 +5009,8 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
     })();
 
     state
-        .hygiene.scan_running
+        .hygiene
+        .scan_running
         .store(false, std::sync::atomic::Ordering::Release);
 
     let report = scan_result?;
@@ -4752,9 +5022,9 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
 pub async fn get_duplicate_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
-    state.db_read(|db| {
-        crate::hygiene::detect_duplicate_people(db)
-    }).await
+    state
+        .db_read(|db| crate::hygiene::detect_duplicate_people(db))
+        .await
 }
 
 /// Detect potential duplicate people for a specific person (I172).
@@ -4763,13 +5033,15 @@ pub async fn get_duplicate_people_for_person(
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
-    state.db_read(move |db| {
-        let dupes = crate::hygiene::detect_duplicate_people(db)?;
-        Ok(dupes
-            .into_iter()
-            .filter(|d| d.person1_id == person_id || d.person2_id == person_id)
-            .collect())
-    }).await
+    state
+        .db_read(move |db| {
+            let dupes = crate::hygiene::detect_duplicate_people(db)?;
+            Ok(dupes
+                .into_iter()
+                .filter(|d| d.person1_id == person_id || d.person2_id == person_id)
+                .collect())
+        })
+        .await
 }
 
 // =============================================================================
@@ -4784,9 +5056,11 @@ pub async fn archive_account(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::archive_account(db, &app_state, &id, archived)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::archive_account(db, &app_state, &id, archived)
+        })
+        .await
 }
 
 /// Merge source account into target account.
@@ -4797,9 +5071,11 @@ pub async fn merge_accounts(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::db::MergeResult, String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::merge_accounts(db, &app_state, &from_id, &into_id)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::merge_accounts(db, &app_state, &from_id, &into_id)
+        })
+        .await
 }
 
 /// Archive or unarchive a project.
@@ -4809,9 +5085,9 @@ pub async fn archive_project(
     archived: bool,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        crate::services::projects::archive_project(db, &id, archived)
-    }).await
+    state
+        .db_write(move |db| crate::services::projects::archive_project(db, &id, archived))
+        .await
 }
 
 /// Archive or unarchive a person.
@@ -4822,9 +5098,9 @@ pub async fn archive_person(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::people::archive_person(db, &app_state, &id, archived)
-    }).await
+    state
+        .db_write(move |db| crate::services::people::archive_person(db, &app_state, &id, archived))
+        .await
 }
 
 /// Get archived accounts.
@@ -4832,9 +5108,9 @@ pub async fn archive_person(
 pub async fn get_archived_accounts(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccount>, String> {
-    state.db_read(|db| {
-        db.get_archived_accounts().map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(|db| db.get_archived_accounts().map_err(|e| e.to_string()))
+        .await
 }
 
 /// Get archived projects.
@@ -4842,9 +5118,9 @@ pub async fn get_archived_accounts(
 pub async fn get_archived_projects(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbProject>, String> {
-    state.db_read(|db| {
-        db.get_archived_projects().map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(|db| db.get_archived_projects().map_err(|e| e.to_string()))
+        .await
 }
 
 /// Get archived people with signals.
@@ -4852,10 +5128,12 @@ pub async fn get_archived_projects(
 pub async fn get_archived_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::PersonListItem>, String> {
-    state.db_read(|db| {
-        db.get_archived_people_with_signals()
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(|db| {
+            db.get_archived_people_with_signals()
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Restore an archived account with optional child restoration (I199).
@@ -4865,9 +5143,11 @@ pub async fn restore_account(
     restore_children: bool,
     state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
-    state.db_write(move |db| {
-        crate::services::accounts::restore_account(db, &account_id, restore_children)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::restore_account(db, &account_id, restore_children)
+        })
+        .await
 }
 
 // =============================================================================
@@ -4876,7 +5156,10 @@ pub async fn restore_account(
 
 /// Set multiple user domains for multi-org meeting classification.
 #[tauri::command]
-pub async fn set_user_domains(domains: String, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
+pub async fn set_user_domains(
+    domains: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Config, String> {
     crate::services::settings::set_user_domains(&domains, &state).await
 }
 
@@ -4890,15 +5173,20 @@ pub async fn bulk_create_accounts(
     names: Vec<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    let workspace_path = state.config.read().map_err(|_| "Lock poisoned")?
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
         .clone();
-    state.db_write(move |db| {
-        let workspace = Path::new(&workspace_path);
-        crate::services::accounts::bulk_create_accounts(db, workspace, &names)
-    }).await
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
+            crate::services::accounts::bulk_create_accounts(db, workspace, &names)
+        })
+        .await
 }
 
 /// Bulk-create projects from a list of names. Returns created project IDs.
@@ -4907,15 +5195,20 @@ pub async fn bulk_create_projects(
     names: Vec<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    let workspace_path = state.config.read().map_err(|_| "Lock poisoned")?
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
         .as_ref()
         .ok_or("Config not loaded")?
         .workspace_path
         .clone();
-    state.db_write(move |db| {
-        let workspace = Path::new(&workspace_path);
-        crate::services::projects::bulk_create_projects(db, workspace, &names)
-    }).await
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
+            crate::services::projects::bulk_create_projects(db, workspace, &names)
+        })
+        .await
 }
 
 // =============================================================================
@@ -4933,11 +5226,19 @@ pub async fn record_account_event(
     state: State<'_, Arc<AppState>>,
 ) -> Result<i64, String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::accounts::record_account_event(
-            db, &app_state, &account_id, &event_type, &event_date, arr_impact, notes.as_deref(),
-        )
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::accounts::record_account_event(
+                db,
+                &app_state,
+                &account_id,
+                &event_type,
+                &event_date,
+                arr_impact,
+                notes.as_deref(),
+            )
+        })
+        .await
 }
 
 /// Get account events for a given account.
@@ -4946,10 +5247,12 @@ pub async fn get_account_events(
     account_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAccountEvent>, String> {
-    state.db_read(move |db| {
-        db.get_account_events(&account_id)
-            .map_err(|e| e.to_string())
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_account_events(&account_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
 }
 
 // =============================================================================
@@ -5186,9 +5489,9 @@ pub async fn apply_meeting_prep_prefill(
     let mid = meeting_id.clone();
     let ai = agenda_items.clone();
     let na = notes_append.clone();
-    let result = state.db_write(move |db| {
-        apply_meeting_prep_prefill_inner(db, &mid, &ai, &na)
-    }).await?;
+    let result = state
+        .db_write(move |db| apply_meeting_prep_prefill_inner(db, &mid, &ai, &na))
+        .await?;
 
     // Mirror write to active prep JSON (best-effort) for immediate UI coherence.
     if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
@@ -5242,21 +5545,23 @@ pub async fn generate_meeting_agenda_message_draft(
         .ok_or("No configuration loaded")?;
     let workspace_path = config.workspace_path.clone();
 
-    state.db_read(move |db| {
-        let workspace = Path::new(&workspace_path);
-        let today_dir = workspace.join("_today");
-        let meeting = db
-            .get_meeting_intelligence_row(&meeting_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
-        let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+    state
+        .db_read(move |db| {
+            let workspace = Path::new(&workspace_path);
+            let today_dir = workspace.join("_today");
+            let meeting = db
+                .get_meeting_intelligence_row(&meeting_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+            let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
 
-        Ok(build_agenda_draft_result(
-            &meeting,
-            prep.as_ref(),
-            context_hint.as_deref(),
-        ))
-    }).await
+            Ok(build_agenda_draft_result(
+                &meeting,
+                prep.as_ref(),
+                context_hint.as_deref(),
+            ))
+        })
+        .await
 }
 
 /// Update user-authored agenda items on a meeting prep file.
@@ -5269,11 +5574,18 @@ pub async fn update_meeting_user_agenda(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::meetings::update_meeting_user_agenda(
-            db, &app_state, &meeting_id, agenda, dismissed_topics, hidden_attendees,
-        )
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::meetings::update_meeting_user_agenda(
+                db,
+                &app_state,
+                &meeting_id,
+                agenda,
+                dismissed_topics,
+                hidden_attendees,
+            )
+        })
+        .await
 }
 
 /// Update user-authored notes on a meeting prep file.
@@ -5284,9 +5596,16 @@ pub async fn update_meeting_user_notes(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::meetings::update_meeting_user_notes(db, &app_state, &meeting_id, &notes)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::meetings::update_meeting_user_notes(
+                db,
+                &app_state,
+                &meeting_id,
+                &notes,
+            )
+        })
+        .await
 }
 
 /// Resolve the on-disk path for a meeting's prep JSON file.
@@ -5709,13 +6028,16 @@ mod tests {
 pub async fn backfill_historical_meetings(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(usize, usize, Vec<String>), String> {
-    let config = state.config.read().map_err(|_| "Config lock poisoned")?
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Config lock poisoned")?
         .clone()
         .ok_or("Config not initialized")?;
 
-    state.db_write(move |db| {
-        crate::backfill_meetings::backfill_historical_meetings(db, &config)
-    }).await
+    state
+        .db_write(move |db| crate::backfill_meetings::backfill_historical_meetings(db, &config))
+        .await
 }
 
 // ==================== Risk Briefing ====================
@@ -5739,9 +6061,11 @@ pub async fn get_risk_briefing(
     account_id: String,
 ) -> Result<crate::types::RiskBriefing, String> {
     let app_state = state.inner().clone();
-    state.db_read(move |db| {
-        crate::services::intelligence::get_risk_briefing(db, &app_state, &account_id)
-    }).await
+    state
+        .db_read(move |db| {
+            crate::services::intelligence::get_risk_briefing(db, &app_state, &account_id)
+        })
+        .await
 }
 
 /// Save an edited risk briefing back to disk (user corrections).
@@ -5752,9 +6076,16 @@ pub async fn save_risk_briefing(
     briefing: crate::types::RiskBriefing,
 ) -> Result<(), String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::intelligence::save_risk_briefing(db, &app_state, &account_id, &briefing)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::intelligence::save_risk_briefing(
+                db,
+                &app_state,
+                &account_id,
+                &briefing,
+            )
+        })
+        .await
 }
 
 // =============================================================================
@@ -5769,7 +6100,8 @@ pub async fn generate_report(
     entity_type: String,
     report_type: String,
 ) -> Result<crate::reports::ReportRow, String> {
-    crate::services::reports::generate_report(state.inner(), &entity_id, &entity_type, &report_type).await
+    crate::services::reports::generate_report(state.inner(), &entity_id, &entity_type, &report_type)
+        .await
 }
 
 /// Read a cached report (fast, no AI).
@@ -5780,9 +6112,11 @@ pub async fn get_report(
     entity_type: String,
     report_type: String,
 ) -> Result<Option<crate::reports::ReportRow>, String> {
-    state.db_read(move |db| {
-        crate::services::reports::get_report_cached(db, &entity_id, &entity_type, &report_type)
-    }).await
+    state
+        .db_read(move |db| {
+            crate::services::reports::get_report_cached(db, &entity_id, &entity_type, &report_type)
+        })
+        .await
 }
 
 /// Save user edits to a report (persists content_json back to DB).
@@ -5794,9 +6128,17 @@ pub async fn save_report(
     report_type: String,
     content_json: String,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        crate::services::reports::save_report(db, &entity_id, &entity_type, &report_type, &content_json)
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::reports::save_report(
+                db,
+                &entity_id,
+                &entity_type,
+                &report_type,
+                &content_json,
+            )
+        })
+        .await
 }
 
 /// Fetch all reports for an entity.
@@ -5806,9 +6148,11 @@ pub async fn get_reports_for_entity(
     entity_id: String,
     entity_type: String,
 ) -> Result<Vec<crate::reports::ReportRow>, String> {
-    state.db_read(move |db| {
-        crate::services::reports::get_all_reports_for_entity(db, &entity_id, &entity_type)
-    }).await
+    state
+        .db_read(move |db| {
+            crate::services::reports::get_all_reports_for_entity(db, &entity_id, &entity_type)
+        })
+        .await
 }
 
 // =============================================================================
@@ -5828,7 +6172,6 @@ pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
 pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
     crate::services::integrations::configure_claude_desktop()
 }
-
 
 // =============================================================================
 // Cowork Plugin Export
@@ -5879,15 +6222,13 @@ pub fn export_cowork_plugin(
         .map(|d| d.join("resources/plugins").join(filename));
 
     // In dev mode, fall back to the source tree
-    let source_path = resource_path
-        .filter(|p| p.exists())
-        .or_else(|| {
-            let dev_path = std::env::current_dir()
-                .ok()?
-                .join("resources/plugins")
-                .join(filename);
-            dev_path.exists().then_some(dev_path)
-        });
+    let source_path = resource_path.filter(|p| p.exists()).or_else(|| {
+        let dev_path = std::env::current_dir()
+            .ok()?
+            .join("resources/plugins")
+            .join(filename);
+        dev_path.exists().then_some(dev_path)
+    });
 
     let source = match source_path {
         Some(p) => p,
@@ -5929,8 +6270,16 @@ pub fn export_cowork_plugin(
 #[tauri::command]
 pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPluginInfo> {
     let plugins = vec![
-        ("dailyos", "dailyos-plugin.zip", "DailyOS workspace tools — briefings, accounts, meetings, actions"),
-        ("dailyos-writer", "dailyos-writer-plugin.zip", "DailyOS Writer — drafts emails, agendas, and follow-ups from your data"),
+        (
+            "dailyos",
+            "dailyos-plugin.zip",
+            "DailyOS workspace tools — briefings, accounts, meetings, actions",
+        ),
+        (
+            "dailyos-writer",
+            "dailyos-writer-plugin.zip",
+            "DailyOS Writer — drafts emails, agendas, and follow-ups from your data",
+        ),
     ];
 
     let desktop = dirs::home_dir().map(|h| h.join("Desktop"));
@@ -5946,7 +6295,9 @@ pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPlug
                 .unwrap_or(false)
                 || std::env::current_dir()
                     .ok()
-                    .map(|d: std::path::PathBuf| d.join("resources/plugins").join(filename).exists())
+                    .map(|d: std::path::PathBuf| {
+                        d.join("resources/plugins").join(filename).exists()
+                    })
                     .unwrap_or(false);
 
             let exported = desktop
@@ -5965,7 +6316,6 @@ pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPlug
         .collect()
 }
 
-
 // =============================================================================
 // Intelligence Field Editing (I261)
 // =============================================================================
@@ -5983,7 +6333,14 @@ pub async fn update_intelligence_field(
     value: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    crate::services::intelligence::update_intelligence_field(&entity_id, &entity_type, &field_path, &value, &state).await
+    crate::services::intelligence::update_intelligence_field(
+        &entity_id,
+        &entity_type,
+        &field_path,
+        &value,
+        &state,
+    )
+    .await
 }
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
@@ -5997,7 +6354,13 @@ pub async fn update_stakeholders(
     let stakeholders: Vec<crate::intelligence::StakeholderInsight> =
         serde_json::from_str(&stakeholders_json)
             .map_err(|e| format!("Invalid stakeholders JSON: {}", e))?;
-    crate::services::intelligence::update_stakeholders(&entity_id, &entity_type, stakeholders, &state).await
+    crate::services::intelligence::update_stakeholders(
+        &entity_id,
+        &entity_type,
+        stakeholders,
+        &state,
+    )
+    .await
 }
 
 /// Create a person entity from a stakeholder name (no email required).
@@ -6013,11 +6376,18 @@ pub async fn create_person_from_stakeholder(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let app_state = state.inner().clone();
-    state.db_write(move |db| {
-        crate::services::people::create_person_from_stakeholder(
-            db, &app_state, &entity_id, &entity_type, &name, role.as_deref(),
-        )
-    }).await
+    state
+        .db_write(move |db| {
+            crate::services::people::create_person_from_stakeholder(
+                db,
+                &app_state,
+                &entity_id,
+                &entity_type,
+                &name,
+                role.as_deref(),
+            )
+        })
+        .await
 }
 
 // =============================================================================
@@ -6051,8 +6421,7 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
         .and_then(|g| g.as_ref().map(|c| c.quill.clone()));
 
     let quill_config = config.unwrap_or_default();
-    let bridge_exists =
-        std::path::Path::new(&quill_config.bridge_path).exists();
+    let bridge_exists = std::path::Path::new(&quill_config.bridge_path).exists();
 
     // Count sync states from DB
     let (pending, failed, completed, last_sync, last_error, last_error_at, abandoned) = state
@@ -6061,10 +6430,7 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
         .ok()
         .and_then(|g| {
             g.as_ref().map(|db| {
-                let pending = db
-                    .get_pending_quill_syncs()
-                    .map(|v| v.len())
-                    .unwrap_or(0);
+                let pending = db.get_pending_quill_syncs().map(|v| v.len()).unwrap_or(0);
 
                 // Count failed, completed, abandoned from all rows
                 let (failed_count, completed_count, last, abandoned_count) = db
@@ -6107,7 +6473,15 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
                     })
                     .unwrap_or((None, None));
 
-                (pending, failed_count, completed_count, last, err_msg, err_at, abandoned_count)
+                (
+                    pending,
+                    failed_count,
+                    completed_count,
+                    last,
+                    err_msg,
+                    err_at,
+                    abandoned_count,
+                )
             })
         })
         .unwrap_or((0, 0, 0, None, None, None, 0));
@@ -6129,10 +6503,7 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
 
 /// Enable or disable Quill integration.
 #[tauri::command]
-pub fn set_quill_enabled(
-    enabled: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub fn set_quill_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.quill.enabled = enabled;
     })?;
@@ -6149,20 +6520,24 @@ pub struct QuillBackfillResult {
 
 /// Create Quill sync rows for past meetings that never had transcript sync.
 #[tauri::command]
-pub async fn start_quill_backfill(state: State<'_, Arc<AppState>>) -> Result<QuillBackfillResult, String> {
-    state.db_write(|db| {
-        let ids = db
-            .get_backfill_eligible_meeting_ids(90)
-            .map_err(|e| e.to_string())?;
-        let eligible = ids.len();
-        let mut created = 0;
-        for id in &ids {
-            if crate::quill::sync::create_sync_for_meeting(db, id).is_ok() {
-                created += 1;
+pub async fn start_quill_backfill(
+    state: State<'_, Arc<AppState>>,
+) -> Result<QuillBackfillResult, String> {
+    state
+        .db_write(|db| {
+            let ids = db
+                .get_backfill_eligible_meeting_ids(90)
+                .map_err(|e| e.to_string())?;
+            let eligible = ids.len();
+            let mut created = 0;
+            for id in &ids {
+                if crate::quill::sync::create_sync_for_meeting(db, id).is_ok() {
+                    created += 1;
+                }
             }
-        }
-        Ok(QuillBackfillResult { created, eligible })
-    }).await
+            Ok(QuillBackfillResult { created, eligible })
+        })
+        .await
 }
 
 /// Set the Quill poll interval (1–60 minutes).
@@ -6212,48 +6587,75 @@ pub async fn trigger_quill_sync_for_meeting(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let force = force.unwrap_or(false);
-    state.db_write(move |db| {
-
-    // Check if a sync row already exists
-    match db.get_quill_sync_state(&meeting_id).map_err(|e| e.to_string())? {
-        Some(existing) => {
-            match existing.state.as_str() {
-                "completed" if !force => Ok("already_completed".to_string()),
-                "completed" => {
-                    // Force re-sync: reset to pending so poller picks it up again.
-                    // This handles the case where captures were lost due to a bug
-                    // or when the user wants to re-process with updated AI.
-                    crate::quill::sync::transition_state(
-                        db, &existing.id, "pending", None, None, None, Some("Force re-sync"),
-                    ).map_err(|e| e.to_string())?;
-                    Ok("resyncing".to_string())
+    state
+        .db_write(move |db| {
+            // Check if a sync row already exists
+            match db
+                .get_quill_sync_state(&meeting_id)
+                .map_err(|e| e.to_string())?
+            {
+                Some(existing) => {
+                    match existing.state.as_str() {
+                        "completed" if !force => Ok("already_completed".to_string()),
+                        "completed" => {
+                            // Force re-sync: reset to pending so poller picks it up again.
+                            // This handles the case where captures were lost due to a bug
+                            // or when the user wants to re-process with updated AI.
+                            crate::quill::sync::transition_state(
+                                db,
+                                &existing.id,
+                                "pending",
+                                None,
+                                None,
+                                None,
+                                Some("Force re-sync"),
+                            )
+                            .map_err(|e| e.to_string())?;
+                            Ok("resyncing".to_string())
+                        }
+                        "pending" | "polling" | "fetching" | "processing" if force => {
+                            // Force-reset a stuck in-progress state back to pending.
+                            // Covers the case where the app crashed or the AI pipeline
+                            // failed silently mid-processing, leaving the row orphaned.
+                            crate::quill::sync::transition_state(
+                                db,
+                                &existing.id,
+                                "pending",
+                                None,
+                                None,
+                                None,
+                                Some("Force reset from stuck state"),
+                            )
+                            .map_err(|e| e.to_string())?;
+                            Ok("resyncing".to_string())
+                        }
+                        "pending" | "polling" | "fetching" | "processing" => {
+                            Ok("already_in_progress".to_string())
+                        }
+                        _ => {
+                            // Failed or abandoned — reset to pending for retry
+                            crate::quill::sync::transition_state(
+                                db,
+                                &existing.id,
+                                "pending",
+                                None,
+                                None,
+                                None,
+                                Some("Manual retry"),
+                            )
+                            .map_err(|e| e.to_string())?;
+                            Ok("retrying".to_string())
+                        }
+                    }
                 }
-                "pending" | "polling" | "fetching" | "processing" if force => {
-                    // Force-reset a stuck in-progress state back to pending.
-                    // Covers the case where the app crashed or the AI pipeline
-                    // failed silently mid-processing, leaving the row orphaned.
-                    crate::quill::sync::transition_state(
-                        db, &existing.id, "pending", None, None, None, Some("Force reset from stuck state"),
-                    ).map_err(|e| e.to_string())?;
-                    Ok("resyncing".to_string())
-                }
-                "pending" | "polling" | "fetching" | "processing" => Ok("already_in_progress".to_string()),
-                _ => {
-                    // Failed or abandoned — reset to pending for retry
-                    crate::quill::sync::transition_state(
-                        db, &existing.id, "pending", None, None, None, Some("Manual retry"),
-                    ).map_err(|e| e.to_string())?;
-                    Ok("retrying".to_string())
+                None => {
+                    crate::quill::sync::create_sync_for_meeting(db, &meeting_id)
+                        .map_err(|e| e.to_string())?;
+                    Ok("created".to_string())
                 }
             }
-        }
-        None => {
-            crate::quill::sync::create_sync_for_meeting(db, &meeting_id)
-                .map_err(|e| e.to_string())?;
-            Ok("created".to_string())
-        }
-    }
-    }).await
+        })
+        .await
 }
 
 /// Get Quill sync states, optionally filtered by meeting ID.
@@ -6262,19 +6664,15 @@ pub async fn get_quill_sync_states(
     meeting_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbQuillSyncState>, String> {
-    state.db_read(move |db| {
-        match meeting_id {
+    state
+        .db_read(move |db| match meeting_id {
             Some(ref mid) => {
-                let row = db
-                    .get_quill_sync_state(mid)
-                    .map_err(|e| e.to_string())?;
+                let row = db.get_quill_sync_state(mid).map_err(|e| e.to_string())?;
                 Ok(row.into_iter().collect())
             }
-            None => db
-                .get_pending_quill_syncs()
-                .map_err(|e| e.to_string()),
-        }
-    }).await
+            None => db.get_pending_quill_syncs().map_err(|e| e.to_string()),
+        })
+        .await
 }
 
 // =============================================================================
@@ -6315,30 +6713,33 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
     };
 
     // Count sync states from DB (source='granola')
-    let (pending, failed, completed, last_sync) = state.db_read(|db| {
-        let (failed_count, completed_count, last, pending_count) = db
-            .conn_ref()
-            .prepare(
-                "SELECT
+    let (pending, failed, completed, last_sync) = state
+        .db_read(|db| {
+            let (failed_count, completed_count, last, pending_count) = db
+                .conn_ref()
+                .prepare(
+                    "SELECT
                     SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
                     SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
                     MAX(completed_at),
                     SUM(CASE WHEN state IN ('pending', 'polling', 'processing') THEN 1 ELSE 0 END)
                  FROM quill_sync_state WHERE source = 'granola'",
-            )
-            .and_then(|mut stmt| {
-                stmt.query_row([], |row| {
-                    Ok((
-                        row.get::<_, i64>(0).unwrap_or(0) as usize,
-                        row.get::<_, i64>(1).unwrap_or(0) as usize,
-                        row.get::<_, Option<String>>(2)?,
-                        row.get::<_, i64>(3).unwrap_or(0) as usize,
-                    ))
+                )
+                .and_then(|mut stmt| {
+                    stmt.query_row([], |row| {
+                        Ok((
+                            row.get::<_, i64>(0).unwrap_or(0) as usize,
+                            row.get::<_, i64>(1).unwrap_or(0) as usize,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, i64>(3).unwrap_or(0) as usize,
+                        ))
+                    })
                 })
-            })
-            .unwrap_or((0, 0, None, 0));
-        Ok((pending_count, failed_count, completed_count, last))
-    }).await.unwrap_or((0, 0, 0, None));
+                .unwrap_or((0, 0, None, 0));
+            Ok((pending_count, failed_count, completed_count, last))
+        })
+        .await
+        .unwrap_or((0, 0, 0, None));
 
     Ok(GranolaStatus {
         enabled: granola_config.enabled,
@@ -6358,10 +6759,7 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
 
 /// Enable or disable Granola integration.
 #[tauri::command]
-pub fn set_granola_enabled(
-    enabled: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub fn set_granola_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.granola.enabled = enabled;
     })?;
@@ -6460,10 +6858,7 @@ pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
 
 /// Enable or disable Gravatar integration.
 #[tauri::command]
-pub fn set_gravatar_enabled(
-    enabled: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub fn set_gravatar_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.gravatar.enabled = enabled;
     })?;
@@ -6490,15 +6885,17 @@ pub async fn fetch_gravatar(
 ) -> Result<(), String> {
     // Look up person's email
     let pid = person_id.clone();
-    let email = state.db_read(move |db| {
-        db.conn_ref()
+    let email = state
+        .db_read(move |db| {
+            db.conn_ref()
             .query_row(
                 "SELECT email FROM person_emails WHERE person_id = ?1 AND is_primary = 1 LIMIT 1",
                 [&pid],
                 |row| row.get::<_, String>(0),
             )
             .map_err(|_| format!("No email found for person {}", pid))
-    }).await?;
+        })
+        .await?;
 
     let api_key = state
         .config
@@ -6511,10 +6908,7 @@ pub async fn fetch_gravatar(
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
-    let profile = client
-        .get_profile(&email)
-        .await
-        .unwrap_or_default();
+    let profile = client.get_profile(&email).await.unwrap_or_default();
 
     let data_dir = dirs::home_dir()
         .unwrap_or_default()
@@ -6561,27 +6955,25 @@ pub async fn fetch_gravatar(
         person_id: Some(person_id),
     };
 
-    state.db_write(move |db| {
-        crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry)
-    }).await?;
+    state
+        .db_write(move |db| crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry))
+        .await?;
 
     Ok(())
 }
 
 /// Batch fetch Gravatar data for all people with stale or missing cache.
 #[tauri::command]
-pub async fn bulk_fetch_gravatars(
-    state: State<'_, Arc<AppState>>,
-) -> Result<usize, String> {
+pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     let api_key = state
         .config
         .read()
         .ok()
         .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
 
-    let emails_to_fetch: Vec<(String, Option<String>)> = state.db_read(|db| {
-        crate::gravatar::cache::get_stale_emails(db.conn_ref(), 100)
-    }).await?;
+    let emails_to_fetch: Vec<(String, Option<String>)> = state
+        .db_read(|db| crate::gravatar::cache::get_stale_emails(db.conn_ref(), 100))
+        .await?;
 
     if emails_to_fetch.is_empty() {
         return Ok(0);
@@ -6637,9 +7029,9 @@ pub async fn bulk_fetch_gravatars(
             person_id: person_id.clone(),
         };
 
-        let _ = state.db_write(move |db| {
-            crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry)
-        }).await;
+        let _ = state
+            .db_write(move |db| crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry))
+            .await;
 
         fetched += 1;
         // Rate limit: 1 req/sec
@@ -6657,9 +7049,15 @@ pub async fn get_person_avatar(
     person_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<String>, String> {
-    let path = match state.db_read(move |db| {
-        Ok(crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id))
-    }).await {
+    let path = match state
+        .db_read(move |db| {
+            Ok(crate::gravatar::cache::get_avatar_url_for_person(
+                db.conn_ref(),
+                &person_id,
+            ))
+        })
+        .await
+    {
         Ok(Some(p)) => p,
         _ => return Ok(None),
     };
@@ -6699,18 +7097,34 @@ pub async fn get_clay_status(state: State<'_, Arc<AppState>>) -> Result<ClayStat
 
     let clay_config = config.unwrap_or_default();
 
-    let (enriched_count, pending_count, last_enrichment) = state.db_read(|db| {
-        let enriched: i64 = db.conn_ref()
-            .query_row("SELECT COUNT(*) FROM people WHERE last_enriched_at IS NOT NULL", [], |row| row.get(0))
-            .unwrap_or(0);
-        let pending: i64 = db.conn_ref()
-            .query_row("SELECT COUNT(*) FROM clay_sync_state WHERE state = 'pending'", [], |row| row.get(0))
-            .unwrap_or(0);
-        let last: Option<String> = db.conn_ref()
-            .query_row("SELECT MAX(last_enriched_at) FROM people", [], |row| row.get(0))
-            .unwrap_or(None);
-        Ok((enriched, pending, last))
-    }).await.unwrap_or((0, 0, None));
+    let (enriched_count, pending_count, last_enrichment) = state
+        .db_read(|db| {
+            let enriched: i64 = db
+                .conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM people WHERE last_enriched_at IS NOT NULL",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let pending: i64 = db
+                .conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM clay_sync_state WHERE state = 'pending'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let last: Option<String> = db
+                .conn_ref()
+                .query_row("SELECT MAX(last_enriched_at) FROM people", [], |row| {
+                    row.get(0)
+                })
+                .unwrap_or(None);
+            Ok((enriched, pending, last))
+        })
+        .await
+        .unwrap_or((0, 0, None));
 
     Ok(ClayStatusData {
         enabled: clay_config.enabled,
@@ -6725,10 +7139,7 @@ pub async fn get_clay_status(state: State<'_, Arc<AppState>>) -> Result<ClayStat
 
 /// Enable or disable Clay integration.
 #[tauri::command]
-pub fn set_clay_enabled(
-    enabled: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub fn set_clay_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.clay.enabled = enabled;
     })?;
@@ -6749,10 +7160,7 @@ pub fn set_clay_api_key(
 
 /// Toggle auto-enrich on person creation.
 #[tauri::command]
-pub fn set_clay_auto_enrich(
-    enabled: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub fn set_clay_auto_enrich(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.clay.auto_enrich_on_create = enabled;
     })?;
@@ -6781,9 +7189,7 @@ fn resolve_smithery_config(state: &AppState) -> Result<(String, String, String),
 
 /// Test Clay connection by attempting to connect via Smithery.
 #[tauri::command]
-pub async fn test_clay_connection(
-    state: State<'_, Arc<AppState>>,
-) -> Result<bool, String> {
+pub async fn test_clay_connection(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     let (api_key, ns, conn) = resolve_smithery_config(&state)?;
 
     let client = crate::clay::client::ClayClient::connect(&api_key, &ns, &conn)
@@ -6815,10 +7221,9 @@ pub async fn enrich_person_from_clay(
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
-    let result = crate::clay::enricher::enrich_person_from_clay_with_client(
-        &state, &person_id, &client,
-    )
-    .await?;
+    let result =
+        crate::clay::enricher::enrich_person_from_clay_with_client(&state, &person_id, &client)
+            .await?;
 
     client.disconnect().await;
 
@@ -6836,21 +7241,17 @@ pub async fn enrich_account_from_clay(
     state: State<'_, Arc<AppState>>,
 ) -> Result<EnrichmentResultData, String> {
     // Find a linked person for this account, enrich them, company data follows
-    let person_id: Option<String> = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().and_then(|db| {
-                db.conn_ref()
-                    .query_row(
-                        "SELECT person_id FROM entity_people WHERE entity_id = ?1 LIMIT 1",
-                        [&account_id],
-                        |row| row.get(0),
-                    )
-                    .ok()
-            })
-        });
+    let person_id: Option<String> = state.db.lock().ok().and_then(|g| {
+        g.as_ref().and_then(|db| {
+            db.conn_ref()
+                .query_row(
+                    "SELECT person_id FROM entity_people WHERE entity_id = ?1 LIMIT 1",
+                    [&account_id],
+                    |row| row.get(0),
+                )
+                .ok()
+        })
+    });
 
     let person_id = person_id.ok_or("No linked people found for this account")?;
 
@@ -6860,10 +7261,9 @@ pub async fn enrich_account_from_clay(
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
-    let result = crate::clay::enricher::enrich_person_from_clay_with_client(
-        &state, &person_id, &client,
-    )
-    .await?;
+    let result =
+        crate::clay::enricher::enrich_person_from_clay_with_client(&state, &person_id, &client)
+            .await?;
 
     client.disconnect().await;
 
@@ -7062,8 +7462,16 @@ pub fn set_smithery_connection(
     connection_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let ns = if namespace.trim().is_empty() { None } else { Some(namespace) };
-    let conn = if connection_id.trim().is_empty() { None } else { Some(connection_id) };
+    let ns = if namespace.trim().is_empty() {
+        None
+    } else {
+        Some(namespace)
+    };
+    let conn = if connection_id.trim().is_empty() {
+        None
+    } else {
+        Some(connection_id)
+    };
     crate::state::create_or_update_config(&state, |config| {
         config.clay.smithery_namespace = ns.clone();
         config.clay.smithery_connection_id = conn.clone();
@@ -7153,11 +7561,9 @@ pub fn get_linear_status(state: State<'_, Arc<AppState>>) -> LinearStatusData {
                     .unwrap_or(0);
                 let last: Option<String> = db
                     .conn_ref()
-                    .query_row(
-                        "SELECT MAX(synced_at) FROM linear_issues",
-                        [],
-                        |row| row.get(0),
-                    )
+                    .query_row("SELECT MAX(synced_at) FROM linear_issues", [], |row| {
+                        row.get(0)
+                    })
                     .unwrap_or(None);
                 (issues, projects, last)
             })
@@ -7185,7 +7591,10 @@ pub fn set_linear_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Res
 
 /// Set or clear the Linear API key.
 #[tauri::command]
-pub fn set_linear_api_key(key: Option<String>, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub fn set_linear_api_key(
+    key: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.linear.api_key = key.filter(|k| !k.is_empty());
     })?;
@@ -7194,9 +7603,7 @@ pub fn set_linear_api_key(key: Option<String>, state: State<'_, Arc<AppState>>) 
 
 /// Test Linear connection by fetching the viewer.
 #[tauri::command]
-pub async fn test_linear_connection(
-    state: State<'_, Arc<AppState>>,
-) -> Result<String, String> {
+pub async fn test_linear_connection(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let api_key = state
         .config
         .read()
@@ -7251,9 +7658,12 @@ pub async fn get_linear_recent_issues(
 pub async fn get_linear_entity_links(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    state.db_read(|db| {
-        let mut stmt = db.conn_ref().prepare(
-            "SELECT lel.id, lel.linear_project_id, lp.name as project_name,
+    state
+        .db_read(|db| {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT lel.id, lel.linear_project_id, lp.name as project_name,
                     lel.entity_id, lel.entity_type, lel.confirmed,
                     CASE lel.entity_type
                         WHEN 'account' THEN (SELECT name FROM accounts WHERE id = lel.entity_id)
@@ -7262,30 +7672,32 @@ pub async fn get_linear_entity_links(
                     END as entity_name
              FROM linear_entity_links lel
              LEFT JOIN linear_projects lp ON lp.id = lel.linear_project_id
-             ORDER BY lel.created_at DESC"
-        ).map_err(|e| e.to_string())?;
-        let links = stmt.query_map([], |row| {
-            Ok(serde_json::json!({
-                "id": row.get::<_, String>(0)?,
-                "linearProjectId": row.get::<_, String>(1)?,
-                "projectName": row.get::<_, Option<String>>(2)?,
-                "entityId": row.get::<_, String>(3)?,
-                "entityType": row.get::<_, String>(4)?,
-                "confirmed": row.get::<_, bool>(5)?,
-                "entityName": row.get::<_, Option<String>>(6)?,
-            }))
-        }).map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-        Ok(links)
-    }).await
+             ORDER BY lel.created_at DESC",
+                )
+                .map_err(|e| e.to_string())?;
+            let links = stmt
+                .query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "id": row.get::<_, String>(0)?,
+                        "linearProjectId": row.get::<_, String>(1)?,
+                        "projectName": row.get::<_, Option<String>>(2)?,
+                        "entityId": row.get::<_, String>(3)?,
+                        "entityType": row.get::<_, String>(4)?,
+                        "confirmed": row.get::<_, bool>(5)?,
+                        "entityName": row.get::<_, Option<String>>(6)?,
+                    }))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(links)
+        })
+        .await
 }
 
 /// I425: Auto-detect entity links by fuzzy-matching Linear project names to entity names.
 #[tauri::command]
-pub async fn run_linear_auto_link(
-    state: State<'_, Arc<AppState>>,
-) -> Result<usize, String> {
+pub async fn run_linear_auto_link(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     state.db_write(|db| {
         let conn = db.conn_ref();
         let mut linked = 0usize;
@@ -7350,13 +7762,14 @@ pub async fn delete_linear_entity_link(
     state: State<'_, Arc<AppState>>,
     link_id: String,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        db.conn_ref().execute(
-            "DELETE FROM linear_entity_links WHERE id = ?1",
-            [&link_id],
-        ).map_err(|e| e.to_string())?;
-        Ok(())
-    }).await
+    state
+        .db_write(move |db| {
+            db.conn_ref()
+                .execute("DELETE FROM linear_entity_links WHERE id = ?1", [&link_id])
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .await
 }
 
 /// List all Linear projects for the manual link picker.
@@ -7364,20 +7777,25 @@ pub async fn delete_linear_entity_link(
 pub async fn get_linear_projects(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    state.db_read(|db| {
-        let mut stmt = db.conn_ref().prepare(
-            "SELECT id, name FROM linear_projects ORDER BY name ASC"
-        ).map_err(|e| e.to_string())?;
-        let projects = stmt.query_map([], |row| {
-            Ok(serde_json::json!({
-                "id": row.get::<_, String>(0)?,
-                "name": row.get::<_, String>(1)?,
-            }))
-        }).map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-        Ok(projects)
-    }).await
+    state
+        .db_read(|db| {
+            let mut stmt = db
+                .conn_ref()
+                .prepare("SELECT id, name FROM linear_projects ORDER BY name ASC")
+                .map_err(|e| e.to_string())?;
+            let projects = stmt
+                .query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "id": row.get::<_, String>(0)?,
+                        "name": row.get::<_, String>(1)?,
+                    }))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(projects)
+        })
+        .await
 }
 
 /// Manually create a Linear entity link.
@@ -7461,7 +7879,9 @@ pub async fn update_entity_metadata(
 ) -> Result<String, String> {
     serde_json::from_str::<serde_json::Value>(&metadata)
         .map_err(|e| format!("Invalid JSON metadata: {}", e))?;
-    state.db_write(move |db| db.update_entity_metadata(&entity_type, &entity_id, &metadata)).await?;
+    state
+        .db_write(move |db| db.update_entity_metadata(&entity_type, &entity_id, &metadata))
+        .await?;
     Ok("ok".to_string())
 }
 
@@ -7472,7 +7892,9 @@ pub async fn get_entity_metadata(
     entity_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    state.db_read(move |db| db.get_entity_metadata(&entity_type, &entity_id)).await
+    state
+        .db_read(move |db| db.get_entity_metadata(&entity_type, &entity_id))
+        .await
 }
 
 // =============================================================================
@@ -7496,34 +7918,36 @@ pub async fn correct_email_disposition(
         ));
     }
 
-    state.db_write(move |db| {
-        // Emit a feedback signal for recalibration
-        let signal_text = format!(
-            "User corrected auto-archived email to {}",
-            corrected_priority
-        );
-        db.upsert_email_signal(
-            &email_id,
-            None,           // sender_email
-            None,           // person_id
-            "system",       // entity_id (not entity-specific)
-            "account",      // entity_type
-            "feedback",     // signal_type (valid enum value)
-            &signal_text,
-            Some(1.0),      // confidence
-            None,           // sentiment
-            None,           // urgency
-            None,           // detected_at (defaults to now)
-        )
-        .map_err(|e| format!("Failed to record correction signal: {}", e))?;
+    state
+        .db_write(move |db| {
+            // Emit a feedback signal for recalibration
+            let signal_text = format!(
+                "User corrected auto-archived email to {}",
+                corrected_priority
+            );
+            db.upsert_email_signal(
+                &email_id,
+                None,       // sender_email
+                None,       // person_id
+                "system",   // entity_id (not entity-specific)
+                "account",  // entity_type
+                "feedback", // signal_type (valid enum value)
+                &signal_text,
+                Some(1.0), // confidence
+                None,      // sentiment
+                None,      // urgency
+                None,      // detected_at (defaults to now)
+            )
+            .map_err(|e| format!("Failed to record correction signal: {}", e))?;
 
-        log::info!(
-            "correct_email_disposition: {} corrected to {}",
-            email_id,
-            corrected_priority
-        );
-        Ok(format!("Disposition corrected to {}", corrected_priority))
-    }).await
+            log::info!(
+                "correct_email_disposition: {} corrected to {}",
+                email_id,
+                corrected_priority
+            );
+            Ok(format!("Disposition corrected to {}", corrected_priority))
+        })
+        .await
 }
 
 // =============================================================================
@@ -7542,40 +7966,51 @@ pub async fn get_meeting_timeline(
     days_after: Option<i64>,
 ) -> Result<Vec<crate::types::TimelineMeeting>, String> {
     let days_after_val = days_after.unwrap_or(7);
-    let result = crate::services::meetings::get_meeting_timeline(&state, days_before, days_after).await?;
+    let result =
+        crate::services::meetings::get_meeting_timeline(&state, days_before, days_after).await?;
 
     // Check if we have any meetings AFTER today (i.e., tomorrow or later)
     let tomorrow_str = (chrono::Local::now().date_naive() + chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
-    let has_future = result.iter().any(|m| m.start_time.as_str() >= tomorrow_str.as_str());
+    let has_future = result
+        .iter()
+        .any(|m| m.start_time.as_str() >= tomorrow_str.as_str());
     if has_future || days_after_val == 0 {
         // Enqueue future meetings that have no prep_frozen_json yet
         let ts = tomorrow_str.clone();
-        let needs_prep: Vec<String> = state.db_read(move |db| {
-            Ok(db.conn_ref()
-                .prepare(
-                    "SELECT id FROM meetings_history
+        let needs_prep: Vec<String> = state
+            .db_read(move |db| {
+                Ok(db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT id FROM meetings_history
                      WHERE start_time >= ?1
                        AND prep_frozen_json IS NULL
                        AND meeting_type NOT IN ('personal', 'focus', 'blocked')",
-                )
-                .and_then(|mut stmt| {
-                    let rows = stmt.query_map(rusqlite::params![ts], |row| {
-                        row.get::<_, String>(0)
-                    })?;
-                    Ok(rows.filter_map(|r| r.ok()).collect())
-                })
-                .unwrap_or_default())
-        }).await.unwrap_or_default();
+                    )
+                    .and_then(|mut stmt| {
+                        let rows =
+                            stmt.query_map(rusqlite::params![ts], |row| row.get::<_, String>(0))?;
+                        Ok(rows.filter_map(|r| r.ok()).collect())
+                    })
+                    .unwrap_or_default())
+            })
+            .await
+            .unwrap_or_default();
         if !needs_prep.is_empty() {
-            log::info!("get_meeting_timeline: enqueuing {} future meetings without prep", needs_prep.len());
+            log::info!(
+                "get_meeting_timeline: enqueuing {} future meetings without prep",
+                needs_prep.len()
+            );
             for mid in needs_prep {
-                state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
-                    meeting_id: mid,
-                    priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
-                    requested_at: std::time::Instant::now(),
-                });
+                state
+                    .meeting_prep_queue
+                    .enqueue(crate::meeting_prep_queue::PrepRequest {
+                        meeting_id: mid,
+                        priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
+                        requested_at: std::time::Instant::now(),
+                    });
             }
             state.integrations.prep_queue_wake.notify_one();
         }
@@ -7615,14 +8050,18 @@ pub async fn get_meeting_timeline(
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
         .unwrap_or_default();
-    let entity_hints = state.db_read(|db| {
-        Ok(crate::helpers::build_entity_hints(db))
-    }).await?;
+    let entity_hints = state
+        .db_read(|db| Ok(crate::helpers::build_entity_hints(db)))
+        .await?;
 
     // Classify events first (no DB needed)
-    let mut to_upsert: Vec<(crate::types::CalendarEvent, Vec<crate::google_api::classify::ResolvedMeetingEntity>)> = Vec::new();
+    let mut to_upsert: Vec<(
+        crate::types::CalendarEvent,
+        Vec<crate::google_api::classify::ResolvedMeetingEntity>,
+    )> = Vec::new();
     for raw in &raw_events {
-        let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &entity_hints);
+        let cm =
+            crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &entity_hints);
         let event = cm.to_calendar_event();
 
         // Skip personal (matches timeline query filter)
@@ -7634,82 +8073,99 @@ pub async fn get_meeting_timeline(
     }
 
     // Batch upsert in a single DB write
-    let upserted_ids = state.db_write(move |db| {
-        let mut ids: Vec<String> = Vec::new();
-        for (event, resolved_entities) in &to_upsert {
-            // Only insert if not already present
-            if db.get_meeting_by_calendar_event_id(&event.id).ok().flatten().is_some() {
-                continue;
+    let upserted_ids = state
+        .db_write(move |db| {
+            let mut ids: Vec<String> = Vec::new();
+            for (event, resolved_entities) in &to_upsert {
+                // Only insert if not already present
+                if db
+                    .get_meeting_by_calendar_event_id(&event.id)
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    continue;
+                }
+
+                let attendees_json = if event.attendees.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::to_string(&event.attendees).unwrap_or_default())
+                };
+
+                let db_meeting = crate::db::DbMeeting {
+                    id: event.id.clone(),
+                    title: event.title.clone(),
+                    meeting_type: event.meeting_type.as_str().to_string(),
+                    start_time: event.start.to_rfc3339(),
+                    end_time: Some(event.end.to_rfc3339()),
+                    attendees: attendees_json,
+                    notes_path: None,
+                    summary: None,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    calendar_event_id: Some(event.id.clone()),
+                    description: None,
+                    prep_context_json: None,
+                    user_agenda_json: None,
+                    user_notes: None,
+                    prep_frozen_json: None,
+                    prep_frozen_at: None,
+                    prep_snapshot_path: None,
+                    prep_snapshot_hash: None,
+                    transcript_path: None,
+                    transcript_processed_at: None,
+                    intelligence_state: None,
+                    intelligence_quality: None,
+                    last_enriched_at: None,
+                    signal_count: None,
+                    has_new_signals: None,
+                    last_viewed_at: None,
+                };
+                if let Err(e) = db.upsert_meeting(&db_meeting) {
+                    log::warn!(
+                        "get_meeting_timeline: failed to upsert '{}': {}",
+                        event.title,
+                        e
+                    );
+                    continue;
+                }
+
+                // Link resolved entities (same pattern as prepare_week)
+                for re in resolved_entities {
+                    let _ = db.link_meeting_entity(&event.id, &re.entity_id, &re.entity_type);
+                }
+
+                ids.push(event.id.clone());
             }
-
-            let attendees_json = if event.attendees.is_empty() {
-                None
-            } else {
-                Some(serde_json::to_string(&event.attendees).unwrap_or_default())
-            };
-
-            let db_meeting = crate::db::DbMeeting {
-                id: event.id.clone(),
-                title: event.title.clone(),
-                meeting_type: event.meeting_type.as_str().to_string(),
-                start_time: event.start.to_rfc3339(),
-                end_time: Some(event.end.to_rfc3339()),
-                attendees: attendees_json,
-                notes_path: None,
-                summary: None,
-                created_at: chrono::Utc::now().to_rfc3339(),
-                calendar_event_id: Some(event.id.clone()),
-                description: None,
-                prep_context_json: None,
-                user_agenda_json: None,
-                user_notes: None,
-                prep_frozen_json: None,
-                prep_frozen_at: None,
-                prep_snapshot_path: None,
-                prep_snapshot_hash: None,
-                transcript_path: None,
-                transcript_processed_at: None,
-                intelligence_state: None,
-                intelligence_quality: None,
-                last_enriched_at: None,
-                signal_count: None,
-                has_new_signals: None,
-                last_viewed_at: None,
-            };
-            if let Err(e) = db.upsert_meeting(&db_meeting) {
-                log::warn!("get_meeting_timeline: failed to upsert '{}': {}", event.title, e);
-                continue;
-            }
-
-            // Link resolved entities (same pattern as prepare_week)
-            for re in resolved_entities {
-                let _ = db.link_meeting_entity(&event.id, &re.entity_id, &re.entity_type);
-            }
-
-            ids.push(event.id.clone());
-        }
-        Ok(ids)
-    }).await?;
+            Ok(ids)
+        })
+        .await?;
 
     let upserted = upserted_ids.len() as u32;
 
     if upserted > 0 {
-        log::info!("get_meeting_timeline: upserted {} future meetings from Google Calendar", upserted);
+        log::info!(
+            "get_meeting_timeline: upserted {} future meetings from Google Calendar",
+            upserted
+        );
 
         // Enqueue newly upserted meetings for prep generation
         for mid in &upserted_ids {
-            state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: mid.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
-                requested_at: std::time::Instant::now(),
-            });
+            state
+                .meeting_prep_queue
+                .enqueue(crate::meeting_prep_queue::PrepRequest {
+                    meeting_id: mid.clone(),
+                    priority: crate::meeting_prep_queue::PrepPriority::PageLoad,
+                    requested_at: std::time::Instant::now(),
+                });
         }
         if !upserted_ids.is_empty() {
             state.integrations.prep_queue_wake.notify_one();
         }
 
         // Re-query with the newly upserted meetings
-        return crate::services::meetings::get_meeting_timeline(&state, days_before, days_after).await;
+        return crate::services::meetings::get_meeting_timeline(&state, days_before, days_after)
+            .await;
     }
 
     Ok(result)
@@ -7737,9 +8193,15 @@ pub struct RelationshipPayload {
     pub source: String,
 }
 
-fn default_rel_direction() -> String { "directed".to_string() }
-fn default_rel_confidence() -> f64 { 0.8 }
-fn default_rel_source() -> String { "user_confirmed".to_string() }
+fn default_rel_direction() -> String {
+    "directed".to_string()
+}
+fn default_rel_confidence() -> f64 {
+    0.8
+}
+fn default_rel_source() -> String {
+    "user_confirmed".to_string()
+}
 
 #[tauri::command]
 pub async fn upsert_person_relationship(
@@ -7747,42 +8209,61 @@ pub async fn upsert_person_relationship(
     payload: RelationshipPayload,
 ) -> Result<String, String> {
     // Validate relationship type parses
-    payload.relationship_type.parse::<crate::db::person_relationships::RelationshipType>()
+    payload
+        .relationship_type
+        .parse::<crate::db::person_relationships::RelationshipType>()
         .map_err(|e| format!("Invalid relationship type: {}", e))?;
 
     let engine = state.signals.engine.clone();
-    state.db_write(move |db| {
-        let id = payload.id.unwrap_or_else(|| format!("rel-{}", uuid::Uuid::new_v4()));
-        db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
-            id: &id,
-            from_person_id: &payload.from_person_id,
-            to_person_id: &payload.to_person_id,
-            relationship_type: &payload.relationship_type,
-            direction: &payload.direction,
-            confidence: payload.confidence,
-            context_entity_id: payload.context_entity_id.as_deref(),
-            context_entity_type: payload.context_entity_type.as_deref(),
-            source: &payload.source,
-        }).map_err(|e| format!("Failed to upsert relationship: {}", e))?;
+    state
+        .db_write(move |db| {
+            let id = payload
+                .id
+                .unwrap_or_else(|| format!("rel-{}", uuid::Uuid::new_v4()));
+            db.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+                id: &id,
+                from_person_id: &payload.from_person_id,
+                to_person_id: &payload.to_person_id,
+                relationship_type: &payload.relationship_type,
+                direction: &payload.direction,
+                confidence: payload.confidence,
+                context_entity_id: payload.context_entity_id.as_deref(),
+                context_entity_type: payload.context_entity_type.as_deref(),
+                source: &payload.source,
+            })
+            .map_err(|e| format!("Failed to upsert relationship: {}", e))?;
 
-        // Emit signal to re-enqueue both persons in intel_queue
-        let _ = crate::services::signals::emit_and_propagate(
-            db, &engine,
-            "person", &payload.from_person_id,
-            "relationship_graph_changed", "user_action",
-            Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.to_person_id)),
-            0.9,
-        );
-        let _ = crate::services::signals::emit_and_propagate(
-            db, &engine,
-            "person", &payload.to_person_id,
-            "relationship_graph_changed", "user_action",
-            Some(&format!("{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}", id, payload.from_person_id)),
-            0.9,
-        );
+            // Emit signal to re-enqueue both persons in intel_queue
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                "person",
+                &payload.from_person_id,
+                "relationship_graph_changed",
+                "user_action",
+                Some(&format!(
+                    "{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}",
+                    id, payload.to_person_id
+                )),
+                0.9,
+            );
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                "person",
+                &payload.to_person_id,
+                "relationship_graph_changed",
+                "user_action",
+                Some(&format!(
+                    "{{\"relationship_id\":\"{}\",\"other_person_id\":\"{}\"}}",
+                    id, payload.from_person_id
+                )),
+                0.9,
+            );
 
-        Ok(id)
-    }).await
+            Ok(id)
+        })
+        .await
 }
 
 #[tauri::command]
@@ -7791,34 +8272,43 @@ pub async fn delete_person_relationship(
     id: String,
 ) -> Result<(), String> {
     let engine = state.signals.engine.clone();
-    state.db_write(move |db| {
-        // Capture person IDs before deleting for signal emission
-        let person_ids = db.get_person_relationship_by_id(&id)
-            .map_err(|e| format!("Failed to look up relationship: {}", e))?;
+    state
+        .db_write(move |db| {
+            // Capture person IDs before deleting for signal emission
+            let person_ids = db
+                .get_person_relationship_by_id(&id)
+                .map_err(|e| format!("Failed to look up relationship: {}", e))?;
 
-        db.delete_person_relationship(&id)
-            .map_err(|e| format!("Failed to delete relationship: {}", e))?;
+            db.delete_person_relationship(&id)
+                .map_err(|e| format!("Failed to delete relationship: {}", e))?;
 
-        // Emit signals on both persons to re-enqueue for intel enrichment
-        if let Some((from_id, to_id)) = person_ids {
-            let _ = crate::services::signals::emit_and_propagate(
-                db, &engine,
-                "person", &from_id,
-                "relationship_graph_changed", "user_action",
-                Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
-                0.7,
-            );
-            let _ = crate::services::signals::emit_and_propagate(
-                db, &engine,
-                "person", &to_id,
-                "relationship_graph_changed", "user_action",
-                Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
-                0.7,
-            );
-        }
+            // Emit signals on both persons to re-enqueue for intel enrichment
+            if let Some((from_id, to_id)) = person_ids {
+                let _ = crate::services::signals::emit_and_propagate(
+                    db,
+                    &engine,
+                    "person",
+                    &from_id,
+                    "relationship_graph_changed",
+                    "user_action",
+                    Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
+                    0.7,
+                );
+                let _ = crate::services::signals::emit_and_propagate(
+                    db,
+                    &engine,
+                    "person",
+                    &to_id,
+                    "relationship_graph_changed",
+                    "user_action",
+                    Some(&format!("{{\"deleted_relationship_id\":\"{}\"}}", id)),
+                    0.7,
+                );
+            }
 
-        Ok(())
-    }).await
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
@@ -7826,10 +8316,12 @@ pub async fn get_person_relationships(
     state: State<'_, Arc<AppState>>,
     person_id: String,
 ) -> Result<Vec<crate::db::person_relationships::PersonRelationship>, String> {
-    state.db_read(move |db| {
-        db.get_relationships_for_person(&person_id)
-            .map_err(|e| format!("Failed to get relationships: {}", e))
-    }).await
+    state
+        .db_read(move |db| {
+            db.get_relationships_for_person(&person_id)
+                .map_err(|e| format!("Failed to get relationships: {}", e))
+        })
+        .await
 }
 
 // =========================================================================
@@ -7866,7 +8358,9 @@ pub fn get_google_client_id() -> String {
 
 /// Get Google Drive integration status.
 #[tauri::command]
-pub async fn get_google_drive_status(state: State<'_, Arc<AppState>>) -> Result<crate::commands::DriveStatusData, String> {
+pub async fn get_google_drive_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::commands::DriveStatusData, String> {
     let config = state
         .config
         .read()
@@ -7882,13 +8376,32 @@ pub async fn get_google_drive_status(state: State<'_, Arc<AppState>>) -> Result<
         .map(|guard| matches!(*guard, crate::types::GoogleAuthStatus::Authenticated { .. }))
         .unwrap_or(false);
 
-    let (watched_count, synced_count, last_sync) = state.db_read(|db| {
-        let conn = db.conn_ref();
-        let watched: i64 = conn.query_row("SELECT COUNT(*) FROM drive_watched_sources", [], |row| row.get(0)).unwrap_or(0);
-        let synced: i64 = conn.query_row("SELECT COUNT(*) FROM drive_watched_sources WHERE last_synced_at IS NOT NULL", [], |row| row.get(0)).unwrap_or(0);
-        let last: Option<String> = conn.query_row("SELECT MAX(last_synced_at) FROM drive_watched_sources", [], |row| row.get(0)).unwrap_or(None);
-        Ok((watched, synced, last))
-    }).await.unwrap_or((0, 0, None));
+    let (watched_count, synced_count, last_sync) = state
+        .db_read(|db| {
+            let conn = db.conn_ref();
+            let watched: i64 = conn
+                .query_row("SELECT COUNT(*) FROM drive_watched_sources", [], |row| {
+                    row.get(0)
+                })
+                .unwrap_or(0);
+            let synced: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM drive_watched_sources WHERE last_synced_at IS NOT NULL",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let last: Option<String> = conn
+                .query_row(
+                    "SELECT MAX(last_synced_at) FROM drive_watched_sources",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(None);
+            Ok((watched, synced, last))
+        })
+        .await
+        .unwrap_or((0, 0, None));
 
     Ok(crate::commands::DriveStatusData {
         enabled: drive_config.enabled,
@@ -7902,7 +8415,10 @@ pub async fn get_google_drive_status(state: State<'_, Arc<AppState>>) -> Result<
 
 /// Enable or disable Google Drive integration.
 #[tauri::command]
-pub fn set_google_drive_enabled(enabled: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub fn set_google_drive_enabled(
+    enabled: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.drive.enabled = enabled;
     })?;
@@ -7960,17 +8476,19 @@ pub async fn add_google_drive_watch(
     entity_type: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let watch_id = state.db_write(move |db| {
-        crate::google_drive::sync::upsert_watched_source(
-            db,
-            &google_id,
-            &name,
-            &file_type,
-            google_doc_url.as_deref(),
-            &entity_id,
-            &entity_type,
-        )
-    }).await?;
+    let watch_id = state
+        .db_write(move |db| {
+            crate::google_drive::sync::upsert_watched_source(
+                db,
+                &google_id,
+                &name,
+                &file_type,
+                google_doc_url.as_deref(),
+                &entity_id,
+                &entity_type,
+            )
+        })
+        .await?;
 
     // Wake the poller so it does an initial sync
     state.integrations.drive_poller_wake.notify_one();
@@ -7984,9 +8502,9 @@ pub async fn remove_google_drive_watch(
     watch_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.db_write(move |db| {
-        crate::google_drive::sync::remove_watched_source(db, &watch_id)
-    }).await
+    state
+        .db_write(move |db| crate::google_drive::sync::remove_watched_source(db, &watch_id))
+        .await
 }
 
 /// Get all watched Drive sources.
@@ -7994,9 +8512,9 @@ pub async fn remove_google_drive_watch(
 pub async fn get_google_drive_watches(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<DriveWatchData>, String> {
-    let sources = state.db_read(|db| {
-        crate::google_drive::sync::get_all_watched_sources(db)
-    }).await?;
+    let sources = state
+        .db_read(|db| crate::google_drive::sync::get_all_watched_sources(db))
+        .await?;
     Ok(sources
         .into_iter()
         .map(|s| DriveWatchData {

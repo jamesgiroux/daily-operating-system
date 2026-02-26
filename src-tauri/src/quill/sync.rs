@@ -175,7 +175,10 @@ pub fn process_fetched_transcript_without_db(
     if result.status == "success" {
         Ok(result)
     } else {
-        Err(result.message.clone().unwrap_or_else(|| "Transcript processing failed".to_string()))
+        Err(result
+            .message
+            .clone()
+            .unwrap_or_else(|| "Transcript processing failed".to_string()))
     }
 }
 

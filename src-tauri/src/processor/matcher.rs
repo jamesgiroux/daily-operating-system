@@ -62,7 +62,9 @@ pub fn find_best_match(
         }
 
         if score >= AUTO_LINK_THRESHOLD
-            && best.as_ref().is_none_or(|(_, best_score)| score > *best_score)
+            && best
+                .as_ref()
+                .is_none_or(|(_, best_score)| score > *best_score)
         {
             best = Some((i, score));
         }
@@ -341,12 +343,7 @@ mod tests {
             start_time: None,
             entity_id: Some("acme".to_string()),
         }];
-        let result = find_best_match(
-            "Acme Weekly Standup",
-            None,
-            Some("acme"),
-            &candidates,
-        );
+        let result = find_best_match("Acme Weekly Standup", None, Some("acme"), &candidates);
         assert!(result.is_some());
         assert_eq!(result.unwrap().score, 110); // 70 (contains) + 40 (entity)
     }

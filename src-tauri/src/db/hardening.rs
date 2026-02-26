@@ -27,8 +27,7 @@ fn set_directory_permissions(path: &Path) {
     {
         use std::os::unix::fs::PermissionsExt;
         if path.is_dir() {
-            if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
-            {
+            if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)) {
                 log::warn!(
                     "Failed to set directory permissions on {}: {e}",
                     path.display()
@@ -44,12 +43,8 @@ pub fn set_file_permissions(path: &Path) {
     {
         use std::os::unix::fs::PermissionsExt;
         if path.is_file() {
-            if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            {
-                log::warn!(
-                    "Failed to set file permissions on {}: {e}",
-                    path.display()
-                );
+            if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
+                log::warn!("Failed to set file permissions on {}: {e}", path.display());
             }
         }
     }

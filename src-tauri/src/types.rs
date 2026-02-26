@@ -673,9 +673,9 @@ impl std::fmt::Display for QualityLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Staleness {
-    Current,   // < 12 hours
-    Aging,     // 12-48 hours
-    Stale,     // 48+ hours
+    Current, // < 12 hours
+    Aging,   // 12-48 hours
+    Stale,   // 48+ hours
 }
 
 /// Structured intelligence quality assessment for a meeting

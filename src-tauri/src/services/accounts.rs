@@ -4,7 +4,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::commands::{AccountChildSummary, AccountDetailResult, AccountListItem, MeetingPreview, MeetingSummary, PickerAccount, PrepContext};
+use crate::commands::{
+    AccountChildSummary, AccountDetailResult, AccountListItem, MeetingPreview, MeetingSummary,
+    PickerAccount, PrepContext,
+};
 use crate::db::ActionDb;
 use crate::state::AppState;
 
@@ -197,155 +200,156 @@ pub async fn get_account_detail(
     let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
 
     let account_id = account_id.to_string();
-    state.db_read(move |db| {
-        let account = db
-            .get_account(&account_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Account not found: {}", account_id))?;
+    state
+        .db_read(move |db| {
+            let account = db
+                .get_account(&account_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-        // Read narrative fields from dashboard.json + intelligence.json if they exist
-        let (overview, programs, notes, intelligence) = if let Some(ref config) = config {
-            let workspace = Path::new(&config.workspace_path);
-            let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-            let json_path = account_dir.join("dashboard.json");
-            let (ov, prg, nt) = if json_path.exists() {
-                match crate::accounts::read_account_json(&json_path) {
-                    Ok(result) => (
-                        result.json.company_overview,
-                        result.json.strategic_programs,
-                        result.json.notes,
-                    ),
-                    Err(_) => (None, Vec::new(), None),
-                }
+            // Read narrative fields from dashboard.json + intelligence.json if they exist
+            let (overview, programs, notes, intelligence) = if let Some(ref config) = config {
+                let workspace = Path::new(&config.workspace_path);
+                let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+                let json_path = account_dir.join("dashboard.json");
+                let (ov, prg, nt) = if json_path.exists() {
+                    match crate::accounts::read_account_json(&json_path) {
+                        Ok(result) => (
+                            result.json.company_overview,
+                            result.json.strategic_programs,
+                            result.json.notes,
+                        ),
+                        Err(_) => (None, Vec::new(), None),
+                    }
+                } else {
+                    (None, Vec::new(), None)
+                };
+                // Read intelligence.json (ADR-0057), migrate from CompanyOverview if needed
+                let intel = crate::intelligence::read_intelligence_json(&account_dir)
+                    .ok()
+                    .or_else(|| {
+                        // Auto-migrate from legacy CompanyOverview on first access
+                        ov.as_ref().and_then(|overview| {
+                            crate::intelligence::migrate_company_overview_to_intelligence(
+                                workspace, &account, overview,
+                            )
+                        })
+                    });
+                (ov, prg, nt, intel)
             } else {
-                (None, Vec::new(), None)
+                (None, Vec::new(), None, None)
             };
-            // Read intelligence.json (ADR-0057), migrate from CompanyOverview if needed
-            let intel = crate::intelligence::read_intelligence_json(&account_dir)
-                .ok()
-                .or_else(|| {
-                    // Auto-migrate from legacy CompanyOverview on first access
-                    ov.as_ref().and_then(|overview| {
-                        crate::intelligence::migrate_company_overview_to_intelligence(
-                            workspace, &account, overview,
-                        )
-                    })
-                });
-            (ov, prg, nt, intel)
-        } else {
-            (None, Vec::new(), None, None)
-        };
 
-        let open_actions = db
-            .get_account_actions(&account_id)
-            .map_err(|e| e.to_string())?;
+            let open_actions = db
+                .get_account_actions(&account_id)
+                .map_err(|e| e.to_string())?;
 
-        let upcoming_meetings: Vec<MeetingSummary> = db
-            .get_upcoming_meetings_for_account(&account_id, 5)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|m| MeetingSummary {
-                id: m.id,
-                title: m.title,
-                start_time: m.start_time,
-                meeting_type: m.meeting_type,
-            })
-            .collect();
-
-        let recent_meetings: Vec<MeetingPreview> = db
-            .get_meetings_for_account_with_prep(&account_id, 10)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|m| {
-                let prep_context = m
-                    .prep_context_json
-                    .as_ref()
-                    .and_then(|json_str| serde_json::from_str::<PrepContext>(json_str).ok());
-                MeetingPreview {
+            let upcoming_meetings: Vec<MeetingSummary> = db
+                .get_upcoming_meetings_for_account(&account_id, 5)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|m| MeetingSummary {
                     id: m.id,
                     title: m.title,
                     start_time: m.start_time,
                     meeting_type: m.meeting_type,
-                    prep_context,
-                }
+                })
+                .collect();
+
+            let recent_meetings: Vec<MeetingPreview> =
+                db.get_meetings_for_account_with_prep(&account_id, 10)
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .map(|m| {
+                        let prep_context = m.prep_context_json.as_ref().and_then(|json_str| {
+                            serde_json::from_str::<PrepContext>(json_str).ok()
+                        });
+                        MeetingPreview {
+                            id: m.id,
+                            title: m.title,
+                            start_time: m.start_time,
+                            meeting_type: m.meeting_type,
+                            prep_context,
+                        }
+                    })
+                    .collect();
+
+            let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
+            let account_team = db.get_account_team(&account_id).unwrap_or_default();
+            let account_team_import_notes = db
+                .get_account_team_import_notes(&account_id)
+                .unwrap_or_default();
+
+            let signals = db.get_stakeholder_signals(&account_id).ok();
+
+            let recent_captures = db
+                .get_captures_for_account(&account_id, 90)
+                .unwrap_or_default();
+            let recent_email_signals = db
+                .list_recent_email_signals_for_entity(&account_id, 12)
+                .unwrap_or_default();
+
+            // I114: Resolve parent name for child accounts, children for parent accounts
+            let parent_name = account
+                .parent_id
+                .as_ref()
+                .and_then(|pid| db.get_account(pid).ok().flatten().map(|a| a.name));
+
+            let child_accounts = db.get_child_accounts(&account.id).unwrap_or_default();
+            let parent_aggregate = if !child_accounts.is_empty() {
+                db.get_parent_aggregate(&account.id).ok()
+            } else {
+                None
+            };
+            let children: Vec<AccountChildSummary> = child_accounts
+                .iter()
+                .map(|child| {
+                    let open_action_count = db
+                        .get_account_actions(&child.id)
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    AccountChildSummary {
+                        id: child.id.clone(),
+                        name: child.name.clone(),
+                        health: child.health.clone(),
+                        arr: child.arr,
+                        open_action_count,
+                        account_type: child.account_type.as_db_str().to_string(),
+                    }
+                })
+                .collect();
+
+            Ok(AccountDetailResult {
+                id: account.id,
+                name: account.name,
+                lifecycle: account.lifecycle,
+                arr: account.arr,
+                health: account.health,
+                nps: account.nps,
+                renewal_date: account.contract_end,
+                contract_start: account.contract_start,
+                company_overview: overview,
+                strategic_programs: programs,
+                notes,
+                open_actions,
+                upcoming_meetings,
+                recent_meetings,
+                linked_people,
+                account_team,
+                account_team_import_notes,
+                signals,
+                recent_captures,
+                recent_email_signals,
+                parent_id: account.parent_id,
+                parent_name,
+                children,
+                parent_aggregate,
+                account_type: account.account_type.clone(),
+                archived: account.archived,
+                intelligence,
             })
-            .collect();
-
-        let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
-        let account_team = db.get_account_team(&account_id).unwrap_or_default();
-        let account_team_import_notes = db
-            .get_account_team_import_notes(&account_id)
-            .unwrap_or_default();
-
-        let signals = db.get_stakeholder_signals(&account_id).ok();
-
-        let recent_captures = db
-            .get_captures_for_account(&account_id, 90)
-            .unwrap_or_default();
-        let recent_email_signals = db
-            .list_recent_email_signals_for_entity(&account_id, 12)
-            .unwrap_or_default();
-
-        // I114: Resolve parent name for child accounts, children for parent accounts
-        let parent_name = account
-            .parent_id
-            .as_ref()
-            .and_then(|pid| db.get_account(pid).ok().flatten().map(|a| a.name));
-
-        let child_accounts = db.get_child_accounts(&account.id).unwrap_or_default();
-        let parent_aggregate = if !child_accounts.is_empty() {
-            db.get_parent_aggregate(&account.id).ok()
-        } else {
-            None
-        };
-        let children: Vec<AccountChildSummary> = child_accounts
-            .iter()
-            .map(|child| {
-                let open_action_count = db
-                    .get_account_actions(&child.id)
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-                AccountChildSummary {
-                    id: child.id.clone(),
-                    name: child.name.clone(),
-                    health: child.health.clone(),
-                    arr: child.arr,
-                    open_action_count,
-                    account_type: child.account_type.as_db_str().to_string(),
-                }
-            })
-            .collect();
-
-        Ok(AccountDetailResult {
-            id: account.id,
-            name: account.name,
-            lifecycle: account.lifecycle,
-            arr: account.arr,
-            health: account.health,
-            nps: account.nps,
-            renewal_date: account.contract_end,
-            contract_start: account.contract_start,
-            company_overview: overview,
-            strategic_programs: programs,
-            notes,
-            open_actions,
-            upcoming_meetings,
-            recent_meetings,
-            linked_people,
-            account_team,
-            account_team_import_notes,
-            signals,
-            recent_captures,
-            recent_email_signals,
-            parent_id: account.parent_id,
-            parent_name,
-            children,
-            parent_aggregate,
-            account_type: account.account_type.clone(),
-            archived: account.archived,
-            intelligence,
         })
-    }).await
+        .await
 }
 
 /// Update a single structured field on an account.
@@ -361,12 +365,27 @@ pub fn update_account_field(
         .map_err(|e| e.to_string())?;
 
     // Emit field update signal + self-healing evaluation (I308, I410)
-    let _ = crate::services::signals::emit_propagate_and_evaluate(db, &state.signals.engine, "account", account_id, "field_updated", "user_edit",
-        Some(&format!("{{\"field\":\"{}\",\"value\":\"{}\"}}", field, value.replace('"', "\\\""))), 0.8, &state.intel_queue);
+    let _ = crate::services::signals::emit_propagate_and_evaluate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"{}\",\"value\":\"{}\"}}",
+            field,
+            value.replace('"', "\\\"")
+        )),
+        0.8,
+        &state.intel_queue,
+    );
 
     // Self-healing: record user correction for Clay-enrichable fields (I409)
     if matches!(field, "lifecycle" | "arr" | "health" | "nps") {
-        crate::self_healing::feedback::record_enrichment_correction(db, account_id, "account", "clay");
+        crate::self_healing::feedback::record_enrichment_correction(
+            db, account_id, "account", "clay",
+        );
     }
 
     // Regenerate workspace files
@@ -419,14 +438,33 @@ pub fn update_account_notes(
         default_account_json(&account)
     };
 
-    existing.notes = if notes.is_empty() { None } else { Some(notes.to_string()) };
+    existing.notes = if notes.is_empty() {
+        None
+    } else {
+        Some(notes.to_string())
+    };
 
     let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
     let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
 
     // Emit field update signal (I377)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "field_updated", "user_edit",
-        Some(&format!("{{\"field\":\"notes\",\"value\":\"{}\"}}", notes.chars().take(100).collect::<String>().replace('"', "\\\""))), 0.8);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some(&format!(
+            "{{\"field\":\"notes\",\"value\":\"{}\"}}",
+            notes
+                .chars()
+                .take(100)
+                .collect::<String>()
+                .replace('"', "\\\"")
+        )),
+        0.8,
+    );
 
     Ok(())
 }
@@ -444,8 +482,8 @@ pub fn update_account_programs(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let programs: Vec<crate::accounts::StrategicProgram> = serde_json::from_str(programs_json)
-        .map_err(|e| format!("Invalid programs JSON: {}", e))?;
+    let programs: Vec<crate::accounts::StrategicProgram> =
+        serde_json::from_str(programs_json).map_err(|e| format!("Invalid programs JSON: {}", e))?;
 
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
     let config = config.as_ref().ok_or("Config not loaded")?;
@@ -467,8 +505,16 @@ pub fn update_account_programs(
     let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
 
     // Emit field update signal (I377)
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "field_updated", "user_edit",
-        Some("{\"field\":\"strategic_programs\"}"), 0.8);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "field_updated",
+        "user_edit",
+        Some("{\"field\":\"strategic_programs\"}"),
+        0.8,
+    );
 
     Ok(())
 }
@@ -547,29 +593,65 @@ pub fn create_account(
 }
 
 /// Archive or unarchive an account with signal emission. Cascades to children when archiving.
-pub fn archive_account(db: &ActionDb, state: &crate::state::AppState, id: &str, archived: bool) -> Result<(), String> {
+pub fn archive_account(
+    db: &ActionDb,
+    state: &crate::state::AppState,
+    id: &str,
+    archived: bool,
+) -> Result<(), String> {
     db.archive_account(id, archived)
         .map_err(|e| e.to_string())?;
 
-    let signal_type = if archived { "entity_archived" } else { "entity_unarchived" };
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", id, signal_type, "user_action", None, 0.9);
+    let signal_type = if archived {
+        "entity_archived"
+    } else {
+        "entity_unarchived"
+    };
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "account",
+        id,
+        signal_type,
+        "user_action",
+        None,
+        0.9,
+    );
 
     Ok(())
 }
 
 /// Merge source account into target account with signal emission.
-pub fn merge_accounts(db: &ActionDb, state: &crate::state::AppState, from_id: &str, into_id: &str) -> Result<crate::db::MergeResult, String> {
-    let result = db.merge_accounts(from_id, into_id)
+pub fn merge_accounts(
+    db: &ActionDb,
+    state: &crate::state::AppState,
+    from_id: &str,
+    into_id: &str,
+) -> Result<crate::db::MergeResult, String> {
+    let result = db
+        .merge_accounts(from_id, into_id)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", into_id, "entity_merged", "user_action",
-        Some(&format!("{{\"merged_from\":\"{}\"}}", from_id)), 0.9);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "account",
+        into_id,
+        "entity_merged",
+        "user_action",
+        Some(&format!("{{\"merged_from\":\"{}\"}}", from_id)),
+        0.9,
+    );
 
     Ok(result)
 }
 
 /// Restore an archived account with optional child restoration.
-pub fn restore_account(db: &ActionDb, account_id: &str, restore_children: bool) -> Result<usize, String> {
+pub fn restore_account(
+    db: &ActionDb,
+    account_id: &str,
+    restore_children: bool,
+) -> Result<usize, String> {
     db.restore_account(account_id, restore_children)
         .map_err(|e| e.to_string())
 }
@@ -589,8 +671,19 @@ pub fn add_account_team_member(
     db.add_account_team_member(account_id, person_id, &role)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "team_member_added", "user_action",
-        Some(&format!("{{\"person_id\":\"{}\",\"role\":\"{}\"}}", person_id, role)), 0.8);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "team_member_added",
+        "user_action",
+        Some(&format!(
+            "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+            person_id, role
+        )),
+        0.8,
+    );
 
     Ok(())
 }
@@ -606,8 +699,19 @@ pub fn remove_account_team_member(
     db.remove_account_team_member(account_id, person_id, role)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "team_member_removed", "user_action",
-        Some(&format!("{{\"person_id\":\"{}\",\"role\":\"{}\"}}", person_id, role)), 0.7);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "team_member_removed",
+        "user_action",
+        Some(&format!(
+            "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+            person_id, role
+        )),
+        0.7,
+    );
 
     Ok(())
 }
@@ -622,11 +726,23 @@ pub fn record_account_event(
     arr_impact: Option<f64>,
     notes: Option<&str>,
 ) -> Result<i64, String> {
-    let event_id = db.record_account_event(account_id, event_type, event_date, arr_impact, notes)
+    let event_id = db
+        .record_account_event(account_id, event_type, event_date, arr_impact, notes)
         .map_err(|e| e.to_string())?;
 
-    let _ = crate::services::signals::emit_and_propagate(db, &state.signals.engine, "account", account_id, "account_event_recorded", "user_action",
-        Some(&format!("{{\"event_type\":\"{}\",\"event_date\":\"{}\"}}", event_type, event_date)), 0.8);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        &state.signals.engine,
+        "account",
+        account_id,
+        "account_event_recorded",
+        "user_action",
+        Some(&format!(
+            "{{\"event_type\":\"{}\",\"event_date\":\"{}\"}}",
+            event_type, event_date
+        )),
+        0.8,
+    );
 
     Ok(event_id)
 }
@@ -856,148 +972,158 @@ pub async fn create_internal_organization(
     let company_name_clone = company_name.clone();
     let team_name_clone = team_name.clone();
 
-    let (root_account, initial_team, created_people, updated_people) = state.db_write(move |db| {
-        let workspace = std::path::Path::new(&workspace_path);
+    let (root_account, initial_team, created_people, updated_people) = state
+        .db_write(move |db| {
+            let workspace = std::path::Path::new(&workspace_path);
 
-        let (root_account, initial_team, created_people, updated_people) =
-            db.with_transaction(|db| {
-                if db
-                    .get_internal_root_account()
-                    .map_err(|e| e.to_string())?
-                    .is_some()
-                {
-                    return Err("Internal organization already exists".to_string());
-                }
+            let (root_account, initial_team, created_people, updated_people) = db
+                .with_transaction(|db| {
+                    if db
+                        .get_internal_root_account()
+                        .map_err(|e| e.to_string())?
+                        .is_some()
+                    {
+                        return Err("Internal organization already exists".to_string());
+                    }
 
-                let mut root_id = format!("internal-{}", crate::util::slugify(&company_name_clone));
-                let mut suffix = 2usize;
-                while db
-                    .get_account(&root_id)
-                    .map_err(|e| e.to_string())?
-                    .is_some()
-                {
-                    root_id = format!(
-                        "internal-{}-{}",
-                        crate::util::slugify(&company_name_clone),
-                        suffix
-                    );
-                    suffix += 1;
-                }
+                    let mut root_id =
+                        format!("internal-{}", crate::util::slugify(&company_name_clone));
+                    let mut suffix = 2usize;
+                    while db
+                        .get_account(&root_id)
+                        .map_err(|e| e.to_string())?
+                        .is_some()
+                    {
+                        root_id = format!(
+                            "internal-{}-{}",
+                            crate::util::slugify(&company_name_clone),
+                            suffix
+                        );
+                        suffix += 1;
+                    }
 
-                let now = chrono::Utc::now().to_rfc3339();
-                let root_account = crate::db::DbAccount {
-                    id: root_id.clone(),
-                    name: company_name_clone.clone(),
-                    lifecycle: Some("active".to_string()),
-                    arr: None,
-                    health: Some("green".to_string()),
-                    contract_start: None,
-                    contract_end: None,
-                    nps: None,
-                    tracker_path: Some(format!("Internal/{}", company_name_clone)),
-                    parent_id: None,
-                    account_type: crate::db::AccountType::Internal,
-                    updated_at: now,
-                    archived: false,
-                    keywords: None,
-                    keywords_extracted_at: None,
-                    metadata: None,
-                };
-                db.upsert_account(&root_account)
-                    .map_err(|e| e.to_string())?;
-                db.set_account_domains(&root_account.id, &domains_clone)
-                    .map_err(|e| e.to_string())?;
-
-                let initial_team =
-                    create_child_account_record(db, None, &root_account, &team_name_clone, None, None)?;
-                db.copy_account_domains(&root_account.id, &initial_team.id)
-                    .map_err(|e| e.to_string())?;
-
-                let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
-                for colleague in &colleagues {
-                    let email = match crate::util::validate_email(&colleague.email) {
-                        Ok(e) => e,
-                        Err(_) => continue,
-                    };
-                    let person_id = crate::util::slugify(&email);
                     let now = chrono::Utc::now().to_rfc3339();
-                    let person = crate::db::DbPerson {
-                        id: person_id.clone(),
-                        email: email.clone(),
-                        name: colleague.name.trim().to_string(),
-                        organization: Some(company_name_clone.clone()),
-                        role: colleague.title.clone(),
-                        relationship: "internal".to_string(),
-                        notes: None,
-                        tracker_path: None,
-                        last_seen: None,
-                        first_seen: Some(now.clone()),
-                        meeting_count: 0,
+                    let root_account = crate::db::DbAccount {
+                        id: root_id.clone(),
+                        name: company_name_clone.clone(),
+                        lifecycle: Some("active".to_string()),
+                        arr: None,
+                        health: Some("green".to_string()),
+                        contract_start: None,
+                        contract_end: None,
+                        nps: None,
+                        tracker_path: Some(format!("Internal/{}", company_name_clone)),
+                        parent_id: None,
+                        account_type: crate::db::AccountType::Internal,
                         updated_at: now,
                         archived: false,
-                        linkedin_url: None,
-                        twitter_handle: None,
-                        phone: None,
-                        photo_url: None,
-                        bio: None,
-                        title_history: None,
-                        company_industry: None,
-                        company_size: None,
-                        company_hq: None,
-                        last_enriched_at: None,
-                        enrichment_sources: None,
+                        keywords: None,
+                        keywords_extracted_at: None,
+                        metadata: None,
                     };
-                    db.upsert_person(&person).map_err(|e| e.to_string())?;
-                    db.link_person_to_entity(&person_id, &root_account.id, "member")
+                    db.upsert_account(&root_account)
                         .map_err(|e| e.to_string())?;
-                    db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                    db.set_account_domains(&root_account.id, &domains_clone)
                         .map_err(|e| e.to_string())?;
-                    created_people.push(person);
-                }
 
-                let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
-                for person_id in &existing_person_ids {
-                    if let Ok(Some(mut person)) = db.get_person(person_id) {
-                        if person.relationship != "internal" {
-                            person.relationship = "internal".to_string();
-                            person.organization = Some(company_name_clone.clone());
-                            db.upsert_person(&person).map_err(|e| e.to_string())?;
-                            updated_people.push(person);
-                        }
-                        db.link_person_to_entity(person_id, &root_account.id, "member")
+                    let initial_team = create_child_account_record(
+                        db,
+                        None,
+                        &root_account,
+                        &team_name_clone,
+                        None,
+                        None,
+                    )?;
+                    db.copy_account_domains(&root_account.id, &initial_team.id)
+                        .map_err(|e| e.to_string())?;
+
+                    let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
+                    for colleague in &colleagues {
+                        let email = match crate::util::validate_email(&colleague.email) {
+                            Ok(e) => e,
+                            Err(_) => continue,
+                        };
+                        let person_id = crate::util::slugify(&email);
+                        let now = chrono::Utc::now().to_rfc3339();
+                        let person = crate::db::DbPerson {
+                            id: person_id.clone(),
+                            email: email.clone(),
+                            name: colleague.name.trim().to_string(),
+                            organization: Some(company_name_clone.clone()),
+                            role: colleague.title.clone(),
+                            relationship: "internal".to_string(),
+                            notes: None,
+                            tracker_path: None,
+                            last_seen: None,
+                            first_seen: Some(now.clone()),
+                            meeting_count: 0,
+                            updated_at: now,
+                            archived: false,
+                            linkedin_url: None,
+                            twitter_handle: None,
+                            phone: None,
+                            photo_url: None,
+                            bio: None,
+                            title_history: None,
+                            company_industry: None,
+                            company_size: None,
+                            company_hq: None,
+                            last_enriched_at: None,
+                            enrichment_sources: None,
+                        };
+                        db.upsert_person(&person).map_err(|e| e.to_string())?;
+                        db.link_person_to_entity(&person_id, &root_account.id, "member")
                             .map_err(|e| e.to_string())?;
-                        db.link_person_to_entity(person_id, &initial_team.id, "member")
+                        db.link_person_to_entity(&person_id, &initial_team.id, "member")
                             .map_err(|e| e.to_string())?;
+                        created_people.push(person);
                     }
-                }
 
-                Ok((root_account, initial_team, created_people, updated_people))
-            })?;
+                    let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
+                    for person_id in &existing_person_ids {
+                        if let Ok(Some(mut person)) = db.get_person(person_id) {
+                            if person.relationship != "internal" {
+                                person.relationship = "internal".to_string();
+                                person.organization = Some(company_name_clone.clone());
+                                db.upsert_person(&person).map_err(|e| e.to_string())?;
+                                updated_people.push(person);
+                            }
+                            db.link_person_to_entity(person_id, &root_account.id, "member")
+                                .map_err(|e| e.to_string())?;
+                            db.link_person_to_entity(person_id, &initial_team.id, "member")
+                                .map_err(|e| e.to_string())?;
+                        }
+                    }
 
-        // Filesystem writes (best-effort, outside transaction)
-        let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
-        let _ = std::fs::create_dir_all(&root_dir);
-        let _ = crate::util::bootstrap_entity_directory(&root_dir, &company_name_clone, "account");
-        let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
-        let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
+                    Ok((root_account, initial_team, created_people, updated_people))
+                })?;
 
-        let team_dir = crate::accounts::resolve_account_dir(workspace, &initial_team);
-        let _ = std::fs::create_dir_all(&team_dir);
-        let _ = crate::util::bootstrap_entity_directory(&team_dir, &team_name_clone, "account");
-        let _ = crate::accounts::write_account_json(workspace, &initial_team, None, db);
-        let _ = crate::accounts::write_account_markdown(workspace, &initial_team, None, db);
+            // Filesystem writes (best-effort, outside transaction)
+            let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
+            let _ = std::fs::create_dir_all(&root_dir);
+            let _ =
+                crate::util::bootstrap_entity_directory(&root_dir, &company_name_clone, "account");
+            let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
+            let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
 
-        for person in &created_people {
-            let _ = crate::people::write_person_json(workspace, person, db);
-            let _ = crate::people::write_person_markdown(workspace, person, db);
-        }
-        for person in &updated_people {
-            let _ = crate::people::write_person_json(workspace, person, db);
-            let _ = crate::people::write_person_markdown(workspace, person, db);
-        }
+            let team_dir = crate::accounts::resolve_account_dir(workspace, &initial_team);
+            let _ = std::fs::create_dir_all(&team_dir);
+            let _ = crate::util::bootstrap_entity_directory(&team_dir, &team_name_clone, "account");
+            let _ = crate::accounts::write_account_json(workspace, &initial_team, None, db);
+            let _ = crate::accounts::write_account_markdown(workspace, &initial_team, None, db);
 
-        Ok((root_account, initial_team, created_people, updated_people))
-    }).await?;
+            for person in &created_people {
+                let _ = crate::people::write_person_json(workspace, person, db);
+                let _ = crate::people::write_person_markdown(workspace, person, db);
+            }
+            for person in &updated_people {
+                let _ = crate::people::write_person_json(workspace, person, db);
+                let _ = crate::people::write_person_markdown(workspace, person, db);
+            }
+
+            Ok((root_account, initial_team, created_people, updated_people))
+        })
+        .await?;
 
     // Suppress unused warnings — these were used inside the closure for filesystem writes
     let _ = &created_people;
@@ -1042,22 +1168,24 @@ pub async fn create_child_account_cmd(
     let description = description.map(|s| s.to_string());
     let owner_person_id = owner_person_id.map(|s| s.to_string());
 
-    let child_id = state.db_write(move |db| {
-        let workspace = workspace_path.as_deref().map(std::path::Path::new);
-        let parent = db
-            .get_account(&parent_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Parent account not found: {}", parent_id))?;
-        let child = create_child_account_record(
-            db,
-            workspace,
-            &parent,
-            &name,
-            description.as_deref(),
-            owner_person_id.as_deref(),
-        )?;
-        Ok(child.id)
-    }).await?;
+    let child_id = state
+        .db_write(move |db| {
+            let workspace = workspace_path.as_deref().map(std::path::Path::new);
+            let parent = db
+                .get_account(&parent_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Parent account not found: {}", parent_id))?;
+            let child = create_child_account_record(
+                db,
+                workspace,
+                &parent,
+                &name,
+                description.as_deref(),
+                owner_person_id.as_deref(),
+            )?;
+            Ok(child.id)
+        })
+        .await?;
 
     state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
         entity_id: child_id.clone(),
@@ -1072,9 +1200,7 @@ pub async fn create_child_account_cmd(
 }
 
 /// Backfill internal meeting → account associations for meetings missing entity links.
-pub fn backfill_internal_meeting_associations(
-    db: &ActionDb,
-) -> Result<usize, String> {
+pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, String> {
     let mut stmt = db
         .conn_ref()
         .prepare(
@@ -1093,8 +1219,7 @@ pub fn backfill_internal_meeting_associations(
 
     let mut updated = 0usize;
     for (meeting_id, title, attendees) in meetings {
-        let Some(account) =
-            infer_internal_account_for_meeting(db, &title, attendees.as_deref())
+        let Some(account) = infer_internal_account_for_meeting(db, &title, attendees.as_deref())
         else {
             continue;
         };

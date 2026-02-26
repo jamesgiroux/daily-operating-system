@@ -44,10 +44,7 @@ fn compute_staleness(last_enriched_at: Option<&str>) -> Staleness {
 /// A meeting can reach `Developing` quality purely from DB queries.
 /// Returns an `IntelligenceQuality` with the computed level, signal count,
 /// and context flags.
-pub fn assess_intelligence_quality(
-    db: &ActionDb,
-    meeting_id: &str,
-) -> IntelligenceQuality {
+pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> IntelligenceQuality {
     let conn = db.conn_ref();
 
     // 1. Load the meeting row
@@ -192,9 +189,10 @@ pub async fn generate_meeting_intelligence(
 ) -> Result<IntelligenceQuality, ExecutionError> {
     // 1. Load meeting from DB
     let (meeting_state, has_new) = {
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
+        let guard = state
+            .db
+            .lock()
+            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
         let db = guard.as_ref().ok_or_else(|| {
             ExecutionError::ConfigurationError("Database not initialized".to_string())
         })?;
@@ -203,10 +201,7 @@ pub async fn generate_meeting_intelligence(
             .get_meeting_by_id(meeting_id)
             .map_err(|e| ExecutionError::ConfigurationError(e.to_string()))?
             .ok_or_else(|| {
-                ExecutionError::ConfigurationError(format!(
-                    "Meeting not found: {}",
-                    meeting_id
-                ))
+                ExecutionError::ConfigurationError(format!("Meeting not found: {}", meeting_id))
             })?;
 
         let intel_state = meeting.intelligence_state.clone();
@@ -215,13 +210,10 @@ pub async fn generate_meeting_intelligence(
     };
 
     if force_full {
-        let refreshed = crate::services::meetings::refresh_meeting_briefing_full(
-            state,
-            meeting_id,
-            None,
-        )
-        .await
-        .map_err(ExecutionError::ConfigurationError)?;
+        let refreshed =
+            crate::services::meetings::refresh_meeting_briefing_full(state, meeting_id, None)
+                .await
+                .map_err(ExecutionError::ConfigurationError)?;
         return Ok(refreshed.quality);
     }
 
@@ -241,18 +233,20 @@ pub async fn generate_meeting_intelligence(
             return Ok(quality);
         }
         // Has new signals: set state to "refreshing"
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
+        let guard = state
+            .db
+            .lock()
+            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
         let db = guard.as_ref().ok_or_else(|| {
             ExecutionError::ConfigurationError("Database not initialized".to_string())
         })?;
         let _ = db.update_intelligence_state(meeting_id, "refreshing", None, None);
     } else if meeting_state.as_deref() != Some("enriched") {
         // No intelligence exists (detected): set state to "enriching"
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
+        let guard = state
+            .db
+            .lock()
+            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
         let db = guard.as_ref().ok_or_else(|| {
             ExecutionError::ConfigurationError("Database not initialized".to_string())
         })?;
@@ -261,9 +255,10 @@ pub async fn generate_meeting_intelligence(
 
     // 3. Run mechanical quality assessment
     let quality = {
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
+        let guard = state
+            .db
+            .lock()
+            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
         let db = guard.as_ref().ok_or_else(|| {
             ExecutionError::ConfigurationError("Database not initialized".to_string())
         })?;
@@ -271,11 +266,13 @@ pub async fn generate_meeting_intelligence(
     };
 
     // 4. Enqueue meeting prep regeneration.
-    state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
-        meeting_id: meeting_id.to_string(),
-        priority: crate::meeting_prep_queue::PrepPriority::Manual,
-        requested_at: std::time::Instant::now(),
-    });
+    state
+        .meeting_prep_queue
+        .enqueue(crate::meeting_prep_queue::PrepRequest {
+            meeting_id: meeting_id.to_string(),
+            priority: crate::meeting_prep_queue::PrepPriority::Manual,
+            requested_at: std::time::Instant::now(),
+        });
     state.integrations.prep_queue_wake.notify_one();
 
     log::info!(
@@ -288,9 +285,10 @@ pub async fn generate_meeting_intelligence(
     // 5. Update DB: mark as "enriched" — intelligence comes from entity level,
     // meeting prep is mechanical assembly.
     {
-        let guard = state.db.lock().map_err(|_| {
-            ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-        })?;
+        let guard = state
+            .db
+            .lock()
+            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
         let db = guard.as_ref().ok_or_else(|| {
             ExecutionError::ConfigurationError("Database not initialized".to_string())
         })?;

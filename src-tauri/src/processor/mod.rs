@@ -101,8 +101,13 @@ pub fn process_file(
     log::info!("Classified '{}' as '{}'", filename, class_label);
 
     // Resolve destination (pass db for entity validation)
-    let route_outcome =
-        resolve_destination(&classification, workspace, filename, entity_tracker_path, db);
+    let route_outcome = resolve_destination(
+        &classification,
+        workspace,
+        filename,
+        entity_tracker_path,
+        db,
+    );
 
     let result = match route_outcome {
         RouteOutcome::Destination(dest) => {
@@ -143,12 +148,7 @@ pub fn process_file(
                     // I474: Match MeetingNotes to historical meetings
                     if matches!(classification, Classification::MeetingNotes { .. }) {
                         if let Some(db) = db {
-                            try_match_to_meeting(
-                                &classification,
-                                filename,
-                                &dest,
-                                db,
-                            );
+                            try_match_to_meeting(&classification, filename, &dest, db);
                         }
                     }
 
@@ -230,7 +230,9 @@ pub fn process_file(
             processed_at: Some(Utc::now().to_rfc3339()),
             error_message: match &result {
                 ProcessingResult::Error { message } => Some(message.clone()),
-                ProcessingResult::NeedsEntity { suggested_name, .. } => Some(suggested_name.clone()),
+                ProcessingResult::NeedsEntity { suggested_name, .. } => {
+                    Some(suggested_name.clone())
+                }
                 _ => None,
             },
             created_at: Utc::now().to_rfc3339(),
@@ -536,12 +538,8 @@ fn try_match_to_meeting(
     };
 
     // Resolve account name to entity_id
-    let doc_entity_id = account_name.and_then(|name| {
-        db.get_account_by_name(name)
-            .ok()
-            .flatten()
-            .map(|a| a.id)
-    });
+    let doc_entity_id =
+        account_name.and_then(|name| db.get_account_by_name(name).ok().flatten().map(|a| a.id));
 
     // Query recent meetings with entity context
     let raw_candidates = match db.get_recent_meetings_for_matching(14) {
@@ -559,14 +557,14 @@ fn try_match_to_meeting(
     // Build matcher candidates
     let candidates: Vec<matcher::MeetingCandidate> = raw_candidates
         .iter()
-        .map(|(id, title, start_time, entity_id)| {
-            matcher::MeetingCandidate {
+        .map(
+            |(id, title, start_time, entity_id)| matcher::MeetingCandidate {
                 meeting_id: id.clone(),
                 title: title.clone(),
                 start_time: start_time.parse::<chrono::DateTime<chrono::Utc>>().ok(),
                 entity_id: entity_id.clone(),
-            }
-        })
+            },
+        )
         .collect();
 
     // Use filename stem as document title for matching
@@ -579,12 +577,8 @@ fn try_match_to_meeting(
     // Use current time as document time (inbox files processed near their creation)
     let doc_time = Some(Utc::now());
 
-    let match_result = matcher::find_best_match(
-        &doc_title,
-        doc_time,
-        doc_entity_id.as_deref(),
-        &candidates,
-    );
+    let match_result =
+        matcher::find_best_match(&doc_title, doc_time, doc_entity_id.as_deref(), &candidates);
 
     if let Some(m) = match_result {
         log::info!(
@@ -775,12 +769,19 @@ mod tests {
 
         // Write a test file
         let file_path = attachments_dir.join("my-resume.md");
-        std::fs::write(&file_path, "# Resume\n\nSenior CS Manager with 10 years experience.").unwrap();
+        std::fs::write(
+            &file_path,
+            "# Resume\n\nSenior CS Manager with 10 years experience.",
+        )
+        .unwrap();
 
         let result = process_user_attachment(workspace, &file_path, None);
 
         match &result {
-            ProcessingResult::Routed { classification, destination } => {
+            ProcessingResult::Routed {
+                classification,
+                destination,
+            } => {
                 assert_eq!(classification, "user_context");
                 // File should stay in place
                 assert_eq!(destination, &file_path.display().to_string());

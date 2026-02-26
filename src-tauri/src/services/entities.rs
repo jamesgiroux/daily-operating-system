@@ -69,7 +69,14 @@ pub fn build_entity_signal_prose(signals: &[EmailSignal], email_count: usize) ->
     }
 
     // Informational signals — use signal_text for context
-    for key in &["question", "timeline", "sentiment", "feedback", "relationship", "commitment"] {
+    for key in &[
+        "question",
+        "timeline",
+        "sentiment",
+        "feedback",
+        "relationship",
+        "commitment",
+    ] {
         if let Some(texts) = by_type.remove(key) {
             let label = match *key {
                 "question" => "Open question",
@@ -163,12 +170,47 @@ pub fn auto_extract_title_keywords(
 ) -> Result<(), String> {
     // Words to ignore — generic meeting vocabulary
     const STOP_WORDS: &[&str] = &[
-        "1:1", "1-1", "sync", "meeting", "call", "review", "check-in",
-        "checkin", "catch", "up", "weekly", "daily", "monthly", "quarterly",
-        "bi-weekly", "standup", "retro", "planning", "prep", "debrief",
-        "follow", "kickoff", "onboarding", "training", "workshop", "session",
-        "the", "a", "an", "and", "or", "of", "for", "with", "re", "fwd",
-        "qbr", "ebr", "deck", "demo", "presentation",
+        "1:1",
+        "1-1",
+        "sync",
+        "meeting",
+        "call",
+        "review",
+        "check-in",
+        "checkin",
+        "catch",
+        "up",
+        "weekly",
+        "daily",
+        "monthly",
+        "quarterly",
+        "bi-weekly",
+        "standup",
+        "retro",
+        "planning",
+        "prep",
+        "debrief",
+        "follow",
+        "kickoff",
+        "onboarding",
+        "training",
+        "workshop",
+        "session",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "of",
+        "for",
+        "with",
+        "re",
+        "fwd",
+        "qbr",
+        "ebr",
+        "deck",
+        "demo",
+        "presentation",
     ];
 
     let stop: std::collections::HashSet<&str> = STOP_WORDS.iter().copied().collect();
@@ -268,7 +310,8 @@ pub async fn get_executive_intelligence(
             .map(|(_overview, meetings)| meetings)
             .unwrap_or_default();
         let live_events = state
-            .calendar.events
+            .calendar
+            .events
             .read()
             .map(|g| g.clone())
             .unwrap_or_default();
@@ -288,14 +331,13 @@ pub async fn get_executive_intelligence(
 
     let profile = config.profile.clone();
     // Compute intelligence from DB
-    state.db_read(move |db| {
-        Ok(crate::intelligence::compute_executive_intelligence(
-            db,
-            &meetings,
-            &profile,
-            skip_today,
-        ))
-    }).await
+    state
+        .db_read(move |db| {
+            Ok(crate::intelligence::compute_executive_intelligence(
+                db, &meetings, &profile, skip_today,
+            ))
+        })
+        .await
 }
 
 /// Load cached SKIP TODAY results from `_today/data/intelligence.json`.

@@ -71,7 +71,8 @@ impl MeetingPrepQueue {
     /// Debounces Background/PageLoad requests within `DEBOUNCE_SECS`.
     pub fn enqueue(&self, request: PrepRequest) {
         // Debounce low-priority triggers
-        if request.priority == PrepPriority::Background || request.priority == PrepPriority::PageLoad
+        if request.priority == PrepPriority::Background
+            || request.priority == PrepPriority::PageLoad
         {
             if let Ok(last) = self.last_enqueued.lock() {
                 if let Some(last_time) = last.get(&request.meeting_id) {
@@ -156,10 +157,7 @@ impl MeetingPrepQueue {
             last.retain(|_, instant| instant.elapsed().as_secs() < stale_threshold_secs);
             let pruned = before - last.len();
             if pruned > 0 {
-                log::debug!(
-                    "MeetingPrepQueue: pruned {} stale debounce entries",
-                    pruned
-                );
+                log::debug!("MeetingPrepQueue: pruned {} stale debounce entries", pruned);
             }
         }
     }
@@ -259,7 +257,10 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
 
     loop {
         // Adaptive sleep: back off when queue is empty + user is active; wake instantly on enqueue
-        let interval = crate::activity::adaptive_poll_interval(&state.activity, state.meeting_prep_queue.is_empty());
+        let interval = crate::activity::adaptive_poll_interval(
+            &state.activity,
+            state.meeting_prep_queue.is_empty(),
+        );
         tokio::select! {
             _ = tokio::time::sleep(interval) => {}
             _ = state.integrations.prep_queue_wake.notified() => {}
@@ -301,10 +302,7 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                         meeting_id: request.meeting_id.clone(),
                     },
                 );
-                log::info!(
-                    "MeetingPrepProcessor: completed {}",
-                    request.meeting_id
-                );
+                log::info!("MeetingPrepProcessor: completed {}", request.meeting_id);
             }
             Ok(Err(e)) => {
                 log::warn!(

@@ -5,15 +5,14 @@
 // Devtools mock data uses large tuple types for seed fixtures.
 #![allow(clippy::type_complexity)]
 
-pub mod activity;
 pub mod accounts;
+pub mod activity;
 mod audit;
 mod backfill_meetings;
 mod calendar_merge;
 mod capture;
 pub mod clay;
 mod commands;
-pub mod linear;
 pub mod db;
 mod db_backup;
 pub mod db_service;
@@ -29,14 +28,16 @@ mod focus_prioritization;
 mod google;
 pub mod google_api;
 pub mod google_drive;
+pub mod granola;
 pub mod gravatar;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
-pub mod meeting_prep_queue;
 pub mod intelligence;
 pub mod json_loader;
 mod latency;
+pub mod linear;
+pub mod meeting_prep_queue;
 mod migrations;
 mod notification;
 mod parser;
@@ -47,11 +48,10 @@ pub mod proactive;
 mod processor;
 pub mod projects;
 mod pty;
-pub mod granola;
-pub mod quill;
 pub mod queries;
-mod risk_briefing;
+pub mod quill;
 pub mod reports;
+mod risk_briefing;
 mod scheduler;
 pub mod self_healing;
 pub mod services;
@@ -159,7 +159,8 @@ pub fn run() {
             let scheduler_sender = scheduler_tx.clone();
             let scheduler_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let scheduler = scheduler::Scheduler::new(scheduler_state, scheduler_sender, scheduler_handle);
+                let scheduler =
+                    scheduler::Scheduler::new(scheduler_state, scheduler_sender, scheduler_handle);
                 scheduler.run().await;
             });
 
@@ -315,25 +316,24 @@ pub fn run() {
                 .build(app)?;
 
             // Track last focused time for app lock (I465)
-            let last_focused = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+            let last_focused =
+                std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
 
             // Handle window close: hide instead of quit + track focus for lock (I465)
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
                 let focus_tracker = last_focused.clone();
-                window.on_window_event(move |event| {
-                    match event {
-                        tauri::WindowEvent::CloseRequested { api, .. } => {
-                            api.prevent_close();
-                            let _ = window_clone.hide();
-                        }
-                        tauri::WindowEvent::Focused(true) => {
-                            if let Ok(mut guard) = focus_tracker.lock() {
-                                *guard = std::time::Instant::now();
-                            }
-                        }
-                        _ => {}
+                window.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
                     }
+                    tauri::WindowEvent::Focused(true) => {
+                        if let Ok(mut guard) = focus_tracker.lock() {
+                            *guard = std::time::Instant::now();
+                        }
+                    }
+                    _ => {}
                 });
             }
 
@@ -465,6 +465,7 @@ pub fn run() {
             commands::get_processing_history,
             // I20: Email Refresh
             commands::refresh_emails,
+            commands::sync_email_inbox_presence,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
             // I39: Feature Toggles

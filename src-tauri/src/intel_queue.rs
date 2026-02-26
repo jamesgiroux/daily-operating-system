@@ -263,7 +263,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
     loop {
         // Adaptive sleep: back off when queue is empty + user is active; wake instantly on enqueue
-        let interval = crate::activity::adaptive_poll_interval(&state.activity, state.intel_queue.is_empty());
+        let interval =
+            crate::activity::adaptive_poll_interval(&state.activity, state.intel_queue.is_empty());
         tokio::select! {
             _ = tokio::time::sleep(interval) => {}
             _ = state.integrations.intel_queue_wake.notified() => {}
@@ -428,16 +429,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
             // Invalidate + requeue meeting preps for future meetings linked to this entity.
             // intelligence.json changed → meeting briefings that consume it need regeneration.
-            invalidate_and_requeue_meeting_preps(
-                &state,
-                &request.entity_id,
-            );
+            invalidate_and_requeue_meeting_preps(&state, &request.entity_id);
 
             // Self-healing: record success + post-enrichment coherence check (I409/I410)
             {
                 if let Ok(db_guard) = state.db.lock() {
                     if let Some(db) = db_guard.as_ref() {
-                        crate::self_healing::feedback::record_enrichment_success(db, &request.entity_id);
+                        crate::self_healing::feedback::record_enrichment_success(
+                            db,
+                            &request.entity_id,
+                        );
                         let _ = crate::self_healing::scheduler::on_enrichment_complete(
                             db,
                             Some(state.embedding_model.as_ref()),
@@ -469,9 +470,7 @@ fn enrichment_age_check(enriched_at: &str, entity_id: &str) -> Option<String> {
         return None;
     }
     let ts = chrono::DateTime::parse_from_rfc3339(enriched_at).ok()?;
-    let age_secs = (Utc::now() - ts.with_timezone(&Utc))
-        .num_seconds()
-        .max(0) as u64;
+    let age_secs = (Utc::now() - ts.with_timezone(&Utc)).num_seconds().max(0) as u64;
 
     if age_secs < ENRICHMENT_TTL_SECS {
         let minutes_ago = age_secs / 60;
@@ -606,8 +605,17 @@ pub fn gather_enrichment_input(
         .map(|p| p.relationship.as_str())
         .or_else(|| account.as_ref().map(|a| a.account_type.as_db_str()));
     // Read active preset for domain-specific prompt language (I313)
-    let preset_guard = state.active_preset.read().map_err(|_| "Preset lock poisoned")?;
-    let prompt = build_intelligence_prompt_with_preset(&entity_name, &request.entity_type, &ctx, relationship, preset_guard.as_ref());
+    let preset_guard = state
+        .active_preset
+        .read()
+        .map_err(|_| "Preset lock poisoned")?;
+    let prompt = build_intelligence_prompt_with_preset(
+        &entity_name,
+        &request.entity_type,
+        &ctx,
+        relationship,
+        preset_guard.as_ref(),
+    );
 
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
@@ -638,8 +646,7 @@ pub fn run_enrichment(
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
     // I305: Extract and persist keywords from the raw AI response
-    if let Some(keywords_json) =
-        crate::intelligence::extract_keywords_from_response(&output.stdout)
+    if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             match input.entity_type.as_str() {
@@ -769,7 +776,10 @@ fn build_batch_prompt(inputs: &[(IntelRequest, EnrichmentInput)]) -> String {
     );
 
     for id in &entity_ids {
-        prompt.push_str(&format!("=== RESULT: {} ===\n<JSON for this entity>\n\n", id));
+        prompt.push_str(&format!(
+            "=== RESULT: {} ===\n<JSON for this entity>\n\n",
+            id
+        ));
     }
 
     prompt.push_str(
@@ -808,9 +818,7 @@ fn parse_batch_response(
             let remaining = &response[after_delimiter..];
 
             // Find end: next === RESULT delimiter or end of string
-            let end = remaining
-                .find("=== RESULT:")
-                .unwrap_or(remaining.len());
+            let end = remaining.find("=== RESULT:").unwrap_or(remaining.len());
 
             remaining[..end].trim()
         } else {
@@ -1246,7 +1254,10 @@ mod tests {
 
         // Fresh entry should still be there
         let last = queue.last_enqueued.lock().unwrap();
-        assert!(last.contains_key("fresh-entity"), "fresh entry should survive pruning");
+        assert!(
+            last.contains_key("fresh-entity"),
+            "fresh entry should survive pruning"
+        );
     }
 
     #[test]
@@ -1450,7 +1461,7 @@ mod tests {
                 entity_type: "account".to_string(),
                 priority: IntelPriority::ContentChange,
                 requested_at: Instant::now(),
-            retry_count: 0,
+                retry_count: 0,
             },
             EnrichmentInput {
                 workspace: PathBuf::from("/tmp"),
@@ -1467,7 +1478,10 @@ mod tests {
         let response = "=== RESULT: wrong-entity ===\n{}\n";
 
         let results = parse_batch_response(response, &inputs);
-        assert!(results.is_empty(), "Should return empty for missing delimiter");
+        assert!(
+            results.is_empty(),
+            "Should return empty for missing delimiter"
+        );
     }
 
     #[test]

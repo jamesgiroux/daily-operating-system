@@ -63,7 +63,7 @@ pub fn score_item(
     let entity_score = if let (Some(eid), Some(etype)) = (ctx.entity_id, ctx.entity_type) {
         let signal_count = count_entity_signals(db, eid, etype);
         let score = match signal_count {
-            0 => 0.10,  // Entity exists but no updates yet
+            0 => 0.10, // Entity exists but no updates yet
             1..=3 => 0.20,
             _ => 0.30,
         };
@@ -78,7 +78,8 @@ pub fn score_item(
     // 2. Meeting relevance (0.0–0.25) — entity must have a meeting today (I449)
     let relevance_score = if !todays_meeting_context.is_empty() && !ctx.content_text.is_empty() {
         // Only claim meeting relevance if the email's entity actually has a meeting today
-        let entity_has_meeting = ctx.entity_id
+        let entity_has_meeting = ctx
+            .entity_id
             .map(|eid| entity_has_meeting_today(db, eid))
             .unwrap_or(false);
 
@@ -260,7 +261,10 @@ mod tests {
             created_at: &chrono::Utc::now().to_rfc3339(),
         };
         let result = score_item(&db, None, &ctx, "");
-        assert!(result.keyword_score > 0.0, "renewal keyword should score > 0");
+        assert!(
+            result.keyword_score > 0.0,
+            "renewal keyword should score > 0"
+        );
         assert!(result.reason.contains("renewal"));
     }
 

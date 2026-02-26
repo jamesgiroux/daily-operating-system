@@ -7,11 +7,7 @@ use crate::intelligence::IntelligenceContext;
 
 /// Build the shared preamble for any report prompt.
 /// Includes entity facts, user role context, and report type framing.
-pub fn build_report_preamble(
-    entity_name: &str,
-    report_type: &str,
-    entity_type: &str,
-) -> String {
+pub fn build_report_preamble(entity_name: &str, report_type: &str, entity_type: &str) -> String {
     let mut preamble = String::with_capacity(2048);
 
     let framing = match report_type {
@@ -25,7 +21,9 @@ pub fn build_report_preamble(
 
     preamble.push_str(&format!(
         "You are a senior customer success strategist preparing {} for **{}** ({}).\n",
-        framing, crate::util::sanitize_external_field(entity_name), entity_type
+        framing,
+        crate::util::sanitize_external_field(entity_name),
+        entity_type
     ));
     preamble.push_str("Ground every claim in the data provided. Cite sources by event ID or meeting date when possible.\n");
     preamble.push_str("Use executive-ready language — direct, specific, no filler.\n\n");

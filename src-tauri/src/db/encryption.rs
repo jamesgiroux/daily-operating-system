@@ -36,10 +36,7 @@ pub fn get_or_create_db_key(db_path: &std::path::Path) -> Result<String, String>
             // Return a KEY_MISSING marker so callers can distinguish this from
             // other encryption errors and show a recovery screen.
             if db_path.exists() && !is_database_plaintext(db_path) {
-                return Err(format!(
-                    "KEY_MISSING:{}",
-                    db_path.display()
-                ));
+                return Err(format!("KEY_MISSING:{}", db_path.display()));
             }
             // No DB yet (fresh install) or plaintext DB (pre-migration) → safe to create key
             let new_key = generate_key();
@@ -63,15 +60,20 @@ pub fn delete_db_key() -> Result<(), String> {
     let output = std::process::Command::new("security")
         .args([
             "delete-generic-password",
-            "-s", KEYCHAIN_SERVICE,
-            "-a", KEYCHAIN_ACCOUNT,
+            "-s",
+            KEYCHAIN_SERVICE,
+            "-a",
+            KEYCHAIN_ACCOUNT,
         ])
         .output()
         .map_err(|e| format!("Failed to run security CLI: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to delete keychain entry: {}", stderr.trim()));
+        return Err(format!(
+            "Failed to delete keychain entry: {}",
+            stderr.trim()
+        ));
     }
     Ok(())
 }
@@ -92,17 +94,14 @@ pub fn is_database_plaintext(path: &std::path::Path) -> bool {
 }
 
 /// Migrate a plaintext database to an encrypted one using sqlcipher_export().
-pub fn migrate_to_encrypted(
-    plaintext_path: &std::path::Path,
-    hex_key: &str,
-) -> Result<(), String> {
+pub fn migrate_to_encrypted(plaintext_path: &std::path::Path, hex_key: &str) -> Result<(), String> {
     use rusqlite::Connection;
 
     let encrypted_path = plaintext_path.with_extension("db.encrypted");
 
     // Open plaintext DB
-    let plain_conn =
-        Connection::open(plaintext_path).map_err(|e| format!("Failed to open plaintext DB: {e}"))?;
+    let plain_conn = Connection::open(plaintext_path)
+        .map_err(|e| format!("Failed to open plaintext DB: {e}"))?;
 
     // Checkpoint WAL to ensure all data is in the main file
     let _ = plain_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
@@ -159,8 +158,10 @@ fn get_key_from_keychain() -> Result<String, String> {
     let output = std::process::Command::new("security")
         .args([
             "find-generic-password",
-            "-s", KEYCHAIN_SERVICE,
-            "-a", KEYCHAIN_ACCOUNT,
+            "-s",
+            KEYCHAIN_SERVICE,
+            "-a",
+            KEYCHAIN_ACCOUNT,
             "-w", // output password only
         ])
         .output()
@@ -184,17 +185,22 @@ fn store_key_in_keychain(key: &str) -> Result<(), String> {
     let _ = std::process::Command::new("security")
         .args([
             "delete-generic-password",
-            "-s", KEYCHAIN_SERVICE,
-            "-a", KEYCHAIN_ACCOUNT,
+            "-s",
+            KEYCHAIN_SERVICE,
+            "-a",
+            KEYCHAIN_ACCOUNT,
         ])
         .output();
 
     let output = std::process::Command::new("security")
         .args([
             "add-generic-password",
-            "-s", KEYCHAIN_SERVICE,
-            "-a", KEYCHAIN_ACCOUNT,
-            "-w", key,
+            "-s",
+            KEYCHAIN_SERVICE,
+            "-a",
+            KEYCHAIN_ACCOUNT,
+            "-w",
+            key,
             "-U", // update if exists
         ])
         .output()

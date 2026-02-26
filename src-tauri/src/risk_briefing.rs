@@ -13,9 +13,11 @@ use chrono::Utc;
 use std::path::PathBuf;
 
 use crate::db::ActionDb;
-use crate::intelligence::{build_intelligence_context, read_intelligence_json, IntelligenceContext};
+use crate::intelligence::{
+    build_intelligence_context, read_intelligence_json, IntelligenceContext,
+};
 use crate::pty::{ModelTier, PtyManager};
-use crate::types::{AiModelConfig, RiskBriefing, RiskBottomLine, RiskCover};
+use crate::types::{AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover};
 use crate::util::{atomic_write_str, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 // =============================================================================
@@ -47,8 +49,7 @@ pub fn read_risk_briefing(account_dir: &Path) -> Result<RiskBriefing, String> {
     }
     let data = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read risk-briefing.json: {}", e))?;
-    serde_json::from_str(&data)
-        .map_err(|e| format!("Failed to parse risk-briefing.json: {}", e))
+    serde_json::from_str(&data).map_err(|e| format!("Failed to parse risk-briefing.json: {}", e))
 }
 
 /// Write risk briefing to `<account_dir>/risk-briefing.json`.
@@ -73,8 +74,11 @@ fn build_risk_briefing_prompt(
     // I468: Injection resistance preamble
     prompt.push_str(INJECTION_PREAMBLE);
 
-    prompt.push_str("You are a senior strategy consultant preparing a 6-slide executive risk briefing. ");
-    prompt.push_str("Use SCQA thinking internally (Situation → Complication → Question → Answer). ");
+    prompt.push_str(
+        "You are a senior strategy consultant preparing a 6-slide executive risk briefing. ",
+    );
+    prompt
+        .push_str("Use SCQA thinking internally (Situation → Complication → Question → Answer). ");
     prompt.push_str("Output a presentation structure executives actually want.\n\n");
 
     prompt.push_str("# Task\n\n");
@@ -140,7 +144,9 @@ fn build_risk_briefing_prompt(
     }
 
     prompt.push_str("# Output Format\n\n");
-    prompt.push_str("This is a SLIDE DECK for a 5-minute risk huddle. Each slide fills one screen.\n");
+    prompt.push_str(
+        "This is a SLIDE DECK for a 5-minute risk huddle. Each slide fills one screen.\n",
+    );
     prompt.push_str("The story: severity → decline arc → stakes → recovery → ask.\n");
     prompt.push_str("BREVITY IS ABSOLUTE. Every field has a hard word limit. Exceeding limits is a failure.\n\n");
     prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences, no commentary) matching this exact schema:\n\n");

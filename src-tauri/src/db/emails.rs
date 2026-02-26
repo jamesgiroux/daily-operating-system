@@ -78,8 +78,10 @@ impl ActionDb {
             now, now,
             placeholders.join(", ")
         );
-        let param_values: Vec<&dyn rusqlite::types::ToSql> =
-            vanished_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+        let param_values: Vec<&dyn rusqlite::types::ToSql> = vanished_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
         let rows = self
             .conn
             .execute(&sql, param_values.as_slice())
@@ -94,15 +96,18 @@ impl ActionDb {
             return Ok(0);
         }
         let now = Utc::now().to_rfc3339();
-        let placeholders: Vec<String> =
-            (1..=reappeared_ids.len()).map(|i| format!("?{i}")).collect();
+        let placeholders: Vec<String> = (1..=reappeared_ids.len())
+            .map(|i| format!("?{i}"))
+            .collect();
         let sql = format!(
             "UPDATE emails SET resolved_at = NULL, updated_at = '{}' WHERE email_id IN ({})",
             now,
             placeholders.join(", ")
         );
-        let param_values: Vec<&dyn rusqlite::types::ToSql> =
-            reappeared_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+        let param_values: Vec<&dyn rusqlite::types::ToSql> = reappeared_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
         let rows = self
             .conn
             .execute(&sql, param_values.as_slice())
@@ -253,11 +258,7 @@ impl ActionDb {
     pub fn get_email_sync_stats(&self) -> Result<EmailSyncStats, String> {
         let last_fetch_at: Option<String> = self
             .conn
-            .query_row(
-                "SELECT MAX(last_seen_at) FROM emails",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MAX(last_seen_at) FROM emails", [], |row| row.get(0))
             .map_err(|e| format!("Failed to query last fetch time: {e}"))?;
 
         let total: i32 = self
@@ -341,7 +342,9 @@ impl ActionDb {
                          WHERE email_id = ?1 AND entity_id != ?2 AND deactivated_at IS NULL",
                         rusqlite::params![email_id, new_entity_id],
                     )
-                    .map_err(|e| format!("Failed to clean duplicate signals for {email_id}: {e}"))?;
+                    .map_err(|e| {
+                        format!("Failed to clean duplicate signals for {email_id}: {e}")
+                    })?;
             }
             None => {
                 // Entity cleared — deactivate signals instead of deleting
@@ -359,7 +362,12 @@ impl ActionDb {
     }
 
     /// Set the relevance score and reason for an email (I395).
-    pub fn set_relevance_score(&self, email_id: &str, score: f64, reason: &str) -> Result<(), String> {
+    pub fn set_relevance_score(
+        &self,
+        email_id: &str,
+        score: f64,
+        reason: &str,
+    ) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn
             .execute(
@@ -371,7 +379,11 @@ impl ActionDb {
     }
 
     /// Get emails sorted by relevance score (highest first), with minimum score filter.
-    pub fn get_emails_by_score(&self, min_score: f64, limit: usize) -> Result<Vec<DbEmail>, String> {
+    pub fn get_emails_by_score(
+        &self,
+        min_score: f64,
+        limit: usize,
+    ) -> Result<Vec<DbEmail>, String> {
         let mut stmt = self
             .conn
             .prepare(

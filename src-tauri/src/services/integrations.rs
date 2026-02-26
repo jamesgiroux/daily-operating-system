@@ -64,9 +64,7 @@ pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
         }
     };
 
-    let entry = config
-        .get("mcpServers")
-        .and_then(|s| s.get("dailyos"));
+    let entry = config.get("mcpServers").and_then(|s| s.get("dailyos"));
 
     match entry {
         Some(server) => {
@@ -159,9 +157,7 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
     // Read existing config or start fresh
     let mut config: serde_json::Value = if config_path.exists() {
         match std::fs::read_to_string(&config_path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|_| {
-                serde_json::json!({})
-            }),
+            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({})),
             Err(_) => serde_json::json!({}),
         }
     } else {

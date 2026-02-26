@@ -27,7 +27,9 @@ use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
 };
 use crate::types::{EmailSyncStage, EmailSyncState, EmailSyncStatus};
-use crate::util::{encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
+use crate::util::{
+    encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE,
+};
 
 // ============================================================================
 // Constants
@@ -287,7 +289,12 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         .talking_points
         .as_ref()
         .filter(|v| !v.is_empty())
-        .map(|v| v.iter().take(4).map(|s| sanitize_inline_markdown(s)).collect())
+        .map(|v| {
+            v.iter()
+                .take(4)
+                .map(|s| sanitize_inline_markdown(s))
+                .collect()
+        })
         .or_else(|| {
             account_data
                 .and_then(|d| d.get("recent_wins"))
@@ -312,7 +319,9 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
                 arr.iter()
                     .take(3)
                     .filter_map(|v| {
-                        v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                        v.get("text")
+                            .and_then(|t| t.as_str())
+                            .map(|s| s.to_string())
                     })
                     .collect()
             })
@@ -324,7 +333,12 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         .wins
         .as_ref()
         .filter(|v| !v.is_empty())
-        .map(|v| v.iter().take(3).map(|s| sanitize_inline_markdown(s)).collect())
+        .map(|v| {
+            v.iter()
+                .take(3)
+                .map(|s| sanitize_inline_markdown(s))
+                .collect()
+        })
         .unwrap_or_default();
 
     // Context: executive_assessment (truncated for card display)
@@ -349,7 +363,8 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
                 })
                 .take(6)
                 .filter_map(|v| {
-                    let name = v.get("displayName")
+                    let name = v
+                        .get("displayName")
                         .or_else(|| v.get("name"))
                         .and_then(|n| n.as_str())
                         .or_else(|| v.get("email").and_then(|e| e.as_str()))?;
@@ -367,8 +382,7 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
                 .map(|arr| {
                     arr.iter()
                         .filter(|v| {
-                            v.get("relationship")
-                                .and_then(|r| r.as_str()) != Some("internal")
+                            v.get("relationship").and_then(|r| r.as_str()) != Some("internal")
                         })
                         .take(6)
                         .filter_map(|v| {
@@ -519,10 +533,7 @@ fn build_prep_summary_from_file(data_dir: &Path, meeting_id: &str) -> Option<Val
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter(|v| {
-                    v.get("relationship")
-                        .and_then(|r| r.as_str()) != Some("internal")
-                })
+                .filter(|v| v.get("relationship").and_then(|r| r.as_str()) != Some("internal"))
                 .take(6)
                 .filter_map(|v| {
                     let name = v.get("name").and_then(|n| n.as_str())?;
@@ -649,8 +660,7 @@ pub fn deliver_schedule(
         .and_then(|c| c.schedules.today.timezone.parse::<Tz>().ok());
 
     // Resolve authenticated user email for filtering self from attendee lists
-    let user_email = crate::google_api::token_store::peek_account_email()
-        .map(|e| e.to_lowercase());
+    let user_email = crate::google_api::token_store::peek_account_email().map(|e| e.to_lowercase());
 
     let events = &directive.calendar.events;
     let meetings_by_type = &directive.meetings;
@@ -681,7 +691,8 @@ pub fn deliver_schedule(
             .join("preps")
             .join(format!("{}.json", meeting_id))
             .exists();
-        let has_account_prep = PREP_ELIGIBLE_TYPES.contains(&meeting_type) && (mc.is_some() || has_prep_file);
+        let has_account_prep =
+            PREP_ELIGIBLE_TYPES.contains(&meeting_type) && (mc.is_some() || has_prep_file);
         let has_person_prep = PERSON_PREP_TYPES.contains(&meeting_type);
         let has_prep = has_account_prep || has_person_prep;
         let prep_file = if has_prep {
@@ -1800,7 +1811,11 @@ fn build_email_digest(email_ctx: &[Value]) -> Value {
         if senders.len() <= 3 {
             senders.join(", ")
         } else {
-            format!("{} and {} others", senders[..2].join(", "), senders.len() - 2)
+            format!(
+                "{} and {} others",
+                senders[..2].join(", "),
+                senders.len() - 2
+            )
         }
     );
 
@@ -2580,7 +2595,10 @@ pub fn enrich_emails(
     let mut no_thread: Vec<&Value> = Vec::new();
     for email in &emails_to_enrich {
         if let Some(tid) = email.get("threadId").and_then(|v| v.as_str()) {
-            thread_groups.entry(tid.to_string()).or_default().push(email);
+            thread_groups
+                .entry(tid.to_string())
+                .or_default()
+                .push(email);
         } else {
             no_thread.push(email);
         }
@@ -2590,7 +2608,11 @@ pub fn enrich_emails(
     let mut email_context = String::new();
     for (tid, thread_emails) in &thread_groups {
         if thread_emails.len() > 1 {
-            email_context.push_str(&format!("--- Thread {} ({} messages) ---\n", tid, thread_emails.len()));
+            email_context.push_str(&format!(
+                "--- Thread {} ({} messages) ---\n",
+                tid,
+                thread_emails.len()
+            ));
         }
         for email in thread_emails {
             let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
@@ -2662,7 +2684,10 @@ pub fn enrich_emails(
         .map_err(|e| format!("Claude enrichment failed: {}", e))?;
 
     // Audit trail (I297)
-    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let date_id = data_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
     let _ = crate::audit::write_audit_entry(workspace, "email_batch", date_id, &output.stdout);
 
     let enrichments = parse_email_enrichment(&output.stdout);
@@ -2675,10 +2700,7 @@ pub fn enrich_emails(
 
     // Merge enrichments into emails.json (high + medium priority)
     for key in &["highPriority", "mediumPriority"] {
-        if let Some(arr) = emails_data
-            .get_mut(*key)
-            .and_then(|v| v.as_array_mut())
-        {
+        if let Some(arr) = emails_data.get_mut(*key).and_then(|v| v.as_array_mut()) {
             for email in arr.iter_mut() {
                 let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 if let Some(enrichment) = enrichments.get(id) {
@@ -3126,7 +3148,10 @@ pub fn enrich_briefing(
         .map_err(|e| format!("Claude briefing failed: {}", e))?;
 
     // Audit trail (I297)
-    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let date_id = data_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
     let _ = crate::audit::write_audit_entry(workspace, "daily_briefing", date_id, &output.stdout);
 
     let response = &output.stdout;
@@ -3505,7 +3530,10 @@ pub fn enrich_preps(
         .map_err(|e| format!("Claude prep enrichment failed: {}", e))?;
 
     // Audit trail (I297)
-    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let date_id = data_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
     let _ = crate::audit::write_audit_entry(workspace, "meeting_prep", date_id, &output.stdout);
 
     let enrichments = parse_prep_enrichment(&output.stdout);
@@ -4087,10 +4115,19 @@ pub fn enrich_week(
                 .iter()
                 .filter_map(|item| {
                     let id = item.get("id").and_then(|v| v.as_str())?;
-                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+                    let title = item
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Untitled");
                     let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
-                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
-                    let days = item.get("daysOverdue").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let priority = item
+                        .get("priority")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("P3");
+                    let days = item
+                        .get("daysOverdue")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
                     Some(format!(
                         "{}: {} ({}, {}, {}d overdue)",
                         id, title, account, priority, days
@@ -4109,9 +4146,15 @@ pub fn enrich_week(
                 .iter()
                 .filter_map(|item| {
                     let id = item.get("id").and_then(|v| v.as_str())?;
-                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+                    let title = item
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Untitled");
                     let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
-                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
+                    let priority = item
+                        .get("priority")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("P3");
                     let due = item.get("dueDate").and_then(|v| v.as_str()).unwrap_or("");
                     Some(format!(
                         "{}: {} ({}, {}, due {})",
@@ -4143,16 +4186,14 @@ pub fn enrich_week(
                                 .iter()
                                 .filter_map(|m| {
                                     let id = m.get("meetingId").and_then(|v| v.as_str())?;
-                                    let title =
-                                        m.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
-                                    let time =
-                                        m.get("time").and_then(|v| v.as_str()).unwrap_or("");
+                                    let title = m
+                                        .get("title")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("Untitled");
+                                    let time = m.get("time").and_then(|v| v.as_str()).unwrap_or("");
                                     let acct =
                                         m.get("account").and_then(|v| v.as_str()).unwrap_or("");
-                                    Some(format!(
-                                        "{}: {} ({} {} {})",
-                                        id, title, day, time, acct
-                                    ))
+                                    Some(format!("{}: {} ({} {} {})", id, title, day, time, acct))
                                 })
                                 .collect::<Vec<_>>()
                         })
@@ -4318,7 +4359,8 @@ pub fn enrich_week(
         .map_err(|e| format!("Claude week enrichment failed: {}", e))?;
 
     // Audit trail (I297)
-    let _ = crate::audit::write_audit_entry(workspace, "week_forecast", week_number, &output.stdout);
+    let _ =
+        crate::audit::write_audit_entry(workspace, "week_forecast", week_number, &output.stdout);
 
     let response = &output.stdout;
 
@@ -4368,7 +4410,8 @@ pub fn enrich_week(
                             let start_display = format_time_display(start);
                             let matches = start == suggestion.block_start
                                 || start_display == suggestion.block_start
-                                || start_display.to_lowercase() == suggestion.block_start.to_lowercase();
+                                || start_display.to_lowercase()
+                                    == suggestion.block_start.to_lowercase();
                             if matches {
                                 block.as_object_mut().unwrap().insert(
                                     "suggestedUse".to_string(),

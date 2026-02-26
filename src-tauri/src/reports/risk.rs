@@ -35,8 +35,7 @@ pub fn store_risk_briefing_in_reports(
 /// Try to load a risk briefing from the reports table.
 /// Returns None if not found or if content can't be parsed.
 pub fn load_risk_briefing_from_reports(db: &ActionDb, account_id: &str) -> Option<RiskBriefing> {
-    let report =
-        crate::reports::get_report(db, account_id, "account", "risk_briefing").ok()??;
+    let report = crate::reports::get_report(db, account_id, "account", "risk_briefing").ok()??;
 
     serde_json::from_str::<RiskBriefing>(&report.content_json)
         .map_err(|e| {
