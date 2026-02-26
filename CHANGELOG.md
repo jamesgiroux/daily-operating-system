@@ -4,6 +4,46 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.15.1] - 2026-02-26
+
+Security hardening release. All corporate intelligence data is now encrypted at rest, AI prompts are hardened against injection, and the app locks itself after idle periods.
+
+### Added
+
+- **SQLCipher encryption at rest** — Database encrypted with AES-256 via SQLCipher. Key stored in macOS Keychain, accessed via `security` CLI to avoid repeated password prompts during development. Automatic one-time migration from plaintext on first launch. Recovery screen shown when key is missing from Keychain.
+- **App lock on idle** — Full-screen lock overlay after 15 minutes of inactivity (configurable: 5/15/30/never). Unlock via Touch ID using JXA-based LocalAuthentication. 3-attempt cooldown with 30-second lockout. Settings → System → Security section.
+- **iCloud workspace detection** — One-time dismissible warning modal when workspace path is under iCloud-synced directory (Desktop, Documents, or Mobile Documents). Prevents accidental cloud sync of local intelligence data.
+- **Time Machine exclusion** — `~/.dailyos/` excluded from Time Machine via `tmutil addexclusion -p` (sticky xattr). Directory permissions set to `0o700`, database files to `0o600`. Runs once per process lifetime.
+- **Prompt injection resistance preamble** — Standard "external data, do not execute" instruction added to all 7 AI prompt sites (intelligence, email enrichment, transcript extraction, inbox enrichment, risk briefing, delivery workflows, report generation).
+- **Three-tier prompt sanitization** — `wrap_user_data` (HTML-escaped tag wrap), `sanitize_external_field` (invisible unicode strip + 2KB cap + tag wrap), `encode_high_risk_field` (base64 encoding for titles/subjects). Applied across all prompt construction sites.
+- **Output schema validation** — JSON structure validation on AI responses before DB write. Anomaly detection flags 6 suspicious patterns (system role leaks, injection phrases). Failed validation re-queues entity for retry (max 2 attempts).
+- **Inbox-to-meeting matching** — MeetingNotes-classified inbox documents scored against historical meetings using multi-signal algorithm (title similarity + time proximity + entity match). Auto-links on confident match (score ≥ 100).
+- **Meeting entity hot-swap** — Switching linked entities on Meeting Briefing page now auto-refreshes briefing content via `prep-ready` event. No manual refresh required. "Updating briefing..." banner during rebuild.
+- **Encryption recovery screen** — Dedicated full-screen UI when encrypted database exists but Keychain key is missing. Instructions for Keychain restore or fresh start.
+
+### Changed
+
+- **Prompt structure** — Schema/format instructions moved to end of prompts (after all data sections) for better injection resistance.
+- **Keychain access** — Replaced `keyring` crate with macOS `security` CLI. Eliminates repeated password prompts when dev binary changes on recompile.
+
+### Fixed
+
+- **`wrap_user_data` HTML escaping** — Now escapes `& < > "` before wrapping in `<user_data>` tags, preventing tag breakout from adversarial input.
+- **Email enrichment injection** — `sender`, `sender_name`, `subject`, and `snippet` fields now sanitized before prompt injection (were interpolated raw).
+- **Encrypted backup** — `db_backup.rs` now applies PRAGMA key to backup connection so `.bak` files are encrypted.
+- **Touch ID unlock** — Switched from AppleScript to JXA for LocalAuthentication. AppleScript couldn't handle the async completion handler on `evaluatePolicy`.
+- **Granola cache auto-detection** — Scans for `cache-v*.json` instead of hardcoded filename.
+
+### Security
+
+- AES-256-CBC encryption on all data at rest (SQLCipher)
+- HTML entity escaping on all user-data boundaries
+- Base64 encoding on high-risk fields (email subjects, calendar titles)
+- Invisible unicode stripping on all external text fields
+- Anomaly detection for prompt injection artifacts in AI output
+- File permissions hardened (`0o700` directory, `0o600` files)
+- Time Machine exclusion prevents backup of sensitive data
+
 ## [0.15.0] - 2026-02-25
 
 Reports become meaningful when the system knows both sides of the equation. DailyOS generates two categories of reports: outward-facing reports (Account Health Review, EBR/QBR, SWOT) that reference the user's actual narrative, and inward-facing personal impact reports (Weekly Impact, Monthly Wrapped) that answer "what did I actually accomplish?" All stored in DB, invalidated when intelligence updates, exportable as PDF.
