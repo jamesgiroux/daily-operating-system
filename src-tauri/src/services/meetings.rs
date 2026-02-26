@@ -9,7 +9,7 @@ use tauri::Emitter;
 use crate::commands::{MeetingHistoryDetail, MeetingSearchResult, PrepContext};
 use crate::db::ActionDb;
 use crate::state::AppState;
-use crate::types::{CapturedOutcome, MeetingIntelligence};
+use crate::types::{CapturedOutcome, IntelligenceQuality, MeetingIntelligence};
 
 /// Hydrate attendee context by matching calendar attendee emails to person entities.
 ///
@@ -1405,6 +1405,305 @@ pub fn update_meeting_user_notes(
 }
 
 // ── I453: Meeting handlers extracted from commands.rs ──────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingBriefingRefreshProgress {
+    pub meeting_id: String,
+    pub stage: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<u32>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingBriefingRefreshResult {
+    pub meeting_id: String,
+    pub refreshed_entities: u32,
+    pub failed_entities: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub failed_entity_ids: Vec<String>,
+    pub prep_rebuilt_sync: bool,
+    pub prep_queued: bool,
+    pub quality: IntelligenceQuality,
+}
+
+fn emit_briefing_refresh_progress(
+    app_handle: Option<&tauri::AppHandle>,
+    payload: MeetingBriefingRefreshProgress,
+) {
+    if let Some(app) = app_handle {
+        let _ = app.emit("meeting-briefing-refresh-progress", &payload);
+    }
+}
+
+/// Single-service full briefing refresh for one meeting.
+///
+/// This is the deterministic manual refresh path:
+/// 1) clear frozen prep, 2) refresh linked entity intelligence, 3) rebuild prep.
+pub async fn refresh_meeting_briefing_full(
+    state: &AppState,
+    meeting_id: &str,
+    app_handle: Option<&tauri::AppHandle>,
+) -> Result<MeetingBriefingRefreshResult, String> {
+    let meeting_id_owned = meeting_id.to_string();
+
+    emit_briefing_refresh_progress(
+        app_handle,
+        MeetingBriefingRefreshProgress {
+            meeting_id: meeting_id_owned.clone(),
+            stage: "started".to_string(),
+            message: "Starting full briefing refresh".to_string(),
+            entity_id: None,
+            entity_type: None,
+            entity_name: None,
+            current: None,
+            total: None,
+        },
+    );
+
+    // Phase 1: clear current prep + collect linked entities.
+    emit_briefing_refresh_progress(
+        app_handle,
+        MeetingBriefingRefreshProgress {
+            meeting_id: meeting_id_owned.clone(),
+            stage: "clearing_prep".to_string(),
+            message: "Clearing existing briefing snapshot".to_string(),
+            entity_id: None,
+            entity_type: None,
+            entity_name: None,
+            current: None,
+            total: None,
+        },
+    );
+
+    let linked_entities = {
+        let guard = state.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database not initialized".to_string())?;
+
+        db.get_meeting_by_id(&meeting_id_owned)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting not found: {}", meeting_id_owned))?;
+
+        let _ = db.update_intelligence_state(&meeting_id_owned, "enriching", None, None);
+
+        db.conn_ref()
+            .execute(
+                "UPDATE meetings_history
+                 SET prep_frozen_json = NULL, prep_frozen_at = NULL
+                 WHERE id = ?1",
+                rusqlite::params![meeting_id_owned.as_str()],
+            )
+            .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
+
+        db.get_meeting_entities(&meeting_id_owned)
+            .map_err(|e| format!("Failed to load linked entities: {}", e))?
+    };
+
+    let total_entities = linked_entities.len() as u32;
+    if total_entities > 0 {
+        emit_briefing_refresh_progress(
+            app_handle,
+            MeetingBriefingRefreshProgress {
+                meeting_id: meeting_id_owned.clone(),
+                stage: "refreshing_entities".to_string(),
+                message: format!("Refreshing linked intelligence ({})", total_entities),
+                entity_id: None,
+                entity_type: None,
+                entity_name: None,
+                current: Some(0),
+                total: Some(total_entities),
+            },
+        );
+    }
+
+    // Phase 2: refresh linked entity intelligence synchronously.
+    let mut refreshed_entities = 0u32;
+    let mut failed_entities: Vec<(String, String)> = Vec::new();
+
+    for (idx, entity) in linked_entities.iter().enumerate() {
+        let current = (idx as u32) + 1;
+        let entity_id = entity.id.clone();
+        let entity_type = entity.entity_type.as_str().to_string();
+        let entity_name = entity.name.clone();
+
+        emit_briefing_refresh_progress(
+            app_handle,
+            MeetingBriefingRefreshProgress {
+                meeting_id: meeting_id_owned.clone(),
+                stage: "refreshing_entities".to_string(),
+                message: format!(
+                    "Refreshing {} intelligence ({}/{})",
+                    entity_name, current, total_entities
+                ),
+                entity_id: Some(entity_id.clone()),
+                entity_type: Some(entity_type.clone()),
+                entity_name: Some(entity_name.clone()),
+                current: Some(current),
+                total: Some(total_entities),
+            },
+        );
+
+        match crate::services::intelligence::enrich_entity(entity_id.clone(), entity_type.clone(), state).await {
+            Ok(_) => {
+                refreshed_entities += 1;
+                crate::intel_queue::invalidate_and_requeue_meeting_preps(state, &entity_id);
+                emit_briefing_refresh_progress(
+                    app_handle,
+                    MeetingBriefingRefreshProgress {
+                        meeting_id: meeting_id_owned.clone(),
+                        stage: "entity_refreshed".to_string(),
+                        message: format!("Updated {} intelligence", entity_name),
+                        entity_id: Some(entity_id),
+                        entity_type: Some(entity_type),
+                        entity_name: Some(entity_name),
+                        current: Some(current),
+                        total: Some(total_entities),
+                    },
+                );
+            }
+            Err(err) => {
+                log::warn!(
+                    "refresh_meeting_briefing_full: sync entity refresh failed for {} ({}): {}",
+                    entity.id,
+                    entity.entity_type.as_str(),
+                    err
+                );
+                failed_entities.push((entity.id.clone(), entity.entity_type.as_str().to_string()));
+                emit_briefing_refresh_progress(
+                    app_handle,
+                    MeetingBriefingRefreshProgress {
+                        meeting_id: meeting_id_owned.clone(),
+                        stage: "entity_failed".to_string(),
+                        message: format!("Queued retry for {} intelligence", entity.name),
+                        entity_id: Some(entity.id.clone()),
+                        entity_type: Some(entity.entity_type.as_str().to_string()),
+                        entity_name: Some(entity.name.clone()),
+                        current: Some(current),
+                        total: Some(total_entities),
+                    },
+                );
+            }
+        }
+    }
+
+    // Failed entity refreshes are queued for retry.
+    if !failed_entities.is_empty() {
+        for (entity_id, entity_type) in &failed_entities {
+            state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+                entity_id: entity_id.clone(),
+                entity_type: entity_type.clone(),
+                priority: crate::intel_queue::IntelPriority::Manual,
+                requested_at: std::time::Instant::now(),
+            });
+        }
+        state.integrations.intel_queue_wake.notify_one();
+    }
+
+    // Phase 3: rebuild mechanical prep now; fallback to queue if needed.
+    emit_briefing_refresh_progress(
+        app_handle,
+        MeetingBriefingRefreshProgress {
+            meeting_id: meeting_id_owned.clone(),
+            stage: "rebuilding_prep".to_string(),
+            message: "Rebuilding meeting briefing".to_string(),
+            entity_id: None,
+            entity_type: None,
+            entity_name: None,
+            current: None,
+            total: None,
+        },
+    );
+
+    let prep_rebuilt_sync = match crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_owned) {
+        Ok(_) => true,
+        Err(err) => {
+            log::warn!(
+                "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
+                meeting_id_owned,
+                err
+            );
+            false
+        }
+    };
+
+    let prep_queued = !prep_rebuilt_sync;
+    if prep_queued {
+        state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+            meeting_id: meeting_id_owned.clone(),
+            priority: crate::meeting_prep_queue::PrepPriority::Manual,
+            requested_at: std::time::Instant::now(),
+        });
+        state.integrations.prep_queue_wake.notify_one();
+    }
+
+    // Phase 4: finalize meeting intelligence metadata.
+    let quality = {
+        let guard = state.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database not initialized".to_string())?;
+
+        let quality = crate::intelligence::assess_intelligence_quality(db, &meeting_id_owned);
+        db.update_intelligence_state(
+            &meeting_id_owned,
+            "enriched",
+            Some(&quality.level.to_string()),
+            Some(quality.signal_count as i32),
+        )
+        .map_err(|e| e.to_string())?;
+        let _ = db.clear_meeting_new_signals(&meeting_id_owned);
+        quality
+    };
+
+    let result = MeetingBriefingRefreshResult {
+        meeting_id: meeting_id_owned.clone(),
+        refreshed_entities,
+        failed_entities: failed_entities.len() as u32,
+        failed_entity_ids: failed_entities
+            .iter()
+            .map(|(entity_id, _)| entity_id.clone())
+            .collect(),
+        prep_rebuilt_sync,
+        prep_queued,
+        quality,
+    };
+
+    let completed_msg = if result.failed_entities > 0 {
+        format!(
+            "Briefing refreshed ({} entity retries queued)",
+            result.failed_entities
+        )
+    } else {
+        "Briefing refreshed".to_string()
+    };
+    emit_briefing_refresh_progress(
+        app_handle,
+        MeetingBriefingRefreshProgress {
+            meeting_id: meeting_id_owned,
+            stage: "completed".to_string(),
+            message: completed_msg,
+            entity_id: None,
+            entity_type: None,
+            entity_name: None,
+            current: Some(refreshed_entities),
+            total: Some(total_entities),
+        },
+    );
+
+    Ok(result)
+}
 
 /// Refresh all future meeting preps: clear frozen JSON and re-enqueue.
 pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {

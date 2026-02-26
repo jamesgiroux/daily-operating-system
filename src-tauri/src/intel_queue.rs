@@ -926,7 +926,7 @@ pub fn write_enrichment_results(
 /// intelligence.json is the shared enrichment source — meeting briefings consume it
 /// mechanically. When it changes, affected briefings must regenerate to pull the
 /// latest intelligence data.
-fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: &str) {
+pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: &str) {
     let db = match crate::db::ActionDb::open() {
         Ok(db) => db,
         Err(e) => {

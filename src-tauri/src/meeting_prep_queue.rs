@@ -437,6 +437,14 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
     Ok(())
 }
 
+/// Generate mechanical prep immediately for a single meeting.
+///
+/// Used by manual refresh flows that need deterministic completion before
+/// returning control to the UI.
+pub fn generate_mechanical_prep_now(state: &AppState, meeting_id: &str) -> Result<(), String> {
+    generate_mechanical_prep(state, meeting_id)
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
