@@ -59,7 +59,7 @@ const QUALITY_DOT_COLORS: Record<StructuredQuality["level"], string> = {
 
 const QUALITY_LABELS: Record<StructuredQuality["level"], string> = {
   sparse: "Sparse",
-  developing: "Building",
+  developing: "Limited",
   ready: "Ready",
   fresh: "Fresh",
 };
