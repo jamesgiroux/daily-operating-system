@@ -428,6 +428,14 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
         )
         .map_err(|e| format!("Failed to write prep: {}", e))?;
 
+    let quality = crate::intelligence::assess_intelligence_quality(&db, meeting_id);
+    let _ = db.update_intelligence_state(
+        meeting_id,
+        "enriched",
+        Some(&quality.level.to_string()),
+        Some(quality.signal_count as i32),
+    );
+
     log::info!(
         "MeetingPrepQueue: wrote prep_frozen_json for {} ({} bytes)",
         meeting_id,
