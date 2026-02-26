@@ -1472,6 +1472,7 @@ fn queue_person_intelligence(
             entity_type: "person".to_string(),
             priority: crate::intel_queue::IntelPriority::CalendarChange,
             requested_at: std::time::Instant::now(),
+            retry_count: 0,
         });
         enqueued += 1;
     }

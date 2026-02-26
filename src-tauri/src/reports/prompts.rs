@@ -25,7 +25,7 @@ pub fn build_report_preamble(
 
     preamble.push_str(&format!(
         "You are a senior customer success strategist preparing {} for **{}** ({}).\n",
-        framing, entity_name, entity_type
+        framing, crate::util::sanitize_external_field(entity_name), entity_type
     ));
     preamble.push_str("Ground every claim in the data provided. Cite sources by event ID or meeting date when possible.\n");
     preamble.push_str("Use executive-ready language — direct, specific, no filler.\n\n");
