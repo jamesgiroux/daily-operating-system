@@ -263,14 +263,14 @@ mod tests {
         // Emit a resolution signal that pointed to the wrong entity
         crate::signals::bus::emit_signal(
             &db, "account", "wrong-acme", "entity_resolution", "keyword",
-            Some(&format!("{{\"event_id\":\"m1\",\"source\":\"keyword\",\"outcome\":\"resolved\"}}")),
+            Some("{\"event_id\":\"m1\",\"source\":\"keyword\",\"outcome\":\"resolved\"}"),
             0.8,
         ).expect("emit");
 
         // Also emit one that pointed to the correct entity
         crate::signals::bus::emit_signal(
             &db, "account", "correct-acme", "entity_resolution", "attendee_vote",
-            Some(&format!("{{\"event_id\":\"m1\",\"source\":\"attendee_vote\",\"outcome\":\"resolved\"}}")),
+            Some("{\"event_id\":\"m1\",\"source\":\"attendee_vote\",\"outcome\":\"resolved\"}"),
             0.7,
         ).expect("emit correct");
 
