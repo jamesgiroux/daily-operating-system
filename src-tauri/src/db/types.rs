@@ -594,7 +594,9 @@ pub(crate) fn map_sync_row(row: &rusqlite::Row) -> rusqlite::Result<DbQuillSyncS
         transcript_path: row.get(11)?,
         created_at: row.get(12)?,
         updated_at: row.get(13)?,
-        source: row.get::<_, String>(14).unwrap_or_else(|_| "quill".to_string()),
+        source: row
+            .get::<_, String>(14)
+            .unwrap_or_else(|_| "quill".to_string()),
     })
 }
 

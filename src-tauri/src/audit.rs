@@ -49,8 +49,7 @@ pub fn write_audit_entry(
     let filename = format!("{}_{}_{}.txt", timestamp, safe_type, safe_id);
     let file_path = audit_dir.join(&filename);
 
-    atomic_write_str(&file_path, raw_output)
-        .map_err(|e| format!("Audit write failed: {}", e))?;
+    atomic_write_str(&file_path, raw_output).map_err(|e| format!("Audit write failed: {}", e))?;
 
     Ok(file_path)
 }
@@ -64,8 +63,7 @@ pub fn prune_audit_files(workspace: &Path) -> usize {
         return 0;
     }
 
-    let cutoff = Utc::now()
-        - chrono::Duration::days(AUDIT_RETENTION_DAYS as i64);
+    let cutoff = Utc::now() - chrono::Duration::days(AUDIT_RETENTION_DAYS as i64);
     let cutoff_ts = cutoff.timestamp();
 
     let entries = match std::fs::read_dir(&audit_dir) {
@@ -134,19 +132,14 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
 
         // Write two entries
-        let recent = write_audit_entry(dir.path(), "account", "recent", "new data")
-            .expect("write");
-        let old = write_audit_entry(dir.path(), "account", "old", "old data")
-            .expect("write");
+        let recent = write_audit_entry(dir.path(), "account", "recent", "new data").expect("write");
+        let old = write_audit_entry(dir.path(), "account", "old", "old data").expect("write");
 
         // Backdate the old file's mtime to 60 days ago
-        let old_time = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(60 * 24 * 3600);
-        filetime::set_file_mtime(
-            &old,
-            filetime::FileTime::from_system_time(old_time),
-        )
-        .expect("set mtime");
+        let old_time =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 24 * 3600);
+        filetime::set_file_mtime(&old, filetime::FileTime::from_system_time(old_time))
+            .expect("set mtime");
 
         let pruned = prune_audit_files(dir.path());
 

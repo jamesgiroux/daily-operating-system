@@ -59,11 +59,7 @@ pub fn coherence_check(
         .query_map(rusqlite::params![entity_id], |row| {
             let title: String = row.get(0)?;
             let summary: Option<String> = row.get(1)?;
-            Ok(format!(
-                "{} {}",
-                title,
-                summary.unwrap_or_default()
-            ))
+            Ok(format!("{} {}", title, summary.unwrap_or_default()))
         })
         .map_err(|e| format!("Failed to read meetings: {}", e))?
         .filter_map(|r| r.ok())
