@@ -46,7 +46,20 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let poll_interval = Duration::from_secs((config.poll_interval_minutes as u64) * 60);
 
         // Read and process the cache
-        if let Err(e) = poll_once(&state, &app_handle, &config.cache_path) {
+        let cache_path = match super::resolve_cache_path(&config) {
+            Some(p) => p,
+            None => {
+                log::debug!("Granola poller: no cache file found");
+                tokio::select! {
+                    _ = tokio::time::sleep(poll_interval) => {}
+                    _ = state.integrations.granola_poller_wake.notified() => {
+                        log::info!("Granola poller: woken by signal (meeting ended)");
+                    }
+                }
+                continue;
+            }
+        };
+        if let Err(e) = poll_once(&state, &app_handle, &cache_path) {
             log::warn!("Granola poller: {}", e);
         }
 
@@ -60,13 +73,12 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
 }
 
 /// Single poll cycle: read cache, match documents, sync new ones.
-fn poll_once(state: &AppState, app_handle: &AppHandle, cache_path: &str) -> Result<(), String> {
-    let path = std::path::Path::new(cache_path);
-    if !path.exists() {
-        return Ok(()); // Cache not present — Granola may not be installed
-    }
-
-    let documents = cache::read_cache(path)?;
+fn poll_once(
+    state: &AppState,
+    app_handle: &AppHandle,
+    cache_path: &std::path::Path,
+) -> Result<(), String> {
+    let documents = cache::read_cache(cache_path)?;
     if documents.is_empty() {
         return Ok(());
     }
@@ -296,20 +308,18 @@ fn get_recent_meetings_for_matching(
 
 /// Run a one-time backfill: match all Granola cache documents to meetings_history.
 pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> {
-    let cache_path = state
+    let granola_config = state
         .config
         .read()
         .map_err(|_| "Lock poisoned")?
         .as_ref()
-        .map(|c| c.granola.cache_path.clone())
+        .map(|c| c.granola.clone())
         .unwrap_or_default();
 
-    let path = std::path::Path::new(&cache_path);
-    if !path.exists() {
-        return Err("Granola cache file not found".to_string());
-    }
+    let cache_path = super::resolve_cache_path(&granola_config)
+        .ok_or("Granola cache file not found")?;
 
-    let documents = cache::read_cache(path)?;
+    let documents = cache::read_cache(&cache_path)?;
     let eligible = documents.len();
 
     let meetings_for_matching = {
