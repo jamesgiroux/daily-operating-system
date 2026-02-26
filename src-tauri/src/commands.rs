@@ -1498,27 +1498,38 @@ pub fn set_lock_timeout(
     })
 }
 
-/// Attempt system-level authentication using macOS LocalAuthentication via osascript.
+/// Attempt system-level authentication using macOS LocalAuthentication via JXA.
 /// Triggers Touch ID if available, falls back to password.
+///
+/// Uses JavaScript for Automation (JXA) instead of AppleScript because
+/// `evaluatePolicy` is an async ObjC method with a completion handler —
+/// AppleScript's ObjC bridge doesn't handle async callbacks, so it returns
+/// immediately without waiting for the biometric prompt.
 async fn attempt_system_auth() -> Result<bool, String> {
     let script = r#"
-use framework "LocalAuthentication"
-set context to current application's LAContext's new()
-set {canEvaluate, theError} to context's canEvaluatePolicy:1 |error|:(reference)
-if canEvaluate then
-    set {authResult, authError} to context's evaluatePolicy:1 localizedReason:"DailyOS requires authentication to unlock." |error|:(reference)
-    if authResult then
-        return "ok"
-    else
-        return "fail"
-    end if
-else
-    return "unavailable"
-end if
+ObjC.import("LocalAuthentication");
+var context = $.LAContext.new;
+var error = Ref();
+var can = context.canEvaluatePolicyError(1, error);
+if (!can) { "unavailable"; }
+else {
+  var sem = $.NSCondition.alloc.init;
+  var result = {value: "fail"};
+  context.evaluatePolicyLocalizedReasonReply(1, "DailyOS requires authentication to unlock.", function(success, err) {
+    result.value = success ? "ok" : "fail";
+    sem.lock;
+    sem.signal;
+    sem.unlock;
+  });
+  sem.lock;
+  sem.waitUntilDate($.NSDate.dateWithTimeIntervalSinceNow(30));
+  sem.unlock;
+  result.value;
+}
 "#;
 
     let output = tokio::process::Command::new("osascript")
-        .args(["-l", "AppleScript", "-e", script])
+        .args(["-l", "JavaScript", "-e", script])
         .output()
         .await
         .map_err(|e| format!("Failed to launch auth: {}", e))?;
