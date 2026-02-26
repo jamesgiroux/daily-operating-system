@@ -1429,8 +1429,6 @@ pub fn extract_keywords_from_response(response: &str) -> Option<String> {
     serde_json::to_string(&kw_strings).ok()
 }
 
-/// Compute a human-readable age string from an ISO 8601 timestamp.
-
 // =============================================================================
 // Tests
 // =============================================================================
