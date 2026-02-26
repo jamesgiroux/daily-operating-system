@@ -1064,6 +1064,7 @@ pub async fn create_child_account_cmd(
         entity_type: "account".to_string(),
         priority: crate::intel_queue::IntelPriority::ContentChange,
         requested_at: std::time::Instant::now(),
+        retry_count: 0,
     });
     state.integrations.intel_queue_wake.notify_one();
 

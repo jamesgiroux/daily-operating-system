@@ -16,7 +16,7 @@ use crate::db::ActionDb;
 use crate::intelligence::{build_intelligence_context, read_intelligence_json, IntelligenceContext};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::{AiModelConfig, RiskBriefing, RiskBottomLine, RiskCover};
-use crate::util::{atomic_write_str, wrap_user_data};
+use crate::util::{atomic_write_str, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 // =============================================================================
 // Gathered Input (Phase 1 output — captured under brief DB lock)
@@ -70,6 +70,9 @@ fn build_risk_briefing_prompt(
 ) -> String {
     let mut prompt = String::with_capacity(16_000);
 
+    // I468: Injection resistance preamble
+    prompt.push_str(INJECTION_PREAMBLE);
+
     prompt.push_str("You are a senior strategy consultant preparing a 6-slide executive risk briefing. ");
     prompt.push_str("Use SCQA thinking internally (Situation → Complication → Question → Answer). ");
     prompt.push_str("Output a presentation structure executives actually want.\n\n");
@@ -77,7 +80,7 @@ fn build_risk_briefing_prompt(
     prompt.push_str("# Task\n\n");
     prompt.push_str(&format!(
         "Generate a 6-slide risk briefing for **{}**.\n\n",
-        wrap_user_data(account_name)
+        sanitize_external_field(account_name)
     ));
 
     prompt.push_str("# Input Data\n\n");
