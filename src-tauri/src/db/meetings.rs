@@ -290,7 +290,9 @@ impl ActionDb {
     ) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).format("%Y-%m-%d %H:%M:%S").to_string();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(2))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
         self.conn.execute(
             "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, source, next_attempt_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -303,7 +305,9 @@ impl ActionDb {
     pub fn insert_quill_sync_state(&self, meeting_id: &str) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).format("%Y-%m-%d %H:%M:%S").to_string();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(2))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
         self.conn.execute(
             "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, next_attempt_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -427,7 +431,9 @@ impl ActionDb {
 
         // Exponential backoff: 5 * 2^attempts minutes (5, 10, 20, 40, 80 min)
         let delay_minutes = 5i64 * (1i64 << new_attempts);
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(delay_minutes)).format("%Y-%m-%d %H:%M:%S").to_string();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(delay_minutes))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
 
         self.conn.execute(
             "UPDATE quill_sync_state
@@ -496,6 +502,30 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Get recent meetings as matching candidates with entity context (I474).
+    ///
+    /// Returns meetings from the last `days_back` days with their primary
+    /// linked entity_id (if any). Used by the inbox processor to match
+    /// incoming documents to historical meetings.
+    pub fn get_recent_meetings_for_matching(
+        &self,
+        days_back: i32,
+    ) -> Result<Vec<(String, String, String, Option<String>)>, DbError> {
+        let offset = format!("-{} days", days_back);
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.title, m.start_time,
+                    (SELECT me.entity_id FROM meeting_entities me
+                     WHERE me.meeting_id = m.id LIMIT 1) AS entity_id
+             FROM meetings_history m
+             WHERE m.start_time >= datetime('now', ?1)
+             ORDER BY m.start_time DESC",
+        )?;
+        let rows = stmt.query_map(params![offset], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
     /// Get recent meetings as (id, title, start_time) tuples for transcript matching.
     pub fn get_meetings_for_transcript_matching(
         &self,
@@ -519,7 +549,10 @@ impl ActionDb {
     /// Only includes account-linked meetings with relationship-relevant types
     /// (customer, qbr, partnership). Excludes internal, one_on_one, and external
     /// meetings which are too broad and would pull in personal or tangential calls.
-    pub fn get_backfill_eligible_meeting_ids(&self, days_back: i32) -> Result<Vec<String>, DbError> {
+    pub fn get_backfill_eligible_meeting_ids(
+        &self,
+        days_back: i32,
+    ) -> Result<Vec<String>, DbError> {
         let offset = format!("-{} days", days_back);
         let mut stmt = self.conn.prepare(
             "SELECT m.id FROM meetings_history m
@@ -534,7 +567,6 @@ impl ActionDb {
         let rows = stmt.query_map(params![offset], |row| row.get(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
-
 
     // =========================================================================
     // Meetings
@@ -762,6 +794,4 @@ impl ActionDb {
         }
         Ok(map)
     }
-
-
 }

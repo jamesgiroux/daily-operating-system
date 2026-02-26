@@ -10,14 +10,26 @@ use super::scoring::{score_item, ScoringContext};
 
 /// Sender patterns that indicate automated/noise emails.
 const NOISE_SENDERS: &[&str] = &[
-    "noreply", "no-reply", "donotreply", "do-not-reply", "comment-reply",
-    "notifications@", "mailer-daemon", "drive-shares", "calendar-notification", "notify@",
+    "noreply",
+    "no-reply",
+    "donotreply",
+    "do-not-reply",
+    "comment-reply",
+    "notifications@",
+    "mailer-daemon",
+    "drive-shares",
+    "calendar-notification",
+    "notify@",
 ];
 
 /// Subject prefixes that indicate calendar notifications (not conversations).
 const NOISE_SUBJECT_PREFIXES: &[&str] = &[
-    "Accepted:", "Declined:", "Tentatively accepted:",
-    "Updated invitation:", "Canceled event:", "Invitation:",
+    "Accepted:",
+    "Declined:",
+    "Tentatively accepted:",
+    "Updated invitation:",
+    "Canceled event:",
+    "Invitation:",
 ];
 
 /// Score a single email. Returns (score, reason).
@@ -37,14 +49,18 @@ pub fn score_single_email(
 
     // Check noise subject
     if let Some(subject) = &email.subject {
-        if NOISE_SUBJECT_PREFIXES.iter().any(|prefix| subject.starts_with(prefix)) {
+        if NOISE_SUBJECT_PREFIXES
+            .iter()
+            .any(|prefix| subject.starts_with(prefix))
+        {
             return (0.02, "calendar notification".to_string());
         }
     }
 
-    let content = email.contextual_summary.as_deref().unwrap_or(
-        email.snippet.as_deref().unwrap_or("")
-    );
+    let content = email
+        .contextual_summary
+        .as_deref()
+        .unwrap_or(email.snippet.as_deref().unwrap_or(""));
     let created = email.received_at.as_deref().unwrap_or(&email.created_at);
 
     let ctx = ScoringContext {
@@ -87,9 +103,10 @@ pub fn build_meeting_context(db: &ActionDb) -> String {
     let start = format!("{}T00:00:00", today);
     let end = format!("{}T23:59:59", today);
 
-    let mut stmt = match db.conn_ref().prepare(
-        "SELECT title FROM meetings_history WHERE start_time >= ?1 AND start_time <= ?2"
-    ) {
+    let mut stmt = match db
+        .conn_ref()
+        .prepare("SELECT title FROM meetings_history WHERE start_time >= ?1 AND start_time <= ?2")
+    {
         Ok(s) => s,
         Err(_) => return String::new(),
     };
@@ -143,7 +160,11 @@ mod tests {
         let db = crate::db::test_utils::test_db();
         let email = make_test_email("noreply@company.com", "Your report is ready");
         let (score, reason) = score_single_email(&db, None, &email, "");
-        assert!(score < 0.05, "noise sender should score near zero, got {}", score);
+        assert!(
+            score < 0.05,
+            "noise sender should score near zero, got {}",
+            score
+        );
         assert_eq!(reason, "automated sender");
     }
 
@@ -152,7 +173,11 @@ mod tests {
         let db = crate::db::test_utils::test_db();
         let email = make_test_email("alice@company.com", "Accepted: Weekly standup");
         let (score, reason) = score_single_email(&db, None, &email, "");
-        assert!(score < 0.05, "calendar notification should score near zero, got {}", score);
+        assert!(
+            score < 0.05,
+            "calendar notification should score near zero, got {}",
+            score
+        );
         assert_eq!(reason, "calendar notification");
     }
 
@@ -161,6 +186,10 @@ mod tests {
         let db = crate::db::test_utils::test_db();
         let email = make_test_email("alice@customer.com", "Re: Contract renewal discussion");
         let (score, _reason) = score_single_email(&db, None, &email, "");
-        assert!(score > 0.05, "normal email with keyword should score above noise, got {}", score);
+        assert!(
+            score > 0.05,
+            "normal email with keyword should score above noise, got {}",
+            score
+        );
     }
 }

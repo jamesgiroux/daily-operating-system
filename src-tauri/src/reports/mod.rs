@@ -10,10 +10,10 @@ pub mod account_health;
 pub mod ebr_qbr;
 pub mod generator;
 pub mod invalidation;
+pub mod monthly_wrapped;
 pub mod prompts;
 pub mod risk;
 pub mod swot;
-pub mod monthly_wrapped;
 pub mod weekly_impact;
 
 use chrono::Utc;

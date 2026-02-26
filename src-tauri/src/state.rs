@@ -155,6 +155,15 @@ pub struct AppState {
     pub signals: SignalState,
     /// Integration poller wake signals (I405).
     pub integrations: IntegrationState,
+    /// Whether the app is currently locked (I465).
+    pub is_locked: AtomicBool,
+    /// Timestamp of last failed unlock attempt for cooldown tracking (I465).
+    pub last_failed_unlock: Mutex<Option<Instant>>,
+    /// Count of consecutive failed unlock attempts (I465).
+    pub failed_unlock_count: AtomicU32,
+    /// True if the encryption key was not found in the Keychain on startup (I462).
+    /// When set, the frontend shows a recovery screen instead of normal UI.
+    pub encryption_key_missing: AtomicBool,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
@@ -183,8 +192,17 @@ impl AppState {
         let config = load_config().ok();
         let history = load_execution_history().unwrap_or_default();
 
+        let mut encryption_key_missing = false;
         let db = match crate::db::ActionDb::open() {
             Ok(db) => Some(db),
+            Err(crate::db::DbError::KeyMissing { ref db_path }) => {
+                log::error!(
+                    "Encryption key missing for database at {db_path}. \
+                     Showing recovery screen."
+                );
+                encryption_key_missing = true;
+                None
+            }
             Err(e) => {
                 log::warn!("Failed to open actions database: {e}. DB features disabled.");
                 None
@@ -197,10 +215,7 @@ impl AppState {
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
 
-        let hygiene_budget_limit = config
-            .as_ref()
-            .map(|c| c.hygiene_ai_budget)
-            .unwrap_or(10);
+        let hygiene_budget_limit = config.as_ref().map(|c| c.hygiene_ai_budget).unwrap_or(10);
 
         // I309: Load active role preset from config
         let active_preset = config.as_ref().and_then(|c| {
@@ -268,6 +283,10 @@ impl AppState {
                 prep_queue_wake: Arc::new(tokio::sync::Notify::new()),
                 embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
             },
+            is_locked: AtomicBool::new(false),
+            last_failed_unlock: Mutex::new(None),
+            failed_unlock_count: AtomicU32::new(0),
+            encryption_key_missing: AtomicBool::new(encryption_key_missing),
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
@@ -276,7 +295,8 @@ impl AppState {
 
     /// Get current status of a workflow
     pub fn get_workflow_status(&self, workflow: WorkflowId) -> WorkflowStatus {
-        self.workflow.status
+        self.workflow
+            .status
             .read()
             .map(|guard| guard.get(&workflow).cloned().unwrap_or_default())
             .unwrap_or_default()
@@ -318,7 +338,8 @@ impl AppState {
 
     /// Get execution history
     pub fn get_execution_history(&self, limit: usize) -> Vec<ExecutionRecord> {
-        self.workflow.history
+        self.workflow
+            .history
             .lock()
             .map(|guard| guard.iter().take(limit).cloned().collect())
             .unwrap_or_default()
@@ -333,7 +354,8 @@ impl AppState {
 
     /// Get when a workflow last ran on schedule
     pub fn get_last_scheduled_run(&self, workflow: WorkflowId) -> Option<DateTime<Utc>> {
-        self.workflow.last_scheduled_run
+        self.workflow
+            .last_scheduled_run
             .read()
             .ok()
             .and_then(|guard| guard.get(&workflow).cloned())
@@ -441,7 +463,8 @@ impl AppState {
     /// Save execution history to disk
     fn save_execution_history(&self) -> Result<(), String> {
         let history = self
-            .workflow.history
+            .workflow
+            .history
             .lock()
             .map_err(|_| "Lock poisoned")?
             .clone();
@@ -487,7 +510,10 @@ pub fn run_startup_sync(state: &AppState) {
 
     // Refresh managed workspace files if version changed (I275)
     if let Err(e) = crate::util::write_managed_workspace_files(workspace) {
-        log::warn!("Startup sync: failed to write managed workspace files: {}", e);
+        log::warn!(
+            "Startup sync: failed to write managed workspace files: {}",
+            e
+        );
     }
 
     let db = match crate::db::ActionDb::open() {
@@ -629,6 +655,8 @@ pub fn create_or_update_config(
                 internal_org_account_id: None,
                 role: "customer-success".to_string(),
                 custom_preset_path: None,
+                icloud_warning_dismissed: None,
+                app_lock_timeout_minutes: Some(15),
                 hygiene_scan_interval_hours: 4,
                 hygiene_ai_budget: 10,
                 hygiene_pre_meeting_hours: 12,

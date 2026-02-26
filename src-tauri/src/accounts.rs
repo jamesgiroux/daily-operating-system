@@ -15,7 +15,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::db::{ActionDb, DbAccount};
-use crate::util::{slugify, wrap_user_data};
+use crate::util::{sanitize_external_field, slugify, wrap_user_data};
 
 // =============================================================================
 // JSON Schema
@@ -527,7 +527,9 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
     let account_dir = path.parent().ok_or("No parent dir")?;
     let json: AccountJson = crate::entity_io::read_entity_json(
         account_dir,
-        path.file_name().and_then(|n| n.to_str()).unwrap_or("dashboard.json"),
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("dashboard.json"),
     )?;
 
     let updated_at = crate::entity_io::file_updated_at(path);
@@ -554,7 +556,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         },
         json,
     })
@@ -713,11 +715,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
 /// `dashboard.json` are synced via `read_account_json`; bare directories are
 /// bootstrapped. The function recurses into BU-named subdirectories up to a
 /// depth limit of 10.
-fn scan_child_accounts_recursive(
-    workspace: &Path,
-    db: &ActionDb,
-    parent_dir: &Path,
-) -> usize {
+fn scan_child_accounts_recursive(workspace: &Path, db: &ActionDb, parent_dir: &Path) -> usize {
     scan_child_accounts_inner(workspace, db, parent_dir, 0)
 }
 
@@ -773,15 +771,13 @@ fn scan_child_accounts_inner(
                             synced += 1;
                         } else if db_account.updated_at > file_account.updated_at {
                             let _ = write_account_json(workspace, &db_account, Some(&json), db);
-                            let _ =
-                                write_account_markdown(workspace, &db_account, Some(&json), db);
+                            let _ = write_account_markdown(workspace, &db_account, Some(&json), db);
                             synced += 1;
                         }
                     }
                     Ok(None) => {
                         let _ = db.upsert_account(&file_account);
-                        let _ =
-                            write_account_markdown(workspace, &file_account, Some(&json), db);
+                        let _ = write_account_markdown(workspace, &file_account, Some(&json), db);
                         synced += 1;
                     }
                     Err(_) => continue,
@@ -972,7 +968,7 @@ pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) ->
 
         context_parts.push(format!(
             "--- {} [{}] ---\n{}",
-            wrap_user_data(&file.filename),
+            sanitize_external_field(&file.filename),
             file.content_type,
             wrap_user_data(truncated),
         ));
@@ -1042,7 +1038,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         }
     }
 
@@ -1289,10 +1285,16 @@ END_ENRICHMENT";
 
         // Verify NO SQLite records were created
         let acme = db.get_account("acme-corp").unwrap();
-        assert!(acme.is_none(), "Unrecognized folder should NOT create account");
+        assert!(
+            acme.is_none(),
+            "Unrecognized folder should NOT create account"
+        );
 
         let beta = db.get_account("beta-industries").unwrap();
-        assert!(beta.is_none(), "Unrecognized folder should NOT create account");
+        assert!(
+            beta.is_none(),
+            "Unrecognized folder should NOT create account"
+        );
 
         // Verify existing files were NOT touched
         let notes = std::fs::read_to_string(acct1.join("notes.md")).unwrap();
@@ -1414,7 +1416,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
 
         write_account_json(workspace, &account, None, &db).unwrap();
@@ -1456,11 +1458,17 @@ END_ENRICHMENT";
 
         // Parent should exist (synced from dashboard.json)
         let parent = db.get_account("testparent").unwrap();
-        assert!(parent.is_some(), "Parent account should exist from dashboard.json");
+        assert!(
+            parent.is_some(),
+            "Parent account should exist from dashboard.json"
+        );
 
         // Child should NOT exist (bare folder, no auto-bootstrap)
         let child = db.get_account("testparent--testchild").unwrap();
-        assert!(child.is_none(), "Child without dashboard.json should NOT be bootstrapped");
+        assert!(
+            child.is_none(),
+            "Child without dashboard.json should NOT be bootstrapped"
+        );
 
         // Internal dir should NOT be an account
         let internal = db
@@ -1490,7 +1498,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&parent).unwrap();
 
@@ -1511,7 +1519,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&child1).unwrap();
 
@@ -1531,7 +1539,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         };
         db.upsert_account(&child2).unwrap();
 
@@ -1568,7 +1576,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         })
         .unwrap();
 
@@ -1589,7 +1597,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         })
         .unwrap();
 
@@ -1609,7 +1617,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
-        metadata: None,
+            metadata: None,
         })
         .unwrap();
 

@@ -67,8 +67,11 @@ fn build_swot_prompt(
     append_intel_context(&mut prompt, &ctx);
 
     prompt.push_str("# Output Format\n\n");
-    prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n");
-    prompt.push_str(r#"{
+    prompt.push_str(
+        "Respond with ONLY a valid JSON object (no markdown fences) matching this schema:\n\n",
+    );
+    prompt.push_str(
+        r#"{
   "strengths": [
     {"text": "Specific strength observed, max 20 words", "source": "meeting-id or null"}
   ],
@@ -82,7 +85,8 @@ fn build_swot_prompt(
     {"text": "Specific threat or risk, max 20 words", "source": "signal-id or null"}
   ],
   "summary": "One paragraph executive summary, max 50 words. null if no clear narrative."
-}"#);
+}"#,
+    );
     prompt.push_str("\n\n# Rules\n");
     prompt.push_str("- 2–5 items per quadrant. No padding.\n");
     prompt.push_str("- Every item must cite a real event, signal, or meeting from the data. Set source to null only if genuinely no citation applies.\n");
@@ -105,8 +109,7 @@ pub fn gather_swot_input(
     ai_models: AiModelConfig,
 ) -> Result<ReportGeneratorInput, String> {
     let account = if entity_type == "account" {
-        db.get_account(entity_id)
-            .map_err(|e| e.to_string())?
+        db.get_account(entity_id).map_err(|e| e.to_string())?
     } else {
         None
     };
@@ -116,20 +119,14 @@ pub fn gather_swot_input(
         .map(|a| a.name.clone())
         .or_else(|| {
             if entity_type == "project" {
-                db.get_project(entity_id)
-                    .ok()
-                    .flatten()
-                    .map(|p| p.name)
+                db.get_project(entity_id).ok().flatten().map(|p| p.name)
             } else {
                 None
             }
         })
         .or_else(|| {
             if entity_type == "person" {
-                db.get_person(entity_id)
-                    .ok()
-                    .flatten()
-                    .map(|p| p.name)
+                db.get_person(entity_id).ok().flatten().map(|p| p.name)
             } else {
                 None
             }
