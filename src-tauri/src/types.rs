@@ -84,6 +84,12 @@ pub struct Config {
     /// Optional path to a custom preset JSON file (I309).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_preset_path: Option<String>,
+    /// Whether the user has dismissed the iCloud workspace warning (I464).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icloud_warning_dismissed: Option<bool>,
+    /// App lock timeout in minutes. None = disabled. Default: 15. (I465)
+    #[serde(default = "default_lock_timeout")]
+    pub app_lock_timeout_minutes: Option<u32>,
     /// Hygiene scan interval in hours (default: 4). Options: 1, 2, 4, 8.
     #[serde(default = "default_hygiene_scan_interval_hours")]
     pub hygiene_scan_interval_hours: u32,
@@ -232,6 +238,10 @@ fn default_embedding_chunk_overlap_tokens() -> usize {
 
 fn default_embedding_max_files_per_sweep() -> usize {
     100
+}
+
+fn default_lock_timeout() -> Option<u32> {
+    Some(15)
 }
 
 fn default_hygiene_scan_interval_hours() -> u32 {
@@ -2231,6 +2241,8 @@ mod tests {
             embeddings: EmbeddingConfig::default(),
             role: "customer-success".to_string(),
             custom_preset_path: None,
+            app_lock_timeout_minutes: Some(15),
+            icloud_warning_dismissed: None,
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,

@@ -496,6 +496,35 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Get recent meetings as matching candidates with entity context (I474).
+    ///
+    /// Returns meetings from the last `days_back` days with their primary
+    /// linked entity_id (if any). Used by the inbox processor to match
+    /// incoming documents to historical meetings.
+    pub fn get_recent_meetings_for_matching(
+        &self,
+        days_back: i32,
+    ) -> Result<Vec<(String, String, String, Option<String>)>, DbError> {
+        let offset = format!("-{} days", days_back);
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.title, m.start_time,
+                    (SELECT me.entity_id FROM meeting_entities me
+                     WHERE me.meeting_id = m.id LIMIT 1) AS entity_id
+             FROM meetings_history m
+             WHERE m.start_time >= datetime('now', ?1)
+             ORDER BY m.start_time DESC",
+        )?;
+        let rows = stmt.query_map(params![offset], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
     /// Get recent meetings as (id, title, start_time) tuples for transcript matching.
     pub fn get_meetings_for_transcript_matching(
         &self,

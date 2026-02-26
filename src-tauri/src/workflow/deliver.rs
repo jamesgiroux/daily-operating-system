@@ -27,7 +27,7 @@ use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
 };
 use crate::types::{EmailSyncStage, EmailSyncState, EmailSyncStatus};
-use crate::util::wrap_user_data;
+use crate::util::{encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 // ============================================================================
 // Constants
@@ -2600,9 +2600,9 @@ pub fn enrich_emails(
             email_context.push_str(&format!(
                 "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
                 id,
-                wrap_user_data(sender),
-                wrap_user_data(subject),
-                wrap_user_data(snippet),
+                sanitize_external_field(sender),
+                encode_high_risk_field(subject),
+                sanitize_external_field(snippet),
             ));
         }
     }
@@ -2614,9 +2614,9 @@ pub fn enrich_emails(
         email_context.push_str(&format!(
             "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
             id,
-            wrap_user_data(sender),
-            wrap_user_data(subject),
-            wrap_user_data(snippet),
+            sanitize_external_field(sender),
+            encode_high_risk_field(subject),
+            sanitize_external_field(snippet),
         ));
     }
 
@@ -2627,7 +2627,7 @@ pub fn enrich_emails(
 
     let user_fragment = user_ctx.prompt_fragment();
     let prompt = format!(
-        "You are enriching email briefing data. {}\
+        "{}You are enriching email briefing data. {}\
          Emails grouped by thread are shown together for context.\n\n\
          For each email below, provide a one-line summary, \
          a recommended action, brief conversation arc context, a JSON array \
@@ -2654,7 +2654,7 @@ pub fn enrich_emails(
          SENTIMENT: <positive|neutral|negative|urgent>\n\
          END_ENRICHMENT\n\n\
          {}",
-        user_fragment, email_context
+        INJECTION_PREAMBLE, user_fragment, email_context
     );
 
     let output = pty
@@ -3044,29 +3044,31 @@ pub fn enrich_briefing(
         .map(|p| format!("Briefing emphasis: {}\n", p.briefing_emphasis))
         .unwrap_or_default();
 
+    let top_meetings_str = wrap_user_data(&top_meetings.join(", "));
     let mut prompt = format!(
-        "You are writing a morning briefing narrative for {role_label}.\n\
+        "{preamble}You are writing a morning briefing narrative for {role_label}.\n\
          {user_fragment}\n\
          {vocab_context}\
          {emphasis_context}\
          Today's context:\n\
-         - Date: {}\n\
-         - Meetings: {} ({} customer) — density: {}\n\
-         - First meeting: {}\n\
-         - Key meetings: {}\n\
-         - Actions: {} overdue, {} due today\n\
-         - Emails: {} high-priority\n\n\
-         {}\n",
-        date,
-        meetings,
-        customer_count,
-        density,
-        first_meeting_time,
-        wrap_user_data(&top_meetings.join(", ")),
-        overdue_count,
-        due_today,
-        high_count,
-        density_guidance,
+         - Date: {date}\n\
+         - Meetings: {meetings} ({customer_count} customer) — density: {density}\n\
+         - First meeting: {first_meeting_time}\n\
+         - Key meetings: {top_meetings_str}\n\
+         - Actions: {overdue_count} overdue, {due_today} due today\n\
+         - Emails: {high_count} high-priority\n\n\
+         {density_guidance}\n",
+        preamble = INJECTION_PREAMBLE,
+        date = date,
+        meetings = meetings,
+        customer_count = customer_count,
+        density = density,
+        first_meeting_time = first_meeting_time,
+        top_meetings_str = top_meetings_str,
+        overdue_count = overdue_count,
+        due_today = due_today,
+        high_count = high_count,
+        density_guidance = density_guidance,
     );
 
     if !intel_context.is_empty() {
@@ -3466,7 +3468,7 @@ pub fn enrich_preps(
     }
 
     let prompt = format!(
-        "You are refining meeting prep reports for a Customer Success Manager.\n\n\
+        "{}You are refining meeting prep reports for a Customer Success Manager.\n\n\
          For each meeting below, review recent wins, risks, open items, questions, \
          meeting purpose, and current mechanical agenda. Produce:\n\
          1) A refined agenda that:\n\
@@ -3495,7 +3497,7 @@ pub fn enrich_preps(
          ... more wins ...\n\
          END_WINS\n\n\
          {}",
-        prep_context
+        INJECTION_PREAMBLE, prep_context
     );
 
     let output = pty
@@ -4229,7 +4231,7 @@ pub fn enrich_week(
     };
 
     let prompt = format!(
-        "You are writing a weekly briefing for {role_label}.\n\
+        "{preamble}You are writing a weekly briefing for {role_label}.\n\
          {user_fragment}\n\
          {week_vocab_context}\
          {week_emphasis_context}\
@@ -4277,6 +4279,7 @@ pub fn enrich_week(
          SUGGESTIONS:\n\
          [{{\"blockDay\": \"Monday\", \"blockStart\": \"11:00 AM\", \"suggestedUse\": \"...\", \"actionId\": \"optional\", \"meetingId\": \"optional\"}}]\n\
          END_SUGGESTIONS",
+        preamble = INJECTION_PREAMBLE,
         role_label = role_label,
         user_fragment = user_fragment,
         week_number = week_number,

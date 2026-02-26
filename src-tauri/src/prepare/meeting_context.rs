@@ -1879,7 +1879,7 @@ mod tests {
         entity_type: crate::entity::EntityType,
         event_id: &str,
     ) -> crate::db::ActionDb {
-        let db = crate::db::ActionDb::open_at(dir.join("test.db")).expect("open test db");
+        let db = crate::db::ActionDb::open_at_unencrypted(dir.join("test.db")).expect("open test db");
         let now = chrono::Utc::now().to_rfc3339();
 
         db.upsert_entity(&crate::entity::DbEntity {

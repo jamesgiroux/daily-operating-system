@@ -58,6 +58,7 @@ pub fn evaluate_portfolio(
             entity_type: entity_type.clone(),
             priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
             requested_at: std::time::Instant::now(),
+            retry_count: 0,
         });
         enqueued += 1;
     }

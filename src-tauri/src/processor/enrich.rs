@@ -10,7 +10,7 @@ use chrono::Utc;
 use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
-use crate::util::wrap_user_data;
+use crate::util::{sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 use super::classifier::Classification;
 use super::router::{move_file, resolve_destination, RouteOutcome};
@@ -185,6 +185,25 @@ pub fn enrich_file(
                         log::warn!("Failed to write companion .md for '{}': {}", filename, e);
                     }
                 }
+                // I474: Match meeting_notes to historical meetings
+                if file_type == "meeting_notes" {
+                    if let Some(state) = state {
+                        if let Ok(db_guard) = state.db.lock() {
+                            if let Some(db) = db_guard.as_ref() {
+                                let classification = Classification::MeetingNotes {
+                                    account: account.clone(),
+                                };
+                                super::try_match_to_meeting(
+                                    &classification,
+                                    filename,
+                                    &route_result.destination,
+                                    db,
+                                );
+                            }
+                        }
+                    }
+                }
+
                 EnrichResult::Routed {
                     classification: file_type.clone(),
                     destination: route_result.destination.display().to_string(),
@@ -365,7 +384,13 @@ fn build_enrichment_prompt(
         .unwrap_or("check-in");
 
     format!(
-        r#"{user_fragment}Analyze this inbox file and respond in exactly this format:
+        r#"{preamble}{user_fragment}Analyze the following inbox file.
+
+Filename: {filename}
+Content:
+{truncated}
+
+Respond in exactly this format:
 
 FILE_TYPE: <one of: meeting_notes, account_update, action_items, meeting_context, general>
 ACCOUNT: <account name if relevant, or NONE>
@@ -411,12 +436,9 @@ Rules for decisions:
 - Only include if clear decisions or commitments were made
 - Each item should state what was decided and who is responsible (if clear)
 - If no decisions are apparent, leave the section empty (just the markers)
-
-Filename: {filename}
-Content:
-{truncated}
 "#,
-        filename = wrap_user_data(filename),
+        preamble = INJECTION_PREAMBLE,
+        filename = sanitize_external_field(filename),
         truncated = wrap_user_data(truncated),
     )
 }
