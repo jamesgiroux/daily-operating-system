@@ -162,7 +162,10 @@ fn scan_entity_directory(
         }
 
         // Skip if already in database
-        let absolute_path = path.canonicalize().ok().and_then(|p| p.to_str().map(String::from));
+        let absolute_path = path
+            .canonicalize()
+            .ok()
+            .and_then(|p| p.to_str().map(String::from));
         if let Some(abs_path) = &absolute_path {
             if existing_paths.contains(abs_path) {
                 continue;
@@ -263,7 +266,9 @@ fn extract_title_from_filename(filename: &str, date_re: &Regex) -> String {
     // Remove date prefix, then normalize separators so type prefix check works
     title = date_re.replace(&title, "").to_string();
     title = title.replace('_', "-");
-    title = title.trim_matches(|c: char| c == '-' || c.is_whitespace()).to_string();
+    title = title
+        .trim_matches(|c: char| c == '-' || c.is_whitespace())
+        .to_string();
 
     // Remove type prefixes (summary-, meeting-, strategy-, transcript-)
     let prefixes = ["summary-", "meeting-", "strategy-", "transcript-", "call-"];
@@ -285,8 +290,7 @@ fn extract_title_from_filename(filename: &str, date_re: &Regex) -> String {
             match chars.next() {
                 None => String::new(),
                 Some(first) => {
-                    first.to_uppercase().collect::<String>()
-                        + &chars.as_str().to_lowercase()
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
                 }
             }
         })
@@ -406,26 +410,38 @@ mod tests {
         );
 
         assert_eq!(
-            extract_title_from_filename("2025-06-23-strategy-shobha-airbnb-account-strategy-discussion.md", &date_re),
+            extract_title_from_filename(
+                "2025-06-23-strategy-shobha-airbnb-account-strategy-discussion.md",
+                &date_re
+            ),
             "Shobha Aperture Media Account Strategy Discussion"
         );
 
         assert_eq!(
-            extract_title_from_filename(
-                "2026-02-05 SlackWPVIP-sync_-transcript.md",
-                &date_re
-            ),
+            extract_title_from_filename("2026-02-05 SlackWPVIP-sync_-transcript.md", &date_re),
             "Slackwpvip Sync Transcript"
         );
     }
 
     #[test]
     fn test_slug_to_entity_id() {
-        assert_eq!(slug_to_entity_id("Bring-a-Trailer", "account"), "autoco");
-        assert_eq!(slug_to_entity_id("AutoCo-(bat)", "account"), "autoco-bat");
+        assert_eq!(
+            slug_to_entity_id("Bring-a-Trailer", "account"),
+            "autoco"
+        );
+        assert_eq!(
+            slug_to_entity_id("AutoCo-(bat)", "account"),
+            "autoco-bat"
+        );
         assert_eq!(slug_to_entity_id("Harbor Group", "account"), "hilton");
-        assert_eq!(slug_to_entity_id("Test-Software", "account"), "test-software");
+        assert_eq!(
+            slug_to_entity_id("Test-Software", "account"),
+            "test-software"
+        );
         // Parentheses and special chars become hyphens, then deduplicated
-        assert_eq!(slug_to_entity_id("Salesforce (Digital Marketing)", "account"), "salesforce-digital-marketing");
+        assert_eq!(
+            slug_to_entity_id("Salesforce (Digital Marketing)", "account"),
+            "salesforce-digital-marketing"
+        );
     }
 }

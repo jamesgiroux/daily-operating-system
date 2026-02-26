@@ -151,6 +151,7 @@
   --z-atmosphere: 0; /* Background layer */
   --z-page-content: 1; /* Main content, above atmosphere */
   --z-app-shell: 100; /* Folio bar, nav island, top-level UI */
+  --z-lock: 1000; /* App lock overlay — above everything (I465) */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

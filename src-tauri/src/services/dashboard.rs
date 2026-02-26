@@ -5,15 +5,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_directive,
-    load_schedule_json, DataFreshness,
+    check_data_freshness, load_actions_json, load_directive, load_schedule_json, DataFreshness,
 };
 use crate::parser::count_inbox;
 use crate::state::AppState;
 use crate::types::{
-    Action, CalendarEvent, DailyFocus, DashboardData, DayOverview, DayStats,
-    EmailSyncStage, EmailSyncState, EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus, Priority,
-    WeekOverview,
+    Action, CalendarEvent, DailyFocus, DashboardData, DayOverview, DayStats, EmailSyncStage,
+    EmailSyncState, EmailSyncStatus, GoogleAuthStatus, Meeting, MeetingType, OverlayStatus,
+    Priority, WeekOverview,
 };
 
 /// Result type for dashboard data loading
@@ -84,80 +83,82 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         .format("%Y-%m-%d")
         .to_string();
 
-    let snap = match state.db_read(move |db| {
-        let conn = db.conn_ref();
+    let snap = match state
+        .db_read(move |db| {
+            let conn = db.conn_ref();
 
-        // 1. Query today's meetings from meetings_history
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, title, meeting_type, start_time, end_time, attendees,
+            // 1. Query today's meetings from meetings_history
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, title, meeting_type, start_time, end_time, attendees,
                         notes_path, summary, created_at, calendar_event_id, description,
                         prep_context_json, intelligence_state
                  FROM meetings_history
                  WHERE start_time >= ?1 AND start_time < ?2
                  ORDER BY start_time ASC",
-            )
-            .map_err(|e| e.to_string())?;
-        let meeting_rows = stmt
-            .query_map(rusqlite::params![today, tomorrow], |row| {
-                Ok(crate::db::DbMeeting {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    meeting_type: row.get(2)?,
-                    start_time: row.get(3)?,
-                    end_time: row.get(4)?,
-                    attendees: row.get(5)?,
-                    notes_path: row.get(6)?,
-                    summary: row.get(7)?,
-                    created_at: row.get(8)?,
-                    calendar_event_id: row.get(9)?,
-                    description: row.get(10)?,
-                    prep_context_json: row.get(11)?,
-                    user_agenda_json: None,
-                    user_notes: None,
-                    prep_frozen_json: None,
-                    prep_frozen_at: None,
-                    prep_snapshot_path: None,
-                    prep_snapshot_hash: None,
-                    transcript_path: None,
-                    transcript_processed_at: None,
-                    intelligence_state: row.get(12)?,
-                    intelligence_quality: None,
-                    last_enriched_at: None,
-                    signal_count: None,
-                    has_new_signals: None,
-                    last_viewed_at: None,
+                )
+                .map_err(|e| e.to_string())?;
+            let meeting_rows = stmt
+                .query_map(rusqlite::params![today, tomorrow], |row| {
+                    Ok(crate::db::DbMeeting {
+                        id: row.get(0)?,
+                        title: row.get(1)?,
+                        meeting_type: row.get(2)?,
+                        start_time: row.get(3)?,
+                        end_time: row.get(4)?,
+                        attendees: row.get(5)?,
+                        notes_path: row.get(6)?,
+                        summary: row.get(7)?,
+                        created_at: row.get(8)?,
+                        calendar_event_id: row.get(9)?,
+                        description: row.get(10)?,
+                        prep_context_json: row.get(11)?,
+                        user_agenda_json: None,
+                        user_notes: None,
+                        prep_frozen_json: None,
+                        prep_frozen_at: None,
+                        prep_snapshot_path: None,
+                        prep_snapshot_hash: None,
+                        transcript_path: None,
+                        transcript_processed_at: None,
+                        intelligence_state: row.get(12)?,
+                        intelligence_quality: None,
+                        last_enriched_at: None,
+                        signal_count: None,
+                        has_new_signals: None,
+                        last_viewed_at: None,
+                    })
                 })
-            })
-            .map_err(|e| e.to_string())?;
-        let meetings: Vec<crate::db::DbMeeting> =
-            meeting_rows.filter_map(|r| r.ok()).collect();
+                .map_err(|e| e.to_string())?;
+            let meetings: Vec<crate::db::DbMeeting> = meeting_rows.filter_map(|r| r.ok()).collect();
 
-        if meetings.is_empty() {
-            return Ok(None);
-        }
+            if meetings.is_empty() {
+                return Ok(None);
+            }
 
-        // 2. Get actions
-        let actions = db.get_non_briefing_pending_actions().unwrap_or_default();
-        let focus_candidates = db.get_focus_candidate_actions(7).unwrap_or_default();
+            // 2. Get actions
+            let actions = db.get_non_briefing_pending_actions().unwrap_or_default();
+            let focus_candidates = db.get_focus_candidate_actions(7).unwrap_or_default();
 
-        // 3. Get entity map and intelligence qualities
-        let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-        let entity_map = db.get_meeting_entity_map(&meeting_ids).unwrap_or_default();
-        let mut iq_map = HashMap::new();
-        for mid in &meeting_ids {
-            let q = crate::intelligence::assess_intelligence_quality(db, mid);
-            iq_map.insert(mid.clone(), q);
-        }
+            // 3. Get entity map and intelligence qualities
+            let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
+            let entity_map = db.get_meeting_entity_map(&meeting_ids).unwrap_or_default();
+            let mut iq_map = HashMap::new();
+            for mid in &meeting_ids {
+                let q = crate::intelligence::assess_intelligence_quality(db, mid);
+                iq_map.insert(mid.clone(), q);
+            }
 
-        Ok(Some(LiveSnapshot {
-            meetings,
-            actions,
-            focus_candidates,
-            entity_map,
-            intelligence_qualities: iq_map,
-        }))
-    }).await {
+            Ok(Some(LiveSnapshot {
+                meetings,
+                actions,
+                focus_candidates,
+                entity_map,
+                intelligence_qualities: iq_map,
+            }))
+        })
+        .await
+    {
         Ok(Some(snap)) => snap,
         _ => return None,
     };
@@ -172,7 +173,9 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
 
             // Format time as "h:mm AM" from ISO start_time
             let time = chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%dT%H:%M:%S")
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%d %H:%M:%S"))
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%d %H:%M:%S")
+                })
                 .map(|dt| dt.format("%-I:%M %p").to_string())
                 .unwrap_or_else(|_| dbm.start_time.clone());
 
@@ -265,16 +268,15 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         .parse()
         .unwrap_or(chrono_tz::America::New_York);
     let today_date = chrono::Local::now().date_naive();
-    let capacity = crate::focus_capacity::compute_focus_capacity(
-        crate::focus_capacity::FocusCapacityInput {
+    let capacity =
+        crate::focus_capacity::compute_focus_capacity(crate::focus_capacity::FocusCapacityInput {
             meetings: meetings.clone(),
             source: crate::focus_capacity::FocusCapacitySource::Live,
             timezone: tz,
             work_hours_start: config.google.work_hours_start,
             work_hours_end: config.google.work_hours_end,
             day_date: today_date,
-        },
-    );
+        });
     let focus = if snap.focus_candidates.is_empty() {
         None
     } else {
@@ -367,14 +369,15 @@ pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
 }
 
 async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> DashboardResult {
-        // Get Google auth status for frontend
-        let google_auth = state
-            .calendar.google_auth
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or(GoogleAuthStatus::NotConfigured);
-        // Get config
-        let config = match state.config.read() {
+    // Get Google auth status for frontend
+    let google_auth = state
+        .calendar
+        .google_auth
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or(GoogleAuthStatus::NotConfigured);
+    // Get config
+    let config = match state.config.read() {
             Ok(guard) => match guard.clone() {
                 Some(c) => c,
                 None => {
@@ -390,75 +393,76 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             }
         };
 
-        let workspace = Path::new(&config.workspace_path);
-        let today_dir = workspace.join("_today");
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
 
-        // Check if _today directory exists
-        let today_dir_exists = today_dir.exists();
-        let data_dir = today_dir.join("data");
-        let data_dir_exists = today_dir_exists && data_dir.exists();
+    // Check if _today directory exists
+    let today_dir_exists = today_dir.exists();
+    let data_dir = today_dir.join("data");
+    let data_dir_exists = today_dir_exists && data_dir.exists();
 
-        // Load from JSON (happy path)
-        let schedule_result = if data_dir_exists {
-            load_schedule_json(&today_dir).ok()
-        } else {
-            None
-        };
+    // Load from JSON (happy path)
+    let schedule_result = if data_dir_exists {
+        load_schedule_json(&today_dir).ok()
+    } else {
+        None
+    };
 
-        // If schedule.json is unavailable, try building from live SQLite data
-        let (overview, briefing_meetings) = match schedule_result {
-            Some(data) => data,
-            None => {
-                // Fallback: build dashboard from SQLite meetings_history
-                if let Some(live_data) = build_live_dashboard_data(state).await {
-                    if !live_data.meetings.is_empty() {
-                        log::info!(
-                            "schedule.json unavailable — serving {} meetings from SQLite",
-                            live_data.meetings.len()
-                        );
-                        return DashboardResult::Success {
-                            data: live_data,
-                            freshness: DataFreshness::Unknown,
-                            google_auth,
-                        };
-                    }
+    // If schedule.json is unavailable, try building from live SQLite data
+    let (overview, briefing_meetings) = match schedule_result {
+        Some(data) => data,
+        None => {
+            // Fallback: build dashboard from SQLite meetings_history
+            if let Some(live_data) = build_live_dashboard_data(state).await {
+                if !live_data.meetings.is_empty() {
+                    log::info!(
+                        "schedule.json unavailable — serving {} meetings from SQLite",
+                        live_data.meetings.len()
+                    );
+                    return DashboardResult::Success {
+                        data: live_data,
+                        freshness: DataFreshness::Unknown,
+                        google_auth,
+                    };
                 }
-                return DashboardResult::Empty {
-                    message: "Your daily briefing will appear here once generated.".to_string(),
-                    google_auth,
-                };
             }
-        };
-
-        // Merge briefing meetings with live calendar events (ADR-0032)
-        let live_events = state
-            .calendar.events
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tz: chrono_tz::Tz = config
-            .schedules
-            .today
-            .timezone
-            .parse()
-            .unwrap_or(chrono_tz::America::New_York);
-        let mut meetings =
-            crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
-
-        // Consolidate all dashboard DB reads into a single lock acquisition (I235).
-        // This reduces lock contention and improves dashboard load latency.
-        let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-        struct DashboardDbSnapshot {
-            reviewed: Option<HashMap<String, String>>,
-            entity_map: Option<HashMap<String, Vec<crate::types::LinkedEntity>>>,
-            accounts_with_domains: Option<Vec<(crate::db::DbAccount, Vec<String>)>>,
-            non_briefing_actions: Option<Vec<crate::db::DbAction>>,
-            focus_candidates: Option<Vec<crate::db::DbAction>>,
-            intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
+            return DashboardResult::Empty {
+                message: "Your daily briefing will appear here once generated.".to_string(),
+                google_auth,
+            };
         }
+    };
 
-        let meeting_ids_clone = meeting_ids.clone();
-        let db_snapshot = match state.db_read(move |db| {
+    // Merge briefing meetings with live calendar events (ADR-0032)
+    let live_events = state
+        .calendar
+        .events
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    let tz: chrono_tz::Tz = config
+        .schedules
+        .today
+        .timezone
+        .parse()
+        .unwrap_or(chrono_tz::America::New_York);
+    let mut meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
+
+    // Consolidate all dashboard DB reads into a single lock acquisition (I235).
+    // This reduces lock contention and improves dashboard load latency.
+    let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
+    struct DashboardDbSnapshot {
+        reviewed: Option<HashMap<String, String>>,
+        entity_map: Option<HashMap<String, Vec<crate::types::LinkedEntity>>>,
+        accounts_with_domains: Option<Vec<(crate::db::DbAccount, Vec<String>)>>,
+        non_briefing_actions: Option<Vec<crate::db::DbAction>>,
+        focus_candidates: Option<Vec<crate::db::DbAction>>,
+        intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
+    }
+
+    let meeting_ids_clone = meeting_ids.clone();
+    let db_snapshot = match state
+        .db_read(move |db| {
             let mut iq_map = HashMap::new();
             for mid in &meeting_ids_clone {
                 let q = crate::intelligence::assess_intelligence_quality(db, mid);
@@ -472,209 +476,222 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 focus_candidates: db.get_focus_candidate_actions(7).ok(),
                 intelligence_qualities: iq_map,
             })
-        }).await {
-            Ok(snap) => Some(snap),
-            Err(_) => {
-                *db_busy = true;
-                None
-            }
-        };
+        })
+        .await
+    {
+        Ok(snap) => Some(snap),
+        Err(_) => {
+            *db_busy = true;
+            None
+        }
+    };
 
-        // Apply DB data to meetings (outside the lock)
-        if let Some(ref snap) = db_snapshot {
-            // Annotate meetings with prep-reviewed state (ADR-0033)
-            if let Some(ref reviewed) = snap.reviewed {
-                for m in &mut meetings {
-                    if reviewed.contains_key(&m.id) {
-                        m.prep_reviewed = Some(true);
-                    }
+    // Apply DB data to meetings (outside the lock)
+    if let Some(ref snap) = db_snapshot {
+        // Annotate meetings with prep-reviewed state (ADR-0033)
+        if let Some(ref reviewed) = snap.reviewed {
+            for m in &mut meetings {
+                if reviewed.contains_key(&m.id) {
+                    m.prep_reviewed = Some(true);
+                }
+            }
+        }
+
+        // Annotate meetings with linked entities (I52)
+        if let Some(ref entity_map) = snap.entity_map {
+            for m in &mut meetings {
+                if let Some(entities) = entity_map.get(&m.id) {
+                    let entities_vec: Vec<crate::types::LinkedEntity> = entities.clone();
+                    m.linked_entities = Some(entities_vec);
+                }
+            }
+        }
+
+        // Flag meetings matching archived accounts for unarchive suggestion (I161)
+        if let Some(ref accounts_with_domains) = snap.accounts_with_domains {
+            let mut archived = Vec::new();
+            let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
+            for (account, domains) in accounts_with_domains {
+                if account.archived {
+                    let domain_set: HashSet<String> =
+                        domains.iter().map(|d| d.to_lowercase()).collect();
+                    domains_by_account.insert(account.id.clone(), domain_set);
+                    archived.push(account);
                 }
             }
 
-            // Annotate meetings with linked entities (I52)
-            if let Some(ref entity_map) = snap.entity_map {
-                for m in &mut meetings {
-                    if let Some(entities) = entity_map.get(&m.id) {
-                        let entities_vec: Vec<crate::types::LinkedEntity> = entities.clone();
-                        m.linked_entities = Some(entities_vec);
+            let archived_ids: HashSet<String> =
+                archived.iter().map(|a| a.id.to_lowercase()).collect();
+            let live_domains = build_live_event_domain_map(&live_events);
+            for m in &mut meetings {
+                let linked_account_id = m
+                    .linked_entities
+                    .as_ref()
+                    .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
+                    .map(|e| e.id.clone());
+                let linked_account_name = m
+                    .linked_entities
+                    .as_ref()
+                    .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
+                    .map(|e| e.name.clone());
+
+                if let Some(ref account_id) = linked_account_id {
+                    if !archived_ids.contains(&account_id.to_lowercase()) {
+                        continue;
                     }
                 }
-            }
 
-            // Flag meetings matching archived accounts for unarchive suggestion (I161)
-            if let Some(ref accounts_with_domains) = snap.accounts_with_domains {
-                let mut archived = Vec::new();
-                let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
-                for (account, domains) in accounts_with_domains {
-                    if account.archived {
-                        let domain_set: HashSet<String> =
-                            domains.iter().map(|d| d.to_lowercase()).collect();
-                        domains_by_account.insert(account.id.clone(), domain_set);
-                        archived.push(account);
+                let account_hint_key = linked_account_name
+                    .as_deref()
+                    .map(normalize_match_key)
+                    .unwrap_or_default();
+                let account_id_key = linked_account_id
+                    .as_deref()
+                    .map(normalize_match_key)
+                    .unwrap_or_default();
+                let meeting_domains = m
+                    .calendar_event_id
+                    .as_ref()
+                    .and_then(|id| live_domains.get(id))
+                    .or_else(|| live_domains.get(&m.id));
+
+                let mut best: Option<(i32, String, String)> = None;
+                for archived_account in &archived {
+                    let mut score = 0i32;
+                    let archived_id_key = normalize_match_key(&archived_account.id);
+                    let archived_name_key = normalize_match_key(&archived_account.name);
+
+                    if !account_id_key.is_empty() && account_id_key == archived_id_key {
+                        score = score.max(100);
                     }
-                }
-
-                let archived_ids: HashSet<String> =
-                    archived.iter().map(|a| a.id.to_lowercase()).collect();
-                let live_domains = build_live_event_domain_map(&live_events);
-                for m in &mut meetings {
-                    let linked_account_id = m.linked_entities.as_ref()
-                        .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
-                        .map(|e| e.id.clone());
-                    let linked_account_name = m.linked_entities.as_ref()
-                        .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
-                        .map(|e| e.name.clone());
-
-                    if let Some(ref account_id) = linked_account_id {
-                        if !archived_ids.contains(&account_id.to_lowercase()) {
-                            continue;
-                        }
+                    if !account_hint_key.is_empty()
+                        && (account_hint_key == archived_id_key
+                            || account_hint_key == archived_name_key)
+                    {
+                        score = score.max(90);
                     }
-
-                    let account_hint_key = linked_account_name
-                        .as_deref()
-                        .map(normalize_match_key)
-                        .unwrap_or_default();
-                    let account_id_key = linked_account_id
-                        .as_deref()
-                        .map(normalize_match_key)
-                        .unwrap_or_default();
-                    let meeting_domains = m
-                        .calendar_event_id
-                        .as_ref()
-                        .and_then(|id| live_domains.get(id))
-                        .or_else(|| live_domains.get(&m.id));
-
-                    let mut best: Option<(i32, String, String)> = None;
-                    for archived_account in &archived {
-                        let mut score = 0i32;
-                        let archived_id_key = normalize_match_key(&archived_account.id);
-                        let archived_name_key = normalize_match_key(&archived_account.name);
-
-                        if !account_id_key.is_empty() && account_id_key == archived_id_key {
-                            score = score.max(100);
-                        }
-                        if !account_hint_key.is_empty()
-                            && (account_hint_key == archived_id_key
-                                || account_hint_key == archived_name_key)
+                    if let Some(domains) = meeting_domains {
+                        if let Some(account_domains) = domains_by_account.get(&archived_account.id)
                         {
-                            score = score.max(90);
-                        }
-                        if let Some(domains) = meeting_domains {
-                            if let Some(account_domains) =
-                                domains_by_account.get(&archived_account.id)
+                            if !account_domains.is_empty()
+                                && domains.iter().any(|d| account_domains.contains(d))
                             {
-                                if !account_domains.is_empty()
-                                    && domains.iter().any(|d| account_domains.contains(d))
-                                {
-                                    score = score.max(80);
-                                }
+                                score = score.max(80);
                             }
                         }
-
-                        if score == 0 {
-                            continue;
-                        }
-                        let tie = archived_account.id.to_lowercase();
-                        let candidate = (score, tie.clone(), archived_account.id.clone());
-                        if best
-                            .as_ref()
-                            .map(|(s, t, _)| score > *s || (score == *s && tie < *t))
-                            .unwrap_or(true)
-                        {
-                            best = Some(candidate);
-                        }
                     }
 
-                    if let Some((score, _, account_id)) = best {
-                        if score >= 80 {
-                            m.suggested_unarchive_account_id = Some(account_id);
-                        }
+                    if score == 0 {
+                        continue;
+                    }
+                    let tie = archived_account.id.to_lowercase();
+                    let candidate = (score, tie.clone(), archived_account.id.clone());
+                    if best
+                        .as_ref()
+                        .map(|(s, t, _)| score > *s || (score == *s && tie < *t))
+                        .unwrap_or(true)
+                    {
+                        best = Some(candidate);
+                    }
+                }
+
+                if let Some((score, _, account_id)) = best {
+                    if score >= 80 {
+                        m.suggested_unarchive_account_id = Some(account_id);
                     }
                 }
             }
         }
+    }
 
-        // Annotate meetings with intelligence quality from lifecycle assessment (I329)
-        if let Some(ref snap) = db_snapshot {
-            for m in &mut meetings {
-                if let Some(q) = snap.intelligence_qualities.get(&m.id) {
-                    m.intelligence_quality = Some(q.clone());
+    // Annotate meetings with intelligence quality from lifecycle assessment (I329)
+    if let Some(ref snap) = db_snapshot {
+        for m in &mut meetings {
+            if let Some(q) = snap.intelligence_qualities.get(&m.id) {
+                m.intelligence_quality = Some(q.clone());
+            }
+        }
+    }
+
+    let mut actions = load_actions_json(&today_dir).unwrap_or_default();
+
+    // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
+    if let Some(ref snap) = db_snapshot {
+        if let Some(ref db_actions) = snap.non_briefing_actions {
+            let json_titles: HashSet<String> = actions
+                .iter()
+                .map(|a| a.title.to_lowercase().trim().to_string())
+                .collect();
+            for dba in db_actions {
+                if !json_titles.contains(dba.title.to_lowercase().trim()) {
+                    let priority = match dba.priority.as_str() {
+                        "P1" => Priority::P1,
+                        "P3" => Priority::P3,
+                        _ => Priority::P2,
+                    };
+                    actions.push(Action {
+                        id: dba.id.clone(),
+                        title: dba.title.clone(),
+                        account: dba.account_id.clone(),
+                        due_date: dba.due_date.clone(),
+                        priority,
+                        status: crate::types::ActionStatus::Pending,
+                        is_overdue: None,
+                        context: dba.context.clone(),
+                        source: dba.source_label.clone(),
+                        days_overdue: None,
+                    });
                 }
             }
         }
+    }
 
-        let mut actions = load_actions_json(&today_dir).unwrap_or_default();
-
-        // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
-        if let Some(ref snap) = db_snapshot {
-            if let Some(ref db_actions) = snap.non_briefing_actions {
-                let json_titles: HashSet<String> = actions
+    // I368: Try DB first for enriched emails, fall back to JSON
+    let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
+        let mut db_emails: Vec<crate::types::Email> = state
+            .db_read(|db| {
+                let rows = db.get_all_active_emails().map_err(|e| e.to_string())?;
+                if rows.is_empty() {
+                    return Ok(Vec::new());
+                }
+                // Batch-resolve entity names (same approach as emails service)
+                let entity_ids: std::collections::HashSet<String> =
+                    rows.iter().filter_map(|e| e.entity_id.clone()).collect();
+                let mut entity_names: std::collections::HashMap<String, String> =
+                    std::collections::HashMap::new();
+                for eid in &entity_ids {
+                    if let Ok(Some(a)) = db.get_account(eid) {
+                        entity_names.insert(eid.clone(), a.name);
+                    } else if let Ok(Some(p)) = db.get_person(eid) {
+                        // Find the most relevant linked account using email context
+                        let email_context: String = rows
+                            .iter()
+                            .filter(|e| e.entity_id.as_deref() == Some(eid.as_str()))
+                            .filter_map(|e| {
+                                e.contextual_summary.as_deref().or(e.subject.as_deref())
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                            .to_lowercase();
+                        let display = crate::services::emails::best_account_for_person(
+                            db,
+                            eid,
+                            &email_context,
+                        )
+                        .unwrap_or(p.name);
+                        entity_names.insert(eid.clone(), display);
+                    } else if let Ok(Some(p)) = db.get_project(eid) {
+                        entity_names.insert(eid.clone(), p.name);
+                    }
+                }
+                Ok(rows
                     .iter()
-                    .map(|a| a.title.to_lowercase().trim().to_string())
-                    .collect();
-                for dba in db_actions {
-                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                        let priority = match dba.priority.as_str() {
-                            "P1" => Priority::P1,
-                            "P3" => Priority::P3,
-                            _ => Priority::P2,
-                        };
-                        actions.push(Action {
-                            id: dba.id.clone(),
-                            title: dba.title.clone(),
-                            account: dba.account_id.clone(),
-                            due_date: dba.due_date.clone(),
-                            priority,
-                            status: crate::types::ActionStatus::Pending,
-                            is_overdue: None,
-                            context: dba.context.clone(),
-                            source: dba.source_label.clone(),
-                            days_overdue: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        // I368: Try DB first for enriched emails, fall back to JSON
-        let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
-            let mut db_emails: Vec<crate::types::Email> =
-                state.db_read(|db| {
-                    let rows = db.get_all_active_emails().map_err(|e| e.to_string())?;
-                    if rows.is_empty() {
-                        return Ok(Vec::new());
-                    }
-                    // Batch-resolve entity names (same approach as emails service)
-                    let entity_ids: std::collections::HashSet<String> = rows
-                        .iter()
-                        .filter_map(|e| e.entity_id.clone())
-                        .collect();
-                    let mut entity_names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-                    for eid in &entity_ids {
-                        if let Ok(Some(a)) = db.get_account(eid) {
-                            entity_names.insert(eid.clone(), a.name);
-                        } else if let Ok(Some(p)) = db.get_person(eid) {
-                            // Find the most relevant linked account using email context
-                            let email_context: String = rows.iter()
-                                .filter(|e| e.entity_id.as_deref() == Some(eid.as_str()))
-                                .filter_map(|e| e.contextual_summary.as_deref()
-                                    .or(e.subject.as_deref()))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                                .to_lowercase();
-                            let display = crate::services::emails::best_account_for_person(db, eid, &email_context)
-                                .unwrap_or(p.name);
-                            entity_names.insert(eid.clone(), display);
-                        } else if let Ok(Some(p)) = db.get_project(eid) {
-                            entity_names.insert(eid.clone(), p.name);
-                        }
-                    }
-                    Ok(rows.iter()
-                        .map(|dbe| {
-                            let entity_name = dbe.entity_id.as_ref()
-                                .and_then(|eid| entity_names.get(eid).cloned());
-                            crate::types::Email {
+                    .map(|dbe| {
+                        let entity_name = dbe
+                            .entity_id
+                            .as_ref()
+                            .and_then(|eid| entity_names.get(eid).cloned());
+                        crate::types::Email {
                             id: dbe.email_id.clone(),
                             sender: dbe.sender_name.clone().unwrap_or_default(),
                             sender_email: dbe.sender_email.clone().unwrap_or_default(),
@@ -699,101 +716,111 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             entity_name,
                             relevance_score: dbe.relevance_score,
                             score_reason: dbe.score_reason.clone(),
-                        }})
-                        .collect())
-                }).await.unwrap_or_default();
-
-            // I395: Sort by relevance score for briefing
-            db_emails.sort_by(|a, b| {
-                let sa = a.relevance_score.unwrap_or(-1.0);
-                let sb = b.relevance_score.unwrap_or(-1.0);
-                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
-            });
-
-            // I448: DB is source of truth — no JSON fallback (archived emails
-            // have resolved_at set and are correctly filtered by DB queries)
-            if !db_emails.is_empty() {
-                (Some(db_emails), None)
-            } else {
-                (None, None)
-            }
-        };
-
-        // Compute capacity-aware focus priorities (live, not a briefing artifact)
-        let focus: Option<DailyFocus> = (|| {
-            let today_date = chrono::Local::now().date_naive();
-            let capacity = crate::focus_capacity::compute_focus_capacity(
-                crate::focus_capacity::FocusCapacityInput {
-                    meetings: meetings.clone(),
-                    source: if live_events.is_empty() {
-                        crate::focus_capacity::FocusCapacitySource::BriefingFallback
-                    } else {
-                        crate::focus_capacity::FocusCapacitySource::Live
-                    },
-                    timezone: tz,
-                    work_hours_start: config.google.work_hours_start,
-                    work_hours_end: config.google.work_hours_end,
-                    day_date: today_date,
-                },
-            );
-            let candidates = match db_snapshot.as_ref().and_then(|s| s.focus_candidates.clone()) {
-                Some(c) => c,
-                None => return None,
-            };
-            let (prioritized, top_three, implications) =
-                crate::focus_prioritization::prioritize_actions(
-                    candidates,
-                    capacity.available_minutes,
-                );
-            Some(DailyFocus {
-                available_minutes: capacity.available_minutes,
-                deep_work_minutes: capacity.deep_work_minutes,
-                meeting_minutes: capacity.meeting_minutes,
-                meeting_count: capacity.meeting_count,
-                prioritized_actions: prioritized,
-                top_three,
-                implications,
-                available_blocks: capacity.available_blocks,
+                        }
+                    })
+                    .collect())
             })
-        })();
-
-        // Calculate stats (exclude cancelled meetings)
-        let inbox_count = count_inbox(workspace);
-        let active_meetings: Vec<_> = meetings
-            .iter()
-            .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
-            .collect();
-        let stats = DayStats {
-            total_meetings: active_meetings.len(),
-            customer_meetings: active_meetings
-                .iter()
-                .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
-                .count(),
-            actions_due: actions.len(),
-            inbox_count,
-        };
-
-        let freshness = check_data_freshness(&today_dir);
-
-        // Load replies_needed from directive (I355).
-        // I448: Directive narrative is baked into the file — build dynamically from real data.
-        let replies_needed = load_directive(&today_dir)
-            .map(|d| d.emails.replies_needed)
+            .await
             .unwrap_or_default();
 
-        let email_narrative: Option<String> = {
-            let email_count = emails.as_ref().map(|v| v.len()).unwrap_or(0);
-            if email_count == 0 {
-                None
-            } else {
-                // Count entities with meetings today
-                let entity_ids: Vec<String> = emails.as_ref()
-                    .map(|v| v.iter().filter_map(|e| e.entity_id.clone()).collect::<std::collections::HashSet<_>>().into_iter().collect())
-                    .unwrap_or_default();
-                let meeting_linked = if entity_ids.is_empty() {
-                    0usize
+        // I395: Sort by relevance score for briefing
+        db_emails.sort_by(|a, b| {
+            let sa = a.relevance_score.unwrap_or(-1.0);
+            let sb = b.relevance_score.unwrap_or(-1.0);
+            sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // I448: DB is source of truth — no JSON fallback (archived emails
+        // have resolved_at set and are correctly filtered by DB queries)
+        if !db_emails.is_empty() {
+            (Some(db_emails), None)
+        } else {
+            (None, None)
+        }
+    };
+
+    // Compute capacity-aware focus priorities (live, not a briefing artifact)
+    let focus: Option<DailyFocus> = (|| {
+        let today_date = chrono::Local::now().date_naive();
+        let capacity = crate::focus_capacity::compute_focus_capacity(
+            crate::focus_capacity::FocusCapacityInput {
+                meetings: meetings.clone(),
+                source: if live_events.is_empty() {
+                    crate::focus_capacity::FocusCapacitySource::BriefingFallback
                 } else {
-                    state.db_read(move |db| {
+                    crate::focus_capacity::FocusCapacitySource::Live
+                },
+                timezone: tz,
+                work_hours_start: config.google.work_hours_start,
+                work_hours_end: config.google.work_hours_end,
+                day_date: today_date,
+            },
+        );
+        let candidates = match db_snapshot
+            .as_ref()
+            .and_then(|s| s.focus_candidates.clone())
+        {
+            Some(c) => c,
+            None => return None,
+        };
+        let (prioritized, top_three, implications) =
+            crate::focus_prioritization::prioritize_actions(candidates, capacity.available_minutes);
+        Some(DailyFocus {
+            available_minutes: capacity.available_minutes,
+            deep_work_minutes: capacity.deep_work_minutes,
+            meeting_minutes: capacity.meeting_minutes,
+            meeting_count: capacity.meeting_count,
+            prioritized_actions: prioritized,
+            top_three,
+            implications,
+            available_blocks: capacity.available_blocks,
+        })
+    })();
+
+    // Calculate stats (exclude cancelled meetings)
+    let inbox_count = count_inbox(workspace);
+    let active_meetings: Vec<_> = meetings
+        .iter()
+        .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
+        .collect();
+    let stats = DayStats {
+        total_meetings: active_meetings.len(),
+        customer_meetings: active_meetings
+            .iter()
+            .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
+            .count(),
+        actions_due: actions.len(),
+        inbox_count,
+    };
+
+    let freshness = check_data_freshness(&today_dir);
+
+    // Load replies_needed from directive (I355).
+    // I448: Directive narrative is baked into the file — build dynamically from real data.
+    let replies_needed = load_directive(&today_dir)
+        .map(|d| d.emails.replies_needed)
+        .unwrap_or_default();
+
+    let email_narrative: Option<String> = {
+        let email_count = emails.as_ref().map(|v| v.len()).unwrap_or(0);
+        if email_count == 0 {
+            None
+        } else {
+            // Count entities with meetings today
+            let entity_ids: Vec<String> = emails
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .filter_map(|e| e.entity_id.clone())
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect()
+                })
+                .unwrap_or_default();
+            let meeting_linked = if entity_ids.is_empty() {
+                0usize
+            } else {
+                state.db_read(move |db| {
                         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
                         let start = format!("{}T00:00:00", today);
                         let end = format!("{}T23:59:59", today);
@@ -810,59 +837,71 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                         }).count();
                         Ok::<usize, String>(count)
                     }).await.unwrap_or(0)
-                };
-                if meeting_linked > 0 {
-                    Some(format!("{} threads in your inbox, {} linked to today's meetings.", email_count, meeting_linked))
-                } else {
-                    Some(format!("{} threads in your inbox.", email_count))
-                }
+            };
+            if meeting_linked > 0 {
+                Some(format!(
+                    "{} threads in your inbox, {} linked to today's meetings.",
+                    email_count, meeting_linked
+                ))
+            } else {
+                Some(format!("{} threads in your inbox.", email_count))
             }
-        };
-
-        // Fall back to DB enrichment stats when JSON sync status absent (I373)
-        let email_sync_fallback: Option<EmailSyncStatus> = if email_sync.is_none() {
-            match state.db_read(|db| db.get_email_sync_stats().map_err(|e| e.to_string())).await {
-                Ok(stats) => {
-                    stats.last_fetch_at.as_ref().map(|last| EmailSyncStatus {
-                        state: if stats.failed > 0 { EmailSyncState::Warning } else { EmailSyncState::Ok },
-                        stage: EmailSyncStage::Enrich,
-                        code: None,
-                        message: Some(format!("{}/{} ready", stats.enriched, stats.total)),
-                        using_last_known_good: None,
-                        can_retry: if stats.failed > 0 { Some(true) } else { None },
-                        last_attempt_at: Some(last.clone()),
-                        last_success_at: Some(last.clone()),
-                        enrichment_pending: Some(stats.pending as i64),
-                        enrichment_enriched: Some(stats.enriched as i64),
-                        enrichment_failed: Some(stats.failed as i64),
-                        total_active: Some(stats.total as i64),
-                    })
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
-
-        DashboardResult::Success {
-            data: DashboardData {
-                overview,
-                stats,
-                meetings,
-                actions,
-                emails,
-                email_sync: email_sync.or(email_sync_fallback),
-                focus,
-                email_narrative,
-                replies_needed,
-                user_domains: {
-                    let domains = config.resolved_user_domains();
-                    if domains.is_empty() { None } else { Some(domains) }
-                },
-            },
-            freshness,
-            google_auth,
         }
+    };
+
+    // Fall back to DB enrichment stats when JSON sync status absent (I373)
+    let email_sync_fallback: Option<EmailSyncStatus> = if email_sync.is_none() {
+        match state
+            .db_read(|db| db.get_email_sync_stats().map_err(|e| e.to_string()))
+            .await
+        {
+            Ok(stats) => stats.last_fetch_at.as_ref().map(|last| EmailSyncStatus {
+                state: if stats.failed > 0 {
+                    EmailSyncState::Warning
+                } else {
+                    EmailSyncState::Ok
+                },
+                stage: EmailSyncStage::Enrich,
+                code: None,
+                message: Some(format!("{}/{} ready", stats.enriched, stats.total)),
+                using_last_known_good: None,
+                can_retry: if stats.failed > 0 { Some(true) } else { None },
+                last_attempt_at: Some(last.clone()),
+                last_success_at: Some(last.clone()),
+                enrichment_pending: Some(stats.pending as i64),
+                enrichment_enriched: Some(stats.enriched as i64),
+                enrichment_failed: Some(stats.failed as i64),
+                total_active: Some(stats.total as i64),
+            }),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    DashboardResult::Success {
+        data: DashboardData {
+            overview,
+            stats,
+            meetings,
+            actions,
+            emails,
+            email_sync: email_sync.or(email_sync_fallback),
+            focus,
+            email_narrative,
+            replies_needed,
+            user_domains: {
+                let domains = config.resolved_user_domains();
+                if domains.is_empty() {
+                    None
+                } else {
+                    Some(domains)
+                }
+            },
+        },
+        freshness,
+        google_auth,
+    }
 }
 
 /// Get week overview data from workspace _today/data/ JSON files.
@@ -903,8 +942,11 @@ pub fn get_week_data(state: &AppState) -> WeekResult {
         if let Ok(db) = crate::db::ActionDb::open() {
             if let Ok(candidates) = db.get_focus_candidate_actions(7) {
                 for shape in shapes.iter_mut() {
-                    let available_minutes: u32 =
-                        shape.available_blocks.iter().map(|b| b.duration_minutes).sum();
+                    let available_minutes: u32 = shape
+                        .available_blocks
+                        .iter()
+                        .map(|b| b.duration_minutes)
+                        .sum();
 
                     let (prioritized, _top_three, implications) =
                         crate::focus_prioritization::prioritize_actions(
@@ -923,7 +965,12 @@ pub fn get_week_data(state: &AppState) -> WeekResult {
         let elapsed_ms = started.elapsed().as_millis();
         crate::latency::record_latency(command, elapsed_ms, budget_ms);
         if elapsed_ms > budget_ms {
-            log::warn!("{} exceeded latency budget: {}ms > {}ms", command, elapsed_ms, budget_ms);
+            log::warn!(
+                "{} exceeded latency budget: {}ms > {}ms",
+                command,
+                elapsed_ms,
+                budget_ms
+            );
         } else {
             log::debug!("{} completed in {}ms", command, elapsed_ms);
         }

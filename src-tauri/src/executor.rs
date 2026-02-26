@@ -83,12 +83,14 @@ impl Executor {
         if let Ok(guard) = self.state.db.lock() {
             if let Some(db) = guard.as_ref() {
                 // Account domains
-                if let Ok(rows) = db.conn_ref().prepare(
-                    "SELECT DISTINCT lower(domain) FROM account_domains"
-                ).and_then(|mut stmt| {
-                    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-                    Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
-                }) {
+                if let Ok(rows) = db
+                    .conn_ref()
+                    .prepare("SELECT DISTINCT lower(domain) FROM account_domains")
+                    .and_then(|mut stmt| {
+                        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                        Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                    })
+                {
                     domains.extend(rows);
                 }
                 // Person email domains
@@ -114,8 +116,13 @@ impl Executor {
         synthesis_pty: &PtyManager,
     ) -> Result<(), String> {
         let known_domains = self.build_known_domains();
-        match crate::workflow::deliver::enrich_emails(data_dir, extraction_pty, workspace, user_ctx, &known_domains)
-        {
+        match crate::workflow::deliver::enrich_emails(
+            data_dir,
+            extraction_pty,
+            workspace,
+            user_ctx,
+            &known_domains,
+        ) {
             Ok(()) => Ok(()),
             Err(err) if Self::is_model_unavailable_error(&err) => {
                 log::warn!(
@@ -202,11 +209,9 @@ impl Executor {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
 
-                    let person = sender_email.as_deref().and_then(|sender| {
-                        db.get_person_by_email_or_alias(sender)
-                            .ok()
-                            .flatten()
-                    });
+                    let person = sender_email
+                        .as_deref()
+                        .and_then(|sender| db.get_person_by_email_or_alias(sender).ok().flatten());
                     let person_id = person.as_ref().map(|p| p.id.clone());
 
                     let mut targets: HashSet<(String, String)> = HashSet::new();
@@ -215,7 +220,8 @@ impl Executor {
                     // Internal people are linked to many accounts as team members —
                     // fanning their email signals to all those accounts creates noise.
                     // For internal senders, fall through to domain-based attribution.
-                    let is_external = person.as_ref()
+                    let is_external = person
+                        .as_ref()
                         .map(|p| p.relationship == "external")
                         .unwrap_or(false);
 
@@ -223,8 +229,10 @@ impl Executor {
                         if let Some(ref pid) = person_id {
                             if let Ok(entities) = db.get_entities_for_person(pid) {
                                 for entity in entities {
-                                    targets
-                                        .insert((entity.id, entity.entity_type.as_str().to_string()));
+                                    targets.insert((
+                                        entity.id,
+                                        entity.entity_type.as_str().to_string(),
+                                    ));
                                 }
                             }
                         }
@@ -232,7 +240,10 @@ impl Executor {
 
                     if targets.is_empty() && !domain.is_empty() {
                         if let Ok(accounts) = db.lookup_account_candidates_by_domain(&domain) {
-                            for account in accounts.into_iter().filter(|a| !a.account_type.is_internal()) {
+                            for account in accounts
+                                .into_iter()
+                                .filter(|a| !a.account_type.is_internal())
+                            {
                                 targets.insert((account.id, "account".to_string()));
                             }
                         }
@@ -300,20 +311,19 @@ impl Executor {
                                 // Emit email_received for person entities to trigger hygiene rules
                                 if entity_type == "person" {
                                     if let Some(ref pid) = person_id {
-                                        let display_name = sender_email
-                                            .as_deref()
-                                            .and_then(|e| {
-                                                // Extract display name from "Name <email>" format
-                                                let trimmed = e.trim();
-                                                trimmed.find('<').and_then(|pos| {
-                                                    let name = trimmed[..pos].trim().trim_matches('"').trim();
-                                                    if name.is_empty() || !name.contains(' ') {
-                                                        None
-                                                    } else {
-                                                        Some(name.to_string())
-                                                    }
-                                                })
-                                            });
+                                        let display_name = sender_email.as_deref().and_then(|e| {
+                                            // Extract display name from "Name <email>" format
+                                            let trimmed = e.trim();
+                                            trimmed.find('<').and_then(|pos| {
+                                                let name =
+                                                    trimmed[..pos].trim().trim_matches('"').trim();
+                                                if name.is_empty() || !name.contains(' ') {
+                                                    None
+                                                } else {
+                                                    Some(name.to_string())
+                                                }
+                                            })
+                                        });
                                         let _ = crate::services::signals::emit(
                                             db,
                                             "person",
@@ -692,7 +702,11 @@ impl Executor {
                     enriched_count += 1;
                 }
                 crate::processor::enrich::EnrichResult::NeedsEntity { suggested_name, .. } => {
-                    log::info!("Enriched '{}' → needs entity assignment (suggested: '{}')", filename, suggested_name);
+                    log::info!(
+                        "Enriched '{}' → needs entity assignment (suggested: '{}')",
+                        filename,
+                        suggested_name
+                    );
                 }
                 crate::processor::enrich::EnrichResult::Error { message } => {
                     log::warn!("Enrichment failed for '{}': {}", filename, message);
@@ -1043,7 +1057,6 @@ impl Executor {
             let _ = self
                 .app_handle
                 .emit("operation-delivered", "emails-enriched");
-
         }
 
         // AI: Enrich prep agendas (feature-gated I39)
@@ -1191,7 +1204,8 @@ impl Executor {
         }
 
         // Step 2: Read refresh directive → build and write emails.json
-        let _email_ids = crate::google::deliver_from_refresh_directive(&data_dir, &self.app_handle)?;
+        let _email_ids =
+            crate::google::deliver_from_refresh_directive(&data_dir, &self.app_handle)?;
         let _ = self.app_handle.emit("operation-delivered", "emails");
         let _ = self.app_handle.emit("emails-updated", ());
 
@@ -1245,7 +1259,6 @@ impl Executor {
             .app_handle
             .emit("operation-delivered", "emails-enriched");
         let _ = self.app_handle.emit("emails-updated", ());
-
 
         // Wake the email poller so it resets its sleep timer
         self.state.integrations.email_poller_wake.notify_one();

@@ -107,7 +107,11 @@ pub fn correlate_post_meeting_emails_with_engine(
             })
             .to_string();
 
-            let entity_type = if account_id.is_some() { "account" } else { "meeting" };
+            let entity_type = if account_id.is_some() {
+                "account"
+            } else {
+                "meeting"
+            };
             let entity_id = account_id.as_deref().unwrap_or(meeting_id);
 
             if let Some(eng) = engine {
@@ -181,16 +185,15 @@ impl ActionDb {
         )?;
 
         let hours_param = format!("-{} hours", hours_ago);
-        let rows = stmt
-            .query_map(params![hours_param], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                ))
-            })?;
+        let rows = stmt.query_map(params![hours_param], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })?;
 
         let mut meetings = Vec::new();
         for row in rows {

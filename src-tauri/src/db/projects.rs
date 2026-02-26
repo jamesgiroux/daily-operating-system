@@ -288,11 +288,7 @@ impl ActionDb {
     }
 
     /// Remove a keyword from a project's keyword list (I305 — user curation).
-    pub fn remove_project_keyword(
-        &self,
-        project_id: &str,
-        keyword: &str,
-    ) -> Result<(), DbError> {
+    pub fn remove_project_keyword(&self, project_id: &str, keyword: &str) -> Result<(), DbError> {
         let current: Option<String> = self
             .conn
             .query_row(
@@ -318,11 +314,7 @@ impl ActionDb {
     }
 
     /// Remove a keyword from an account's keyword list (I305 — user curation).
-    pub fn remove_account_keyword(
-        &self,
-        account_id: &str,
-        keyword: &str,
-    ) -> Result<(), DbError> {
+    pub fn remove_account_keyword(&self, account_id: &str, keyword: &str) -> Result<(), DbError> {
         let current: Option<String> = self
             .conn
             .query_row(
@@ -640,6 +632,4 @@ impl ActionDb {
 
         Ok(count)
     }
-
-
 }
