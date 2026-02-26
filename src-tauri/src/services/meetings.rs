@@ -202,6 +202,14 @@ pub fn load_meeting_prep_from_sources(
             }
         }
     }
+    let rebuild_in_progress = meeting.prep_frozen_json.is_none()
+        && matches!(
+            meeting.intelligence_state.as_deref(),
+            Some("refreshing") | Some("enriching")
+        );
+    if rebuild_in_progress {
+        return None;
+    }
     // Source 2: disk prep file (daily pipeline output)
     if let Ok(prep) = crate::json_loader::load_prep_json(today_dir, &meeting.id) {
         return Some(prep);
@@ -253,8 +261,289 @@ pub fn load_meeting_prep_from_sources(
     None
 }
 
+#[derive(Debug, Clone)]
+enum MeetingEntityMutation {
+    Replace {
+        entity_id: Option<String>,
+        entity_type: String,
+        meeting_title: String,
+        start_time: String,
+        meeting_type: String,
+    },
+    Add {
+        entity_id: String,
+        entity_type: String,
+        meeting_title: String,
+        start_time: String,
+        meeting_type: String,
+    },
+    Remove {
+        entity_id: String,
+        entity_type: String,
+    },
+}
+
+#[derive(Debug, Default)]
+struct MeetingEntityMutationOutcome {
+    old_entity_ids: Vec<(String, String)>,
+    entities_to_refresh: Vec<(String, String)>,
+    correction_target: Option<(String, String)>,
+    keyword_target: Option<(String, String, String)>,
+}
+
+fn cascade_targets<'a>(
+    entity_id: Option<&'a str>,
+    entity_type: &str,
+) -> (Option<&'a str>, Option<&'a str>) {
+    match entity_type {
+        "account" => (entity_id, None),
+        "project" => (None, entity_id),
+        _ => (entity_id, None),
+    }
+}
+
+/// Single orchestration path for meeting-entity mutations.
+///
+/// Performs mutation, prep invalidation, immediate mechanical rebuild, and
+/// async entity intelligence refresh queuing. Falls back to prep queue when
+/// immediate rebuild fails.
+async fn mutate_meeting_entities_and_refresh_briefing(
+    state: &AppState,
+    meeting_id: &str,
+    mutation: MeetingEntityMutation,
+) -> Result<(), String> {
+    let meeting_id_s = meeting_id.to_string();
+
+    let mutation_result = state
+        .db_write({
+            let meeting_id = meeting_id_s.clone();
+            let mutation = mutation.clone();
+            move |db| {
+                let mut result = MeetingEntityMutationOutcome {
+                    old_entity_ids: db
+                        .get_meeting_entities(&meeting_id)
+                        .map_err(|e| e.to_string())?
+                        .into_iter()
+                        .map(|e| (e.id, e.entity_type.as_str().to_string()))
+                        .collect(),
+                    ..Default::default()
+                };
+
+                match mutation {
+                    MeetingEntityMutation::Replace {
+                        entity_id,
+                        entity_type,
+                        meeting_title,
+                        start_time,
+                        meeting_type,
+                    } => {
+                        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+                            id: &meeting_id,
+                            title: &meeting_title,
+                            meeting_type: &meeting_type,
+                            start_time: &start_time,
+                            end_time: None,
+                            calendar_event_id: None,
+                            attendees: None,
+                            description: None,
+                        })
+                        .map_err(|e| e.to_string())?;
+
+                        db.clear_meeting_entities(&meeting_id)
+                            .map_err(|e| e.to_string())?;
+
+                        if let Some(ref eid) = entity_id {
+                            db.link_meeting_entity(&meeting_id, eid, &entity_type)
+                                .map_err(|e| e.to_string())?;
+                        }
+
+                        let (cascade_account, cascade_project) =
+                            cascade_targets(entity_id.as_deref(), &entity_type);
+                        db.cascade_meeting_entity_to_actions(
+                            &meeting_id,
+                            cascade_account,
+                            cascade_project,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        db.cascade_meeting_entity_to_captures(
+                            &meeting_id,
+                            cascade_account,
+                            cascade_project,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        db.cascade_meeting_entity_to_people(
+                            &meeting_id,
+                            cascade_account,
+                            cascade_project,
+                        )
+                        .map_err(|e| e.to_string())?;
+
+                        result
+                            .entities_to_refresh
+                            .extend(result.old_entity_ids.clone());
+
+                        if let Some(ref eid) = entity_id {
+                            result
+                                .entities_to_refresh
+                                .push((eid.clone(), entity_type.clone()));
+                            result.correction_target = Some((eid.clone(), entity_type.clone()));
+                            if entity_type == "account" || entity_type == "project" {
+                                result.keyword_target =
+                                    Some((eid.clone(), entity_type, meeting_title));
+                            }
+                        }
+                    }
+                    MeetingEntityMutation::Add {
+                        entity_id,
+                        entity_type,
+                        meeting_title,
+                        start_time,
+                        meeting_type,
+                    } => {
+                        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+                            id: &meeting_id,
+                            title: &meeting_title,
+                            meeting_type: &meeting_type,
+                            start_time: &start_time,
+                            end_time: None,
+                            calendar_event_id: None,
+                            attendees: None,
+                            description: None,
+                        })
+                        .map_err(|e| e.to_string())?;
+
+                        db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
+                            .map_err(|e| e.to_string())?;
+
+                        let (cascade_account, cascade_project) =
+                            cascade_targets(Some(entity_id.as_str()), &entity_type);
+                        db.cascade_meeting_entity_to_people(
+                            &meeting_id,
+                            cascade_account,
+                            cascade_project,
+                        )
+                        .map_err(|e| e.to_string())?;
+
+                        result.entities_to_refresh.push((entity_id, entity_type));
+                    }
+                    MeetingEntityMutation::Remove {
+                        entity_id,
+                        entity_type,
+                    } => {
+                        let _ = crate::signals::feedback::record_removal(
+                            db,
+                            &meeting_id,
+                            &entity_id,
+                            &entity_type,
+                        );
+                        db.unlink_meeting_entity(&meeting_id, &entity_id)
+                            .map_err(|e| e.to_string())?;
+                        result.entities_to_refresh.push((entity_id, entity_type));
+                    }
+                }
+
+                if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
+                    let _ = std::fs::remove_file(&old_path);
+                }
+                let _ = db.update_intelligence_state(&meeting_id, "refreshing", None, None);
+
+                Ok::<MeetingEntityMutationOutcome, String>(result)
+            }
+        })
+        .await?;
+
+    if mutation_result.correction_target.is_some() || mutation_result.keyword_target.is_some() {
+        let meeting_id = meeting_id_s.clone();
+        let old_ids = mutation_result.old_entity_ids.clone();
+        let correction_target = mutation_result.correction_target.clone();
+        let keyword_target = mutation_result.keyword_target.clone();
+        let _ = state
+            .db_write(move |db| {
+                if let Some((new_id, entity_type)) = correction_target {
+                    if !old_ids.is_empty() && old_ids.iter().all(|(id, _)| id != &new_id) {
+                        let _ = crate::signals::feedback::record_correction(
+                            db,
+                            &meeting_id,
+                            &old_ids,
+                            &new_id,
+                            &entity_type,
+                        );
+                    }
+                }
+
+                if let Some((entity_id, entity_type, meeting_title)) = keyword_target {
+                    if entity_type == "account" || entity_type == "project" {
+                        let _ = crate::services::entities::auto_extract_title_keywords(
+                            db,
+                            &entity_id,
+                            &entity_type,
+                            &meeting_title,
+                        );
+                    }
+                }
+                Ok::<(), String>(())
+            })
+            .await;
+    }
+
+    let mut entities_to_refresh = mutation_result.entities_to_refresh;
+    entities_to_refresh.sort();
+    entities_to_refresh.dedup();
+    if !entities_to_refresh.is_empty() {
+        for (entity_id, entity_type) in entities_to_refresh {
+            state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+                entity_id,
+                entity_type,
+                priority: crate::intel_queue::IntelPriority::CalendarChange,
+                requested_at: std::time::Instant::now(),
+            });
+        }
+        state.integrations.intel_queue_wake.notify_one();
+    }
+
+    let prep_rebuilt_sync = match tokio::task::block_in_place(|| {
+        crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_s)
+    }) {
+        Ok(_) => true,
+        Err(err) => {
+            log::warn!(
+                "mutate_meeting_entities_and_refresh_briefing: immediate prep rebuild failed for {}: {}",
+                meeting_id_s,
+                err
+            );
+            false
+        }
+    };
+
+    if prep_rebuilt_sync {
+        let meeting_id = meeting_id_s.clone();
+        let _ = state
+            .db_write(move |db| {
+                let quality = crate::intelligence::assess_intelligence_quality(db, &meeting_id);
+                db.update_intelligence_state(
+                    &meeting_id,
+                    "enriched",
+                    Some(&quality.level.to_string()),
+                    Some(quality.signal_count as i32),
+                )
+                .map_err(|e| e.to_string())?;
+                Ok::<(), String>(())
+            })
+            .await;
+    } else {
+        state.meeting_prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest {
+            meeting_id: meeting_id_s,
+            priority: crate::meeting_prep_queue::PrepPriority::Manual,
+            requested_at: std::time::Instant::now(),
+        });
+        state.integrations.prep_queue_wake.notify_one();
+    }
+
+    Ok(())
+}
+
 /// Update a meeting entity with full cascade: clear existing links, set new one,
-/// cascade to actions/captures/people, invalidate prep, queue intelligence refresh.
+/// cascade to actions/captures/people, invalidate prep, then rebuild prep.
 pub async fn update_meeting_entity(
     state: &AppState,
     meeting_id: &str,
@@ -264,122 +553,18 @@ pub async fn update_meeting_entity(
     start_time: &str,
     meeting_type_str: &str,
 ) -> Result<(), String> {
-    let meeting_id_s = meeting_id.to_string();
-    let entity_id_s = entity_id.map(|s| s.to_string());
-    let entity_type_s = entity_type.to_string();
-    let meeting_title_s = meeting_title.to_string();
-    let start_time_s = start_time.to_string();
-    let meeting_type_str_s = meeting_type_str.to_string();
-
-    // First DB write: main cascade
-    let old_entity_ids = state.db_write({
-        let meeting_id = meeting_id_s.clone();
-        let entity_id = entity_id_s.clone();
-        let entity_type = entity_type_s.clone();
-        let meeting_title = meeting_title_s.clone();
-        let start_time = start_time_s.clone();
-        let meeting_type_str = meeting_type_str_s.clone();
-        move |db| {
-            let old_entity_ids: Vec<(String, String)> = db
-                .get_meeting_entities(&meeting_id)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|e| (e.id, e.entity_type.as_str().to_string()))
-                .collect();
-
-            db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-                id: &meeting_id,
-                title: &meeting_title,
-                meeting_type: &meeting_type_str,
-                start_time: &start_time,
-                end_time: None,
-                calendar_event_id: None,
-                attendees: None,
-                description: None,
-            })
-            .map_err(|e| e.to_string())?;
-
-            db.clear_meeting_entities(&meeting_id)
-                .map_err(|e| e.to_string())?;
-
-            let (cascade_account, cascade_project) = match entity_type.as_str() {
-                "account" => (entity_id.as_deref(), None),
-                "project" => (None, entity_id.as_deref()),
-                _ => (entity_id.as_deref(), None),
-            };
-
-            if let Some(ref eid) = entity_id {
-                db.link_meeting_entity(&meeting_id, eid, &entity_type)
-                    .map_err(|e| e.to_string())?;
-            }
-
-            db.cascade_meeting_entity_to_actions(&meeting_id, cascade_account, cascade_project)
-                .map_err(|e| e.to_string())?;
-            db.cascade_meeting_entity_to_captures(&meeting_id, cascade_account, cascade_project)
-                .map_err(|e| e.to_string())?;
-            db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
-                .map_err(|e| e.to_string())?;
-
-            if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
-                let _ = std::fs::remove_file(&old_path);
-            }
-
-            Ok(old_entity_ids)
-        }
-    }).await?;
-
-    // Second DB write: correction recording + keyword extraction
-    let _ = state.db_write({
-        let meeting_id = meeting_id_s.clone();
-        let entity_id = entity_id_s.clone();
-        let entity_type = entity_type_s.clone();
-        let meeting_title = meeting_title_s.clone();
-        let old_ids = old_entity_ids.clone();
-        move |db| {
-            if !old_ids.is_empty() {
-                if let Some(ref new_id) = entity_id {
-                    let differs = old_ids.iter().all(|(id, _)| id != new_id);
-                    if differs {
-                        let _ = crate::signals::feedback::record_correction(
-                            db, &meeting_id, &old_ids, new_id, &entity_type,
-                        );
-                    }
-                }
-            }
-            if let Some(ref new_id) = entity_id {
-                if entity_type == "account" || entity_type == "project" {
-                    let _ = crate::services::entities::auto_extract_title_keywords(
-                        db, new_id, &entity_type, &meeting_title,
-                    );
-                }
-            }
-            Ok(())
-        }
-    }).await;
-
-    // I305: Queue prep regeneration
-    if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
-        queue.push(meeting_id_s.clone());
-    }
-
-    // Queue intelligence refresh for old and new entities
-    let mut entities_to_refresh: Vec<(String, String)> = old_entity_ids;
-    if let Some(eid) = entity_id_s {
-        entities_to_refresh.push((eid, entity_type_s));
-    }
-    entities_to_refresh.sort();
-    entities_to_refresh.dedup();
-    for (eid, etype) in entities_to_refresh {
-        state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-            entity_id: eid,
-            entity_type: etype,
-            priority: crate::intel_queue::IntelPriority::CalendarChange,
-            requested_at: std::time::Instant::now(),
-        });
-    }
-    state.integrations.intel_queue_wake.notify_one();
-
-    Ok(())
+    mutate_meeting_entities_and_refresh_briefing(
+        state,
+        meeting_id,
+        MeetingEntityMutation::Replace {
+            entity_id: entity_id.map(|s| s.to_string()),
+            entity_type: entity_type.to_string(),
+            meeting_title: meeting_title.to_string(),
+            start_time: start_time.to_string(),
+            meeting_type: meeting_type_str.to_string(),
+        },
+    )
+    .await
 }
 
 /// Add an entity link to a meeting with full cascade (people, intelligence).
@@ -393,56 +578,18 @@ pub async fn add_meeting_entity(
     start_time: &str,
     meeting_type_str: &str,
 ) -> Result<(), String> {
-    let meeting_id_s = meeting_id.to_string();
-    let entity_id_s = entity_id.to_string();
-    let entity_type_s = entity_type.to_string();
-    let meeting_title_s = meeting_title.to_string();
-    let start_time_s = start_time.to_string();
-    let meeting_type_str_s = meeting_type_str.to_string();
-
-    state.db_write(move |db| {
-        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-            id: &meeting_id_s,
-            title: &meeting_title_s,
-            meeting_type: &meeting_type_str_s,
-            start_time: &start_time_s,
-            end_time: None,
-            calendar_event_id: None,
-            attendees: None,
-            description: None,
-        })
-        .map_err(|e| e.to_string())?;
-
-        db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
-            .map_err(|e| e.to_string())?;
-
-        let (cascade_account, cascade_project) = match entity_type_s.as_str() {
-            "account" => (Some(entity_id_s.as_str()), None),
-            "project" => (None, Some(entity_id_s.as_str())),
-            _ => (Some(entity_id_s.as_str()), None),
-        };
-        db.cascade_meeting_entity_to_people(&meeting_id_s, cascade_account, cascade_project)
-            .map_err(|e| e.to_string())?;
-
-        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id_s) {
-            let _ = std::fs::remove_file(&old_path);
-        }
-        Ok(())
-    }).await?;
-
-    if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
-        queue.push(meeting_id.to_string());
-    }
-
-    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id: entity_id.to_string(),
-        entity_type: entity_type.to_string(),
-        priority: crate::intel_queue::IntelPriority::CalendarChange,
-        requested_at: std::time::Instant::now(),
-    });
-    state.integrations.intel_queue_wake.notify_one();
-
-    Ok(())
+    mutate_meeting_entities_and_refresh_briefing(
+        state,
+        meeting_id,
+        MeetingEntityMutation::Add {
+            entity_id: entity_id.to_string(),
+            entity_type: entity_type.to_string(),
+            meeting_title: meeting_title.to_string(),
+            start_time: start_time.to_string(),
+            meeting_type: meeting_type_str.to_string(),
+        },
+    )
+    .await
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
@@ -452,37 +599,15 @@ pub async fn remove_meeting_entity(
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), String> {
-    let meeting_id_s = meeting_id.to_string();
-    let entity_id_s = entity_id.to_string();
-    let entity_type_s = entity_type.to_string();
-
-    state.db_write({
-        let meeting_id = meeting_id_s.clone();
-        let entity_id = entity_id_s.clone();
-        let entity_type = entity_type_s.clone();
-        move |db| {
-            let _ = crate::signals::feedback::record_removal(db, &meeting_id, &entity_id, &entity_type);
-            db.unlink_meeting_entity(&meeting_id, &entity_id).map_err(|e| e.to_string())?;
-            if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
-                let _ = std::fs::remove_file(&old_path);
-            }
-            Ok(())
-        }
-    }).await?;
-
-    if let Ok(mut queue) = state.signals.prep_invalidation_queue.lock() {
-        queue.push(meeting_id_s);
-    }
-
-    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id: entity_id_s,
-        entity_type: entity_type_s,
-        priority: crate::intel_queue::IntelPriority::CalendarChange,
-        requested_at: std::time::Instant::now(),
-    });
-    state.integrations.intel_queue_wake.notify_one();
-
-    Ok(())
+    mutate_meeting_entities_and_refresh_briefing(
+        state,
+        meeting_id,
+        MeetingEntityMutation::Remove {
+            entity_id: entity_id.to_string(),
+            entity_type: entity_type.to_string(),
+        },
+    )
+    .await
 }
 
 /// Get full detail for a single past meeting by ID.
@@ -1626,7 +1751,9 @@ pub async fn refresh_meeting_briefing_full(
         },
     );
 
-    let prep_rebuilt_sync = match crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_owned) {
+    let prep_rebuilt_sync = match tokio::task::block_in_place(|| {
+        crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_owned)
+    }) {
         Ok(_) => true,
         Err(err) => {
             log::warn!(
