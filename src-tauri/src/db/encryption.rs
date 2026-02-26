@@ -60,11 +60,20 @@ pub fn has_db_key() -> bool {
 
 /// Delete the DB key from Keychain. Used for testing/recovery only.
 pub fn delete_db_key() -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|e| format!("Keychain entry error: {e}"))?;
-    entry
-        .delete_credential()
-        .map_err(|e| format!("Failed to delete keychain entry: {e}"))
+    let output = std::process::Command::new("security")
+        .args([
+            "delete-generic-password",
+            "-s", KEYCHAIN_SERVICE,
+            "-a", KEYCHAIN_ACCOUNT,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run security CLI: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to delete keychain entry: {}", stderr.trim()));
+    }
+    Ok(())
 }
 
 /// Format a hex key string into the SQLCipher PRAGMA format.
@@ -140,18 +149,60 @@ fn generate_key() -> String {
     hex::encode(bytes)
 }
 
+/// Read the encryption key from macOS Keychain via the `security` CLI.
+///
+/// Using the `security` binary instead of the `keyring` crate avoids the
+/// repeated password prompt during development — `security` is a trusted
+/// system binary, so macOS doesn't re-prompt when the app binary changes
+/// on every recompile.
 fn get_key_from_keychain() -> Result<String, String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|e| format!("Keychain entry error: {e}"))?;
-    entry
-        .get_password()
-        .map_err(|e| format!("Keychain read error: {e}"))
+    let output = std::process::Command::new("security")
+        .args([
+            "find-generic-password",
+            "-s", KEYCHAIN_SERVICE,
+            "-a", KEYCHAIN_ACCOUNT,
+            "-w", // output password only
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run security CLI: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Keychain read failed: {}", stderr.trim()));
+    }
+
+    let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if key.is_empty() {
+        return Err("Keychain returned empty key".to_string());
+    }
+    Ok(key)
 }
 
+/// Store the encryption key in macOS Keychain via the `security` CLI.
 fn store_key_in_keychain(key: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        .map_err(|e| format!("Keychain entry error: {e}"))?;
-    entry
-        .set_password(key)
-        .map_err(|e| format!("Keychain write error: {e}"))
+    // Delete existing entry first (add-generic-password fails if it exists)
+    let _ = std::process::Command::new("security")
+        .args([
+            "delete-generic-password",
+            "-s", KEYCHAIN_SERVICE,
+            "-a", KEYCHAIN_ACCOUNT,
+        ])
+        .output();
+
+    let output = std::process::Command::new("security")
+        .args([
+            "add-generic-password",
+            "-s", KEYCHAIN_SERVICE,
+            "-a", KEYCHAIN_ACCOUNT,
+            "-w", key,
+            "-U", // update if exists
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run security CLI: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Keychain write failed: {}", stderr.trim()));
+    }
+    Ok(())
 }
