@@ -47,8 +47,7 @@ pub struct GravatarClient {
 impl GravatarClient {
     /// Connect to the Gravatar MCP server by spawning npx.
     pub async fn connect(api_key: Option<&str>) -> Result<Self, GravatarError> {
-        let npx_path = crate::util::resolve_npx_binary()
-            .ok_or(GravatarError::NpxNotFound)?;
+        let npx_path = crate::util::resolve_npx_binary().ok_or(GravatarError::NpxNotFound)?;
 
         let mut cmd = tokio::process::Command::new(npx_path);
         cmd.arg("@automattic/mcp-server-gravatar");
@@ -57,8 +56,8 @@ impl GravatarClient {
             cmd.env("GRAVATAR_API_KEY", key);
         }
 
-        let transport =
-            TokioChildProcess::new(&mut cmd).map_err(|e| GravatarError::SpawnFailed(e.to_string()))?;
+        let transport = TokioChildProcess::new(&mut cmd)
+            .map_err(|e| GravatarError::SpawnFailed(e.to_string()))?;
 
         let service = ()
             .serve(transport)
@@ -74,9 +73,7 @@ impl GravatarClient {
             .service
             .call_tool(CallToolRequestParam {
                 name: "get_profile_by_email".into(),
-                arguments: serde_json::json!({ "email": email })
-                    .as_object()
-                    .cloned(),
+                arguments: serde_json::json!({ "email": email }).as_object().cloned(),
             })
             .await
             .map_err(|e| GravatarError::ToolCallFailed(e.to_string()))?;
@@ -139,9 +136,7 @@ impl GravatarClient {
         // Extract image bytes from the response
         for content in &result.content {
             if let Some(img) = content.as_image() {
-                if let Ok(bytes) =
-                    base64::engine::general_purpose::STANDARD.decode(&img.data)
-                {
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&img.data) {
                     return Ok(Some(bytes));
                 }
             }
@@ -164,9 +159,7 @@ impl GravatarClient {
             .service
             .call_tool(CallToolRequestParam {
                 name: "get_inferred_interests_by_email".into(),
-                arguments: serde_json::json!({ "email": email })
-                    .as_object()
-                    .cloned(),
+                arguments: serde_json::json!({ "email": email }).as_object().cloned(),
             })
             .await
             .map_err(|e| GravatarError::ToolCallFailed(e.to_string()))?;
@@ -229,8 +222,7 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
         let emails_to_fetch: Vec<(String, Option<String>)> = {
             let db_guard = state.db.lock().ok();
             match db_guard.as_ref().and_then(|g| g.as_ref()) {
-                Some(db) => super::cache::get_stale_emails(db.conn_ref(), 50)
-                    .unwrap_or_default(),
+                Some(db) => super::cache::get_stale_emails(db.conn_ref(), 50).unwrap_or_default(),
                 None => Vec::new(),
             }
         };
@@ -352,5 +344,3 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
         tokio::time::sleep(std::time::Duration::from_secs(6 * 3600)).await;
     }
 }
-
-

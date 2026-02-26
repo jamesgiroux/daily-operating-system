@@ -144,11 +144,7 @@ fn poll_once(
         let _ = app_handle.emit("transcript-processed", &matched.meeting_id);
 
         if result.is_ok() {
-            let _ = crate::notification::notify_transcript_ready(
-                app_handle,
-                &doc.title,
-                None,
-            );
+            let _ = crate::notification::notify_transcript_ready(app_handle, &doc.title, None);
         }
     }
 
@@ -228,20 +224,29 @@ fn process_granola_document(
             let account = calendar_event.account.as_deref();
             for win in &tr.wins {
                 let _ = db.insert_capture(
-                    &calendar_event.id, &calendar_event.title,
-                    account, "win", win,
+                    &calendar_event.id,
+                    &calendar_event.title,
+                    account,
+                    "win",
+                    win,
                 );
             }
             for risk in &tr.risks {
                 let _ = db.insert_capture(
-                    &calendar_event.id, &calendar_event.title,
-                    account, "risk", risk,
+                    &calendar_event.id,
+                    &calendar_event.title,
+                    account,
+                    "risk",
+                    risk,
                 );
             }
             for decision in &tr.decisions {
                 let _ = db.insert_capture(
-                    &calendar_event.id, &calendar_event.title,
-                    account, "decision", decision,
+                    &calendar_event.id,
+                    &calendar_event.title,
+                    account,
+                    "decision",
+                    decision,
                 );
             }
 
@@ -256,13 +261,15 @@ fn process_granola_document(
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
-                    account_id: account.map(|a| {
-                        db.get_account_by_name(a)
-                            .ok()
-                            .flatten()
-                            .map(|acc| acc.id)
-                            .unwrap_or_default()
-                    }).filter(|s| !s.is_empty()),
+                    account_id: account
+                        .map(|a| {
+                            db.get_account_by_name(a)
+                                .ok()
+                                .flatten()
+                                .map(|acc| acc.id)
+                                .unwrap_or_default()
+                        })
+                        .filter(|s| !s.is_empty()),
                     project_id: None,
                     source_type: Some("transcript".to_string()),
                     source_id: Some(calendar_event.id.clone()),
@@ -280,7 +287,13 @@ fn process_granola_document(
 
             // Transition sync state to completed
             let _ = crate::quill::sync::transition_state(
-                db, sync_id, "completed", None, None, Some(dest), None,
+                db,
+                sync_id,
+                "completed",
+                None,
+                None,
+                Some(dest),
+                None,
             );
 
             Ok(dest.to_string())
@@ -289,7 +302,13 @@ fn process_granola_document(
             if let Ok(db_guard) = state.db.lock() {
                 if let Some(db) = db_guard.as_ref() {
                     let _ = crate::quill::sync::transition_state(
-                        db, sync_id, "failed", None, None, None, Some(&error),
+                        db,
+                        sync_id,
+                        "failed",
+                        None,
+                        None,
+                        None,
+                        Some(&error),
                     );
                 }
             }
@@ -316,8 +335,8 @@ pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> 
         .map(|c| c.granola.clone())
         .unwrap_or_default();
 
-    let cache_path = super::resolve_cache_path(&granola_config)
-        .ok_or("Granola cache file not found")?;
+    let cache_path =
+        super::resolve_cache_path(&granola_config).ok_or("Granola cache file not found")?;
 
     let documents = cache::read_cache(&cache_path)?;
     let eligible = documents.len();

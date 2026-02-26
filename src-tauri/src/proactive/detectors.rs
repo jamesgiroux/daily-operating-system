@@ -7,9 +7,9 @@
 use chrono::{Datelike, Duration};
 use rusqlite::params;
 
+use super::engine::{fingerprint, DetectorContext, RawInsight};
 use crate::db::ActionDb;
 use crate::helpers;
-use super::engine::{DetectorContext, RawInsight, fingerprint};
 
 // ---------------------------------------------------------------------------
 // Detector 1: Renewal gap
@@ -46,11 +46,12 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
             continue;
         }
 
-        let days_until = if let Ok(end_date) = chrono::NaiveDate::parse_from_str(&contract_end, "%Y-%m-%d") {
-            (end_date - ctx.today).num_days()
-        } else {
-            60
-        };
+        let days_until =
+            if let Ok(end_date) = chrono::NaiveDate::parse_from_str(&contract_end, "%Y-%m-%d") {
+                (end_date - ctx.today).num_days()
+            } else {
+                60
+            };
 
         let fp = fingerprint(&["account", &acct.id, "renewal_gap"]);
         let context_json = serde_json::json!({
@@ -236,7 +237,6 @@ pub fn detect_email_volume_spike(db: &ActionDb, _ctx: &DetectorContext) -> Vec<R
     insights
 }
 
-
 // ---------------------------------------------------------------------------
 // Detector 4: Meeting load forecast
 // ---------------------------------------------------------------------------
@@ -328,9 +328,7 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
         .unwrap_or_else(|_| conn.prepare("SELECT 1 WHERE 0").unwrap());
 
     let accounts: Vec<(String, String, String)> = acct_stmt
-        .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
         .ok()
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
@@ -374,13 +372,12 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
             };
 
             if days_since >= 45 {
-                let renewal_days = if let Ok(ce) =
-                    chrono::NaiveDate::parse_from_str(contract_end, "%Y-%m-%d")
-                {
-                    (ce - ctx.today).num_days()
-                } else {
-                    0
-                };
+                let renewal_days =
+                    if let Ok(ce) = chrono::NaiveDate::parse_from_str(contract_end, "%Y-%m-%d") {
+                        (ce - ctx.today).num_days()
+                    } else {
+                        0
+                    };
 
                 let person_name: String = conn
                     .query_row(
@@ -679,13 +676,12 @@ pub fn detect_renewal_proximity(db: &ActionDb, ctx: &DetectorContext) -> Vec<Raw
 
     let mut insights = Vec::new();
     for (account_id, account_name, contract_end) in accounts {
-        let days_until = if let Ok(end_date) =
-            chrono::NaiveDate::parse_from_str(&contract_end, "%Y-%m-%d")
-        {
-            (end_date - ctx.today).num_days()
-        } else {
-            90
-        };
+        let days_until =
+            if let Ok(end_date) = chrono::NaiveDate::parse_from_str(&contract_end, "%Y-%m-%d") {
+                (end_date - ctx.today).num_days()
+            } else {
+                90
+            };
 
         // Tiered confidence
         let confidence = if days_until <= 30 {
@@ -729,8 +725,8 @@ pub fn detect_renewal_proximity(db: &ActionDb, ctx: &DetectorContext) -> Vec<Raw
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
     use crate::db::test_utils::test_db;
+    use chrono::NaiveDate;
 
     fn test_ctx(today: NaiveDate) -> DetectorContext {
         DetectorContext {
@@ -799,7 +795,10 @@ mod tests {
             .unwrap();
 
         let insights = detect_renewal_gap(&db, &ctx);
-        assert!(insights.is_empty(), "Should not fire when recent meeting exists");
+        assert!(
+            insights.is_empty(),
+            "Should not fire when recent meeting exists"
+        );
     }
 
     // -- Detector 2: Relationship drift --
@@ -1004,7 +1003,10 @@ mod tests {
         }
 
         let insights = detect_meeting_load_forecast(&db, &ctx);
-        assert!(insights.is_empty(), "Should not fire when next week is not 2x this week");
+        assert!(
+            insights.is_empty(),
+            "Should not fire when next week is not 2x this week"
+        );
     }
 
     // -- Detector 5: Stale champion --
@@ -1020,7 +1022,8 @@ mod tests {
             "INSERT INTO accounts (id, name, contract_end, archived, is_internal, updated_at)
              VALUES ('a1', 'AcmeCo', '2026-05-14', 0, 0, '2026-01-01')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Person as champion
         conn.execute(
@@ -1037,12 +1040,14 @@ mod tests {
             "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'Sync', 'external', '2026-01-14 10:00:00', '2026-01-14')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
              VALUES ('m1', 'p1', 'person')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let ctx = test_ctx(today);
         let results = detect_stale_champion(&db, &ctx);
@@ -1062,7 +1067,8 @@ mod tests {
             "INSERT INTO accounts (id, name, contract_end, archived, is_internal, updated_at)
              VALUES ('a1', 'AcmeCo', '2026-05-14', 0, 0, '2026-01-01')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO people (id, email, name, updated_at) VALUES ('p1', 'jane@acme.com', 'Jane Doe', '2026-01-01')",
             [],
@@ -1077,12 +1083,14 @@ mod tests {
             "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'Sync', 'external', '2026-03-05 10:00:00', '2026-03-05')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
              VALUES ('m1', 'p1', 'person')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let ctx = test_ctx(today);
         let results = detect_stale_champion(&db, &ctx);
@@ -1101,7 +1109,8 @@ mod tests {
             "INSERT INTO accounts (id, name, updated_at, is_internal, archived)
              VALUES ('a1', 'AcmeCo', '2026-01-01', 0, 0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Insert 6 pending actions, 4 overdue
         for i in 0..6 {
@@ -1130,7 +1139,8 @@ mod tests {
             "INSERT INTO accounts (id, name, updated_at, is_internal, archived)
              VALUES ('a1', 'AcmeCo', '2026-01-01', 0, 0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Only 3 pending actions (below threshold of 5)
         for i in 0..3 {
@@ -1165,7 +1175,8 @@ mod tests {
                     format!("Meeting {}", i),
                     format!("{} 10:00:00", tomorrow)
                 ],
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         let ctx = test_ctx(today);
@@ -1192,7 +1203,8 @@ mod tests {
                     format!("Meeting {}", i),
                     format!("{} 10:00:00", tomorrow)
                 ],
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         // Link entities to 2 of 3 (67% > 60%)
@@ -1201,7 +1213,8 @@ mod tests {
                 "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
                  VALUES (?1, ?2, 'account')",
                 params![format!("m{}", i), format!("a{}", i)],
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         let ctx = test_ctx(today);
@@ -1226,7 +1239,8 @@ mod tests {
                     format!("Meeting {}", i),
                     format!("{} 10:00:00", tomorrow)
                 ],
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         let ctx = test_ctx(today);
@@ -1246,7 +1260,8 @@ mod tests {
             "INSERT INTO accounts (id, name, updated_at, is_internal, archived)
              VALUES ('a1', 'SilentCo', '2026-01-01', 0, 0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let ctx = test_ctx(today);
         let results = detect_no_contact_accounts(&db, &ctx);
@@ -1265,7 +1280,8 @@ mod tests {
             "INSERT INTO accounts (id, name, updated_at, is_internal, account_type, archived)
              VALUES ('a1', 'InternalCo', '2026-01-01', 1, 'internal', 0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let ctx = test_ctx(today);
         let results = detect_no_contact_accounts(&db, &ctx);
@@ -1348,22 +1364,28 @@ mod tests {
             "INSERT INTO accounts (id, name, updated_at, is_internal, archived)
              VALUES ('a1', 'ActiveCo', '2026-01-01', 0, 0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Recent meeting (5 days ago)
         conn.execute(
             "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'Sync', 'external', '2026-03-10 10:00:00', '2026-03-10')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
              VALUES ('m1', 'a1', 'account')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
 
         let ctx = test_ctx(today);
         let results = detect_no_contact_accounts(&db, &ctx);
-        assert!(results.is_empty(), "Account with recent meeting should be excluded");
+        assert!(
+            results.is_empty(),
+            "Account with recent meeting should be excluded"
+        );
     }
 }

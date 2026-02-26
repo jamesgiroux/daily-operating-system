@@ -27,14 +27,19 @@ fn action_entity_info(action: &crate::db::DbAction, fallback_id: &str) -> (&'sta
 }
 
 /// Complete an action and emit the completion signal.
-pub fn complete_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
+pub fn complete_action(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.complete_action(id).map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
-            db, engine,
+            db,
+            engine,
             entity_type,
             &entity_id,
             "action_completed",
@@ -48,14 +53,19 @@ pub fn complete_action(db: &ActionDb, engine: &crate::signals::propagation::Prop
 }
 
 /// Reopen a completed action, setting it back to pending.
-pub fn reopen_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
+pub fn reopen_action(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.reopen_action(id).map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
-            db, engine,
+            db,
+            engine,
             entity_type,
             &entity_id,
             "action_reopened",
@@ -69,14 +79,19 @@ pub fn reopen_action(db: &ActionDb, engine: &crate::signals::propagation::Propag
 }
 
 /// Accept a proposed action, moving it to pending (I256).
-pub fn accept_proposed_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
+pub fn accept_proposed_action(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.accept_proposed_action(id).map_err(|e| e.to_string())?;
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
-            db, engine,
+            db,
+            engine,
             entity_type,
             &entity_id,
             "action_accepted",
@@ -94,7 +109,11 @@ pub fn accept_proposed_action(db: &ActionDb, engine: &crate::signals::propagatio
 }
 
 /// Reject a proposed action by archiving it (I256).
-pub fn reject_proposed_action(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str) -> Result<(), String> {
+pub fn reject_proposed_action(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.reject_proposed_action(id).map_err(|e| e.to_string())?;
 
@@ -102,7 +121,8 @@ pub fn reject_proposed_action(db: &ActionDb, engine: &crate::signals::propagatio
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
-            db, engine,
+            db,
+            engine,
             entity_type,
             &entity_id,
             "action_rejected",
@@ -120,7 +140,12 @@ pub fn reject_proposed_action(db: &ActionDb, engine: &crate::signals::propagatio
 }
 
 /// Cycle an action's priority with signal emission.
-pub fn update_action_priority(db: &ActionDb, engine: &crate::signals::propagation::PropagationEngine, id: &str, priority: &str) -> Result<(), String> {
+pub fn update_action_priority(
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+    priority: &str,
+) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
     db.update_action_priority(id, priority)
         .map_err(|e| e.to_string())?;
@@ -128,7 +153,8 @@ pub fn update_action_priority(db: &ActionDb, engine: &crate::signals::propagatio
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
-            db, engine,
+            db,
+            engine,
             entity_type,
             &entity_id,
             "priority_corrected",
@@ -178,9 +204,12 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
     let mut actions = crate::json_loader::load_actions_json(&today_dir).unwrap_or_default();
 
     // Merge non-briefing actions from SQLite (same logic as dashboard)
-    let db_actions_result = state.db_read(|db| {
-        db.get_non_briefing_pending_actions().map_err(|e| e.to_string())
-    }).await;
+    let db_actions_result = state
+        .db_read(|db| {
+            db.get_non_briefing_pending_actions()
+                .map_err(|e| e.to_string())
+        })
+        .await;
 
     if let Ok(db_actions) = db_actions_result {
         let json_titles: HashSet<String> = actions
@@ -282,17 +311,16 @@ pub async fn create_action(
         next_meeting_start: None,
     };
 
-    state.db_write(move |db| {
-        db.upsert_action(&action).map_err(|e| e.to_string())?;
-        Ok(id)
-    }).await
+    state
+        .db_write(move |db| {
+            db.upsert_action(&action).map_err(|e| e.to_string())?;
+            Ok(id)
+        })
+        .await
 }
 
 /// Update arbitrary fields on an existing action (I128).
-pub async fn update_action(
-    request: UpdateActionRequest,
-    state: &AppState,
-) -> Result<(), String> {
+pub async fn update_action(request: UpdateActionRequest, state: &AppState) -> Result<(), String> {
     let UpdateActionRequest {
         id,
         title,
@@ -337,59 +365,58 @@ pub async fn update_action(
         crate::util::validate_id_slug(p, "person_id")?;
     }
 
-    state.db_write(move |db| {
-        let mut action = db
-            .get_action_by_id(&id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Action not found: {id}"))?;
+    state
+        .db_write(move |db| {
+            let mut action = db
+                .get_action_by_id(&id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Action not found: {id}"))?;
 
-        if let Some(t) = title {
-            action.title = t;
-        }
-        if let Some(p) = priority {
-            action.priority = p;
-        }
-        if clear_due_date == Some(true) {
-            action.due_date = None;
-        } else if let Some(d) = due_date {
-            action.due_date = Some(d);
-        }
-        if clear_context == Some(true) {
-            action.context = None;
-        } else if let Some(c) = context {
-            action.context = Some(c);
-        }
-        if clear_source_label == Some(true) {
-            action.source_label = None;
-        } else if let Some(s) = source_label {
-            action.source_label = Some(s);
-        }
-        if clear_account == Some(true) {
-            action.account_id = None;
-        } else if let Some(a) = account_id {
-            action.account_id = Some(a);
-        }
-        if clear_project == Some(true) {
-            action.project_id = None;
-        } else if let Some(p) = project_id {
-            action.project_id = Some(p);
-        }
-        if clear_person == Some(true) {
-            action.person_id = None;
-        } else if let Some(p) = person_id {
-            action.person_id = Some(p);
-        }
+            if let Some(t) = title {
+                action.title = t;
+            }
+            if let Some(p) = priority {
+                action.priority = p;
+            }
+            if clear_due_date == Some(true) {
+                action.due_date = None;
+            } else if let Some(d) = due_date {
+                action.due_date = Some(d);
+            }
+            if clear_context == Some(true) {
+                action.context = None;
+            } else if let Some(c) = context {
+                action.context = Some(c);
+            }
+            if clear_source_label == Some(true) {
+                action.source_label = None;
+            } else if let Some(s) = source_label {
+                action.source_label = Some(s);
+            }
+            if clear_account == Some(true) {
+                action.account_id = None;
+            } else if let Some(a) = account_id {
+                action.account_id = Some(a);
+            }
+            if clear_project == Some(true) {
+                action.project_id = None;
+            } else if let Some(p) = project_id {
+                action.project_id = Some(p);
+            }
+            if clear_person == Some(true) {
+                action.person_id = None;
+            } else if let Some(p) = person_id {
+                action.person_id = Some(p);
+            }
 
-        action.updated_at = chrono::Utc::now().to_rfc3339();
-        db.upsert_action(&action).map_err(|e| e.to_string())
-    }).await
+            action.updated_at = chrono::Utc::now().to_rfc3339();
+            db.upsert_action(&action).map_err(|e| e.to_string())
+        })
+        .await
 }
 
 /// Get full detail for a single action, with resolved relationships.
-pub fn get_action_detail(
-    db: &ActionDb,
-    action_id: &str,
-) -> Result<ActionDetail, String> {
+pub fn get_action_detail(db: &ActionDb, action_id: &str) -> Result<ActionDetail, String> {
     let action = db
         .get_action_by_id(action_id)
         .map_err(|e| e.to_string())?
@@ -420,13 +447,8 @@ pub fn get_action_detail(
 ///
 /// Returns pending actions (within `days_ahead` window) combined with recently
 /// completed actions (last 48 hours). Account names are batch-resolved.
-pub fn get_actions_from_db(
-    db: &ActionDb,
-    days_ahead: i32,
-) -> Result<Vec<ActionListItem>, String> {
-    let mut actions = db
-        .get_due_actions(days_ahead)
-        .map_err(|e| e.to_string())?;
+pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionListItem>, String> {
+    let mut actions = db.get_due_actions(days_ahead).map_err(|e| e.to_string())?;
     let completed = db.get_completed_actions(48).map_err(|e| e.to_string())?;
     actions.extend(completed);
 
