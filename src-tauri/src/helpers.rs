@@ -35,7 +35,9 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
     if let Ok(accounts) = db.get_all_accounts() {
         for acct in accounts.iter().filter(|a| !a.archived) {
             let domains = db.get_account_domains(&acct.id).unwrap_or_default();
-            let keywords = acct.keywords.as_deref()
+            let keywords = acct
+                .keywords
+                .as_deref()
                 .and_then(|k| serde_json::from_str::<Vec<String>>(k).ok())
                 .unwrap_or_default();
             let slug = normalize_key(&acct.name);
@@ -57,7 +59,9 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
     // 2. Projects: name slugs + keywords
     if let Ok(projects) = db.get_all_projects() {
         for proj in projects.iter().filter(|p| !p.archived) {
-            let keywords = proj.keywords.as_deref()
+            let keywords = proj
+                .keywords
+                .as_deref()
                 .and_then(|k| serde_json::from_str::<Vec<String>>(k).ok())
                 .unwrap_or_default();
             let slug = normalize_key(&proj.name);
@@ -107,7 +111,8 @@ pub fn build_entity_hints(db: &ActionDb) -> Vec<EntityHint> {
 /// Build account hint set for email classification (backward compat). I336.
 /// Extracts account slugs from entity hints for use by email_classify.
 pub fn account_hints_from_entity_hints(entity_hints: &[EntityHint]) -> HashSet<String> {
-    entity_hints.iter()
+    entity_hints
+        .iter()
         .filter(|h| matches!(h.entity_type, EntityType::Account))
         .flat_map(|h| h.slugs.iter().cloned())
         .collect()
@@ -172,4 +177,168 @@ pub fn extract_attendee_emails(meeting: &serde_json::Value) -> Vec<String> {
             .collect();
     }
     Vec::new()
+}
+
+// ---------------------------------------------------------------------------
+// Calendar description cleaning (shared by deliver.rs + prompts.rs)
+// ---------------------------------------------------------------------------
+
+/// Strip video-conferencing noise from a calendar event description.
+///
+/// Removes Zoom, Teams, Google Meet, WebEx blocks and dial-in metadata,
+/// returning only the meaningful meeting context (agenda, discussion points, etc.).
+pub fn strip_conferencing_noise(description: &str) -> String {
+    let mut out = Vec::new();
+    let mut in_conf_block = false;
+
+    for line in description.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_lowercase();
+
+        // Detect conferencing block headers — set skip flag
+        if lower.contains("join zoom meeting")
+            || lower.contains("join microsoft teams meeting")
+            || lower.contains("join with a video conferencing device")
+            || lower.contains("join with google meet")
+            || lower.contains("join webex meeting")
+            || lower.starts_with("microsoft teams meeting")
+            || lower.starts_with("microsoft teams need help?")
+        {
+            in_conf_block = true;
+            continue;
+        }
+
+        // Blank line ends a conferencing block
+        if trimmed.is_empty() {
+            if in_conf_block {
+                in_conf_block = false;
+            } else {
+                out.push(String::new());
+            }
+            continue;
+        }
+
+        // Skip lines inside a conferencing block
+        if in_conf_block {
+            continue;
+        }
+
+        // Skip individual noise lines (URLs, dial-in metadata)
+        if is_conferencing_noise_line(trimmed) {
+            continue;
+        }
+
+        out.push(line.to_string());
+    }
+
+    // Trim trailing blank lines
+    while out.last().map(|l| l.trim().is_empty()).unwrap_or(false) {
+        out.pop();
+    }
+
+    out.join("\n")
+}
+
+/// Returns true if a single line is conferencing noise (URL-only, dial-in info, etc.).
+fn is_conferencing_noise_line(trimmed: &str) -> bool {
+    let lower = trimmed.to_lowercase();
+
+    // Pure URL lines
+    if (lower.starts_with("http://") || lower.starts_with("https://")) && !trimmed.contains(' ') {
+        return true;
+    }
+
+    // Conferencing-specific URL domains
+    if lower.contains("zoom.us/")
+        || lower.contains("meet.google.com/")
+        || lower.contains(".webex.com/")
+        || lower.contains("teams.microsoft.com/")
+    {
+        return true;
+    }
+
+    // Dial-in metadata patterns
+    if lower.starts_with("meeting id:")
+        || lower.starts_with("passcode:")
+        || lower.starts_with("password:")
+        || lower.starts_with("pin:")
+        || lower.starts_with("dial-in:")
+        || lower.starts_with("dial in:")
+        || lower.starts_with("one tap mobile")
+        || lower.starts_with("find your local number")
+        || lower.starts_with("phone one-tap:")
+        || lower.starts_with("tap to join from a mobile device")
+    {
+        return true;
+    }
+
+    // Phone numbers with access codes (e.g., "+1 555-1234,,12345#")
+    if trimmed.starts_with('+')
+        && trimmed.len() > 6
+        && trimmed.chars().filter(|c| c.is_ascii_digit()).count() > 6
+    {
+        return true;
+    }
+
+    // Lines that are just separators (dashes, underscores, equals)
+    if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-' || c == '_' || c == '=') {
+        return true;
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod conferencing_noise_tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_zoom_block() {
+        let desc = "Discuss Q1 goals\n\nJoin Zoom Meeting\nhttps://zoom.us/j/12345\nMeeting ID: 123 456\nPasscode: abc\n\nPlease come prepared.";
+        let cleaned = strip_conferencing_noise(desc);
+        assert!(cleaned.contains("Discuss Q1 goals"));
+        assert!(cleaned.contains("Please come prepared"));
+        assert!(!cleaned.contains("Zoom"));
+        assert!(!cleaned.contains("Passcode"));
+    }
+
+    #[test]
+    fn test_strip_teams_block() {
+        let desc = "1. Review pipeline\n2. Budget update\n\nJoin Microsoft Teams Meeting\nhttps://teams.microsoft.com/l/meetup\n+1 234-567-8901,,12345#\n\nMicrosoft Teams Need help?";
+        let cleaned = strip_conferencing_noise(desc);
+        assert!(cleaned.contains("Review pipeline"));
+        assert!(cleaned.contains("Budget update"));
+        assert!(!cleaned.contains("Teams"));
+    }
+
+    #[test]
+    fn test_strip_google_meet_url() {
+        let desc = "Agenda: Review proposal\nhttps://meet.google.com/abc-defg-hij";
+        let cleaned = strip_conferencing_noise(desc);
+        assert!(cleaned.contains("Agenda: Review proposal"));
+        assert!(!cleaned.contains("meet.google.com"));
+    }
+
+    #[test]
+    fn test_pure_zoom_returns_empty() {
+        let desc = "Join Zoom Meeting\nhttps://zoom.us/j/12345\nMeeting ID: 123 456\nPasscode: abc";
+        let cleaned = strip_conferencing_noise(desc);
+        assert!(cleaned.trim().is_empty());
+    }
+
+    #[test]
+    fn test_no_noise_passes_through() {
+        let desc = "Here's the planned agenda:\n1. Salesforce DMT overview\n2. Review Q1 pipeline\n3. Discuss expansion";
+        let cleaned = strip_conferencing_noise(desc);
+        assert_eq!(cleaned, desc);
+    }
+
+    #[test]
+    fn test_phone_number_stripped() {
+        let desc = "Discuss roadmap\n+1 555-123-4567,,99887766#\nDial-in: 555-1234";
+        let cleaned = strip_conferencing_noise(desc);
+        assert!(cleaned.contains("Discuss roadmap"));
+        assert!(!cleaned.contains("+1 555"));
+        assert!(!cleaned.contains("Dial-in"));
+    }
 }

@@ -11,6 +11,7 @@ pub mod embeddings;
 pub mod enrich;
 pub mod extract;
 pub mod hooks;
+pub mod matcher;
 pub mod metadata;
 pub mod router;
 pub mod transcript;
@@ -100,8 +101,13 @@ pub fn process_file(
     log::info!("Classified '{}' as '{}'", filename, class_label);
 
     // Resolve destination (pass db for entity validation)
-    let route_outcome =
-        resolve_destination(&classification, workspace, filename, entity_tracker_path, db);
+    let route_outcome = resolve_destination(
+        &classification,
+        workspace,
+        filename,
+        entity_tracker_path,
+        db,
+    );
 
     let result = match route_outcome {
         RouteOutcome::Destination(dest) => {
@@ -136,6 +142,13 @@ pub fn process_file(
                                 _ => None,
                             };
                             extract_and_sync_actions(&content, filename, db, account_fallback);
+                        }
+                    }
+
+                    // I474: Match MeetingNotes to historical meetings
+                    if matches!(classification, Classification::MeetingNotes { .. }) {
+                        if let Some(db) = db {
+                            try_match_to_meeting(&classification, filename, &dest, db);
                         }
                     }
 
@@ -217,7 +230,9 @@ pub fn process_file(
             processed_at: Some(Utc::now().to_rfc3339()),
             error_message: match &result {
                 ProcessingResult::Error { message } => Some(message.clone()),
-                ProcessingResult::NeedsEntity { suggested_name, .. } => Some(suggested_name.clone()),
+                ProcessingResult::NeedsEntity { suggested_name, .. } => {
+                    Some(suggested_name.clone())
+                }
                 _ => None,
             },
             created_at: Utc::now().to_rfc3339(),
@@ -505,6 +520,110 @@ fn extract_and_sync_actions(
     }
 }
 
+/// I474: Attempt to match a MeetingNotes document to a historical meeting.
+///
+/// Queries recent meetings (last 14 days), runs the multi-signal matcher,
+/// and on confident match: updates the meeting's transcript metadata and
+/// emits a `transcript_outcomes` signal for entity intelligence.
+fn try_match_to_meeting(
+    classification: &Classification,
+    filename: &str,
+    destination: &std::path::Path,
+    db: &crate::db::ActionDb,
+) {
+    // Extract account name from classification for entity matching
+    let account_name = match classification {
+        Classification::MeetingNotes { account } => account.as_deref(),
+        _ => return,
+    };
+
+    // Resolve account name to entity_id
+    let doc_entity_id =
+        account_name.and_then(|name| db.get_account_by_name(name).ok().flatten().map(|a| a.id));
+
+    // Query recent meetings with entity context
+    let raw_candidates = match db.get_recent_meetings_for_matching(14) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("I474: Failed to query meeting candidates: {}", e);
+            return;
+        }
+    };
+
+    if raw_candidates.is_empty() {
+        return;
+    }
+
+    // Build matcher candidates
+    let candidates: Vec<matcher::MeetingCandidate> = raw_candidates
+        .iter()
+        .map(
+            |(id, title, start_time, entity_id)| matcher::MeetingCandidate {
+                meeting_id: id.clone(),
+                title: title.clone(),
+                start_time: start_time.parse::<chrono::DateTime<chrono::Utc>>().ok(),
+                entity_id: entity_id.clone(),
+            },
+        )
+        .collect();
+
+    // Use filename stem as document title for matching
+    let doc_title = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename)
+        .replace('-', " ");
+
+    // Use current time as document time (inbox files processed near their creation)
+    let doc_time = Some(Utc::now());
+
+    let match_result =
+        matcher::find_best_match(&doc_title, doc_time, doc_entity_id.as_deref(), &candidates);
+
+    if let Some(m) = match_result {
+        log::info!(
+            "I474: Matched '{}' to meeting '{}' (score={}, confidence={:.2})",
+            filename,
+            m.meeting_id,
+            m.score,
+            m.confidence,
+        );
+
+        // Update the meeting's transcript metadata to link this document
+        let now = Utc::now().to_rfc3339();
+        if let Err(e) = db.update_meeting_transcript_metadata(
+            &m.meeting_id,
+            &destination.display().to_string(),
+            &now,
+            None,
+        ) {
+            log::warn!(
+                "I474: Failed to update transcript metadata for meeting '{}': {}",
+                m.meeting_id,
+                e,
+            );
+        }
+
+        // Emit transcript_outcomes signal for entity intelligence
+        let entity_type = "account";
+        let entity_id = doc_entity_id.as_deref().unwrap_or(&m.meeting_id);
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            entity_type,
+            entity_id,
+            "transcript_outcomes",
+            "inbox_matcher",
+            Some(&format!(
+                "{{\"meeting_id\":\"{}\",\"source\":\"inbox_document\",\"filename\":\"{}\"}}",
+                m.meeting_id, filename,
+            )),
+            m.confidence * 0.75, // slightly discount confidence vs direct transcript processing
+        );
+    } else {
+        log::info!("I474: No meeting match found for '{}'", filename);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -650,12 +769,19 @@ mod tests {
 
         // Write a test file
         let file_path = attachments_dir.join("my-resume.md");
-        std::fs::write(&file_path, "# Resume\n\nSenior CS Manager with 10 years experience.").unwrap();
+        std::fs::write(
+            &file_path,
+            "# Resume\n\nSenior CS Manager with 10 years experience.",
+        )
+        .unwrap();
 
         let result = process_user_attachment(workspace, &file_path, None);
 
         match &result {
-            ProcessingResult::Routed { classification, destination } => {
+            ProcessingResult::Routed {
+                classification,
+                destination,
+            } => {
                 assert_eq!(classification, "user_context");
                 // File should stay in place
                 assert_eq!(destination, &file_path.display().to_string());

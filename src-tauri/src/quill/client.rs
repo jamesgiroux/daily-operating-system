@@ -68,15 +68,14 @@ impl QuillClient {
         if !std::path::Path::new(bridge_path).exists() {
             return Err(QuillError::BridgeNotFound(bridge_path.to_string()));
         }
-        let node_path = crate::util::resolve_node_binary()
-            .ok_or(QuillError::NodeNotFound)?;
+        let node_path = crate::util::resolve_node_binary().ok_or(QuillError::NodeNotFound)?;
 
-        let transport = TokioChildProcess::new(
-            tokio::process::Command::new(node_path).arg(bridge_path),
-        )
-        .map_err(|e| QuillError::SpawnFailed(e.to_string()))?;
+        let transport =
+            TokioChildProcess::new(tokio::process::Command::new(node_path).arg(bridge_path))
+                .map_err(|e| QuillError::SpawnFailed(e.to_string()))?;
 
-        let service = ().serve(transport)
+        let service = ()
+            .serve(transport)
             .await
             .map_err(|e| QuillError::ConnectionFailed(e.to_string()))?;
 
@@ -128,8 +127,7 @@ impl QuillClient {
         // Quill returns XML, not JSON. Try JSON first for forward-compat,
         // then fall back to XML parsing.
         if text.trim_start().starts_with('[') || text.trim_start().starts_with('{') {
-            return serde_json::from_str(&text)
-                .map_err(|e| QuillError::ParseError(e.to_string()));
+            return serde_json::from_str(&text).map_err(|e| QuillError::ParseError(e.to_string()));
         }
 
         // Parse Quill's XML response:
@@ -144,7 +142,9 @@ impl QuillClient {
     /// List recent meetings from Quill by searching a wide time window.
     pub async fn list_meetings(&self) -> Result<Vec<QuillMeeting>, QuillError> {
         let now = chrono::Utc::now();
-        let after = (now - chrono::Duration::days(7)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let after = (now - chrono::Duration::days(7))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
         let before = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         self.search_meetings("", &after, &before).await
     }
@@ -155,9 +155,7 @@ impl QuillClient {
             .service
             .call_tool(CallToolRequestParam {
                 name: "get_transcript".into(),
-                arguments: serde_json::json!({ "id": meeting_id })
-                    .as_object()
-                    .cloned(),
+                arguments: serde_json::json!({ "id": meeting_id }).as_object().cloned(),
             })
             .await
             .map_err(|e| QuillError::ToolCallFailed(e.to_string()))?;
