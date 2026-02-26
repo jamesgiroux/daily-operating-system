@@ -583,7 +583,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, m.summary, m.created_at,
-                    m.calendar_event_id
+                    m.calendar_event_id, m.description
              FROM meetings_history m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
@@ -603,7 +603,7 @@ impl ActionDb {
                 summary: row.get(7)?,
                 created_at: row.get(8)?,
                 calendar_event_id: row.get(9)?,
-                description: None,
+                description: row.get(10)?,
                 prep_context_json: None,
                 user_agenda_json: None,
                 user_notes: None,
