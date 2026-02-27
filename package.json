@@ -6,7 +6,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "rollup": ">=4.59.0"
+    }
   },
   "scripts": {
     "dev": "vite",
