@@ -188,26 +188,19 @@ pub async fn generate_meeting_intelligence(
     force_full: bool,
 ) -> Result<IntelligenceQuality, ExecutionError> {
     // 1. Load meeting from DB
-    let (meeting_state, has_new) = {
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-
-        let meeting = db
-            .get_meeting_by_id(meeting_id)
-            .map_err(|e| ExecutionError::ConfigurationError(e.to_string()))?
-            .ok_or_else(|| {
-                ExecutionError::ConfigurationError(format!("Meeting not found: {}", meeting_id))
-            })?;
-
-        let intel_state = meeting.intelligence_state.clone();
-        let has_new = meeting.has_new_signals.unwrap_or(0);
-        (intel_state, has_new)
-    };
+    let meeting_id_owned = meeting_id.to_string();
+    let (meeting_state, has_new) = state
+        .db_read(move |db| {
+            let meeting = db
+                .get_meeting_by_id(&meeting_id_owned)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", meeting_id_owned))?;
+            let intel_state = meeting.intelligence_state.clone();
+            let has_new = meeting.has_new_signals.unwrap_or(0);
+            Ok((intel_state, has_new))
+        })
+        .await
+        .map_err(ExecutionError::ConfigurationError)?;
 
     if force_full {
         let refreshed =
@@ -221,49 +214,38 @@ pub async fn generate_meeting_intelligence(
     if meeting_state.as_deref() == Some("enriched") {
         if has_new == 0 {
             // No new signals — return current quality without extra work
-            let quality = {
-                let guard = state.db.lock().map_err(|_| {
-                    ExecutionError::ConfigurationError("DB lock poisoned".to_string())
-                })?;
-                let db = guard.as_ref().ok_or_else(|| {
-                    ExecutionError::ConfigurationError("Database not initialized".to_string())
-                })?;
-                assess_intelligence_quality(db, meeting_id)
-            };
+            let mid = meeting_id.to_string();
+            let quality = state
+                .db_read(move |db| Ok(assess_intelligence_quality(db, &mid)))
+                .await
+                .map_err(ExecutionError::ConfigurationError)?;
             return Ok(quality);
         }
         // Has new signals: set state to "refreshing"
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-        let _ = db.update_intelligence_state(meeting_id, "refreshing", None, None);
+        let mid = meeting_id.to_string();
+        let _ = state
+            .db_write(move |db| {
+                let _ = db.update_intelligence_state(&mid, "refreshing", None, None);
+                Ok(())
+            })
+            .await;
     } else if meeting_state.as_deref() != Some("enriched") {
         // No intelligence exists (detected): set state to "enriching"
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-        let _ = db.update_intelligence_state(meeting_id, "enriching", None, None);
+        let mid = meeting_id.to_string();
+        let _ = state
+            .db_write(move |db| {
+                let _ = db.update_intelligence_state(&mid, "enriching", None, None);
+                Ok(())
+            })
+            .await;
     }
 
     // 3. Run mechanical quality assessment
-    let quality = {
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-        assess_intelligence_quality(db, meeting_id)
-    };
+    let mid = meeting_id.to_string();
+    let quality = state
+        .db_read(move |db| Ok(assess_intelligence_quality(db, &mid)))
+        .await
+        .map_err(ExecutionError::ConfigurationError)?;
 
     // 4. Enqueue meeting prep regeneration.
     state
@@ -284,24 +266,22 @@ pub async fn generate_meeting_intelligence(
 
     // 5. Update DB: mark as "enriched" — intelligence comes from entity level,
     // meeting prep is mechanical assembly.
-    {
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| ExecutionError::ConfigurationError("DB lock poisoned".to_string()))?;
-        let db = guard.as_ref().ok_or_else(|| {
-            ExecutionError::ConfigurationError("Database not initialized".to_string())
-        })?;
-        db.update_intelligence_state(
-            meeting_id,
-            "enriched",
-            Some(&quality.level.to_string()),
-            Some(quality.signal_count as i32),
-        )
-        .map_err(|e| ExecutionError::ConfigurationError(e.to_string()))?;
-
-        let _ = db.clear_meeting_new_signals(meeting_id);
-    }
+    let mid = meeting_id.to_string();
+    let quality_level = quality.level.to_string();
+    state
+        .db_write(move |db| {
+            db.update_intelligence_state(
+                &mid,
+                "enriched",
+                Some(&quality_level),
+                Some(quality.signal_count as i32),
+            )
+            .map_err(|e| e.to_string())?;
+            let _ = db.clear_meeting_new_signals(&mid);
+            Ok(())
+        })
+        .await
+        .map_err(ExecutionError::ConfigurationError)?;
 
     Ok(quality)
 }

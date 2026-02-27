@@ -31,8 +31,17 @@ pub async fn generate_report(
             let workspace = std::path::Path::new(&config.workspace_path);
             let ai_models = config.ai_models.clone();
 
+            let ctx_provider = state.context_provider.as_ref();
+
             match report_type_str.as_str() {
-                "swot" => gather_swot_input(workspace, db, &entity_id, &entity_type, ai_models)?,
+                "swot" => gather_swot_input(
+                    workspace,
+                    db,
+                    &entity_id,
+                    &entity_type,
+                    ai_models,
+                    ctx_provider,
+                )?,
                 "account_health" => {
                     let active_preset = config.role.clone();
                     crate::reports::account_health::gather_account_health_input(
@@ -41,6 +50,7 @@ pub async fn generate_report(
                         &entity_id,
                         ai_models,
                         &active_preset,
+                        ctx_provider,
                     )?
                 }
                 "weekly_impact" => {
@@ -69,6 +79,7 @@ pub async fn generate_report(
                         &entity_id,
                         ai_models,
                         &active_preset,
+                        ctx_provider,
                     )?
                 }
                 _ => return Err(format!("Unknown report type: {}", report_type_str)),

@@ -296,6 +296,14 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
 
         match result {
             Ok(Ok(())) => {
+                // Audit: meeting prep generated
+                if let Ok(mut audit) = state.audit_log.lock() {
+                    let _ = audit.append(
+                        "ai",
+                        "meeting_prep_generated",
+                        serde_json::json!({"meeting_id": request.meeting_id}),
+                    );
+                }
                 let _ = app.emit(
                     "prep-ready",
                     PrepReadyPayload {

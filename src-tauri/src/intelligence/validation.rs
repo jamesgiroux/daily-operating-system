@@ -56,7 +56,8 @@ pub fn check_anomalies_public(raw: &str) {
     check_anomalies(raw);
 }
 
-fn check_anomalies(raw: &str) {
+/// Check for anomalies and return the list of detected patterns (for audit logging).
+pub fn detect_anomalies(raw: &str) -> Vec<&'static str> {
     let lower = raw.to_lowercase();
 
     let suspicious_patterns: &[&str] = &[
@@ -68,14 +69,21 @@ fn check_anomalies(raw: &str) {
         "you are a",       // Role assignment leak
     ];
 
+    let mut found = Vec::new();
     for pattern in suspicious_patterns {
         if lower.contains(pattern) {
             log::warn!(
                 "Anomaly detected in AI output: contains '{}' — possible injection artifact",
                 pattern
             );
+            found.push(*pattern);
         }
     }
+    found
+}
+
+fn check_anomalies(raw: &str) {
+    detect_anomalies(raw);
 }
 
 #[cfg(test)]

@@ -157,6 +157,9 @@ pub struct AppState {
     pub integrations: IntegrationState,
     /// Whether the app is currently locked (I465).
     pub is_locked: AtomicBool,
+    /// Last user activity timestamp for idle lock timer (I465).
+    /// Updated on window focus AND user interaction (click/keypress).
+    pub last_activity: Mutex<Instant>,
     /// Timestamp of last failed unlock attempt for cooldown tracking (I465).
     pub last_failed_unlock: Mutex<Option<Instant>>,
     /// Count of consecutive failed unlock attempts (I465).
@@ -164,6 +167,8 @@ pub struct AppState {
     /// True if the encryption key was not found in the Keychain on startup (I462).
     /// When set, the frontend shows a recovery screen instead of normal UI.
     pub encryption_key_missing: AtomicBool,
+    /// Tamper-evident audit log for enterprise observability (I471).
+    pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
@@ -172,6 +177,9 @@ pub struct AppState {
     /// embedding inference) to one at a time. Prevents resource contention
     /// between background processors.
     pub heavy_work_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Context provider for intelligence enrichment (ADR-0095).
+    /// Determines where entity context is gathered (local DB vs. Glean).
+    pub context_provider: Arc<dyn crate::context_provider::ContextProvider>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -192,13 +200,60 @@ impl AppState {
         let config = load_config().ok();
         let history = load_execution_history().unwrap_or_default();
 
+        // Initialize audit logger BEFORE DB open so key events can be logged (Option B).
+        let audit_path = crate::audit_log::default_audit_log_path();
+        let mut audit_logger = crate::audit_log::AuditLogger::new(audit_path);
+
+        // Rotate old records on startup
+        let (records_pruned, bytes_freed) = crate::audit_log::rotate_audit_log(&mut audit_logger);
+        let _ = audit_logger.append(
+            "system",
+            "audit_log_rotated",
+            serde_json::json!({
+                "records_pruned": records_pruned,
+                "bytes_freed": bytes_freed,
+            }),
+        );
+
         let mut encryption_key_missing = false;
         let db = match crate::db::ActionDb::open() {
-            Ok(db) => Some(db),
+            Ok(db) => {
+                // Distinguish key generation (fresh install) from access (existing DB)
+                let event = if crate::db::encryption::was_key_generated() {
+                    "db_key_generated"
+                } else {
+                    "db_key_accessed"
+                };
+                let _ = audit_logger.append(
+                    "security",
+                    event,
+                    serde_json::json!({"db_encrypted": true}),
+                );
+
+                // Log migration events if a plaintext→encrypted migration happened
+                if crate::db::encryption::was_migration_performed() {
+                    let _ = audit_logger.append(
+                        "security",
+                        "db_migration_started",
+                        serde_json::json!({"migration_type": "plaintext_to_encrypted"}),
+                    );
+                    let _ = audit_logger.append(
+                        "security",
+                        "db_migration_completed",
+                        serde_json::json!({"migration_type": "plaintext_to_encrypted"}),
+                    );
+                }
+                Some(db)
+            }
             Err(crate::db::DbError::KeyMissing { ref db_path }) => {
                 log::error!(
                     "Encryption key missing for database at {db_path}. \
                      Showing recovery screen."
+                );
+                let _ = audit_logger.append(
+                    "security",
+                    "db_key_missing",
+                    serde_json::json!({"recovery_screen": true}),
                 );
                 encryption_key_missing = true;
                 None
@@ -229,6 +284,65 @@ impl AppState {
         // Build the prep invalidation queue and signal engine together so
         // the engine can push invalidated meeting IDs into the shared queue.
         let prep_queue = Arc::new(Mutex::new(Vec::new()));
+        // Log app_started event
+        let _ = audit_logger.append(
+            "system",
+            "app_started",
+            serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "db_encrypted": !encryption_key_missing && db.is_some(),
+            }),
+        );
+        let audit_log = Arc::new(Mutex::new(audit_logger));
+
+        // Initialize context provider (ADR-0095).
+        // Read context_mode from DB if available, else default to Local.
+        let embedding_model = Arc::new(crate::embeddings::EmbeddingModel::new());
+        let workspace_path = config
+            .as_ref()
+            .map(|c| std::path::PathBuf::from(&c.workspace_path))
+            .unwrap_or_default();
+
+        let context_mode = db.as_ref().and_then(|db| {
+            db.conn_ref()
+                .query_row(
+                    "SELECT mode_json FROM context_mode_config WHERE id = 1",
+                    [],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+                .and_then(|json| {
+                    serde_json::from_str::<crate::context_provider::ContextMode>(&json).ok()
+                })
+        });
+
+        let local_provider = crate::context_provider::local::LocalContextProvider::new(
+            workspace_path.clone(),
+            Arc::clone(&embedding_model),
+        );
+
+        let context_provider: Arc<dyn crate::context_provider::ContextProvider> = match context_mode
+        {
+            Some(crate::context_provider::ContextMode::Glean {
+                endpoint,
+                strategy,
+            }) => {
+                log::info!("Context mode: Glean ({:?}) endpoint={}", strategy, endpoint);
+                let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
+                Arc::new(crate::context_provider::glean::GleanContextProvider::new(
+                    endpoint,
+                    strategy,
+                    cache,
+                    local_provider,
+                ))
+            }
+            _ => {
+                log::info!("Context mode: Local");
+                Arc::new(local_provider)
+            }
+        };
+
         let intel_queue_arc = Arc::new(crate::intel_queue::IntelligenceQueue::new());
         let mut signal_engine = crate::signals::propagation::default_engine();
         signal_engine.set_prep_queue(Arc::clone(&prep_queue));
@@ -256,7 +370,7 @@ impl AppState {
                 transcript_processed: Mutex::new(transcript_processed),
             },
             intel_queue: intel_queue_arc,
-            embedding_model: Arc::new(crate::embeddings::EmbeddingModel::new()),
+            embedding_model,
             embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
             hygiene: HygieneState {
                 report: Mutex::new(None),
@@ -284,12 +398,15 @@ impl AppState {
                 embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
             },
             is_locked: AtomicBool::new(false),
+            last_activity: Mutex::new(Instant::now()),
             last_failed_unlock: Mutex::new(None),
             failed_unlock_count: AtomicU32::new(0),
             encryption_key_missing: AtomicBool::new(encryption_key_missing),
+            audit_log,
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+            context_provider,
         }
     }
 
@@ -433,14 +550,42 @@ impl AppState {
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
     {
-        let svc = self.db_service.get().ok_or("DbService not initialized")?;
-        svc.reader()
-            .call(move |conn| {
-                let db = crate::db::ActionDb::from_conn(conn);
-                Ok(f(db))
-            })
-            .await
-            .map_err(|e| format!("DB read error: {e}"))?
+        // If the async service hasn't finished startup init yet, try to
+        // initialize it on-demand before falling back.
+        if self.db_service.get().is_none() {
+            let _ = self.init_db_service().await;
+        }
+
+        if let Some(svc) = self.db_service.get() {
+            return svc
+                .reader()
+                .call(move |conn| {
+                    let db = crate::db::ActionDb::from_conn(conn);
+                    Ok(f(db))
+                })
+                .await
+                .map_err(|e| format!("DB read error: {e}"))?;
+        }
+
+        // Startup fallback: DbService initialization runs in background.
+        // Keep commands working by using the legacy sync connection until
+        // DbService is ready.
+        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        if guard.is_none() {
+            match crate::db::ActionDb::open() {
+                Ok(db) => {
+                    log::warn!("db_read: sync DB was unavailable; reopened on demand");
+                    *guard = Some(db);
+                }
+                Err(e) => {
+                    return Err(format!("Database unavailable: failed to open DB ({e})"));
+                }
+            }
+        }
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database unavailable".to_string())?;
+        f(db)
     }
 
     /// Run a mutating closure on the writer connection. Serialized — only one
@@ -450,14 +595,40 @@ impl AppState {
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
     {
-        let svc = self.db_service.get().ok_or("DbService not initialized")?;
-        svc.writer()
-            .call(move |conn| {
-                let db = crate::db::ActionDb::from_conn(conn);
-                Ok(f(db))
-            })
-            .await
-            .map_err(|e| format!("DB write error: {e}"))?
+        // If the async service hasn't finished startup init yet, try to
+        // initialize it on-demand before falling back.
+        if self.db_service.get().is_none() {
+            let _ = self.init_db_service().await;
+        }
+
+        if let Some(svc) = self.db_service.get() {
+            return svc
+                .writer()
+                .call(move |conn| {
+                    let db = crate::db::ActionDb::from_conn(conn);
+                    Ok(f(db))
+                })
+                .await
+                .map_err(|e| format!("DB write error: {e}"))?;
+        }
+
+        // Startup fallback: DbService initialization runs in background.
+        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        if guard.is_none() {
+            match crate::db::ActionDb::open() {
+                Ok(db) => {
+                    log::warn!("db_write: sync DB was unavailable; reopened on demand");
+                    *guard = Some(db);
+                }
+                Err(e) => {
+                    return Err(format!("Database unavailable: failed to open DB ({e})"));
+                }
+            }
+        }
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database unavailable".to_string())?;
+        f(db)
     }
 
     /// Save execution history to disk
