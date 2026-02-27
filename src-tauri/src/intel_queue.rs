@@ -340,19 +340,6 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
-        // Check for injection attempts in prompt content (I466)
-        for (request, input) in &inputs {
-            if crate::util::contains_tag_escape(&input.prompt) {
-                if let Ok(mut audit) = state.audit_log.lock() {
-                    let _ = audit.append(
-                        "anomaly",
-                        "injection_tag_escape_detected",
-                        serde_json::json!({"source": "enrichment_prompt", "entity_id": request.entity_id, "escaped": true}),
-                    );
-                }
-            }
-        }
-
         // Phase 2: Run PTY enrichment (no DB lock held)
         // Acquire heavy-work semaphore — limits concurrent expensive operations
         // (PTY subprocess, embedding inference) to one at a time.
