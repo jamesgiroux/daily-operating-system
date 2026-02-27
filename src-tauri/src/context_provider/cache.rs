@@ -191,9 +191,10 @@ impl GleanCache {
         let key = Self::cache_key(kind, id);
         self.memory.remove(&key);
         if let Some(db) = db {
-            let _ = db
-                .conn_ref()
-                .execute("DELETE FROM glean_document_cache WHERE cache_key = ?1", [&key]);
+            let _ = db.conn_ref().execute(
+                "DELETE FROM glean_document_cache WHERE cache_key = ?1",
+                [&key],
+            );
         }
     }
 

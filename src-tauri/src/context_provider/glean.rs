@@ -141,13 +141,8 @@ impl GleanMcpClient {
             })?;
 
         let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-        {
-            return Err(ContextError::Auth(format!(
-                "Glean returned {}",
-                status
-            )));
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(ContextError::Auth(format!("Glean returned {}", status)));
         }
 
         let json: serde_json::Value = response
@@ -313,12 +308,7 @@ impl GleanContextProvider {
     /// Resolve the OAuth token from the macOS Keychain.
     fn resolve_token(&self) -> Result<String, ContextError> {
         let output = std::process::Command::new("security")
-            .args([
-                "find-generic-password",
-                "-s",
-                &self.keychain_key,
-                "-w",
-            ])
+            .args(["find-generic-password", "-s", &self.keychain_key, "-w"])
             .output()
             .map_err(|e| ContextError::Auth(format!("Keychain access failed: {}", e)))?;
 
@@ -387,7 +377,10 @@ impl GleanContextProvider {
         // Search Glean with each query
         for query in &queries {
             // Check cache first
-            if let Some(cached) = self.cache.get_with_db(CacheKind::Document, &format!("search:{}", query), db) {
+            if let Some(cached) =
+                self.cache
+                    .get_with_db(CacheKind::Document, &format!("search:{}", query), db)
+            {
                 if let Ok(results) = serde_json::from_str::<Vec<GleanSearchResult>>(&cached) {
                     for r in results {
                         if let Some(ref url) = r.url {
@@ -514,12 +507,15 @@ impl ContextProvider for GleanContextProvider {
     ) -> Result<IntelligenceContext, ContextError> {
         // Phase A: Always-local data via the local fallback provider.
         // This gives us meetings, actions, captures, facts, user_context, etc.
-        let mut ctx = self
-            .local_fallback
-            .gather_entity_context(db, entity_id, entity_type, prior)?;
+        let mut ctx =
+            self.local_fallback
+                .gather_entity_context(db, entity_id, entity_type, prior)?;
 
         // Phase B: Glean-sourced data (network calls).
         // We use tokio::runtime::Handle to run async code from this sync trait method.
+        // SAFETY: block_in_place requires a multi-threaded tokio runtime and must NOT
+        // be called from inside spawn_blocking. All current callers (intel_queue,
+        // report generators) run on async tasks, so this is safe.
         let glean_data = match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 // We're inside a tokio runtime — use block_in_place to avoid deadlock
