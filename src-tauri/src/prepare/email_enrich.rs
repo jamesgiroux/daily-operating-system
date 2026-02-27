@@ -274,6 +274,24 @@ pub fn enrich_pending_emails_two_phase(
 
     // Phase 2: AI enrichment via PTY (no DB lock held)
     for (email, entity_id, entity_type) in &pending {
+        // Check for injection attempts in email fields (I466)
+        let fields_to_check: [(&str, &str); 4] = [
+            ("subject", email.subject.as_deref().unwrap_or("")),
+            ("snippet", email.snippet.as_deref().unwrap_or("")),
+            ("sender_email", email.sender_email.as_deref().unwrap_or("")),
+            ("sender_name", email.sender_name.as_deref().unwrap_or("")),
+        ];
+        for (field_name, value) in &fields_to_check {
+            if crate::util::contains_tag_escape(value) {
+                if let Ok(mut audit) = state.audit_log.lock() {
+                    let _ = audit.append(
+                        "anomaly",
+                        "injection_tag_escape_detected",
+                        serde_json::json!({"source": format!("email_{}", field_name), "escaped": true}),
+                    );
+                }
+            }
+        }
         // Build context prompt — needs DB for relationship context
         let prompt = {
             let guard = state.db.lock().ok();
@@ -338,6 +356,17 @@ pub fn enrich_pending_emails_two_phase(
             enriched_count,
             pending.len()
         );
+        // Audit: email enrichment batch
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append(
+                "ai",
+                "email_enrichment_batch",
+                serde_json::json!({
+                    "emails_processed": enriched_count,
+                    "failed": pending.len() - enriched_count,
+                }),
+            );
+        }
     }
     enriched_count
 }
