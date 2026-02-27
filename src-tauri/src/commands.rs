@@ -8727,18 +8727,27 @@ pub fn set_context_mode(
     let parsed: crate::context_provider::ContextMode =
         serde_json::from_value(mode).map_err(|e| format!("Invalid context mode: {}", e))?;
 
+    // Read current mode before writing so we can log from/to
+    let previous_mode = state
+        .with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))
+        .unwrap_or_default();
+
     state.with_db_write(|db| crate::context_provider::save_context_mode(db, &parsed))?;
 
-    // Log the mode change
+    // Log the mode change with from/to
+    let mode_name = |m: &crate::context_provider::ContextMode| -> &str {
+        match m {
+            crate::context_provider::ContextMode::Local => "local",
+            crate::context_provider::ContextMode::Glean { .. } => "glean",
+        }
+    };
     if let Ok(mut audit) = state.audit_log.lock() {
         let _ = audit.append(
             "config",
             "context_mode_changed",
             serde_json::json!({
-                "provider": match &parsed {
-                    crate::context_provider::ContextMode::Local => "local",
-                    crate::context_provider::ContextMode::Glean { .. } => "glean",
-                },
+                "from": mode_name(&previous_mode),
+                "to": mode_name(&parsed),
             }),
         );
     }
