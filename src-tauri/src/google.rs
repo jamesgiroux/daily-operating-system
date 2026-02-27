@@ -179,7 +179,11 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             Ok(events) => {
                 // Audit: calendar sync
                 if let Ok(mut audit) = state.audit_log.lock() {
-                    let _ = audit.append("data_access", "google_calendar_sync", serde_json::json!({"events_count": events.len()}));
+                    let _ = audit.append(
+                        "data_access",
+                        "google_calendar_sync",
+                        serde_json::json!({"events_count": events.len()}),
+                    );
                 }
                 // Check for new prep-eligible meetings before storing (I41)
                 let new_preps = generate_preps_for_new_meetings(&events, &state, &workspace);

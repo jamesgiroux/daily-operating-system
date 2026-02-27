@@ -840,18 +840,63 @@ pub async fn capture_meeting_outcome(
     let outcome_clone = outcome.clone();
     let _ = state
         .db_write(move |db| {
+            // Resolve stable entity IDs so post-meeting actions/captures attach even when
+            // the UI payload only has display names.
+            let linked_entities = db
+                .get_meeting_entities(&outcome_clone.meeting_id)
+                .unwrap_or_default();
+
+            let mut resolved_account_id = linked_entities
+                .iter()
+                .find(|e| e.entity_type == crate::entity::EntityType::Account)
+                .map(|e| e.id.clone());
+            let mut resolved_project_id = linked_entities
+                .iter()
+                .find(|e| e.entity_type == crate::entity::EntityType::Project)
+                .map(|e| e.id.clone());
+
+            if let Some(raw_entity) = outcome_clone.account.as_deref() {
+                if resolved_account_id.is_none() {
+                    resolved_account_id = db
+                        .get_account(raw_entity)
+                        .ok()
+                        .flatten()
+                        .map(|a| a.id)
+                        .or_else(|| {
+                            db.get_account_by_name(raw_entity)
+                                .ok()
+                                .flatten()
+                                .map(|a| a.id)
+                        });
+                }
+
+                if resolved_project_id.is_none() {
+                    resolved_project_id = db
+                        .get_project(raw_entity)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.id)
+                        .or_else(|| {
+                            db.get_project_by_name(raw_entity)
+                                .ok()
+                                .flatten()
+                                .map(|p| p.id)
+                        });
+                }
+            }
+
             for action in &outcome_clone.actions {
                 let now = chrono::Utc::now().to_rfc3339();
                 let db_action = crate::db::DbAction {
                     id: uuid::Uuid::new_v4().to_string(),
                     title: action.title.clone(),
                     priority: "P2".to_string(),
-                    status: "pending".to_string(),
+                    status: "proposed".to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
-                    account_id: outcome_clone.account.clone(),
-                    project_id: None,
+                    account_id: resolved_account_id.clone(),
+                    project_id: resolved_project_id.clone(),
                     source_type: Some("post_meeting".to_string()),
                     source_id: Some(outcome_clone.meeting_id.clone()),
                     source_label: Some(outcome_clone.meeting_title.clone()),
@@ -869,19 +914,21 @@ pub async fn capture_meeting_outcome(
             }
 
             for win in &outcome_clone.wins {
-                let _ = db.insert_capture(
+                let _ = db.insert_capture_with_project(
                     &outcome_clone.meeting_id,
                     &outcome_clone.meeting_title,
-                    outcome_clone.account.as_deref(),
+                    resolved_account_id.as_deref(),
+                    resolved_project_id.as_deref(),
                     "win",
                     win,
                 );
             }
             for risk in &outcome_clone.risks {
-                let _ = db.insert_capture(
+                let _ = db.insert_capture_with_project(
                     &outcome_clone.meeting_id,
                     &outcome_clone.meeting_title,
-                    outcome_clone.account.as_deref(),
+                    resolved_account_id.as_deref(),
+                    resolved_project_id.as_deref(),
                     "risk",
                     risk,
                 );
