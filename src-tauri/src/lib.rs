@@ -8,6 +8,7 @@
 pub mod accounts;
 pub mod activity;
 mod audit;
+pub mod audit_log;
 mod backfill_meetings;
 mod calendar_merge;
 mod capture;
@@ -702,6 +703,10 @@ pub fn run() {
             commands::lock_app,
             commands::unlock_app,
             commands::set_lock_timeout,
+            // I471: Audit Log
+            commands::get_audit_log_records,
+            commands::export_audit_log,
+            commands::verify_audit_log_integrity,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
