@@ -8693,9 +8693,7 @@ pub fn verify_audit_log_integrity(state: State<'_, Arc<AppState>>) -> Result<Str
 /// Get the current context mode (Local or Glean).
 #[tauri::command]
 pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
-    let mode = state.with_db_read(|db| {
-        Ok(crate::context_provider::read_context_mode(db))
-    })?;
+    let mode = state.with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))?;
 
     serde_json::to_value(&mode).map_err(|e| format!("Serialization error: {}", e))
 }
@@ -8710,9 +8708,7 @@ pub fn set_context_mode(
     let parsed: crate::context_provider::ContextMode =
         serde_json::from_value(mode).map_err(|e| format!("Invalid context mode: {}", e))?;
 
-    state.with_db_write(|db| {
-        crate::context_provider::save_context_mode(db, &parsed)
-    })?;
+    state.with_db_write(|db| crate::context_provider::save_context_mode(db, &parsed))?;
 
     // Log the mode change
     if let Ok(mut audit) = state.audit_log.lock() {
@@ -8781,9 +8777,12 @@ pub fn save_glean_token(token: String) -> Result<(), String> {
     let status = std::process::Command::new("security")
         .args([
             "add-generic-password",
-            "-s", "com.dailyos.desktop.glean",
-            "-a", "glean-oauth",
-            "-w", &token,
+            "-s",
+            "com.dailyos.desktop.glean",
+            "-a",
+            "glean-oauth",
+            "-w",
+            &token,
             "-U",
         ])
         .status()
@@ -8802,8 +8801,10 @@ pub fn get_glean_token_status() -> Result<bool, String> {
     let output = std::process::Command::new("security")
         .args([
             "find-generic-password",
-            "-s", "com.dailyos.desktop.glean",
-            "-a", "glean-oauth",
+            "-s",
+            "com.dailyos.desktop.glean",
+            "-a",
+            "glean-oauth",
         ])
         .output()
         .map_err(|e| format!("Keychain access failed: {}", e))?;
@@ -8817,8 +8818,10 @@ pub fn delete_glean_token() -> Result<(), String> {
     let _ = std::process::Command::new("security")
         .args([
             "delete-generic-password",
-            "-s", "com.dailyos.desktop.glean",
-            "-a", "glean-oauth",
+            "-s",
+            "com.dailyos.desktop.glean",
+            "-a",
+            "glean-oauth",
         ])
         .status();
 

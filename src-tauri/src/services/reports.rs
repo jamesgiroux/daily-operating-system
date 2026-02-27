@@ -34,7 +34,14 @@ pub async fn generate_report(
             let ctx_provider = state.context_provider.as_ref();
 
             match report_type_str.as_str() {
-                "swot" => gather_swot_input(workspace, db, &entity_id, &entity_type, ai_models, ctx_provider)?,
+                "swot" => gather_swot_input(
+                    workspace,
+                    db,
+                    &entity_id,
+                    &entity_type,
+                    ai_models,
+                    ctx_provider,
+                )?,
                 "account_health" => {
                     let active_preset = config.role.clone();
                     crate::reports::account_health::gather_account_health_input(
