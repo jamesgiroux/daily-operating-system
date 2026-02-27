@@ -5,10 +5,27 @@
 //! bypasses SQLCipher's PBKDF2, avoiding the 300ms open-time overhead.
 
 use rand::Rng;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 const KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.db";
 const KEYCHAIN_ACCOUNT: &str = "sqlcipher-key";
+
+/// Set to `true` when a new key is generated (fresh install).
+static KEY_WAS_GENERATED: AtomicBool = AtomicBool::new(false);
+
+/// Set to `true` when a plaintext→encrypted migration is performed.
+static MIGRATION_PERFORMED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the last `get_or_create_db_key` call generated a new key.
+pub fn was_key_generated() -> bool {
+    KEY_WAS_GENERATED.load(Ordering::Relaxed)
+}
+
+/// Whether `migrate_to_encrypted` ran during this process.
+pub fn was_migration_performed() -> bool {
+    MIGRATION_PERFORMED.load(Ordering::Relaxed)
+}
 
 /// Process-wide cached key. Set once on first Keychain read, reused for all
 /// subsequent DB opens. This avoids hitting the Keychain on every background
@@ -41,6 +58,7 @@ pub fn get_or_create_db_key(db_path: &std::path::Path) -> Result<String, String>
             // No DB yet (fresh install) or plaintext DB (pre-migration) → safe to create key
             let new_key = generate_key();
             store_key_in_keychain(&new_key)?;
+            KEY_WAS_GENERATED.store(true, Ordering::Relaxed);
             new_key
         }
     };
@@ -138,6 +156,7 @@ pub fn migrate_to_encrypted(plaintext_path: &std::path::Path, hex_key: &str) -> 
     // Remove the plaintext backup after successful swap
     let _ = std::fs::remove_file(&backup_path);
 
+    MIGRATION_PERFORMED.store(true, Ordering::Relaxed);
     log::info!("Database migrated to SQLCipher encryption");
     Ok(())
 }
