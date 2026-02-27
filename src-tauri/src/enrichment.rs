@@ -61,8 +61,20 @@ pub async fn run_enrichment_processor(state: Arc<AppState>) {
 /// Returns total number of rows *attempted* (not just successes).
 async fn process_one_sweep(state: &AppState) -> u32 {
     let mut total = 0;
-    total += process_clay_queue(state).await;
-    total += process_gravatar_queue(state).await;
+    let clay_count = process_clay_queue(state).await;
+    if clay_count > 0 {
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append("data_access", "clay_enrichment", serde_json::json!({"attempted": clay_count}));
+        }
+    }
+    total += clay_count;
+    let gravatar_count = process_gravatar_queue(state).await;
+    if gravatar_count > 0 {
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append("data_access", "gravatar_lookup", serde_json::json!({"attempted": gravatar_count}));
+        }
+    }
+    total += gravatar_count;
     total
 }
 
