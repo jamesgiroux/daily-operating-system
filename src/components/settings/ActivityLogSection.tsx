@@ -69,6 +69,10 @@ const EVENT_NAMES: Record<string, EventTranslation> = {
   schema_validation_failed: "AI output rejected (unexpected format)",
   workspace_path_changed: "Workspace path changed",
   ai_provider_changed: "AI provider changed",
+  context_mode_changed: (d) =>
+    `Context source changed (${d.from ?? "?"} → ${d.to ?? "?"})`,
+  glean_context_gathered: "Glean context gathered",
+  glean_connection_failed: "Glean connection failed",
 };
 
 // ---------------------------------------------------------------------------
