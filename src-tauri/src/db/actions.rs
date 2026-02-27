@@ -85,7 +85,7 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Query pending and waiting actions for a specific account.
+    /// Query proposed, pending, and waiting actions for a specific account.
     pub fn get_account_actions(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -94,7 +94,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
-               AND status IN ('pending', 'waiting')
+               AND status IN ('proposed', 'pending', 'waiting')
              ORDER BY priority, due_date",
         )?;
 
@@ -130,12 +130,14 @@ impl ActionDb {
                    a.source_type IN ('post_meeting', 'transcript')
                    AND a.source_id IN (
                      SELECT m.id FROM meetings_history m
-                     JOIN meeting_attendees ma ON m.id = ma.meeting_id
-                     WHERE ma.person_id = ?1
-                       AND (
-                         m.meeting_type = 'one_on_one'
-                         OR (SELECT COUNT(*) FROM meeting_attendees WHERE meeting_id = m.id) = 2
-                       )
+                     LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
+                     LEFT JOIN meeting_entities me ON m.id = me.meeting_id
+                     WHERE (ma.person_id = ?1
+                        OR (me.entity_type = 'person' AND me.entity_id = ?1))
+                        AND (
+                          m.meeting_type = 'one_on_one'
+                          OR (SELECT COUNT(*) FROM meeting_attendees WHERE meeting_id = m.id) = 2
+                        )
                    )
                  )
                )
@@ -161,12 +163,16 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+            "SELECT DISTINCT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id
              FROM meetings_history m
-             JOIN meeting_attendees ma ON m.id = ma.meeting_id
-             WHERE ma.person_id = ?1
+             LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
+             LEFT JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE (
+                   ma.person_id = ?1
+                   OR (me.entity_type = 'person' AND me.entity_id = ?1)
+                 )
                AND m.start_time >= datetime('now')
              ORDER BY m.start_time ASC
              LIMIT ?2",
@@ -526,7 +532,7 @@ impl ActionDb {
         Ok(changed)
     }
 
-    /// Query actions extracted from a transcript for a specific meeting.
+    /// Query actions captured from a transcript or post-meeting flow for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -534,7 +540,8 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE source_id = ?1 AND source_type = 'transcript'
+             WHERE source_id = ?1
+               AND source_type IN ('transcript', 'post_meeting')
              ORDER BY priority, created_at",
         )?;
 
