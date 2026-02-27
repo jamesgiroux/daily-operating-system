@@ -340,10 +340,14 @@ pub fn enrich_pending_emails_two_phase(
         );
         // Audit: email enrichment batch
         if let Ok(mut audit) = state.audit_log.lock() {
-            let _ = audit.append("ai", "email_enrichment_batch", serde_json::json!({
-                "enriched": enriched_count,
-                "attempted": pending.len(),
-            }));
+            let _ = audit.append(
+                "ai",
+                "email_enrichment_batch",
+                serde_json::json!({
+                    "enriched": enriched_count,
+                    "attempted": pending.len(),
+                }),
+            );
         }
     }
     enriched_count
