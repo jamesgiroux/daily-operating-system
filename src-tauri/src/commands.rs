@@ -1387,7 +1387,29 @@ pub async fn set_workspace_path(
     path: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::services::settings::set_workspace_path(&path, &state).await
+    let result = crate::services::settings::set_workspace_path(&path, &state).await;
+    if result.is_ok() {
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let category = {
+                let home = dirs::home_dir().unwrap_or_default();
+                let documents = home.join("Documents");
+                let p = std::path::Path::new(&path);
+                if p.starts_with(&documents) {
+                    "documents"
+                } else if p.starts_with(&home) {
+                    "home"
+                } else {
+                    "custom"
+                }
+            };
+            let _ = audit.append(
+                "config",
+                "workspace_path_changed",
+                serde_json::json!({"category": category}),
+            );
+        }
+    }
+    result
 }
 
 /// Toggle developer mode (shows/hides devtools panel)
@@ -1492,11 +1514,25 @@ pub async fn unlock_app(
         Ok(true) => {
             state.is_locked.store(false, Ordering::Relaxed);
             state.failed_unlock_count.store(0, Ordering::Relaxed);
+            // Reset activity timer so the user gets a fresh idle window
+            if let Ok(mut guard) = state.last_activity.lock() {
+                *guard = std::time::Instant::now();
+            }
+            if let Ok(mut audit) = state.audit_log.lock() {
+                let _ = audit.append("security", "app_unlock_succeeded", serde_json::json!({}));
+            }
             let _ = app.emit("app-unlocked", ());
             Ok(())
         }
         Ok(false) => {
             let new_count = state.failed_unlock_count.fetch_add(1, Ordering::Relaxed) + 1;
+            if let Ok(mut audit) = state.audit_log.lock() {
+                let _ = audit.append(
+                    "security",
+                    "app_unlock_failed",
+                    serde_json::json!({"consecutive_failures": new_count}),
+                );
+            }
             if let Ok(mut guard) = state.last_failed_unlock.lock() {
                 *guard = Some(std::time::Instant::now());
             }
@@ -1532,56 +1568,108 @@ pub fn set_lock_timeout(
     })
 }
 
-/// Attempt system-level authentication using macOS LocalAuthentication via JXA.
-/// Triggers Touch ID if available, falls back to password.
-///
-/// Uses JavaScript for Automation (JXA) instead of AppleScript because
-/// `evaluatePolicy` is an async ObjC method with a completion handler —
-/// AppleScript's ObjC bridge doesn't handle async callbacks, so it returns
-/// immediately without waiting for the biometric prompt.
-async fn attempt_system_auth() -> Result<bool, String> {
-    let script = r#"
-ObjC.import("LocalAuthentication");
-var context = $.LAContext.new;
-var error = Ref();
-var can = context.canEvaluatePolicyError(1, error);
-if (!can) { "unavailable"; }
-else {
-  var sem = $.NSCondition.alloc.init;
-  var result = {value: "fail"};
-  context.evaluatePolicyLocalizedReasonReply(1, "DailyOS requires authentication to unlock.", function(success, err) {
-    result.value = success ? "ok" : "fail";
-    sem.lock;
-    sem.signal;
-    sem.unlock;
-  });
-  sem.lock;
-  sem.waitUntilDate($.NSDate.dateWithTimeIntervalSinceNow(30));
-  sem.unlock;
-  result.value;
+/// Signal user activity (click/keypress) to reset the idle lock timer.
+#[tauri::command]
+pub fn signal_user_activity(state: State<'_, Arc<AppState>>) {
+    if let Ok(mut guard) = state.last_activity.lock() {
+        *guard = std::time::Instant::now();
+    }
 }
-"#;
 
-    let output = tokio::process::Command::new("osascript")
-        .args(["-l", "JavaScript", "-e", script])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to launch auth: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    match stdout.as_str() {
-        "ok" => Ok(true),
-        "fail" => Ok(false),
-        "unavailable" => {
-            // No biometric available — skip lock requirement
-            log::warn!("Biometric authentication unavailable, auto-unlocking");
-            Ok(true)
-        }
-        _ => {
-            // osascript failed (user cancelled, etc.)
-            Ok(false)
+/// Signal window focus change to reset the idle lock timer.
+#[tauri::command]
+pub fn signal_window_focus(focused: bool, state: State<'_, Arc<AppState>>) {
+    if focused {
+        if let Ok(mut guard) = state.last_activity.lock() {
+            *guard = std::time::Instant::now();
         }
     }
+}
+
+/// Attempt system-level authentication using macOS LocalAuthentication framework.
+/// Calls LAContext.evaluatePolicy directly via objc2 FFI so the Touch ID dialog
+/// shows "DailyOS" as the requesting app (not "osascript").
+#[cfg(target_os = "macos")]
+async fn attempt_system_auth() -> Result<bool, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<bool, String>>();
+
+    std::thread::spawn(move || {
+        use block2::RcBlock;
+        use objc2::runtime::Bool;
+        use objc2_foundation::{NSComparisonResult, NSRunLoop, NSDate, NSString};
+        use objc2_local_authentication::{LAContext, LAPolicy};
+
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        unsafe {
+            let context = LAContext::new();
+            let policy = LAPolicy(1); // deviceOwnerAuthentication (biometrics + passcode fallback)
+
+            // Check if any authentication method is available
+            if let Err(e) = context.canEvaluatePolicy_error(policy) {
+                log::warn!("Biometric authentication unavailable: {e}, auto-unlocking");
+                let _ = tx.send(Ok(true));
+                return;
+            }
+
+            let reason = NSString::from_str("DailyOS requires authentication to unlock.");
+            let done_clone = done.clone();
+            let tx = std::sync::Mutex::new(Some(tx));
+            let block = RcBlock::new(move |success: Bool, err: *mut objc2_foundation::NSError| {
+                let result = if success.as_bool() {
+                    Ok(true)
+                } else if !err.is_null() {
+                    let err_ref = &*err;
+                    let code = err_ref.code();
+                    // LAError.userCancel = -2, LAError.systemCancel = -4
+                    if code == -2 || code == -4 {
+                        log::info!("Touch ID cancelled (code {code})");
+                        Ok(false)
+                    } else {
+                        let desc = err_ref.localizedDescription();
+                        log::warn!("Touch ID error (code {code}): {desc}");
+                        Ok(false)
+                    }
+                } else {
+                    Ok(false)
+                };
+                if let Some(tx) = tx.lock().unwrap().take() {
+                    let _ = tx.send(result);
+                }
+                done_clone.store(true, std::sync::atomic::Ordering::Release);
+            });
+
+            context.evaluatePolicy_localizedReason_reply(policy, &reason, &block);
+
+            // Pump the run loop until the callback fires or 30s deadline
+            let deadline = NSDate::dateWithTimeIntervalSinceNow(30.0);
+            while !done.load(std::sync::atomic::Ordering::Acquire) {
+                let step = NSDate::dateWithTimeIntervalSinceNow(0.1);
+                NSRunLoop::currentRunLoop().runUntilDate(&step);
+                if NSDate::date().compare(&deadline) != NSComparisonResult::Ascending {
+                    log::warn!("Touch ID run loop deadline exceeded");
+                    break;
+                }
+            }
+        }
+    });
+
+    // 35s outer timeout — the thread has its own 30s deadline,
+    // but if something hangs we don't want the frontend stuck forever.
+    match tokio::time::timeout(std::time::Duration::from_secs(35), rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => {
+            log::warn!("Touch ID channel closed without result");
+            Ok(false)
+        }
+        Err(_) => Err("Authentication timed out".to_string()),
+    }
+}
+
+/// Non-macOS fallback: no biometric available, auto-unlock.
+#[cfg(not(target_os = "macos"))]
+async fn attempt_system_auth() -> Result<bool, String> {
+    Ok(true)
 }
 
 /// Set UI personality tone (professional, friendly, playful)
@@ -2004,7 +2092,7 @@ pub async fn get_proposed_actions(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAction>, String> {
     state
-        .db_read(|db| crate::services::actions::get_proposed_actions(db))
+        .db_read(crate::services::actions::get_proposed_actions)
         .await
 }
 
@@ -2209,6 +2297,15 @@ pub async fn start_google_auth(
         email: email.clone(),
     };
 
+    // Audit: oauth_connected
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append(
+            "security",
+            "oauth_connected",
+            serde_json::json!({"provider": "google"}),
+        );
+    }
+
     // Update state
     if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = new_status.clone();
@@ -2239,6 +2336,15 @@ pub fn disconnect_google(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     crate::google::disconnect()?;
+
+    // Audit: oauth_revoked
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append(
+            "security",
+            "oauth_revoked",
+            serde_json::json!({"provider": "google"}),
+        );
+    }
 
     let new_status = GoogleAuthStatus::NotConfigured;
 
@@ -2648,9 +2754,7 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
     let workspace = std::path::Path::new(&workspace_path);
     crate::devtools::write_fixtures(workspace)?;
 
-    state
-        .db_write(|db| crate::devtools::seed_database(db))
-        .await?;
+    state.db_write(crate::devtools::seed_database).await?;
 
     Ok("Demo data installed".into())
 }
@@ -3731,7 +3835,7 @@ pub async fn get_accounts_list(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<AccountListItem>, String> {
     state
-        .db_read(|db| crate::services::accounts::get_accounts_list(db))
+        .db_read(crate::services::accounts::get_accounts_list)
         .await
 }
 
@@ -3750,7 +3854,7 @@ pub async fn get_accounts_for_picker(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<PickerAccount>, String> {
     state
-        .db_read(|db| crate::services::accounts::get_accounts_for_picker(db))
+        .db_read(crate::services::accounts::get_accounts_for_picker)
         .await
 }
 
@@ -4114,7 +4218,7 @@ pub async fn backfill_internal_meeting_associations(
     state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
     state
-        .db_write(|db| crate::services::accounts::backfill_internal_meeting_associations(db))
+        .db_write(crate::services::accounts::backfill_internal_meeting_associations)
         .await
 }
 
@@ -4874,9 +4978,7 @@ pub async fn enrich_project(
 
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
-    state
-        .db_read(|db| crate::db_backup::backup_database(db))
-        .await
+    state.db_read(crate::db_backup::backup_database).await
 }
 
 #[tauri::command]
@@ -5022,9 +5124,7 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
 pub async fn get_duplicate_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
-    state
-        .db_read(|db| crate::hygiene::detect_duplicate_people(db))
-        .await
+    state.db_read(crate::hygiene::detect_duplicate_people).await
 }
 
 /// Detect potential duplicate people for a specific person (I172).
@@ -8513,7 +8613,7 @@ pub async fn get_google_drive_watches(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<DriveWatchData>, String> {
     let sources = state
-        .db_read(|db| crate::google_drive::sync::get_all_watched_sources(db))
+        .db_read(crate::google_drive::sync::get_all_watched_sources)
         .await?;
     Ok(sources
         .into_iter()
@@ -8541,4 +8641,226 @@ pub struct DriveWatchData {
     pub entity_id: String,
     pub entity_type: String,
     pub last_synced_at: Option<String>,
+}
+
+// =============================================================================
+// I471: Audit Log Commands
+// =============================================================================
+
+/// Get recent audit log records, optionally filtered by category.
+#[tauri::command]
+pub fn get_audit_log_records(
+    limit: Option<usize>,
+    category_filter: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Vec<crate::audit_log::AuditRecord> {
+    let path = if let Ok(guard) = state.audit_log.lock() {
+        guard.path().to_path_buf()
+    } else {
+        return Vec::new();
+    };
+
+    crate::audit_log::read_records(&path, limit.unwrap_or(100), category_filter.as_deref())
+}
+
+/// Export the audit log to a user-selected path.
+#[tauri::command]
+pub fn export_audit_log(dest_path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let src = if let Ok(guard) = state.audit_log.lock() {
+        guard.path().to_path_buf()
+    } else {
+        return Err("Audit log unavailable".to_string());
+    };
+
+    if !src.exists() {
+        return Err("No audit log file exists yet".to_string());
+    }
+
+    std::fs::copy(&src, &dest_path).map_err(|e| format!("Failed to export audit log: {e}"))?;
+    Ok(())
+}
+
+/// Verify the audit log hash chain integrity.
+#[tauri::command]
+pub fn verify_audit_log_integrity(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let path = if let Ok(guard) = state.audit_log.lock() {
+        guard.path().to_path_buf()
+    } else {
+        return Err("Audit log unavailable".to_string());
+    };
+
+    if !path.exists() {
+        return Ok("No audit log file exists yet.".to_string());
+    }
+
+    match crate::audit_log::verify_audit_log(&path) {
+        Ok(count) => Ok(format!(
+            "Integrity verified: {} records, hash chain intact.",
+            count
+        )),
+        Err((line, msg)) => Err(format!(
+            "Integrity check failed at record {}: {}",
+            line, msg
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Context Mode (ADR-0095)
+// ---------------------------------------------------------------------------
+
+/// Get the current context mode (Local or Glean).
+#[tauri::command]
+pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
+    let mode = state.with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))?;
+
+    serde_json::to_value(&mode).map_err(|e| format!("Serialization error: {}", e))
+}
+
+/// Set the context mode. Requires app restart to take effect.
+/// In Glean mode, Clay and Gravatar enrichment are automatically disabled.
+#[tauri::command]
+pub fn set_context_mode(
+    mode: serde_json::Value,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let parsed: crate::context_provider::ContextMode =
+        serde_json::from_value(mode).map_err(|e| format!("Invalid context mode: {}", e))?;
+
+    state.with_db_write(|db| crate::context_provider::save_context_mode(db, &parsed))?;
+
+    // Log the mode change
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append(
+            "config",
+            "context_mode_changed",
+            serde_json::json!({
+                "provider": match &parsed {
+                    crate::context_provider::ContextMode::Local => "local",
+                    crate::context_provider::ContextMode::Glean { .. } => "glean",
+                },
+            }),
+        );
+    }
+
+    // Enqueue all entities for re-enrichment at ProactiveHygiene priority.
+    // A mode switch means context sources changed — existing intelligence
+    // should be refreshed with the new provider on next app start.
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            use crate::intel_queue::{IntelPriority, IntelRequest};
+            let mut count = 0u32;
+
+            // Re-enqueue all entities that have intelligence (stale threshold = 0)
+            if let Ok(entities) = db.get_stale_entity_intelligence(0) {
+                for (entity_id, entity_type, _) in entities {
+                    state.intel_queue.enqueue(IntelRequest {
+                        entity_id,
+                        entity_type,
+                        priority: IntelPriority::ProactiveHygiene,
+                        requested_at: std::time::Instant::now(),
+                        retry_count: 0,
+                    });
+                    count += 1;
+                }
+            }
+            // Also enqueue entities with no intelligence yet
+            if let Ok(missing) = db.get_entities_without_intelligence() {
+                for (entity_id, entity_type) in missing {
+                    state.intel_queue.enqueue(IntelRequest {
+                        entity_id,
+                        entity_type,
+                        priority: IntelPriority::ProactiveHygiene,
+                        requested_at: std::time::Instant::now(),
+                        retry_count: 0,
+                    });
+                    count += 1;
+                }
+            }
+
+            if count > 0 {
+                log::info!(
+                    "Context mode switch: enqueued {} entities for re-enrichment",
+                    count
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Start Glean OAuth consent flow — opens browser for SSO authentication.
+///
+/// Uses MCP OAuth discovery + DCR from the Glean MCP endpoint URL.
+/// Returns `GleanAuthStatus::Authenticated` on success.
+#[tauri::command]
+pub async fn start_glean_auth(
+    endpoint: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::glean::GleanAuthStatus, String> {
+    use crate::glean;
+
+    match glean::oauth::run_glean_consent_flow(&endpoint).await {
+        Ok(result) => {
+            let status = glean::GleanAuthStatus::Authenticated {
+                email: result.email.unwrap_or_else(|| "connected".to_string()),
+                name: result.name,
+            };
+
+            // Audit: oauth_connected
+            if let Ok(mut audit) = state.audit_log.lock() {
+                let _ = audit.append(
+                    "security",
+                    "oauth_connected",
+                    serde_json::json!({"provider": "glean"}),
+                );
+            }
+
+            let _ = app_handle.emit("glean-auth-changed", &status);
+            Ok(status)
+        }
+        Err(glean::GleanAuthError::FlowCancelled) => {
+            Err("Glean authorization was cancelled".to_string())
+        }
+        Err(e) => {
+            let message = format!("{}", e);
+            let _ = app_handle.emit(
+                "glean-auth-failed",
+                serde_json::json!({ "message": message }),
+            );
+            Err(message)
+        }
+    }
+}
+
+/// Get current Glean authentication status from Keychain.
+#[tauri::command]
+pub fn get_glean_auth_status() -> crate::glean::GleanAuthStatus {
+    crate::glean::detect_glean_auth()
+}
+
+/// Disconnect Glean — delete OAuth token from Keychain.
+#[tauri::command]
+pub fn disconnect_glean(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::glean::token_store::delete_token().map_err(|e| format!("{}", e))?;
+
+    // Audit: oauth_revoked
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append(
+            "security",
+            "oauth_revoked",
+            serde_json::json!({"provider": "glean"}),
+        );
+    }
+
+    let status = crate::glean::GleanAuthStatus::NotConfigured;
+    let _ = app_handle.emit("glean-auth-changed", &status);
+
+    log::info!("Glean disconnected");
+    Ok(())
 }

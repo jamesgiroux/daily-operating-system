@@ -219,6 +219,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 51,
         sql: include_str!("migrations/051_entity_context_entries.sql"),
     },
+    Migration {
+        version: 52,
+        sql: include_str!("migrations/052_glean_document_cache.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -293,8 +297,24 @@ fn backup_before_migration(conn: &Connection) -> Result<(), String> {
     let mut backup_conn = rusqlite::Connection::open(&backup_path)
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
 
-    let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)
-        .map_err(|e| format!("Failed to initialize pre-migration backup: {}", e))?;
+    let backup = match rusqlite::backup::Backup::new(conn, &mut backup_conn) {
+        Ok(backup) => backup,
+        Err(e) => {
+            let msg = e.to_string();
+            // SQLCipher builds can disable SQLite's backup API for encrypted
+            // connections. In that case, skip backup but still run migrations.
+            if msg.contains("backup is not supported with encrypted databases")
+                || msg.contains("encrypted databases")
+            {
+                log::warn!(
+                    "Pre-migration backup skipped (encrypted DB backup API unsupported): {}",
+                    msg
+                );
+                return Ok(());
+            }
+            return Err(format!("Failed to initialize pre-migration backup: {}", e));
+        }
+    };
 
     backup
         .step(-1)
@@ -382,13 +402,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 51,
-            "should apply all migrations including entity context entries"
+            applied, 52,
+            "should apply all migrations including glean document cache"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 51);
+        assert_eq!(version, 52);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -915,13 +935,13 @@ mod tests {
         // Run migrations — should bootstrap v1 and apply v2 through v50 (49 pending migrations)
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 50,
-            "bootstrap should mark v1, then apply 50 pending migrations (v2-v51)"
+            applied, 51,
+            "bootstrap should mark v1, then apply 51 pending migrations (v2-v52)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 51);
+        assert_eq!(version, 52);
 
         // Verify existing data is untouched
         let title: String = conn
