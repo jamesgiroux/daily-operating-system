@@ -135,10 +135,16 @@ fn test_get_account_actions() {
     action3.waiting_on = Some("John".to_string());
     db.upsert_action(&action3).expect("upsert 3");
 
+    let mut action4 = sample_action("act-013", "Acme proposed");
+    action4.account_id = Some("acme-corp".to_string());
+    action4.status = "proposed".to_string();
+    db.upsert_action(&action4).expect("upsert 4");
+
     let results = db.get_account_actions("acme-corp").expect("account query");
-    assert_eq!(results.len(), 2);
-    // Both pending and waiting should appear
+    assert_eq!(results.len(), 3);
+    // Proposed, pending, and waiting should appear
     let statuses: Vec<&str> = results.iter().map(|a| a.status.as_str()).collect();
+    assert!(statuses.contains(&"proposed"));
     assert!(statuses.contains(&"pending"));
     assert!(statuses.contains(&"waiting"));
 }
@@ -526,6 +532,39 @@ fn test_get_non_briefing_pending_actions() {
     assert!(ids.contains(&"pm-001"));
     assert!(ids.contains(&"inbox-001"));
     assert!(ids.contains(&"inbox-wait"));
+}
+
+#[test]
+fn test_get_actions_for_meeting_includes_post_meeting() {
+    let db = test_db();
+
+    let mut transcript_action = sample_action("mtg-act-001", "Transcript follow-up");
+    transcript_action.source_type = Some("transcript".to_string());
+    transcript_action.source_id = Some("meeting-123".to_string());
+    db.upsert_action(&transcript_action)
+        .expect("insert transcript action");
+
+    let mut post_meeting_action = sample_action("mtg-act-002", "Manual capture follow-up");
+    post_meeting_action.source_type = Some("post_meeting".to_string());
+    post_meeting_action.source_id = Some("meeting-123".to_string());
+    db.upsert_action(&post_meeting_action)
+        .expect("insert post-meeting action");
+
+    let mut unrelated = sample_action("mtg-act-003", "Other meeting");
+    unrelated.source_type = Some("post_meeting".to_string());
+    unrelated.source_id = Some("meeting-999".to_string());
+    db.upsert_action(&unrelated)
+        .expect("insert unrelated action");
+
+    let actions = db
+        .get_actions_for_meeting("meeting-123")
+        .expect("query actions");
+    let ids: Vec<&str> = actions.iter().map(|a| a.id.as_str()).collect();
+
+    assert_eq!(actions.len(), 2);
+    assert!(ids.contains(&"mtg-act-001"));
+    assert!(ids.contains(&"mtg-act-002"));
+    assert!(!ids.contains(&"mtg-act-003"));
 }
 
 #[test]
@@ -2157,8 +2196,8 @@ fn test_get_project_actions() {
     };
     db.upsert_project(&project).expect("upsert");
 
-    // Insert an action linked to project
-    let action = DbAction {
+    // Insert pending action linked to project
+    let pending_action = DbAction {
         id: "act-proj-1".to_string(),
         title: "Fix the widget".to_string(),
         priority: "P1".to_string(),
@@ -2179,11 +2218,24 @@ fn test_get_project_actions() {
         next_meeting_title: None,
         next_meeting_start: None,
     };
-    db.upsert_action(&action).expect("upsert action");
+    db.upsert_action(&pending_action)
+        .expect("upsert pending action");
+
+    // Insert proposed action linked to project
+    let proposed_action = DbAction {
+        id: "act-proj-2".to_string(),
+        title: "Draft rollout plan".to_string(),
+        status: "proposed".to_string(),
+        ..pending_action.clone()
+    };
+    db.upsert_action(&proposed_action)
+        .expect("upsert proposed action");
 
     let actions = db.get_project_actions("proj-actions").expect("get");
-    assert_eq!(actions.len(), 1);
-    assert_eq!(actions[0].title, "Fix the widget");
+    assert_eq!(actions.len(), 2);
+    let ids: Vec<&str> = actions.iter().map(|a| a.id.as_str()).collect();
+    assert!(ids.contains(&"act-proj-1"));
+    assert!(ids.contains(&"act-proj-2"));
 }
 
 #[test]
