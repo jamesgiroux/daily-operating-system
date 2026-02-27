@@ -31,10 +31,9 @@ pub enum ContextMode {
     #[default]
     Local,
     /// Enterprise: Glean as primary context source.
+    /// DCR handles client registration — no user-provided client_id needed.
     Glean {
         endpoint: String,
-        /// Keychain key for the Glean API token.
-        keychain_key: String,
         strategy: GleanStrategy,
     },
 }
