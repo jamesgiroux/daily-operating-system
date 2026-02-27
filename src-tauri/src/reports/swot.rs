@@ -3,8 +3,9 @@
 //! One AI call: builds context from entity_intelligence + meeting history,
 //! produces structured JSON with 4 quadrants.
 
+use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::{build_intelligence_context, read_intelligence_json};
+use crate::intelligence::read_intelligence_json;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -41,6 +42,7 @@ fn build_swot_prompt(
     workspace: &std::path::Path,
     entity_id: &str,
     account: Option<&crate::db::DbAccount>,
+    context_provider: &dyn ContextProvider,
 ) -> String {
     let prior = if entity_type == "account" {
         account.and_then(|a| {
@@ -51,16 +53,9 @@ fn build_swot_prompt(
         None
     };
 
-    let ctx = build_intelligence_context(
-        workspace,
-        db,
-        entity_id,
-        entity_type,
-        account,
-        None,
-        prior.as_ref(),
-        None,
-    );
+    let ctx = context_provider
+        .gather_entity_context(db, entity_id, entity_type, prior.as_ref())
+        .unwrap_or_default();
 
     let mut prompt = build_report_preamble(entity_name, "swot", entity_type);
     prompt.push_str("# Intelligence Data\n\n");
@@ -107,6 +102,7 @@ pub fn gather_swot_input(
     entity_id: &str,
     entity_type: &str,
     ai_models: AiModelConfig,
+    context_provider: &dyn ContextProvider,
 ) -> Result<ReportGeneratorInput, String> {
     let account = if entity_type == "account" {
         db.get_account(entity_id).map_err(|e| e.to_string())?
@@ -141,6 +137,7 @@ pub fn gather_swot_input(
         workspace,
         entity_id,
         account.as_ref(),
+        context_provider,
     );
 
     Ok(ReportGeneratorInput {

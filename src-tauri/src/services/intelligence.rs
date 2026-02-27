@@ -236,6 +236,7 @@ pub async fn generate_risk_briefing(
                 &account_id,
                 config.user_name.clone(),
                 config.ai_models.clone(),
+                app_state.context_provider.as_ref(),
             )?
         };
 
