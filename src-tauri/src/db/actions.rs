@@ -130,12 +130,14 @@ impl ActionDb {
                    a.source_type IN ('post_meeting', 'transcript')
                    AND a.source_id IN (
                      SELECT m.id FROM meetings_history m
-                     JOIN meeting_attendees ma ON m.id = ma.meeting_id
-                     WHERE ma.person_id = ?1
-                       AND (
-                         m.meeting_type = 'one_on_one'
-                         OR (SELECT COUNT(*) FROM meeting_attendees WHERE meeting_id = m.id) = 2
-                       )
+                     LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
+                     LEFT JOIN meeting_entities me ON m.id = me.meeting_id
+                     WHERE (ma.person_id = ?1
+                        OR (me.entity_type = 'person' AND me.entity_id = ?1))
+                        AND (
+                          m.meeting_type = 'one_on_one'
+                          OR (SELECT COUNT(*) FROM meeting_attendees WHERE meeting_id = m.id) = 2
+                        )
                    )
                  )
                )
@@ -161,12 +163,16 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+            "SELECT DISTINCT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id
              FROM meetings_history m
-             JOIN meeting_attendees ma ON m.id = ma.meeting_id
-             WHERE ma.person_id = ?1
+             LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
+             LEFT JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE (
+                   ma.person_id = ?1
+                   OR (me.entity_type = 'person' AND me.entity_id = ?1)
+                 )
                AND m.start_time >= datetime('now')
              ORDER BY m.start_time ASC
              LIMIT ?2",
