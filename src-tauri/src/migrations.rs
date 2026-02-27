@@ -297,8 +297,24 @@ fn backup_before_migration(conn: &Connection) -> Result<(), String> {
     let mut backup_conn = rusqlite::Connection::open(&backup_path)
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
 
-    let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)
-        .map_err(|e| format!("Failed to initialize pre-migration backup: {}", e))?;
+    let backup = match rusqlite::backup::Backup::new(conn, &mut backup_conn) {
+        Ok(backup) => backup,
+        Err(e) => {
+            let msg = e.to_string();
+            // SQLCipher builds can disable SQLite's backup API for encrypted
+            // connections. In that case, skip backup but still run migrations.
+            if msg.contains("backup is not supported with encrypted databases")
+                || msg.contains("encrypted databases")
+            {
+                log::warn!(
+                    "Pre-migration backup skipped (encrypted DB backup API unsupported): {}",
+                    msg
+                );
+                return Ok(());
+            }
+            return Err(format!("Failed to initialize pre-migration backup: {}", e));
+        }
+    };
 
     backup
         .step(-1)
