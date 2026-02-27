@@ -464,12 +464,14 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+            "SELECT DISTINCT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
                     m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id, m.transcript_path
              FROM meetings_history m
-             JOIN meeting_attendees ma ON m.id = ma.meeting_id
+             LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
+             LEFT JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE ma.person_id = ?1
+                OR (me.entity_type = 'person' AND me.entity_id = ?1)
              ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
@@ -511,10 +513,20 @@ impl ActionDb {
         let count_30d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
-                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
-                 WHERE ma.person_id = ?1
-                   AND m.start_time >= date('now', '-30 days')",
+                "SELECT COUNT(DISTINCT m.id) FROM meetings_history m
+                 WHERE m.start_time >= date('now', '-30 days')
+                   AND (
+                        EXISTS (
+                            SELECT 1 FROM meeting_attendees ma
+                            WHERE ma.meeting_id = m.id AND ma.person_id = ?1
+                        )
+                        OR EXISTS (
+                            SELECT 1 FROM meeting_entities me
+                            WHERE me.meeting_id = m.id
+                              AND me.entity_type = 'person'
+                              AND me.entity_id = ?1
+                        )
+                   )",
                 params![person_id],
                 |row| row.get(0),
             )
@@ -523,10 +535,20 @@ impl ActionDb {
         let count_90d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
-                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
-                 WHERE ma.person_id = ?1
-                   AND m.start_time >= date('now', '-90 days')",
+                "SELECT COUNT(DISTINCT m.id) FROM meetings_history m
+                 WHERE m.start_time >= date('now', '-90 days')
+                   AND (
+                        EXISTS (
+                            SELECT 1 FROM meeting_attendees ma
+                            WHERE ma.meeting_id = m.id AND ma.person_id = ?1
+                        )
+                        OR EXISTS (
+                            SELECT 1 FROM meeting_entities me
+                            WHERE me.meeting_id = m.id
+                              AND me.entity_type = 'person'
+                              AND me.entity_id = ?1
+                        )
+                   )",
                 params![person_id],
                 |row| row.get(0),
             )
@@ -536,9 +558,19 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT MAX(m.start_time) FROM meetings_history m
-                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
-                 WHERE ma.person_id = ?1
-                   AND m.start_time <= datetime('now')",
+                 WHERE m.start_time <= datetime('now')
+                   AND (
+                        EXISTS (
+                            SELECT 1 FROM meeting_attendees ma
+                            WHERE ma.meeting_id = m.id AND ma.person_id = ?1
+                        )
+                        OR EXISTS (
+                            SELECT 1 FROM meeting_entities me
+                            WHERE me.meeting_id = m.id
+                              AND me.entity_type = 'person'
+                              AND me.entity_id = ?1
+                        )
+                   )",
                 params![person_id],
                 |row| row.get(0),
             )
