@@ -147,6 +147,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I459** | Stakeholder Map report type — relationship network, coverage gaps, engagement levels; uses people relationship network (v0.13.5) | P1 | Backend / Reports |
 | **I460** | Success Plan report type — mutual objectives, success metrics, responsibilities; requires user entity context (v0.14.0) to be meaningful | P1 | Backend / Reports |
 | **I461** | Coaching Patterns — pattern recognition across 3+ months of Monthly Wrapped; factual not prescriptive | P2 | Backend / Reports |
+| **I482** | Role-aware Glean query optimization — preset vocabulary shapes search queries, lifecycle-stage filtering, dedup | P1 | Backend / Connectors + Intelligence |
 
 ---
 
@@ -435,6 +436,7 @@ Note: I258, I302, I347 superseded by I397. I348 removed.
 | I459 | Stakeholder Map report — relationship network, coverage gaps, engagement levels | P1 | Backend / Reports |
 | I460 | Success Plan report — mutual objectives, metrics, responsibilities (requires user entity context) | P1 | Backend / Reports |
 | I461 | Coaching Patterns — pattern recognition across 3+ Monthly Wrapped reports; factual not prescriptive | P2 | Backend / Reports |
+| I482 | Role-aware Glean query optimization — preset vocabulary shapes search queries, lifecycle-stage filtering, query budget, dedup | P1 | Backend / Connectors + Intelligence |
 
 See `.docs/research/cs-report-types.md`. Coaching Patterns (I461) only activates when 3+ Monthly Wrapped reports exist.
 
