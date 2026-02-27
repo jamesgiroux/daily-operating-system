@@ -8685,3 +8685,142 @@ pub fn verify_audit_log_integrity(state: State<'_, Arc<AppState>>) -> Result<Str
         )),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Context Mode (ADR-0095)
+// ---------------------------------------------------------------------------
+
+/// Get the current context mode (Local or Glean).
+#[tauri::command]
+pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
+    let mode = state.with_db_read(|db| {
+        Ok(crate::context_provider::read_context_mode(db))
+    })?;
+
+    serde_json::to_value(&mode).map_err(|e| format!("Serialization error: {}", e))
+}
+
+/// Set the context mode. Requires app restart to take effect.
+/// In Glean mode, Clay and Gravatar enrichment are automatically disabled.
+#[tauri::command]
+pub fn set_context_mode(
+    mode: serde_json::Value,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let parsed: crate::context_provider::ContextMode =
+        serde_json::from_value(mode).map_err(|e| format!("Invalid context mode: {}", e))?;
+
+    state.with_db_write(|db| {
+        crate::context_provider::save_context_mode(db, &parsed)
+    })?;
+
+    // Log the mode change
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append(
+            "config",
+            "context_mode_changed",
+            serde_json::json!({
+                "provider": match &parsed {
+                    crate::context_provider::ContextMode::Local => "local",
+                    crate::context_provider::ContextMode::Glean { .. } => "glean",
+                },
+            }),
+        );
+    }
+
+    // Enqueue all entities for re-enrichment at ProactiveHygiene priority.
+    // A mode switch means context sources changed — existing intelligence
+    // should be refreshed with the new provider on next app start.
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            use crate::intel_queue::{IntelPriority, IntelRequest};
+            let mut count = 0u32;
+
+            // Re-enqueue all entities that have intelligence (stale threshold = 0)
+            if let Ok(entities) = db.get_stale_entity_intelligence(0) {
+                for (entity_id, entity_type, _) in entities {
+                    state.intel_queue.enqueue(IntelRequest {
+                        entity_id,
+                        entity_type,
+                        priority: IntelPriority::ProactiveHygiene,
+                        requested_at: std::time::Instant::now(),
+                        retry_count: 0,
+                    });
+                    count += 1;
+                }
+            }
+            // Also enqueue entities with no intelligence yet
+            if let Ok(missing) = db.get_entities_without_intelligence() {
+                for (entity_id, entity_type) in missing {
+                    state.intel_queue.enqueue(IntelRequest {
+                        entity_id,
+                        entity_type,
+                        priority: IntelPriority::ProactiveHygiene,
+                        requested_at: std::time::Instant::now(),
+                        retry_count: 0,
+                    });
+                    count += 1;
+                }
+            }
+
+            if count > 0 {
+                log::info!(
+                    "Context mode switch: enqueued {} entities for re-enrichment",
+                    count
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Store a Glean OAuth token in the macOS Keychain.
+#[tauri::command]
+pub fn save_glean_token(token: String) -> Result<(), String> {
+    let status = std::process::Command::new("security")
+        .args([
+            "add-generic-password",
+            "-s", "com.dailyos.desktop.glean",
+            "-a", "glean-oauth",
+            "-w", &token,
+            "-U",
+        ])
+        .status()
+        .map_err(|e| format!("Keychain access failed: {}", e))?;
+
+    if !status.success() {
+        return Err("Failed to store Glean token in Keychain".to_string());
+    }
+
+    Ok(())
+}
+
+/// Check if a Glean OAuth token exists in the Keychain.
+#[tauri::command]
+pub fn get_glean_token_status() -> Result<bool, String> {
+    let output = std::process::Command::new("security")
+        .args([
+            "find-generic-password",
+            "-s", "com.dailyos.desktop.glean",
+            "-a", "glean-oauth",
+        ])
+        .output()
+        .map_err(|e| format!("Keychain access failed: {}", e))?;
+
+    Ok(output.status.success())
+}
+
+/// Remove the Glean OAuth token from the Keychain.
+#[tauri::command]
+pub fn delete_glean_token() -> Result<(), String> {
+    let _ = std::process::Command::new("security")
+        .args([
+            "delete-generic-password",
+            "-s", "com.dailyos.desktop.glean",
+            "-a", "glean-oauth",
+        ])
+        .status();
+
+    Ok(())
+}

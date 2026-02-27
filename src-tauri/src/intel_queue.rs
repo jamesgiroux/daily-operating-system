@@ -15,8 +15,8 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::intelligence::{
-    build_intelligence_context, build_intelligence_prompt_with_preset, parse_intelligence_response,
-    read_intelligence_json, write_intelligence_json, IntelligenceJson, SourceManifestEntry,
+    build_intelligence_prompt_with_preset, parse_intelligence_response, read_intelligence_json,
+    write_intelligence_json, IntelligenceJson, SourceManifestEntry,
 };
 use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
@@ -674,17 +674,13 @@ pub fn gather_enrichment_input(
     // Read prior intelligence
     let prior = read_intelligence_json(&entity_dir).ok();
 
-    // Build context (reads from DB)
-    let ctx = build_intelligence_context(
-        &workspace,
-        &db,
-        &request.entity_id,
-        &request.entity_type,
-        account.as_ref(),
-        project.as_ref(),
-        prior.as_ref(),
-        Some(state.embedding_model.as_ref()),
-    );
+    // Build context via the context provider (ADR-0095).
+    // In Local mode this delegates to build_intelligence_context() — same behavior.
+    // In Glean mode, context is gathered from Glean search API instead.
+    let ctx = state
+        .context_provider
+        .gather_entity_context(&db, &request.entity_id, &request.entity_type, prior.as_ref())
+        .map_err(|e| format!("Context gather failed: {}", e))?;
 
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing.
