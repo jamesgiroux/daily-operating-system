@@ -157,6 +157,9 @@ pub struct AppState {
     pub integrations: IntegrationState,
     /// Whether the app is currently locked (I465).
     pub is_locked: AtomicBool,
+    /// Last user activity timestamp for idle lock timer (I465).
+    /// Updated on window focus AND user interaction (click/keypress).
+    pub last_activity: Mutex<Instant>,
     /// Timestamp of last failed unlock attempt for cooldown tracking (I465).
     pub last_failed_unlock: Mutex<Option<Instant>>,
     /// Count of consecutive failed unlock attempts (I465).
@@ -324,6 +327,7 @@ impl AppState {
                 embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
             },
             is_locked: AtomicBool::new(false),
+            last_activity: Mutex::new(Instant::now()),
             last_failed_unlock: Mutex::new(None),
             failed_unlock_count: AtomicU32::new(0),
             encryption_key_missing: AtomicBool::new(encryption_key_missing),

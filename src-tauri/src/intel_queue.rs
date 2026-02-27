@@ -296,7 +296,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
         // Audit: entity enrichment started
         if let Ok(mut audit) = state.audit_log.lock() {
-            let _ = audit.append("ai", "entity_enrichment_started", serde_json::json!({"batch_size": batch.len()}));
+            let _ = audit.append(
+                "ai",
+                "entity_enrichment_started",
+                serde_json::json!({"batch_size": batch.len()}),
+            );
         }
 
         // TTL check: filter out entities enriched recently unless manually requested (I287)
@@ -416,12 +420,20 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             let failed_count = original_requests.len() - succeeded_count;
             if succeeded_count > 0 {
                 if let Ok(mut audit) = state.audit_log.lock() {
-                    let _ = audit.append("ai", "entity_enrichment_completed", serde_json::json!({"count": succeeded_count}));
+                    let _ = audit.append(
+                        "ai",
+                        "entity_enrichment_completed",
+                        serde_json::json!({"count": succeeded_count}),
+                    );
                 }
             }
             if failed_count > 0 {
                 if let Ok(mut audit) = state.audit_log.lock() {
-                    let _ = audit.append("ai", "entity_enrichment_failed", serde_json::json!({"count": failed_count}));
+                    let _ = audit.append(
+                        "ai",
+                        "entity_enrichment_failed",
+                        serde_json::json!({"count": failed_count}),
+                    );
                 }
             }
         }

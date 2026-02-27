@@ -408,7 +408,7 @@ impl ActionDb {
             conn.execute(
                 "UPDATE actions
                  SET source_id = ?1
-                 WHERE source_type = 'transcript' AND source_id = ?2",
+                 WHERE source_type IN ('transcript', 'post_meeting') AND source_id = ?2",
                 params![canonical_id, old_id],
             )?;
 
