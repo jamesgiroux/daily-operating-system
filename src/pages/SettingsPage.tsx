@@ -7,6 +7,7 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import YouCard from "@/components/settings/YouCard";
 import ConnectorsGrid from "@/components/settings/ConnectorsGrid";
+import ContextSourceSection from "@/components/settings/ContextSourceSection";
 import SystemStatus from "@/components/settings/SystemStatus";
 import ActivityLogSection from "@/components/settings/ActivityLogSection";
 import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
@@ -138,6 +139,7 @@ export default function SettingsPage() {
           title="Connectors"
           epigraph="External services that feed your daily briefings."
         />
+        <ContextSourceSection />
         <ConnectorsGrid />
       </section>
 

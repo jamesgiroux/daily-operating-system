@@ -177,6 +177,9 @@ pub struct AppState {
     /// embedding inference) to one at a time. Prevents resource contention
     /// between background processors.
     pub heavy_work_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Context provider for intelligence enrichment (ADR-0095).
+    /// Determines where entity context is gathered (local DB vs. Glean).
+    pub context_provider: Arc<dyn crate::context_provider::ContextProvider>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -292,6 +295,60 @@ impl AppState {
         );
         let audit_log = Arc::new(Mutex::new(audit_logger));
 
+        // Initialize context provider (ADR-0095).
+        // Read context_mode from DB if available, else default to Local.
+        let embedding_model = Arc::new(crate::embeddings::EmbeddingModel::new());
+        let workspace_path = config
+            .as_ref()
+            .map(|c| std::path::PathBuf::from(&c.workspace_path))
+            .unwrap_or_default();
+
+        let context_mode = db.as_ref().and_then(|db| {
+            db.conn_ref()
+                .query_row(
+                    "SELECT mode_json FROM context_mode_config WHERE id = 1",
+                    [],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+                .and_then(|json| {
+                    serde_json::from_str::<crate::context_provider::ContextMode>(&json).ok()
+                })
+        });
+
+        let local_provider = crate::context_provider::local::LocalContextProvider::new(
+            workspace_path.clone(),
+            Arc::clone(&embedding_model),
+        );
+
+        let context_provider: Arc<dyn crate::context_provider::ContextProvider> =
+            match context_mode {
+                Some(crate::context_provider::ContextMode::Glean {
+                    endpoint,
+                    keychain_key,
+                    strategy,
+                }) => {
+                    log::info!(
+                        "Context mode: Glean ({:?}) endpoint={}",
+                        strategy,
+                        endpoint
+                    );
+                    let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
+                    Arc::new(crate::context_provider::glean::GleanContextProvider::new(
+                        endpoint,
+                        keychain_key,
+                        strategy,
+                        cache,
+                        local_provider,
+                    ))
+                }
+                _ => {
+                    log::info!("Context mode: Local");
+                    Arc::new(local_provider)
+                }
+            };
+
         let intel_queue_arc = Arc::new(crate::intel_queue::IntelligenceQueue::new());
         let mut signal_engine = crate::signals::propagation::default_engine();
         signal_engine.set_prep_queue(Arc::clone(&prep_queue));
@@ -319,7 +376,7 @@ impl AppState {
                 transcript_processed: Mutex::new(transcript_processed),
             },
             intel_queue: intel_queue_arc,
-            embedding_model: Arc::new(crate::embeddings::EmbeddingModel::new()),
+            embedding_model,
             embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
             hygiene: HygieneState {
                 report: Mutex::new(None),
@@ -355,6 +412,7 @@ impl AppState {
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+            context_provider,
         }
     }
 

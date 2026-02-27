@@ -12,10 +12,9 @@ use chrono::Utc;
 
 use std::path::PathBuf;
 
+use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::{
-    build_intelligence_context, read_intelligence_json, IntelligenceContext,
-};
+use crate::intelligence::{read_intelligence_json, IntelligenceContext};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::{AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover};
 use crate::util::{atomic_write_str, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
@@ -317,6 +316,7 @@ pub fn gather_risk_input(
     account_id: &str,
     tam_name: Option<String>,
     ai_models: AiModelConfig,
+    context_provider: &dyn ContextProvider,
 ) -> Result<GatheredRiskInput, String> {
     let account = db
         .get_account(account_id)
@@ -325,18 +325,11 @@ pub fn gather_risk_input(
 
     let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
 
-    // Gather context (reuses entity_intel)
+    // Gather context via ContextProvider (Glean-aware)
     let prior_intel = read_intelligence_json(&account_dir).ok();
-    let ctx = build_intelligence_context(
-        workspace,
-        db,
-        account_id,
-        "account",
-        Some(&account),
-        None,
-        prior_intel.as_ref(),
-        None, // embedding_model — not needed for risk briefing context
-    );
+    let ctx = context_provider
+        .gather_entity_context(db, account_id, "account", prior_intel.as_ref())
+        .unwrap_or_default();
 
     // Serialize existing intelligence for cross-reference
     let intel_json = prior_intel
