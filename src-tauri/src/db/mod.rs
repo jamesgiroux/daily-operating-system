@@ -121,15 +121,17 @@ impl ActionDb {
         // PRAGMA key MUST be first — before any other PRAGMA (ADR-0092)
         conn.execute_batch(&encryption::key_to_pragma(&hex_key))?;
 
-        // Verify encryption is active
-        let cipher_version: String = conn
-            .query_row("SELECT sqlcipher_version()", [], |row| row.get(0))
-            .map_err(|e| {
-                DbError::Encryption(format!(
-                    "SQLCipher verification failed (key may be wrong): {e}"
-                ))
-            })?;
-        log::info!("SQLCipher version: {cipher_version}");
+        // Validate that the key can read the database by touching schema metadata.
+        // This avoids engine-specific SQLCipher functions (e.g. sqlcipher_version)
+        // that may not exist in all bundled builds.
+        conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|e| {
+            DbError::Encryption(format!(
+                "SQLCipher key verification failed (database unreadable): {e}"
+            ))
+        })?;
 
         // Enable WAL mode for better concurrent read performance
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
