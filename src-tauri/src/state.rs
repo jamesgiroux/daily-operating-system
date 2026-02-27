@@ -215,11 +215,31 @@ impl AppState {
         let mut encryption_key_missing = false;
         let db = match crate::db::ActionDb::open() {
             Ok(db) => {
+                // Distinguish key generation (fresh install) from access (existing DB)
+                let event = if crate::db::encryption::was_key_generated() {
+                    "db_key_generated"
+                } else {
+                    "db_key_accessed"
+                };
                 let _ = audit_logger.append(
                     "security",
-                    "db_key_accessed",
+                    event,
                     serde_json::json!({"db_encrypted": true}),
                 );
+
+                // Log migration events if a plaintext→encrypted migration happened
+                if crate::db::encryption::was_migration_performed() {
+                    let _ = audit_logger.append(
+                        "security",
+                        "db_migration_started",
+                        serde_json::json!({"migration_type": "plaintext_to_encrypted"}),
+                    );
+                    let _ = audit_logger.append(
+                        "security",
+                        "db_migration_completed",
+                        serde_json::json!({"migration_type": "plaintext_to_encrypted"}),
+                    );
+                }
                 Some(db)
             }
             Err(crate::db::DbError::KeyMissing { ref db_path }) => {
