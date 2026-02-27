@@ -177,6 +177,14 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         // Poll calendar
         match poll_calendar(&state).await {
             Ok(events) => {
+                // Audit: calendar sync
+                if let Ok(mut audit) = state.audit_log.lock() {
+                    let _ = audit.append(
+                        "data_access",
+                        "google_calendar_sync",
+                        serde_json::json!({"events_fetched": events.len()}),
+                    );
+                }
                 // Check for new prep-eligible meetings before storing (I41)
                 let new_preps = generate_preps_for_new_meetings(&events, &state, &workspace);
                 if new_preps > 0 {
@@ -1026,6 +1034,30 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // Longer startup delay than calendar (10s vs 5s) — let auth + calendar settle
     tokio::time::sleep(Duration::from_secs(10)).await;
 
+    // ADR-0095: In Glean Governed mode, Gmail poller is disabled.
+    // Glean indexes Gmail directly — no need for DailyOS to poll.
+    if state.context_provider.provider_name() == "glean" {
+        let is_governed = state
+            .with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))
+            .map(|mode| {
+                matches!(
+                    mode,
+                    crate::context_provider::ContextMode::Glean {
+                        strategy: crate::context_provider::GleanStrategy::Governed,
+                        ..
+                    }
+                )
+            })
+            .unwrap_or(false);
+
+        if is_governed {
+            log::info!("Email poller: disabled in Glean Governed mode");
+            loop {
+                tokio::time::sleep(Duration::from_secs(3600)).await;
+            }
+        }
+    }
+
     loop {
         // Check if we should poll
         if !should_poll(&state) {
@@ -1068,6 +1100,14 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Step 2: Deliver from directive → emails.json
                 match deliver_from_refresh_directive(&data_dir, &app_handle) {
                     Ok(after_ids) => {
+                        // Audit: gmail sync (after delivery so we know the count)
+                        if let Ok(mut audit) = state.audit_log.lock() {
+                            let _ = audit.append(
+                                "data_access",
+                                "gmail_sync",
+                                serde_json::json!({"emails_fetched": after_ids.len()}),
+                            );
+                        }
                         // Emit mechanical update immediately
                         let _ = app_handle.emit("emails-updated", ());
 

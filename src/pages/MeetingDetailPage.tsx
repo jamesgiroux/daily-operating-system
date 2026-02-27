@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -113,6 +113,7 @@ export default function MeetingDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
+  const transientRetryCount = useRef(0);
 
   // Entity mutation in progress — shows "Updating briefing..." (I477)
   const [briefingUpdating, setBriefingUpdating] = useState(false);
@@ -181,8 +182,23 @@ export default function MeetingDetailPage() {
         userAgenda: intel.userAgenda ?? basePrep.userAgenda,
         userNotes: intel.userNotes ?? basePrep.userNotes,
       });
+      transientRetryCount.current = 0;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const message = err instanceof Error ? err.message : String(err);
+      const isTransientDbError =
+        message.includes("Database not initialized")
+        || message.includes("DbService not initialized")
+        || message.includes("Database unavailable");
+
+      if (isTransientDbError && transientRetryCount.current < 3) {
+        transientRetryCount.current += 1;
+        setTimeout(() => {
+          void loadMeetingIntelligence();
+        }, 600);
+        return;
+      }
+
+      setError(message || "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -673,7 +689,10 @@ Thanks!`;
                   meetingStartTime={meetingMeta?.startTime ?? new Date().toISOString()}
                   meetingType={meetingMeta?.meetingType ?? "internal"}
                   linkedEntities={linkedEntities}
-                  onEntitiesChanged={() => { setBriefingUpdating(true); }}
+                  onEntitiesChanged={() => {
+                    setBriefingUpdating(true);
+                    void loadMeetingIntelligence();
+                  }}
                 />
               </div>
             )}
@@ -736,16 +755,19 @@ Thanks!`;
               {/* Entity chips */}
               {meetingId && (
                 <div className={styles.entityChipsWrap}>
-                  <MeetingEntityChips
-                    meetingId={meetingId}
-                    meetingTitle={meetingMeta?.title ?? data.title}
-                    meetingStartTime={meetingMeta?.startTime ?? new Date().toISOString()}
-                    meetingType={meetingMeta?.meetingType ?? "internal"}
-                    linkedEntities={linkedEntities}
-                    onEntitiesChanged={() => { setBriefingUpdating(true); }}
-                  />
-                </div>
-              )}
+                <MeetingEntityChips
+                  meetingId={meetingId}
+                  meetingTitle={meetingMeta?.title ?? data.title}
+                  meetingStartTime={meetingMeta?.startTime ?? new Date().toISOString()}
+                  meetingType={meetingMeta?.meetingType ?? "internal"}
+                  linkedEntities={linkedEntities}
+                  onEntitiesChanged={() => {
+                    setBriefingUpdating(true);
+                    void loadMeetingIntelligence();
+                  }}
+                />
+              </div>
+            )}
 
               {/* New signals banner */}
               {intelligenceQuality?.hasNewSignals && (

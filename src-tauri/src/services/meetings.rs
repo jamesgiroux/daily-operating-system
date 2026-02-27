@@ -840,18 +840,63 @@ pub async fn capture_meeting_outcome(
     let outcome_clone = outcome.clone();
     let _ = state
         .db_write(move |db| {
+            // Resolve stable entity IDs so post-meeting actions/captures attach even when
+            // the UI payload only has display names.
+            let linked_entities = db
+                .get_meeting_entities(&outcome_clone.meeting_id)
+                .unwrap_or_default();
+
+            let mut resolved_account_id = linked_entities
+                .iter()
+                .find(|e| e.entity_type == crate::entity::EntityType::Account)
+                .map(|e| e.id.clone());
+            let mut resolved_project_id = linked_entities
+                .iter()
+                .find(|e| e.entity_type == crate::entity::EntityType::Project)
+                .map(|e| e.id.clone());
+
+            if let Some(raw_entity) = outcome_clone.account.as_deref() {
+                if resolved_account_id.is_none() {
+                    resolved_account_id = db
+                        .get_account(raw_entity)
+                        .ok()
+                        .flatten()
+                        .map(|a| a.id)
+                        .or_else(|| {
+                            db.get_account_by_name(raw_entity)
+                                .ok()
+                                .flatten()
+                                .map(|a| a.id)
+                        });
+                }
+
+                if resolved_project_id.is_none() {
+                    resolved_project_id = db
+                        .get_project(raw_entity)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.id)
+                        .or_else(|| {
+                            db.get_project_by_name(raw_entity)
+                                .ok()
+                                .flatten()
+                                .map(|p| p.id)
+                        });
+                }
+            }
+
             for action in &outcome_clone.actions {
                 let now = chrono::Utc::now().to_rfc3339();
                 let db_action = crate::db::DbAction {
                     id: uuid::Uuid::new_v4().to_string(),
                     title: action.title.clone(),
                     priority: "P2".to_string(),
-                    status: "pending".to_string(),
+                    status: "proposed".to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
-                    account_id: outcome_clone.account.clone(),
-                    project_id: None,
+                    account_id: resolved_account_id.clone(),
+                    project_id: resolved_project_id.clone(),
                     source_type: Some("post_meeting".to_string()),
                     source_id: Some(outcome_clone.meeting_id.clone()),
                     source_label: Some(outcome_clone.meeting_title.clone()),
@@ -869,19 +914,21 @@ pub async fn capture_meeting_outcome(
             }
 
             for win in &outcome_clone.wins {
-                let _ = db.insert_capture(
+                let _ = db.insert_capture_with_project(
                     &outcome_clone.meeting_id,
                     &outcome_clone.meeting_title,
-                    outcome_clone.account.as_deref(),
+                    resolved_account_id.as_deref(),
+                    resolved_project_id.as_deref(),
                     "win",
                     win,
                 );
             }
             for risk in &outcome_clone.risks {
-                let _ = db.insert_capture(
+                let _ = db.insert_capture_with_project(
                     &outcome_clone.meeting_id,
                     &outcome_clone.meeting_title,
-                    outcome_clone.account.as_deref(),
+                    resolved_account_id.as_deref(),
+                    resolved_project_id.as_deref(),
                     "risk",
                     risk,
                 );
@@ -1730,33 +1777,28 @@ pub async fn refresh_meeting_briefing_full(
         },
     );
 
-    let linked_entities = {
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| "DB lock poisoned".to_string())?;
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database not initialized".to_string())?;
+    let meeting_id_for_phase1 = meeting_id_owned.clone();
+    let linked_entities = state
+        .db_write(move |db| {
+            db.get_meeting_by_id(&meeting_id_for_phase1)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", meeting_id_for_phase1))?;
 
-        db.get_meeting_by_id(&meeting_id_owned)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Meeting not found: {}", meeting_id_owned))?;
+            let _ = db.update_intelligence_state(&meeting_id_for_phase1, "enriching", None, None);
 
-        let _ = db.update_intelligence_state(&meeting_id_owned, "enriching", None, None);
+            db.conn_ref()
+                .execute(
+                    "UPDATE meetings_history
+                     SET prep_frozen_json = NULL, prep_frozen_at = NULL
+                     WHERE id = ?1",
+                    rusqlite::params![meeting_id_for_phase1.as_str()],
+                )
+                .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
 
-        db.conn_ref()
-            .execute(
-                "UPDATE meetings_history
-                 SET prep_frozen_json = NULL, prep_frozen_at = NULL
-                 WHERE id = ?1",
-                rusqlite::params![meeting_id_owned.as_str()],
-            )
-            .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
-
-        db.get_meeting_entities(&meeting_id_owned)
-            .map_err(|e| format!("Failed to load linked entities: {}", e))?
-    };
+            db.get_meeting_entities(&meeting_id_for_phase1)
+                .map_err(|e| format!("Failed to load linked entities: {}", e))
+        })
+        .await?;
 
     let total_entities = linked_entities.len() as u32;
     if total_entities > 0 {
@@ -1907,26 +1949,22 @@ pub async fn refresh_meeting_briefing_full(
     }
 
     // Phase 4: finalize meeting intelligence metadata.
-    let quality = {
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| "DB lock poisoned".to_string())?;
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database not initialized".to_string())?;
-
-        let quality = crate::intelligence::assess_intelligence_quality(db, &meeting_id_owned);
-        db.update_intelligence_state(
-            &meeting_id_owned,
-            "enriched",
-            Some(&quality.level.to_string()),
-            Some(quality.signal_count as i32),
-        )
-        .map_err(|e| e.to_string())?;
-        let _ = db.clear_meeting_new_signals(&meeting_id_owned);
-        quality
-    };
+    let meeting_id_for_phase4 = meeting_id_owned.clone();
+    let quality = state
+        .db_write(move |db| {
+            let quality =
+                crate::intelligence::assess_intelligence_quality(db, &meeting_id_for_phase4);
+            db.update_intelligence_state(
+                &meeting_id_for_phase4,
+                "enriched",
+                Some(&quality.level.to_string()),
+                Some(quality.signal_count as i32),
+            )
+            .map_err(|e| e.to_string())?;
+            let _ = db.clear_meeting_new_signals(&meeting_id_for_phase4);
+            Ok::<IntelligenceQuality, String>(quality)
+        })
+        .await?;
 
     let result = MeetingBriefingRefreshResult {
         meeting_id: meeting_id_owned.clone(),
