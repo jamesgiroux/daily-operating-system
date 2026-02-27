@@ -322,32 +322,28 @@ impl AppState {
             Arc::clone(&embedding_model),
         );
 
-        let context_provider: Arc<dyn crate::context_provider::ContextProvider> =
-            match context_mode {
-                Some(crate::context_provider::ContextMode::Glean {
+        let context_provider: Arc<dyn crate::context_provider::ContextProvider> = match context_mode
+        {
+            Some(crate::context_provider::ContextMode::Glean {
+                endpoint,
+                keychain_key,
+                strategy,
+            }) => {
+                log::info!("Context mode: Glean ({:?}) endpoint={}", strategy, endpoint);
+                let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
+                Arc::new(crate::context_provider::glean::GleanContextProvider::new(
                     endpoint,
                     keychain_key,
                     strategy,
-                }) => {
-                    log::info!(
-                        "Context mode: Glean ({:?}) endpoint={}",
-                        strategy,
-                        endpoint
-                    );
-                    let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
-                    Arc::new(crate::context_provider::glean::GleanContextProvider::new(
-                        endpoint,
-                        keychain_key,
-                        strategy,
-                        cache,
-                        local_provider,
-                    ))
-                }
-                _ => {
-                    log::info!("Context mode: Local");
-                    Arc::new(local_provider)
-                }
-            };
+                    cache,
+                    local_provider,
+                ))
+            }
+            _ => {
+                log::info!("Context mode: Local");
+                Arc::new(local_provider)
+            }
+        };
 
         let intel_queue_arc = Arc::new(crate::intel_queue::IntelligenceQueue::new());
         let mut signal_engine = crate::signals::propagation::default_engine();
@@ -556,14 +552,42 @@ impl AppState {
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
     {
-        let svc = self.db_service.get().ok_or("DbService not initialized")?;
-        svc.reader()
-            .call(move |conn| {
-                let db = crate::db::ActionDb::from_conn(conn);
-                Ok(f(db))
-            })
-            .await
-            .map_err(|e| format!("DB read error: {e}"))?
+        // If the async service hasn't finished startup init yet, try to
+        // initialize it on-demand before falling back.
+        if self.db_service.get().is_none() {
+            let _ = self.init_db_service().await;
+        }
+
+        if let Some(svc) = self.db_service.get() {
+            return svc
+                .reader()
+                .call(move |conn| {
+                    let db = crate::db::ActionDb::from_conn(conn);
+                    Ok(f(db))
+                })
+                .await
+                .map_err(|e| format!("DB read error: {e}"))?;
+        }
+
+        // Startup fallback: DbService initialization runs in background.
+        // Keep commands working by using the legacy sync connection until
+        // DbService is ready.
+        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        if guard.is_none() {
+            match crate::db::ActionDb::open() {
+                Ok(db) => {
+                    log::warn!("db_read: sync DB was unavailable; reopened on demand");
+                    *guard = Some(db);
+                }
+                Err(e) => {
+                    return Err(format!("Database unavailable: failed to open DB ({e})"));
+                }
+            }
+        }
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database unavailable".to_string())?;
+        f(db)
     }
 
     /// Run a mutating closure on the writer connection. Serialized — only one
@@ -573,14 +597,40 @@ impl AppState {
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
     {
-        let svc = self.db_service.get().ok_or("DbService not initialized")?;
-        svc.writer()
-            .call(move |conn| {
-                let db = crate::db::ActionDb::from_conn(conn);
-                Ok(f(db))
-            })
-            .await
-            .map_err(|e| format!("DB write error: {e}"))?
+        // If the async service hasn't finished startup init yet, try to
+        // initialize it on-demand before falling back.
+        if self.db_service.get().is_none() {
+            let _ = self.init_db_service().await;
+        }
+
+        if let Some(svc) = self.db_service.get() {
+            return svc
+                .writer()
+                .call(move |conn| {
+                    let db = crate::db::ActionDb::from_conn(conn);
+                    Ok(f(db))
+                })
+                .await
+                .map_err(|e| format!("DB write error: {e}"))?;
+        }
+
+        // Startup fallback: DbService initialization runs in background.
+        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        if guard.is_none() {
+            match crate::db::ActionDb::open() {
+                Ok(db) => {
+                    log::warn!("db_write: sync DB was unavailable; reopened on demand");
+                    *guard = Some(db);
+                }
+                Err(e) => {
+                    return Err(format!("Database unavailable: failed to open DB ({e})"));
+                }
+            }
+        }
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database unavailable".to_string())?;
+        f(db)
     }
 
     /// Save execution history to disk

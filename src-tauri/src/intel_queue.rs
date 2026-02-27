@@ -679,7 +679,12 @@ pub fn gather_enrichment_input(
     // In Glean mode, context is gathered from Glean search API instead.
     let ctx = state
         .context_provider
-        .gather_entity_context(&db, &request.entity_id, &request.entity_type, prior.as_ref())
+        .gather_entity_context(
+            &db,
+            &request.entity_id,
+            &request.entity_type,
+            prior.as_ref(),
+        )
         .map_err(|e| format!("Context gather failed: {}", e))?;
 
     // Build prompt (pure function, but easier to do here while we have the data)
