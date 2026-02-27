@@ -182,7 +182,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     let _ = audit.append(
                         "data_access",
                         "google_calendar_sync",
-                        serde_json::json!({"events_count": events.len()}),
+                        serde_json::json!({"events_fetched": events.len()}),
                     );
                 }
                 // Check for new prep-eligible meetings before storing (I41)
@@ -1073,13 +1073,17 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         log::info!("Email poll: starting fetch + classify");
         match crate::prepare::orchestrate::refresh_emails(&state, &workspace).await {
             Ok(()) => {
-                // Audit: gmail sync
-                if let Ok(mut audit) = state.audit_log.lock() {
-                    let _ = audit.append("data_access", "gmail_sync", serde_json::json!({}));
-                }
                 // Step 2: Deliver from directive → emails.json
                 match deliver_from_refresh_directive(&data_dir, &app_handle) {
                     Ok(after_ids) => {
+                        // Audit: gmail sync (after delivery so we know the count)
+                        if let Ok(mut audit) = state.audit_log.lock() {
+                            let _ = audit.append(
+                                "data_access",
+                                "gmail_sync",
+                                serde_json::json!({"emails_fetched": after_ids.len()}),
+                            );
+                        }
                         // Emit mechanical update immediately
                         let _ = app_handle.emit("emails-updated", ());
 
