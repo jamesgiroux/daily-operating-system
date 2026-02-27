@@ -27,6 +27,7 @@ mod error;
 mod executor;
 mod focus_capacity;
 mod focus_prioritization;
+pub mod glean;
 mod google;
 pub mod google_api;
 pub mod google_drive;
@@ -42,6 +43,7 @@ pub mod linear;
 pub mod meeting_prep_queue;
 mod migrations;
 mod notification;
+pub mod oauth;
 mod parser;
 pub mod people;
 pub mod prepare;
@@ -710,9 +712,9 @@ pub fn run() {
             // ADR-0095: Context Mode (Local / Glean)
             commands::get_context_mode,
             commands::set_context_mode,
-            commands::save_glean_token,
-            commands::get_glean_token_status,
-            commands::delete_glean_token,
+            commands::start_glean_auth,
+            commands::get_glean_auth_status,
+            commands::disconnect_glean,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
