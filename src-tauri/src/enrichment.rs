@@ -57,12 +57,44 @@ pub async fn run_enrichment_processor(state: Arc<AppState>) {
     }
 }
 
+/// Check if we're in Glean mode (any strategy). In Glean mode, Clay and
+/// Gravatar enrichment are disabled — Glean replaces these data sources.
+fn is_glean_mode(state: &AppState) -> bool {
+    state.context_provider.provider_name() == "glean"
+}
+
 /// Run one sweep: Clay enrichment first (higher priority), then Gravatar.
 /// Returns total number of rows *attempted* (not just successes).
+/// In Glean mode, Clay and Gravatar are skipped entirely.
 async fn process_one_sweep(state: &AppState) -> u32 {
+    if is_glean_mode(state) {
+        log::info!("Enrichment: Glean mode active, skipping Clay/Gravatar");
+        return 0;
+    }
+
     let mut total = 0;
-    total += process_clay_queue(state).await;
-    total += process_gravatar_queue(state).await;
+    let clay_count = process_clay_queue(state).await;
+    if clay_count > 0 {
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append(
+                "data_access",
+                "clay_enrichment",
+                serde_json::json!({"entity_type": "person", "count": clay_count}),
+            );
+        }
+    }
+    total += clay_count;
+    let gravatar_count = process_gravatar_queue(state).await;
+    if gravatar_count > 0 {
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append(
+                "data_access",
+                "gravatar_lookup",
+                serde_json::json!({"count": gravatar_count}),
+            );
+        }
+    }
+    total += gravatar_count;
     total
 }
 
