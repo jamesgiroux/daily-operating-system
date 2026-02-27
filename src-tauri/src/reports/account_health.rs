@@ -3,8 +3,9 @@
 //! Produces a structured health assessment reading entity_intelligence
 //! fields plus meeting cadence and email signal data.
 
+use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::{build_intelligence_context, read_intelligence_json};
+use crate::intelligence::read_intelligence_json;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -55,6 +56,7 @@ fn build_account_health_prompt(
     entity_id: &str,
     account: Option<&crate::db::DbAccount>,
     active_preset: &str,
+    context_provider: &dyn ContextProvider,
 ) -> String {
     let entity_noun = match active_preset {
         "sales" => "deal",
@@ -86,16 +88,9 @@ fn build_account_health_prompt(
         read_intelligence_json(&dir).ok()
     });
 
-    let ctx = build_intelligence_context(
-        workspace,
-        db,
-        entity_id,
-        "account",
-        account,
-        None,
-        prior.as_ref(),
-        None,
-    );
+    let ctx = context_provider
+        .gather_entity_context(db, entity_id, "account", prior.as_ref())
+        .unwrap_or_default();
 
     // Gather supplemental data: meeting count (90d), email signal count, renewal date
     let ninety_days_ago = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
@@ -203,6 +198,7 @@ pub fn gather_account_health_input(
     entity_id: &str,
     ai_models: AiModelConfig,
     active_preset: &str,
+    context_provider: &dyn ContextProvider,
 ) -> Result<ReportGeneratorInput, String> {
     let account = db
         .get_account(entity_id)
@@ -218,6 +214,7 @@ pub fn gather_account_health_input(
         entity_id,
         Some(&account),
         active_preset,
+        context_provider,
     );
 
     Ok(ReportGeneratorInput {
