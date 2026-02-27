@@ -664,6 +664,7 @@ pub fn gather_enrichment_input(
     // Build context via the context provider (ADR-0095).
     // In Local mode this delegates to build_intelligence_context() — same behavior.
     // In Glean mode, context is gathered from Glean search API instead.
+    let gather_start = Instant::now();
     let ctx = state
         .context_provider
         .gather_entity_context(
@@ -672,7 +673,44 @@ pub fn gather_enrichment_input(
             &request.entity_type,
             prior.as_ref(),
         )
-        .map_err(|e| format!("Context gather failed: {}", e))?;
+        .map_err(|e| {
+            // Audit Glean-specific failures
+            if state.context_provider.is_remote() {
+                let error_category = match &e {
+                    crate::context_provider::ContextError::Timeout(_) => "timeout",
+                    crate::context_provider::ContextError::Auth(_) => "auth",
+                    crate::context_provider::ContextError::Db(_) => "db",
+                    crate::context_provider::ContextError::Other(_) => "other",
+                };
+                if let Ok(mut audit) = state.audit_log.lock() {
+                    let _ = audit.append(
+                        "data_access",
+                        "glean_connection_failed",
+                        serde_json::json!({
+                            "entity_id": request.entity_id,
+                            "error_category": error_category,
+                        }),
+                    );
+                }
+            }
+            format!("Context gather failed: {}", e)
+        })?;
+
+    // Audit successful Glean context gather
+    if state.context_provider.is_remote() {
+        let gather_ms = gather_start.elapsed().as_millis() as u64;
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append(
+                "data_access",
+                "glean_context_gathered",
+                serde_json::json!({
+                    "entity_id": request.entity_id,
+                    "entity_type": request.entity_type,
+                    "duration_ms": gather_ms,
+                }),
+            );
+        }
+    }
 
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing.
