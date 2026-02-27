@@ -2,9 +2,9 @@
 //!
 //! Produces a 6-slide executive risk briefing (Cover → Bottom Line →
 //! What Happened → Stakes → The Plan → The Ask). Uses SCQA as an internal
-//! thinking tool but outputs a presentation structure. Reuses
-//! `build_intelligence_context()` from entity_intel.rs and enriches via
-//! Claude Code PTY with a specialized strategy consultant prompt.
+//! thinking tool but outputs a presentation structure. Gathers context via
+//! the `ContextProvider` trait (ADR-0095) and enriches via Claude Code PTY
+//! with a specialized strategy consultant prompt.
 
 use std::path::Path;
 
