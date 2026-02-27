@@ -1498,6 +1498,10 @@ pub async fn unlock_app(
         Ok(true) => {
             state.is_locked.store(false, Ordering::Relaxed);
             state.failed_unlock_count.store(0, Ordering::Relaxed);
+            // Reset activity timer so the user gets a fresh idle window
+            if let Ok(mut guard) = state.last_activity.lock() {
+                *guard = std::time::Instant::now();
+            }
             if let Ok(mut audit) = state.audit_log.lock() {
                 let _ = audit.append("security", "app_unlock_succeeded", serde_json::json!({}));
             }
@@ -1507,7 +1511,11 @@ pub async fn unlock_app(
         Ok(false) => {
             let new_count = state.failed_unlock_count.fetch_add(1, Ordering::Relaxed) + 1;
             if let Ok(mut audit) = state.audit_log.lock() {
-                let _ = audit.append("security", "app_unlock_failed", serde_json::json!({"consecutive_failures": new_count}));
+                let _ = audit.append(
+                    "security",
+                    "app_unlock_failed",
+                    serde_json::json!({"consecutive_failures": new_count}),
+                );
             }
             if let Ok(mut guard) = state.last_failed_unlock.lock() {
                 *guard = Some(std::time::Instant::now());
@@ -1544,6 +1552,24 @@ pub fn set_lock_timeout(
     })
 }
 
+/// Signal user activity (click/keypress) to reset the idle lock timer.
+#[tauri::command]
+pub fn signal_user_activity(state: State<'_, Arc<AppState>>) {
+    if let Ok(mut guard) = state.last_activity.lock() {
+        *guard = std::time::Instant::now();
+    }
+}
+
+/// Signal window focus change to reset the idle lock timer.
+#[tauri::command]
+pub fn signal_window_focus(focused: bool, state: State<'_, Arc<AppState>>) {
+    if focused {
+        if let Ok(mut guard) = state.last_activity.lock() {
+            *guard = std::time::Instant::now();
+        }
+    }
+}
+
 /// Attempt system-level authentication using macOS LocalAuthentication via JXA.
 /// Triggers Touch ID if available, falls back to password.
 ///
@@ -1559,32 +1585,38 @@ var error = Ref();
 var can = context.canEvaluatePolicyError(1, error);
 if (!can) { "unavailable"; }
 else {
-  var sem = $.NSCondition.alloc.init;
   var done = false;
-  var result = {value: "fail"};
+  var result = "fail";
   context.evaluatePolicyLocalizedReasonReply(1, "DailyOS requires authentication to unlock.", function(success, err) {
-    sem.lock;
-    result.value = success ? "ok" : "fail";
+    result = success ? "ok" : "fail";
     done = true;
-    sem.signal;
-    sem.unlock;
   });
-  sem.lock;
-  if (!done) {
-    sem.waitUntilDate($.NSDate.dateWithTimeIntervalSinceNow(30));
+  var deadline = $.NSDate.dateWithTimeIntervalSinceNow(30);
+  while (!done && $.NSDate.date.compare(deadline) < 0) {
+    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.1));
   }
-  sem.unlock;
-  result.value;
+  result;
 }
 "#;
 
-    let output = tokio::process::Command::new("osascript")
-        .args(["-l", "JavaScript", "-e", script])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to launch auth: {}", e))?;
+    // 35s timeout as safety net — the JXA script has its own 30s deadline,
+    // but if osascript hangs we don't want the frontend stuck forever.
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(35),
+        tokio::process::Command::new("osascript")
+            .args(["-l", "JavaScript", "-e", script])
+            .output(),
+    )
+    .await
+    .map_err(|_| "Authentication timed out".to_string())?
+    .map_err(|e| format!("Failed to launch auth: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        log::warn!("osascript auth stderr: {}", stderr);
+    }
+    log::info!("osascript auth result: {:?} (exit: {:?})", stdout, output.status.code());
     match stdout.as_str() {
         "ok" => Ok(true),
         "fail" => Ok(false),
@@ -1595,6 +1627,7 @@ else {
         }
         _ => {
             // osascript failed (user cancelled, etc.)
+            log::warn!("Unexpected auth output: {:?}", stdout);
             Ok(false)
         }
     }
@@ -2227,7 +2260,11 @@ pub async fn start_google_auth(
 
     // Audit: oauth_connected
     if let Ok(mut audit) = state.audit_log.lock() {
-        let _ = audit.append("security", "oauth_connected", serde_json::json!({"provider": "google"}));
+        let _ = audit.append(
+            "security",
+            "oauth_connected",
+            serde_json::json!({"provider": "google"}),
+        );
     }
 
     // Update state
@@ -2263,7 +2300,11 @@ pub fn disconnect_google(
 
     // Audit: oauth_revoked
     if let Ok(mut audit) = state.audit_log.lock() {
-        let _ = audit.append("security", "oauth_revoked", serde_json::json!({"provider": "google"}));
+        let _ = audit.append(
+            "security",
+            "oauth_revoked",
+            serde_json::json!({"provider": "google"}),
+        );
     }
 
     let new_status = GoogleAuthStatus::NotConfigured;
@@ -2674,9 +2715,7 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
     let workspace = std::path::Path::new(&workspace_path);
     crate::devtools::write_fixtures(workspace)?;
 
-    state
-        .db_write(crate::devtools::seed_database)
-        .await?;
+    state.db_write(crate::devtools::seed_database).await?;
 
     Ok("Demo data installed".into())
 }
@@ -4900,9 +4939,7 @@ pub async fn enrich_project(
 
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
-    state
-        .db_read(crate::db_backup::backup_database)
-        .await
+    state.db_read(crate::db_backup::backup_database).await
 }
 
 #[tauri::command]
@@ -5048,9 +5085,7 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
 pub async fn get_duplicate_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
-    state
-        .db_read(crate::hygiene::detect_duplicate_people)
-        .await
+    state.db_read(crate::hygiene::detect_duplicate_people).await
 }
 
 /// Detect potential duplicate people for a specific person (I172).
