@@ -1387,7 +1387,13 @@ pub async fn set_workspace_path(
     path: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::services::settings::set_workspace_path(&path, &state).await
+    let result = crate::services::settings::set_workspace_path(&path, &state).await;
+    if result.is_ok() {
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append("config", "workspace_path_changed", serde_json::json!({}));
+        }
+    }
+    result
 }
 
 /// Toggle developer mode (shows/hides devtools panel)
@@ -1492,11 +1498,17 @@ pub async fn unlock_app(
         Ok(true) => {
             state.is_locked.store(false, Ordering::Relaxed);
             state.failed_unlock_count.store(0, Ordering::Relaxed);
+            if let Ok(mut audit) = state.audit_log.lock() {
+                let _ = audit.append("security", "app_unlock_succeeded", serde_json::json!({}));
+            }
             let _ = app.emit("app-unlocked", ());
             Ok(())
         }
         Ok(false) => {
             let new_count = state.failed_unlock_count.fetch_add(1, Ordering::Relaxed) + 1;
+            if let Ok(mut audit) = state.audit_log.lock() {
+                let _ = audit.append("security", "app_unlock_failed", serde_json::json!({"consecutive_failures": new_count}));
+            }
             if let Ok(mut guard) = state.last_failed_unlock.lock() {
                 *guard = Some(std::time::Instant::now());
             }
@@ -1548,15 +1560,19 @@ var can = context.canEvaluatePolicyError(1, error);
 if (!can) { "unavailable"; }
 else {
   var sem = $.NSCondition.alloc.init;
+  var done = false;
   var result = {value: "fail"};
   context.evaluatePolicyLocalizedReasonReply(1, "DailyOS requires authentication to unlock.", function(success, err) {
-    result.value = success ? "ok" : "fail";
     sem.lock;
+    result.value = success ? "ok" : "fail";
+    done = true;
     sem.signal;
     sem.unlock;
   });
   sem.lock;
-  sem.waitUntilDate($.NSDate.dateWithTimeIntervalSinceNow(30));
+  if (!done) {
+    sem.waitUntilDate($.NSDate.dateWithTimeIntervalSinceNow(30));
+  }
   sem.unlock;
   result.value;
 }
@@ -2004,7 +2020,7 @@ pub async fn get_proposed_actions(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbAction>, String> {
     state
-        .db_read(|db| crate::services::actions::get_proposed_actions(db))
+        .db_read(crate::services::actions::get_proposed_actions)
         .await
 }
 
@@ -2209,6 +2225,11 @@ pub async fn start_google_auth(
         email: email.clone(),
     };
 
+    // Audit: oauth_connected
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append("security", "oauth_connected", serde_json::json!({"provider": "google"}));
+    }
+
     // Update state
     if let Ok(mut guard) = state.calendar.google_auth.lock() {
         *guard = new_status.clone();
@@ -2239,6 +2260,11 @@ pub fn disconnect_google(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     crate::google::disconnect()?;
+
+    // Audit: oauth_revoked
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append("security", "oauth_revoked", serde_json::json!({"provider": "google"}));
+    }
 
     let new_status = GoogleAuthStatus::NotConfigured;
 
@@ -2649,7 +2675,7 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
     crate::devtools::write_fixtures(workspace)?;
 
     state
-        .db_write(|db| crate::devtools::seed_database(db))
+        .db_write(crate::devtools::seed_database)
         .await?;
 
     Ok("Demo data installed".into())
@@ -3731,7 +3757,7 @@ pub async fn get_accounts_list(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<AccountListItem>, String> {
     state
-        .db_read(|db| crate::services::accounts::get_accounts_list(db))
+        .db_read(crate::services::accounts::get_accounts_list)
         .await
 }
 
@@ -3750,7 +3776,7 @@ pub async fn get_accounts_for_picker(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<PickerAccount>, String> {
     state
-        .db_read(|db| crate::services::accounts::get_accounts_for_picker(db))
+        .db_read(crate::services::accounts::get_accounts_for_picker)
         .await
 }
 
@@ -4114,7 +4140,7 @@ pub async fn backfill_internal_meeting_associations(
     state: State<'_, Arc<AppState>>,
 ) -> Result<usize, String> {
     state
-        .db_write(|db| crate::services::accounts::backfill_internal_meeting_associations(db))
+        .db_write(crate::services::accounts::backfill_internal_meeting_associations)
         .await
 }
 
@@ -4875,7 +4901,7 @@ pub async fn enrich_project(
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
     state
-        .db_read(|db| crate::db_backup::backup_database(db))
+        .db_read(crate::db_backup::backup_database)
         .await
 }
 
@@ -5023,7 +5049,7 @@ pub async fn get_duplicate_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
     state
-        .db_read(|db| crate::hygiene::detect_duplicate_people(db))
+        .db_read(crate::hygiene::detect_duplicate_people)
         .await
 }
 
@@ -8513,7 +8539,7 @@ pub async fn get_google_drive_watches(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<DriveWatchData>, String> {
     let sources = state
-        .db_read(|db| crate::google_drive::sync::get_all_watched_sources(db))
+        .db_read(crate::google_drive::sync::get_all_watched_sources)
         .await?;
     Ok(sources
         .into_iter()
@@ -8541,4 +8567,66 @@ pub struct DriveWatchData {
     pub entity_id: String,
     pub entity_type: String,
     pub last_synced_at: Option<String>,
+}
+
+// =============================================================================
+// I471: Audit Log Commands
+// =============================================================================
+
+/// Get recent audit log records, optionally filtered by category.
+#[tauri::command]
+pub fn get_audit_log_records(
+    limit: Option<usize>,
+    category_filter: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Vec<crate::audit_log::AuditRecord> {
+    let path = if let Ok(guard) = state.audit_log.lock() {
+        guard.path().to_path_buf()
+    } else {
+        return Vec::new();
+    };
+
+    crate::audit_log::read_records(&path, limit.unwrap_or(100), category_filter.as_deref())
+}
+
+/// Export the audit log to a user-selected path.
+#[tauri::command]
+pub fn export_audit_log(dest_path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let src = if let Ok(guard) = state.audit_log.lock() {
+        guard.path().to_path_buf()
+    } else {
+        return Err("Audit log unavailable".to_string());
+    };
+
+    if !src.exists() {
+        return Err("No audit log file exists yet".to_string());
+    }
+
+    std::fs::copy(&src, &dest_path).map_err(|e| format!("Failed to export audit log: {e}"))?;
+    Ok(())
+}
+
+/// Verify the audit log hash chain integrity.
+#[tauri::command]
+pub fn verify_audit_log_integrity(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let path = if let Ok(guard) = state.audit_log.lock() {
+        guard.path().to_path_buf()
+    } else {
+        return Err("Audit log unavailable".to_string());
+    };
+
+    if !path.exists() {
+        return Ok("No audit log file exists yet.".to_string());
+    }
+
+    match crate::audit_log::verify_audit_log(&path) {
+        Ok(count) => Ok(format!(
+            "Integrity verified: {} records, hash chain intact.",
+            count
+        )),
+        Err((line, msg)) => Err(format!(
+            "Integrity check failed at record {}: {}",
+            line, msg
+        )),
+    }
 }
