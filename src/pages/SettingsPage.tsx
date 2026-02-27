@@ -1,13 +1,15 @@
 import { useMemo, useEffect, useRef } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { User, Link2, Monitor, Wrench } from "lucide-react";
+import { User, Link2, Monitor, Shield, Wrench } from "lucide-react";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import YouCard from "@/components/settings/YouCard";
 import ConnectorsGrid from "@/components/settings/ConnectorsGrid";
+import ContextSourceSection from "@/components/settings/ContextSourceSection";
 import SystemStatus from "@/components/settings/SystemStatus";
+import ActivityLogSection from "@/components/settings/ActivityLogSection";
 import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
 
 
@@ -28,6 +30,7 @@ const LEGACY_TAB_MAP: Record<string, string> = {
 const VALID_TABS = new Set<string>([
   "you",
   "connectors",
+  "data",
   "system",
   "diagnostics",
   ...Object.keys(LEGACY_TAB_MAP),
@@ -45,6 +48,7 @@ function resolveTab(value: unknown): string | null {
 const CHAPTER_DEFS = [
   { id: "settings-you", label: "You", icon: <User size={18} strokeWidth={1.5} /> },
   { id: "settings-connectors", label: "Connectors", icon: <Link2 size={18} strokeWidth={1.5} /> },
+  { id: "settings-data", label: "Data", icon: <Shield size={18} strokeWidth={1.5} /> },
   { id: "settings-system", label: "System", icon: <Monitor size={18} strokeWidth={1.5} /> },
 ];
 
@@ -135,7 +139,17 @@ export default function SettingsPage() {
           title="Connectors"
           epigraph="External services that feed your daily briefings."
         />
+        <ContextSourceSection />
         <ConnectorsGrid />
+      </section>
+
+      {/* ═══ DATA ═══ */}
+      <section id="settings-data" style={{ marginBottom: 48 }}>
+        <ChapterHeading
+          title="Data"
+          epigraph="What happened, when, and whether anything looks unusual."
+        />
+        <ActivityLogSection />
       </section>
 
       {/* ═══ SYSTEM ═══ */}

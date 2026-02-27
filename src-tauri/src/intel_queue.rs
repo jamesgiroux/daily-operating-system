@@ -15,8 +15,8 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::intelligence::{
-    build_intelligence_context, build_intelligence_prompt_with_preset, parse_intelligence_response,
-    read_intelligence_json, write_intelligence_json, IntelligenceJson, SourceManifestEntry,
+    build_intelligence_prompt_with_preset, parse_intelligence_response, read_intelligence_json,
+    write_intelligence_json, IntelligenceJson, SourceManifestEntry,
 };
 use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
@@ -294,6 +294,15 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             entity_names,
         );
 
+        // Audit: entity enrichment started
+        if let Ok(mut audit) = state.audit_log.lock() {
+            let _ = audit.append(
+                "ai",
+                "entity_enrichment_started",
+                serde_json::json!({"batch_size": batch.len()}),
+            );
+        }
+
         // TTL check: filter out entities enriched recently unless manually requested (I287)
         let batch: Vec<IntelRequest> = batch
             .into_iter()
@@ -331,6 +340,19 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
+        // Check for injection attempts in prompt content (I466)
+        for (request, input) in &inputs {
+            if crate::util::contains_tag_escape(&input.prompt) {
+                if let Ok(mut audit) = state.audit_log.lock() {
+                    let _ = audit.append(
+                        "anomaly",
+                        "injection_tag_escape_detected",
+                        serde_json::json!({"source": "enrichment_prompt", "entity_id": request.entity_id, "escaped": true}),
+                    );
+                }
+            }
+        }
+
         // Phase 2: Run PTY enrichment (no DB lock held)
         // Acquire heavy-work semaphore — limits concurrent expensive operations
         // (PTY subprocess, embedding inference) to one at a time.
@@ -352,12 +374,18 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // Track original requests so we can detect failures and re-enqueue (I470)
         let original_requests: Vec<IntelRequest> = inputs.iter().map(|(r, _)| r.clone()).collect();
 
+        // Track error categories for failed entities (I472)
+        let mut error_categories: HashMap<String, &str> = HashMap::new();
+
+        let enrichment_start = Instant::now();
         let results: Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> = if inputs.len() == 1 {
             // Single entity — use existing direct path (no batching overhead)
             let (request, input) = inputs.pop().unwrap();
             match run_enrichment(&input, &ai_config) {
                 Ok(intel) => vec![(request, input, intel)],
                 Err(e) => {
+                    let category = categorize_enrichment_error(&e);
+                    error_categories.insert(request.entity_id.clone(), category);
                     log::warn!(
                         "IntelProcessor: enrichment failed for {}: {}",
                         request.entity_id,
@@ -370,6 +398,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             // Multi-entity batch — combined prompt with delimiters (I289)
             run_batch_enrichment(inputs, &ai_config)
         };
+        let enrichment_duration_ms = enrichment_start.elapsed().as_millis() as u64;
 
         // I470: Re-enqueue entities that failed validation (up to MAX_VALIDATION_RETRIES)
         {
@@ -401,6 +430,49 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         original.entity_id,
                         original.retry_count,
                     );
+                    // Track schema validation failures for dropped entities (I472)
+                    error_categories
+                        .entry(original.entity_id.clone())
+                        .or_insert("schema_validation");
+                    if let Ok(mut audit) = state.audit_log.lock() {
+                        let _ = audit.append(
+                            "anomaly",
+                            "schema_validation_failed",
+                            serde_json::json!({"entity_id": original.entity_id}),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Audit: enrichment results
+        {
+            let succeeded_count = results.len();
+            let failed_count = original_requests.len() - succeeded_count;
+            if succeeded_count > 0 {
+                if let Ok(mut audit) = state.audit_log.lock() {
+                    let _ = audit.append(
+                        "ai",
+                        "entity_enrichment_completed",
+                        serde_json::json!({"count": succeeded_count, "duration_ms": enrichment_duration_ms}),
+                    );
+                }
+            }
+            if failed_count > 0 {
+                // Determine the dominant error category
+                let dominant_category = if error_categories.values().any(|c| *c == "timeout") {
+                    "timeout"
+                } else if error_categories.values().any(|c| *c == "schema_validation") {
+                    "schema_validation"
+                } else {
+                    "pty_error"
+                };
+                if let Ok(mut audit) = state.audit_log.lock() {
+                    let _ = audit.append(
+                        "ai",
+                        "entity_enrichment_failed",
+                        serde_json::json!({"count": failed_count, "error_category": dominant_category}),
+                    );
                 }
             }
         }
@@ -410,6 +482,23 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
         // Phase 3 + 4: Write results and emit events for each entity
         for (request, input, intel) in &results {
+            // Check for anomalies in the enrichment output (I472)
+            if let Ok(serialized) = serde_json::to_string(intel) {
+                let anomalies = crate::intelligence::validation::detect_anomalies(&serialized);
+                if !anomalies.is_empty() {
+                    if let Ok(mut audit) = state.audit_log.lock() {
+                        let _ = audit.append(
+                            "anomaly",
+                            "injection_instruction_in_output",
+                            serde_json::json!({
+                                "entity_id": request.entity_id,
+                                "detected_terms": anomalies,
+                            }),
+                        );
+                    }
+                }
+            }
+
             if let Err(e) = write_enrichment_results(&state, input, intel) {
                 log::warn!(
                     "IntelProcessor: failed to write results for {}: {}",
@@ -585,17 +674,18 @@ pub fn gather_enrichment_input(
     // Read prior intelligence
     let prior = read_intelligence_json(&entity_dir).ok();
 
-    // Build context (reads from DB)
-    let ctx = build_intelligence_context(
-        &workspace,
-        &db,
-        &request.entity_id,
-        &request.entity_type,
-        account.as_ref(),
-        project.as_ref(),
-        prior.as_ref(),
-        Some(state.embedding_model.as_ref()),
-    );
+    // Build context via the context provider (ADR-0095).
+    // In Local mode this delegates to build_intelligence_context() — same behavior.
+    // In Glean mode, context is gathered from Glean search API instead.
+    let ctx = state
+        .context_provider
+        .gather_entity_context(
+            &db,
+            &request.entity_id,
+            &request.entity_type,
+            prior.as_ref(),
+        )
+        .map_err(|e| format!("Context gather failed: {}", e))?;
 
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing.
@@ -630,6 +720,21 @@ pub fn gather_enrichment_input(
         file_manifest,
         file_count,
     })
+}
+
+/// Categorize an enrichment error for audit logging (I472).
+fn categorize_enrichment_error(error: &str) -> &'static str {
+    let lower = error.to_lowercase();
+    if lower.contains("timed out") || lower.contains("timeout") {
+        "timeout"
+    } else if lower.contains("validation")
+        || lower.contains("schema")
+        || lower.contains("invalid json")
+    {
+        "schema_validation"
+    } else {
+        "pty_error"
+    }
 }
 
 /// Phase 2: Run PTY enrichment (no DB lock held).

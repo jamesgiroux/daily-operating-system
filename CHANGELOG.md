@@ -4,6 +4,40 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.15.2] - 2026-02-27
+
+Audit log and enterprise observability release. DailyOS now records what it does in a tamper-evident log and supports dual-mode context gathering from local data or Glean's knowledge graph.
+
+### Added
+
+- **Tamper-evident audit log** — Append-only JSON-lines log at `~/.dailyos/audit.log` with SHA-256 hash chain, 90-day rotation, and `0o600` permissions. Every security, data access, AI operation, anomaly, and config event is recorded with structured detail fields. No PII stored — only IDs, counts, categories.
+- **Activity Log UI** — Settings → Data → Activity Log. Last 100 records grouped by day, category filter chips (Security / Data / AI / Anomalies / Config), anomaly highlighting, collapsible detail view. Export to JSON-lines. Verify integrity button validates the hash chain.
+- **Event instrumentation** — 18 audit event types covering: `db_key_generated`, `db_key_accessed`, `db_migration_started/completed`, `oauth_connected/revoked`, `app_unlock_succeeded/failed`, `google_calendar_sync` (with `events_fetched`), `gmail_sync` (with `emails_fetched`), `clay_enrichment`, `gravatar_lookup`, `entity_enrichment_completed` (with `duration_ms`), `entity_enrichment_failed` (with `error_category`), `email_enrichment_batch`, `injection_tag_escape_detected`, `injection_instruction_in_output`, `schema_validation_failed`, `workspace_path_changed` (with path `category`).
+- **ContextProvider trait** — `context_provider/mod.rs` with `gather_entity_context()` and `mode()`. `LocalContextProvider` wraps existing context gathering. All intelligence and report generators call through the trait.
+- **GleanContextProvider** — Glean MCP client with DashMap + SQLite cache (docs 1h, profiles 24h, org graph 4h). Two-phase gather: Phase A (local, ms) + Phase B (Glean network, 200-2000ms). Graceful fallback to local on Glean outage.
+- **Dual-mode context switching** — Local mode (default) or Glean mode (Additive/Governed strategy). Gmail/Drive pollers disabled in Governed mode, Clay/Gravatar disabled in any Glean mode. `set_context_mode` command triggers full re-enrichment. Settings UI: ContextSourceSection with mode selector, endpoint, token, strategy.
+- **Glean MCP spec discovery** — Dynamic Client Registration via MCP spec for Glean endpoint authentication.
+- **Native Touch ID** — Replaced JXA-based LocalAuthentication with native `LAContext` via objc2 FFI. Eliminates osascript stalls.
+
+### Changed
+
+- **Idle lock timer** — Now resets on mouse/keyboard activity, not just app focus events. Prevents premature lock during active use.
+- **Activity Log translations** — Dynamic event names: "Calendar synced (N events)", "Email synced (N emails)", "Database opened", "Intelligence updated", "Log maintenance", "AI output rejected (unexpected format)".
+
+### Fixed
+
+- **Touch ID stall** — Native LAContext FFI replaces osascript path that could hang indefinitely.
+- **Idle lock timer** — Timer now resets on actual user activity (mouse move, key press), not just window focus.
+- **Person-linked 1:1 meeting summary** — 1:1 meetings linked to a person now show the correct summary.
+- **Encrypted DB startup checks** — Migration backup fallback handles edge cases cleanly.
+
+### Security
+
+- Tamper-evident audit log with SHA-256 hash chain for compliance and forensics
+- Injection attempt detection and audit logging (`injection_tag_escape_detected`, `injection_instruction_in_output`)
+- Schema validation failure auditing (`schema_validation_failed`)
+- No PII in audit records — only IDs, counts, and classifications
+
 ## [0.15.1] - 2026-02-26
 
 Security hardening release. All corporate intelligence data is now encrypted at rest, AI prompts are hardened against injection, and the app locks itself after idle periods.

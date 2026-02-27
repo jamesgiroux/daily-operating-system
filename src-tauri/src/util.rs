@@ -660,6 +660,12 @@ pub fn wrap_user_data(content: &str) -> String {
     format!("<user_data>{}</user_data>", escaped)
 }
 
+/// Check if content contains `</user_data>` which would need escaping.
+/// Used by callers with AppState access to audit injection detection events.
+pub fn contains_tag_escape(content: &str) -> bool {
+    content.contains("</user_data>") || content.contains("<user_data")
+}
+
 /// Strip invisible Unicode characters that could be used for prompt injection (I469).
 /// Removes soft hyphens, zero-width spaces/joiners, BOM, and line/paragraph separators.
 pub fn strip_invisible_unicode(content: &str) -> String {
