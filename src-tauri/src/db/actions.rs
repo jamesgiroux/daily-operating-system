@@ -85,7 +85,7 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Query pending and waiting actions for a specific account.
+    /// Query proposed, pending, and waiting actions for a specific account.
     pub fn get_account_actions(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -94,7 +94,7 @@ impl ActionDb {
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE account_id = ?1
-               AND status IN ('pending', 'waiting')
+               AND status IN ('proposed', 'pending', 'waiting')
              ORDER BY priority, due_date",
         )?;
 
@@ -526,7 +526,7 @@ impl ActionDb {
         Ok(changed)
     }
 
-    /// Query actions extracted from a transcript for a specific meeting.
+    /// Query actions captured from a transcript or post-meeting flow for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
@@ -534,7 +534,8 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
-             WHERE source_id = ?1 AND source_type = 'transcript'
+             WHERE source_id = ?1
+               AND source_type IN ('transcript', 'post_meeting')
              ORDER BY priority, created_at",
         )?;
 

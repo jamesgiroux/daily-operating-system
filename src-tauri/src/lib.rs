@@ -316,21 +316,17 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Track last focused time for app lock (I465)
-            let last_focused =
-                std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
-
             // Handle window close: hide instead of quit + track focus for lock (I465)
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
-                let focus_tracker = last_focused.clone();
+                let activity_tracker = state.clone();
                 window.on_window_event(move |event| match event {
                     tauri::WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
                         let _ = window_clone.hide();
                     }
                     tauri::WindowEvent::Focused(true) => {
-                        if let Ok(mut guard) = focus_tracker.lock() {
+                        if let Ok(mut guard) = activity_tracker.last_activity.lock() {
                             *guard = std::time::Instant::now();
                         }
                     }
@@ -341,7 +337,6 @@ pub fn run() {
             // Spawn app lock idle timer (I465)
             let lock_state_timer = state.clone();
             let lock_handle_timer = app.handle().clone();
-            let last_focused_timer = last_focused.clone();
             tauri::async_runtime::spawn(async move {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(30)).await;
@@ -367,8 +362,10 @@ pub fn run() {
                     }
 
                     let elapsed = {
-                        let guard = last_focused_timer.lock().unwrap();
-                        guard.elapsed()
+                        match lock_state_timer.last_activity.lock() {
+                            Ok(guard) => guard.elapsed(),
+                            Err(_) => continue,
+                        }
                     };
 
                     if elapsed >= std::time::Duration::from_secs(u64::from(timeout_mins) * 60) {
@@ -703,6 +700,8 @@ pub fn run() {
             commands::lock_app,
             commands::unlock_app,
             commands::set_lock_timeout,
+            commands::signal_user_activity,
+            commands::signal_window_focus,
             // I471: Audit Log
             commands::get_audit_log_records,
             commands::export_audit_log,
