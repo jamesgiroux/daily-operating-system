@@ -73,17 +73,15 @@ pub struct GleanMcpClient {
 }
 
 impl GleanMcpClient {
-    /// Create a new client with the given MCP endpoint and OAuth token.
-    pub fn new(endpoint: &str, oauth_token: &str) -> Self {
+    /// Create a new client for the given MCP endpoint.
+    ///
+    /// Does NOT take a static token. Each request fetches a fresh
+    /// (possibly refreshed) token via `glean::get_valid_access_token()`.
+    pub fn new(endpoint: &str) -> Self {
         let client = reqwest::Client::builder()
             .timeout(GLEAN_CALL_TIMEOUT)
             .default_headers({
                 let mut headers = reqwest::header::HeaderMap::new();
-                headers.insert(
-                    reqwest::header::AUTHORIZATION,
-                    reqwest::header::HeaderValue::from_str(&format!("Bearer {}", oauth_token))
-                        .unwrap_or_else(|_| reqwest::header::HeaderValue::from_static("")),
-                );
                 headers.insert(
                     reqwest::header::CONTENT_TYPE,
                     reqwest::header::HeaderValue::from_static("application/json"),
@@ -105,12 +103,29 @@ impl GleanMcpClient {
         }
     }
 
+    /// Get a valid access token for this request.
+    ///
+    /// Transparently refreshes expired tokens via Keychain + token endpoint.
+    fn get_token(&self) -> Result<String, ContextError> {
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => tokio::task::block_in_place(|| {
+                handle.block_on(crate::glean::get_valid_access_token())
+            })
+            .map_err(|e| ContextError::Auth(format!("Glean token error: {}", e))),
+            Err(_) => match crate::glean::token_store::load_token() {
+                Ok(token) => Ok(token.access_token),
+                Err(e) => Err(ContextError::Auth(format!("Glean token not found: {}", e))),
+            },
+        }
+    }
+
     /// Search Glean for documents related to a query.
     pub async fn search(
         &self,
         query: &str,
         max_results: usize,
     ) -> Result<Vec<GleanSearchResult>, ContextError> {
+        let token = self.get_token()?;
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -127,6 +142,7 @@ impl GleanMcpClient {
         let response = self
             .client
             .post(&self.endpoint)
+            .bearer_auth(&token)
             .json(&body)
             .send()
             .await
@@ -173,6 +189,7 @@ impl GleanMcpClient {
         query: &str,
         max_results: usize,
     ) -> Result<Vec<GleanPersonResult>, ContextError> {
+        let token = self.get_token()?;
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -189,6 +206,7 @@ impl GleanMcpClient {
         let response = self
             .client
             .post(&self.endpoint)
+            .bearer_auth(&token)
             .json(&body)
             .send()
             .await
@@ -222,6 +240,7 @@ impl GleanMcpClient {
 
     /// Read a specific document's content from Glean.
     pub async fn read_document(&self, url: &str) -> Result<Option<String>, ContextError> {
+        let token = self.get_token()?;
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -237,6 +256,7 @@ impl GleanMcpClient {
         let response = self
             .client
             .post(&self.endpoint)
+            .bearer_auth(&token)
             .json(&body)
             .send()
             .await
@@ -278,8 +298,6 @@ impl GleanMcpClient {
 pub struct GleanContextProvider {
     /// Glean MCP server endpoint.
     endpoint: String,
-    /// Keychain key for the OAuth token.
-    keychain_key: String,
     /// Whether to suppress local connectors (Governed) or merge (Additive).
     strategy: super::GleanStrategy,
     /// In-memory + DB cache for Glean responses.
@@ -291,35 +309,16 @@ pub struct GleanContextProvider {
 impl GleanContextProvider {
     pub fn new(
         endpoint: String,
-        keychain_key: String,
         strategy: super::GleanStrategy,
         cache: Arc<GleanCache>,
         local_fallback: super::local::LocalContextProvider,
     ) -> Self {
         Self {
             endpoint,
-            keychain_key,
             strategy,
             cache,
             local_fallback,
         }
-    }
-
-    /// Resolve the OAuth token from the macOS Keychain.
-    fn resolve_token(&self) -> Result<String, ContextError> {
-        let output = std::process::Command::new("security")
-            .args(["find-generic-password", "-s", &self.keychain_key, "-w"])
-            .output()
-            .map_err(|e| ContextError::Auth(format!("Keychain access failed: {}", e)))?;
-
-        if !output.status.success() {
-            return Err(ContextError::Auth(format!(
-                "Glean OAuth token not found in Keychain (key: {})",
-                self.keychain_key
-            )));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
     /// Build Glean search queries for an entity.
@@ -367,8 +366,7 @@ impl GleanContextProvider {
         entity_id: &str,
         entity_type: &str,
     ) -> Result<GleanEntityData, ContextError> {
-        let token = self.resolve_token()?;
-        let client = GleanMcpClient::new(&self.endpoint, &token);
+        let client = GleanMcpClient::new(&self.endpoint);
 
         let queries = self.entity_search_queries(db, entity_id, entity_type);
         let mut all_results: Vec<GleanSearchResult> = Vec::new();

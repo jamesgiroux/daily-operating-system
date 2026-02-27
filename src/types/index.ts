@@ -563,6 +563,10 @@ export type GoogleAuthStatus =
   | { status: "authenticated"; email: string }
   | { status: "tokenexpired" };
 
+export type GleanAuthStatus =
+  | { status: "notconfigured" }
+  | { status: "authenticated"; email: string; name?: string };
+
 export interface HygieneFixView {
   key: string;
   label: string;
