@@ -164,6 +164,8 @@ pub struct AppState {
     /// True if the encryption key was not found in the Keychain on startup (I462).
     /// When set, the frontend shows a recovery screen instead of normal UI.
     pub encryption_key_missing: AtomicBool,
+    /// Tamper-evident audit log for enterprise observability (I471).
+    pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
@@ -192,13 +194,40 @@ impl AppState {
         let config = load_config().ok();
         let history = load_execution_history().unwrap_or_default();
 
+        // Initialize audit logger BEFORE DB open so key events can be logged (Option B).
+        let audit_path = crate::audit_log::default_audit_log_path();
+        let mut audit_logger = crate::audit_log::AuditLogger::new(audit_path);
+
+        // Rotate old records on startup
+        let (records_pruned, bytes_freed) = crate::audit_log::rotate_audit_log(&mut audit_logger);
+        let _ = audit_logger.append(
+            "system",
+            "audit_log_rotated",
+            serde_json::json!({
+                "records_pruned": records_pruned,
+                "bytes_freed": bytes_freed,
+            }),
+        );
+
         let mut encryption_key_missing = false;
         let db = match crate::db::ActionDb::open() {
-            Ok(db) => Some(db),
+            Ok(db) => {
+                let _ = audit_logger.append(
+                    "security",
+                    "db_key_accessed",
+                    serde_json::json!({"db_encrypted": true}),
+                );
+                Some(db)
+            }
             Err(crate::db::DbError::KeyMissing { ref db_path }) => {
                 log::error!(
                     "Encryption key missing for database at {db_path}. \
                      Showing recovery screen."
+                );
+                let _ = audit_logger.append(
+                    "security",
+                    "db_key_missing",
+                    serde_json::json!({"recovery_screen": true}),
                 );
                 encryption_key_missing = true;
                 None
@@ -229,6 +258,17 @@ impl AppState {
         // Build the prep invalidation queue and signal engine together so
         // the engine can push invalidated meeting IDs into the shared queue.
         let prep_queue = Arc::new(Mutex::new(Vec::new()));
+        // Log app_started event
+        let _ = audit_logger.append(
+            "system",
+            "app_started",
+            serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "db_encrypted": !encryption_key_missing && db.is_some(),
+            }),
+        );
+        let audit_log = Arc::new(Mutex::new(audit_logger));
+
         let intel_queue_arc = Arc::new(crate::intel_queue::IntelligenceQueue::new());
         let mut signal_engine = crate::signals::propagation::default_engine();
         signal_engine.set_prep_queue(Arc::clone(&prep_queue));
@@ -287,6 +327,7 @@ impl AppState {
             last_failed_unlock: Mutex::new(None),
             failed_unlock_count: AtomicU32::new(0),
             encryption_key_missing: AtomicBool::new(encryption_key_missing),
+            audit_log,
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
