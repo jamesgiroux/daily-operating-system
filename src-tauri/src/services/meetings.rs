@@ -1730,33 +1730,28 @@ pub async fn refresh_meeting_briefing_full(
         },
     );
 
-    let linked_entities = {
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| "DB lock poisoned".to_string())?;
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database not initialized".to_string())?;
+    let meeting_id_for_phase1 = meeting_id_owned.clone();
+    let linked_entities = state
+        .db_write(move |db| {
+            db.get_meeting_by_id(&meeting_id_for_phase1)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", meeting_id_for_phase1))?;
 
-        db.get_meeting_by_id(&meeting_id_owned)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Meeting not found: {}", meeting_id_owned))?;
+            let _ = db.update_intelligence_state(&meeting_id_for_phase1, "enriching", None, None);
 
-        let _ = db.update_intelligence_state(&meeting_id_owned, "enriching", None, None);
+            db.conn_ref()
+                .execute(
+                    "UPDATE meetings_history
+                     SET prep_frozen_json = NULL, prep_frozen_at = NULL
+                     WHERE id = ?1",
+                    rusqlite::params![meeting_id_for_phase1.as_str()],
+                )
+                .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
 
-        db.conn_ref()
-            .execute(
-                "UPDATE meetings_history
-                 SET prep_frozen_json = NULL, prep_frozen_at = NULL
-                 WHERE id = ?1",
-                rusqlite::params![meeting_id_owned.as_str()],
-            )
-            .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
-
-        db.get_meeting_entities(&meeting_id_owned)
-            .map_err(|e| format!("Failed to load linked entities: {}", e))?
-    };
+            db.get_meeting_entities(&meeting_id_for_phase1)
+                .map_err(|e| format!("Failed to load linked entities: {}", e))
+        })
+        .await?;
 
     let total_entities = linked_entities.len() as u32;
     if total_entities > 0 {
@@ -1907,26 +1902,22 @@ pub async fn refresh_meeting_briefing_full(
     }
 
     // Phase 4: finalize meeting intelligence metadata.
-    let quality = {
-        let guard = state
-            .db
-            .lock()
-            .map_err(|_| "DB lock poisoned".to_string())?;
-        let db = guard
-            .as_ref()
-            .ok_or_else(|| "Database not initialized".to_string())?;
-
-        let quality = crate::intelligence::assess_intelligence_quality(db, &meeting_id_owned);
-        db.update_intelligence_state(
-            &meeting_id_owned,
-            "enriched",
-            Some(&quality.level.to_string()),
-            Some(quality.signal_count as i32),
-        )
-        .map_err(|e| e.to_string())?;
-        let _ = db.clear_meeting_new_signals(&meeting_id_owned);
-        quality
-    };
+    let meeting_id_for_phase4 = meeting_id_owned.clone();
+    let quality = state
+        .db_write(move |db| {
+            let quality =
+                crate::intelligence::assess_intelligence_quality(db, &meeting_id_for_phase4);
+            db.update_intelligence_state(
+                &meeting_id_for_phase4,
+                "enriched",
+                Some(&quality.level.to_string()),
+                Some(quality.signal_count as i32),
+            )
+            .map_err(|e| e.to_string())?;
+            let _ = db.clear_meeting_new_signals(&meeting_id_for_phase4);
+            Ok::<IntelligenceQuality, String>(quality)
+        })
+        .await?;
 
     let result = MeetingBriefingRefreshResult {
         meeting_id: meeting_id_owned.clone(),
