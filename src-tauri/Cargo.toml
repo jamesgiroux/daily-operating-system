@@ -1,6 +1,6 @@
 [package]
 name = "dailyos"
-version = "0.15.1"
+version = "0.15.2"
 default-run = "dailyos"
 description = "Operational intelligence for your workday. Open the app, your day is ready."
 authors = ["DailyOS"]
@@ -68,6 +68,9 @@ rand = "0.10"
 rand_distr = "0.6"
 strsim = "0.11"
 
+# ADR-0095: Glean context provider cache (concurrent hash map)
+dashmap = "6"
+
 # MCP Server (ADR-0075) + Quill MCP client
 rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
 schemars = { version = "0.8", optional = true }
@@ -88,6 +91,12 @@ path = "src/main.rs"
 name = "dailyos-mcp"
 path = "src/mcp/main.rs"
 required-features = ["mcp"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-local-authentication = { version = "0.3", features = ["block2"] }
+block2 = "0.6"
 
 [profile.release]
 panic = "abort"

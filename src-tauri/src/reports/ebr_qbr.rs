@@ -3,8 +3,9 @@
 //! Flagship customer-facing report. Full intelligence context + user entity
 //! context. 8 structured sections. Value Delivered must cite real event IDs.
 
+use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::{build_intelligence_context, read_intelligence_json};
+use crate::intelligence::read_intelligence_json;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -71,6 +72,7 @@ fn build_ebr_qbr_prompt(
     entity_id: &str,
     account: Option<&crate::db::DbAccount>,
     active_preset: &str,
+    context_provider: &dyn ContextProvider,
 ) -> String {
     let entity_noun = match active_preset {
         "sales" => "deal",
@@ -101,16 +103,9 @@ fn build_ebr_qbr_prompt(
         read_intelligence_json(&dir).ok()
     });
 
-    let ctx = build_intelligence_context(
-        workspace,
-        db,
-        entity_id,
-        "account",
-        account,
-        None,
-        prior.as_ref(),
-        None,
-    );
+    let ctx = context_provider
+        .gather_entity_context(db, entity_id, "account", prior.as_ref())
+        .unwrap_or_default();
 
     // Gather user entity context (role, priorities) for framing
     let user_context: String = db
@@ -222,6 +217,7 @@ pub fn gather_ebr_qbr_input(
     entity_id: &str,
     ai_models: AiModelConfig,
     active_preset: &str,
+    context_provider: &dyn ContextProvider,
 ) -> Result<ReportGeneratorInput, String> {
     let account = db
         .get_account(entity_id)
@@ -237,6 +233,7 @@ pub fn gather_ebr_qbr_input(
         entity_id,
         Some(&account),
         active_preset,
+        context_provider,
     );
 
     Ok(ReportGeneratorInput {
