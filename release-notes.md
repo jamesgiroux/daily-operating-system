@@ -10,6 +10,22 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v0.15.2 — Observability & Enterprise Context
+
+Now you can see what DailyOS does — and connect it to your company's knowledge.
+
+Every action DailyOS takes is now recorded in a tamper-evident activity log: calendar syncs, briefing updates, security events, and anything unusual. You can browse it, export it, and verify it hasn't been tampered with. It's the kind of transparency a chief of staff should have — you trust it because you can audit it.
+
+**Activity Log** — Go to **Settings → Data → Activity Log** to see what the app has been doing. Events are grouped by day, color-coded by category, and written in plain English ("Calendar synced (47 events)", "Intelligence updated", "Database opened"). Click any entry to see the raw details. Use the category filters to focus on what matters — Security, Data, AI, or Anomalies.
+
+**Export & Verify** — Hit *Export Log* to save a copy of the full audit trail as a JSON file. Hit *Verify Integrity* to confirm the hash chain is intact — if anyone (or anything) has modified a record, you'll know.
+
+**Enterprise Context (Glean)** — If your company uses Glean, DailyOS can now pull from your organization's knowledge graph to enrich briefings and reports. Go to **Settings → Context Source**, switch to Glean mode, and enter your endpoint. Choose Additive (Glean supplements local data) or Governed (Glean replaces local connectors). When Glean is unavailable, everything falls back to local data seamlessly.
+
+**Touch ID (improved)** — App unlock is now native and instant. The old approach could occasionally stall — the new one won't.
+
+---
+
 ## v0.15.1 — Security
 
 Your data, locked down.
