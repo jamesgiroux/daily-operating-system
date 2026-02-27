@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { Globe, HardDrive, RefreshCw, Check, AlertCircle } from "lucide-react";
+import { Globe, HardDrive, RefreshCw, Check, AlertCircle, Loader2 } from "lucide-react";
 import { styles } from "@/components/settings/styles";
+import { useGleanAuth } from "@/hooks/useGleanAuth";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -15,7 +16,6 @@ interface ContextModeLocal {
 interface ContextModeGlean {
   mode: "Glean";
   endpoint: string;
-  keychain_key: string;
   strategy: "Additive" | "Governed";
 }
 
@@ -27,25 +27,20 @@ type ContextMode = ContextModeLocal | ContextModeGlean;
 
 export default function ContextSourceSection() {
   const [mode, setMode] = useState<ContextMode>({ mode: "Local" });
-  const [hasToken, setHasToken] = useState(false);
-  const [endpoint, setEndpoint] = useState(
-    "https://automattic-be.glean.com/mcp/default"
-  );
+  const [endpoint, setEndpoint] = useState("");
   const [strategy, setStrategy] = useState<"Additive" | "Governed">(
     "Additive"
   );
-  const [tokenInput, setTokenInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
+  const glean = useGleanAuth();
+  const isConnected = glean.status.status === "authenticated";
+
   const load = useCallback(async () => {
     try {
-      const [currentMode, tokenStatus] = await Promise.all([
-        invoke<ContextMode>("get_context_mode"),
-        invoke<boolean>("get_glean_token_status"),
-      ]);
+      const currentMode = await invoke<ContextMode>("get_context_mode");
       setMode(currentMode);
-      setHasToken(tokenStatus);
       if (currentMode.mode === "Glean") {
         setEndpoint(currentMode.endpoint);
         setStrategy(currentMode.strategy);
@@ -59,21 +54,20 @@ export default function ContextSourceSection() {
     load();
   }, [load]);
 
+  const handleConnectGlean = async () => {
+    if (!endpoint.trim()) {
+      toast.error("MCP endpoint is required");
+      return;
+    }
+    await glean.connect(endpoint.trim());
+  };
+
   const handleSaveGlean = async () => {
     setSaving(true);
     try {
-      // Save token if provided
-      if (tokenInput.trim()) {
-        await invoke("save_glean_token", { token: tokenInput.trim() });
-        setTokenInput("");
-        setHasToken(true);
-      }
-
-      // Save mode
       const newMode: ContextModeGlean = {
         mode: "Glean",
-        endpoint,
-        keychain_key: "com.dailyos.desktop.glean",
+        endpoint: endpoint.trim(),
         strategy,
       };
       await invoke("set_context_mode", { mode: newMode });
@@ -103,10 +97,9 @@ export default function ContextSourceSection() {
 
   const handleDisconnectGlean = async () => {
     try {
-      await invoke("delete_glean_token");
+      await glean.disconnect();
       await invoke("set_context_mode", { mode: { mode: "Local" } });
       setMode({ mode: "Local" });
-      setHasToken(false);
       toast.success("Glean disconnected. Restart the app to apply.");
     } catch (e) {
       toast.error(`Failed to disconnect: ${e}`);
@@ -185,7 +178,7 @@ export default function ContextSourceSection() {
               marginBottom: 16,
             }}
           >
-            {hasToken ? (
+            {isConnected ? (
               <>
                 <Check
                   size={14}
@@ -201,6 +194,37 @@ export default function ContextSourceSection() {
                   }}
                 >
                   Connected
+                </span>
+                {glean.email && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 12,
+                      color: "var(--color-text-secondary)",
+                      marginLeft: 4,
+                    }}
+                  >
+                    {glean.email}
+                  </span>
+                )}
+              </>
+            ) : glean.phase === "authorizing" ? (
+              <>
+                <Loader2
+                  size={14}
+                  className="animate-spin"
+                  style={{ color: "var(--color-spice-turmeric)" }}
+                />
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-spice-turmeric)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Waiting for authorization...
                 </span>
               </>
             ) : (
@@ -218,11 +242,25 @@ export default function ContextSourceSection() {
                     letterSpacing: "0.06em",
                   }}
                 >
-                  Token required
+                  Not connected
                 </span>
               </>
             )}
           </div>
+
+          {/* Error message */}
+          {glean.error && (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                color: "var(--color-earth-terracotta)",
+                margin: "0 0 12px",
+              }}
+            >
+              {glean.error}
+            </p>
+          )}
 
           {/* Endpoint */}
           <label style={styles.fieldLabel}>MCP Endpoint</label>
@@ -235,119 +273,134 @@ export default function ContextSourceSection() {
             }}
             placeholder="https://your-org.glean.com/mcp/default"
             style={{ ...styles.input, marginBottom: 16 }}
+            disabled={glean.loading}
           />
 
-          {/* OAuth token */}
-          {!hasToken && (
+          {/* Connect / Disconnect button */}
+          {!isConnected ? (
+            <button
+              onClick={handleConnectGlean}
+              disabled={
+                glean.loading || !endpoint.trim()
+              }
+              style={{
+                ...styles.btn,
+                ...styles.btnPrimary,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 16,
+                opacity:
+                  glean.loading || !endpoint.trim()
+                    ? 0.5
+                    : 1,
+              }}
+            >
+              {glean.loading ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Globe size={12} />
+              )}
+              {glean.loading ? "Connecting..." : "Connect to Glean"}
+            </button>
+          ) : (
             <>
-              <label style={styles.fieldLabel}>OAuth Token</label>
-              <input
-                type="password"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                placeholder="Paste token from Glean MCP Configurator"
-                style={{ ...styles.input, marginBottom: 16 }}
-              />
+              {/* Strategy (only shown after connected) */}
+              <label style={styles.fieldLabel}>Strategy</label>
+              <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    color: "var(--color-text-secondary)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="glean-strategy"
+                    checked={strategy === "Additive"}
+                    onChange={() => {
+                      setStrategy("Additive");
+                      setDirty(true);
+                    }}
+                  />
+                  Additive
+                </label>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    color: "var(--color-text-secondary)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="glean-strategy"
+                    checked={strategy === "Governed"}
+                    onChange={() => {
+                      setStrategy("Governed");
+                      setDirty(true);
+                    }}
+                  />
+                  Governed
+                </label>
+              </div>
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 12,
+                  color: "var(--color-text-tertiary)",
+                  margin: "0 0 16px",
+                }}
+              >
+                {strategy === "Additive"
+                  ? "Glean is the primary context source. Local signals (Gmail, Calendar) are still active."
+                  : "Glean is the only context source. Gmail polling and local file enrichment are disabled."}
+              </p>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 12 }}>
+                {dirty && (
+                  <button
+                    onClick={handleSaveGlean}
+                    disabled={saving}
+                    style={{
+                      ...styles.btn,
+                      ...styles.btnPrimary,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      opacity: saving ? 0.5 : 1,
+                    }}
+                  >
+                    {saving ? (
+                      <RefreshCw size={12} className="animate-spin" />
+                    ) : (
+                      <Check size={12} />
+                    )}
+                    {saving ? "Saving..." : "Save & Restart Required"}
+                  </button>
+                )}
+                <button
+                  onClick={handleDisconnectGlean}
+                  style={{
+                    ...styles.btn,
+                    ...styles.btnDanger,
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
             </>
           )}
-
-          {/* Strategy */}
-          <label style={styles.fieldLabel}>Strategy</label>
-          <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontFamily: "var(--font-sans)",
-                fontSize: 13,
-                color: "var(--color-text-secondary)",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="radio"
-                name="glean-strategy"
-                checked={strategy === "Additive"}
-                onChange={() => {
-                  setStrategy("Additive");
-                  setDirty(true);
-                }}
-              />
-              Additive
-            </label>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontFamily: "var(--font-sans)",
-                fontSize: 13,
-                color: "var(--color-text-secondary)",
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="radio"
-                name="glean-strategy"
-                checked={strategy === "Governed"}
-                onChange={() => {
-                  setStrategy("Governed");
-                  setDirty(true);
-                }}
-              />
-              Governed
-            </label>
-          </div>
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              margin: "0 0 16px",
-            }}
-          >
-            {strategy === "Additive"
-              ? "Glean is the primary context source. Local signals (Gmail, Calendar) are still active."
-              : "Glean is the only context source. Gmail polling and local file enrichment are disabled."}
-          </p>
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: 12 }}>
-            {dirty && (
-              <button
-                onClick={handleSaveGlean}
-                disabled={saving || (!hasToken && !tokenInput.trim())}
-                style={{
-                  ...styles.btn,
-                  ...styles.btnPrimary,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  opacity:
-                    saving || (!hasToken && !tokenInput.trim()) ? 0.5 : 1,
-                }}
-              >
-                {saving ? (
-                  <RefreshCw size={12} className="animate-spin" />
-                ) : (
-                  <Check size={12} />
-                )}
-                {saving ? "Saving…" : "Save & Restart Required"}
-              </button>
-            )}
-            {isGlean && (
-              <button
-                onClick={handleDisconnectGlean}
-                style={{
-                  ...styles.btn,
-                  ...styles.btnDanger,
-                }}
-              >
-                Disconnect
-              </button>
-            )}
-          </div>
         </div>
       )}
     </div>
