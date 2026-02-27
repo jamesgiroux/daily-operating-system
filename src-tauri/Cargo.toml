@@ -92,6 +92,12 @@ name = "dailyos-mcp"
 path = "src/mcp/main.rs"
 required-features = ["mcp"]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-local-authentication = { version = "0.3", features = ["block2"] }
+block2 = "0.6"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

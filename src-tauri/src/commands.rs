@@ -1586,71 +1586,90 @@ pub fn signal_window_focus(focused: bool, state: State<'_, Arc<AppState>>) {
     }
 }
 
-/// Attempt system-level authentication using macOS LocalAuthentication via JXA.
-/// Triggers Touch ID if available, falls back to password.
-///
-/// Uses JavaScript for Automation (JXA) instead of AppleScript because
-/// `evaluatePolicy` is an async ObjC method with a completion handler —
-/// AppleScript's ObjC bridge doesn't handle async callbacks, so it returns
-/// immediately without waiting for the biometric prompt.
+/// Attempt system-level authentication using macOS LocalAuthentication framework.
+/// Calls LAContext.evaluatePolicy directly via objc2 FFI so the Touch ID dialog
+/// shows "DailyOS" as the requesting app (not "osascript").
+#[cfg(target_os = "macos")]
 async fn attempt_system_auth() -> Result<bool, String> {
-    let script = r#"
-ObjC.import("LocalAuthentication");
-var context = $.LAContext.new;
-var error = Ref();
-var can = context.canEvaluatePolicyError(1, error);
-if (!can) { "unavailable"; }
-else {
-  var done = false;
-  var result = "fail";
-  context.evaluatePolicyLocalizedReasonReply(1, "DailyOS requires authentication to unlock.", function(success, err) {
-    result = success ? "ok" : "fail";
-    done = true;
-  });
-  var deadline = $.NSDate.dateWithTimeIntervalSinceNow(30);
-  while (!done && $.NSDate.date.compare(deadline) < 0) {
-    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.1));
-  }
-  result;
-}
-"#;
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<bool, String>>();
 
-    // 35s timeout as safety net — the JXA script has its own 30s deadline,
-    // but if osascript hangs we don't want the frontend stuck forever.
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(35),
-        tokio::process::Command::new("osascript")
-            .args(["-l", "JavaScript", "-e", script])
-            .output(),
-    )
-    .await
-    .map_err(|_| "Authentication timed out".to_string())?
-    .map_err(|e| format!("Failed to launch auth: {}", e))?;
+    std::thread::spawn(move || {
+        use block2::RcBlock;
+        use objc2::runtime::Bool;
+        use objc2_foundation::{NSComparisonResult, NSRunLoop, NSDate, NSString};
+        use objc2_local_authentication::{LAContext, LAPolicy};
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !stderr.is_empty() {
-        log::warn!("osascript auth stderr: {}", stderr);
-    }
-    log::info!(
-        "osascript auth result: {:?} (exit: {:?})",
-        stdout,
-        output.status.code()
-    );
-    match stdout.as_str() {
-        "ok" => Ok(true),
-        "fail" => Ok(false),
-        "unavailable" => {
-            // No biometric available — skip lock requirement
-            log::warn!("Biometric authentication unavailable, auto-unlocking");
-            Ok(true)
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        unsafe {
+            let context = LAContext::new();
+            let policy = LAPolicy(1); // deviceOwnerAuthentication (biometrics + passcode fallback)
+
+            // Check if any authentication method is available
+            if let Err(e) = context.canEvaluatePolicy_error(policy) {
+                log::warn!("Biometric authentication unavailable: {e}, auto-unlocking");
+                let _ = tx.send(Ok(true));
+                return;
+            }
+
+            let reason = NSString::from_str("DailyOS requires authentication to unlock.");
+            let done_clone = done.clone();
+            let tx = std::sync::Mutex::new(Some(tx));
+            let block = RcBlock::new(move |success: Bool, err: *mut objc2_foundation::NSError| {
+                let result = if success.as_bool() {
+                    Ok(true)
+                } else if !err.is_null() {
+                    let err_ref = &*err;
+                    let code = err_ref.code();
+                    // LAError.userCancel = -2, LAError.systemCancel = -4
+                    if code == -2 || code == -4 {
+                        log::info!("Touch ID cancelled (code {code})");
+                        Ok(false)
+                    } else {
+                        let desc = err_ref.localizedDescription();
+                        log::warn!("Touch ID error (code {code}): {desc}");
+                        Ok(false)
+                    }
+                } else {
+                    Ok(false)
+                };
+                if let Some(tx) = tx.lock().unwrap().take() {
+                    let _ = tx.send(result);
+                }
+                done_clone.store(true, std::sync::atomic::Ordering::Release);
+            });
+
+            context.evaluatePolicy_localizedReason_reply(policy, &reason, &block);
+
+            // Pump the run loop until the callback fires or 30s deadline
+            let deadline = NSDate::dateWithTimeIntervalSinceNow(30.0);
+            while !done.load(std::sync::atomic::Ordering::Acquire) {
+                let step = NSDate::dateWithTimeIntervalSinceNow(0.1);
+                NSRunLoop::currentRunLoop().runUntilDate(&step);
+                if NSDate::date().compare(&deadline) != NSComparisonResult::Ascending {
+                    log::warn!("Touch ID run loop deadline exceeded");
+                    break;
+                }
+            }
         }
-        _ => {
-            // osascript failed (user cancelled, etc.)
-            log::warn!("Unexpected auth output: {:?}", stdout);
+    });
+
+    // 35s outer timeout — the thread has its own 30s deadline,
+    // but if something hangs we don't want the frontend stuck forever.
+    match tokio::time::timeout(std::time::Duration::from_secs(35), rx).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => {
+            log::warn!("Touch ID channel closed without result");
             Ok(false)
         }
+        Err(_) => Err("Authentication timed out".to_string()),
     }
+}
+
+/// Non-macOS fallback: no biometric available, auto-unlock.
+#[cfg(not(target_os = "macos"))]
+async fn attempt_system_auth() -> Result<bool, String> {
+    Ok(true)
 }
 
 /// Set UI personality tone (professional, friendly, playful)
@@ -8771,59 +8790,77 @@ pub fn set_context_mode(
     Ok(())
 }
 
-/// Store a Glean OAuth token in the macOS Keychain.
+/// Start Glean OAuth consent flow — opens browser for SSO authentication.
+///
+/// Uses MCP OAuth discovery + DCR from the Glean MCP endpoint URL.
+/// Returns `GleanAuthStatus::Authenticated` on success.
 #[tauri::command]
-pub fn save_glean_token(token: String) -> Result<(), String> {
-    let status = std::process::Command::new("security")
-        .args([
-            "add-generic-password",
-            "-s",
-            "com.dailyos.desktop.glean",
-            "-a",
-            "glean-oauth",
-            "-w",
-            &token,
-            "-U",
-        ])
-        .status()
-        .map_err(|e| format!("Keychain access failed: {}", e))?;
+pub async fn start_glean_auth(
+    endpoint: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::glean::GleanAuthStatus, String> {
+    use crate::glean;
 
-    if !status.success() {
-        return Err("Failed to store Glean token in Keychain".to_string());
+    match glean::oauth::run_glean_consent_flow(&endpoint).await {
+        Ok(result) => {
+            let status = glean::GleanAuthStatus::Authenticated {
+                email: result.email.unwrap_or_else(|| "connected".to_string()),
+                name: result.name,
+            };
+
+            // Audit: oauth_connected
+            if let Ok(mut audit) = state.audit_log.lock() {
+                let _ = audit.append(
+                    "security",
+                    "oauth_connected",
+                    serde_json::json!({"provider": "glean"}),
+                );
+            }
+
+            let _ = app_handle.emit("glean-auth-changed", &status);
+            Ok(status)
+        }
+        Err(glean::GleanAuthError::FlowCancelled) => {
+            Err("Glean authorization was cancelled".to_string())
+        }
+        Err(e) => {
+            let message = format!("{}", e);
+            let _ = app_handle.emit(
+                "glean-auth-failed",
+                serde_json::json!({ "message": message }),
+            );
+            Err(message)
+        }
+    }
+}
+
+/// Get current Glean authentication status from Keychain.
+#[tauri::command]
+pub fn get_glean_auth_status() -> crate::glean::GleanAuthStatus {
+    crate::glean::detect_glean_auth()
+}
+
+/// Disconnect Glean — delete OAuth token from Keychain.
+#[tauri::command]
+pub fn disconnect_glean(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::glean::token_store::delete_token().map_err(|e| format!("{}", e))?;
+
+    // Audit: oauth_revoked
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append(
+            "security",
+            "oauth_revoked",
+            serde_json::json!({"provider": "glean"}),
+        );
     }
 
-    Ok(())
-}
+    let status = crate::glean::GleanAuthStatus::NotConfigured;
+    let _ = app_handle.emit("glean-auth-changed", &status);
 
-/// Check if a Glean OAuth token exists in the Keychain.
-#[tauri::command]
-pub fn get_glean_token_status() -> Result<bool, String> {
-    let output = std::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s",
-            "com.dailyos.desktop.glean",
-            "-a",
-            "glean-oauth",
-        ])
-        .output()
-        .map_err(|e| format!("Keychain access failed: {}", e))?;
-
-    Ok(output.status.success())
-}
-
-/// Remove the Glean OAuth token from the Keychain.
-#[tauri::command]
-pub fn delete_glean_token() -> Result<(), String> {
-    let _ = std::process::Command::new("security")
-        .args([
-            "delete-generic-password",
-            "-s",
-            "com.dailyos.desktop.glean",
-            "-a",
-            "glean-oauth",
-        ])
-        .status();
-
+    log::info!("Glean disconnected");
     Ok(())
 }
