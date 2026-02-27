@@ -14,6 +14,7 @@ mod calendar_merge;
 mod capture;
 pub mod clay;
 mod commands;
+pub mod context_provider;
 pub mod db;
 mod db_backup;
 pub mod db_service;
@@ -706,6 +707,12 @@ pub fn run() {
             commands::get_audit_log_records,
             commands::export_audit_log,
             commands::verify_audit_log_integrity,
+            // ADR-0095: Context Mode (Local / Glean)
+            commands::get_context_mode,
+            commands::set_context_mode,
+            commands::save_glean_token,
+            commands::get_glean_token_status,
+            commands::delete_glean_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
