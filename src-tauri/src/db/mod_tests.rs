@@ -1667,6 +1667,150 @@ fn test_meeting_attendance() {
 }
 
 #[test]
+fn test_get_person_meetings_includes_person_entity_link() {
+    let db = test_db();
+    let person = sample_person("linked-person@test.com");
+    db.upsert_person(&person).expect("upsert person");
+
+    let now = Utc::now().to_rfc3339();
+    let meeting = DbMeeting {
+        id: "mtg-person-link-001".to_string(),
+        title: "1:1 Linked by Entity".to_string(),
+        meeting_type: "one_on_one".to_string(),
+        start_time: now.clone(),
+        end_time: None,
+        attendees: None,
+        notes_path: None,
+        summary: Some("Followed up on staffing plan".to_string()),
+        created_at: now,
+        calendar_event_id: None,
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    };
+    db.upsert_meeting(&meeting).expect("upsert meeting");
+    db.link_meeting_entity(&meeting.id, &person.id, "person")
+        .expect("link person entity");
+
+    let meetings = db
+        .get_person_meetings(&person.id, 10)
+        .expect("person meetings");
+    assert_eq!(meetings.len(), 1);
+    assert_eq!(meetings[0].id, "mtg-person-link-001");
+    assert_eq!(
+        meetings[0].summary.as_deref(),
+        Some("Followed up on staffing plan")
+    );
+}
+
+#[test]
+fn test_get_upcoming_meetings_for_person_includes_person_entity_link() {
+    let db = test_db();
+    let person = sample_person("linked-upcoming@test.com");
+    db.upsert_person(&person).expect("upsert person");
+
+    let start_time = (Utc::now() + chrono::Duration::days(1)).to_rfc3339();
+    let meeting = DbMeeting {
+        id: "mtg-person-link-002".to_string(),
+        title: "Future 1:1 Linked by Entity".to_string(),
+        meeting_type: "one_on_one".to_string(),
+        start_time,
+        end_time: None,
+        attendees: None,
+        notes_path: None,
+        summary: None,
+        created_at: Utc::now().to_rfc3339(),
+        calendar_event_id: None,
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    };
+    db.upsert_meeting(&meeting).expect("upsert meeting");
+    db.link_meeting_entity(&meeting.id, &person.id, "person")
+        .expect("link person entity");
+
+    let meetings = db
+        .get_upcoming_meetings_for_person(&person.id, 10)
+        .expect("upcoming meetings");
+    assert_eq!(meetings.len(), 1);
+    assert_eq!(meetings[0].id, "mtg-person-link-002");
+}
+
+#[test]
+fn test_get_person_actions_includes_person_entity_linked_meeting() {
+    let db = test_db();
+    let person = sample_person("linked-actions@test.com");
+    db.upsert_person(&person).expect("upsert person");
+
+    let meeting = DbMeeting {
+        id: "mtg-person-link-003".to_string(),
+        title: "1:1 Action Source".to_string(),
+        meeting_type: "one_on_one".to_string(),
+        start_time: Utc::now().to_rfc3339(),
+        end_time: None,
+        attendees: None,
+        notes_path: None,
+        summary: None,
+        created_at: Utc::now().to_rfc3339(),
+        calendar_event_id: None,
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    };
+    db.upsert_meeting(&meeting).expect("upsert meeting");
+    db.link_meeting_entity(&meeting.id, &person.id, "person")
+        .expect("link person entity");
+
+    let mut action = sample_action("act-person-link-001", "Follow up with colleague");
+    action.source_type = Some("post_meeting".to_string());
+    action.source_id = Some(meeting.id.clone());
+    db.upsert_action(&action).expect("upsert action");
+
+    let actions = db.get_person_actions(&person.id).expect("person actions");
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].id, "act-person-link-001");
+}
+
+#[test]
 fn test_search_people() {
     let db = test_db();
     db.upsert_person(&sample_person("alice@acme.com"))
