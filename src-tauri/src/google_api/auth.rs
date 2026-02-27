@@ -3,14 +3,14 @@
 //! Replaces google_auth.py. Opens the user's browser for consent,
 //! captures the redirect on a localhost TcpListener, exchanges
 //! the auth code for tokens, and fetches the user's email.
+//!
+//! Shared OAuth primitives (PKCE, callback listener, HTML rendering)
+//! live in `crate::oauth` and are reused by the Glean OAuth flow.
 
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::path::Path;
 
-use base64::Engine;
-use sha2::{Digest, Sha256};
-use uuid::Uuid;
+use crate::oauth;
 
 use super::{
     load_credentials, save_token, send_with_retry, GoogleApiError, GoogleToken, RetryPolicy, SCOPES,
@@ -30,9 +30,9 @@ use super::{
 pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, GoogleApiError> {
     let creds = load_credentials(workspace)?;
     let installed = &creds.installed;
-    let pkce_verifier = generate_code_verifier();
-    let pkce_challenge = derive_code_challenge(&pkce_verifier);
-    let oauth_state = generate_state();
+    let pkce_verifier = oauth::pkce_verifier();
+    let pkce_challenge = oauth::pkce_challenge(&pkce_verifier);
+    let oauth_state = oauth::generate_state();
 
     // Bind to a random port
     let listener = TcpListener::bind("127.0.0.1:0").map_err(GoogleApiError::Io)?;
@@ -60,12 +60,15 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         .set_nonblocking(false)
         .map_err(GoogleApiError::Io)?;
 
-    let CallbackResult {
+    let oauth::CallbackResult {
         callback,
         mut stream,
-    } = wait_for_auth_callback(&listener)?;
+    } = oauth::listen_for_callback(&listener).map_err(|e| match e {
+        oauth::CallbackError::Io(io_err) => GoogleApiError::Io(io_err),
+        oauth::CallbackError::FlowCancelled => GoogleApiError::FlowCancelled,
+    })?;
     if callback.state.as_deref() != Some(oauth_state.as_str()) {
-        send_error_response(
+        oauth::send_error_response(
             &mut stream,
             "Authorization failed",
             "State mismatch detected. Please return to DailyOS and try connecting again.",
@@ -93,7 +96,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         Ok(result) => result,
         Err(e) => {
             log::error!("OAuth: token exchange request failed: {}", e);
-            send_error_response(
+            oauth::send_error_response(
                 &mut stream,
                 "Authorization failed",
                 "Could not reach Google during token exchange. Please return to DailyOS and try again.",
@@ -110,7 +113,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
             status,
             body_text
         );
-        send_error_response(
+        oauth::send_error_response(
             &mut stream,
             "Authorization failed",
             &format!(
@@ -150,7 +153,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
 
     if let Err(e) = save_token(&token) {
         log::error!("OAuth: failed to save token: {}", e);
-        send_error_response(
+        oauth::send_error_response(
             &mut stream,
             "Authorization failed",
             "Credentials could not be saved. Please return to DailyOS and check logs.",
@@ -159,7 +162,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     }
 
     // Token saved — NOW tell the browser it worked
-    send_success_response(
+    oauth::send_success_response(
         &mut stream,
         "Google account connected",
         "You can close this tab and return to DailyOS. Settings will update automatically.",
@@ -169,137 +172,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     Ok(email)
 }
 
-/// Result from waiting for the OAuth callback — includes the TCP stream so the
-/// caller can send the final response after the token exchange completes.
-struct CallbackResult {
-    callback: AuthCallback,
-    stream: TcpStream,
-}
-
-/// Wait for the OAuth redirect and extract the auth code from the URL.
-///
-/// Does NOT send a success response — the caller must do that after the token
-/// exchange succeeds. Error responses (denied, missing code) are sent immediately
-/// since those are terminal.
-fn wait_for_auth_callback(listener: &TcpListener) -> Result<CallbackResult, GoogleApiError> {
-    let (mut stream, _) = listener.accept().map_err(GoogleApiError::Io)?;
-
-    let mut buffer = [0u8; 4096];
-    let n = stream.read(&mut buffer).map_err(GoogleApiError::Io)?;
-    let request = String::from_utf8_lossy(&buffer[..n]);
-
-    let query = request
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .and_then(|path| path.split('?').nth(1))
-        .ok_or(GoogleApiError::FlowCancelled)?;
-    let params = parse_query_params(query);
-    let code = params.get("code").cloned();
-    let state = params.get("state").cloned();
-    let error = params.get("error").cloned();
-
-    if let Some(error_code) = error {
-        if error_code == "access_denied" {
-            send_info_response(
-                &mut stream,
-                "Authorization cancelled",
-                "No changes were made. You can close this tab and return to DailyOS.",
-            );
-            return Err(GoogleApiError::FlowCancelled);
-        }
-        send_error_response(
-            &mut stream,
-            "Authorization failed",
-            "Google returned an error response. You can close this tab and return to DailyOS.",
-        );
-        return Err(GoogleApiError::FlowCancelled);
-    }
-
-    let code = code.ok_or(GoogleApiError::FlowCancelled)?;
-    if code.is_empty() {
-        send_error_response(
-            &mut stream,
-            "Authorization failed",
-            "No authorization code was returned. Please close this tab and try again from DailyOS.",
-        );
-        return Err(GoogleApiError::FlowCancelled);
-    }
-
-    log::info!("OAuth: received auth code from browser callback");
-
-    // Don't send success yet — caller will respond after token exchange
-    Ok(CallbackResult {
-        callback: AuthCallback { code, state },
-        stream,
-    })
-}
-
-/// Send an HTTP response to the browser.
-enum CallbackTone {
-    Success,
-    Error,
-    Info,
-}
-
-fn render_callback_html(title: &str, message: &str, tone: CallbackTone) -> String {
-    // Editorial design system colors (ADR-0076)
-    let (accent, rule_color) = match tone {
-        CallbackTone::Success => ("#7eaa7b", "#7eaa7b"), // Sage
-        CallbackTone::Error => ("#c4654a", "#c4654a"),   // Terracotta
-        CallbackTone::Info => ("#c9a227", "#c9a227"),    // Turmeric
-    };
-
-    format!(
-        r#"<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>DailyOS</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
-</head>
-<body style="margin:0;background:#f5f2ef;color:#1e2530;font-family:'DM Sans',sans-serif;">
-<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 24px;">
-<section style="max-width:480px;width:100%;text-align:center;">
-<div style="font-family:'Montserrat','DM Sans',sans-serif;font-size:28px;font-weight:800;color:#c9a227;margin-bottom:48px;">*</div>
-<div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.1em;color:{accent};margin-bottom:16px;">DailyOS</div>
-<h1 style="margin:0 0 16px;font-family:'DM Sans',sans-serif;font-size:24px;font-weight:500;line-height:1.35;color:#1e2530;">{title}</h1>
-<p style="margin:0 0 40px;font-family:'DM Sans',sans-serif;font-size:15px;line-height:1.65;color:#6b7280;max-width:360px;margin-left:auto;margin-right:auto;">{message}</p>
-<div style="border-top:1px solid {rule_color};padding-top:20px;max-width:320px;margin:0 auto;">
-<p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.04em;color:#6b7280;">Return to DailyOS. This window can be closed.</p>
-</div>
-</section>
-</main>
-</body>
-</html>"#
-    )
-}
-
-fn send_response(stream: &mut impl Write, title: &str, message: &str, tone: CallbackTone) {
-    let body = render_callback_html(title, message, tone);
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
-        body.len(),
-        body
-    );
-    let _ = stream.write_all(response.as_bytes());
-    let _ = stream.flush();
-}
-
-fn send_success_response(stream: &mut impl Write, title: &str, message: &str) {
-    send_response(stream, title, message, CallbackTone::Success);
-}
-
-fn send_error_response(stream: &mut impl Write, title: &str, message: &str) {
-    send_response(stream, title, message, CallbackTone::Error);
-}
-
-fn send_info_response(stream: &mut impl Write, title: &str, message: &str) {
-    send_response(stream, title, message, CallbackTone::Info);
-}
+// Callback listener, HTML rendering, and PKCE helpers are in crate::oauth.
 
 /// Fetch the user's email address from the Gmail API.
 ///
@@ -348,30 +221,6 @@ async fn fetch_user_email(access_token: &str) -> String {
     "authenticated".to_string()
 }
 
-/// Simple percent-encoding for URL parameters.
-fn urlencoding(s: &str) -> String {
-    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
-}
-
-#[derive(Debug, Clone)]
-struct AuthCallback {
-    code: String,
-    state: Option<String>,
-}
-
-fn generate_code_verifier() -> String {
-    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
-}
-
-fn derive_code_challenge(verifier: &str) -> String {
-    let digest = Sha256::digest(verifier.as_bytes());
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
-}
-
-fn generate_state() -> String {
-    format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
-}
-
 fn build_auth_url(
     installed: &super::InstalledAppCredentials,
     redirect_uri: &str,
@@ -382,19 +231,15 @@ fn build_auth_url(
     format!(
         "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256&state={}",
         installed.auth_uri,
-        urlencoding(&installed.client_id),
-        urlencoding(redirect_uri),
-        urlencoding(scope_string),
-        urlencoding(code_challenge),
-        urlencoding(state),
+        oauth::urlencode(&installed.client_id),
+        oauth::urlencode(redirect_uri),
+        oauth::urlencode(scope_string),
+        oauth::urlencode(code_challenge),
+        oauth::urlencode(state),
     )
 }
 
-fn parse_query_params(query: &str) -> std::collections::HashMap<String, String> {
-    url::form_urlencoded::parse(query.as_bytes())
-        .into_owned()
-        .collect()
-}
+// parse_query_params is in crate::oauth
 
 async fn exchange_auth_code(
     client: &reqwest::Client,
@@ -430,24 +275,6 @@ async fn exchange_auth_code(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_pkce_challenge_shape() {
-        let verifier = generate_code_verifier();
-        let challenge = derive_code_challenge(&verifier);
-        assert!(!challenge.is_empty());
-        assert!(!challenge.contains('='));
-        assert!(challenge
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
-    }
-
-    #[test]
-    fn test_parse_query_params_decodes_values() {
-        let params = parse_query_params("code=a%2Fb&state=x-y_z&scope=abc");
-        assert_eq!(params.get("code").map(String::as_str), Some("a/b"));
-        assert_eq!(params.get("state").map(String::as_str), Some("x-y_z"));
-    }
 
     #[test]
     fn test_auth_url_includes_pkce_and_state() {
