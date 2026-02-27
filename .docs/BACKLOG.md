@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** v0.14.3 shipped (Google Drive connector). v0.15.0 in progress (CS reports + personal impact reports). 0.15.1 planned (security hardening — SQLCipher, injection fixes, app lock, inbox matching — ADRs 0092/0093). 0.15.2 planned (audit log + enterprise observability — ADR-0094). 0.16.0 planned (onboarding + first-run). 0.16.1 planned (beta hardening + search + offline). 0.16.2 planned (UI finesse). 1.0.0 = ship to beta users on tag. 1.0.1 planned (Glean + CS report suite completion). 1.1.0 planned (local-first AI — ADR-0091).
+**Current state:** v0.14.3 shipped (Google Drive connector). v0.15.0 in progress (CS reports + personal impact reports). 0.15.1 planned (security hardening — SQLCipher, injection fixes, app lock, inbox matching — ADRs 0092/0093). 0.15.2 implemented (audit log + enterprise observability + dual-mode context — ADRs 0094/0095/0096). 0.16.0 planned (onboarding + first-run). 0.16.1 planned (beta hardening + search + offline). 0.16.2 planned (UI finesse). 1.0.0 = ship to beta users on tag. 1.0.1 planned (CS report suite completion; Glean moved to v0.15.2). 1.1.0 planned (local-first AI — ADR-0091).
 
 ---
 
@@ -28,7 +28,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I277** | Marketplace repo for community preset discoverability | P3 | Integrations |
 | **I280** | Beta hardening umbrella — dependency, DB, token, DRY audit | P1 | Code Quality |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
-| **I340** | Glean integration — Glean MCP as entity enrichment source; org knowledge injected into intelligence prompts (v1.0.1) | P1 | Backend / Connectors + Intelligence |
+| ~~I340~~ | ~~Glean integration~~ — superseded by I479-I481 in v0.15.2 | — | — |
 | **I347** | SWOT report type — account analysis from existing intelligence | P2 | Intelligence / Reports |
 | **I348** | Email digest push — DailyOS intelligence summaries via scheduled email | P2 | Distribution |
 | **I350** | In-app notifications — release announcements, what's new, system status | P1 | UX / Infra |
@@ -140,6 +140,9 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I475** | Inbox entity-gating follow-ups — transcript NeedsEntity path, onAssignEntity result check, enrich.rs redundant DB, action account validation | P2 | Backend / Pipeline + Frontend / UX |
 | **I477** | Meeting entity switch should hot-swap briefing content — stale disk fallback guard + single mutation-and-refresh service | P1 | Backend / Meeting + Frontend / UX |
 | **I478** | Remove feature toggle section from Advanced Settings — internal dev knobs, not user-facing | P1 | Frontend / Settings + Backend / Config |
+| ~~I479~~ | ~~ContextProvider trait + LocalContextProvider — pure refactor~~ — done in v0.15.2 | P1 | Backend / Architecture |
+| ~~I480~~ | ~~GleanContextProvider + cache + migration~~ — done in v0.15.2 | P1 | Backend / Connectors + Intelligence |
+| ~~I481~~ | ~~Connector gating + mode switching + Settings UI~~ — done in v0.15.2 | P1 | Backend / Connectors + Frontend / Settings |
 | **I458** | Renewal Readiness report type — CS report for accounts renewing in the next 90 days; risk rating, champion alignment, recommended actions | P1 | Backend / Reports |
 | **I459** | Stakeholder Map report type — relationship network, coverage gaps, engagement levels; uses people relationship network (v0.13.5) | P1 | Backend / Reports |
 | **I460** | Success Plan report type — mutual objectives, success metrics, responsibilities; requires user entity context (v0.14.0) to be meaningful | P1 | Backend / Reports |
@@ -419,19 +422,21 @@ Note: I258, I302, I347 superseded by I397. I348 removed.
 
 ---
 
-### v1.0.1 — Glean Integration + CS Report Suite Completion [PLANNED]
+### v1.0.1 — CS Report Suite Completion [PLANNED]
 
-**Theme:** Entity intelligence gains its first organisational signal source — Glean's knowledge graph. When enriching an account, DailyOS now has access to everything VIP knows (Zendesk tickets, Gong call summaries, Salesforce notes, internal docs) alongside everything *you* know. The CS report suite completes with Renewal Readiness, Stakeholder Map, and Success Plan — the three reports a CSM needs beyond EBR/QBR. Coaching Patterns emerges from 3+ months of Monthly Wrapped history.
+**Theme:** The CS report suite completes with Renewal Readiness, Stakeholder Map, and Success Plan — the three reports a CSM needs beyond EBR/QBR. Coaching Patterns emerges from 3+ months of Monthly Wrapped history.
+
+> **Note:** I340 (Glean integration) has been superseded by I479-I481, shipped in v0.15.2. The dual-mode context architecture (ContextProvider trait, GleanContextProvider, connector gating) now lives there. See ADRs 0095 and 0096.
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I340 | Glean integration — org knowledge as entity enrichment source via Glean MCP | P1 | Backend / Connectors |
+| ~~I340~~ | ~~Glean integration~~ — superseded by I479-I481 in v0.15.2 | — | — |
 | I458 | Renewal Readiness report — 90-day renewal window, risk rating, champion alignment, recommended actions | P1 | Backend / Reports |
 | I459 | Stakeholder Map report — relationship network, coverage gaps, engagement levels | P1 | Backend / Reports |
 | I460 | Success Plan report — mutual objectives, metrics, responsibilities (requires user entity context) | P1 | Backend / Reports |
 | I461 | Coaching Patterns — pattern recognition across 3+ Monthly Wrapped reports; factual not prescriptive | P2 | Backend / Reports |
 
-See `.docs/research/glean-integration-analysis.md` and `.docs/research/cs-report-types.md`. Coaching Patterns (I461) only activates when 3+ Monthly Wrapped reports exist.
+See `.docs/research/cs-report-types.md`. Coaching Patterns (I461) only activates when 3+ Monthly Wrapped reports exist.
 
 ---
 
@@ -459,17 +464,20 @@ Issue specs: `i462.md` (SQLCipher), `i465.md` (app lock), `i469.md` (sanitize ut
 
 ---
 
-### 0.15.2 — Audit Log and Enterprise Observability [PLANNED]
+### 0.15.2 — Audit Log, Enterprise Observability + Dual-Mode Context [IMPLEMENTED]
 
-**Theme:** v0.15.1 hardens the security posture. v0.15.2 makes it observable. A tamper-evident append-only audit log records what the app did, when, and whether anything anomalous occurred — giving users and their security teams a verifiable record. The hash chain detects tampering. The Activity Log UI surfaces it. ADR: 0094.
+**Theme:** v0.15.1 hardens the security posture. v0.15.2 adds two capabilities: (1) a tamper-evident append-only audit log for observability, and (2) a dual-mode context architecture enabling intelligence from local data or Glean's organizational knowledge graph. ADRs: 0094, 0095, 0096.
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | I471 | `AuditLogger` core — append-only JSON-lines at `~/.dailyos/audit.log`, SHA-256 hash chain, 90-day rotation | P1 | Backend / Security |
 | I472 | Instrument all pipeline events — security, data access, AI operation, anomaly, and config events wired to `AuditLogger` | P1 | Backend / Security |
 | I473 | Settings → Data → Activity Log UI — last 100 records, category filter, anomaly highlighting, export, chain verification | P2 | Frontend / Security |
+| I479 | `ContextProvider` trait + `LocalContextProvider` — pure refactor, zero behavior change | P1 | Backend / Architecture |
+| I480 | `GleanContextProvider` + cache + migration — Glean MCP client, two-phase gather, graceful fallback | P1 | Backend / Connectors + Intelligence |
+| I481 | Connector gating + mode switching + Settings UI — Gmail/Drive/Clay disabled in Governed mode, ContextSourceSection.tsx | P1 | Backend / Connectors + Frontend / Settings |
 
-Issue spec: `i471.md` (AuditLogger core). ADR: `.docs/decisions/0094-audit-log-and-enterprise-observability.md`.
+Issue specs: `i471.md`, `i479-done.md`, `i480-done.md`, `i481-done.md`. ADRs: 0094, 0095, 0096.
 
 ---
 
@@ -548,7 +556,7 @@ Not version-locked. Pulled in when capacity allows.
 | I225 | Gong integration — sales call intelligence + transcripts | P1 | Gong API access |
 | I227 | Gainsight integration — CS platform data sync | P2 | Gainsight API |
 | I230 | Claude Cowork integration — project/task sync | P2 | API TBD |
-| I340 | Glean integration — enterprise knowledge enrichment | P2 | Glean account access |
+| ~~I340~~ | ~~Glean integration~~ — superseded by I479-I481 in v0.15.2 | — | — |
 | I277 | Marketplace repo — preset community discoverability | P3 | — |
 
 ---
