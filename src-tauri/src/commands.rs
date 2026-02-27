@@ -1390,7 +1390,23 @@ pub async fn set_workspace_path(
     let result = crate::services::settings::set_workspace_path(&path, &state).await;
     if result.is_ok() {
         if let Ok(mut audit) = state.audit_log.lock() {
-            let _ = audit.append("config", "workspace_path_changed", serde_json::json!({}));
+            let category = {
+                let home = dirs::home_dir().unwrap_or_default();
+                let documents = home.join("Documents");
+                let p = std::path::Path::new(&path);
+                if p.starts_with(&documents) {
+                    "documents"
+                } else if p.starts_with(&home) {
+                    "home"
+                } else {
+                    "custom"
+                }
+            };
+            let _ = audit.append(
+                "config",
+                "workspace_path_changed",
+                serde_json::json!({"category": category}),
+            );
         }
     }
     result
@@ -1616,7 +1632,11 @@ else {
     if !stderr.is_empty() {
         log::warn!("osascript auth stderr: {}", stderr);
     }
-    log::info!("osascript auth result: {:?} (exit: {:?})", stdout, output.status.code());
+    log::info!(
+        "osascript auth result: {:?} (exit: {:?})",
+        stdout,
+        output.status.code()
+    );
     match stdout.as_str() {
         "ok" => Ok(true),
         "fail" => Ok(false),

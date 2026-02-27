@@ -41,11 +41,13 @@ const CATEGORY_FILTERS: { value: CategoryFilter; label: string }[] = [
 // Event name translation (raw snake_case → plain English)
 // ---------------------------------------------------------------------------
 
-const EVENT_NAMES: Record<string, string> = {
+type EventTranslation = string | ((detail: Record<string, unknown>) => string);
+
+const EVENT_NAMES: Record<string, EventTranslation> = {
   app_started: "App started",
-  audit_log_rotated: "Audit log rotated",
-  db_key_accessed: "Database key accessed",
-  db_key_generated: "Database key generated",
+  audit_log_rotated: "Log maintenance",
+  db_key_accessed: "Database opened",
+  db_key_generated: "Encryption key created",
   db_key_missing: "Database key missing",
   db_migration_started: "Database migration started",
   db_migration_completed: "Database migration completed",
@@ -53,18 +55,18 @@ const EVENT_NAMES: Record<string, string> = {
   oauth_revoked: "Google account disconnected",
   app_unlock_succeeded: "App unlocked",
   app_unlock_failed: "Unlock attempt failed",
-  google_calendar_sync: "Calendar synced",
-  gmail_sync: "Email synced",
+  google_calendar_sync: (d) =>
+    `Calendar synced (${d.events_fetched ?? 0} events)`,
+  gmail_sync: (d) => `Email synced (${d.emails_fetched ?? 0} emails)`,
   clay_enrichment: "Contact enrichment (Clay)",
   gravatar_lookup: "Avatar lookup (Gravatar)",
-  entity_enrichment_started: "Intelligence enrichment started",
-  entity_enrichment_completed: "Intelligence enrichment completed",
+  entity_enrichment_completed: "Intelligence updated",
   entity_enrichment_failed: "Intelligence enrichment failed",
   email_enrichment_batch: "Email enrichment batch",
   meeting_prep_generated: "Meeting briefing generated",
-  injection_tag_escape_detected: "Injection attempt blocked",
+  injection_tag_escape_detected: "Injection attempt detected and blocked",
   injection_instruction_in_output: "Suspicious output detected",
-  schema_validation_failed: "Schema validation failed",
+  schema_validation_failed: "AI output rejected (unexpected format)",
   workspace_path_changed: "Workspace path changed",
   ai_provider_changed: "AI provider changed",
 };
@@ -245,7 +247,11 @@ export default function ActivityLogSection() {
                       {record.category.replace("_", " ")}
                     </span>
                     <span className={s.eventName}>
-                      {EVENT_NAMES[record.event] ?? record.event}
+                      {(() => {
+                        const t = EVENT_NAMES[record.event];
+                        if (typeof t === "function") return t(record.detail);
+                        return t ?? record.event;
+                      })()}
                     </span>
                   </div>
                   {isExpanded && (

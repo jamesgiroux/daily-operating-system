@@ -67,7 +67,7 @@ async fn process_one_sweep(state: &AppState) -> u32 {
             let _ = audit.append(
                 "data_access",
                 "clay_enrichment",
-                serde_json::json!({"attempted": clay_count}),
+                serde_json::json!({"entity_type": "person", "count": clay_count}),
             );
         }
     }
@@ -78,7 +78,7 @@ async fn process_one_sweep(state: &AppState) -> u32 {
             let _ = audit.append(
                 "data_access",
                 "gravatar_lookup",
-                serde_json::json!({"attempted": gravatar_count}),
+                serde_json::json!({"count": gravatar_count}),
             );
         }
     }
