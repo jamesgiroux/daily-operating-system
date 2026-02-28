@@ -112,6 +112,12 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
         .unwrap_or_else(Instant::now);
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         let config = match state.config.read().ok().and_then(|g| g.clone()) {
             Some(c) => c,
             None => {
