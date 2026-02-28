@@ -18,7 +18,8 @@ function devToast(type: "success" | "error", message: string) {
     duration: type === "error" ? 8000 : 5000,
     action: {
       label: "Copy",
-      onClick: () => {
+      onClick: (e) => {
+        e.preventDefault(); // Prevent toast dismissal
         navigator.clipboard.writeText(message).catch(() => {});
       },
     },
