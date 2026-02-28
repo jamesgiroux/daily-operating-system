@@ -61,6 +61,16 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
 export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [checking, setChecking] = useState(false);
+  const [isDevMode, setIsDevMode] = useState(false);
+
+  // Check if dev sandbox is active — enables skip button
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+        .then((s) => setIsDevMode(s.isDevDbMode === true))
+        .catch(() => {});
+    }
+  }, []);
 
   async function checkStatus() {
     setChecking(true);
@@ -221,8 +231,14 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
         </div>
       )}
 
-      {/* Continue — no skip option for this step */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      {/* Continue — skip only available in dev sandbox */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {isDevMode && !isReady && (
+          <Button variant="outline" onClick={() => onNext(false)}>
+            Skip (Dev Mode)
+            <ArrowRight className="ml-2 size-4" />
+          </Button>
+        )}
         <Button onClick={() => onNext(isReady ?? false)} disabled={!isReady || (checking && !status)}>
           Continue
           <ArrowRight className="ml-2 size-4" />
