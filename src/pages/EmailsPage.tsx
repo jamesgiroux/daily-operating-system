@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useNavigate } from "@tanstack/react-router";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { EmptyState } from "@/components/editorial/EmptyState";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -46,6 +47,7 @@ function EmailRefreshButton() {
 // =============================================================================
 
 export default function EmailsPage() {
+  const navigate = useNavigate();
   const { personality } = usePersonality();
   const [data, setData] = useState<EmailBriefingData | null>(null);
   const [syncStats, setSyncStats] = useState<EmailSyncStats | null>(null);
@@ -404,9 +406,17 @@ export default function EmailsPage() {
       <div className={s.sectionRule} />
 
       {/* EMPTY STATE */}
-      {isEmpty && (
-        <EditorialEmpty {...getPersonalityCopy("emails-empty", personality)} />
-      )}
+      {isEmpty && (() => {
+        const copy = getPersonalityCopy("emails-empty", personality);
+        return (
+          <EmptyState
+            headline={copy.title}
+            explanation={copy.explanation ?? copy.message ?? ""}
+            benefit={copy.benefit}
+            action={{ label: "Connect Gmail", onClick: () => navigate({ to: "/settings", search: { tab: "connectors" } }) }}
+          />
+        );
+      })()}
 
       {/* ═══ YOUR MOVE — Top scored emails with intelligence ═══ */}
       {hasYourMove && (

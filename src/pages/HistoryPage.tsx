@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useNavigate } from "@tanstack/react-router";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { EmptyState } from "@/components/editorial/EmptyState";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -10,6 +11,7 @@ import { usePersonality } from "@/hooks/usePersonality";
 import type { ProcessingLogEntry } from "@/types";
 
 export default function HistoryPage() {
+  const navigate = useNavigate();
   const { personality } = usePersonality();
   const [entries, setEntries] = useState<ProcessingLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,9 +84,17 @@ export default function HistoryPage() {
 
       {/* ═══ ENTRIES ═══ */}
       {entries.length === 0 ? (
-        <EditorialEmpty
-          {...getPersonalityCopy("history-empty", personality)}
-        />
+        (() => {
+          const copy = getPersonalityCopy("history-empty", personality);
+          return (
+            <EmptyState
+              headline={copy.title}
+              explanation={copy.explanation ?? copy.message ?? ""}
+              benefit={copy.benefit}
+              action={{ label: "Go to inbox", onClick: () => navigate({ to: "/inbox", search: { entityId: undefined } }) }}
+            />
+          );
+        })()
       ) : (
         <>
           {/* Column headers */}
