@@ -18,6 +18,7 @@ pub mod context_provider;
 pub mod db;
 mod db_backup;
 pub mod db_service;
+pub mod demo;
 mod devtools;
 pub mod embeddings;
 mod enrichment;
@@ -469,11 +470,13 @@ pub fn run() {
             commands::sync_email_inbox_presence,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
-            // I39: Feature Toggles
-            commands::get_features,
-            commands::set_feature_enabled,
-            // Onboarding
+            // Onboarding / Demo / App State (I56/I57)
             commands::install_demo_data,
+            commands::clear_demo_data,
+            commands::get_app_state,
+            commands::set_tour_completed,
+            commands::set_wizard_completed,
+            commands::set_wizard_step,
             commands::populate_workspace,
             commands::set_user_profile,
             // I411: User Entity

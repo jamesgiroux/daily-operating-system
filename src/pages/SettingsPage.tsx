@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useRef } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { User, Link2, Monitor, Shield, Wrench } from "lucide-react";
+import { useAppState } from "@/hooks/useAppState";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -65,6 +66,7 @@ const DIAGNOSTICS_CHAPTER = {
 export default function SettingsPage() {
   const search = useSearch({ from: "/settings" });
   const scrolledRef = useRef(false);
+  const { appState, resumeOnboarding } = useAppState();
 
   // Chapters: include diagnostics only in dev mode
   const chapters = useMemo(() => {
@@ -101,6 +103,46 @@ export default function SettingsPage() {
 
   return (
     <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* Setup incomplete banner (I57) */}
+      {!appState.wizardCompletedAt && (
+        <div
+          style={{
+            padding: "12px 20px",
+            borderBottom: "1px solid var(--color-rule-light)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            Finish setting up DailyOS — briefings work best when the system knows about you.
+          </span>
+          <button
+            onClick={resumeOnboarding}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.04em",
+              color: "var(--color-spice-turmeric)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              padding: 0,
+            }}
+          >
+            Resume setup &rarr;
+          </button>
+        </div>
+      )}
+
       {/* ═══ HERO ═══ */}
       <section style={{ paddingTop: 80, paddingBottom: 40 }}>
         <h1

@@ -1412,15 +1412,31 @@ pub async fn set_workspace_path(
     result
 }
 
-/// Toggle developer mode (shows/hides devtools panel)
+/// Toggle developer mode with full isolation.
+///
+/// When enabled: switches to isolated dev database, workspace, and auth.
+/// When disabled: returns to live database, workspace, and real auth.
 #[tauri::command]
-pub fn set_developer_mode(
+pub async fn set_developer_mode(
     enabled: bool,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::state::create_or_update_config(&state, |config| {
-        config.developer_mode = enabled;
-    })
+    if enabled {
+        crate::devtools::enter_dev_mode(&state)?;
+    } else {
+        crate::devtools::exit_dev_mode(&state)?;
+    }
+
+    // Reinitialize the async DB connection pool at the new path
+    if let Err(e) = state.reinit_db_service().await {
+        log::warn!("Failed to reinit db_service after dev mode toggle: {}", e);
+    }
+
+    // Return the current config (which is now either dev or live)
+    let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+    guard
+        .clone()
+        .ok_or_else(|| "No configuration loaded".to_string())
 }
 
 /// Check if workspace is under iCloud sync and warning hasn't been dismissed (I464).
@@ -2618,121 +2634,15 @@ pub async fn get_processing_history(
         .await
 }
 
-// =============================================================================
-// Feature Toggles (I39)
-// =============================================================================
-
-/// Feature definition for the Settings UI.
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeatureDefinition {
-    pub key: String,
-    pub label: String,
-    pub description: String,
-    pub enabled: bool,
-    pub cs_only: bool,
-}
-
-/// Get all features with their current enabled state.
-#[tauri::command]
-pub fn get_features(state: State<'_, Arc<AppState>>) -> Result<Vec<FeatureDefinition>, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let definitions = vec![
-        (
-            "emailTriage",
-            "Email Triage",
-            "Fetch and classify Gmail messages",
-            false,
-        ),
-        (
-            "postMeetingCapture",
-            "Post-Meeting Capture",
-            "Prompt for outcomes after meetings end",
-            false,
-        ),
-        (
-            "meetingPrep",
-            "Meeting Prep",
-            "Generate prep context for upcoming meetings",
-            false,
-        ),
-        (
-            "weeklyPlanning",
-            "Weekly Planning",
-            "Weekly overview and focus block suggestions",
-            false,
-        ),
-        (
-            "inboxProcessing",
-            "Inbox Processing",
-            "Classify and route files from _inbox",
-            false,
-        ),
-        (
-            "accountTracking",
-            "Account Tracking",
-            "Track customer accounts, health, and ARR",
-            true,
-        ),
-        (
-            "projectTracking",
-            "Project Tracking",
-            "Track projects, milestones, and deliverables",
-            false,
-        ),
-        (
-            "impactRollup",
-            "Impact Rollup",
-            "Roll up daily wins and risks to account files",
-            true,
-        ),
-        (
-            "autoArchiveEnabled",
-            "Auto-Archive Email",
-            "Automatically archive low-priority emails during daily prep",
-            false,
-        ),
-    ];
-
-    Ok(definitions
-        .into_iter()
-        .map(|(key, label, desc, cs_only)| FeatureDefinition {
-            enabled: crate::types::is_feature_enabled(&config, key),
-            key: key.to_string(),
-            label: label.to_string(),
-            description: desc.to_string(),
-            cs_only,
-        })
-        .collect())
-}
-
-/// Set a single feature toggle on or off.
-#[tauri::command]
-pub fn set_feature_enabled(
-    feature: String,
-    enabled: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<Config, String> {
-    crate::state::create_or_update_config(&state, |config| {
-        config.features.insert(feature.clone(), enabled);
-    })
-}
 
 // =============================================================================
 // Onboarding: Demo Data
 // =============================================================================
 
-/// Install demo data into the user's workspace for the onboarding tour.
+/// Install demo data for first-run experience (I56).
 ///
-/// Writes date-patched JSON fixtures to `_today/data/` and seeds SQLite
-/// with mock accounts, actions, and meeting history. The demo data is
-/// replaced on the first real briefing run.
+/// Seeds curated accounts, actions, meetings, and people marked `is_demo = 1`.
+/// Writes fixture files if a workspace path is configured.
 #[tauri::command]
 pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state
@@ -2740,23 +2650,88 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
         .read()
         .map_err(|_| "Config lock failed")?
         .as_ref()
-        .map(|c| c.workspace_path.clone())
-        .ok_or("No workspace configured")?;
+        .and_then(|c| {
+            if c.workspace_path.is_empty() {
+                None
+            } else {
+                Some(c.workspace_path.clone())
+            }
+        });
 
-    if !crate::devtools::is_dev_workspace(&state) {
-        return Err(
-            "Refused: demo data can only be installed in the dev sandbox \
-             (~/Documents/DailyOS-dev). Switch workspace first."
-                .into(),
-        );
-    }
-
-    let workspace = std::path::Path::new(&workspace_path);
-    crate::devtools::write_fixtures(workspace)?;
-
-    state.db_write(crate::devtools::seed_database).await?;
+    let ws = workspace_path.clone();
+    state
+        .db_write(move |db| {
+            crate::demo::install_demo(db, ws.as_deref().map(std::path::Path::new))
+        })
+        .await?;
 
     Ok("Demo data installed".into())
+}
+
+/// Clear all demo data and reset demo mode (I56).
+#[tauri::command]
+pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Config lock failed")?
+        .as_ref()
+        .and_then(|c| {
+            if c.workspace_path.is_empty() {
+                None
+            } else {
+                Some(c.workspace_path.clone())
+            }
+        });
+
+    let ws = workspace_path.clone();
+    state
+        .db_write(move |db| {
+            crate::demo::clear_demo(db, ws.as_deref().map(std::path::Path::new))
+        })
+        .await?;
+
+    Ok("Demo data cleared".into())
+}
+
+/// Get app-level state (demo mode, tour, wizard progress).
+#[tauri::command]
+pub async fn get_app_state(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::demo::AppStateRow, String> {
+    state
+        .db_read(crate::demo::get_app_state)
+        .await
+}
+
+/// Mark the post-wizard tour as completed.
+#[tauri::command]
+pub async fn set_tour_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    state
+        .db_write(crate::demo::set_tour_completed)
+        .await?;
+    Ok("Tour completed".into())
+}
+
+/// Mark the wizard as completed with current timestamp.
+#[tauri::command]
+pub async fn set_wizard_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    state
+        .db_write(crate::demo::set_wizard_completed)
+        .await?;
+    Ok("Wizard completed".into())
+}
+
+/// Set wizard last step for mid-wizard resume.
+#[tauri::command]
+pub async fn set_wizard_step(
+    step: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    state
+        .db_write(move |db| crate::demo::set_wizard_step(db, &step))
+        .await?;
+    Ok("Wizard step saved".into())
 }
 
 // =============================================================================

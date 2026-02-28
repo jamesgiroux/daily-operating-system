@@ -1416,17 +1416,6 @@ export interface AiModelConfig {
   mechanical: string;
 }
 
-// =============================================================================
-// Feature Toggles (I39)
-// =============================================================================
-
-export interface FeatureDefinition {
-  key: string;
-  label: string;
-  description: string;
-  enabled: boolean;
-  csOnly: boolean;
-}
 
 // =============================================================================
 // Processing History (I6)
