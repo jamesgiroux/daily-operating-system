@@ -28,6 +28,11 @@ pub async fn run_entity_resolution_trigger(state: Arc<AppState>) {
             }
         }
 
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            continue;
+        }
+
         // Run entity resolution on meetings needing it
         if let Err(e) = resolve_new_meetings(&state) {
             log::warn!("Entity resolution trigger: {}", e);

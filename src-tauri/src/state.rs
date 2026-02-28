@@ -133,7 +133,10 @@ pub struct AppState {
     /// in Tauri setup after `AppState::new()`. Use `db_read()` / `db_write()`
     /// helpers for new code; old code can continue using `with_db_read()` etc.
     /// during incremental migration.
-    pub db_service: tokio::sync::OnceCell<crate::db_service::DbService>,
+    ///
+    /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
+    /// the service to point at `dailyos-dev.db`.
+    pub db_service: tokio::sync::RwLock<Option<crate::db_service::DbService>>,
     /// User activity monitor for throttling background work (I426).
     pub activity: Arc<crate::activity::ActivityMonitor>,
     /// Calendar subsystem state (I404).
@@ -357,7 +360,7 @@ impl AppState {
                 last_scheduled_run: RwLock::new(HashMap::new()),
             },
             db: Mutex::new(db),
-            db_service: tokio::sync::OnceCell::new(),
+            db_service: tokio::sync::RwLock::new(None),
             activity: Arc::new(crate::activity::ActivityMonitor::new()),
             calendar: CalendarState {
                 google_auth: Mutex::new(google_auth),
@@ -531,14 +534,26 @@ impl AppState {
     // Async DbService helpers — use these for new/migrated command handlers.
     // -------------------------------------------------------------------------
 
-    /// Initialize the async DbService. Called once from Tauri setup.
+    /// Initialize the async DbService. Called from Tauri setup and on dev mode transitions.
     pub async fn init_db_service(&self) -> Result<(), String> {
         let svc = crate::db_service::DbService::open()
             .await
             .map_err(|e| format!("Failed to open DbService: {e}"))?;
-        self.db_service
-            .set(svc)
-            .map_err(|_| "DbService already initialized".to_string())
+        let mut guard = self.db_service.write().await;
+        *guard = Some(svc);
+        Ok(())
+    }
+
+    /// Reinitialize the DbService at the current DB path (live or dev).
+    /// Called during dev mode enter/exit to switch the async connection pool.
+    pub async fn reinit_db_service(&self) -> Result<(), String> {
+        // Drop the old service first
+        {
+            let mut guard = self.db_service.write().await;
+            *guard = None;
+        }
+        // Open a new service at the current path (respects DEV_DB_MODE)
+        self.init_db_service().await
     }
 
     /// Run a read-only closure on a reader connection. Never blocks writes.
@@ -552,19 +567,26 @@ impl AppState {
     {
         // If the async service hasn't finished startup init yet, try to
         // initialize it on-demand before falling back.
-        if self.db_service.get().is_none() {
-            let _ = self.init_db_service().await;
+        {
+            let guard = self.db_service.read().await;
+            if guard.is_none() {
+                drop(guard);
+                let _ = self.init_db_service().await;
+            }
         }
 
-        if let Some(svc) = self.db_service.get() {
-            return svc
-                .reader()
-                .call(move |conn| {
-                    let db = crate::db::ActionDb::from_conn(conn);
-                    Ok(f(db))
-                })
-                .await
-                .map_err(|e| format!("DB read error: {e}"))?;
+        {
+            let guard = self.db_service.read().await;
+            if let Some(svc) = guard.as_ref() {
+                return svc
+                    .reader()
+                    .call(move |conn| {
+                        let db = crate::db::ActionDb::from_conn(conn);
+                        Ok(f(db))
+                    })
+                    .await
+                    .map_err(|e| format!("DB read error: {e}"))?;
+            }
         }
 
         // Startup fallback: DbService initialization runs in background.
@@ -597,19 +619,26 @@ impl AppState {
     {
         // If the async service hasn't finished startup init yet, try to
         // initialize it on-demand before falling back.
-        if self.db_service.get().is_none() {
-            let _ = self.init_db_service().await;
+        {
+            let guard = self.db_service.read().await;
+            if guard.is_none() {
+                drop(guard);
+                let _ = self.init_db_service().await;
+            }
         }
 
-        if let Some(svc) = self.db_service.get() {
-            return svc
-                .writer()
-                .call(move |conn| {
-                    let db = crate::db::ActionDb::from_conn(conn);
-                    Ok(f(db))
-                })
-                .await
-                .map_err(|e| format!("DB write error: {e}"))?;
+        {
+            let guard = self.db_service.read().await;
+            if let Some(svc) = guard.as_ref() {
+                return svc
+                    .writer()
+                    .call(move |conn| {
+                        let db = crate::db::ActionDb::from_conn(conn);
+                        Ok(f(db))
+                    })
+                    .await
+                    .map_err(|e| format!("DB write error: {e}"))?;
+            }
         }
 
         // Startup fallback: DbService initialization runs in background.
@@ -750,35 +779,83 @@ pub fn run_startup_sync(state: &AppState) {
 
 /// Recover from an unclean dev-mode exit (app quit without restore_live).
 ///
-/// If `config.json.dev-backup` exists, the app was in dev mode when it last
-/// closed. Restore the backup so the live DB doesn't get polluted with mock
-/// data during startup sync.
+/// Two recovery signals:
+/// 1. `config.json.dev-backup` — legacy: config was backed up before dev mode
+/// 2. `.dev-mode-active` sentinel — written by `enter_dev_mode()`, deleted by `exit_dev_mode()`
+///
+/// Either signal triggers recovery. Also cleans up `config-dev.json` (Phase 4).
 fn recover_from_unclean_dev_exit() {
     let home = match dirs::home_dir() {
         Some(h) => h,
         None => return,
     };
-    let config = home.join(".dailyos").join("config.json");
+    let dailyos_dir = home.join(".dailyos");
+    let config = dailyos_dir.join("config.json");
     let backup = config.with_extension("json.dev-backup");
+    let sentinel = dailyos_dir.join(".dev-mode-active");
+    let dev_config = dailyos_dir.join("config-dev.json");
 
-    if backup.exists() {
-        log::warn!("Detected unclean dev-mode exit — restoring live config from backup");
-        match fs::copy(&backup, &config) {
-            Ok(_) => {
-                let _ = fs::remove_file(&backup);
-                log::info!("Live config restored successfully");
-            }
-            Err(e) => {
-                log::error!("Failed to restore config from dev backup: {}", e);
+    let needs_recovery = backup.exists() || sentinel.exists();
+
+    if needs_recovery {
+        log::warn!("Detected unclean dev-mode exit — restoring live state");
+
+        // Restore config from backup if available
+        if backup.exists() {
+            match fs::copy(&backup, &config) {
+                Ok(_) => {
+                    let _ = fs::remove_file(&backup);
+                    log::info!("Live config restored from backup");
+                }
+                Err(e) => {
+                    log::error!("Failed to restore config from dev backup: {}", e);
+                }
             }
         }
+
+        // Ensure DEV_DB_MODE is false (already defaults to false on startup, but be explicit)
+        crate::db::set_dev_db_mode(false);
+
+        // Clean up sentinel file
+        let _ = fs::remove_file(&sentinel);
+
+        // Clean up dev config
+        let _ = fs::remove_file(&dev_config);
+
+        log::info!("Dev mode recovery complete");
     }
 }
 
-/// Get the canonical config file path (~/.dailyos/config.json)
+/// Path to the dev-mode sentinel file.
+pub(crate) fn dev_mode_sentinel_path() -> Result<std::path::PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    Ok(home.join(".dailyos").join(".dev-mode-active"))
+}
+
+/// Get the active config file path.
+///
+/// When dev mode is active, returns `~/.dailyos/config-dev.json` so the live
+/// `config.json` is never modified during dev mode.
 pub fn config_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let dailyos_dir = home.join(".dailyos");
+    if crate::db::is_dev_db_mode() {
+        Ok(dailyos_dir.join("config-dev.json"))
+    } else {
+        Ok(dailyos_dir.join("config.json"))
+    }
+}
+
+/// Get the live config file path (always `config.json`, ignores dev mode).
+pub fn live_config_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
     Ok(home.join(".dailyos").join("config.json"))
+}
+
+/// Get the dev config file path (~/.dailyos/config-dev.json).
+pub fn dev_config_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    Ok(home.join(".dailyos").join("config-dev.json"))
 }
 
 /// Create or update config.json atomically.
@@ -926,10 +1003,11 @@ fn get_state_dir() -> Result<PathBuf, String> {
     Ok(state_dir)
 }
 
-/// Load configuration from ~/.dailyos/config.json
+/// Load configuration from the active config path.
+///
+/// In dev mode, reads from `config-dev.json`. Otherwise reads `config.json`.
 pub fn load_config() -> Result<Config, String> {
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let config_path = home.join(".dailyos").join("config.json");
+    let config_path = config_path()?;
 
     if !config_path.exists() {
         return Err(format!(

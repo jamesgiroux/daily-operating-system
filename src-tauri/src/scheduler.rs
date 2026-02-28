@@ -72,6 +72,11 @@ impl Scheduler {
         loop {
             tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
 
+            // Dev mode isolation: pause background processing while dev sandbox is active
+            if crate::db::is_dev_db_mode() {
+                continue;
+            }
+
             let now = Utc::now();
 
             // Detect day change (midnight crossing or sleep/wake across day boundary)
