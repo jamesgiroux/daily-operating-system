@@ -1,9 +1,18 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
+
+/// Dev-only override for Claude status checks.
+/// 0 = real check, 1 = installed+authenticated, 2 = not installed, 3 = installed but not authenticated
+pub(crate) static DEV_CLAUDE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+/// Dev-only override for Google auth status.
+/// 0 = real check, 1 = authenticated, 2 = not configured, 3 = token expired
+pub(crate) static DEV_GOOGLE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
 
 use chrono::TimeZone;
 use regex::Regex;
@@ -2246,6 +2255,20 @@ struct GoogleAuthFailedPayload {
 #[tauri::command]
 pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStatus {
     let started = std::time::Instant::now();
+
+    // Dev override: return mocked Google auth status
+    if cfg!(debug_assertions) {
+        let ov = DEV_GOOGLE_OVERRIDE.load(Ordering::Relaxed);
+        if ov != 0 {
+            log_command_latency("get_google_auth_status", started, READ_CMD_LATENCY_BUDGET_MS);
+            return match ov {
+                1 => GoogleAuthStatus::Authenticated { email: "dev@dailyos.test".to_string() },
+                3 => GoogleAuthStatus::TokenExpired,
+                _ => GoogleAuthStatus::NotConfigured,
+            };
+        }
+    }
+
     let cached = state
         .calendar
         .google_auth
@@ -2284,6 +2307,23 @@ pub async fn start_google_auth(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<GoogleAuthStatus, String> {
+    // Dev override: skip real OAuth flow when auth is mocked
+    if cfg!(debug_assertions) {
+        let ov = DEV_GOOGLE_OVERRIDE.load(Ordering::Relaxed);
+        match ov {
+            1 => {
+                let status = GoogleAuthStatus::Authenticated { email: "dev@dailyos.test".to_string() };
+                if let Ok(mut guard) = state.calendar.google_auth.lock() {
+                    *guard = status.clone();
+                }
+                return Ok(status);
+            }
+            2 => return Err("Google not configured (dev override)".into()),
+            3 => return Err("Google token expired (dev override)".into()),
+            _ => {} // 0 = real flow
+        }
+    }
+
     let config = state
         .config
         .read()
@@ -3068,6 +3108,21 @@ pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
 #[tauri::command]
 pub async fn check_claude_status() -> ClaudeStatus {
     let started = std::time::Instant::now();
+
+    // Dev override: return mocked status without spawning subprocess
+    if cfg!(debug_assertions) {
+        let ov = DEV_CLAUDE_OVERRIDE.load(Ordering::Relaxed);
+        if ov != 0 {
+            log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
+            return match ov {
+                1 => ClaudeStatus { installed: true, authenticated: true },
+                2 => ClaudeStatus { installed: false, authenticated: false },
+                3 => ClaudeStatus { installed: true, authenticated: false },
+                _ => ClaudeStatus { installed: false, authenticated: false },
+            };
+        }
+    }
+
     static STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
     let cache = STATUS_CACHE.get_or_init(|| Mutex::new(None));
     let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
@@ -3279,6 +3334,34 @@ pub fn dev_clean_artifacts(include_workspace: bool) -> Result<String, String> {
         return Err("Dev tools not available in release builds".into());
     }
     crate::devtools::clean_dev_artifacts(include_workspace)
+}
+
+/// Set dev auth overrides for Claude and Google status checks.
+///
+/// 0 = real check (no override), 1 = authenticated/ready,
+/// 2 = not installed/not configured, 3 = installed-not-authed / token expired.
+#[tauri::command]
+pub fn dev_set_auth_override(claude_mode: u8, google_mode: u8) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    DEV_CLAUDE_OVERRIDE.store(claude_mode, Ordering::Relaxed);
+    DEV_GOOGLE_OVERRIDE.store(google_mode, Ordering::Relaxed);
+    Ok(format!("Auth overrides set — Claude: {}, Google: {}", claude_mode, google_mode))
+}
+
+/// Apply a named onboarding scenario: reset wizard state + set auth overrides.
+///
+/// Scenarios: fresh, auth_ready, no_claude, claude_unauthed, no_google, google_expired, nothing_works.
+#[tauri::command]
+pub fn dev_onboarding_scenario(
+    scenario: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::onboarding_scenario(&scenario, &state)
 }
 
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
