@@ -266,6 +266,11 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
             _ = state.integrations.prep_queue_wake.notified() => {}
         }
 
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            continue;
+        }
+
         // Periodic pruning
         polls_since_prune += 1;
         if polls_since_prune >= prune_interval {
