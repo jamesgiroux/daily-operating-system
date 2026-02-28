@@ -1,4 +1,15 @@
-import { useState } from "react";
+/**
+ * OnboardingFlow.tsx — First-run wizard (I57 refactor)
+ *
+ * Trimmed from 11 chapters to 4 essential steps:
+ * Landing → Claude Code → Google → YouCard → Role Preset → Dashboard
+ *
+ * The Claude Code step is required (no skip). All others are skippable.
+ * Each step persists immediately via Tauri commands.
+ */
+
+import { useState, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { EntityMode } from "@/types";
 
 import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
@@ -6,29 +17,19 @@ import { FolioBar } from "@/components/layout/FolioBar";
 import { FloatingNavIsland, type ChapterItem } from "@/components/layout/FloatingNavIsland";
 import {
   Sparkles,
-  Briefcase,
-  FolderOpen,
   Mail,
   Terminal,
   User,
-  Package,
-  Inbox,
-  LayoutDashboard,
-  CalendarCheck,
-  Rocket,
+  Briefcase,
+  Building,
 } from "lucide-react";
 
 import { Welcome } from "./chapters/Welcome";
-import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
-import { Workspace } from "./chapters/Workspace";
 import { GoogleConnect } from "./chapters/GoogleConnect";
 import { ClaudeCode } from "./chapters/ClaudeCode";
-import { AboutYou, type AboutYouFormData } from "./chapters/AboutYou";
-import { PopulateWorkspace, type PopulateFormData } from "./chapters/PopulateWorkspace";
-import { InboxTraining } from "./chapters/InboxTraining";
-import { DashboardTour } from "./chapters/DashboardTour";
-import { MeetingDeepDive } from "./chapters/MeetingDeepDive";
-import { PrimeBriefing } from "./chapters/PrimeBriefing";
+import { YouCardStep, type YouCardFormData } from "./chapters/YouCardStep";
+import { FirstAccountStep } from "./chapters/FirstAccountStep";
+import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -36,90 +37,151 @@ interface OnboardingFlowProps {
 
 const CHAPTERS = [
   "welcome",
-  "entity-mode",
-  "workspace",
-  "google",
   "claude-code",
-  "about-you",
-  "populate",
-  "inbox-training",
-  "dashboard-tour",
-  "meeting-deep-dive",
-  "prime-briefing",
+  "google",
+  "youcard",
+  "first-account",
+  "role",
 ] as const;
 
 type Chapter = (typeof CHAPTERS)[number];
 
 const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
   "welcome": <Sparkles size={16} strokeWidth={1.8} />,
-  "entity-mode": <Briefcase size={16} strokeWidth={1.8} />,
-  "workspace": <FolderOpen size={16} strokeWidth={1.8} />,
-  "google": <Mail size={16} strokeWidth={1.8} />,
   "claude-code": <Terminal size={16} strokeWidth={1.8} />,
-  "about-you": <User size={16} strokeWidth={1.8} />,
-  "populate": <Package size={16} strokeWidth={1.8} />,
-  "inbox-training": <Inbox size={16} strokeWidth={1.8} />,
-  "dashboard-tour": <LayoutDashboard size={16} strokeWidth={1.8} />,
-  "meeting-deep-dive": <CalendarCheck size={16} strokeWidth={1.8} />,
-  "prime-briefing": <Rocket size={16} strokeWidth={1.8} />,
+  "google": <Mail size={16} strokeWidth={1.8} />,
+  "youcard": <User size={16} strokeWidth={1.8} />,
+  "first-account": <Building size={16} strokeWidth={1.8} />,
+  "role": <Briefcase size={16} strokeWidth={1.8} />,
 };
 
 const CHAPTER_LABELS: Record<Chapter, string> = {
   "welcome": "Welcome",
-  "entity-mode": "Your Role",
-  "workspace": "Workspace",
-  "google": "Google",
   "claude-code": "Claude",
-  "about-you": "About You",
-  "populate": "Your Work",
-  "inbox-training": "Inbox",
-  "dashboard-tour": "Dashboard",
-  "meeting-deep-dive": "Meeting Prep",
-  "prime-briefing": "Prime",
+  "google": "Google",
+  "youcard": "About You",
+  "first-account": "Account",
+  "role": "Your Role",
 };
+
+const DEFAULT_WORKSPACE = "~/Documents/DailyOS";
+
+/** Map wizard_last_step to the NEXT chapter to show */
+function resolveResumeChapter(lastStep: string | null | undefined): Chapter {
+  if (!lastStep) return CHAPTERS[0];
+  const idx = CHAPTERS.indexOf(lastStep as Chapter);
+  if (idx === -1) return CHAPTERS[0];
+  // Advance to the step after the last completed one
+  const next = idx + 1;
+  return next < CHAPTERS.length ? CHAPTERS[next] : CHAPTERS[CHAPTERS.length - 1];
+}
 
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [chapter, setChapter] = useState<Chapter>(CHAPTERS[0]);
-  const [entityMode, setEntityMode] = useState<EntityMode>("account");
-  const [workspacePath, setWorkspacePath] = useState("~/Documents/DailyOS");
-  const [quickSetup, setQuickSetup] = useState(false);
   const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
+  const [resumeChecked, setResumeChecked] = useState(false);
 
-  // I345: Lifted form state to survive chapter navigation
-  const [aboutYouData, setAboutYouData] = useState<AboutYouFormData>({
+  // Resume from last completed step on mount
+  useEffect(() => {
+    if (resumeChecked) return;
+    invoke<{ wizardLastStep?: string | null }>("get_app_state")
+      .then((state) => {
+        const resumeTo = resolveResumeChapter(state.wizardLastStep);
+        if (resumeTo !== "welcome") {
+          // Mark all prior chapters as visited
+          const visited = new Set<Chapter>();
+          for (const c of CHAPTERS) {
+            visited.add(c);
+            if (c === resumeTo) break;
+          }
+          setChapter(resumeTo);
+          setVisitedChapters(visited);
+        }
+      })
+      .catch(() => {}) // Non-fatal — just start from beginning
+      .finally(() => setResumeChecked(true));
+  }, [resumeChecked]);
+
+  // Lifted form state
+  const [youCardData, setYouCardData] = useState<YouCardFormData>({
     name: "",
     company: "",
     title: "",
     domains: [],
-    focus: "",
-    colleagues: [],
   });
-  const [populateData, setPopulateData] = useState<PopulateFormData>({
-    accounts: [],
-    projects: [],
-  });
-
-  const chapterIndex = CHAPTERS.indexOf(chapter);
 
   function goToChapter(c: Chapter) {
     setChapter(c);
     setVisitedChapters((prev) => new Set([...prev, c]));
   }
 
-  function handleSkipToQuickSetup() {
-    setQuickSetup(true);
-    setChapter("entity-mode");
+  // Auto-create workspace at default path
+  const autoCreateWorkspace = useCallback(async () => {
+    try {
+      // Expand ~ to home directory
+      const home = await invoke<{ workspacePath?: string }>("get_config")
+        .then((c) => c.workspacePath)
+        .catch(() => null);
+
+      // Only create if not already set
+      if (!home) {
+        await invoke("set_workspace_path", { path: DEFAULT_WORKSPACE.replace("~", "") });
+      }
+    } catch (e) {
+      console.error("Auto-create workspace failed:", e);
+    }
+  }, []);
+
+  // "Skip setup" — auto-create workspace, land on empty dashboard
+  async function handleSkipSetup() {
+    try {
+      await autoCreateWorkspace();
+      // Set lock timeout to "Never" for new installs
+      await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
+    } catch {
+      // Non-fatal
+    }
+    onComplete();
   }
 
-  // Build chapter items for FloatingNavIsland
-  const navChapters: ChapterItem[] = CHAPTERS.map((c) => ({
+  // Handle demo mode entry from Welcome
+  async function handleDemoMode() {
+    try {
+      await autoCreateWorkspace();
+      await invoke("install_demo_data");
+    } catch (e) {
+      console.error("Demo install failed:", e);
+    }
+    onComplete();
+  }
+
+  // Complete wizard — mark done, trigger calendar poll if connected
+  async function handleWizardComplete(_mode: EntityMode) {
+    try {
+      await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+      await invoke("set_wizard_completed");
+      // Trigger immediate calendar poll if Google is connected
+      try {
+        const authStatus = await invoke<{ status: string }>("get_google_auth_status");
+        if (authStatus.status === "authenticated") {
+          // Non-blocking calendar poll
+          invoke("run_workflow", { workflowId: "today" }).catch(() => {});
+        }
+      } catch {
+        // Non-fatal
+      }
+    } catch (e) {
+      console.error("Wizard completion failed:", e);
+    }
+    onComplete();
+  }
+
+  // Build chapter items for FloatingNavIsland (4 step dots, not labels)
+  const navChapters: ChapterItem[] = CHAPTERS.filter((c) => c !== "welcome").map((c) => ({
     id: c,
     label: CHAPTER_LABELS[c],
     icon: CHAPTER_ICONS[c],
   }));
-
-  // Determine max width based on chapter
-  const maxWidth = chapter === "dashboard-tour" ? 1200 : 720;
 
   return (
     <div
@@ -132,24 +194,25 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <AtmosphereLayer color="turmeric" />
       <FolioBar publicationLabel="Setup" />
 
-      {/* FloatingNavIsland in chapter mode */}
-      <FloatingNavIsland
-        mode="chapters"
-        chapters={navChapters}
-        activeChapterId={chapter}
-        activeColor="turmeric"
-        onChapterClick={(id) => {
-          // Only allow navigating to previously visited chapters
-          if (visitedChapters.has(id as Chapter)) {
-            goToChapter(id as Chapter);
-          }
-        }}
-      />
+      {/* FloatingNavIsland — show step dots (skip welcome) */}
+      {chapter !== "welcome" && (
+        <FloatingNavIsland
+          mode="chapters"
+          chapters={navChapters}
+          activeChapterId={chapter}
+          activeColor="turmeric"
+          onChapterClick={(id) => {
+            if (visitedChapters.has(id as Chapter)) {
+              goToChapter(id as Chapter);
+            }
+          }}
+        />
+      )}
 
       {/* Content column */}
       <div
         style={{
-          maxWidth,
+          maxWidth: 720,
           margin: "0 auto",
           paddingTop: 80,
           paddingBottom: 120,
@@ -157,28 +220,35 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           paddingRight: "var(--page-padding-horizontal)",
           position: "relative",
           zIndex: "var(--z-page-content)",
-          transition: "max-width 0.3s ease",
         }}
       >
-        {/* Chapter content */}
+        {/* Step content */}
         {chapter === "welcome" && (
-          <Welcome onNext={() => goToChapter("entity-mode")} />
-        )}
-
-        {chapter === "entity-mode" && (
-          <EntityModeChapter
-            onNext={(mode) => {
-              setEntityMode(mode);
-              goToChapter("workspace");
-            }}
+          <Welcome
+            onNext={() => goToChapter("claude-code")}
+            onDemoMode={handleDemoMode}
+            onSkipSetup={handleSkipSetup}
           />
         )}
 
-        {chapter === "workspace" && (
-          <Workspace
-            entityMode={entityMode}
-            onNext={(path) => {
-              setWorkspacePath(path.replace(/^\/Users\/[^/]+/, "~"));
+        {chapter === "claude-code" && (
+          <ClaudeCode
+            workspacePath={DEFAULT_WORKSPACE}
+            onNext={async (_installed) => {
+              // Silently auto-create workspace on Claude Code success
+              await autoCreateWorkspace();
+              // Set lock timeout to "Never" for new installs
+              await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
+              // Check iCloud warning inline — returns warning message or null
+              try {
+                const icloudMsg = await invoke<string | null>("check_icloud_warning");
+                if (icloudMsg) {
+                  console.warn("Workspace may be iCloud-synced:", icloudMsg);
+                }
+              } catch {
+                // Non-fatal
+              }
+              await invoke("set_wizard_step", { step: "claude-code" }).catch(() => {});
               goToChapter("google");
             }}
           />
@@ -186,82 +256,33 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "google" && (
           <GoogleConnect
-            onNext={() => goToChapter("claude-code")}
-          />
-        )}
-
-        {chapter === "claude-code" && (
-          <ClaudeCode
-            workspacePath={workspacePath}
-            onNext={(_installed) => goToChapter("about-you")}
-          />
-        )}
-
-        {chapter === "about-you" && (
-          <AboutYou
-            formData={aboutYouData}
-            onFormChange={setAboutYouData}
-            onNext={() => goToChapter("populate")}
-          />
-        )}
-
-        {chapter === "populate" && (
-          <PopulateWorkspace
-            entityMode={entityMode}
-            formData={populateData}
-            onFormChange={setPopulateData}
-            onNext={() => goToChapter("inbox-training")}
-          />
-        )}
-
-        {chapter === "inbox-training" && (
-          <InboxTraining
-            onNext={(_state) => {
-              if (quickSetup) {
-                goToChapter("prime-briefing");
-              } else {
-                goToChapter("dashboard-tour");
-              }
+            onNext={async () => {
+              await invoke("set_wizard_step", { step: "google" }).catch(() => {});
+              goToChapter("youcard");
             }}
           />
         )}
 
-        {chapter === "dashboard-tour" && (
-          <DashboardTour
-            onNext={() => goToChapter("meeting-deep-dive")}
-            onSkipTour={() => goToChapter("prime-briefing")}
+        {chapter === "youcard" && (
+          <YouCardStep
+            formData={youCardData}
+            onFormChange={setYouCardData}
+            onNext={() => goToChapter("first-account")}
+            onSkip={() => goToChapter("first-account")}
           />
         )}
 
-        {chapter === "meeting-deep-dive" && (
-          <MeetingDeepDive onNext={() => goToChapter("prime-briefing")} />
+        {chapter === "first-account" && (
+          <FirstAccountStep
+            onNext={() => goToChapter("role")}
+            onSkip={() => goToChapter("role")}
+          />
         )}
 
-        {chapter === "prime-briefing" && (
-          <PrimeBriefing onComplete={onComplete} />
-        )}
-
-        {/* Skip to Quick Setup — visible on chapters 1-4 when not already in quick setup */}
-        {!quickSetup && chapterIndex <= 3 && (
-          <div style={{ textAlign: "center", paddingTop: 24 }}>
-            <button
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                letterSpacing: "0.04em",
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                transition: "color 0.15s ease",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
-              onClick={handleSkipToQuickSetup}
-            >
-              Skip to Quick Setup
-            </button>
-          </div>
+        {chapter === "role" && (
+          <EntityModeChapter
+            onNext={handleWizardComplete}
+          />
         )}
       </div>
     </div>
