@@ -10,6 +10,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { homeDir, join } from "@tauri-apps/api/path";
 import type { EntityMode } from "@/types";
 
 import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
@@ -115,17 +116,25 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     setVisitedChapters((prev) => new Set([...prev, c]));
   }
 
-  // Auto-create workspace at default path
+  // Auto-create workspace at default path (dev-aware)
   const autoCreateWorkspace = useCallback(async () => {
     try {
-      // Expand ~ to home directory
-      const home = await invoke<{ workspacePath?: string }>("get_config")
+      // Check if workspace is already set
+      const existing = await invoke<{ workspacePath?: string }>("get_config")
         .then((c) => c.workspacePath)
         .catch(() => null);
 
-      // Only create if not already set
-      if (!home) {
-        await invoke("set_workspace_path", { path: DEFAULT_WORKSPACE.replace("~", "") });
+      if (!existing) {
+        const home = await homeDir();
+        // Use DailyOS-dev when dev sandbox is active, DailyOS otherwise
+        const isDevDb = import.meta.env.DEV
+          ? await invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+              .then((s) => s.isDevDbMode === true)
+              .catch(() => false)
+          : false;
+        const dirName = isDevDb ? "DailyOS-dev" : "DailyOS";
+        const absPath = await join(home, "Documents", dirName);
+        await invoke("set_workspace_path", { path: absPath });
       }
     } catch (e) {
       console.error("Auto-create workspace failed:", e);
@@ -158,6 +167,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   // Complete wizard — mark done, trigger calendar poll if connected
   async function handleWizardComplete(_mode: EntityMode) {
     try {
+      // Ensure workspace exists — required for the post-reload config check
+      await autoCreateWorkspace();
       await invoke("set_wizard_step", { step: "role" }).catch(() => {});
       await invoke("set_wizard_completed");
       // Trigger immediate calendar poll if Google is connected
@@ -212,7 +223,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       {/* Content column */}
       <div
         style={{
-          maxWidth: 720,
+          maxWidth: 1080,
           margin: "0 auto",
           paddingTop: 80,
           paddingBottom: 120,
