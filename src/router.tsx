@@ -64,6 +64,8 @@ import { ICloudWarningModal } from "@/components/ICloudWarningModal";
 import { LockOverlay } from "@/components/LockOverlay";
 import { useAppLock } from "@/hooks/useAppLock";
 import { EncryptionRecovery, useEncryptionStatus } from "@/components/EncryptionRecovery";
+import { AppStateCtx, useAppStateProvider } from "@/hooks/useAppState";
+import { TourTips } from "@/components/tour/TourTips";
 
 const settingsTabs = new Set([
   "you",
@@ -96,6 +98,7 @@ function RootLayout() {
   const { autoShowOpen, dismissAutoShow } = useWhatsNewAutoShow();
   const { isLocked, setIsLocked } = useAppLock();
   const encryptionKeyMissing = useEncryptionStatus();
+  const appStateCtx = useAppStateProvider();
 
   // Magazine shell context — pages register their config, layout consumes it
   const magazineShell = useMagazineShellProvider();
@@ -121,6 +124,13 @@ function RootLayout() {
     }
     checkConfig();
   }, []);
+
+  // Allow Settings "Resume setup" to re-enter onboarding
+  useEffect(() => {
+    if (appStateCtx.forceOnboarding) {
+      setNeedsOnboarding(true);
+    }
+  }, [appStateCtx.forceOnboarding]);
 
   function handleOnboardingComplete() {
     setNeedsOnboarding(false);
@@ -192,22 +202,25 @@ function RootLayout() {
     return (
       <ThemeProvider>
         <PersonalityProvider>
-          <MagazineShellContext.Provider value={magazineShell}>
-            <MagazinePageLayout
-              onFolioSearch={() => setCommandOpen(true)}
-              onNavigate={handleNavNavigate}
-              onNavHome={() => navigate({ to: "/" })}
-              onWhatsNew={() => setWhatsNewOpen(true)}
-            >
-              <Outlet />
-            </MagazinePageLayout>
-          </MagazineShellContext.Provider>
-          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
-          <PostMeetingPrompt />
-          <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
-          <ICloudWarningModal />
-          <Toaster position="bottom-right" />
-          <DevToolsPanel />
+          <AppStateCtx.Provider value={appStateCtx}>
+            <MagazineShellContext.Provider value={magazineShell}>
+              <MagazinePageLayout
+                onFolioSearch={() => setCommandOpen(true)}
+                onNavigate={handleNavNavigate}
+                onNavHome={() => navigate({ to: "/" })}
+                onWhatsNew={() => setWhatsNewOpen(true)}
+              >
+                <Outlet />
+              </MagazinePageLayout>
+            </MagazineShellContext.Provider>
+            <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+            <PostMeetingPrompt />
+            <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
+            <ICloudWarningModal />
+            <TourTips />
+            <Toaster position="bottom-right" />
+            <DevToolsPanel />
+          </AppStateCtx.Provider>
         </PersonalityProvider>
       </ThemeProvider>
     );
@@ -217,19 +230,22 @@ function RootLayout() {
   return (
     <ThemeProvider>
       <PersonalityProvider>
-        <SidebarProvider defaultOpen={false}>
-          <SidebarInset>
-            <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
-            <Header onCommandMenuOpen={() => setCommandOpen(true)} />
-            <Outlet />
-          </SidebarInset>
-          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
-        </SidebarProvider>
-        <PostMeetingPrompt />
-        <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
-        <ICloudWarningModal />
-        <Toaster position="bottom-right" />
-        <DevToolsPanel />
+        <AppStateCtx.Provider value={appStateCtx}>
+          <SidebarProvider defaultOpen={false}>
+            <SidebarInset>
+              <UpdateBanner onWhatsNew={() => setWhatsNewOpen(true)} />
+              <Header onCommandMenuOpen={() => setCommandOpen(true)} />
+              <Outlet />
+            </SidebarInset>
+            <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+          </SidebarProvider>
+          <PostMeetingPrompt />
+          <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
+          <ICloudWarningModal />
+          <TourTips />
+          <Toaster position="bottom-right" />
+          <DevToolsPanel />
+        </AppStateCtx.Provider>
       </PersonalityProvider>
     </ThemeProvider>
   );
