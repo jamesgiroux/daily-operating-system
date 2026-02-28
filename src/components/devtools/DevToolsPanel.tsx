@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2, Eraser } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -161,10 +161,10 @@ function DevToolsPanelInner() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                      Dev DB Active
+                      Sandbox Active
                     </p>
                     <p className="text-xs text-amber-600/80 dark:text-amber-500/80">
-                      Using isolated dailyos-dev.db
+                      Fully isolated — changes won't affect your real data
                     </p>
                   </div>
                   <Button
@@ -177,6 +177,17 @@ function DevToolsPanelInner() {
                     <Undo2 className="mr-1.5 h-3 w-3" />
                     {loading === "restore_live" ? "Restoring..." : "Return to Live"}
                   </Button>
+                </div>
+                <div className="mt-2 space-y-1 border-t border-amber-500/20 pt-2">
+                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
+                    Database: <code>dailyos-dev.db</code>
+                  </p>
+                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
+                    Workspace: <code>~/Documents/DailyOS-dev/</code>
+                  </p>
+                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
+                    Google Auth: <code>in-memory only</code>
+                  </p>
                 </div>
               </section>
             )}
@@ -355,30 +366,18 @@ function DevToolsPanelInner() {
               </div>
             </section>
 
-            {/* Cleanup — visible when dev artifacts or mock data may exist */}
-            {(devState?.hasDevDbFile || devState?.hasDevWorkspace || !devState?.isDevDbMode) && (
+            {/* Cleanup — visible when dev artifacts exist */}
+            {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (
               <section>
                 <h3 className="mb-3 text-sm font-medium text-muted-foreground">
                   Cleanup
                 </h3>
                 <div className="space-y-2">
-                  {/* Purge mock data from current (live) DB */}
-                  {!devState?.isDevDbMode && (
-                    <ScenarioButton
-                      icon={Eraser}
-                      label="Purge Mock Data from Live DB"
-                      description="Remove known mock accounts, meetings, actions, people"
-                      variant="destructive"
-                      loading={loading === "purge_mock"}
-                      disabled={loading !== null}
-                      onClick={() => runCommand("purge_mock", "dev_purge_mock_data")}
-                    />
-                  )}
                   {/* Clean dev artifact files from disk */}
                   {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (
                     <ScenarioButton
                       icon={Trash2}
-                      label="Clean Dev Artifacts"
+                      label="Reset Dev Environment"
                       description={[
                         devState?.hasDevDbFile && "dailyos-dev.db",
                         devState?.hasDevWorkspace && "DailyOS-dev/",
