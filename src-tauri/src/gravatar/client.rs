@@ -202,6 +202,12 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Check if enabled
         let (enabled, api_key) = {
             let config = state.config.read().ok();

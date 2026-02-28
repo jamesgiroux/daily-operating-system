@@ -157,6 +157,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Check if we should poll
         if !should_poll(&state) {
             let interval = crate::activity::adaptive_network_interval(&state.activity);
@@ -1059,6 +1065,12 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     }
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Check if we should poll
         if !should_poll(&state) {
             tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;

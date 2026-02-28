@@ -33,9 +33,9 @@ fn dev_workspace() -> std::path::PathBuf {
         .join("DailyOS-dev")
 }
 
-/// Backup config.json before dev mode so restore_live can recover it.
+/// Backup live config.json before dev mode so crash recovery can restore it.
 fn backup_config() -> Result<(), String> {
-    let config = crate::state::config_path()?;
+    let config = crate::state::live_config_path()?;
     if config.exists() {
         let backup = config.with_extension("json.dev-backup");
         std::fs::copy(&config, &backup).map_err(|e| format!("Config backup failed: {}", e))?;
@@ -45,12 +45,181 @@ fn backup_config() -> Result<(), String> {
 
 /// Restore config.json from the dev-backup file.
 fn restore_config_backup() -> Result<(), String> {
-    let config = crate::state::config_path()?;
+    let config = crate::state::live_config_path()?;
     let backup = config.with_extension("json.dev-backup");
     if backup.exists() {
         std::fs::copy(&backup, &config).map_err(|e| format!("Config restore failed: {}", e))?;
         let _ = std::fs::remove_file(&backup);
     }
+    Ok(())
+}
+
+/// Enter dev mode: switch to isolated database, workspace, and auth.
+///
+/// 1. Backup live config (crash recovery)
+/// 2. Write sentinel file (crash recovery signal)
+/// 3. Stash current workspace path
+/// 4. Activate dev DB mode
+/// 5. Reopen sync DB at dev path
+/// 6. Copy live config to config-dev.json and set dev mode fields
+/// 7. Create dev workspace if needed
+pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    if crate::db::is_dev_db_mode() {
+        return Ok(()); // Already in dev mode
+    }
+
+    log::info!("Entering dev mode — activating full isolation");
+
+    // 1. Backup live config for crash recovery
+    backup_config()?;
+
+    // 2. Write sentinel file
+    let sentinel = crate::state::dev_mode_sentinel_path()?;
+    if let Some(parent) = sentinel.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&sentinel, "active")
+        .map_err(|e| format!("Failed to write dev mode sentinel: {}", e))?;
+
+    // 3. Stash current workspace path
+    let current_ws = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+    if let Ok(mut guard) = state.pre_dev_workspace.lock() {
+        *guard = current_ws;
+    }
+
+    // 4. Activate dev DB mode (affects ActionDb::db_path())
+    crate::db::set_dev_db_mode(true);
+
+    // 5. Reopen sync DB at dev path
+    if let Ok(mut guard) = state.db.lock() {
+        *guard = ActionDb::open().ok();
+    }
+
+    // 6. Copy live config to config-dev.json and set dev mode fields
+    let live_path = crate::state::live_config_path()?;
+    let dev_path = crate::state::dev_config_path()?;
+    if live_path.exists() {
+        std::fs::copy(&live_path, &dev_path)
+            .map_err(|e| format!("Failed to copy config to dev: {}", e))?;
+    }
+
+    // Update config in dev copy: developer_mode = true, workspace_path = dev workspace
+    let dev_ws = dev_workspace();
+    crate::state::create_or_update_config(state, |config| {
+        config.developer_mode = true;
+        config.workspace_path = dev_ws.to_string_lossy().to_string();
+    })?;
+
+    // 7. Create dev workspace if needed
+    if !dev_ws.exists() {
+        let entity_mode = state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| c.entity_mode.clone()))
+            .unwrap_or_else(|| "account".to_string());
+        crate::state::initialize_workspace(&dev_ws, &entity_mode)?;
+    }
+
+    log::info!("Dev mode active — DB: dailyos-dev.db, workspace: {}", dev_ws.display());
+    Ok(())
+}
+
+/// Exit dev mode: return to live database, workspace, and auth.
+///
+/// 1. Deactivate dev DB mode
+/// 2. Reopen sync DB at live path
+/// 3. Reload live config from config.json (never touched during dev mode)
+/// 4. Clear dev auth tokens from memory
+/// 5. Restore real Google auth from Keychain
+/// 6. Delete sentinel file
+/// 7. Clean up dev config
+pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    if !crate::db::is_dev_db_mode() {
+        return Ok(()); // Already in live mode
+    }
+
+    log::info!("Exiting dev mode — returning to live");
+
+    // 1. Deactivate dev DB mode
+    crate::db::set_dev_db_mode(false);
+
+    // 2. Reopen sync DB at live path
+    if let Ok(mut guard) = state.db.lock() {
+        *guard = ActionDb::open().ok();
+    }
+
+    // 3. Reload live config from config.json (it was never modified)
+    match crate::state::load_config() {
+        Ok(config) => {
+            if let Ok(mut guard) = state.config.write() {
+                *guard = Some(config);
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to reload live config: {}; trying backup restore", e);
+            // Fallback: restore from backup
+            restore_config_backup()?;
+            if let Ok(config) = crate::state::load_config() {
+                if let Ok(mut guard) = state.config.write() {
+                    *guard = Some(config);
+                }
+            }
+        }
+    }
+
+    // 4. Clear dev auth tokens from memory
+    crate::google_api::token_store::clear_dev_token();
+
+    // 5. Re-probe Google auth state from Keychain
+    match crate::google_api::token_store::load_token() {
+        Ok(token) => {
+            let email = token.account.unwrap_or_else(|| "unknown".to_string());
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
+                *guard = GoogleAuthStatus::Authenticated { email };
+            }
+        }
+        Err(_) => {
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
+                *guard = GoogleAuthStatus::NotConfigured;
+            }
+        }
+    }
+
+    // 6. Delete sentinel file
+    if let Ok(sentinel) = crate::state::dev_mode_sentinel_path() {
+        let _ = std::fs::remove_file(&sentinel);
+    }
+
+    // 7. Clean up dev config (or keep for next session — deleting is safer)
+    if let Ok(dev_config) = crate::state::dev_config_path() {
+        let _ = std::fs::remove_file(&dev_config);
+    }
+
+    // 8. Clean up backup (no longer needed after successful exit)
+    if let Ok(live_path) = crate::state::live_config_path() {
+        let backup = live_path.with_extension("json.dev-backup");
+        let _ = std::fs::remove_file(&backup);
+    }
+
+    // 9. Clear stashed workspace
+    if let Ok(mut guard) = state.pre_dev_workspace.lock() {
+        *guard = None;
+    }
+
+    log::info!("Dev mode exited — back to live");
     Ok(())
 }
 
@@ -109,30 +278,9 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
             | "mock_enriched"
     );
 
-    // I298: On destructive scenario entry, activate dev DB isolation and stash
-    // the current workspace path so restore_live() can return to it.
+    // On destructive scenario entry, ensure dev mode isolation is active.
     if destructive {
-        // Stash current workspace path (only if not already in dev mode)
-        if !crate::db::is_dev_db_mode() {
-            // Backup config.json BEFORE any mutations
-            backup_config()?;
-
-            let current_ws = state
-                .config
-                .read()
-                .ok()
-                .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
-            if let Ok(mut guard) = state.pre_dev_workspace.lock() {
-                *guard = current_ws;
-            }
-        }
-
-        // Switch to dev DB
-        crate::db::set_dev_db_mode(true);
-        // Reopen DB at the dev path
-        if let Ok(mut guard) = state.db.lock() {
-            *guard = ActionDb::open().ok();
-        }
+        enter_dev_mode(state)?;
     }
 
     match scenario {
@@ -169,12 +317,7 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
     }
 }
 
-/// Restore to live mode: undo dev DB isolation and return to the real workspace.
-///
-/// 1. Read the stashed workspace path from `pre_dev_workspace`
-/// 2. Deactivate dev DB mode
-/// 3. Reopen DB at the live path
-/// 4. Restore workspace config
+/// Restore to live mode. Delegates to `exit_dev_mode()`.
 pub fn restore_live(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
@@ -184,57 +327,7 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
         return Err("Already in live mode".into());
     }
 
-    // 1. Read stashed workspace path (fallback only)
-    let original_workspace = state
-        .pre_dev_workspace
-        .lock()
-        .map_err(|_| "Lock poisoned")?
-        .take();
-
-    // 2. Deactivate dev DB mode
-    crate::db::set_dev_db_mode(false);
-
-    // 3. Reopen DB at live path
-    if let Ok(mut guard) = state.db.lock() {
-        *guard = ActionDb::open().ok();
-    }
-
-    // 4. Restore config from backup (written before dev entry)
-    restore_config_backup()?;
-
-    // 5. Reload config from (now-restored) disk file
-    match crate::state::load_config() {
-        Ok(config) => {
-            if let Ok(mut guard) = state.config.write() {
-                *guard = Some(config.clone());
-            }
-        }
-        Err(_) => {
-            // Fallback: use stashed workspace path
-            if let Some(ws) = original_workspace {
-                crate::state::create_or_update_config(state, |config| {
-                    config.workspace_path = ws;
-                })?;
-            }
-        }
-    }
-
-    // 6. Re-probe Google auth state from Keychain (restore real auth, not mock)
-    match crate::google_api::token_store::load_token() {
-        Ok(token) => {
-            let email = token.account.unwrap_or_else(|| "unknown".to_string());
-            if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = GoogleAuthStatus::Authenticated {
-                    email: email.clone(),
-                };
-            }
-        }
-        Err(_) => {
-            if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = GoogleAuthStatus::NotConfigured;
-            }
-        }
-    }
+    exit_dev_mode(state)?;
 
     let ws = state
         .config
@@ -580,8 +673,10 @@ fn reset_all(state: &AppState) -> Result<(), String> {
         ]
     };
 
+    // Use config_path() so dev mode deletes config-dev.json, not live config.json
+    let active_config = crate::state::config_path().unwrap_or_else(|_| dailyos_dir.join("config.json"));
     let mut files_to_delete = vec![
-        dailyos_dir.join("config.json"),
+        active_config,
         dailyos_dir.join("execution_history.json"),
         dailyos_dir.join("transcript_records.json"),
         dailyos_dir.join("google").join("token.json"),
