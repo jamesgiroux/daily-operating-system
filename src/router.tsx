@@ -114,7 +114,12 @@ function RootLayout() {
           workspacePath?: string;
         }>("get_config");
         if (!config.workspacePath) {
-          setNeedsOnboarding(true);
+          // No workspace path — but check if wizard was already completed
+          // (workspace creation may have failed silently)
+          const appState = await invoke<{ wizardCompletedAt?: string | null }>("get_app_state").catch(() => null);
+          if (!appState?.wizardCompletedAt) {
+            setNeedsOnboarding(true);
+          }
         }
       } catch {
         setNeedsOnboarding(true);
