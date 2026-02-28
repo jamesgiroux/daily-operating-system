@@ -13,6 +13,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme="light"
       className="toaster group"
       duration={5000}
+      toastOptions={{
+        style: { userSelect: "text", WebkitUserSelect: "text" },
+      }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,
