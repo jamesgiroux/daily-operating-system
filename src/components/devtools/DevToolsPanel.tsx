@@ -11,15 +11,16 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
-import { Copy } from "lucide-react";
 
 /** Toast with a copy button so messages can be pasted into CLI. */
 function devToast(type: "success" | "error", message: string) {
   toast[type](message, {
     duration: type === "error" ? 8000 : 5000,
     action: {
-      label: <Copy className="h-3 w-3" />,
-      onClick: () => navigator.clipboard.writeText(message),
+      label: "Copy",
+      onClick: () => {
+        navigator.clipboard.writeText(message).catch(() => {});
+      },
     },
   });
 }
@@ -62,11 +63,20 @@ export function DevToolsPanel() {
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
-    // Gate on dev build + config.developerMode
     if (!import.meta.env.DEV) return;
-    invoke<{ developerMode?: boolean }>("get_config")
-      .then((cfg) => setEnabled(cfg.developerMode === true))
-      .catch(() => {}); // No config yet — stay hidden
+    // Show wrench when EITHER config.developerMode is on OR dev sandbox is active.
+    // Check both: config may not exist after "Reset to First Run", but dev_get_state
+    // still reports isDevDbMode correctly — so we don't lose the escape hatch.
+    Promise.all([
+      invoke<{ developerMode?: boolean }>("get_config")
+        .then((cfg) => cfg.developerMode === true)
+        .catch(() => false),
+      invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+        .then((s) => s.isDevDbMode === true)
+        .catch(() => false),
+    ]).then(([configEnabled, sandboxActive]) => {
+      setEnabled(configEnabled || sandboxActive);
+    });
   }, []);
 
   if (!import.meta.env.DEV || !enabled) return null;
