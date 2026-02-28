@@ -3242,14 +3242,21 @@ pub fn dev_run_week_full(state: State<'_, Arc<AppState>>) -> Result<String, Stri
 
 /// Restore from dev mode to live mode (I298).
 ///
-/// Deactivates dev DB isolation, reopens the live database, and restores the
-/// original workspace path. Returns a confirmation message.
+/// Deactivates dev DB isolation, reopens the live database, reinitializes the
+/// async DB connection pool, and restores the original workspace path.
 #[tauri::command]
-pub fn dev_restore_live(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+pub async fn dev_restore_live(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
-    crate::devtools::restore_live(&state)
+    let result = crate::devtools::restore_live(&state)?;
+
+    // Reinitialize the async DB connection pool at the live path
+    if let Err(e) = state.reinit_db_service().await {
+        log::warn!("Failed to reinit db_service after dev_restore_live: {}", e);
+    }
+
+    Ok(result)
 }
 
 /// Purge all known mock/dev data from the current database (I298).
