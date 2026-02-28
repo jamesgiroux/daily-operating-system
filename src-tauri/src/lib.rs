@@ -508,6 +508,8 @@ pub fn run() {
             commands::dev_restore_live,
             commands::dev_purge_mock_data,
             commands::dev_clean_artifacts,
+            commands::dev_set_auth_override,
+            commands::dev_onboarding_scenario,
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,

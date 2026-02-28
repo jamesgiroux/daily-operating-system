@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2 } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2, UserX, KeyRound, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -123,6 +123,18 @@ function DevToolsPanelInner() {
     }
   }
 
+  async function runOnboarding(key: string, scenario: string) {
+    setLoading(key);
+    try {
+      const result = await invoke<string>("dev_onboarding_scenario", { scenario });
+      devToast("success", result);
+      setTimeout(() => window.location.reload(), 500);
+    } catch (err) {
+      devToast("error", typeof err === "string" ? err : "Onboarding scenario failed");
+      setLoading(null);
+    }
+  }
+
   async function runCommand(key: string, command: string, reload = false) {
     setLoading(key);
     try {
@@ -151,8 +163,8 @@ function DevToolsPanelInner() {
         <Wrench className="h-4 w-4" />
       </button>
 
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className="w-[380px] overflow-y-auto">
+      <Sheet open={open} onOpenChange={setOpen} modal={false}>
+        <SheetContent side="right" className="w-[380px] overflow-y-auto" showOverlay={false}>
           <SheetHeader>
             <div className="flex items-center gap-2">
               <SheetTitle>Dev Tools</SheetTitle>
@@ -320,6 +332,78 @@ function DevToolsPanelInner() {
                   loading={loading === "simulate_briefing"}
                   disabled={loading !== null}
                   onClick={() => applyScenario("simulate_briefing")}
+                />
+              </div>
+            </section>
+
+            {/* Onboarding Scenarios */}
+            <section>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Onboarding
+              </h3>
+              <div className="space-y-2">
+                <ScenarioButton
+                  icon={Sparkles}
+                  label="Happy Path"
+                  description="Both auth mocked as ready"
+                  variant="default"
+                  loading={loading === "onb_auth_ready"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_auth_ready", "auth_ready")}
+                />
+                <ScenarioButton
+                  icon={RotateCcw}
+                  label="Fresh (Real Auth)"
+                  description="Real first-run with real auth checks"
+                  variant="outline"
+                  loading={loading === "onb_fresh"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_fresh", "fresh")}
+                />
+                <ScenarioButton
+                  icon={UserX}
+                  label="Claude Not Installed"
+                  description="Shows install instructions"
+                  variant="outline"
+                  loading={loading === "onb_no_claude"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_no_claude", "no_claude")}
+                />
+                <ScenarioButton
+                  icon={KeyRound}
+                  label="Claude Not Authenticated"
+                  description="Claude found but not logged in"
+                  variant="outline"
+                  loading={loading === "onb_claude_unauthed"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_claude_unauthed", "claude_unauthed")}
+                />
+                <ScenarioButton
+                  icon={Shield}
+                  label="No Google"
+                  description="Claude ready, Google not connected"
+                  variant="outline"
+                  loading={loading === "onb_no_google"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_no_google", "no_google")}
+                />
+                <ScenarioButton
+                  icon={Calendar}
+                  label="Google Token Expired"
+                  description="Claude ready, Google token expired"
+                  variant="outline"
+                  loading={loading === "onb_google_expired"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_google_expired", "google_expired")}
+                />
+                <ScenarioButton
+                  icon={AlertTriangle}
+                  label="Nothing Works"
+                  description="Both auth unavailable"
+                  variant="destructive"
+                  loading={loading === "onb_nothing_works"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_nothing_works", "nothing_works")}
                 />
               </div>
             </section>
