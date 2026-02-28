@@ -39,6 +39,12 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
     }
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Check if Drive is enabled
         let enabled = state
             .config
