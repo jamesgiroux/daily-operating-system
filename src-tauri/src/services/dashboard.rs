@@ -172,17 +172,31 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             let has_prep = dbm.prep_context_json.is_some();
 
             // Format time as "h:mm AM" from ISO start_time
+            // Handles NaiveDateTime (%Y-%m-%dT%H:%M:%S), space-separated, and
+            // RFC3339 with timezone offset (e.g. 2026-02-28T09:30:00-05:00).
             let time = chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%dT%H:%M:%S")
+                .map(|dt| dt.format("%-I:%M %p").to_string())
                 .or_else(|_| {
                     chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%d %H:%M:%S")
+                        .map(|dt| dt.format("%-I:%M %p").to_string())
                 })
-                .map(|dt| dt.format("%-I:%M %p").to_string())
+                .or_else(|_| {
+                    chrono::DateTime::parse_from_rfc3339(&dbm.start_time)
+                        .map(|dt| dt.format("%-I:%M %p").to_string())
+                })
                 .unwrap_or_else(|_| dbm.start_time.clone());
 
             let end_time = dbm.end_time.as_ref().and_then(|et| {
                 chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%dT%H:%M:%S")
-                    .or_else(|_| chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%d %H:%M:%S"))
                     .map(|dt| dt.format("%-I:%M %p").to_string())
+                    .or_else(|_| {
+                        chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%d %H:%M:%S")
+                            .map(|dt| dt.format("%-I:%M %p").to_string())
+                    })
+                    .or_else(|_| {
+                        chrono::DateTime::parse_from_rfc3339(et)
+                            .map(|dt| dt.format("%-I:%M %p").to_string())
+                    })
                     .ok()
             });
 
