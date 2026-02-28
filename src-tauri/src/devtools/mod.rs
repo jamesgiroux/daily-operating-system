@@ -1355,48 +1355,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Project action insert: {}", e))?;
     }
 
-    // Project-linked meetings (reuse existing meetings via meeting_entities junction)
-    let project_meetings: Vec<(&str, &str, &str)> = vec![
-        // (meeting_id, entity_id, entity_type)
-        ("mh-acme-2d", "acme-phase-2", "project"),
-        ("mh-acme-7d", "acme-phase-2", "project"),
-        ("mh-globex-3d", "globex-team-b-recovery", "project"),
-        ("mh-globex-14d", "globex-team-b-recovery", "project"),
-        ("mh-standup-5d", "platform-migration", "project"),
-    ];
-
-    for (meeting_id, entity_id, entity_type) in &project_meetings {
-        conn.execute(
-            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
-            rusqlite::params![meeting_id, entity_id, entity_type],
-        ).map_err(|e| format!("Project meeting link: {}", e))?;
-    }
-
-    // I298: Today's meetings → account junction (date-aligned IDs matching schedule.json.tmpl)
+    // NOTE: meeting_entities links are inserted AFTER meetings_history rows
+    // (see below) to satisfy FK constraint: meeting_entities.meeting_id → meetings_history.id
     let today_str = date_only(0);
-    let today_meeting_entities: Vec<(String, &str, &str)> = vec![
-        (
-            format!("mtg-acme-weekly-{}", today_str),
-            "acme-corp",
-            "account",
-        ),
-        (
-            format!("mtg-initech-kickoff-{}", today_str),
-            "initech",
-            "account",
-        ),
-        (
-            format!("mtg-globex-qbr-{}", today_str),
-            "globex-industries",
-            "account",
-        ),
-    ];
-    for (meeting_id, entity_id, entity_type) in &today_meeting_entities {
-        conn.execute(
-            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
-            rusqlite::params![meeting_id, entity_id, entity_type],
-        ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
-    }
 
     // I298: Also seed today's customer meetings into meetings_history with ISO timestamps
     // so DailyFocus/compute_focus_capacity() picks them up.
@@ -1585,6 +1546,34 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 rusqlite::params![id, acct],
             ).map_err(|e| format!("Historical meeting-entity link: {}", e))?;
         }
+    }
+
+    // Project-linked meetings (meetings_history rows exist now, safe for FK)
+    let project_meetings: Vec<(&str, &str, &str)> = vec![
+        ("mh-acme-2d", "acme-phase-2", "project"),
+        ("mh-acme-7d", "acme-phase-2", "project"),
+        ("mh-globex-3d", "globex-team-b-recovery", "project"),
+        ("mh-globex-14d", "globex-team-b-recovery", "project"),
+        ("mh-standup-5d", "platform-migration", "project"),
+    ];
+    for (meeting_id, entity_id, entity_type) in &project_meetings {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![meeting_id, entity_id, entity_type],
+        ).map_err(|e| format!("Project meeting link: {}", e))?;
+    }
+
+    // Today's meetings → account junction
+    let today_meeting_entities: Vec<(String, &str, &str)> = vec![
+        (format!("mtg-acme-weekly-{}", today_str), "acme-corp", "account"),
+        (format!("mtg-initech-kickoff-{}", today_str), "initech", "account"),
+        (format!("mtg-globex-qbr-{}", today_str), "globex-industries", "account"),
+    ];
+    for (meeting_id, entity_id, entity_type) in &today_meeting_entities {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![meeting_id, entity_id, entity_type],
+        ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
     }
 
     // --- Captures ---
