@@ -2,11 +2,35 @@
 //!
 //! - macOS: Keychain is canonical, with one-time migration from legacy token.json.
 //! - non-macOS: token.json file backend is canonical.
+//! - Dev mode: in-memory store (never touches Keychain or disk).
+
+use std::sync::Mutex;
 
 use super::{GoogleApiError, GoogleToken};
 
+/// In-memory token store for dev mode (Phase 2: auth isolation).
+/// When dev DB mode is active, tokens are stored here instead of Keychain.
+/// Cleared on exit from dev mode.
+static DEV_TOKEN: Mutex<Option<GoogleToken>> = Mutex::new(None);
+
+/// Clear the in-memory dev token. Called by `exit_dev_mode()`.
+pub fn clear_dev_token() {
+    if let Ok(mut guard) = DEV_TOKEN.lock() {
+        *guard = None;
+    }
+}
+
 /// Load the current Google OAuth token.
 pub fn load_token() -> Result<GoogleToken, GoogleApiError> {
+    // Dev mode isolation: use in-memory store, never touch Keychain
+    if crate::db::is_dev_db_mode() {
+        return DEV_TOKEN
+            .lock()
+            .map_err(|_| GoogleApiError::Keychain("Dev token lock poisoned".into()))?
+            .clone()
+            .ok_or_else(|| GoogleApiError::TokenNotFound(super::token_path()));
+    }
+
     #[cfg(target_os = "macos")]
     {
         load_token_macos()
@@ -20,6 +44,15 @@ pub fn load_token() -> Result<GoogleToken, GoogleApiError> {
 
 /// Persist a Google OAuth token.
 pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
+    // Dev mode isolation: store in-memory only, never touch Keychain
+    if crate::db::is_dev_db_mode() {
+        let mut guard = DEV_TOKEN
+            .lock()
+            .map_err(|_| GoogleApiError::Keychain("Dev token lock poisoned".into()))?;
+        *guard = Some(token.clone());
+        return Ok(());
+    }
+
     #[cfg(target_os = "macos")]
     {
         save_token_macos(token)
@@ -33,6 +66,12 @@ pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
 
 /// Remove Google OAuth credentials from local storage.
 pub fn delete_token() -> Result<(), GoogleApiError> {
+    // Dev mode isolation: clear in-memory token only
+    if crate::db::is_dev_db_mode() {
+        clear_dev_token();
+        return Ok(());
+    }
+
     #[cfg(target_os = "macos")]
     {
         delete_token_macos()

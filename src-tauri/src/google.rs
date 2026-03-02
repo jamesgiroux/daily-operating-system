@@ -157,6 +157,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Check if we should poll
         if !should_poll(&state) {
             let interval = crate::activity::adaptive_network_interval(&state.activity);
@@ -1059,6 +1065,12 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     }
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Check if we should poll
         if !should_poll(&state) {
             tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
@@ -1122,6 +1134,23 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 "Email poll: {} new emails detected, running AI enrichment",
                                 new_ids.len()
                             );
+
+                            // Serialize expensive poller enrichment/scoring work so wake/unlock
+                            // paths don't compete with other heavy queues.
+                            let _heavy_work_permit = match state
+                                .heavy_work_semaphore
+                                .acquire()
+                                .await
+                            {
+                                Ok(permit) => permit,
+                                Err(e) => {
+                                    log::warn!(
+                                        "Email poll: heavy_work_semaphore closed, skipping enrichment: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                            };
 
                             // Reuse Executor's enrichment pipeline (same as manual refresh)
                             let executor =

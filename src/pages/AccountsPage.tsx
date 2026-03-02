@@ -16,6 +16,9 @@ import {
 } from "@/components/entity/EntityListShell";
 import { EntityRow } from "@/components/entity/EntityRow";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EmptyState } from "@/components/editorial/EmptyState";
+import { usePersonality } from "@/hooks/usePersonality";
+import { getPersonalityCopy } from "@/lib/personality";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatArr } from "@/lib/utils";
 import type { AccountListItem } from "@/types";
@@ -50,6 +53,7 @@ const ACCOUNT_SECTIONS: {
 ];
 
 export default function AccountsPage() {
+  const { personality } = usePersonality();
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -390,48 +394,40 @@ export default function AccountsPage() {
         >
           Your Book
         </h1>
-        <EntityListEmpty title="No accounts yet" message="Create your first account to get started.">
-          {creating ? (
-            <div style={{ maxWidth: 400, margin: "24px auto 0", display: "flex", flexDirection: "column", gap: 12 }}>
-              <AccountTypeSelector
-                value={newAccountType}
-                onChange={(v) => { setNewAccountType(v); setNewParentId(null); }}
-              />
-              {newAccountType !== "partner" && parentOptions.length > 0 && (
-                <ParentSelector
-                  value={newParentId}
-                  onChange={setNewParentId}
-                  options={parentOptions}
-                />
-              )}
-              <InlineCreateForm
-                value={newName}
-                onChange={setNewName}
-                onCreate={handleCreate}
-                onCancel={() => { setCreating(false); setNewAccountType("customer"); setNewParentId(null); }}
-                placeholder={newParentId ? "Business unit name" : "Account name"}
-              />
-            </div>
-          ) : (
-            <button
-              onClick={() => setCreating(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--color-spice-turmeric)",
-                background: "none",
-                border: "1px solid var(--color-spice-turmeric)",
-                borderRadius: 4,
-                padding: "6px 16px",
-                cursor: "pointer",
-                marginTop: 24,
-              }}
+        {(() => {
+          const copy = getPersonalityCopy("accounts-empty", personality);
+          return (
+            <EmptyState
+              headline={copy.title}
+              explanation={copy.explanation ?? copy.message ?? ""}
+              benefit={copy.benefit}
+              action={!creating ? { label: "Create your first account", onClick: () => setCreating(true) } : undefined}
             >
-              + New Account
-            </button>
-          )}
-        </EntityListEmpty>
+              {creating && (
+                <div style={{ maxWidth: 400, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12, textAlign: "left" }}>
+                  <AccountTypeSelector
+                    value={newAccountType}
+                    onChange={(v) => { setNewAccountType(v); setNewParentId(null); }}
+                  />
+                  {newAccountType !== "partner" && parentOptions.length > 0 && (
+                    <ParentSelector
+                      value={newParentId}
+                      onChange={setNewParentId}
+                      options={parentOptions}
+                    />
+                  )}
+                  <InlineCreateForm
+                    value={newName}
+                    onChange={setNewName}
+                    onCreate={handleCreate}
+                    onCancel={() => { setCreating(false); setNewAccountType("customer"); setNewParentId(null); }}
+                    placeholder={newParentId ? "Business unit name" : "Account name"}
+                  />
+                </div>
+              )}
+            </EmptyState>
+          );
+        })()}
       </div>
     );
   }

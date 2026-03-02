@@ -124,6 +124,11 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            continue;
+        }
+
         // Check if capture is enabled
         let config = state.config.read().ok().and_then(|g| g.clone());
         let enabled = config

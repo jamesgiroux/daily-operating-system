@@ -101,6 +101,8 @@ interface PrepReadyPayload {
   meetingId: string;
 }
 
+type TranscriptProcessedPayload = MeetingOutcomeData | string;
+
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -367,6 +369,20 @@ export default function MeetingDetailPage() {
   }, [meetingId, loadMeetingIntelligence]);
 
   useTauriEvent<PrepReadyPayload>("prep-ready", handlePrepReady);
+
+  const handleTranscriptProcessed = useCallback((payload: TranscriptProcessedPayload) => {
+    if (!meetingId) return;
+    if (typeof payload === "string") {
+      if (payload !== meetingId) return;
+      void loadMeetingIntelligence();
+      return;
+    }
+    if (payload.meetingId !== meetingId) return;
+    setOutcomes(payload);
+    void loadMeetingIntelligence();
+  }, [meetingId, loadMeetingIntelligence]);
+
+  useTauriEvent<TranscriptProcessedPayload>("transcript-processed", handleTranscriptProcessed);
 
   // Safety timeout: clear updating banner after 15s if prep-ready never arrives (I477)
   useEffect(() => {
@@ -1459,41 +1475,58 @@ function OutcomesSection({
   onRefresh: () => void;
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
 }) {
+  const summary = outcomes.summary?.trim();
+  const wins = outcomes.wins.filter((item) => item.trim().length > 0);
+  const risks = outcomes.risks.filter((item) => item.trim().length > 0);
+  const decisions = outcomes.decisions.filter((item) => item.trim().length > 0);
+  const hasContent =
+    Boolean(summary) ||
+    wins.length > 0 ||
+    risks.length > 0 ||
+    decisions.length > 0 ||
+    outcomes.actions.length > 0;
+
   return (
     <div className={styles.outcomesContainer}>
       <h2 className={styles.outcomesTitle}>Meeting Outcomes</h2>
       {/* Inlined MeetingOutcomes */}
       <div className={styles.outcomesBody}>
+        {!hasContent && (
+          <p className={styles.outcomesSummary}>
+            Transcript attached, but no structured outcomes were extracted yet.
+          </p>
+        )}
+
         {/* Summary */}
-        {outcomes.summary && (
-          <p className={styles.outcomesSummary}>{outcomes.summary}</p>
+        {summary && (
+          <p className={styles.outcomesSummary}>{summary}</p>
         )}
 
         <div className={styles.outcomesGrid}>
           {/* Wins */}
-          {outcomes.wins.length > 0 && (
+          {wins.length > 0 && (
             <OutcomeSection
               title="Wins"
               icon={<Trophy className={styles.iconSage} />}
-              items={outcomes.wins}
+              items={wins}
             />
           )}
 
           {/* Risks */}
-          {outcomes.risks.length > 0 && (
+          {risks.length > 0 && (
             <OutcomeSection
               title="Risks"
               icon={<AlertTriangle className={styles.iconTerracotta} />}
-              items={outcomes.risks}
+              items={risks}
             />
           )}
 
           {/* Decisions */}
-          {outcomes.decisions.length > 0 && (
+          {decisions.length > 0 && (
             <OutcomeSection
               title="Decisions"
               icon={<CircleDot className={styles.iconTurmeric} />}
-              items={outcomes.decisions}
+              items={decisions}
             />
           )}
         </div>

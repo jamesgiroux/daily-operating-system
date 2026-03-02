@@ -1,0 +1,103 @@
+/* TourTips.module.css — Floating corner card for post-wizard tips (I56) */
+
+.card {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 320px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 8px;
+  padding: 20px;
+  z-index: var(--z-modal, 50);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 8px;
+}
+
+.body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.dots {
+  display: flex;
+  gap: 6px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-rule-light);
+  transition: background 0.15s ease;
+}
+
+.dotActive {
+  background: var(--color-spice-turmeric);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.navButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease;
+}
+
+.navButton:hover {
+  color: var(--color-text-primary);
+}
+
+.doneButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: var(--color-spice-turmeric);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 12px;
+  transition: opacity 0.15s ease;
+}
+
+.doneButton:hover {
+  opacity: 0.85;
+}

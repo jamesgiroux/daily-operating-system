@@ -454,8 +454,11 @@ function AttentionSection({
 
   if (!hasAnything) return null;
 
-  // Determine if attentionActions are PrioritizedAction or raw Action
-  const hasPrioritizedActions = focus?.prioritizedActions && focus.prioritizedActions.length > 0;
+  // Determine if attentionActions are PrioritizedAction or raw Action.
+  // Check the actual items in attentionActions, not the source array — the useMemo
+  // may have fallen through to raw actions even when prioritizedActions exists.
+  const hasPrioritizedActions = attentionActions.length > 0
+    && attentionActions.every((item) => "action" in item && (item as PrioritizedAction).action?.id);
 
   return (
     <section className={s.prioritiesSection}>
