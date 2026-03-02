@@ -495,6 +495,7 @@ pub fn run() {
             commands::create_internal_organization,
             commands::get_onboarding_priming_context,
             commands::check_claude_status,
+            commands::launch_claude_login,
             commands::get_latency_rollups,
             commands::install_inbox_sample,
             commands::get_frequent_correspondents,
