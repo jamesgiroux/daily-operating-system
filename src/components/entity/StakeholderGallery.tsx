@@ -9,7 +9,7 @@
  * stakeholders, internal people filter, create contact from stakeholder.
  */
 import { useState, useRef, useEffect } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Plus, UserPlus, Search, LinkIcon, Check } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
@@ -98,6 +98,7 @@ export function StakeholderGallery({
   entityType,
   onIntelligenceUpdated,
 }: StakeholderGalleryProps) {
+  const navigate = useNavigate();
   const allStakeholders = intelligence?.stakeholderInsights ?? [];
   const stakeholders = filterInternalStakeholders(allStakeholders, linkedPeople);
   const hasStakeholders = stakeholders.length > 0;
@@ -244,13 +245,16 @@ export function StakeholderGallery({
   async function handleCreateContact(s: StakeholderInsight) {
     if (!entityId || !entityType) return;
     try {
-      await invoke("create_person_from_stakeholder", {
+      const personId = await invoke<string>("create_person_from_stakeholder", {
         entityId,
         entityType,
         name: s.name,
         role: s.role ?? null,
       });
       onIntelligenceUpdated?.();
+      if (personId) {
+        navigate({ to: "/people/$personId", params: { personId } });
+      }
     } catch (e) {
       console.error("Failed to create person from stakeholder:", e);
     }
