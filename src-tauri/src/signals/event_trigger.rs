@@ -4,6 +4,7 @@
 //! entity resolution when they appear. Uses a Notify wake signal from
 //! the calendar reconcile loop plus a 5-minute fallback poll.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::state::AppState;
@@ -26,6 +27,11 @@ pub async fn run_entity_resolution_trigger(state: Arc<AppState>) {
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(300)) => {
                 log::debug!("Entity resolution trigger: periodic poll");
             }
+        }
+
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            continue;
         }
 
         // Run entity resolution on meetings needing it
@@ -80,20 +86,18 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
             Some(embedding_ref),
         );
 
-        // Auto-link Resolved outcomes (confidence ≥0.85)
+        // Auto-link only high-confidence `Resolved` outcomes and pick at most
+        // one entity per type to avoid multi-account contamination.
+        let selected = select_auto_link_candidates(&outcomes);
+
         let mut linked = 0;
-        for outcome in &outcomes {
-            if let crate::prepare::entity_resolver::ResolutionOutcome::Resolved(entity)
-            | crate::prepare::entity_resolver::ResolutionOutcome::ResolvedWithFlag(entity) =
-                outcome
-            {
-                let _ = db.link_meeting_entity_if_absent(
-                    &meeting.id,
-                    &entity.entity_id,
-                    entity.entity_type.as_str(),
-                );
-                linked += 1;
-            }
+        for entity in &selected {
+            let _ = db.link_meeting_entity_if_absent(
+                &meeting.id,
+                &entity.entity_id,
+                entity.entity_type.as_str(),
+            );
+            linked += 1;
         }
         if linked > 0 {
             log::debug!(
@@ -105,6 +109,72 @@ fn resolve_new_meetings(state: &AppState) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Base threshold from ADR-0080 for auto-linking.
+const AUTO_LINK_BASE_CONFIDENCE: f64 = 0.85;
+
+fn source_rank(source: &str) -> i32 {
+    match source {
+        "junction" => 6,
+        "keyword" => 5,
+        "group_pattern" => 4,
+        "attendee_vote" => 3,
+        "embedding" => 2,
+        "keyword_fuzzy" => 1,
+        _ => 0,
+    }
+}
+
+/// Additional guardrails by source to reduce false-positive auto-links.
+fn source_min_confidence(source: &str) -> f64 {
+    match source {
+        "junction" | "keyword" => 0.85,
+        "group_pattern" => 0.88,
+        "attendee_vote" => 0.93,
+        "embedding" => 0.95,
+        "keyword_fuzzy" => 0.96,
+        _ => 0.95,
+    }
+}
+
+fn is_auto_link_candidate(entity: &crate::prepare::entity_resolver::ResolvedEntity) -> bool {
+    entity.confidence >= AUTO_LINK_BASE_CONFIDENCE
+        && entity.confidence >= source_min_confidence(&entity.source)
+}
+
+/// Select at most one high-confidence auto-link candidate per entity type.
+fn select_auto_link_candidates(
+    outcomes: &[crate::prepare::entity_resolver::ResolutionOutcome],
+) -> Vec<crate::prepare::entity_resolver::ResolvedEntity> {
+    let mut best_by_type: HashMap<String, crate::prepare::entity_resolver::ResolvedEntity> =
+        HashMap::new();
+
+    for outcome in outcomes {
+        let entity = match outcome {
+            crate::prepare::entity_resolver::ResolutionOutcome::Resolved(e) => e,
+            _ => continue,
+        };
+
+        if !is_auto_link_candidate(entity) {
+            continue;
+        }
+
+        let key = entity.entity_type.as_str().to_string();
+        let replace = match best_by_type.get(&key) {
+            None => true,
+            Some(existing) => {
+                entity.confidence > existing.confidence
+                    || (entity.confidence == existing.confidence
+                        && source_rank(&entity.source) > source_rank(&existing.source))
+            }
+        };
+        if replace {
+            best_by_type.insert(key, entity.clone());
+        }
+    }
+
+    best_by_type.into_values().collect()
 }
 
 /// Minimal meeting info for resolution trigger.
@@ -178,5 +248,69 @@ impl crate::db::ActionDb {
             rusqlite::params![meeting_id, entity_id, entity_type],
         )?;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::entity::EntityType;
+    use crate::prepare::entity_resolver::{ResolutionOutcome, ResolvedEntity};
+
+    use super::select_auto_link_candidates;
+
+    #[test]
+    fn auto_link_excludes_resolved_with_flag() {
+        let outcomes = vec![ResolutionOutcome::ResolvedWithFlag(ResolvedEntity {
+            entity_id: "acc1".to_string(),
+            entity_type: EntityType::Account,
+            confidence: 0.9,
+            source: "keyword".to_string(),
+        })];
+
+        let selected = select_auto_link_candidates(&outcomes);
+        assert!(selected.is_empty());
+    }
+
+    #[test]
+    fn auto_link_picks_single_best_per_type() {
+        let outcomes = vec![
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acc-a".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.89,
+                source: "group_pattern".to_string(),
+            }),
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "acc-b".to_string(),
+                entity_type: EntityType::Account,
+                confidence: 0.91,
+                source: "keyword".to_string(),
+            }),
+            ResolutionOutcome::Resolved(ResolvedEntity {
+                entity_id: "proj-a".to_string(),
+                entity_type: EntityType::Project,
+                confidence: 0.9,
+                source: "keyword".to_string(),
+            }),
+        ];
+
+        let mut selected = select_auto_link_candidates(&outcomes);
+        selected.sort_by(|a, b| a.entity_type.as_str().cmp(b.entity_type.as_str()));
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].entity_id, "acc-b");
+        assert_eq!(selected[1].entity_id, "proj-a");
+    }
+
+    #[test]
+    fn auto_link_rejects_weak_source_with_low_confidence() {
+        let outcomes = vec![ResolutionOutcome::Resolved(ResolvedEntity {
+            entity_id: "acc1".to_string(),
+            entity_type: EntityType::Account,
+            confidence: 0.89,
+            source: "attendee_vote".to_string(),
+        })];
+
+        let selected = select_auto_link_candidates(&outcomes);
+        assert!(selected.is_empty());
     }
 }
