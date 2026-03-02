@@ -1,9 +1,18 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
+
+/// Dev-only override for Claude status checks.
+/// 0 = real check, 1 = installed+authenticated, 2 = not installed, 3 = installed but not authenticated
+pub(crate) static DEV_CLAUDE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+
+/// Dev-only override for Google auth status.
+/// 0 = real check, 1 = authenticated, 2 = not configured, 3 = token expired
+pub(crate) static DEV_GOOGLE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
 
 use chrono::TimeZone;
 use regex::Regex;
@@ -1412,15 +1421,31 @@ pub async fn set_workspace_path(
     result
 }
 
-/// Toggle developer mode (shows/hides devtools panel)
+/// Toggle developer mode with full isolation.
+///
+/// When enabled: switches to isolated dev database, workspace, and auth.
+/// When disabled: returns to live database, workspace, and real auth.
 #[tauri::command]
-pub fn set_developer_mode(
+pub async fn set_developer_mode(
     enabled: bool,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
-    crate::state::create_or_update_config(&state, |config| {
-        config.developer_mode = enabled;
-    })
+    if enabled {
+        crate::devtools::enter_dev_mode(&state)?;
+    } else {
+        crate::devtools::exit_dev_mode(&state)?;
+    }
+
+    // Reinitialize the async DB connection pool at the new path
+    if let Err(e) = state.reinit_db_service().await {
+        log::warn!("Failed to reinit db_service after dev mode toggle: {}", e);
+    }
+
+    // Return the current config (which is now either dev or live)
+    let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+    guard
+        .clone()
+        .ok_or_else(|| "No configuration loaded".to_string())
 }
 
 /// Check if workspace is under iCloud sync and warning hasn't been dismissed (I464).
@@ -1596,7 +1621,7 @@ async fn attempt_system_auth() -> Result<bool, String> {
     std::thread::spawn(move || {
         use block2::RcBlock;
         use objc2::runtime::Bool;
-        use objc2_foundation::{NSComparisonResult, NSRunLoop, NSDate, NSString};
+        use objc2_foundation::{NSComparisonResult, NSDate, NSRunLoop, NSString};
         use objc2_local_authentication::{LAContext, LAPolicy};
 
         let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -2230,6 +2255,26 @@ struct GoogleAuthFailedPayload {
 #[tauri::command]
 pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStatus {
     let started = std::time::Instant::now();
+
+    // Dev override: return mocked Google auth status
+    if cfg!(debug_assertions) {
+        let ov = DEV_GOOGLE_OVERRIDE.load(Ordering::Relaxed);
+        if ov != 0 {
+            log_command_latency(
+                "get_google_auth_status",
+                started,
+                READ_CMD_LATENCY_BUDGET_MS,
+            );
+            return match ov {
+                1 => GoogleAuthStatus::Authenticated {
+                    email: "dev@dailyos.test".to_string(),
+                },
+                3 => GoogleAuthStatus::TokenExpired,
+                _ => GoogleAuthStatus::NotConfigured,
+            };
+        }
+    }
+
     let cached = state
         .calendar
         .google_auth
@@ -2268,6 +2313,25 @@ pub async fn start_google_auth(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<GoogleAuthStatus, String> {
+    // Dev override: skip real OAuth flow when auth is mocked
+    if cfg!(debug_assertions) {
+        let ov = DEV_GOOGLE_OVERRIDE.load(Ordering::Relaxed);
+        match ov {
+            1 => {
+                let status = GoogleAuthStatus::Authenticated {
+                    email: "dev@dailyos.test".to_string(),
+                };
+                if let Ok(mut guard) = state.calendar.google_auth.lock() {
+                    *guard = status.clone();
+                }
+                return Ok(status);
+            }
+            2 => return Err("Google not configured (dev override)".into()),
+            3 => return Err("Google token expired (dev override)".into()),
+            _ => {} // 0 = real flow
+        }
+    }
+
     let config = state
         .config
         .read()
@@ -2619,120 +2683,13 @@ pub async fn get_processing_history(
 }
 
 // =============================================================================
-// Feature Toggles (I39)
-// =============================================================================
-
-/// Feature definition for the Settings UI.
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeatureDefinition {
-    pub key: String,
-    pub label: String,
-    pub description: String,
-    pub enabled: bool,
-    pub cs_only: bool,
-}
-
-/// Get all features with their current enabled state.
-#[tauri::command]
-pub fn get_features(state: State<'_, Arc<AppState>>) -> Result<Vec<FeatureDefinition>, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let definitions = vec![
-        (
-            "emailTriage",
-            "Email Triage",
-            "Fetch and classify Gmail messages",
-            false,
-        ),
-        (
-            "postMeetingCapture",
-            "Post-Meeting Capture",
-            "Prompt for outcomes after meetings end",
-            false,
-        ),
-        (
-            "meetingPrep",
-            "Meeting Prep",
-            "Generate prep context for upcoming meetings",
-            false,
-        ),
-        (
-            "weeklyPlanning",
-            "Weekly Planning",
-            "Weekly overview and focus block suggestions",
-            false,
-        ),
-        (
-            "inboxProcessing",
-            "Inbox Processing",
-            "Classify and route files from _inbox",
-            false,
-        ),
-        (
-            "accountTracking",
-            "Account Tracking",
-            "Track customer accounts, health, and ARR",
-            true,
-        ),
-        (
-            "projectTracking",
-            "Project Tracking",
-            "Track projects, milestones, and deliverables",
-            false,
-        ),
-        (
-            "impactRollup",
-            "Impact Rollup",
-            "Roll up daily wins and risks to account files",
-            true,
-        ),
-        (
-            "autoArchiveEnabled",
-            "Auto-Archive Email",
-            "Automatically archive low-priority emails during daily prep",
-            false,
-        ),
-    ];
-
-    Ok(definitions
-        .into_iter()
-        .map(|(key, label, desc, cs_only)| FeatureDefinition {
-            enabled: crate::types::is_feature_enabled(&config, key),
-            key: key.to_string(),
-            label: label.to_string(),
-            description: desc.to_string(),
-            cs_only,
-        })
-        .collect())
-}
-
-/// Set a single feature toggle on or off.
-#[tauri::command]
-pub fn set_feature_enabled(
-    feature: String,
-    enabled: bool,
-    state: State<'_, Arc<AppState>>,
-) -> Result<Config, String> {
-    crate::state::create_or_update_config(&state, |config| {
-        config.features.insert(feature.clone(), enabled);
-    })
-}
-
-// =============================================================================
 // Onboarding: Demo Data
 // =============================================================================
 
-/// Install demo data into the user's workspace for the onboarding tour.
+/// Install demo data for first-run experience (I56).
 ///
-/// Writes date-patched JSON fixtures to `_today/data/` and seeds SQLite
-/// with mock accounts, actions, and meeting history. The demo data is
-/// replaced on the first real briefing run.
+/// Seeds curated accounts, actions, meetings, and people marked `is_demo = 1`.
+/// Writes fixture files if a workspace path is configured.
 #[tauri::command]
 pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state
@@ -2740,23 +2697,78 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
         .read()
         .map_err(|_| "Config lock failed")?
         .as_ref()
-        .map(|c| c.workspace_path.clone())
-        .ok_or("No workspace configured")?;
+        .and_then(|c| {
+            if c.workspace_path.is_empty() {
+                None
+            } else {
+                Some(c.workspace_path.clone())
+            }
+        });
 
-    if !crate::devtools::is_dev_workspace(&state) {
-        return Err(
-            "Refused: demo data can only be installed in the dev sandbox \
-             (~/Documents/DailyOS-dev). Switch workspace first."
-                .into(),
-        );
-    }
-
-    let workspace = std::path::Path::new(&workspace_path);
-    crate::devtools::write_fixtures(workspace)?;
-
-    state.db_write(crate::devtools::seed_database).await?;
+    let ws = workspace_path.clone();
+    state
+        .db_write(move |db| crate::demo::install_demo(db, ws.as_deref().map(std::path::Path::new)))
+        .await?;
 
     Ok("Demo data installed".into())
+}
+
+/// Clear all demo data and reset demo mode (I56).
+#[tauri::command]
+pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Config lock failed")?
+        .as_ref()
+        .and_then(|c| {
+            if c.workspace_path.is_empty() {
+                None
+            } else {
+                Some(c.workspace_path.clone())
+            }
+        });
+
+    let ws = workspace_path.clone();
+    state
+        .db_write(move |db| crate::demo::clear_demo(db, ws.as_deref().map(std::path::Path::new)))
+        .await?;
+
+    Ok("Demo data cleared".into())
+}
+
+/// Get app-level state (demo mode, tour, wizard progress).
+#[tauri::command]
+pub async fn get_app_state(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::demo::AppStateRow, String> {
+    state.db_read(crate::demo::get_app_state).await
+}
+
+/// Mark the post-wizard tour as completed.
+#[tauri::command]
+pub async fn set_tour_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    state.db_write(crate::demo::set_tour_completed).await?;
+    Ok("Tour completed".into())
+}
+
+/// Mark the wizard as completed with current timestamp.
+#[tauri::command]
+pub async fn set_wizard_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    state.db_write(crate::demo::set_wizard_completed).await?;
+    Ok("Wizard completed".into())
+}
+
+/// Set wizard last step for mid-wizard resume.
+#[tauri::command]
+pub async fn set_wizard_step(
+    step: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    state
+        .db_write(move |db| crate::demo::set_wizard_step(db, &step))
+        .await?;
+    Ok("Wizard step saved".into())
 }
 
 // =============================================================================
@@ -3080,6 +3092,12 @@ struct ClaudeStatusCacheEntry {
     checked_at: std::time::Instant,
 }
 
+static CLAUDE_STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
+
+fn claude_status_cache() -> &'static Mutex<Option<ClaudeStatusCacheEntry>> {
+    CLAUDE_STATUS_CACHE.get_or_init(|| Mutex::new(None))
+}
+
 /// Return in-memory command latency rollups for diagnostics/devtools.
 #[tauri::command]
 pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
@@ -3093,8 +3111,34 @@ pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
 #[tauri::command]
 pub async fn check_claude_status() -> ClaudeStatus {
     let started = std::time::Instant::now();
-    static STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
-    let cache = STATUS_CACHE.get_or_init(|| Mutex::new(None));
+
+    // Dev override: return mocked status without spawning subprocess
+    if cfg!(debug_assertions) {
+        let ov = DEV_CLAUDE_OVERRIDE.load(Ordering::Relaxed);
+        if ov != 0 {
+            log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
+            return match ov {
+                1 => ClaudeStatus {
+                    installed: true,
+                    authenticated: true,
+                },
+                2 => ClaudeStatus {
+                    installed: false,
+                    authenticated: false,
+                },
+                3 => ClaudeStatus {
+                    installed: true,
+                    authenticated: false,
+                },
+                _ => ClaudeStatus {
+                    installed: false,
+                    authenticated: false,
+                },
+            };
+        }
+    }
+
+    let cache = claude_status_cache();
     let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
 
     // Fast path: return cached result without blocking
@@ -3135,6 +3179,24 @@ pub async fn check_claude_status() -> ClaudeStatus {
 
     log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
     status
+}
+
+/// Open the Claude sign-in page in the user's default browser.
+///
+/// Claude Code stores credentials in the macOS Keychain after OAuth completes
+/// on the website. After the user signs in, clicking "Check again" will pick
+/// up the new keychain entry.
+///
+/// Also clears the status cache so the next `check_claude_status` call
+/// performs a fresh probe.
+#[tauri::command]
+pub fn launch_claude_login() -> Result<(), String> {
+    // Clear cached status so the next check returns a fresh result.
+    if let Ok(mut guard) = claude_status_cache().lock() {
+        *guard = None;
+    }
+
+    open::that("https://claude.ai/login").map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -3267,14 +3329,21 @@ pub fn dev_run_week_full(state: State<'_, Arc<AppState>>) -> Result<String, Stri
 
 /// Restore from dev mode to live mode (I298).
 ///
-/// Deactivates dev DB isolation, reopens the live database, and restores the
-/// original workspace path. Returns a confirmation message.
+/// Deactivates dev DB isolation, reopens the live database, reinitializes the
+/// async DB connection pool, and restores the original workspace path.
 #[tauri::command]
-pub fn dev_restore_live(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+pub async fn dev_restore_live(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
-    crate::devtools::restore_live(&state)
+    let result = crate::devtools::restore_live(&state)?;
+
+    // Reinitialize the async DB connection pool at the live path
+    if let Err(e) = state.reinit_db_service().await {
+        log::warn!("Failed to reinit db_service after dev_restore_live: {}", e);
+    }
+
+    Ok(result)
 }
 
 /// Purge all known mock/dev data from the current database (I298).
@@ -3297,6 +3366,37 @@ pub fn dev_clean_artifacts(include_workspace: bool) -> Result<String, String> {
         return Err("Dev tools not available in release builds".into());
     }
     crate::devtools::clean_dev_artifacts(include_workspace)
+}
+
+/// Set dev auth overrides for Claude and Google status checks.
+///
+/// 0 = real check (no override), 1 = authenticated/ready,
+/// 2 = not installed/not configured, 3 = installed-not-authed / token expired.
+#[tauri::command]
+pub fn dev_set_auth_override(claude_mode: u8, google_mode: u8) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    DEV_CLAUDE_OVERRIDE.store(claude_mode, Ordering::Relaxed);
+    DEV_GOOGLE_OVERRIDE.store(google_mode, Ordering::Relaxed);
+    Ok(format!(
+        "Auth overrides set — Claude: {}, Google: {}",
+        claude_mode, google_mode
+    ))
+}
+
+/// Apply a named onboarding scenario: reset wizard state + set auth overrides.
+///
+/// Scenarios: fresh, auth_ready, no_claude, claude_unauthed, no_google, google_expired, nothing_works.
+#[tauri::command]
+pub fn dev_onboarding_scenario(
+    scenario: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::onboarding_scenario(&scenario, &state)
 }
 
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
@@ -6513,7 +6613,7 @@ pub struct QuillStatus {
 
 /// Get the current status of the Quill integration.
 #[tauri::command]
-pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
+pub async fn get_quill_status(state: State<'_, Arc<AppState>>) -> Result<QuillStatus, String> {
     let config = state
         .config
         .read()
@@ -6523,70 +6623,67 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
     let quill_config = config.unwrap_or_default();
     let bridge_exists = std::path::Path::new(&quill_config.bridge_path).exists();
 
-    // Count sync states from DB
+    // Count sync states from DB without blocking the main thread on the
+    // legacy sync mutex (can beachball during wake/unlock contention).
     let (pending, failed, completed, last_sync, last_error, last_error_at, abandoned) = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().map(|db| {
-                let pending = db.get_pending_quill_syncs().map(|v| v.len()).unwrap_or(0);
+        .db_read(|db| {
+            let pending = db.get_pending_quill_syncs().map(|v| v.len()).unwrap_or(0);
 
-                // Count failed, completed, abandoned from all rows
-                let (failed_count, completed_count, last, abandoned_count) = db
-                    .conn_ref()
-                    .prepare(
-                        "SELECT
-                            SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
-                            SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
-                            MAX(completed_at),
-                            SUM(CASE WHEN state = 'abandoned' THEN 1 ELSE 0 END)
-                         FROM quill_sync_state",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.query_row([], |row| {
-                            Ok((
-                                row.get::<_, i64>(0).unwrap_or(0) as usize,
-                                row.get::<_, i64>(1).unwrap_or(0) as usize,
-                                row.get::<_, Option<String>>(2)?,
-                                row.get::<_, i64>(3).unwrap_or(0) as usize,
-                            ))
-                        })
-                    })
-                    .unwrap_or((0, 0, None, 0));
-
-                // Get last error from failed/abandoned syncs
-                let (err_msg, err_at) = db
-                    .conn_ref()
-                    .prepare(
-                        "SELECT error_message, updated_at FROM quill_sync_state
-                         WHERE state IN ('failed', 'abandoned') AND error_message IS NOT NULL
-                         ORDER BY updated_at DESC LIMIT 1",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.query_row([], |row| {
-                            Ok((
-                                row.get::<_, Option<String>>(0)?,
-                                row.get::<_, Option<String>>(1)?,
-                            ))
-                        })
-                    })
-                    .unwrap_or((None, None));
-
-                (
-                    pending,
-                    failed_count,
-                    completed_count,
-                    last,
-                    err_msg,
-                    err_at,
-                    abandoned_count,
+            // Count failed, completed, abandoned from all rows
+            let (failed_count, completed_count, last, abandoned_count) = db
+                .conn_ref()
+                .prepare(
+                    "SELECT
+                        SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                        MAX(completed_at),
+                        SUM(CASE WHEN state = 'abandoned' THEN 1 ELSE 0 END)
+                     FROM quill_sync_state",
                 )
-            })
+                .and_then(|mut stmt| {
+                    stmt.query_row([], |row| {
+                        Ok((
+                            row.get::<_, i64>(0).unwrap_or(0) as usize,
+                            row.get::<_, i64>(1).unwrap_or(0) as usize,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, i64>(3).unwrap_or(0) as usize,
+                        ))
+                    })
+                })
+                .unwrap_or((0, 0, None, 0));
+
+            // Get last error from failed/abandoned syncs
+            let (err_msg, err_at) = db
+                .conn_ref()
+                .prepare(
+                    "SELECT error_message, updated_at FROM quill_sync_state
+                     WHERE state IN ('failed', 'abandoned') AND error_message IS NOT NULL
+                     ORDER BY updated_at DESC LIMIT 1",
+                )
+                .and_then(|mut stmt| {
+                    stmt.query_row([], |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                        ))
+                    })
+                })
+                .unwrap_or((None, None));
+
+            Ok((
+                pending,
+                failed_count,
+                completed_count,
+                last,
+                err_msg,
+                err_at,
+                abandoned_count,
+            ))
         })
+        .await
         .unwrap_or((0, 0, 0, None, None, None, 0));
 
-    QuillStatus {
+    Ok(QuillStatus {
         enabled: quill_config.enabled,
         bridge_exists,
         bridge_path: quill_config.bridge_path,
@@ -6598,7 +6695,7 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
         last_error_at,
         abandoned_syncs: abandoned,
         poll_interval_minutes: quill_config.poll_interval_minutes,
-    }
+    })
 }
 
 /// Enable or disable Quill integration.
