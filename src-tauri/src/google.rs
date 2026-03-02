@@ -1135,6 +1135,23 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 new_ids.len()
                             );
 
+                            // Serialize expensive poller enrichment/scoring work so wake/unlock
+                            // paths don't compete with other heavy queues.
+                            let _heavy_work_permit = match state
+                                .heavy_work_semaphore
+                                .acquire()
+                                .await
+                            {
+                                Ok(permit) => permit,
+                                Err(e) => {
+                                    log::warn!(
+                                        "Email poll: heavy_work_semaphore closed, skipping enrichment: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                            };
+
                             // Reuse Executor's enrichment pipeline (same as manual refresh)
                             let executor =
                                 crate::executor::Executor::new(state.clone(), app_handle.clone());

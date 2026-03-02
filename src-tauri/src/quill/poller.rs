@@ -496,20 +496,16 @@ fn get_pending_syncs(state: &AppState) -> Option<Vec<DbQuillSyncState>> {
 
 /// Emit transcript-processed event with full MeetingOutcomeData payload when available.
 fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
-    let payload = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|guard| {
-            guard.as_ref().and_then(|db| {
-                db.get_meeting_by_id(meeting_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|meeting| {
-                        crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting)
-                    })
-            })
-        });
+    let payload = state.db.lock().ok().and_then(|guard| {
+        guard.as_ref().and_then(|db| {
+            db.get_meeting_by_id(meeting_id)
+                .ok()
+                .flatten()
+                .and_then(|meeting| {
+                    crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting)
+                })
+        })
+    });
 
     match payload {
         Some(outcome) => {

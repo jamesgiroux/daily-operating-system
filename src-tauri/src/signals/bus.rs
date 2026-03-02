@@ -121,7 +121,7 @@ pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError
              SELECT me.meeting_id FROM meeting_entities me
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
          )
-         AND start_time > datetime('now')
+         AND julianday(start_time) > julianday('now')
          AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
         rusqlite::params![signal.entity_id, signal.entity_type],
     );
@@ -166,7 +166,7 @@ pub fn emit_signal(
              SELECT me.meeting_id FROM meeting_entities me
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
          )
-         AND start_time > datetime('now')
+         AND julianday(start_time) > julianday('now')
          AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
         rusqlite::params![entity_id, entity_type],
     );

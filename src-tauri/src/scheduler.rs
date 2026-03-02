@@ -209,12 +209,12 @@ impl Scheduler {
                 let conn = db.conn_ref();
                 let mut stmt = match conn.prepare(
                     "SELECT id FROM meetings_history
-                     WHERE start_time > datetime('now')
-                     AND start_time <= datetime('now', '+2 hours')
+                     WHERE julianday(start_time) > julianday('now')
+                     AND julianday(start_time) <= julianday('now', '+2 hours')
                      AND intelligence_state != 'archived'
                      AND (has_new_signals = 1
                           OR last_enriched_at IS NULL
-                          OR last_enriched_at < datetime('now', '-12 hours'))",
+                          OR julianday(last_enriched_at) < julianday('now', '-12 hours'))",
                 ) {
                     Ok(s) => s,
                     Err(e) => {

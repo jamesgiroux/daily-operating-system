@@ -319,17 +319,41 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // I395: Score enriched emails after enrichment + signal emission
     {
-        let score_guard = state.db.lock().ok();
-        if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
-            let model = state.embedding_model.clone();
-            let active = db.get_all_active_emails().unwrap_or_default();
-            let scores = crate::signals::email_scoring::score_emails(db, Some(&model), &active);
-            for (email_id, score, reason) in &scores {
-                let _ = db.set_relevance_score(email_id, *score, reason);
+        // Split-lock: read active emails, score on a separate DB connection, then
+        // write scores back under lock. Avoids holding DB mutex during ONNX inference.
+        let active = {
+            let score_guard = state.db.lock().ok();
+            if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
+                db.get_all_active_emails().unwrap_or_default()
+            } else {
+                Vec::new()
             }
-            if !scores.is_empty() {
-                log::info!("prepare_today: scored {} emails", scores.len());
+        };
+
+        let scores = if active.is_empty() {
+            Vec::new()
+        } else {
+            match crate::db::ActionDb::open() {
+                Ok(scoring_db) => {
+                    let model = state.embedding_model.clone();
+                    crate::signals::email_scoring::score_emails(&scoring_db, Some(&model), &active)
+                }
+                Err(e) => {
+                    log::warn!("prepare_today: failed to open scoring DB: {}", e);
+                    Vec::new()
+                }
             }
+        };
+
+        if !scores.is_empty() {
+            if let Ok(score_guard) = state.db.lock() {
+                if let Some(db) = score_guard.as_ref() {
+                    for (email_id, score, reason) in &scores {
+                        let _ = db.set_relevance_score(email_id, *score, reason);
+                    }
+                }
+            }
+            log::info!("prepare_today: scored {} emails", scores.len());
         }
     }
 
@@ -1295,6 +1319,12 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
 /// Replaces refresh_emails.py. Writes: _today/data/email-refresh-directive.json
 pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
+    // Serialize heavy refresh work (PTY + embedding inference) with other queues to
+    // reduce wake/unlock contention and UI stalls under load.
+    let _heavy_work_permit = state.heavy_work_semaphore.acquire().await.map_err(|_| {
+        ExecutionError::ConfigurationError("Heavy work semaphore closed".to_string())
+    })?;
+
     let (_profile, user_domains, _user_focus) = get_config(state);
     let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
     let account_hints = {
@@ -1461,17 +1491,41 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
 
     // I395: Score enriched emails after enrichment + signal emission
     {
-        let score_guard = state.db.lock().ok();
-        if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
-            let model = state.embedding_model.clone();
-            let active = db.get_all_active_emails().unwrap_or_default();
-            let scores = crate::signals::email_scoring::score_emails(db, Some(&model), &active);
-            for (email_id, score, reason) in &scores {
-                let _ = db.set_relevance_score(email_id, *score, reason);
+        // Split-lock: read active emails, score on a separate DB connection, then
+        // write scores back under lock. Avoids holding DB mutex during ONNX inference.
+        let active = {
+            let score_guard = state.db.lock().ok();
+            if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
+                db.get_all_active_emails().unwrap_or_default()
+            } else {
+                Vec::new()
             }
-            if !scores.is_empty() {
-                log::info!("refresh_emails: scored {} emails", scores.len());
+        };
+
+        let scores = if active.is_empty() {
+            Vec::new()
+        } else {
+            match crate::db::ActionDb::open() {
+                Ok(scoring_db) => {
+                    let model = state.embedding_model.clone();
+                    crate::signals::email_scoring::score_emails(&scoring_db, Some(&model), &active)
+                }
+                Err(e) => {
+                    log::warn!("refresh_emails: failed to open scoring DB: {}", e);
+                    Vec::new()
+                }
             }
+        };
+
+        if !scores.is_empty() {
+            if let Ok(score_guard) = state.db.lock() {
+                if let Some(db) = score_guard.as_ref() {
+                    for (email_id, score, reason) in &scores {
+                        let _ = db.set_relevance_score(email_id, *score, reason);
+                    }
+                }
+            }
+            log::info!("refresh_emails: scored {} emails", scores.len());
         }
     }
 
