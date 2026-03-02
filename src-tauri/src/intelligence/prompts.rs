@@ -1223,9 +1223,13 @@ fn build_intelligence_prompt_inner(
         label = entity_label,
         name = sanitize_external_field(entity_name)
     ));
+    let local_now = Local::now();
     prompt.push_str(&format!(
-        "System timezone: {}. Interpret all meeting times in this timezone.\n\n",
-        Local::now().format("%Z"),
+        "Current local datetime: {}.\n\
+         System timezone: {} (UTC offset {}). Interpret all meeting times in this timezone.\n\n",
+        local_now.format("%Y-%m-%d %-I:%M %p"),
+        local_now.format("%Z"),
+        local_now.format("%:z"),
     ));
 
     // I313: Inject full vocabulary context for domain-specific framing
@@ -1413,6 +1417,8 @@ fn build_intelligence_prompt_inner(
          - Do NOT narrate chronologically. Synthesize themes and conclusions.\n\
          - Avoid relative time words (tonight, tomorrow, yesterday, this morning). \
            Use explicit local dates and times instead.\n\
+         - Temporal hygiene: rewrite stale time framing from prior intelligence. \
+           If text says a past date/time is still upcoming, correct it.\n\
          - Write for a busy executive who has 60 seconds to understand this {}.\n\n",
         entity_label,
     ));

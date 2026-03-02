@@ -71,7 +71,8 @@ pub fn gather_all_meeting_contexts(
 /// Resolve the primary entity for a meeting by merging I336 classification
 /// entities with the entity resolver's signal cascade.
 ///
-/// Returns the highest-confidence entity above threshold (0.60).
+/// Returns the highest-confidence entity above threshold with meeting-type
+/// aware preference for account/project entities on external meetings.
 fn resolve_primary_entity(
     db: Option<&crate::db::ActionDb>,
     event_id: &str,
@@ -82,8 +83,11 @@ fn resolve_primary_entity(
     use super::entity_resolver::{resolve_meeting_entities, ResolutionOutcome};
     use crate::entity::EntityType;
 
+    const PRIMARY_ENTITY_MIN_CONFIDENCE: f64 = 0.75;
+
     let db = db?;
     let accounts_dir = workspace.join("Accounts");
+    let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
     // Entity resolver handles junction-is-definitive gate internally.
     // If junction table has entries, it returns those immediately
@@ -100,7 +104,16 @@ fn resolve_primary_entity(
 
     for outcome in &resolver_outcomes {
         let entity = match outcome {
-            ResolutionOutcome::Resolved(e) | ResolutionOutcome::ResolvedWithFlag(e) => e,
+            ResolutionOutcome::Resolved(e) => e,
+            ResolutionOutcome::ResolvedWithFlag(e) => {
+                if e.confidence >= PRIMARY_ENTITY_MIN_CONFIDENCE
+                    && matches!(e.source.as_str(), "junction" | "keyword" | "group_pattern")
+                {
+                    e
+                } else {
+                    continue;
+                }
+            }
             _ => continue,
         };
         let name = db
@@ -133,15 +146,34 @@ fn resolve_primary_entity(
         );
     }
 
-    // Select highest-confidence candidate above threshold (0.60)
-    let best = candidates
+    // For external/customer-style meetings, prefer account/project context over person context.
+    let prefer_business_entity = matches!(
+        meeting_type,
+        "customer" | "qbr" | "partnership" | "training" | "external"
+    );
+
+    let mut filtered: Vec<((String, EntityType), (f64, String, String))> = candidates
         .into_iter()
-        .filter(|(_, (conf, _, _))| *conf >= 0.60)
-        .max_by(|a, b| {
-            a.1 .0
-                .partial_cmp(&b.1 .0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })?;
+        .filter(|(_, (conf, _, _))| *conf >= PRIMARY_ENTITY_MIN_CONFIDENCE)
+        .collect();
+    if filtered.is_empty() {
+        return None;
+    }
+
+    if prefer_business_entity {
+        let has_business = filtered
+            .iter()
+            .any(|((_, et), _)| matches!(et, EntityType::Account | EntityType::Project));
+        if has_business {
+            filtered.retain(|((_, et), _)| matches!(et, EntityType::Account | EntityType::Project));
+        }
+    }
+
+    let best = filtered.into_iter().max_by(|a, b| {
+        a.1 .0
+            .partial_cmp(&b.1 .0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
 
     let ((entity_id, entity_type), (confidence, source, name)) = best;
     if name.is_empty() {
@@ -238,25 +270,23 @@ fn gather_account_context(
     }
 
     // SQLite enrichment
-    ctx["recent_captures"] = get_captures_for_account(db, &entity_match.name, 14);
-    ctx["open_actions"] = get_account_actions(db, &entity_match.name);
-    ctx["meeting_history"] = get_meeting_history(db, &entity_match.name, 30, 3);
-    if let Ok(Some(acct)) = db.get_account_by_name(&entity_match.name) {
-        ctx["entity_id"] = json!(acct.id);
-        if let Ok(team) = db.get_account_team(&acct.id) {
-            if !team.is_empty() {
-                ctx["account_team"] = json!(team
-                    .iter()
-                    .map(|m| {
-                        json!({
-                            "personId": m.person_id,
-                            "name": m.person_name,
-                            "email": m.person_email,
-                            "role": m.role,
-                        })
+    ctx["entity_id"] = json!(&entity_match.entity_id);
+    ctx["recent_captures"] = get_captures_for_account(db, &entity_match.entity_id, 14);
+    ctx["open_actions"] = get_account_actions(db, &entity_match.entity_id);
+    ctx["meeting_history"] = get_meeting_history(db, &entity_match.entity_id, 30, 3);
+    if let Ok(team) = db.get_account_team(&entity_match.entity_id) {
+        if !team.is_empty() {
+            ctx["account_team"] = json!(team
+                .iter()
+                .map(|m| {
+                    json!({
+                        "personId": m.person_id,
+                        "name": m.person_name,
+                        "email": m.person_email,
+                        "role": m.role,
                     })
-                    .collect::<Vec<_>>());
-            }
+                })
+                .collect::<Vec<_>>());
         }
     }
 }

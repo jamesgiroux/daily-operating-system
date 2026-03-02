@@ -103,7 +103,11 @@ struct AsMetadata {
 
 /// Truncate a string for log output (first 200 chars).
 fn truncate_log(s: &str) -> &str {
-    if s.len() > 200 { &s[..200] } else { s }
+    if s.len() > 200 {
+        &s[..200]
+    } else {
+        s
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -116,9 +120,7 @@ fn truncate_log(s: &str) -> &str {
 /// 2. Fetch Protected Resource Metadata → extract `authorization_servers[0]` and `resource`
 /// 3. Fetch AS metadata from `{as}/.well-known/oauth-authorization-server`
 ///    or fall back to `{as}/.well-known/openid-configuration`
-pub async fn discover_mcp_oauth(
-    mcp_endpoint: &str,
-) -> Result<McpOAuthEndpoints, GleanAuthError> {
+pub async fn discover_mcp_oauth(mcp_endpoint: &str) -> Result<McpOAuthEndpoints, GleanAuthError> {
     // No-redirect client for the probe (we need to see the 401 + WWW-Authenticate)
     let probe_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -136,10 +138,14 @@ pub async fn discover_mcp_oauth(
     let resource = canonicalize_resource(mcp_endpoint)?;
 
     // --- Step 1: Probe MCP endpoint for resource_metadata hint ---
-    let resource_metadata_url = probe_for_resource_metadata(&probe_client, mcp_endpoint, &base).await?;
+    let resource_metadata_url =
+        probe_for_resource_metadata(&probe_client, mcp_endpoint, &base).await?;
 
     // --- Step 2: Fetch Protected Resource Metadata ---
-    log::info!("Glean MCP: fetching resource metadata from {}", resource_metadata_url);
+    log::info!(
+        "Glean MCP: fetching resource metadata from {}",
+        resource_metadata_url
+    );
     let prm = fetch_protected_resource_metadata(&client, &resource_metadata_url).await;
 
     let (as_url, effective_resource) = match prm {
@@ -154,7 +160,10 @@ pub async fn discover_mcp_oauth(
             (as_server, res)
         }
         Err(e) => {
-            log::warn!("Glean MCP: resource metadata failed ({}), will try OIDC on base URL", e);
+            log::warn!(
+                "Glean MCP: resource metadata failed ({}), will try OIDC on base URL",
+                e
+            );
             (None, resource.clone())
         }
     };
@@ -162,26 +171,37 @@ pub async fn discover_mcp_oauth(
     // --- Step 3: Fetch AS metadata ---
     // Try AS URL from resource metadata first, then fall back to base URL
     let as_meta = if let Some(ref discovered_as) = as_url {
-        log::info!("Glean MCP: trying AS metadata on discovered server: {}", discovered_as);
+        log::info!(
+            "Glean MCP: trying AS metadata on discovered server: {}",
+            discovered_as
+        );
         match fetch_as_metadata(&client, discovered_as).await {
             Ok(meta) => meta,
             Err(e) if *discovered_as != base => {
-                log::warn!("Glean MCP: AS metadata failed on {} ({}), retrying on base {}", discovered_as, e, base);
+                log::warn!(
+                    "Glean MCP: AS metadata failed on {} ({}), retrying on base {}",
+                    discovered_as,
+                    e,
+                    base
+                );
                 fetch_as_metadata(&client, &base).await?
             }
             Err(e) => return Err(e),
         }
     } else {
-        log::info!("Glean MCP: no authorization_servers discovered, trying OIDC on base URL: {}", base);
+        log::info!(
+            "Glean MCP: no authorization_servers discovered, trying OIDC on base URL: {}",
+            base
+        );
         fetch_as_metadata(&client, &base).await?
     };
 
     let authorization_endpoint = as_meta.authorization_endpoint.ok_or_else(|| {
         GleanAuthError::Discovery("No authorization_endpoint in AS metadata".into())
     })?;
-    let token_endpoint = as_meta.token_endpoint.ok_or_else(|| {
-        GleanAuthError::Discovery("No token_endpoint in AS metadata".into())
-    })?;
+    let token_endpoint = as_meta
+        .token_endpoint
+        .ok_or_else(|| GleanAuthError::Discovery("No token_endpoint in AS metadata".into()))?;
 
     Ok(McpOAuthEndpoints {
         authorization_endpoint,
@@ -213,7 +233,10 @@ async fn probe_for_resource_metadata(
                 if let Some(www_auth) = resp.headers().get("www-authenticate") {
                     if let Ok(header_str) = www_auth.to_str() {
                         if let Some(url) = parse_resource_metadata_url(header_str) {
-                            log::info!("Glean MCP: found resource_metadata in WWW-Authenticate: {}", url);
+                            log::info!(
+                                "Glean MCP: found resource_metadata in WWW-Authenticate: {}",
+                                url
+                            );
                             return Ok(url);
                         }
                     }
@@ -222,7 +245,10 @@ async fn probe_for_resource_metadata(
             // Fall through to well-known path
         }
         Err(e) => {
-            log::warn!("Glean MCP: probe request failed ({}), falling back to well-known", e);
+            log::warn!(
+                "Glean MCP: probe request failed ({}), falling back to well-known",
+                e
+            );
         }
     }
 
@@ -268,18 +294,20 @@ async fn fetch_protected_resource_metadata(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<ProtectedResourceMetadata, GleanAuthError> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| GleanAuthError::Discovery(format!("Resource metadata request failed: {}", e)))?;
+    let resp = client.get(url).send().await.map_err(|e| {
+        GleanAuthError::Discovery(format!("Resource metadata request failed: {}", e))
+    })?;
 
     let status = resp.status();
     let content_is_json = is_json_content_type(&resp);
     let body_text = resp.text().await.unwrap_or_default();
 
     if !status.is_success() {
-        log::error!("Resource metadata returned {} body={}", status, truncate_log(&body_text));
+        log::error!(
+            "Resource metadata returned {} body={}",
+            status,
+            truncate_log(&body_text)
+        );
         return Err(GleanAuthError::Discovery(format!(
             "Resource metadata returned {}",
             status
@@ -288,17 +316,19 @@ async fn fetch_protected_resource_metadata(
 
     if !content_is_json && body_text.trim_start().starts_with('<') {
         return Err(GleanAuthError::Discovery(
-            "Resource metadata returned HTML instead of JSON — endpoint likely doesn't exist".into(),
+            "Resource metadata returned HTML instead of JSON — endpoint likely doesn't exist"
+                .into(),
         ));
     }
 
     log::debug!("Resource metadata body: {}", truncate_log(&body_text));
-    serde_json::from_str(&body_text)
-        .map_err(|e| GleanAuthError::Discovery(format!(
+    serde_json::from_str(&body_text).map_err(|e| {
+        GleanAuthError::Discovery(format!(
             "Failed to parse resource metadata: {} (body starts with: {})",
             e,
             truncate_log(&body_text),
-        )))
+        ))
+    })
 }
 
 /// Fetch OAuth Authorization Server metadata.
@@ -321,9 +351,15 @@ async fn fetch_as_metadata(
         if status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
             if content_is_json || !body_text.trim_start().starts_with('<') {
-                log::debug!("AS metadata (oauth-authorization-server) body: {}", truncate_log(&body_text));
+                log::debug!(
+                    "AS metadata (oauth-authorization-server) body: {}",
+                    truncate_log(&body_text)
+                );
                 match serde_json::from_str::<AsMetadata>(&body_text) {
-                    Ok(meta) if meta.authorization_endpoint.is_some() && meta.token_endpoint.is_some() => {
+                    Ok(meta)
+                        if meta.authorization_endpoint.is_some()
+                            && meta.token_endpoint.is_some() =>
+                    {
                         log::info!("Glean MCP: found AS metadata via oauth-authorization-server");
                         return Ok(meta);
                     }
@@ -339,7 +375,9 @@ async fn fetch_as_metadata(
                     }
                 }
             } else {
-                log::info!("Glean MCP: oauth-authorization-server returned HTML (SPA catch-all), skipping");
+                log::info!(
+                    "Glean MCP: oauth-authorization-server returned HTML (SPA catch-all), skipping"
+                );
             }
         } else {
             log::info!("Glean MCP: oauth-authorization-server returned {}", status);
@@ -350,18 +388,21 @@ async fn fetch_as_metadata(
     let oidc_url = format!("{}/.well-known/openid-configuration", as_base);
     log::info!("Glean MCP: falling back to OIDC discovery at {}", oidc_url);
 
-    let resp = client
-        .get(&oidc_url)
-        .send()
-        .await
-        .map_err(|e| GleanAuthError::Discovery(format!("OIDC discovery request failed: {}", e)))?;
+    let resp =
+        client.get(&oidc_url).send().await.map_err(|e| {
+            GleanAuthError::Discovery(format!("OIDC discovery request failed: {}", e))
+        })?;
 
     let status = resp.status();
     let content_is_json = is_json_content_type(&resp);
     let body_text = resp.text().await.unwrap_or_default();
 
     if !status.is_success() {
-        log::error!("OIDC discovery returned {} body={}", status, truncate_log(&body_text));
+        log::error!(
+            "OIDC discovery returned {} body={}",
+            status,
+            truncate_log(&body_text)
+        );
         return Err(GleanAuthError::Discovery(format!(
             "AS metadata returned {} (tried both oauth-authorization-server and openid-configuration on {})",
             status, as_base,
@@ -369,7 +410,10 @@ async fn fetch_as_metadata(
     }
 
     if !content_is_json && body_text.trim_start().starts_with('<') {
-        log::error!("OIDC discovery on {} returned HTML instead of JSON", as_base);
+        log::error!(
+            "OIDC discovery on {} returned HTML instead of JSON",
+            as_base
+        );
         return Err(GleanAuthError::Discovery(format!(
             "No OAuth metadata found on {} — both well-known endpoints returned HTML. \
              The authorization server may be a different host (check resource metadata).",
@@ -377,13 +421,17 @@ async fn fetch_as_metadata(
         )));
     }
 
-    log::debug!("AS metadata (openid-configuration) body: {}", truncate_log(&body_text));
-    serde_json::from_str(&body_text)
-        .map_err(|e| GleanAuthError::Discovery(format!(
+    log::debug!(
+        "AS metadata (openid-configuration) body: {}",
+        truncate_log(&body_text)
+    );
+    serde_json::from_str(&body_text).map_err(|e| {
+        GleanAuthError::Discovery(format!(
             "Failed to parse AS metadata: {} (body starts with: {})",
             e,
             truncate_log(&body_text),
-        )))
+        ))
+    })
 }
 
 // -------------------------------------------------------------------------
@@ -395,7 +443,10 @@ pub async fn register_client(
     registration_endpoint: &str,
     redirect_uri: &str,
 ) -> Result<DcrResponse, GleanAuthError> {
-    log::info!("Glean MCP: registering client via DCR at {}", registration_endpoint);
+    log::info!(
+        "Glean MCP: registering client via DCR at {}",
+        registration_endpoint
+    );
 
     let client = reqwest::Client::new();
     let body = serde_json::json!({
@@ -411,9 +462,7 @@ pub async fn register_client(
         .json(&body)
         .send()
         .await
-        .map_err(|e| {
-            GleanAuthError::Discovery(format!("DCR request failed: {}", e))
-        })?;
+        .map_err(|e| GleanAuthError::Discovery(format!("DCR request failed: {}", e)))?;
 
     let status = resp.status();
     let body_text = resp.text().await.unwrap_or_default();
@@ -426,9 +475,8 @@ pub async fn register_client(
         )));
     }
 
-    serde_json::from_str::<DcrResponse>(&body_text).map_err(|e| {
-        GleanAuthError::Discovery(format!("Failed to parse DCR response: {}", e))
-    })
+    serde_json::from_str::<DcrResponse>(&body_text)
+        .map_err(|e| GleanAuthError::Discovery(format!("Failed to parse DCR response: {}", e)))
 }
 
 // -------------------------------------------------------------------------
@@ -439,9 +487,7 @@ pub async fn register_client(
 ///
 /// Uses MCP OAuth discovery + DCR. Opens the user's browser for Glean SSO,
 /// captures the redirect, exchanges the code for tokens, and saves to Keychain.
-pub async fn run_glean_consent_flow(
-    instance_url: &str,
-) -> Result<GleanAuthResult, GleanAuthError> {
+pub async fn run_glean_consent_flow(instance_url: &str) -> Result<GleanAuthResult, GleanAuthError> {
     // 1. MCP OAuth discovery
     let endpoints = discover_mcp_oauth(instance_url).await?;
 
@@ -569,8 +615,9 @@ pub async fn run_glean_consent_flow(
         )));
     }
 
-    let body: serde_json::Value = serde_json::from_str(&body_text)
-        .map_err(|e| GleanAuthError::TokenExchange(format!("Failed to parse token response: {}", e)))?;
+    let body: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
+        GleanAuthError::TokenExchange(format!("Failed to parse token response: {}", e))
+    })?;
 
     let access_token = body["access_token"]
         .as_str()
@@ -739,7 +786,8 @@ mod tests {
 
     #[test]
     fn test_parse_resource_metadata_url_unquoted() {
-        let header = "Bearer resource_metadata=https://example.com/.well-known/oauth-protected-resource";
+        let header =
+            "Bearer resource_metadata=https://example.com/.well-known/oauth-protected-resource";
         assert_eq!(
             parse_resource_metadata_url(header),
             Some("https://example.com/.well-known/oauth-protected-resource".into())

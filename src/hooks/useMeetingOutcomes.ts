@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { MeetingOutcomeData } from "@/types";
 
+type TranscriptProcessedPayload = MeetingOutcomeData | string;
+
 export function useMeetingOutcomes(meetingId: string) {
   const [outcomes, setOutcomes] = useState<MeetingOutcomeData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,9 +27,15 @@ export function useMeetingOutcomes(meetingId: string) {
     refresh();
 
     // Listen for live updates from auto-processing or manual attach
-    const unlisten = listen<MeetingOutcomeData>(
+    const unlisten = listen<TranscriptProcessedPayload>(
       "transcript-processed",
       (event) => {
+        if (typeof event.payload === "string") {
+          if (event.payload === meetingId) {
+            void refresh();
+          }
+          return;
+        }
         if (event.payload.meetingId === meetingId) {
           setOutcomes(event.payload);
         }

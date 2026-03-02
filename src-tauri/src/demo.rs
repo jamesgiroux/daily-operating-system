@@ -27,7 +27,14 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
     // --- Accounts (3 with varied health/stage) ---
     let accounts: Vec<(&str, &str, &str, f64, &str, Option<&str>)> = vec![
-        ("demo-acme", "Acme Corp", "nurture", 1_200_000.0, "green", None),
+        (
+            "demo-acme",
+            "Acme Corp",
+            "nurture",
+            1_200_000.0,
+            "green",
+            None,
+        ),
         (
             "demo-globex",
             "Globex Industries",
@@ -167,7 +174,9 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, \
              account_id, context, updated_at, is_demo) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)",
-            rusqlite::params![id, title, priority, status, &today, due_date, account_id, context, &today],
+            rusqlite::params![
+                id, title, priority, status, &today, due_date, account_id, context, &today
+            ],
         )
         .map_err(|e| format!("Demo action insert: {}", e))?;
     }
@@ -227,19 +236,24 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     let build_prep_json = |account_name: Option<&str>, summary: Option<&str>| -> Option<String> {
         let acct = account_name?;
         let sum = summary?;
-        Some(serde_json::json!({
-            "account_context": format!("{} — active customer relationship", acct),
-            "meeting_narrative": sum,
-            "recommended_actions": ["Review recent activity", "Prepare discussion points"],
-            "attendee_context": format!("Key stakeholders from {}", acct)
-        }).to_string())
+        Some(
+            serde_json::json!({
+                "account_context": format!("{} — active customer relationship", acct),
+                "meeting_narrative": sum,
+                "recommended_actions": ["Review recent activity", "Prepare discussion points"],
+                "attendee_context": format!("Key stakeholders from {}", acct)
+            })
+            .to_string(),
+        )
     };
 
     let account_names: std::collections::HashMap<&str, &str> = [
         ("demo-acme", "Acme Corp"),
         ("demo-globex", "Globex Industries"),
         ("demo-initech", "Initech"),
-    ].into_iter().collect();
+    ]
+    .into_iter()
+    .collect();
 
     for (id, title, mtype, start_time, account_id, summary) in &meetings {
         let prep_json = account_id.and_then(|acct| {
@@ -251,8 +265,20 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, \
              summary, created_at, prep_frozen_json, prep_frozen_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![id, title, mtype, start_time, summary, &today, prep_json,
-                              if prep_json.is_some() { Some(today.as_str()) } else { None::<&str> }],
+            rusqlite::params![
+                id,
+                title,
+                mtype,
+                start_time,
+                summary,
+                &today,
+                prep_json,
+                if prep_json.is_some() {
+                    Some(today.as_str())
+                } else {
+                    None::<&str>
+                }
+            ],
         )
         .map_err(|e| format!("Demo meeting insert: {}", e))?;
 
@@ -334,11 +360,8 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
     }
 
     // Set demo mode active
-    conn.execute(
-        "UPDATE app_state SET demo_mode_active = 1 WHERE id = 1",
-        [],
-    )
-    .map_err(|e| format!("Set demo_mode_active: {}", e))?;
+    conn.execute("UPDATE app_state SET demo_mode_active = 1 WHERE id = 1", [])
+        .map_err(|e| format!("Set demo_mode_active: {}", e))?;
 
     // Write fixture files if workspace provided
     if let Some(ws) = workspace {
@@ -372,18 +395,12 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
     .map_err(|e| format!("Clear demo entity-people links: {}", e))?;
 
     // Clean up meetings_history for demo meetings
-    conn.execute(
-        "DELETE FROM meetings_history WHERE id LIKE 'demo-%'",
-        [],
-    )
-    .map_err(|e| format!("Clear demo meetings: {}", e))?;
+    conn.execute("DELETE FROM meetings_history WHERE id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo meetings: {}", e))?;
 
     // Clean up email_signals for demo
-    conn.execute(
-        "DELETE FROM email_signals WHERE email_id LIKE 'demo-%'",
-        [],
-    )
-    .map_err(|e| format!("Clear demo email signals: {}", e))?;
+    conn.execute("DELETE FROM email_signals WHERE email_id LIKE 'demo-%'", [])
+        .map_err(|e| format!("Clear demo email signals: {}", e))?;
 
     // Clean up entities for demo accounts
     conn.execute("DELETE FROM entities WHERE id LIKE 'demo-%'", [])
@@ -395,11 +412,8 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
         .map_err(|e| format!("Clear demo accounts: {}", e))?;
 
     // Reset demo mode
-    conn.execute(
-        "UPDATE app_state SET demo_mode_active = 0 WHERE id = 1",
-        [],
-    )
-    .map_err(|e| format!("Clear demo_mode_active: {}", e))?;
+    conn.execute("UPDATE app_state SET demo_mode_active = 0 WHERE id = 1", [])
+        .map_err(|e| format!("Clear demo_mode_active: {}", e))?;
 
     // Remove demo fixture files (best-effort — don't fail if files don't exist)
     if let Some(ws) = workspace {

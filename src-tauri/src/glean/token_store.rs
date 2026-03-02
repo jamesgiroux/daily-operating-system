@@ -96,8 +96,7 @@ pub fn load_token() -> Result<GleanToken, GleanAuthError> {
 
 /// Save a Glean OAuth token to the Keychain.
 pub fn save_token(token: &GleanToken) -> Result<(), GleanAuthError> {
-    let payload =
-        serde_json::to_string(token).map_err(|e| GleanAuthError::Other(e.to_string()))?;
+    let payload = serde_json::to_string(token).map_err(|e| GleanAuthError::Other(e.to_string()))?;
     let output = run_security_cmd(&[
         "add-generic-password",
         "-a",
