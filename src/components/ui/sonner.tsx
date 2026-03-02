@@ -14,7 +14,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
       className="toaster group"
       duration={5000}
       toastOptions={{
-        style: { userSelect: "text", WebkitUserSelect: "text" },
+        style: {
+          userSelect: "text",
+          WebkitUserSelect: "text",
+          pointerEvents: "auto",
+        },
       }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
