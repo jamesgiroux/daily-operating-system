@@ -1621,7 +1621,7 @@ async fn attempt_system_auth() -> Result<bool, String> {
     std::thread::spawn(move || {
         use block2::RcBlock;
         use objc2::runtime::Bool;
-        use objc2_foundation::{NSComparisonResult, NSRunLoop, NSDate, NSString};
+        use objc2_foundation::{NSComparisonResult, NSDate, NSRunLoop, NSString};
         use objc2_local_authentication::{LAContext, LAPolicy};
 
         let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -2260,9 +2260,15 @@ pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStat
     if cfg!(debug_assertions) {
         let ov = DEV_GOOGLE_OVERRIDE.load(Ordering::Relaxed);
         if ov != 0 {
-            log_command_latency("get_google_auth_status", started, READ_CMD_LATENCY_BUDGET_MS);
+            log_command_latency(
+                "get_google_auth_status",
+                started,
+                READ_CMD_LATENCY_BUDGET_MS,
+            );
             return match ov {
-                1 => GoogleAuthStatus::Authenticated { email: "dev@dailyos.test".to_string() },
+                1 => GoogleAuthStatus::Authenticated {
+                    email: "dev@dailyos.test".to_string(),
+                },
                 3 => GoogleAuthStatus::TokenExpired,
                 _ => GoogleAuthStatus::NotConfigured,
             };
@@ -2312,7 +2318,9 @@ pub async fn start_google_auth(
         let ov = DEV_GOOGLE_OVERRIDE.load(Ordering::Relaxed);
         match ov {
             1 => {
-                let status = GoogleAuthStatus::Authenticated { email: "dev@dailyos.test".to_string() };
+                let status = GoogleAuthStatus::Authenticated {
+                    email: "dev@dailyos.test".to_string(),
+                };
                 if let Ok(mut guard) = state.calendar.google_auth.lock() {
                     *guard = status.clone();
                 }
@@ -2674,7 +2682,6 @@ pub async fn get_processing_history(
         .await
 }
 
-
 // =============================================================================
 // Onboarding: Demo Data
 // =============================================================================
@@ -2700,9 +2707,7 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
 
     let ws = workspace_path.clone();
     state
-        .db_write(move |db| {
-            crate::demo::install_demo(db, ws.as_deref().map(std::path::Path::new))
-        })
+        .db_write(move |db| crate::demo::install_demo(db, ws.as_deref().map(std::path::Path::new)))
         .await?;
 
     Ok("Demo data installed".into())
@@ -2726,9 +2731,7 @@ pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, 
 
     let ws = workspace_path.clone();
     state
-        .db_write(move |db| {
-            crate::demo::clear_demo(db, ws.as_deref().map(std::path::Path::new))
-        })
+        .db_write(move |db| crate::demo::clear_demo(db, ws.as_deref().map(std::path::Path::new)))
         .await?;
 
     Ok("Demo data cleared".into())
@@ -2739,26 +2742,20 @@ pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, 
 pub async fn get_app_state(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::demo::AppStateRow, String> {
-    state
-        .db_read(crate::demo::get_app_state)
-        .await
+    state.db_read(crate::demo::get_app_state).await
 }
 
 /// Mark the post-wizard tour as completed.
 #[tauri::command]
 pub async fn set_tour_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    state
-        .db_write(crate::demo::set_tour_completed)
-        .await?;
+    state.db_write(crate::demo::set_tour_completed).await?;
     Ok("Tour completed".into())
 }
 
 /// Mark the wizard as completed with current timestamp.
 #[tauri::command]
 pub async fn set_wizard_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    state
-        .db_write(crate::demo::set_wizard_completed)
-        .await?;
+    state.db_write(crate::demo::set_wizard_completed).await?;
     Ok("Wizard completed".into())
 }
 
@@ -3095,6 +3092,12 @@ struct ClaudeStatusCacheEntry {
     checked_at: std::time::Instant,
 }
 
+static CLAUDE_STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
+
+fn claude_status_cache() -> &'static Mutex<Option<ClaudeStatusCacheEntry>> {
+    CLAUDE_STATUS_CACHE.get_or_init(|| Mutex::new(None))
+}
+
 /// Return in-memory command latency rollups for diagnostics/devtools.
 #[tauri::command]
 pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
@@ -3115,16 +3118,27 @@ pub async fn check_claude_status() -> ClaudeStatus {
         if ov != 0 {
             log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
             return match ov {
-                1 => ClaudeStatus { installed: true, authenticated: true },
-                2 => ClaudeStatus { installed: false, authenticated: false },
-                3 => ClaudeStatus { installed: true, authenticated: false },
-                _ => ClaudeStatus { installed: false, authenticated: false },
+                1 => ClaudeStatus {
+                    installed: true,
+                    authenticated: true,
+                },
+                2 => ClaudeStatus {
+                    installed: false,
+                    authenticated: false,
+                },
+                3 => ClaudeStatus {
+                    installed: true,
+                    authenticated: false,
+                },
+                _ => ClaudeStatus {
+                    installed: false,
+                    authenticated: false,
+                },
             };
         }
     }
 
-    static STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
-    let cache = STATUS_CACHE.get_or_init(|| Mutex::new(None));
+    let cache = claude_status_cache();
     let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
 
     // Fast path: return cached result without blocking
@@ -3165,6 +3179,24 @@ pub async fn check_claude_status() -> ClaudeStatus {
 
     log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
     status
+}
+
+/// Open the Claude sign-in page in the user's default browser.
+///
+/// Claude Code stores credentials in the macOS Keychain after OAuth completes
+/// on the website. After the user signs in, clicking "Check again" will pick
+/// up the new keychain entry.
+///
+/// Also clears the status cache so the next `check_claude_status` call
+/// performs a fresh probe.
+#[tauri::command]
+pub fn launch_claude_login() -> Result<(), String> {
+    // Clear cached status so the next check returns a fresh result.
+    if let Ok(mut guard) = claude_status_cache().lock() {
+        *guard = None;
+    }
+
+    open::that("https://claude.ai/login").map_err(|e| e.to_string())
 }
 
 // =============================================================================
@@ -3347,7 +3379,10 @@ pub fn dev_set_auth_override(claude_mode: u8, google_mode: u8) -> Result<String,
     }
     DEV_CLAUDE_OVERRIDE.store(claude_mode, Ordering::Relaxed);
     DEV_GOOGLE_OVERRIDE.store(google_mode, Ordering::Relaxed);
-    Ok(format!("Auth overrides set — Claude: {}, Google: {}", claude_mode, google_mode))
+    Ok(format!(
+        "Auth overrides set — Claude: {}, Google: {}",
+        claude_mode, google_mode
+    ))
 }
 
 /// Apply a named onboarding scenario: reset wizard state + set auth overrides.
@@ -6578,7 +6613,7 @@ pub struct QuillStatus {
 
 /// Get the current status of the Quill integration.
 #[tauri::command]
-pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
+pub async fn get_quill_status(state: State<'_, Arc<AppState>>) -> Result<QuillStatus, String> {
     let config = state
         .config
         .read()
@@ -6588,70 +6623,67 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
     let quill_config = config.unwrap_or_default();
     let bridge_exists = std::path::Path::new(&quill_config.bridge_path).exists();
 
-    // Count sync states from DB
+    // Count sync states from DB without blocking the main thread on the
+    // legacy sync mutex (can beachball during wake/unlock contention).
     let (pending, failed, completed, last_sync, last_error, last_error_at, abandoned) = state
-        .db
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref().map(|db| {
-                let pending = db.get_pending_quill_syncs().map(|v| v.len()).unwrap_or(0);
+        .db_read(|db| {
+            let pending = db.get_pending_quill_syncs().map(|v| v.len()).unwrap_or(0);
 
-                // Count failed, completed, abandoned from all rows
-                let (failed_count, completed_count, last, abandoned_count) = db
-                    .conn_ref()
-                    .prepare(
-                        "SELECT
-                            SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
-                            SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
-                            MAX(completed_at),
-                            SUM(CASE WHEN state = 'abandoned' THEN 1 ELSE 0 END)
-                         FROM quill_sync_state",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.query_row([], |row| {
-                            Ok((
-                                row.get::<_, i64>(0).unwrap_or(0) as usize,
-                                row.get::<_, i64>(1).unwrap_or(0) as usize,
-                                row.get::<_, Option<String>>(2)?,
-                                row.get::<_, i64>(3).unwrap_or(0) as usize,
-                            ))
-                        })
-                    })
-                    .unwrap_or((0, 0, None, 0));
-
-                // Get last error from failed/abandoned syncs
-                let (err_msg, err_at) = db
-                    .conn_ref()
-                    .prepare(
-                        "SELECT error_message, updated_at FROM quill_sync_state
-                         WHERE state IN ('failed', 'abandoned') AND error_message IS NOT NULL
-                         ORDER BY updated_at DESC LIMIT 1",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.query_row([], |row| {
-                            Ok((
-                                row.get::<_, Option<String>>(0)?,
-                                row.get::<_, Option<String>>(1)?,
-                            ))
-                        })
-                    })
-                    .unwrap_or((None, None));
-
-                (
-                    pending,
-                    failed_count,
-                    completed_count,
-                    last,
-                    err_msg,
-                    err_at,
-                    abandoned_count,
+            // Count failed, completed, abandoned from all rows
+            let (failed_count, completed_count, last, abandoned_count) = db
+                .conn_ref()
+                .prepare(
+                    "SELECT
+                        SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                        MAX(completed_at),
+                        SUM(CASE WHEN state = 'abandoned' THEN 1 ELSE 0 END)
+                     FROM quill_sync_state",
                 )
-            })
+                .and_then(|mut stmt| {
+                    stmt.query_row([], |row| {
+                        Ok((
+                            row.get::<_, i64>(0).unwrap_or(0) as usize,
+                            row.get::<_, i64>(1).unwrap_or(0) as usize,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, i64>(3).unwrap_or(0) as usize,
+                        ))
+                    })
+                })
+                .unwrap_or((0, 0, None, 0));
+
+            // Get last error from failed/abandoned syncs
+            let (err_msg, err_at) = db
+                .conn_ref()
+                .prepare(
+                    "SELECT error_message, updated_at FROM quill_sync_state
+                     WHERE state IN ('failed', 'abandoned') AND error_message IS NOT NULL
+                     ORDER BY updated_at DESC LIMIT 1",
+                )
+                .and_then(|mut stmt| {
+                    stmt.query_row([], |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                        ))
+                    })
+                })
+                .unwrap_or((None, None));
+
+            Ok((
+                pending,
+                failed_count,
+                completed_count,
+                last,
+                err_msg,
+                err_at,
+                abandoned_count,
+            ))
         })
+        .await
         .unwrap_or((0, 0, 0, None, None, None, 0));
 
-    QuillStatus {
+    Ok(QuillStatus {
         enabled: quill_config.enabled,
         bridge_exists,
         bridge_path: quill_config.bridge_path,
@@ -6663,7 +6695,7 @@ pub fn get_quill_status(state: State<'_, Arc<AppState>>) -> QuillStatus {
         last_error_at,
         abandoned_syncs: abandoned,
         poll_interval_minutes: quill_config.poll_interval_minutes,
-    }
+    })
 }
 
 /// Enable or disable Quill integration.
