@@ -94,6 +94,67 @@ export default function QuillConnection() {
 
       {status?.enabled && (
         <>
+          {!status.bridgeExists && (
+            <div style={{
+              padding: "12px 16px",
+              borderRadius: 6,
+              border: "1px solid var(--color-rule-light)",
+              background: "var(--color-paper-linen)",
+              marginBottom: 16,
+            }}>
+              <p style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 500,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                color: "var(--color-text-tertiary)",
+                marginBottom: 6,
+                marginTop: 0,
+              }}>
+                Setup Required
+              </p>
+              <p style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--color-text-secondary)",
+                margin: 0,
+              }}>
+                To connect Quill, enable MCP in the Quill app first:
+              </p>
+              <ol style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--color-text-secondary)",
+                margin: "4px 0 0",
+                paddingLeft: 20,
+              }}>
+                <li>Open Quill → Settings → Integrations</li>
+                <li>Enable MCP Server</li>
+                <li>Restart Quill — this creates the bridge file DailyOS needs</li>
+              </ol>
+              <p style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-secondary)",
+                margin: "8px 0 0",
+              }}>
+                {status.bridgePath}
+              </p>
+              <p style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--color-text-secondary)",
+                margin: "8px 0 0",
+              }}>
+                Requires Node.js installed on your system
+              </p>
+            </div>
+          )}
+
           <div style={styles.settingRow}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={styles.statusDot(statusColor)} />
