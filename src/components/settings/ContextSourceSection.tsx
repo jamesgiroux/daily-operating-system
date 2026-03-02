@@ -272,9 +272,17 @@ export default function ContextSourceSection() {
               setDirty(true);
             }}
             placeholder="https://your-org.glean.com/mcp/default"
-            style={{ ...styles.input, marginBottom: 16 }}
+            style={{ ...styles.input, marginBottom: 0 }}
             disabled={glean.loading}
           />
+          <p style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            margin: "4px 0 12px",
+          }}>
+            Your Glean admin must enable MCP access for your organization. A browser window will open for you to authorize with your Glean account.
+          </p>
 
           {/* Connect / Disconnect button */}
           {!isConnected ? (

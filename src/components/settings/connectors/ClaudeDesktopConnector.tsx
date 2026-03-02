@@ -244,6 +244,15 @@ export default function ClaudeDesktopConnection() {
         Claude can query your briefing, accounts, projects, and meeting
         history.
       </p>
+      <p style={{
+        fontFamily: "var(--font-sans)",
+        fontSize: 12,
+        color: "var(--color-text-tertiary)",
+        margin: "8px 0 0",
+        fontStyle: "italic",
+      }}>
+        After connecting, restart Claude Desktop for the MCP server to take effect.
+      </p>
 
       <CoworkPluginsSubsection />
     </div>

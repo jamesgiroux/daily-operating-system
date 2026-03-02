@@ -3084,6 +3084,7 @@ pub async fn get_onboarding_priming_context(
 pub struct ClaudeStatus {
     pub installed: bool,
     pub authenticated: bool,
+    pub node_installed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -3121,18 +3122,22 @@ pub async fn check_claude_status() -> ClaudeStatus {
                 1 => ClaudeStatus {
                     installed: true,
                     authenticated: true,
+                    node_installed: true,
                 },
                 2 => ClaudeStatus {
                     installed: false,
                     authenticated: false,
+                    node_installed: false,
                 },
                 3 => ClaudeStatus {
                     installed: true,
                     authenticated: false,
+                    node_installed: true,
                 },
                 _ => ClaudeStatus {
                     installed: false,
                     authenticated: false,
+                    node_installed: false,
                 },
             };
         }
@@ -3159,15 +3164,18 @@ pub async fn check_claude_status() -> ClaudeStatus {
         } else {
             false
         };
+        let node_installed = crate::util::resolve_node_binary().is_some();
         ClaudeStatus {
             installed,
             authenticated,
+            node_installed,
         }
     })
     .await
     .unwrap_or(ClaudeStatus {
         installed: false,
         authenticated: false,
+        node_installed: false,
     });
 
     if let Ok(mut guard) = cache.lock() {
@@ -3197,6 +3205,16 @@ pub fn launch_claude_login() -> Result<(), String> {
     }
 
     open::that("https://claude.ai/login").map_err(|e| e.to_string())
+}
+
+/// Clear the Claude status TTL cache so the next `check_claude_status` call
+/// performs a fresh probe. Called by the "Re-check" button in onboarding so
+/// installing Node/Claude while the app is running is detected immediately.
+#[tauri::command]
+pub fn clear_claude_status_cache() {
+    if let Ok(mut guard) = claude_status_cache().lock() {
+        *guard = None;
+    }
 }
 
 // =============================================================================
