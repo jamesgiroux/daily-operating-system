@@ -10,6 +10,22 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v0.16.0 — A better start
+
+Before today, opening DailyOS for the first time meant staring at an empty screen. No guidance, no demonstration of what's possible, no clear path to getting value. You had to know what to connect and what to fill in — without any indication of whether it was worth the effort.
+
+That's fixed.
+
+**See it working before you connect anything.** Click "Try with demo data" from the empty dashboard and DailyOS loads a real-looking workspace — sample customer accounts, upcoming meetings with pre-built briefings, active action items, and email context. It shows you what the app looks like when it's actually doing its job. When you're ready to bring in your real data, click "Connect real data" and the demo clears.
+
+**A proper first-run walkthrough.** On first launch, a guided wizard takes you through everything that matters: verify Claude Code is running (required — without it the app can't build context for you), connect your Google account, set your role and work domain, add your first customer account, and give the system something to work with. Each step takes under a minute. Skip anything except Claude Code. If you close the app halfway through, your progress is saved.
+
+**Empty pages are gone.** Every page in the app now explains what it does and what to do next — even when it has no data. Every surface has a direct action button and a reason to continue. No more blank white pages.
+
+**Claude Code status in Settings.** Settings → System now shows whether Claude Code is installed and signed in, with a one-click path to fix it if not.
+
+---
+
 ## v0.15.2 — Observability & Enterprise Context
 
 Now you can see what DailyOS does — and connect it to your company's knowledge.
