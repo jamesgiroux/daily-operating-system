@@ -10,15 +10,15 @@ First-run experience: demo mode, onboarding wizard, and empty state redesign.
 
 ### Added
 
-- **First-run wizard** (I57) — 7-step guided setup on first launch: verify Claude Code, connect Google, set role preset, enter work domain, add first account, configure user context, and prime with a first piece of context. Claude Code step is non-skippable — without it the app cannot build briefings. All other steps have a skip option. Wizard progress persists across app restarts. Completing the wizard lands on the daily briefing, not an empty page.
-- **Demo data mode** (I56) — "Try with demo data" option on the empty dashboard. Loads a pre-populated workspace with sample accounts, meetings, actions, and email context. Demo badge visible in folio bar throughout. "Connect real data" exits demo mode, clears all demo data, and starts the wizard.
-- **Guided tour** (I56) — 4–6 contextual callouts on first real launch (non-demo). One per surface, dismissible individually or all-at-once. Does not block interaction. Does not reappear after dismissal.
+- **First-run wizard** — 7-step guided setup on first launch: verify Claude Code, connect Google, set role preset, enter work domain, add first account, configure user context, and prime with a first piece of context. Claude Code step is non-skippable — without it the app cannot build briefings. All other steps have a skip option. Wizard progress persists across app restarts. Completing the wizard lands on the daily briefing, not an empty page.
+- **Demo data mode** — "Try with demo data" option on the empty dashboard. Loads a pre-populated workspace with sample accounts, meetings, actions, and email context. Demo badge visible in folio bar throughout. "Connect real data" exits demo mode, clears all demo data, and starts the wizard.
+- **Guided tour** — 4–6 contextual callouts on first real launch (non-demo). One per surface, dismissible individually or all-at-once. Does not block interaction. Does not reappear after dismissal.
 - **Claude Code status in Settings** — System chapter shows installation and auth status with green/amber/red indicator. Banner shown in Settings when Claude Code isn't ready after wizard completion. "Sign in to Claude" opens claude.ai/login in browser; "Download Claude Code" opens claude.ai/download. "Check again" re-polls immediately.
 
 ### Changed
 
-- **Empty states redesigned** (I437) — Every surface that previously showed a blank page now shows a purpose-specific message with a direct action button and benefit statement. Accounts, People, Actions, Email, and Daily Briefing all updated.
-- **Advanced Settings simplified** (I478) — Feature toggle section removed. AI Models, Hygiene, Capture, Data Management, and Lock Timeout remain.
+- **Empty states redesigned** — Every surface that previously showed a blank page now shows a purpose-specific message with a direct action button and benefit statement. Accounts, People, Actions, Email, and Daily Briefing all updated.
+- **Advanced Settings simplified** — Feature toggle section removed. AI Models, Hygiene, Capture, Data Management, and Lock Timeout remain.
 
 ### Fixed
 
