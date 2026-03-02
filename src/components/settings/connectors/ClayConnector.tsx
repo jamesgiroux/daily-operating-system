@@ -230,6 +230,50 @@ export default function ClayConnection() {
 
       {status?.enabled && (
         <>
+          {!smithery?.connected && !smithery?.hasApiKey && (
+            <div style={{
+              padding: "12px 16px",
+              borderRadius: 6,
+              border: "1px solid var(--color-rule-light)",
+              background: "var(--color-paper-linen)",
+              marginBottom: 16,
+            }}>
+              <p style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 500,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                color: "var(--color-text-tertiary)",
+                marginBottom: 6,
+                marginTop: 0,
+              }}>
+                Prerequisites
+              </p>
+              <p style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--color-text-secondary)",
+                margin: 0,
+              }}>
+                Requires a Smithery account connected to Clay.
+              </p>
+              <ol style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "var(--color-text-secondary)",
+                margin: "4px 0 0",
+                paddingLeft: 20,
+              }}>
+                <li>Run <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>npx @smithery/cli login</code> to authenticate with Smithery</li>
+                <li>Connect Clay via <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>npx @smithery/cli mcp add clay-inc/clay-mcp</code></li>
+                <li>Return here and click Detect to auto-configure</li>
+              </ol>
+            </div>
+          )}
+
           {/* Smithery connection */}
           <div style={styles.settingRow}>
             <div>
