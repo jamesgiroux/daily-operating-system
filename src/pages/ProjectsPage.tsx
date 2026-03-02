@@ -15,6 +15,7 @@ import {
   ArchiveToggle,
 } from "@/components/entity/EntityListShell";
 import { EntityRow } from "@/components/entity/EntityRow";
+import { EmptyState } from "@/components/editorial/EmptyState";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import type { ProjectListItem } from "@/types";
@@ -263,29 +264,29 @@ export default function ProjectsPage() {
         <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: "0 0 24px 0" }}>
           Projects
         </h1>
-        <EntityListEmpty
-          title={getPersonalityCopy("projects-no-matches", personality).title}
-          message="Create your first project to get started."
-        >
-          {creating ? (
-            <div style={{ maxWidth: 400, margin: "24px auto 0" }}>
-              <InlineCreateForm
-                value={newName}
-                onChange={setNewName}
-                onCreate={handleCreate}
-                onCancel={() => setCreating(false)}
-                placeholder="Project name"
-              />
-            </div>
-          ) : (
-            <button
-              onClick={() => setCreating(true)}
-              style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--color-garden-olive)", background: "none", border: "1px solid var(--color-garden-olive)", borderRadius: 4, padding: "6px 16px", cursor: "pointer", marginTop: 24 }}
+        {(() => {
+          const copy = getPersonalityCopy("projects-empty", personality);
+          return (
+            <EmptyState
+              headline={copy.title}
+              explanation={copy.explanation ?? copy.message ?? ""}
+              benefit={copy.benefit}
+              action={!creating ? { label: "Create your first project", onClick: () => setCreating(true) } : undefined}
             >
-              + New Project
-            </button>
-          )}
-        </EntityListEmpty>
+              {creating && (
+                <div style={{ maxWidth: 400, margin: "0 auto", textAlign: "left" }}>
+                  <InlineCreateForm
+                    value={newName}
+                    onChange={setNewName}
+                    onCreate={handleCreate}
+                    onCancel={() => setCreating(false)}
+                    placeholder="Project name"
+                  />
+                </div>
+              )}
+            </EmptyState>
+          );
+        })()}
       </div>
     );
   }

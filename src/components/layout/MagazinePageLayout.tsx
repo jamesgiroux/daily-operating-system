@@ -22,6 +22,7 @@ import { UpdateBanner } from '@/components/notifications/UpdateBanner';
 import { useMagazineShellConfig } from '@/hooks/useMagazineShell';
 import { useChapterObserver } from '@/hooks/useChapterObserver';
 import { useTauriEvent } from '@/hooks/useTauriEvent';
+import { useAppState } from '@/hooks/useAppState';
 
 export interface MagazinePageLayoutProps {
   /** Main page content */
@@ -91,6 +92,36 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   const backLink = pageConfig?.backLink;
   const chapters = pageConfig?.chapters;
   const folioActions = pageConfig?.folioActions;
+  const { appState, clearDemo } = useAppState();
+
+  // Demo mode badge — renders in folio bar actions slot
+  const demoBadge = appState.demoModeActive ? (
+    <button
+      onClick={clearDemo}
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10,
+        fontWeight: 500,
+        textTransform: 'uppercase',
+        letterSpacing: '0.08em',
+        color: 'var(--color-spice-terracotta)',
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        padding: '2px 0',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      DEMO &middot; Connect real data &rarr;
+    </button>
+  ) : null;
+
+  const combinedActions = demoBadge || folioActions ? (
+    <>
+      {demoBadge}
+      {folioActions}
+    </>
+  ) : undefined;
 
   // Chapter tracking — runs internally so pages don't need to manage it.
   // Memoize chapterIds so useChapterObserver doesn't reset active chapter on every render.
@@ -110,7 +141,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
         statusText={pageConfig?.folioStatusText}
         onSearchClick={onFolioSearch}
         backLink={backLink}
-        actions={folioActions}
+        actions={combinedActions}
       />
 
       {/* Fixed floating nav island — right margin */}

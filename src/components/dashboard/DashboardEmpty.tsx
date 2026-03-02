@@ -13,6 +13,7 @@
 import { Mail } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
+import { useAppState } from "@/hooks/useAppState";
 import type { GoogleAuthStatus } from "@/types";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 
@@ -47,6 +48,7 @@ interface DashboardEmptyProps {
 
 export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus, googleAuth }: DashboardEmptyProps) {
   const { connect, loading: authLoading } = useGoogleAuth();
+  const { appState, installDemo } = useAppState();
   const isUnauthed = googleAuth?.status === "notconfigured";
 
   if (isRunning && workflowStatus?.status === "running") {
@@ -150,6 +152,29 @@ export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus,
             >
               Prepare my day
             </button>
+          )}
+
+          {/* Secondary action: explore with demo data */}
+          {!appState.demoModeActive && (
+            <div style={{ marginTop: 16 }}>
+              <button
+                onClick={installDemo}
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 13,
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  transition: "color 0.15s ease",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+              >
+                or explore with demo data
+              </button>
+            </div>
           )}
 
           {/* Google connect — section rule row, not a card */}

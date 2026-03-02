@@ -1591,6 +1591,12 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
     log::info!("HygieneLoop: started");
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Read config-driven interval each iteration (changes take effect next cycle)
         let interval = state
             .config

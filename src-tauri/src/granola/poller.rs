@@ -24,6 +24,12 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
     tokio::time::sleep(Duration::from_secs(45)).await;
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            continue;
+        }
+
         let granola_config = state
             .config
             .read()
@@ -140,8 +146,8 @@ fn poll_once(
             }
         }
 
-        // Notify frontend
-        let _ = app_handle.emit("transcript-processed", &matched.meeting_id);
+        // Notify frontend with normalized payload (fallback to meeting ID if unavailable).
+        emit_transcript_processed(state, app_handle, &matched.meeting_id);
 
         if result.is_ok() {
             let _ = crate::notification::notify_transcript_ready(app_handle, &doc.title, None);
@@ -323,6 +329,29 @@ fn get_recent_meetings_for_matching(
 ) -> Result<Vec<(String, String, String)>, String> {
     db.get_meetings_for_transcript_matching(90)
         .map_err(|e| e.to_string())
+}
+
+/// Emit transcript-processed event with full MeetingOutcomeData payload when available.
+fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
+    let payload = state.db.lock().ok().and_then(|guard| {
+        guard.as_ref().and_then(|db| {
+            db.get_meeting_by_id(meeting_id)
+                .ok()
+                .flatten()
+                .and_then(|meeting| {
+                    crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting)
+                })
+        })
+    });
+
+    match payload {
+        Some(outcome) => {
+            let _ = app_handle.emit("transcript-processed", &outcome);
+        }
+        None => {
+            let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
+        }
+    }
 }
 
 /// Run a one-time backfill: match all Granola cache documents to meetings_history.

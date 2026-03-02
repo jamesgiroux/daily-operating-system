@@ -23,6 +23,12 @@ pub async fn run_enrichment_processor(state: Arc<AppState>) {
     log::info!("Enrichment processor: delay complete, entering loop");
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Drain: keep sweeping while there's pending work
         let mut total_this_cycle = 0u32;
         loop {

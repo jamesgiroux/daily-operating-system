@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
-import { BrandMark } from "@/components/ui/BrandMark";
+import { useNavigate } from "@tanstack/react-router";
+import { EmptyState } from "@/components/editorial/EmptyState";
+import { usePersonality } from "@/hooks/usePersonality";
+import { getPersonalityCopy } from "@/lib/personality";
 import { invoke } from "@tauri-apps/api/core";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -31,6 +34,8 @@ import { AlertTriangle } from "lucide-react";
 // =============================================================================
 
 export default function WeekPage() {
+  const navigate = useNavigate();
+  const { personality } = usePersonality();
   const [timeline, setTimeline] = useState<TimelineMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -308,48 +313,17 @@ export default function WeekPage() {
   // ─── Empty state ──────────────────────────────────────────────────────────
 
   if (timeline.length === 0) {
+    const weekCopy = getPersonalityCopy("week-empty", personality);
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "70vh",
-          textAlign: "center",
-          padding: "80px 40px",
-        }}
-      >
-        <div
-          style={{ color: "var(--color-garden-larkspur)", marginBottom: 24 }}
-        >
-          <BrandMark size={48} />
-        </div>
-        <p
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 24,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            marginBottom: 8,
-          }}
-        >
-          No forecast yet
-        </p>
-        <p
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 15,
-            fontStyle: "italic",
-            color: "var(--color-text-tertiary)",
-            marginBottom: 32,
-            maxWidth: 360,
-          }}
-        >
-          Connect your calendar to see your week.
-        </p>
+      <>
+        <EmptyState
+          headline={weekCopy.title}
+          explanation={weekCopy.explanation ?? "Connect your calendar to see your week."}
+          benefit={weekCopy.benefit}
+          action={{ label: "Connect calendar", onClick: () => navigate({ to: "/settings", search: { tab: "connectors" } }) }}
+        />
         {error && <ErrorCard error={error} />}
-      </div>
+      </>
     );
   }
 

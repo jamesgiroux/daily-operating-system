@@ -13,7 +13,7 @@ import type { CreateActionParams } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
-import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { EmptyState } from "@/components/editorial/EmptyState";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { DatePicker } from "@/components/ui/date-picker";
 
@@ -427,9 +427,10 @@ export default function ActionsPage() {
       <section>
         {statusFilter === "proposed" ? (
           proposedActions.length === 0 ? (
-            <EditorialEmpty
-              title="All clear"
-              message="No AI suggestions waiting for review."
+            <EmptyState
+              headline="All clear"
+              explanation="No AI suggestions waiting for review. New proposals surface from meetings and emails."
+              benefit="Action items, captured without lifting a finger."
             />
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
@@ -446,14 +447,20 @@ export default function ActionsPage() {
             </div>
           )
         ) : actions.length === 0 ? (
-          <EditorialEmpty
-            {...getPersonalityCopy(
-              statusFilter === "completed"
-                ? "actions-completed-empty"
-                : "actions-empty",
+          (() => {
+            const copy = getPersonalityCopy(
+              statusFilter === "completed" ? "actions-completed-empty" : "actions-empty",
               personality,
-            )}
-          />
+            );
+            return (
+              <EmptyState
+                headline={copy.title}
+                explanation={copy.explanation ?? copy.message ?? ""}
+                benefit={copy.benefit}
+                action={statusFilter !== "completed" ? { label: "Add an action", onClick: () => setShowCreate(true) } : undefined}
+              />
+            );
+          })()
         ) : statusFilter === "pending" ? (
           // Grouped view for pending tab
           <PendingGroupedView actions={actions} onToggle={toggleAction} />
