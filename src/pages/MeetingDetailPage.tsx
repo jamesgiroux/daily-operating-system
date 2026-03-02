@@ -123,6 +123,7 @@ export default function MeetingDetailPage() {
   // Transcript attach
   const [attaching, setAttaching] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [retryingExtraction, setRetryingExtraction] = useState(false);
   const draft = useAgendaDraft({ onError: setError });
   const [prefillNotice, setPrefillNotice] = useState(false);
   const [prefilling, setPrefilling] = useState(false);
@@ -286,6 +287,55 @@ export default function MeetingDetailPage() {
       setAttaching(false);
     }
   }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
+
+  const handleRetryTranscriptExtraction = useCallback(async () => {
+    if (!meetingId || !data || !outcomes?.transcriptPath) return;
+
+    setRetryingExtraction(true);
+    try {
+      const calendarEvent: CalendarEvent = {
+        id: meetingMeta?.id || meetingId,
+        title: meetingMeta?.title || data.title,
+        start: meetingMeta?.startTime || new Date().toISOString(),
+        end:
+          meetingMeta?.endTime ||
+          meetingMeta?.startTime ||
+          new Date().toISOString(),
+        type:
+          (meetingMeta?.meetingType as CalendarEvent["type"]) ?? "internal",
+        attendees: [],
+        isAllDay: false,
+      };
+
+      const result = await invoke<{
+        status: string;
+        message?: string;
+        summary?: string;
+      }>("attach_meeting_transcript", {
+        filePath: outcomes.transcriptPath,
+        meeting: calendarEvent,
+      });
+
+      if (result.status !== "success") {
+        toast.error("Retry failed", {
+          description: result.message || result.status,
+        });
+      } else if (!result.summary) {
+        toast.warning("No outcomes extracted", {
+          description: result.message || "AI extraction returned empty",
+        });
+      } else {
+        toast.success("Outcomes extracted");
+      }
+      await loadMeetingIntelligence();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to retry transcript extraction:", msg);
+      toast.error("Retry failed", { description: msg });
+    } finally {
+      setRetryingExtraction(false);
+    }
+  }, [meetingId, data, meetingMeta, outcomes?.transcriptPath, loadMeetingIntelligence]);
 
   const handleDraftAgendaMessage = useCallback(async () => {
     if (!meetingId) return;
@@ -666,7 +716,13 @@ Thanks!`;
         {outcomes && (
           <>
             <div className={styles.outcomesWrap}>
-              <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
+              <OutcomesSection
+                outcomes={outcomes}
+                onRefresh={loadMeetingIntelligence}
+                onSaveStatus={setSaveStatus}
+                onRetryTranscriptExtraction={handleRetryTranscriptExtraction}
+                retryingExtraction={retryingExtraction}
+              />
             </div>
             <div className={styles.outcomesDivider} />
             <p className={styles.preMeetingLabel}>
@@ -1470,10 +1526,14 @@ function OutcomesSection({
   outcomes,
   onRefresh,
   onSaveStatus: _onSaveStatus,
+  onRetryTranscriptExtraction,
+  retryingExtraction,
 }: {
   outcomes: MeetingOutcomeData;
   onRefresh: () => void;
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
+  onRetryTranscriptExtraction: () => void;
+  retryingExtraction: boolean;
 }) {
   const summary = outcomes.summary?.trim();
   const wins = outcomes.wins.filter((item) => item.trim().length > 0);
@@ -1492,9 +1552,21 @@ function OutcomesSection({
       {/* Inlined MeetingOutcomes */}
       <div className={styles.outcomesBody}>
         {!hasContent && (
-          <p className={styles.outcomesSummary}>
-            Transcript attached, but no structured outcomes were extracted yet.
-          </p>
+          <>
+            <p className={styles.outcomesSummary}>
+              Transcript attached, but no structured outcomes were extracted yet.
+            </p>
+            {outcomes.transcriptPath && (
+              <button
+                type="button"
+                onClick={onRetryTranscriptExtraction}
+                disabled={retryingExtraction}
+                className={clsx(styles.planSecondaryAction, retryingExtraction && styles.folioBtnDisabled)}
+              >
+                {retryingExtraction ? "Retrying extraction…" : "Retry extraction"}
+              </button>
+            )}
+          </>
         )}
 
         {/* Summary */}
