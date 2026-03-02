@@ -33,6 +33,12 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
     const IDLE_CHECK_SECS: u64 = 120;
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         // Check if Quill is enabled in config
         let quill_config = state
             .config
@@ -472,8 +478,8 @@ async fn process_sync_row(
         }
     }
 
-    // Notify frontend
-    let _ = app_handle.emit("transcript-processed", &row.meeting_id);
+    // Notify frontend with normalized payload (fallback to meeting ID if unavailable).
+    emit_transcript_processed(state, app_handle, &row.meeting_id);
 
     // Send native notification on success
     if result.is_ok() {
@@ -486,6 +492,29 @@ fn get_pending_syncs(state: &AppState) -> Option<Vec<DbQuillSyncState>> {
     let db_guard = state.db.lock().ok()?;
     let db = db_guard.as_ref()?;
     db.get_pending_quill_syncs().ok()
+}
+
+/// Emit transcript-processed event with full MeetingOutcomeData payload when available.
+fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
+    let payload = state.db.lock().ok().and_then(|guard| {
+        guard.as_ref().and_then(|db| {
+            db.get_meeting_by_id(meeting_id)
+                .ok()
+                .flatten()
+                .and_then(|meeting| {
+                    crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting)
+                })
+        })
+    });
+
+    match payload {
+        Some(outcome) => {
+            let _ = app_handle.emit("transcript-processed", &outcome);
+        }
+        None => {
+            let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
+        }
+    }
 }
 
 /// Check recently-ended meetings and create Quill sync rows for eligible ones.

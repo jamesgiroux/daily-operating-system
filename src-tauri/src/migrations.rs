@@ -223,6 +223,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 52,
         sql: include_str!("migrations/052_glean_document_cache.sql"),
     },
+    Migration {
+        version: 53,
+        sql: include_str!("migrations/053_app_state_demo.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -402,13 +406,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 52,
-            "should apply all migrations including glean document cache"
+            applied, 53,
+            "should apply all migrations including app state demo"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 52);
+        assert_eq!(version, 53);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -679,6 +683,23 @@ mod tests {
         )
         .expect("briefing_callouts table should exist and accept inserts");
 
+        // Verify app_state table (migration 053)
+        let demo_active: i32 = conn
+            .query_row(
+                "SELECT demo_mode_active FROM app_state WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("app_state should exist with default row");
+        assert_eq!(demo_active, 0, "demo_mode_active should default to 0");
+
+        // Verify is_demo column on accounts (migration 053)
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at, is_demo) VALUES ('demo-1', 'Demo', '2026-01-01', 1)",
+            [],
+        )
+        .expect("accounts should have is_demo column");
+
         // Verify proactive_scan_state table (migration 021)
         conn.execute(
             "INSERT INTO proactive_scan_state (detector_name, last_insight_count)
@@ -935,13 +956,13 @@ mod tests {
         // Run migrations — should bootstrap v1 and apply v2 through v50 (49 pending migrations)
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 51,
-            "bootstrap should mark v1, then apply 51 pending migrations (v2-v52)"
+            applied, 52,
+            "bootstrap should mark v1, then apply 52 pending migrations (v2-v53)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 52);
+        assert_eq!(version, 53);
 
         // Verify existing data is untouched
         let title: String = conn

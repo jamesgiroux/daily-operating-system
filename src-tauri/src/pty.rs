@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{mpsc, OnceLock};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -63,8 +63,6 @@ fn resolve_claude_binary() -> Option<&'static PathBuf> {
 
 /// Default timeout for AI enrichment phase (5 minutes)
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
-/// Timeout for Claude CLI auth checks.
-const CLAUDE_AUTH_CHECK_TIMEOUT_SECS: u64 = 3;
 
 /// Model tier for AI operations (I174).
 ///
@@ -192,53 +190,29 @@ impl PtyManager {
         resolve_claude_binary().is_some()
     }
 
-    /// Check if Claude Code is authenticated
+    /// Return the absolute path to the claude binary, if found.
+    pub fn resolve_binary_path() -> Option<std::path::PathBuf> {
+        resolve_claude_binary().cloned()
+    }
+
+    /// Check if Claude Code is authenticated.
     ///
-    /// Uses `--print` which actually exercises auth. If unauthenticated,
-    /// Claude Code exits with a non-zero status code.
+    /// Checks the macOS Keychain for the "Claude Code-credentials" entry that
+    /// Claude Code writes when OAuth completes. This is faster and more reliable
+    /// than running `claude --print hello`, which makes an actual LLM API call
+    /// and times out even when the user is authenticated.
     pub fn is_claude_authenticated() -> Result<bool, ExecutionError> {
         use std::process::Stdio;
 
-        let claude_path = resolve_claude_binary().ok_or(ExecutionError::ClaudeCodeNotFound)?;
-
-        let mut child = Command::new(claude_path)
-            .args(["--print", "hello"])
-            .env("TERM", "dumb")
-            .env_remove("CLAUDECODE")
-            .env_remove("CLAUDE_CODE_SSE_PORT")
-            .env_remove("CLAUDE_CODE_ENTRYPOINT")
+        let output = Command::new("security")
+            .args(["find-generic-password", "-s", "Claude Code-credentials"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()
-            .map_err(|_| ExecutionError::ClaudeCodeNotFound)?;
+            .output()
+            .map_err(|e| ExecutionError::IoError(format!("Keychain check failed: {}", e)))?;
 
-        let deadline = Duration::from_secs(CLAUDE_AUTH_CHECK_TIMEOUT_SECS);
-        let started_at = Instant::now();
-
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => return Ok(status.success()),
-                Ok(None) => {
-                    if started_at.elapsed() >= deadline {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        log::warn!(
-                            "Claude auth check timed out after {}s",
-                            CLAUDE_AUTH_CHECK_TIMEOUT_SECS
-                        );
-                        return Ok(false);
-                    }
-                    thread::sleep(Duration::from_millis(50));
-                }
-                Err(e) => {
-                    return Err(ExecutionError::IoError(format!(
-                        "Claude auth check failed: {}",
-                        e
-                    )));
-                }
-            }
-        }
+        Ok(output.status.success())
     }
 
     /// Spawn Claude Code with a command in the given workspace

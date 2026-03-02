@@ -26,6 +26,7 @@ import {
   FilterTabs,
 } from "@/components/entity/EntityListShell";
 import { EntityRow } from "@/components/entity/EntityRow";
+import { EmptyState } from "@/components/editorial/EmptyState";
 import { Avatar } from "@/components/ui/Avatar";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { PersonListItem, DuplicateCandidate } from "@/types";
@@ -289,10 +290,17 @@ export default function PeoplePage() {
         <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: "0 0 24px 0" }}>
           The Room
         </h1>
-        <EntityListEmpty
-          title={getPersonalityCopy("people-empty", personality).title}
-          message={getPersonalityCopy("people-empty", personality).message}
-        />
+        {(() => {
+          const copy = getPersonalityCopy("people-empty", personality);
+          return (
+            <EmptyState
+              headline={copy.title}
+              explanation={copy.explanation ?? copy.message ?? ""}
+              benefit={copy.benefit}
+              action={{ label: "Connect Google", onClick: () => navigate({ to: "/settings", search: { tab: "connectors" } }) }}
+            />
+          );
+        })()}
       </div>
     );
   }

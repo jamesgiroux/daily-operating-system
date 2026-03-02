@@ -69,10 +69,7 @@ pub enum GleanAuthStatus {
     /// No Glean credentials configured.
     NotConfigured,
     /// Successfully authenticated with Glean.
-    Authenticated {
-        email: String,
-        name: Option<String>,
-    },
+    Authenticated { email: String, name: Option<String> },
 }
 
 // ---------------------------------------------------------------------------
@@ -164,8 +161,9 @@ async fn refresh_token(token: &GleanToken) -> Result<String, GleanAuthError> {
         )));
     }
 
-    let body: serde_json::Value = serde_json::from_str(&body_text)
-        .map_err(|e| GleanAuthError::RefreshFailed(format!("Failed to parse refresh response: {}", e)))?;
+    let body: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
+        GleanAuthError::RefreshFailed(format!("Failed to parse refresh response: {}", e))
+    })?;
 
     let new_access_token = body["access_token"]
         .as_str()

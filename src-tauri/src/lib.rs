@@ -18,6 +18,7 @@ pub mod context_provider;
 pub mod db;
 mod db_backup;
 pub mod db_service;
+pub mod demo;
 mod devtools;
 pub mod embeddings;
 mod enrichment;
@@ -469,11 +470,13 @@ pub fn run() {
             commands::sync_email_inbox_presence,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
-            // I39: Feature Toggles
-            commands::get_features,
-            commands::set_feature_enabled,
-            // Onboarding
+            // Onboarding / Demo / App State (I56/I57)
             commands::install_demo_data,
+            commands::clear_demo_data,
+            commands::get_app_state,
+            commands::set_tour_completed,
+            commands::set_wizard_completed,
+            commands::set_wizard_step,
             commands::populate_workspace,
             commands::set_user_profile,
             // I411: User Entity
@@ -492,6 +495,7 @@ pub fn run() {
             commands::create_internal_organization,
             commands::get_onboarding_priming_context,
             commands::check_claude_status,
+            commands::launch_claude_login,
             commands::get_latency_rollups,
             commands::install_inbox_sample,
             commands::get_frequent_correspondents,
@@ -505,6 +509,8 @@ pub fn run() {
             commands::dev_restore_live,
             commands::dev_purge_mock_data,
             commands::dev_clean_artifacts,
+            commands::dev_set_auth_override,
+            commands::dev_onboarding_scenario,
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
