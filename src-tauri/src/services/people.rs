@@ -423,7 +423,7 @@ pub fn create_person_from_stakeholder(
     db.upsert_person(&person).map_err(|e| e.to_string())?;
 
     // Link to the parent entity
-    db.link_person_to_entity(&id, entity_id, entity_type)
+    db.link_person_to_entity(&id, entity_id, "associated")
         .map_err(|e| e.to_string())?;
 
     // Write person files to workspace
