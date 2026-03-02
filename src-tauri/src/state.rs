@@ -327,10 +327,7 @@ impl AppState {
 
         let context_provider: Arc<dyn crate::context_provider::ContextProvider> = match context_mode
         {
-            Some(crate::context_provider::ContextMode::Glean {
-                endpoint,
-                strategy,
-            }) => {
+            Some(crate::context_provider::ContextMode::Glean { endpoint, strategy }) => {
                 log::info!("Context mode: Glean ({:?}) endpoint={}", strategy, endpoint);
                 let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
                 Arc::new(crate::context_provider::glean::GleanContextProvider::new(

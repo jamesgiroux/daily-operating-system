@@ -198,7 +198,7 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
     let sql = "SELECT DISTINCT mh.id
                FROM meetings_history mh
                INNER JOIN meeting_entities me ON mh.id = me.meeting_id
-               WHERE mh.start_time > datetime('now')
+               WHERE julianday(mh.start_time) > julianday('now')
                  AND mh.prep_frozen_json IS NULL
                  AND (mh.intelligence_state IS NULL OR mh.intelligence_state != 'archived')";
 

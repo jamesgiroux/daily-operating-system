@@ -685,7 +685,11 @@ mod tests {
 
         // Verify app_state table (migration 053)
         let demo_active: i32 = conn
-            .query_row("SELECT demo_mode_active FROM app_state WHERE id = 1", [], |row| row.get(0))
+            .query_row(
+                "SELECT demo_mode_active FROM app_state WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
             .expect("app_state should exist with default row");
         assert_eq!(demo_active, 0, "demo_mode_active should default to 0");
 
