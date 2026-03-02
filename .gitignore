@@ -49,6 +49,7 @@ worktrees/
 # Tauri
 src-tauri/target/
 src-tauri/binaries/
+src-tauri/Accounts/
 
 # Setup wizard state
 .setup-state.json
