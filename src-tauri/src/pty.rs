@@ -6,7 +6,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{mpsc, OnceLock};
+use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -16,49 +16,62 @@ use crate::error::ExecutionError;
 use crate::types::AiModelConfig;
 
 /// Cached resolved path to the `claude` binary.
-/// Resolved once per process lifetime via `resolve_claude_binary()`.
-static CLAUDE_BINARY: OnceLock<Option<PathBuf>> = OnceLock::new();
+/// Caches `Some` results; re-probes on `None` so installing Claude while
+/// the app is running gets detected on the next check.
+static CLAUDE_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Resolve the absolute path to the `claude` CLI binary.
 ///
 /// macOS apps launched from Finder/DMG don't inherit the user's shell PATH,
 /// so `which claude` fails even when claude is installed. This function checks
 /// common install locations as a fallback.
-fn resolve_claude_binary() -> Option<&'static PathBuf> {
-    CLAUDE_BINARY
-        .get_or_init(|| {
-            // 1. Try `which claude` (works in terminal, dev mode, or if PATH is correct)
-            if let Ok(output) = Command::new("which").arg("claude").output() {
-                if output.status.success() {
-                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !path.is_empty() {
-                        log::info!("Resolved claude binary via PATH: {}", path);
-                        return Some(PathBuf::from(path));
-                    }
-                }
+///
+/// Caches successful lookups. Re-probes if not yet found.
+fn resolve_claude_binary() -> Option<PathBuf> {
+    let mut guard = CLAUDE_BINARY.lock().ok()?;
+    if let Some(ref path) = *guard {
+        return Some(path.clone());
+    }
+
+    let found = probe_claude_binary();
+    if found.is_some() {
+        *guard = found.clone();
+    }
+    found
+}
+
+/// Actual filesystem probe for the claude binary.
+fn probe_claude_binary() -> Option<PathBuf> {
+    // 1. Try `which claude` (works in terminal, dev mode, or if PATH is correct)
+    if let Ok(output) = Command::new("which").arg("claude").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                log::info!("Resolved claude binary via PATH: {}", path);
+                return Some(PathBuf::from(path));
             }
+        }
+    }
 
-            // 2. Check common install locations (Finder-launched apps won't have shell PATH)
-            let home = dirs::home_dir().unwrap_or_default();
-            let candidates = [
-                home.join(".local/bin/claude"),            // npm global (default)
-                home.join(".npm/bin/claude"),              // npm alternate
-                home.join(".nvm/current/bin/claude"),      // nvm
-                PathBuf::from("/usr/local/bin/claude"),    // Homebrew / manual
-                PathBuf::from("/opt/homebrew/bin/claude"), // Homebrew on Apple Silicon
-            ];
+    // 2. Check common install locations (Finder-launched apps won't have shell PATH)
+    let home = dirs::home_dir().unwrap_or_default();
+    let candidates = [
+        home.join(".local/bin/claude"),            // npm global (default)
+        home.join(".npm/bin/claude"),              // npm alternate
+        home.join(".nvm/current/bin/claude"),      // nvm
+        PathBuf::from("/usr/local/bin/claude"),    // Homebrew / manual
+        PathBuf::from("/opt/homebrew/bin/claude"), // Homebrew on Apple Silicon
+    ];
 
-            for candidate in &candidates {
-                if candidate.is_file() {
-                    log::info!("Resolved claude binary at: {}", candidate.display());
-                    return Some(candidate.clone());
-                }
-            }
+    for candidate in &candidates {
+        if candidate.is_file() {
+            log::info!("Resolved claude binary at: {}", candidate.display());
+            return Some(candidate.clone());
+        }
+    }
 
-            log::warn!("Claude binary not found in PATH or common install locations");
-            None
-        })
-        .as_ref()
+    log::warn!("Claude binary not found in PATH or common install locations");
+    None
 }
 
 /// Default timeout for AI enrichment phase (5 minutes)
@@ -192,7 +205,7 @@ impl PtyManager {
 
     /// Return the absolute path to the claude binary, if found.
     pub fn resolve_binary_path() -> Option<std::path::PathBuf> {
-        resolve_claude_binary().cloned()
+        resolve_claude_binary()
     }
 
     /// Check if Claude Code is authenticated.

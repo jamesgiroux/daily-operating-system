@@ -16,6 +16,7 @@ interface ClaudeCodeProps {
 interface ClaudeStatus {
   installed: boolean;
   authenticated: boolean;
+  nodeInstalled: boolean;
 }
 
 /** Mono uppercase section label */
@@ -72,13 +73,16 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
     }
   }, []);
 
-  async function checkStatus() {
+  async function checkStatus(clearCache = false) {
     setChecking(true);
     try {
+      if (clearCache) {
+        await invoke("clear_claude_status_cache");
+      }
       const result = await invoke<ClaudeStatus>("check_claude_status");
       setStatus(result);
     } catch {
-      setStatus({ installed: false, authenticated: false });
+      setStatus({ installed: false, authenticated: false, nodeInstalled: false });
     } finally {
       setChecking(false);
     }
@@ -188,7 +192,7 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
           <Button
             variant="outline"
             className="w-full"
-            onClick={checkStatus}
+            onClick={() => checkStatus(true)}
             disabled={checking}
           >
             {checking && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -199,14 +203,50 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
 
       {status && !status.installed && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Node.js not found — show install instructions first */}
+          {!status.nodeInstalled && (
+            <div
+              style={{
+                borderTop: "1px solid var(--color-rule-light)",
+                paddingTop: 20,
+              }}
+            >
+              <SectionLabel>
+                <span style={{ color: "var(--color-spice-terracotta)" }}>Node.js required</span>
+              </SectionLabel>
+              <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: 0, marginBottom: 4 }}>
+                Claude Code requires Node.js. Install it first:
+              </p>
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: "8px 0 4px" }}>
+                Download from{" "}
+                <a
+                  href="https://nodejs.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--color-sky-larkspur)", textDecoration: "underline" }}
+                >
+                  nodejs.org
+                </a>{" "}
+                (recommended: LTS version)
+              </p>
+              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>
+                Or via Homebrew:
+              </p>
+              <CodeBlock>brew install node</CodeBlock>
+            </div>
+          )}
+
+          {/* Claude Code install instructions */}
           <div
             style={{
-              borderTop: "1px solid var(--color-rule-light)",
-              paddingTop: 20,
+              borderTop: status.nodeInstalled ? "1px solid var(--color-rule-light)" : "none",
+              paddingTop: status.nodeInstalled ? 20 : 0,
             }}
           >
             <SectionLabel>
-              <span style={{ color: "var(--color-spice-terracotta)" }}>Not found</span>
+              <span style={{ color: "var(--color-spice-terracotta)" }}>
+                {status.nodeInstalled ? "Not found" : "Then install Claude Code"}
+              </span>
             </SectionLabel>
             <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: 0, marginBottom: 4 }}>
               Install Claude Code from your terminal:
@@ -222,7 +262,7 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
           <Button
             variant="outline"
             className="w-full"
-            onClick={checkStatus}
+            onClick={() => checkStatus(true)}
             disabled={checking}
           >
             {checking && <Loader2 className="mr-2 size-4 animate-spin" />}

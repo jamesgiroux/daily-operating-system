@@ -295,6 +295,14 @@ export default function LinearConnection() {
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
                 Personal API key from Linear settings
               </p>
+              <p style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                margin: "2px 0 0",
+              }}>
+                Create one in Linear → Settings → API → Personal API Keys
+              </p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <input
                   type="password"
