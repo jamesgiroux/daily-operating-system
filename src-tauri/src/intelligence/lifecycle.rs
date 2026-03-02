@@ -213,13 +213,25 @@ pub async fn generate_meeting_intelligence(
     // 2. Decide whether work is needed
     if meeting_state.as_deref() == Some("enriched") {
         if has_new == 0 {
-            // No new signals — return current quality without extra work
+            // No new signals: only skip if intelligence is still current.
+            // Stale/aging meetings need a full rebuild to refresh temporal framing.
             let mid = meeting_id.to_string();
             let quality = state
                 .db_read(move |db| Ok(assess_intelligence_quality(db, &mid)))
                 .await
                 .map_err(ExecutionError::ConfigurationError)?;
-            return Ok(quality);
+            if quality.staleness == Staleness::Current {
+                return Ok(quality);
+            }
+            log::info!(
+                "generate_meeting_intelligence: {} stale without new signals; forcing full refresh",
+                meeting_id
+            );
+            let refreshed =
+                crate::services::meetings::refresh_meeting_briefing_full(state, meeting_id, None)
+                    .await
+                    .map_err(ExecutionError::ConfigurationError)?;
+            return Ok(refreshed.quality);
         }
         // Has new signals: set state to "refreshing"
         let mid = meeting_id.to_string();

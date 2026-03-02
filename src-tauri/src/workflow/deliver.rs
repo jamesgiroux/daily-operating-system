@@ -1834,7 +1834,7 @@ fn synthesize_open_items_from_raw(ctx: &DirectiveMeetingContext) -> Vec<Value> {
     let mut items = Vec::new();
 
     if let Some(ref actions) = ctx.open_actions {
-        let today_str = Utc::now().date_naive().to_string();
+        let today_str = chrono::Local::now().date_naive().to_string();
         for action in actions.iter().take(10) {
             let title = action.get("title").and_then(|v| v.as_str()).unwrap_or("");
             if title.is_empty() {

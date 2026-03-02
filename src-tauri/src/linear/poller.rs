@@ -10,6 +10,12 @@ pub async fn run_linear_poller(state: Arc<AppState>) {
     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
 
     loop {
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
+        }
+
         let (enabled, api_key, poll_interval) = {
             let config = state.config.read().ok();
             match config.as_ref().and_then(|g| g.as_ref()) {
