@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2, Eraser } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2, UserX, KeyRound, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,15 +11,17 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
-import { Copy } from "lucide-react";
 
 /** Toast with a copy button so messages can be pasted into CLI. */
 function devToast(type: "success" | "error", message: string) {
   toast[type](message, {
     duration: type === "error" ? 8000 : 5000,
     action: {
-      label: <Copy className="h-3 w-3" />,
-      onClick: () => navigator.clipboard.writeText(message),
+      label: "Copy",
+      onClick: (e) => {
+        e.preventDefault(); // Prevent toast dismissal
+        navigator.clipboard.writeText(message).catch(() => {});
+      },
     },
   });
 }
@@ -62,11 +64,20 @@ export function DevToolsPanel() {
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
-    // Gate on dev build + config.developerMode
     if (!import.meta.env.DEV) return;
-    invoke<{ developerMode?: boolean }>("get_config")
-      .then((cfg) => setEnabled(cfg.developerMode === true))
-      .catch(() => {}); // No config yet — stay hidden
+    // Show wrench when EITHER config.developerMode is on OR dev sandbox is active.
+    // Check both: config may not exist after "Reset to First Run", but dev_get_state
+    // still reports isDevDbMode correctly — so we don't lose the escape hatch.
+    Promise.all([
+      invoke<{ developerMode?: boolean }>("get_config")
+        .then((cfg) => cfg.developerMode === true)
+        .catch(() => false),
+      invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+        .then((s) => s.isDevDbMode === true)
+        .catch(() => false),
+    ]).then(([configEnabled, sandboxActive]) => {
+      setEnabled(configEnabled || sandboxActive);
+    });
   }, []);
 
   if (!import.meta.env.DEV || !enabled) return null;
@@ -112,6 +123,18 @@ function DevToolsPanelInner() {
     }
   }
 
+  async function runOnboarding(key: string, scenario: string) {
+    setLoading(key);
+    try {
+      const result = await invoke<string>("dev_onboarding_scenario", { scenario });
+      devToast("success", result);
+      setTimeout(() => window.location.reload(), 500);
+    } catch (err) {
+      devToast("error", typeof err === "string" ? err : "Onboarding scenario failed");
+      setLoading(null);
+    }
+  }
+
   async function runCommand(key: string, command: string, reload = false) {
     setLoading(key);
     try {
@@ -140,8 +163,8 @@ function DevToolsPanelInner() {
         <Wrench className="h-4 w-4" />
       </button>
 
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className="w-[380px] overflow-y-auto">
+      <Sheet open={open} onOpenChange={setOpen} modal={false}>
+        <SheetContent side="right" className="w-[380px] overflow-y-auto" showOverlay={false}>
           <SheetHeader>
             <div className="flex items-center gap-2">
               <SheetTitle>Dev Tools</SheetTitle>
@@ -161,10 +184,10 @@ function DevToolsPanelInner() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                      Dev DB Active
+                      Sandbox Active
                     </p>
                     <p className="text-xs text-amber-600/80 dark:text-amber-500/80">
-                      Using isolated dailyos-dev.db
+                      Fully isolated — changes won't affect your real data
                     </p>
                   </div>
                   <Button
@@ -177,6 +200,17 @@ function DevToolsPanelInner() {
                     <Undo2 className="mr-1.5 h-3 w-3" />
                     {loading === "restore_live" ? "Restoring..." : "Return to Live"}
                   </Button>
+                </div>
+                <div className="mt-2 space-y-1 border-t border-amber-500/20 pt-2">
+                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
+                    Database: <code>dailyos-dev.db</code>
+                  </p>
+                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
+                    Workspace: <code>~/Documents/DailyOS-dev/</code>
+                  </p>
+                  <p className="text-[11px] text-amber-600/70 dark:text-amber-500/60">
+                    Google Auth: <code>in-memory only</code>
+                  </p>
                 </div>
               </section>
             )}
@@ -302,6 +336,78 @@ function DevToolsPanelInner() {
               </div>
             </section>
 
+            {/* Onboarding Scenarios */}
+            <section>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Onboarding
+              </h3>
+              <div className="space-y-2">
+                <ScenarioButton
+                  icon={Sparkles}
+                  label="Happy Path"
+                  description="Both auth mocked as ready"
+                  variant="default"
+                  loading={loading === "onb_auth_ready"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_auth_ready", "auth_ready")}
+                />
+                <ScenarioButton
+                  icon={RotateCcw}
+                  label="Fresh (Real Auth)"
+                  description="Real first-run with real auth checks"
+                  variant="outline"
+                  loading={loading === "onb_fresh"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_fresh", "fresh")}
+                />
+                <ScenarioButton
+                  icon={UserX}
+                  label="Claude Not Installed"
+                  description="Shows install instructions"
+                  variant="outline"
+                  loading={loading === "onb_no_claude"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_no_claude", "no_claude")}
+                />
+                <ScenarioButton
+                  icon={KeyRound}
+                  label="Claude Not Authenticated"
+                  description="Claude found but not logged in"
+                  variant="outline"
+                  loading={loading === "onb_claude_unauthed"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_claude_unauthed", "claude_unauthed")}
+                />
+                <ScenarioButton
+                  icon={Shield}
+                  label="No Google"
+                  description="Claude ready, Google not connected"
+                  variant="outline"
+                  loading={loading === "onb_no_google"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_no_google", "no_google")}
+                />
+                <ScenarioButton
+                  icon={Calendar}
+                  label="Google Token Expired"
+                  description="Claude ready, Google token expired"
+                  variant="outline"
+                  loading={loading === "onb_google_expired"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_google_expired", "google_expired")}
+                />
+                <ScenarioButton
+                  icon={AlertTriangle}
+                  label="Nothing Works"
+                  description="Both auth unavailable"
+                  variant="destructive"
+                  loading={loading === "onb_nothing_works"}
+                  disabled={loading !== null}
+                  onClick={() => runOnboarding("onb_nothing_works", "nothing_works")}
+                />
+              </div>
+            </section>
+
             {/* Pipeline Testing */}
             <section>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
@@ -355,30 +461,18 @@ function DevToolsPanelInner() {
               </div>
             </section>
 
-            {/* Cleanup — visible when dev artifacts or mock data may exist */}
-            {(devState?.hasDevDbFile || devState?.hasDevWorkspace || !devState?.isDevDbMode) && (
+            {/* Cleanup — visible when dev artifacts exist */}
+            {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (
               <section>
                 <h3 className="mb-3 text-sm font-medium text-muted-foreground">
                   Cleanup
                 </h3>
                 <div className="space-y-2">
-                  {/* Purge mock data from current (live) DB */}
-                  {!devState?.isDevDbMode && (
-                    <ScenarioButton
-                      icon={Eraser}
-                      label="Purge Mock Data from Live DB"
-                      description="Remove known mock accounts, meetings, actions, people"
-                      variant="destructive"
-                      loading={loading === "purge_mock"}
-                      disabled={loading !== null}
-                      onClick={() => runCommand("purge_mock", "dev_purge_mock_data")}
-                    />
-                  )}
                   {/* Clean dev artifact files from disk */}
                   {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (
                     <ScenarioButton
                       icon={Trash2}
-                      label="Clean Dev Artifacts"
+                      label="Reset Dev Environment"
                       description={[
                         devState?.hasDevDbFile && "dailyos-dev.db",
                         devState?.hasDevWorkspace && "DailyOS-dev/",

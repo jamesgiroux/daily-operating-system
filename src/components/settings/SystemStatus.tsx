@@ -9,7 +9,7 @@ import { Loader2 } from "lucide-react";
 import { styles } from "@/components/settings/styles";
 import type {
   PostMeetingCaptureConfig,
-  FeatureDefinition,
+
   AiModelConfig,
   HygieneStatusView,
   HygieneNarrativeView,
@@ -323,77 +323,6 @@ function AiModelsSection() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// FeaturesSection
-// ---------------------------------------------------------------------------
-
-function FeaturesSection() {
-  const [features, setFeatures] = useState<FeatureDefinition[]>([]);
-
-  useEffect(() => {
-    invoke<FeatureDefinition[]>("get_features")
-      .then(setFeatures)
-      .catch((err) => console.error("Settings load failed:", err));
-  }, []);
-
-  async function toggleFeature(key: string, currentEnabled: boolean) {
-    try {
-      await invoke("set_feature_enabled", { feature: key, enabled: !currentEnabled });
-      setFeatures((prev) =>
-        prev.map((f) => (f.key === key ? { ...f, enabled: !currentEnabled } : f)),
-      );
-    } catch (err) {
-      console.error("Failed to toggle feature:", err);
-    }
-  }
-
-  if (features.length === 0) return null;
-
-  return (
-    <div>
-      <p style={styles.subsectionLabel}>Features</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
-        Enable or disable pipeline operations
-      </p>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {features.map((feature) => (
-          <div key={feature.key} style={styles.settingRow}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
-                  {feature.label}
-                </span>
-                {feature.csOnly && (
-                  <span style={{ ...styles.monoLabel, fontSize: 10 }}>CS</span>
-                )}
-              </div>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                {feature.description}
-              </p>
-            </div>
-            <button
-              style={{
-                ...styles.btn,
-                ...(feature.enabled ? styles.btnPrimary : styles.btnGhost),
-                padding: "3px 10px",
-              }}
-              onClick={() => toggleFeature(feature.key, feature.enabled)}
-            >
-              {feature.enabled ? "Enabled" : "Disabled"}
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // HygieneSection — intelligence hygiene config + narrative
@@ -1149,7 +1078,6 @@ export default function SystemStatus() {
       {advancedOpen && (
         <div style={{ display: "flex", flexDirection: "column", gap: 32, marginTop: 24 }}>
           <AiModelsSection />
-          <FeaturesSection />
           <HygieneSection />
           <CaptureSection />
           <DataManagementSection />

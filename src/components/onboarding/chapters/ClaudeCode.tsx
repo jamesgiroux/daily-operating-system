@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ArrowRight,
   Loader2,
@@ -61,6 +61,16 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
 export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [checking, setChecking] = useState(false);
+  const [isDevMode, setIsDevMode] = useState(false);
+
+  // Check if dev sandbox is active — enables skip button
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+        .then((s) => setIsDevMode(s.isDevDbMode === true))
+        .catch(() => {});
+    }
+  }, []);
 
   async function checkStatus() {
     setChecking(true);
@@ -80,6 +90,16 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
   }
 
   const isReady = status?.installed && status?.authenticated;
+
+  // Auto-advance after 1 second when ready
+  const autoAdvanced = useRef(false);
+  useEffect(() => {
+    if (isReady && !autoAdvanced.current) {
+      autoAdvanced.current = true;
+      const timer = setTimeout(() => onNext(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [isReady, onNext]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -211,30 +231,18 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
         </div>
       )}
 
-      {/* Continue / skip */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        {!isReady && status && (
-          <button
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              letterSpacing: "0.04em",
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-            }}
-            onClick={() => onNext(false)}
-          >
-            Skip — AI features will be limited
-          </button>
-        )}
-        <div style={{ marginLeft: "auto" }}>
-          <Button onClick={() => onNext(isReady ?? false)} disabled={checking && !status}>
-            Continue
+      {/* Continue — skip only available in dev sandbox */}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {isDevMode && !isReady && (
+          <Button variant="outline" onClick={() => onNext(false)}>
+            Skip (Dev Mode)
             <ArrowRight className="ml-2 size-4" />
           </Button>
-        </div>
+        )}
+        <Button onClick={() => onNext(isReady ?? false)} disabled={!isReady || (checking && !status)}>
+          Continue
+          <ArrowRight className="ml-2 size-4" />
+        </Button>
       </div>
     </div>
   );

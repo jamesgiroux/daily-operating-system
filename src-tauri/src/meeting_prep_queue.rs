@@ -198,7 +198,7 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
     let sql = "SELECT DISTINCT mh.id
                FROM meetings_history mh
                INNER JOIN meeting_entities me ON mh.id = me.meeting_id
-               WHERE mh.start_time > datetime('now')
+               WHERE julianday(mh.start_time) > julianday('now')
                  AND mh.prep_frozen_json IS NULL
                  AND (mh.intelligence_state IS NULL OR mh.intelligence_state != 'archived')";
 
@@ -264,6 +264,11 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
         tokio::select! {
             _ = tokio::time::sleep(interval) => {}
             _ = state.integrations.prep_queue_wake.notified() => {}
+        }
+
+        // Dev mode isolation: pause background processing while dev sandbox is active
+        if crate::db::is_dev_db_mode() {
+            continue;
         }
 
         // Periodic pruning

@@ -113,7 +113,9 @@ function DeveloperToggle({
             Developer Tools
           </span>
           <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-            Show the devtools panel (wrench icon)
+            {config?.developerMode
+              ? "Active — using isolated database and workspace"
+              : "Switches to an isolated sandbox (separate database, workspace, and auth)"}
           </p>
         </div>
         <button
