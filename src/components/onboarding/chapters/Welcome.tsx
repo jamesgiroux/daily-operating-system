@@ -4,9 +4,11 @@ import { BrandMark } from "@/components/ui/BrandMark";
 
 interface WelcomeProps {
   onNext: () => void;
+  onDemoMode?: () => void;
+  onSkipSetup?: () => void;
 }
 
-export function Welcome({ onNext }: WelcomeProps) {
+export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
       {/* Brand mark */}
@@ -133,12 +135,60 @@ export function Welcome({ onNext }: WelcomeProps) {
         Skip a day, skip a week — it picks up where you are.
       </p>
 
-      <div>
-        <Button size="lg" onClick={onNext}>
-          Let's get started
-          <ArrowRight className="ml-2 size-4" />
-        </Button>
+      {/* Primary CTA */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <Button size="lg" onClick={onNext}>
+            Get started
+            <ArrowRight className="ml-2 size-4" />
+          </Button>
+        </div>
+
+        {/* Secondary: Explore with demo data */}
+        {onDemoMode && (
+          <button
+            onClick={onDemoMode}
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              textAlign: "left",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+          >
+            Explore with demo data
+          </button>
+        )}
       </div>
+
+      {/* Footer: Skip setup */}
+      {onSkipSetup && (
+        <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+          <button
+            onClick={onSkipSetup}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.04em",
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+          >
+            Skip setup
+          </button>
+        </div>
+      )}
     </div>
   );
 }
