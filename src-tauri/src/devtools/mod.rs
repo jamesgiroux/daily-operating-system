@@ -33,9 +33,9 @@ fn dev_workspace() -> std::path::PathBuf {
         .join("DailyOS-dev")
 }
 
-/// Backup config.json before dev mode so restore_live can recover it.
+/// Backup live config.json before dev mode so crash recovery can restore it.
 fn backup_config() -> Result<(), String> {
-    let config = crate::state::config_path()?;
+    let config = crate::state::live_config_path()?;
     if config.exists() {
         let backup = config.with_extension("json.dev-backup");
         std::fs::copy(&config, &backup).map_err(|e| format!("Config backup failed: {}", e))?;
@@ -45,12 +45,236 @@ fn backup_config() -> Result<(), String> {
 
 /// Restore config.json from the dev-backup file.
 fn restore_config_backup() -> Result<(), String> {
-    let config = crate::state::config_path()?;
+    let config = crate::state::live_config_path()?;
     let backup = config.with_extension("json.dev-backup");
     if backup.exists() {
         std::fs::copy(&backup, &config).map_err(|e| format!("Config restore failed: {}", e))?;
         let _ = std::fs::remove_file(&backup);
     }
+    Ok(())
+}
+
+/// Enter dev mode: switch to isolated database, workspace, and auth.
+///
+/// 1. Backup live config (crash recovery)
+/// 2. Write sentinel file (crash recovery signal)
+/// 3. Stash current workspace path
+/// 4. Activate dev DB mode
+/// 5. Reopen sync DB at dev path
+/// 6. Copy live config to config-dev.json and set dev mode fields
+/// 7. Create dev workspace if needed
+pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    if crate::db::is_dev_db_mode() {
+        return Ok(()); // Already in dev mode
+    }
+
+    log::info!("Entering dev mode — activating full isolation");
+
+    // 1. Backup live config for crash recovery
+    backup_config()?;
+
+    // 2. Write sentinel file
+    let sentinel = crate::state::dev_mode_sentinel_path()?;
+    if let Some(parent) = sentinel.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&sentinel, "active")
+        .map_err(|e| format!("Failed to write dev mode sentinel: {}", e))?;
+
+    // 3. Stash current workspace path
+    let current_ws = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+    if let Ok(mut guard) = state.pre_dev_workspace.lock() {
+        *guard = current_ws;
+    }
+
+    // 4. Activate dev DB mode (affects ActionDb::db_path())
+    crate::db::set_dev_db_mode(true);
+
+    // 5. Reopen sync DB at dev path
+    if let Ok(mut guard) = state.db.lock() {
+        *guard = ActionDb::open().ok();
+    }
+
+    // 5b. Clear all in-memory volatile state so production data doesn't
+    //     bleed into the dev sandbox. Calendar events, workflow status,
+    //     and capture state are all in-memory — they must be wiped here,
+    //     not just in reset_all(), because the user may view the app
+    //     between enter_dev_mode and a scenario switch.
+    if let Ok(mut guard) = state.calendar.events.write() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.workflow.status.write() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.workflow.history.lock() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.workflow.last_scheduled_run.write() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.capture.dismissed.lock() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.capture.captured.lock() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+        guard.clear();
+    }
+
+    // 6. Copy live config to config-dev.json and set dev mode fields
+    let live_path = crate::state::live_config_path()?;
+    let dev_path = crate::state::dev_config_path()?;
+    if live_path.exists() {
+        std::fs::copy(&live_path, &dev_path)
+            .map_err(|e| format!("Failed to copy config to dev: {}", e))?;
+    }
+
+    // Update config in dev copy: developer_mode = true, workspace_path = dev workspace
+    let dev_ws = dev_workspace();
+    crate::state::create_or_update_config(state, |config| {
+        config.developer_mode = true;
+        config.workspace_path = dev_ws.to_string_lossy().to_string();
+    })?;
+
+    // 7. Create dev workspace if needed
+    if !dev_ws.exists() {
+        let entity_mode = state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| c.entity_mode.clone()))
+            .unwrap_or_else(|| "account".to_string());
+        crate::state::initialize_workspace(&dev_ws, &entity_mode)?;
+    }
+
+    log::info!(
+        "Dev mode active — DB: dailyos-dev.db, workspace: {}",
+        dev_ws.display()
+    );
+    Ok(())
+}
+
+/// Exit dev mode: return to live database, workspace, and auth.
+///
+/// 1. Deactivate dev DB mode
+/// 2. Reopen sync DB at live path
+/// 3. Reload live config from config.json (never touched during dev mode)
+/// 4. Clear dev auth tokens from memory
+/// 5. Restore real Google auth from Keychain
+/// 6. Delete sentinel file
+/// 7. Clean up dev config
+pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    if !crate::db::is_dev_db_mode() {
+        return Ok(()); // Already in live mode
+    }
+
+    log::info!("Exiting dev mode — returning to live");
+
+    // 1. Deactivate dev DB mode
+    crate::db::set_dev_db_mode(false);
+
+    // 2. Reopen sync DB at live path
+    if let Ok(mut guard) = state.db.lock() {
+        *guard = ActionDb::open().ok();
+    }
+
+    // 3. Reload live config from config.json (it was never modified)
+    match crate::state::load_config() {
+        Ok(config) => {
+            if let Ok(mut guard) = state.config.write() {
+                *guard = Some(config);
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to reload live config: {}; trying backup restore", e);
+            // Fallback: restore from backup
+            restore_config_backup()?;
+            if let Ok(config) = crate::state::load_config() {
+                if let Ok(mut guard) = state.config.write() {
+                    *guard = Some(config);
+                }
+            }
+        }
+    }
+
+    // 4. Clear dev auth tokens from memory
+    crate::google_api::token_store::clear_dev_token();
+
+    // 5. Re-probe Google auth state from Keychain
+    match crate::google_api::token_store::load_token() {
+        Ok(token) => {
+            let email = token.account.unwrap_or_else(|| "unknown".to_string());
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
+                *guard = GoogleAuthStatus::Authenticated { email };
+            }
+        }
+        Err(_) => {
+            if let Ok(mut guard) = state.calendar.google_auth.lock() {
+                *guard = GoogleAuthStatus::NotConfigured;
+            }
+        }
+    }
+
+    // 6. Delete sentinel file
+    if let Ok(sentinel) = crate::state::dev_mode_sentinel_path() {
+        let _ = std::fs::remove_file(&sentinel);
+    }
+
+    // 7. Clean up dev config (or keep for next session — deleting is safer)
+    if let Ok(dev_config) = crate::state::dev_config_path() {
+        let _ = std::fs::remove_file(&dev_config);
+    }
+
+    // 8. Clean up backup (no longer needed after successful exit)
+    if let Ok(live_path) = crate::state::live_config_path() {
+        let backup = live_path.with_extension("json.dev-backup");
+        let _ = std::fs::remove_file(&backup);
+    }
+
+    // 9. Clear all in-memory volatile state so mock data doesn't bleed
+    //    back into live mode. The calendar poller will refill real events
+    //    once it resumes (it pauses during dev mode via is_dev_db_mode check).
+    if let Ok(mut guard) = state.calendar.events.write() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.workflow.status.write() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.workflow.history.lock() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.workflow.last_scheduled_run.write() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.capture.dismissed.lock() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.capture.captured.lock() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+        guard.clear();
+    }
+
+    // 10. Clear stashed workspace
+    if let Ok(mut guard) = state.pre_dev_workspace.lock() {
+        *guard = None;
+    }
+
+    log::info!("Dev mode exited — back to live");
     Ok(())
 }
 
@@ -109,31 +333,14 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
             | "mock_enriched"
     );
 
-    // I298: On destructive scenario entry, activate dev DB isolation and stash
-    // the current workspace path so restore_live() can return to it.
+    // On destructive scenario entry, ensure dev mode isolation is active.
     if destructive {
-        // Stash current workspace path (only if not already in dev mode)
-        if !crate::db::is_dev_db_mode() {
-            // Backup config.json BEFORE any mutations
-            backup_config()?;
-
-            let current_ws = state
-                .config
-                .read()
-                .ok()
-                .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
-            if let Ok(mut guard) = state.pre_dev_workspace.lock() {
-                *guard = current_ws;
-            }
-        }
-
-        // Switch to dev DB
-        crate::db::set_dev_db_mode(true);
-        // Reopen DB at the dev path
-        if let Ok(mut guard) = state.db.lock() {
-            *guard = ActionDb::open().ok();
-        }
+        enter_dev_mode(state)?;
     }
+
+    // Clear any onboarding auth overrides when switching to non-onboarding scenarios
+    crate::commands::DEV_CLAUDE_OVERRIDE.store(0, std::sync::atomic::Ordering::Relaxed);
+    crate::commands::DEV_GOOGLE_OVERRIDE.store(0, std::sync::atomic::Ordering::Relaxed);
 
     match scenario {
         "reset" => {
@@ -169,12 +376,7 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
     }
 }
 
-/// Restore to live mode: undo dev DB isolation and return to the real workspace.
-///
-/// 1. Read the stashed workspace path from `pre_dev_workspace`
-/// 2. Deactivate dev DB mode
-/// 3. Reopen DB at the live path
-/// 4. Restore workspace config
+/// Restore to live mode. Delegates to `exit_dev_mode()`.
 pub fn restore_live(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
@@ -184,57 +386,11 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
         return Err("Already in live mode".into());
     }
 
-    // 1. Read stashed workspace path (fallback only)
-    let original_workspace = state
-        .pre_dev_workspace
-        .lock()
-        .map_err(|_| "Lock poisoned")?
-        .take();
+    exit_dev_mode(state)?;
 
-    // 2. Deactivate dev DB mode
-    crate::db::set_dev_db_mode(false);
-
-    // 3. Reopen DB at live path
-    if let Ok(mut guard) = state.db.lock() {
-        *guard = ActionDb::open().ok();
-    }
-
-    // 4. Restore config from backup (written before dev entry)
-    restore_config_backup()?;
-
-    // 5. Reload config from (now-restored) disk file
-    match crate::state::load_config() {
-        Ok(config) => {
-            if let Ok(mut guard) = state.config.write() {
-                *guard = Some(config.clone());
-            }
-        }
-        Err(_) => {
-            // Fallback: use stashed workspace path
-            if let Some(ws) = original_workspace {
-                crate::state::create_or_update_config(state, |config| {
-                    config.workspace_path = ws;
-                })?;
-            }
-        }
-    }
-
-    // 6. Re-probe Google auth state from Keychain (restore real auth, not mock)
-    match crate::google_api::token_store::load_token() {
-        Ok(token) => {
-            let email = token.account.unwrap_or_else(|| "unknown".to_string());
-            if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = GoogleAuthStatus::Authenticated {
-                    email: email.clone(),
-                };
-            }
-        }
-        Err(_) => {
-            if let Ok(mut guard) = state.calendar.google_auth.lock() {
-                *guard = GoogleAuthStatus::NotConfigured;
-            }
-        }
-    }
+    // Clear any onboarding auth overrides
+    crate::commands::DEV_CLAUDE_OVERRIDE.store(0, std::sync::atomic::Ordering::Relaxed);
+    crate::commands::DEV_GOOGLE_OVERRIDE.store(0, std::sync::atomic::Ordering::Relaxed);
 
     let ws = state
         .config
@@ -243,6 +399,72 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
         .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
         .unwrap_or_else(|| "unknown".to_string());
     Ok(format!("Restored to live mode — workspace: {}", ws))
+}
+
+/// Apply an onboarding scenario: enter dev mode, reset, and set auth overrides.
+///
+/// Each scenario enters dev sandbox isolation first, resets to first-run state,
+/// then sets Claude and Google auth overrides to simulate specific onboarding paths.
+pub fn onboarding_scenario(scenario: &str, state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    use std::sync::atomic::Ordering;
+
+    let (claude_mode, google_mode, description) = match scenario {
+        "fresh" => {
+            // Real auth checks — no mocking
+            (0u8, 0u8, "Fresh start with real auth checks")
+        }
+        "auth_ready" => {
+            // Both auth mocked as ready — happy path
+            (1, 1, "Happy path — both auth ready")
+        }
+        "no_claude" => {
+            // Claude not installed, Google ready
+            (2, 1, "Claude not installed, Google ready")
+        }
+        "claude_unauthed" => {
+            // Claude found but not logged in, Google ready
+            (3, 1, "Claude not authenticated, Google ready")
+        }
+        "no_google" => {
+            // Claude ready, Google not configured
+            (1, 2, "Claude ready, Google not connected")
+        }
+        "google_expired" => {
+            // Claude ready, Google token expired
+            (1, 3, "Claude ready, Google token expired")
+        }
+        "nothing_works" => {
+            // Both auth fail
+            (2, 2, "Both auth unavailable")
+        }
+        _ => return Err(format!("Unknown onboarding scenario: {}", scenario)),
+    };
+
+    // 1. Ensure dev mode isolation is active
+    enter_dev_mode(state)?;
+
+    // 2. Reset to first-run state (clears wizard state, DB, config)
+    reset_all(state)?;
+
+    // 3. Set auth overrides
+    crate::commands::DEV_CLAUDE_OVERRIDE.store(claude_mode, Ordering::Relaxed);
+    crate::commands::DEV_GOOGLE_OVERRIDE.store(google_mode, Ordering::Relaxed);
+
+    log::info!(
+        "Onboarding scenario '{}' applied — Claude override: {}, Google override: {}",
+        scenario,
+        claude_mode,
+        google_mode
+    );
+
+    Ok(format!(
+        "Onboarding: {} — app will reload to wizard",
+        description
+    ))
 }
 
 /// Purge all known mock/dev data from the current database (I298).
@@ -580,8 +802,11 @@ fn reset_all(state: &AppState) -> Result<(), String> {
         ]
     };
 
+    // Use config_path() so dev mode deletes config-dev.json, not live config.json
+    let active_config =
+        crate::state::config_path().unwrap_or_else(|_| dailyos_dir.join("config.json"));
     let mut files_to_delete = vec![
-        dailyos_dir.join("config.json"),
+        active_config,
         dailyos_dir.join("execution_history.json"),
         dailyos_dir.join("transcript_records.json"),
         dailyos_dir.join("google").join("token.json"),
@@ -675,8 +900,8 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
         seed_database(db)?;
     }
 
-    // Write project workspace files (dashboard.json + dashboard.md)
-    write_project_workspace_files(&workspace)?;
+    // Write workspace markdown + JSON files (accounts, projects, people)
+    write_workspace_markdown(&workspace)?;
 
     // Seed transcript record for today's past Acme meeting (#1)
     let today_str = Local::now().format("%Y-%m-%d").to_string();
@@ -1117,6 +1342,91 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params!["contoso--smb", "SMB", "renewal", 600_000.0, "yellow", "2026-03-15", "Accounts/Contoso/SMB", "contoso", &today],
     ).map_err(|e| e.to_string())?;
 
+    // --- Account Domains (inbox-to-account matching) ---
+    let account_domain_rows: Vec<(&str, &str)> = vec![
+        ("acme-corp", "acme.com"),
+        ("globex-industries", "globex.com"),
+        ("initech", "initech.com"),
+        ("contoso", "contoso.com"),
+        ("contoso--enterprise", "contoso.com"),
+        ("contoso--smb", "contoso.com"),
+    ];
+
+    for (account_id, domain) in &account_domain_rows {
+        conn.execute(
+            "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+            rusqlite::params![account_id, domain],
+        )
+        .map_err(|e| format!("Account domain {}/{}: {}", account_id, domain, e))?;
+    }
+
+    // --- Account Events (lifecycle timeline on Account Detail page) ---
+    let account_event_rows: Vec<(&str, &str, String, Option<f64>, &str)> = vec![
+        (
+            "acme-corp",
+            "expansion",
+            date_only(-90),
+            Some(200_000.0),
+            "Phase 1 expansion: added engineering team deployment",
+        ),
+        (
+            "acme-corp",
+            "renewal",
+            date_only(-365),
+            None,
+            "Annual renewal — 2-year extension signed",
+        ),
+        (
+            "globex-industries",
+            "expansion",
+            date_only(-60),
+            Some(150_000.0),
+            "Expanded to 3 new teams in Q1",
+        ),
+        (
+            "globex-industries",
+            "downgrade",
+            date_only(-30),
+            Some(-50_000.0),
+            "Team B seats reduced due to low adoption",
+        ),
+        (
+            "globex-industries",
+            "renewal",
+            date_only(-180),
+            None,
+            "Annual renewal — 1-year term",
+        ),
+        (
+            "initech",
+            "expansion",
+            date_only(-45),
+            Some(100_000.0),
+            "Phase 1 scope increase: added analytics module",
+        ),
+        (
+            "contoso",
+            "renewal",
+            date_only(-120),
+            None,
+            "Enterprise-wide renewal — 3-year commitment",
+        ),
+        (
+            "contoso--smb",
+            "downgrade",
+            date_only(-15),
+            Some(-25_000.0),
+            "SMB division reduced seats after reorg",
+        ),
+    ];
+
+    for (account_id, event_type, event_date, arr_impact, notes) in &account_event_rows {
+        conn.execute(
+            "INSERT INTO account_events (account_id, event_type, event_date, arr_impact, notes) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![account_id, event_type, event_date, arr_impact, notes],
+        ).map_err(|e| format!("Account event {}/{}: {}", account_id, event_type, e))?;
+    }
+
     // --- Entities (mirrors accounts) ---
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1260,48 +1570,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Project action insert: {}", e))?;
     }
 
-    // Project-linked meetings (reuse existing meetings via meeting_entities junction)
-    let project_meetings: Vec<(&str, &str, &str)> = vec![
-        // (meeting_id, entity_id, entity_type)
-        ("mh-acme-2d", "acme-phase-2", "project"),
-        ("mh-acme-7d", "acme-phase-2", "project"),
-        ("mh-globex-3d", "globex-team-b-recovery", "project"),
-        ("mh-globex-14d", "globex-team-b-recovery", "project"),
-        ("mh-standup-5d", "platform-migration", "project"),
-    ];
-
-    for (meeting_id, entity_id, entity_type) in &project_meetings {
-        conn.execute(
-            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
-            rusqlite::params![meeting_id, entity_id, entity_type],
-        ).map_err(|e| format!("Project meeting link: {}", e))?;
-    }
-
-    // I298: Today's meetings → account junction (date-aligned IDs matching schedule.json.tmpl)
+    // NOTE: meeting_entities links are inserted AFTER meetings_history rows
+    // (see below) to satisfy FK constraint: meeting_entities.meeting_id → meetings_history.id
     let today_str = date_only(0);
-    let today_meeting_entities: Vec<(String, &str, &str)> = vec![
-        (
-            format!("mtg-acme-weekly-{}", today_str),
-            "acme-corp",
-            "account",
-        ),
-        (
-            format!("mtg-initech-kickoff-{}", today_str),
-            "initech",
-            "account",
-        ),
-        (
-            format!("mtg-globex-qbr-{}", today_str),
-            "globex-industries",
-            "account",
-        ),
-    ];
-    for (meeting_id, entity_id, entity_type) in &today_meeting_entities {
-        conn.execute(
-            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
-            rusqlite::params![meeting_id, entity_id, entity_type],
-        ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
-    }
 
     // I298: Also seed today's customer meetings into meetings_history with ISO timestamps
     // so DailyFocus/compute_focus_capacity() picks them up.
@@ -1319,13 +1590,15 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             })
             .unwrap_or_default()
     };
-    let today_meetings_history: Vec<(String, &str, &str, String, Option<&str>)> = vec![
+    // (db_id, title, type, start_time, account_id, calendar_event_id)
+    let today_meetings_history: Vec<(String, &str, &str, String, Option<&str>, String)> = vec![
         (
             format!("mtg-acme-weekly-{}", today_str),
             "Acme Corp Weekly Sync",
             "customer",
             make_iso(8, 0),
             Some("acme-corp"),
+            format!("cal-acme-weekly-{}", today_str),
         ),
         (
             format!("mtg-eng-standup-{}", today_str),
@@ -1333,6 +1606,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "team_sync",
             make_iso(9, 30),
             None,
+            format!("cal-eng-standup-{}", today_str),
         ),
         (
             format!("mtg-initech-kickoff-{}", today_str),
@@ -1340,6 +1614,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "customer",
             make_iso(10, 0),
             Some("initech"),
+            format!("cal-initech-kickoff-{}", today_str),
         ),
         (
             format!("mtg-1on1-sarah-{}", today_str),
@@ -1347,6 +1622,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "one_on_one",
             make_iso(11, 0),
             None,
+            format!("cal-1on1-sarah-{}", today_str),
         ),
         (
             format!("mtg-globex-qbr-{}", today_str),
@@ -1354,6 +1630,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "qbr",
             make_iso(13, 0),
             Some("globex-industries"),
+            format!("cal-globex-qbr-{}", today_str),
         ),
         (
             format!("mtg-sprint-review-{}", today_str),
@@ -1361,6 +1638,15 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "internal",
             make_iso(14, 30),
             None,
+            format!("cal-sprint-review-{}", today_str),
+        ),
+        (
+            format!("mtg-initech-onboarding-{}", today_str),
+            "Initech Onboarding Call",
+            "customer",
+            make_iso(15, 30),
+            Some("initech"),
+            format!("cal-initech-onboarding-{}", today_str),
         ),
         (
             format!("mtg-all-hands-{}", today_str),
@@ -1368,12 +1654,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "all_hands",
             make_iso(16, 30),
             None,
+            format!("cal-all-hands-{}", today_str),
         ),
     ];
-    for (id, title, mtype, start_time, account_id) in &today_meetings_history {
+    for (id, title, mtype, start_time, _account_id, cal_event_id) in &today_meetings_history {
         conn.execute(
-            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, title, mtype, start_time, account_id, &today],
+            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, calendar_event_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, cal_event_id, &today],
         ).map_err(|e| format!("Today meeting history: {}", e))?;
     }
 
@@ -1479,8 +1766,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     for (id, title, mtype, start_time, account_id, summary) in &meeting_rows {
         conn.execute(
-            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, summary, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![id, title, mtype, start_time, account_id, summary, &today],
+            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, summary, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, summary, &today],
         ).map_err(|e| e.to_string())?;
 
         // I298: Also link historical customer meetings to their account entity
@@ -1490,6 +1777,46 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 rusqlite::params![id, acct],
             ).map_err(|e| format!("Historical meeting-entity link: {}", e))?;
         }
+    }
+
+    // Project-linked meetings (meetings_history rows exist now, safe for FK)
+    let project_meetings: Vec<(&str, &str, &str)> = vec![
+        ("mh-acme-2d", "acme-phase-2", "project"),
+        ("mh-acme-7d", "acme-phase-2", "project"),
+        ("mh-globex-3d", "globex-team-b-recovery", "project"),
+        ("mh-globex-14d", "globex-team-b-recovery", "project"),
+        ("mh-standup-5d", "platform-migration", "project"),
+    ];
+    for (meeting_id, entity_id, entity_type) in &project_meetings {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![meeting_id, entity_id, entity_type],
+        ).map_err(|e| format!("Project meeting link: {}", e))?;
+    }
+
+    // Today's meetings → account junction
+    let today_meeting_entities: Vec<(String, &str, &str)> = vec![
+        (
+            format!("mtg-acme-weekly-{}", today_str),
+            "acme-corp",
+            "account",
+        ),
+        (
+            format!("mtg-initech-kickoff-{}", today_str),
+            "initech",
+            "account",
+        ),
+        (
+            format!("mtg-globex-qbr-{}", today_str),
+            "globex-industries",
+            "account",
+        ),
+    ];
+    for (meeting_id, entity_id, entity_type) in &today_meeting_entities {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![meeting_id, entity_id, entity_type],
+        ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
     }
 
     // --- Captures ---
@@ -1738,6 +2065,122 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ),
     ];
 
+    // Enrichment data for people (linkedin, photo, bio, etc.)
+    // Jordan Wells + Taylor Nguyen intentionally left unenriched (sparse data test).
+    struct PersonEnrichment {
+        id: &'static str,
+        linkedin_url: Option<&'static str>,
+        photo_url: Option<&'static str>,
+        bio: Option<&'static str>,
+        title_history: Option<&'static str>,
+        company_industry: Option<&'static str>,
+        company_size: Option<&'static str>,
+        company_hq: Option<&'static str>,
+    }
+
+    let enrichments: Vec<PersonEnrichment> = vec![
+        PersonEnrichment {
+            id: "sarah-chen-acme-com",
+            linkedin_url: Some("https://linkedin.com/in/sarachen"),
+            photo_url: Some("https://i.pravatar.cc/150?u=sarah-chen"),
+            bio: Some("VP Engineering at Acme Corp. 15+ years in enterprise software. Previously led platform engineering at Stripe. Stanford CS."),
+            title_history: Some(r#"[{"title":"VP Engineering","company":"Acme Corp","startDate":"2023-01"},{"title":"Director of Platform Engineering","company":"Stripe","startDate":"2019-06","endDate":"2022-12"}]"#),
+            company_industry: Some("Enterprise SaaS"),
+            company_size: Some("500-1000"),
+            company_hq: Some("San Francisco, CA"),
+        },
+        PersonEnrichment {
+            id: "alex-torres-acme-com",
+            linkedin_url: Some("https://linkedin.com/in/alextorres"),
+            photo_url: Some("https://i.pravatar.cc/150?u=alex-torres"),
+            bio: Some("Tech Lead at Acme Corp. Full-stack engineer with deep expertise in distributed systems and cloud architecture."),
+            title_history: Some(r#"[{"title":"Tech Lead","company":"Acme Corp","startDate":"2022-03"},{"title":"Senior Engineer","company":"Acme Corp","startDate":"2020-01","endDate":"2022-02"}]"#),
+            company_industry: Some("Enterprise SaaS"),
+            company_size: Some("500-1000"),
+            company_hq: Some("San Francisco, CA"),
+        },
+        PersonEnrichment {
+            id: "pat-kim-acme-com",
+            linkedin_url: Some("https://linkedin.com/in/patkim"),
+            photo_url: Some("https://i.pravatar.cc/150?u=pat-kim"),
+            bio: Some("CTO at Acme Corp. Former AWS principal engineer. Focused on platform consolidation and APAC expansion."),
+            title_history: Some(r#"[{"title":"CTO","company":"Acme Corp","startDate":"2021-01"},{"title":"Principal Engineer","company":"AWS","startDate":"2016-03","endDate":"2020-12"}]"#),
+            company_industry: Some("Enterprise SaaS"),
+            company_size: Some("500-1000"),
+            company_hq: Some("San Francisco, CA"),
+        },
+        PersonEnrichment {
+            id: "pat-reynolds-globex-com",
+            linkedin_url: Some("https://linkedin.com/in/patreynolds"),
+            photo_url: Some("https://i.pravatar.cc/150?u=pat-reynolds"),
+            bio: Some("VP Product at Globex Industries. Product leader with 12 years in B2B SaaS. Departing Q2 for new opportunity."),
+            title_history: Some(r#"[{"title":"VP Product","company":"Globex Industries","startDate":"2021-06"},{"title":"Senior Product Manager","company":"Salesforce","startDate":"2017-01","endDate":"2021-05"}]"#),
+            company_industry: Some("Manufacturing Technology"),
+            company_size: Some("1000-5000"),
+            company_hq: Some("Chicago, IL"),
+        },
+        PersonEnrichment {
+            id: "jamie-morrison-globex-com",
+            linkedin_url: Some("https://linkedin.com/in/jamiemorrison"),
+            photo_url: Some("https://i.pravatar.cc/150?u=jamie-morrison"),
+            bio: Some("Engineering Director at Globex Industries. Champion for platform adoption across engineering teams. Passionate about developer experience."),
+            title_history: Some(r#"[{"title":"Engineering Director","company":"Globex Industries","startDate":"2022-01"},{"title":"Staff Engineer","company":"Globex Industries","startDate":"2019-06","endDate":"2021-12"}]"#),
+            company_industry: Some("Manufacturing Technology"),
+            company_size: Some("1000-5000"),
+            company_hq: Some("Chicago, IL"),
+        },
+        PersonEnrichment {
+            id: "casey-lee-globex-com",
+            linkedin_url: None,
+            photo_url: Some("https://i.pravatar.cc/150?u=casey-lee"),
+            bio: Some("Head of Operations at Globex Industries. Manages ops budget and tooling decisions for the operations division."),
+            title_history: None,
+            company_industry: Some("Manufacturing Technology"),
+            company_size: Some("1000-5000"),
+            company_hq: Some("Chicago, IL"),
+        },
+        PersonEnrichment {
+            id: "dana-patel-initech-com",
+            linkedin_url: Some("https://linkedin.com/in/danapatel"),
+            photo_url: Some("https://i.pravatar.cc/150?u=dana-patel"),
+            bio: Some("CTO at Initech. Data-driven technology leader. Previously VP Engineering at Palantir. MIT EECS."),
+            title_history: Some(r#"[{"title":"CTO","company":"Initech","startDate":"2022-06"},{"title":"VP Engineering","company":"Palantir","startDate":"2018-01","endDate":"2022-05"}]"#),
+            company_industry: Some("Financial Technology"),
+            company_size: Some("200-500"),
+            company_hq: Some("Boston, MA"),
+        },
+        PersonEnrichment {
+            id: "priya-sharma-initech-com",
+            linkedin_url: Some("https://linkedin.com/in/priyasharma"),
+            photo_url: Some("https://i.pravatar.cc/150?u=priya-sharma"),
+            bio: Some("VP Product at Initech. Leads product strategy and manages cross-functional delivery. Prefers async workflows."),
+            title_history: None,
+            company_industry: Some("Financial Technology"),
+            company_size: Some("200-500"),
+            company_hq: Some("Boston, MA"),
+        },
+        PersonEnrichment {
+            id: "mike-chen-dailyos-test",
+            linkedin_url: None,
+            photo_url: Some("https://i.pravatar.cc/150?u=mike-chen"),
+            bio: Some("Product Manager at DailyOS. Owns the platform roadmap and coordinates sprint deliverables."),
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+        },
+        PersonEnrichment {
+            id: "lisa-park-dailyos-test",
+            linkedin_url: None,
+            photo_url: Some("https://i.pravatar.cc/150?u=lisa-park"),
+            bio: Some("Engineering Manager at DailyOS. Manages the platform team and drives infrastructure decisions."),
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+        },
+    ];
+
     for (id, email, name, org, role, relationship, notes) in &people {
         conn.execute(
             "INSERT OR REPLACE INTO people (
@@ -1758,6 +2201,75 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             ],
         )
         .map_err(|e| format!("People insert: {}", e))?;
+    }
+
+    // Apply enrichment data to people who have it
+    let enrichment_sources_json = |fields: &[&str]| -> String {
+        let mut map = serde_json::Map::new();
+        for field in fields {
+            map.insert(
+                field.to_string(),
+                serde_json::json!({"source": "clay", "at": &today}),
+            );
+        }
+        serde_json::Value::Object(map).to_string()
+    };
+
+    for e in &enrichments {
+        let mut sets = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        let mut enriched_fields: Vec<&str> = Vec::new();
+
+        if let Some(v) = e.linkedin_url {
+            sets.push("linkedin_url = ?");
+            params.push(Box::new(v.to_string()));
+            enriched_fields.push("linkedin_url");
+        }
+        if let Some(v) = e.photo_url {
+            sets.push("photo_url = ?");
+            params.push(Box::new(v.to_string()));
+            enriched_fields.push("photo_url");
+        }
+        if let Some(v) = e.bio {
+            sets.push("bio = ?");
+            params.push(Box::new(v.to_string()));
+            enriched_fields.push("bio");
+        }
+        if let Some(v) = e.title_history {
+            sets.push("title_history = ?");
+            params.push(Box::new(v.to_string()));
+            enriched_fields.push("title_history");
+        }
+        if let Some(v) = e.company_industry {
+            sets.push("company_industry = ?");
+            params.push(Box::new(v.to_string()));
+            enriched_fields.push("company_industry");
+        }
+        if let Some(v) = e.company_size {
+            sets.push("company_size = ?");
+            params.push(Box::new(v.to_string()));
+            enriched_fields.push("company_size");
+        }
+        if let Some(v) = e.company_hq {
+            sets.push("company_hq = ?");
+            params.push(Box::new(v.to_string()));
+            enriched_fields.push("company_hq");
+        }
+
+        if !sets.is_empty() {
+            sets.push("last_enriched_at = ?");
+            params.push(Box::new(today.clone()));
+            sets.push("enrichment_sources = ?");
+            params.push(Box::new(enrichment_sources_json(&enriched_fields)));
+
+            let sql = format!("UPDATE people SET {} WHERE id = ?", sets.join(", "));
+            params.push(Box::new(e.id.to_string()));
+
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params.iter().map(|p| p.as_ref()).collect();
+            conn.execute(&sql, param_refs.as_slice())
+                .map_err(|e2| format!("People enrichment {}: {}", e.id, e2))?;
+        }
     }
 
     // --- Meeting attendees ---
@@ -1902,6 +2414,1030 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Entity-people link: {}", e))?;
     }
 
+    // =========================================================================
+    // Phase 1: User Entity (/me page)
+    // =========================================================================
+
+    let annual_priorities = serde_json::json!([
+        {
+            "id": "ap-1",
+            "text": "Grow enterprise ARR by 40% through Phase 2 deployments and upsell motions",
+            "linkedEntityId": "acme-corp",
+            "linkedEntityType": "account",
+            "createdAt": &today
+        },
+        {
+            "id": "ap-2",
+            "text": "Achieve 95% gross retention by proactively addressing health score declines and stakeholder departures",
+            "linkedEntityId": "globex-industries",
+            "linkedEntityType": "account",
+            "createdAt": &today
+        },
+        {
+            "id": "ap-3",
+            "text": "Build repeatable onboarding playbook from Initech success for future mid-market customers",
+            "linkedEntityId": null,
+            "linkedEntityType": null,
+            "createdAt": &today
+        }
+    ]);
+
+    let quarterly_priorities = serde_json::json!([
+        {
+            "id": "qp-1",
+            "text": "Close Acme Phase 2 scope — finalize SOW, get legal sign-off, confirm April kickoff with Sarah Chen",
+            "linkedEntityId": "acme-phase-2",
+            "linkedEntityType": "project",
+            "createdAt": &today
+        },
+        {
+            "id": "qp-2",
+            "text": "Stabilize Globex before renewal — reverse Team B usage decline, secure renewal commitment",
+            "linkedEntityId": "globex-team-b-recovery",
+            "linkedEntityType": "project",
+            "createdAt": &today
+        },
+        {
+            "id": "qp-3",
+            "text": "Launch Initech Phase 2 — get budget approval from finance, schedule kickoff with Dana Patel",
+            "linkedEntityId": null,
+            "linkedEntityType": null,
+            "createdAt": &today
+        }
+    ]);
+
+    let playbooks = serde_json::json!({
+        "at_risk_accounts": "When health score drops below yellow: (1) Schedule stakeholder check-in within 48 hours. (2) Pull usage trends for trailing 90 days and identify drop-off points. (3) Draft internal risk brief for VP CS. (4) If competitive threat identified, loop in AE for counter-positioning. (5) Build remediation plan with clear success metrics and 30-day checkpoint.",
+        "renewal_approach": "Start renewal prep 90 days out. Build the case around value delivered (not features used). Lead with business outcomes the customer has achieved. Address any open risks head-on — never let a surprise surface during renewal negotiation. Align with AE on commercial terms 30 days before contract end. Multi-year preferred for enterprise accounts.",
+        "ebr_qbr_prep": "Pull usage metrics and health trends for trailing 90 days. Draft executive summary with wins, risks, and asks. Align with AE on commercial narrative and renewal positioning. Pre-brief key stakeholders on any surprises — follow the 'no surprises in the room' rule. Include forward-looking roadmap alignment section. Always end with clear next steps and owners."
+    });
+
+    let differentiators = serde_json::json!([
+        "Time-to-value: most customers see ROI within 60 days of deployment",
+        "White-glove onboarding with dedicated CSM from day one",
+        "Enterprise-grade security and compliance (SOC 2 Type II, HIPAA)",
+        "Flexible API-first architecture that integrates with existing tech stacks"
+    ]);
+
+    let objections = serde_json::json!([
+        "Price is higher than point solutions — counter with TCO analysis showing consolidation savings",
+        "Implementation timeline concerns — reference Initech (delivered on time and under budget)",
+        "Feature gaps vs. competitors — focus on roadmap velocity and customer-driven prioritization",
+        "Internal resistance to platform change — offer pilot program with success metrics"
+    ]);
+
+    conn.execute(
+        "INSERT OR REPLACE INTO user_entity (
+            id, name, company, title, focus,
+            value_proposition, success_definition, current_priorities, product_context,
+            annual_priorities, quarterly_priorities, playbooks,
+            company_bio, role_description, how_im_measured,
+            pricing_model, differentiators, objections, competitive_context,
+            created_at, updated_at
+        ) VALUES (
+            1, ?1, ?2, ?3, ?4,
+            ?5, ?6, ?7, ?8,
+            ?9, ?10, ?11,
+            ?12, ?13, ?14,
+            ?15, ?16, ?17, ?18,
+            ?19, ?20
+        )",
+        rusqlite::params![
+            "Jordan Mitchell",
+            "Acme Platform Co.",
+            "Senior Customer Success Manager",
+            "Enterprise accounts in growth phase",
+            "I help enterprise customers realize measurable value from our platform, turning initial deployments into strategic partnerships that drive expansion revenue and long-term retention.",
+            "Every account in my portfolio hits their success milestones on time, renews without friction, and expands into new use cases within 12 months of onboarding.",
+            "Acme Phase 2 scoping, Globex renewal preparation, Initech onboarding completion",
+            "Our platform helps mid-market and enterprise teams consolidate their operational workflows. Core differentiator is time-to-value: most customers see ROI within 60 days of deployment.",
+            annual_priorities.to_string(),
+            quarterly_priorities.to_string(),
+            playbooks.to_string(),
+            "Acme Platform Co. is a B2B SaaS company serving mid-market and enterprise customers across manufacturing, fintech, and logistics verticals. ~200 employees, Series C, $45M ARR.",
+            "Own a portfolio of 8 enterprise accounts ($4.2M combined ARR). Responsible for onboarding, adoption, expansion, and renewal. Report to VP of Customer Success.",
+            "Gross revenue retention (target: 95%), net revenue retention (target: 115%), time-to-value for new deployments (target: <60 days), CSAT/NPS trends, expansion pipeline generation.",
+            "Per-seat licensing with volume tiers. Enterprise plans start at $15K/year. Custom pricing for 500+ seat deployments. Annual billing with multi-year discounts (10% for 2-year, 15% for 3-year).",
+            differentiators.to_string(),
+            objections.to_string(),
+            "Primary competitors: Contoso (enterprise, lower price but less flexible), WorkflowPro (mid-market, faster setup but limited scale), and several point solutions. We win on time-to-value and enterprise readiness. We lose when price sensitivity is the primary decision factor or when the buyer wants a narrower tool.",
+            &today,
+            &today,
+        ],
+    ).map_err(|e| format!("User entity insert: {}", e))?;
+
+    // User context entries
+    conn.execute(
+        "INSERT OR REPLACE INTO user_context_entries (id, title, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            "uctx-q1-focus",
+            "Q1 Focus Areas",
+            "This quarter is about closing two critical motions: Acme Phase 2 expansion (largest upsell opportunity in the portfolio) and Globex renewal (highest churn risk). Initech onboarding is going well but needs Phase 2 budget approval before we can maintain momentum. Secondary focus: building the QBR playbook into something repeatable.",
+            &today,
+            &today,
+        ],
+    ).map_err(|e| format!("User context entry 1: {}", e))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO user_context_entries (id, title, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            "uctx-leadership-context",
+            "Leadership Team Context",
+            "VP CS (my manager, Sarah) is focused on proving the CS org drives expansion revenue, not just retention. She wants QBR decks that lead with business outcomes, not feature adoption. The CRO is watching Globex closely — it's the largest renewal this quarter and a bellwether for the enterprise segment.",
+            &today,
+            &today,
+        ],
+    ).map_err(|e| format!("User context entry 2: {}", e))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO user_context_entries (id, title, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            "uctx-working-style",
+            "Working Style Notes",
+            "I prefer to front-load meeting prep the evening before. I block 7-8am for briefing review and action triage. I use the 'no surprises' rule with stakeholders — if there's bad news, I share it before the QBR, never during. I over-communicate with my AE partners and expect the same.",
+            &today,
+            &today,
+        ],
+    ).map_err(|e| format!("User context entry 3: {}", e))?;
+
+    // =========================================================================
+    // Phase 2: Meeting Prep Data (prep_frozen_json on today's meetings)
+    // =========================================================================
+
+    // Acme Weekly Sync — full prep
+    let acme_prep = serde_json::json!({
+        "meetingContext": "Weekly sync with Acme Corp engineering leadership. Phase 1 migration completed last week — this is the first meeting focused on Phase 2 scoping.",
+        "attendees": [
+            { "name": "Sarah Chen", "role": "VP Engineering", "org": "Acme Corp", "temperature": "warm", "notes": "Executive sponsor. Confirmed Phase 2 budget." },
+            { "name": "Alex Torres", "role": "Tech Lead", "org": "Acme Corp", "temperature": "warm", "notes": "Departing March. Knowledge transfer priority." },
+            { "name": "Mike Chen", "role": "Product Manager", "org": "DailyOS", "temperature": "neutral" }
+        ],
+        "sinceLast": [
+            "Completed Phase 1 migration ahead of schedule — performance exceeded targets by 15%",
+            "Sarah confirmed executive sponsorship for Phase 2 expansion",
+            "Alex Torres confirmed March departure timeline — KT plan needed this week"
+        ],
+        "openItems": [
+            { "title": "Send updated SOW to Acme legal team", "isOverdue": true, "context": "Legal needs the amended MSA before Phase 2 scoping can proceed." },
+            { "title": "Finalize Phase 2 scope document", "isOverdue": false, "context": "Sarah Chen confirmed scope requirements last week." }
+        ],
+        "risks": [
+            "Alex Torres departing in March — knowledge transfer gap if not addressed this week",
+            "NPS trending down with 3 detractors — need to understand root causes before QBR"
+        ],
+        "talkingPoints": [
+            "Celebrate Phase 1 success — 15% above benchmark, delivered ahead of schedule",
+            "Align on Phase 2 scope: which teams beyond engineering? APAC inclusion?",
+            "Alex's departure: propose KT plan with documentation sprint this week"
+        ],
+        "intelligenceSummary": "Acme is in a strong position post-Phase 1. The key risk is Alex Torres' departure creating a knowledge gap right as Phase 2 scoping begins. Sarah Chen is fully bought in as executive sponsor. NPS detractors need attention but aren't blocking expansion discussions.",
+        "stakeholderInsights": [
+            { "name": "Sarah Chen", "assessment": "Secured budget approval for Phase 2 independently — strong internal champion. Prefers data-driven updates." },
+            { "name": "Alex Torres", "assessment": "Has been the technical backbone of Phase 1. His departure creates urgency around documentation and handoff." }
+        ],
+        "proposedAgenda": [
+            { "topic": "Phase 1 retrospective", "why": "Celebrate wins, review benchmarks" },
+            { "topic": "Phase 2 scope discussion", "why": "Teams in scope, APAC decision, timeline" },
+            { "topic": "Knowledge transfer planning", "why": "Alex's transition, documentation needs" },
+            { "topic": "NPS detractor follow-up", "why": "Plan for individual outreach" }
+        ],
+        "recentWins": [
+            "Phase 1 migration completed ahead of schedule",
+            "Performance benchmarks exceeded targets by 15%"
+        ]
+    });
+
+    conn.execute(
+        "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+        rusqlite::params![
+            acme_prep.to_string(),
+            format!("mtg-acme-weekly-{}", today_str)
+        ],
+    )
+    .map_err(|e| format!("Acme prep frozen: {}", e))?;
+
+    // Globex QBR — full prep
+    let globex_prep = serde_json::json!({
+        "meetingContext": "Quarterly Business Review with Globex Industries. Highest-stakes meeting this quarter — renewal decision expected. Must address Team B usage decline and Pat Reynolds departure.",
+        "attendees": [
+            { "name": "Pat Reynolds", "role": "VP Product", "org": "Globex Industries", "temperature": "cool", "notes": "Departing Q2. Key exec sponsor — renewal risk." },
+            { "name": "Jamie Morrison", "role": "Eng Director", "org": "Globex Industries", "temperature": "warm", "notes": "Technical champion. Enthusiastic about adoption." },
+            { "name": "Casey Lee", "role": "Head of Ops", "org": "Globex Industries", "temperature": "cool", "notes": "Team B contact. Raised engagement concerns." },
+            { "name": "Taylor Nguyen", "role": "Contractor", "org": "", "temperature": "neutral" }
+        ],
+        "sinceLast": [
+            "Expanded deployment to 3 new teams this quarter — Team A usage up 40%",
+            "Pat Reynolds confirmed Q2 departure — need succession plan",
+            "CSAT score improved from 7.2 to 8.1 across active teams",
+            "Team B usage declining 20% month-over-month — intervention needed"
+        ],
+        "openItems": [
+            { "title": "Review Globex QBR deck with AE", "isOverdue": false, "context": "QBR is the highest-stakes meeting this quarter." },
+            { "title": "Run Team B usage audit", "isOverdue": false, "context": "Need data before presenting recovery plan." }
+        ],
+        "risks": [
+            "Pat Reynolds (executive sponsor) departing Q2 — successor unknown",
+            "Team B usage down 20% MoM — could become a churn argument in renewal negotiation",
+            "Competitor (Contoso) actively pitching the Globex team"
+        ],
+        "talkingPoints": [
+            "Lead with expansion wins: 3 new teams, 40% usage growth in Team A, CSAT improvement",
+            "Address Team B proactively — present root cause analysis and recovery plan",
+            "Discuss Pat's transition: who becomes the executive sponsor?",
+            "Renewal positioning: multi-year discount for early commitment"
+        ],
+        "intelligenceSummary": "Globex is a mixed picture: strong expansion momentum (3 new teams, rising CSAT) offset by Team B decline and Pat Reynolds' departure. The QBR is the pivotal moment — need to control the narrative around Team B before the competitor pitch gains traction. Jamie Morrison is the strongest internal champion and likely successor sponsor.",
+        "stakeholderInsights": [
+            { "name": "Pat Reynolds", "assessment": "Departing Q2 but still engaged. Will influence successor choice. Worth investing in a graceful handoff." },
+            { "name": "Jamie Morrison", "assessment": "Most enthusiastic about the platform. Could be elevated to executive sponsor role if positioned correctly." },
+            { "name": "Casey Lee", "assessment": "Skeptical about Team B ROI. Needs concrete data showing value before she'll advocate for renewal." }
+        ],
+        "proposedAgenda": [
+            { "topic": "Q1 wins and adoption metrics", "why": "Lead with the positive story — 3 teams, 40% growth, CSAT gains" },
+            { "topic": "Team B engagement review", "why": "Root cause analysis, recovery plan, timeline" },
+            { "topic": "Leadership transition planning", "why": "Pat's departure, successor identification" },
+            { "topic": "Renewal and expansion discussion", "why": "Multi-year terms, APAC expansion pilot" },
+            { "topic": "Action items and next steps", "why": "Clear owners and deadlines" }
+        ],
+        "recentWins": [
+            "Expanded to 3 new teams this quarter",
+            "Team A usage up 40% since January",
+            "CSAT improved from 7.2 to 8.1"
+        ]
+    });
+
+    conn.execute(
+        "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+        rusqlite::params![
+            globex_prep.to_string(),
+            format!("mtg-globex-qbr-{}", today_str)
+        ],
+    )
+    .map_err(|e| format!("Globex prep frozen: {}", e))?;
+
+    // Initech Kickoff — full prep
+    let initech_prep = serde_json::json!({
+        "meetingContext": "Phase 2 kickoff planning with Initech. Phase 1 delivered on time and under budget. This meeting establishes scope, timeline, and team alignment for the next phase.",
+        "attendees": [
+            { "name": "Dana Patel", "role": "CTO", "org": "Initech", "temperature": "neutral", "notes": "Decision maker. Interested in Phase 2 but budget pending." },
+            { "name": "Priya Sharma", "role": "VP Product", "org": "Initech", "temperature": "neutral", "notes": "Scope lead. Prefers async communication." }
+        ],
+        "sinceLast": [
+            "Phase 1 delivered on time and under budget — strong foundation",
+            "Dana expressed interest in Phase 2 expansion",
+            "Budget approval pending from finance — submitted 7 days ago"
+        ],
+        "openItems": [
+            { "title": "Schedule Phase 2 kickoff with Initech", "isOverdue": false, "context": "Phase 1 completed, need to maintain momentum." },
+            { "title": "Waiting on finance approval for Initech Phase 2 budget", "isOverdue": false, "context": "Submitted 7 days ago, no response." }
+        ],
+        "risks": [
+            "Budget approval still pending from finance — could delay Phase 2 start",
+            "Team bandwidth concerns for Q2 — Priya flagged resource constraints"
+        ],
+        "talkingPoints": [
+            "Review Phase 1 outcomes and key metrics",
+            "Define Phase 2 scope: which capabilities, which teams",
+            "Discuss timeline: what needs to be true for an April start?",
+            "Address bandwidth concerns — what support do they need from us?"
+        ],
+        "intelligenceSummary": "Initech is a promising expansion opportunity. Phase 1 success gives us strong credibility. The main blocker is budget approval from finance. Priya's bandwidth concerns are real but manageable if we offer implementation support. Dana is the decision maker — focus on business case reinforcement.",
+        "stakeholderInsights": [
+            { "name": "Dana Patel", "assessment": "Data-driven CTO. Phase 1 ROI numbers will be the most compelling argument for Phase 2 budget approval." },
+            { "name": "Priya Sharma", "assessment": "Concerned about Q2 team capacity. Will need a phased rollout plan that doesn't overload her team." }
+        ],
+        "proposedAgenda": [
+            { "topic": "Phase 1 retrospective", "why": "Key metrics, lessons learned, team feedback" },
+            { "topic": "Phase 2 scope definition", "why": "Capabilities, teams, integration requirements" },
+            { "topic": "Timeline and resource planning", "why": "Budget status, team bandwidth, phased approach" },
+            { "topic": "Next steps", "why": "Action items with owners" }
+        ],
+        "recentWins": [
+            "Phase 1 delivered on time and under budget"
+        ]
+    });
+
+    conn.execute(
+        "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+        rusqlite::params![
+            initech_prep.to_string(),
+            format!("mtg-initech-kickoff-{}", today_str)
+        ],
+    )
+    .map_err(|e| format!("Initech prep frozen: {}", e))?;
+
+    // =========================================================================
+    // Phase 3: Proposed Actions + Completed Actions
+    // =========================================================================
+
+    // 3a. Proposed actions (status = 'proposed') surfaced from meeting prep
+    let acme_mtg_id = format!("mtg-acme-weekly-{}", today_str);
+    let globex_mtg_id = format!("mtg-globex-qbr-{}", today_str);
+    let initech_mtg_id = format!("mtg-initech-kickoff-{}", today_str);
+
+    let proposed_actions: Vec<(&str, &str, &str, &str, &str, &str, &str)> = vec![
+        // (id, title, priority, account_id, source_type, source_id, context)
+        (
+            "act-proposed-tech-dive",
+            "Schedule technical deep-dive with Acme engineering",
+            "P2",
+            "acme-corp",
+            "meeting_prep",
+            &acme_mtg_id,
+            "Prep identified gap in technical alignment for Phase 2 scope. Alex Torres' departure makes this urgent — need to capture architectural knowledge before March.",
+        ),
+        (
+            "act-proposed-successor",
+            "Identify Pat Reynolds' successor at Globex",
+            "P1",
+            "globex-industries",
+            "meeting_prep",
+            &globex_mtg_id,
+            "Pat Reynolds departing Q2 with no identified successor as executive sponsor. Renewal risk increases significantly without aligned replacement. Jamie Morrison is a candidate.",
+        ),
+        (
+            "act-proposed-teamb-plan",
+            "Draft Team B engagement recovery plan",
+            "P1",
+            "globex-industries",
+            "meeting_prep",
+            &globex_mtg_id,
+            "Team B usage declining 20% MoM. Need a concrete recovery plan before presenting to Globex leadership at QBR. Should include root cause analysis, corrective actions, and success metrics.",
+        ),
+        (
+            "act-proposed-phase1-roi",
+            "Compile Phase 1 ROI report for Initech finance",
+            "P2",
+            "initech",
+            "meeting_prep",
+            &initech_mtg_id,
+            "Budget approval is pending from Initech finance. A compelling ROI report from Phase 1 would accelerate approval. Dana Patel (CTO) can champion it internally.",
+        ),
+    ];
+
+    for (id, title, priority, account_id, source_type, source_id, context) in &proposed_actions {
+        conn.execute(
+            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, account_id, source_type, source_id, context, updated_at) \
+             VALUES (?1, ?2, ?3, 'proposed', ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![id, title, priority, &today, account_id, source_type, source_id, context, &today],
+        ).map_err(|e| format!("Proposed action insert: {}", e))?;
+    }
+
+    // 3b. Completed actions for history
+    conn.execute(
+        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, completed_at, account_id, source_type, context, updated_at) \
+         VALUES (?1, ?2, ?3, 'completed', ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            "act-done-phase1-report",
+            "Send Phase 1 completion report to Acme",
+            "P1",
+            days_ago(5),
+            days_ago(2),
+            "acme-corp",
+            "briefing",
+            "Final Phase 1 completion report with benchmarks showing 15% above target. Sent to Sarah Chen and Pat Kim for executive review.",
+            days_ago(2),
+        ],
+    ).map_err(|e| format!("Completed action 1: {}", e))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, completed_at, account_id, source_type, context, updated_at) \
+         VALUES (?1, ?2, ?3, 'completed', ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            "act-done-globex-expansion",
+            "Coordinate Team A expansion onboarding",
+            "P2",
+            days_ago(14),
+            days_ago(7),
+            "globex-industries",
+            "briefing",
+            "Successfully onboarded 3 new teams at Globex. Team A showing 40% usage growth. Coordination with Jamie Morrison on training schedule completed.",
+            days_ago(7),
+        ],
+    ).map_err(|e| format!("Completed action 2: {}", e))?;
+
+    // =========================================================================
+    // Phase 4: Meeting Outcomes — transcript data on historical meetings
+    // =========================================================================
+
+    conn.execute(
+        "UPDATE meetings_history SET transcript_path = ?1, transcript_processed_at = ?2 WHERE id = 'mh-acme-2d'",
+        rusqlite::params!["Accounts/Acme Corp/meetings/acme-status-call-2d.md", days_ago(2)],
+    ).map_err(|e| format!("Transcript mh-acme-2d: {}", e))?;
+
+    conn.execute(
+        "UPDATE meetings_history SET transcript_path = ?1, transcript_processed_at = ?2 WHERE id = 'mh-globex-3d'",
+        rusqlite::params!["Accounts/Globex Industries/meetings/globex-checkin-3d.md", days_ago(3)],
+    ).map_err(|e| format!("Transcript mh-globex-3d: {}", e))?;
+
+    conn.execute(
+        "UPDATE meetings_history SET transcript_path = ?1, transcript_processed_at = ?2 WHERE id = 'mh-acme-7d'",
+        rusqlite::params!["Accounts/Acme Corp/meetings/acme-weekly-7d.md", days_ago(7)],
+    ).map_err(|e| format!("Transcript mh-acme-7d: {}", e))?;
+
+    // =========================================================================
+    // Phase 5: Entity Context Entries
+    // =========================================================================
+
+    let context_entries: Vec<(&str, &str, &str, &str, &str)> = vec![
+        // Account context
+        (
+            "ectx-acme-renewal",
+            "account",
+            "acme-corp",
+            "Renewal Strategy",
+            "Multi-year preferred. Champion (Sarah Chen) is supportive and has already secured internal budget approval for Phase 2. Legal review of amended MSA is the current blocker. Renewal date: September 2025 — plenty of runway but Phase 2 SOW needs to be signed before renewal conversation.",
+        ),
+        (
+            "ectx-acme-competitive",
+            "account",
+            "acme-corp",
+            "Competitive Landscape",
+            "No active competitive threat at Acme. Strong platform lock-in after Phase 1 migration. Pat Kim (CTO) evaluated alternatives 6 months ago and chose to expand with us. APAC expansion could change this if we can't support the Singapore timezone.",
+        ),
+        (
+            "ectx-globex-risk",
+            "account",
+            "globex-industries",
+            "Team B Risk Assessment",
+            "Usage declining 15% MoM across Team B. Jamie Morrison flagged resource constraints and competing priorities as root causes. Casey Lee (Head of Ops) is skeptical about ROI for Team B's use case. Need data-driven recovery plan before QBR to prevent this becoming a renewal objection.",
+        ),
+        (
+            "ectx-globex-competitor",
+            "account",
+            "globex-industries",
+            "Competitive Intel",
+            "Contoso is actively pitching Globex. Pat Reynolds mentioned they had an introductory call. Jamie Morrison is not impressed with their offering but Casey Lee is evaluating options. Price is not the issue — it's Team B's perceived lack of value. Must address usage decline to neutralize the competitive angle.",
+        ),
+        (
+            "ectx-initech-growth",
+            "account",
+            "initech",
+            "Growth Potential",
+            "Initech is a small account today ($350K ARR) but has strong expansion potential. Dana Patel's vision includes platform-wide adoption across all engineering teams. Phase 2 could double the ARR if scoped correctly. Key constraint: finance team is conservative and needs strong ROI data before approving expansion budget.",
+        ),
+        // Project context
+        (
+            "ectx-phase2-scope",
+            "project",
+            "acme-phase-2",
+            "Scope Decision Log",
+            "Agreed to include APAC in Phase 2 scope after Pat Kim's request (21 days ago). APAC will be a separate workstream targeting Q3 to avoid delaying the core Phase 2 kickoff in April. Singapore office is the pilot site. Sarah Chen confirmed engineering team is ready for expanded scope.",
+        ),
+        (
+            "ectx-teamb-analysis",
+            "project",
+            "globex-team-b-recovery",
+            "Root Cause Hypotheses",
+            "Three hypotheses for Team B usage decline: (1) Competing internal tool launched in January that overlaps 30% of our feature set. (2) Team lead turnover — two of three leads changed roles in Q4. (3) Initial deployment was too broad — Team B may need a narrower, more focused configuration. Usage audit scheduled to validate.",
+        ),
+        // Person context
+        (
+            "ectx-sarah-comms",
+            "person",
+            "sarah-chen-acme-com",
+            "Communication Preferences",
+            "Prefers async updates via Slack for routine matters. Escalates to email for decisions that need a paper trail. Likes data-heavy presentations — always include metrics. Best meeting times: Tuesday/Thursday mornings. Avoid Mondays (all-hands day at Acme).",
+        ),
+        (
+            "ectx-jamie-champion",
+            "person",
+            "jamie-morrison-globex-com",
+            "Champion Development Notes",
+            "Jamie is our strongest internal advocate at Globex. He proactively shares wins with his leadership team. Consider positioning him as the next executive sponsor when Pat Reynolds departs. He needs visibility into our roadmap to make the case internally. Schedule a roadmap preview before the QBR.",
+        ),
+        (
+            "ectx-dana-decisionmaking",
+            "person",
+            "dana-patel-initech-com",
+            "Decision-Making Style",
+            "Dana is a data-driven CTO who makes decisions based on quantitative outcomes, not relationship warmth. Phase 2 approval will hinge on a clear ROI narrative from Phase 1. She respects directness — don't oversell. She also values speed of implementation over feature completeness.",
+        ),
+        (
+            "ectx-alex-transition",
+            "person",
+            "alex-torres-acme-com",
+            "Transition Notes",
+            "Alex is departing in March. He's been the technical backbone of Phase 1 and holds critical institutional knowledge about Acme's deployment architecture. His replacement hasn't been named yet. Priority: get the KT documentation finalized and schedule a handoff meeting with the broader engineering team before his last day.",
+        ),
+        (
+            "ectx-pat-kim-priorities",
+            "person",
+            "pat-kim-acme-com",
+            "Strategic Priorities",
+            "Pat is focused on two things this quarter: (1) proving APAC viability with the Singapore pilot, and (2) reducing total cost of ownership across the engineering stack. He views our platform as a consolidation play — fewer tools, lower ops burden. Phase 2 should be positioned as cost reduction, not feature expansion.",
+        ),
+        (
+            "ectx-pat-reynolds-departure",
+            "person",
+            "pat-reynolds-globex-com",
+            "Departure Context",
+            "Pat is leaving for a VP role at a competitor (not Contoso). He's been our primary executive sponsor since the Globex engagement started. His departure creates a sponsorship vacuum — Jamie Morrison is the most likely successor but hasn't been formally elevated. Pat is willing to do a proper handoff if we schedule it before mid-April.",
+        ),
+        (
+            "ectx-casey-engagement",
+            "person",
+            "casey-lee-globex-com",
+            "Engagement Concerns",
+            "Casey has been increasingly skeptical about ROI since Team B adoption stalled. She manages the ops budget and could influence the renewal decision negatively. She responds well to concrete data — anecdotes won't move her. Need to present Team A success metrics as a counter-narrative and propose a targeted Team B recovery plan with measurable milestones.",
+        ),
+        (
+            "ectx-priya-workstyle",
+            "person",
+            "priya-sharma-initech-com",
+            "Working Style",
+            "Priya strongly prefers async communication — Slack threads over meetings, docs over presentations. She reads every document thoroughly before responding (expect 24-48h turnaround). She's protective of her team's bandwidth and will push back on aggressive timelines. Best approach: send a concise written proposal with clear asks, let her process it, then follow up with a focused 30-minute call.",
+        ),
+    ];
+
+    for (id, entity_type, entity_id, title, content) in &context_entries {
+        conn.execute(
+            "INSERT OR REPLACE INTO entity_context_entries (id, entity_type, entity_id, title, content, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![id, entity_type, entity_id, title, content, &today, &today],
+        ).map_err(|e| format!("Entity context entry {}: {}", id, e))?;
+    }
+
+    // =========================================================================
+    // Phase 6: Account Team (roles for account detail pages)
+    // =========================================================================
+
+    let account_team_rows: Vec<(&str, &str, &str)> = vec![
+        // Acme Corp team
+        ("acme-corp", "sarah-chen-acme-com", "champion"),
+        ("acme-corp", "alex-torres-acme-com", "technical_lead"),
+        ("acme-corp", "pat-kim-acme-com", "executive_sponsor"),
+        // Globex Industries team
+        (
+            "globex-industries",
+            "pat-reynolds-globex-com",
+            "executive_sponsor",
+        ),
+        ("globex-industries", "jamie-morrison-globex-com", "champion"),
+        (
+            "globex-industries",
+            "casey-lee-globex-com",
+            "operations_lead",
+        ),
+        // Initech team
+        ("initech", "dana-patel-initech-com", "executive_sponsor"),
+        ("initech", "priya-sharma-initech-com", "technical_lead"),
+    ];
+
+    for (account_id, person_id, role) in &account_team_rows {
+        conn.execute(
+            "INSERT OR IGNORE INTO account_team (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![account_id, person_id, role, &today],
+        ).map_err(|e| format!("Account team insert: {}", e))?;
+    }
+
+    // =========================================================================
+    // Phase 7: Person Relationships (person-to-person network)
+    // =========================================================================
+
+    let person_rels: Vec<(
+        &str,
+        &str,
+        &str,
+        &str,
+        &str,
+        f64,
+        Option<&str>,
+        Option<&str>,
+    )> = vec![
+        // (id, from, to, relationship_type, direction, confidence, context_entity_id, context_entity_type)
+
+        // Sarah Chen and Alex Torres are peers at Acme
+        (
+            "prel-sarah-alex",
+            "sarah-chen-acme-com",
+            "alex-torres-acme-com",
+            "peer",
+            "symmetric",
+            0.9,
+            Some("acme-corp"),
+            Some("account"),
+        ),
+        // Sarah reports to Pat Kim
+        (
+            "prel-sarah-pat",
+            "sarah-chen-acme-com",
+            "pat-kim-acme-com",
+            "manager",
+            "directed",
+            0.85,
+            Some("acme-corp"),
+            Some("account"),
+        ),
+        // Jamie and Casey are collaborators at Globex
+        (
+            "prel-jamie-casey",
+            "jamie-morrison-globex-com",
+            "casey-lee-globex-com",
+            "collaborator",
+            "symmetric",
+            0.8,
+            Some("globex-industries"),
+            Some("account"),
+        ),
+        // Pat Reynolds is Jamie's manager at Globex
+        (
+            "prel-pat-jamie",
+            "pat-reynolds-globex-com",
+            "jamie-morrison-globex-com",
+            "manager",
+            "directed",
+            0.85,
+            Some("globex-industries"),
+            Some("account"),
+        ),
+        // Dana and Priya are peers at Initech
+        (
+            "prel-dana-priya",
+            "dana-patel-initech-com",
+            "priya-sharma-initech-com",
+            "peer",
+            "symmetric",
+            0.8,
+            Some("initech"),
+            Some("account"),
+        ),
+        // Mike and Lisa are internal collaborators
+        (
+            "prel-mike-lisa",
+            "mike-chen-dailyos-test",
+            "lisa-park-dailyos-test",
+            "collaborator",
+            "symmetric",
+            0.9,
+            None,
+            None,
+        ),
+        // Sarah introduced us to Pat Kim (cross-org relationship insight)
+        (
+            "prel-sarah-intro-pat",
+            "sarah-chen-acme-com",
+            "pat-kim-acme-com",
+            "introduced_by",
+            "directed",
+            0.7,
+            Some("acme-corp"),
+            Some("account"),
+        ),
+        // Taylor Nguyen is a partner/ally
+        (
+            "prel-taylor-jamie",
+            "taylor-nguyen-contractor-io",
+            "jamie-morrison-globex-com",
+            "partner",
+            "symmetric",
+            0.6,
+            Some("globex-industries"),
+            Some("account"),
+        ),
+    ];
+
+    for (id, from_id, to_id, rel_type, direction, confidence, ctx_entity_id, ctx_entity_type) in
+        &person_rels
+    {
+        conn.execute(
+            "INSERT OR IGNORE INTO person_relationships (id, from_person_id, to_person_id, relationship_type, direction, confidence, context_entity_id, context_entity_type, source, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'mock_data', ?9, ?10)",
+            rusqlite::params![id, from_id, to_id, rel_type, direction, confidence, ctx_entity_id, ctx_entity_type, &today, &today],
+        ).map_err(|e| format!("Person relationship {}: {}", id, e))?;
+    }
+
+    // =========================================================================
+    // Phase 8: Today's Meeting Attendees
+    // =========================================================================
+
+    let today_attendees: Vec<(String, &str)> = vec![
+        // Acme Weekly Sync
+        (
+            format!("mtg-acme-weekly-{}", today_str),
+            "sarah-chen-acme-com",
+        ),
+        (
+            format!("mtg-acme-weekly-{}", today_str),
+            "alex-torres-acme-com",
+        ),
+        (
+            format!("mtg-acme-weekly-{}", today_str),
+            "mike-chen-dailyos-test",
+        ),
+        // Initech Phase 2 Kickoff
+        (
+            format!("mtg-initech-kickoff-{}", today_str),
+            "dana-patel-initech-com",
+        ),
+        (
+            format!("mtg-initech-kickoff-{}", today_str),
+            "priya-sharma-initech-com",
+        ),
+        // 1:1 with Sarah
+        (
+            format!("mtg-1on1-sarah-{}", today_str),
+            "lisa-park-dailyos-test",
+        ),
+        // Globex QBR
+        (
+            format!("mtg-globex-qbr-{}", today_str),
+            "pat-reynolds-globex-com",
+        ),
+        (
+            format!("mtg-globex-qbr-{}", today_str),
+            "jamie-morrison-globex-com",
+        ),
+        (
+            format!("mtg-globex-qbr-{}", today_str),
+            "casey-lee-globex-com",
+        ),
+        (
+            format!("mtg-globex-qbr-{}", today_str),
+            "taylor-nguyen-contractor-io",
+        ),
+        // Sprint Review
+        (
+            format!("mtg-sprint-review-{}", today_str),
+            "mike-chen-dailyos-test",
+        ),
+        (
+            format!("mtg-sprint-review-{}", today_str),
+            "lisa-park-dailyos-test",
+        ),
+    ];
+
+    for (meeting_id, person_id) in &today_attendees {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id) VALUES (?1, ?2)",
+            rusqlite::params![meeting_id, person_id],
+        )
+        .map_err(|e| format!("Today meeting attendee: {}", e))?;
+    }
+
+    // Re-run the bulk meeting_count / last_seen update to include today's meetings
+    conn.execute_batch(
+        "UPDATE people SET
+            meeting_count = (
+                SELECT COUNT(*) FROM meeting_attendees WHERE person_id = people.id
+            ),
+            last_seen = (
+                SELECT MAX(m.start_time) FROM meetings_history m
+                JOIN meeting_attendees ma ON m.id = ma.meeting_id
+                WHERE ma.person_id = people.id
+            )
+        ",
+    )
+    .map_err(|e| format!("People stats re-update: {}", e))?;
+
+    // =========================================================================
+    // Phase 9: Email Signals (email timeline on account/person detail pages)
+    // =========================================================================
+
+    // email_signals: email_id, sender_email, person_id, entity_id, entity_type,
+    //                signal_type, signal_text, confidence, sentiment, urgency
+    let email_signals: Vec<(&str, &str, &str, &str, &str, &str, &str, f64, &str, &str)> = vec![
+        (
+            "mock-email-acme-1", "sarah.chen@acme.com", "sarah-chen-acme-com",
+            "acme-corp", "account",
+            "follow_up", "Sarah Chen is following up on Phase 2 SOW status — legal has had it for a week",
+            0.85, "neutral", "medium",
+        ),
+        (
+            "mock-email-acme-2", "alex.torres@acme.com", "alex-torres-acme-com",
+            "acme-corp", "account",
+            "handoff", "Alex Torres shared Phase 1 knowledge transfer documentation before departure",
+            0.9, "positive", "high",
+        ),
+        (
+            "mock-email-globex-1", "jamie.morrison@globex.com", "jamie-morrison-globex-com",
+            "globex-industries", "account",
+            "positive_signal", "Jamie Morrison reports Team A usage up 40% since January — offers to present at QBR",
+            0.9, "positive", "low",
+        ),
+        (
+            "mock-email-globex-2", "casey.lee@globex.com", "casey-lee-globex-com",
+            "globex-industries", "account",
+            "risk_signal", "Casey Lee raising concerns about Team B ROI — questioning whether tool fits their workflow",
+            0.85, "negative", "high",
+        ),
+        (
+            "mock-email-initech-1", "dana.patel@initech.com", "dana-patel-initech-com",
+            "initech", "account",
+            "status_update", "Dana Patel confirms Phase 2 budget request still with finance — escalated, hoping for approval next week",
+            0.8, "neutral", "medium",
+        ),
+        (
+            "mock-email-globex-3", "pat.reynolds@globex.com", "pat-reynolds-globex-com",
+            "globex-industries", "account",
+            "transition", "Pat Reynolds requesting handoff session before Q2 departure — wants successor to have full context",
+            0.85, "neutral", "high",
+        ),
+    ];
+
+    for (
+        email_id,
+        sender,
+        person_id,
+        entity_id,
+        entity_type,
+        sig_type,
+        sig_text,
+        confidence,
+        sentiment,
+        urgency,
+    ) in &email_signals
+    {
+        conn.execute(
+            "INSERT OR IGNORE INTO email_signals (email_id, sender_email, person_id, entity_id, entity_type, signal_type, signal_text, confidence, sentiment, urgency, detected_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![email_id, sender, person_id, entity_id, entity_type, sig_type, sig_text, confidence, sentiment, urgency, days_ago(2)],
+        ).map_err(|e| format!("Email signal {}: {}", email_id, e))?;
+    }
+
+    // =========================================================================
+    // Phase 10: Waiting Actions ("Waiting On" bucket on Actions page)
+    // =========================================================================
+
+    conn.execute(
+        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, waiting_on, context, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            "act-legal-review-acme",
+            "Waiting on legal review of Acme MSA amendment",
+            "P1",
+            "waiting",
+            days_ago(10),
+            date_only(3),
+            "acme-corp",
+            "Legal",
+            "Sarah Chen needs the amended MSA before Phase 2 scoping can proceed. Legal has had the draft for 10 days — follow up needed.",
+            &today,
+        ],
+    ).map_err(|e| format!("Insert waiting action 1: {}", e))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, waiting_on, context, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            "act-finance-approval-initech",
+            "Waiting on finance approval for Initech Phase 2 budget",
+            "P2",
+            "waiting",
+            days_ago(7),
+            date_only(7),
+            "initech",
+            "Finance",
+            "Dana Patel confirmed Phase 2 interest but budget must be approved by finance. Submitted 7 days ago — no response yet.",
+            &today,
+        ],
+    ).map_err(|e| format!("Insert waiting action 2: {}", e))?;
+
+    // =========================================================================
+    // Phase 11: Emails (Email page with entity chips, priority buckets, summaries)
+    // =========================================================================
+
+    let ago_0 = days_ago(0);
+    let ago_1 = days_ago(1);
+    let ago_2 = days_ago(2);
+    let ago_3 = days_ago(3);
+    let ago_4 = days_ago(4);
+    let ago_5 = days_ago(5);
+
+    let email_rows: Vec<(&str, &str, &str, &str, &str, &str, &str, i32, &str, &str, &str, Option<&str>, Option<&str>, &str, &str, &str, Option<f64>)> = vec![
+        // (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, entity_id, entity_type, contextual_summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score)
+        (
+            "mock-email-acme-1", "thread-acme-sow", "sarah.chen@acme.com", "Sarah Chen",
+            "Re: Phase 2 SOW — Legal Status?",
+            "Hi — just checking in on the SOW status. Legal has had it for over a week now and we need to…",
+            "high", 1, &ago_1,
+            "acme-corp", "account",
+            Some("Sarah Chen is following up on the Phase 2 SOW. Legal has had it for over a week. She needs movement before scoping can proceed."),
+            Some("neutral"), "medium", "enriched", &ago_0,
+            Some(0.92),
+        ),
+        (
+            "mock-email-acme-2", "thread-acme-kt", "alex.torres@acme.com", "Alex Torres",
+            "Knowledge Transfer Documentation — Final Draft",
+            "Attached the final KT documentation covering Phase 1 architecture, deployment playbook, and…",
+            "high", 0, &ago_2,
+            "acme-corp", "account",
+            Some("Alex Torres shared comprehensive Phase 1 knowledge transfer documentation before his departure. Covers architecture, deployment, and operational procedures."),
+            Some("positive"), "high", "enriched", &ago_1,
+            Some(0.88),
+        ),
+        (
+            "mock-email-globex-1", "thread-globex-usage", "jamie.morrison@globex.com", "Jamie Morrison",
+            "Team A Usage Report — 40% Growth!",
+            "Great news — Team A usage is up 40% since January. Happy to present these numbers at the QBR if…",
+            "medium", 1, &ago_1,
+            "globex-industries", "account",
+            Some("Jamie Morrison reports Team A usage up 40% since January and offers to present at the upcoming QBR. Strong champion signal."),
+            Some("positive"), "low", "enriched", &ago_0,
+            Some(0.85),
+        ),
+        (
+            "mock-email-globex-2", "thread-globex-teamb", "casey.lee@globex.com", "Casey Lee",
+            "Re: Team B Engagement — Concerns",
+            "I've been reviewing Team B's numbers and I'm not convinced the tool fits their workflow. We need…",
+            "high", 1, &ago_0,
+            "globex-industries", "account",
+            Some("Casey Lee is questioning Team B's ROI and whether the tool fits their workflow. This could become a churn argument during renewal."),
+            Some("negative"), "high", "enriched", &ago_0,
+            Some(0.94),
+        ),
+        (
+            "mock-email-initech-1", "thread-initech-budget", "dana.patel@initech.com", "Dana Patel",
+            "Phase 2 Budget — Finance Update",
+            "Quick update: I escalated the budget request to our CFO yesterday. Hoping for approval by next…",
+            "medium", 1, &ago_1,
+            "initech", "account",
+            Some("Dana Patel escalated the Phase 2 budget request to the CFO. Expecting approval within a week. Positive signal for expansion."),
+            Some("neutral"), "medium", "enriched", &ago_0,
+            Some(0.80),
+        ),
+        (
+            "mock-email-globex-3", "thread-globex-handoff", "pat.reynolds@globex.com", "Pat Reynolds",
+            "Executive Handoff Planning — Q2 Departure",
+            "As discussed, I'd like to schedule a formal handoff session before my departure. Want to make sure…",
+            "high", 0, &ago_3,
+            "globex-industries", "account",
+            Some("Pat Reynolds requesting formal handoff session before Q2 departure. Wants successor to have full context on our partnership."),
+            Some("neutral"), "high", "enriched", &ago_2,
+            Some(0.90),
+        ),
+        (
+            "mock-email-acme-3", "thread-acme-nps", "pat.kim@acme.com", "Pat Kim",
+            "NPS Results — Engineering Team Feedback",
+            "Sharing the latest NPS results for your review. We have 3 detractors in engineering that I think…",
+            "medium", 1, &ago_4,
+            "acme-corp", "account",
+            Some("Pat Kim flagged 3 NPS detractors in engineering. Wants a joint call to understand concerns before the quarterly review."),
+            Some("negative"), "medium", "enriched", &ago_3,
+            Some(0.78),
+        ),
+        (
+            "mock-email-initech-2", "thread-initech-phase1", "priya.sharma@initech.com", "Priya Sharma",
+            "Phase 1 Wrap-Up — Outstanding Items",
+            "A few Phase 1 items still need closure: documentation updates, final training session, and the…",
+            "low", 0, &ago_5,
+            "initech", "account",
+            Some("Priya Sharma listing Phase 1 closure items: documentation, training, and performance report. Routine wrap-up with no blockers."),
+            Some("neutral"), "low", "enriched", &ago_4,
+            Some(0.65),
+        ),
+        (
+            "mock-email-internal-1", "thread-internal-sprint", "mike.chen@dailyos.test", "Mike Chen",
+            "Sprint Review Prep — Agenda Items",
+            "Here's what I'm planning to cover in tomorrow's sprint review. Let me know if you want to add…",
+            "low", 0, &ago_1,
+            "", "",
+            Some("Mike Chen sharing sprint review agenda for tomorrow. Standard internal coordination."),
+            Some("positive"), "low", "enriched", &ago_0,
+            Some(0.45),
+        ),
+        (
+            "mock-email-globex-4", "thread-globex-competitor", "jamie.morrison@globex.com", "Jamie Morrison",
+            "FYI: Contoso Pitch to Leadership",
+            "Heads up — Contoso presented to our VP last week. I wasn't impressed but Casey seemed interested…",
+            "high", 1, &ago_2,
+            "globex-industries", "account",
+            Some("Jamie Morrison alerting us that Contoso pitched to Globex leadership. He wasn't impressed but Casey Lee showed interest. Competitive threat needs monitoring."),
+            Some("negative"), "high", "enriched", &ago_1,
+            Some(0.96),
+        ),
+    ];
+
+    for (
+        email_id,
+        thread_id,
+        sender_email,
+        sender_name,
+        subject,
+        snippet,
+        priority,
+        is_unread,
+        received_at,
+        entity_id,
+        entity_type,
+        summary,
+        sentiment,
+        urgency,
+        enrichment_state,
+        last_seen_at,
+        relevance_score,
+    ) in &email_rows
+    {
+        conn.execute(
+            "INSERT OR REPLACE INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, entity_id, entity_type, contextual_summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            rusqlite::params![email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at,
+                if entity_id.is_empty() { &None::<&str> as &dyn rusqlite::types::ToSql } else { entity_id as &dyn rusqlite::types::ToSql },
+                if entity_type.is_empty() { &None::<&str> as &dyn rusqlite::types::ToSql } else { entity_type as &dyn rusqlite::types::ToSql },
+                summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, &today, &today],
+        ).map_err(|e| format!("Email {}: {}", email_id, e))?;
+    }
+
     Ok(())
 }
 
@@ -1929,42 +3465,6 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
     )
     .map_err(|e| format!("Flag decisions: {}", e))?;
 
-    // --- Stale delegation actions (new inserts) ---
-    // status='waiting' + created_at old enough to exceed STALE_DELEGATION_DAYS (3d).
-    conn.execute(
-        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, waiting_on, context, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        rusqlite::params![
-            "act-legal-review-acme",
-            "Waiting on legal review of Acme MSA amendment",
-            "P1",
-            "waiting",
-            days_ago_rfc(10),
-            date_only(3),
-            "acme-corp",
-            "Legal",
-            "Sarah Chen needs the amended MSA before Phase 2 scoping can proceed. Legal has had the draft for 10 days — follow up needed.",
-            &today,
-        ],
-    ).map_err(|e| format!("Insert delegation 1: {}", e))?;
-
-    conn.execute(
-        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, waiting_on, context, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        rusqlite::params![
-            "act-finance-approval-initech",
-            "Waiting on finance approval for Initech Phase 2 budget",
-            "P2",
-            "waiting",
-            days_ago_rfc(7),
-            date_only(7),
-            "initech",
-            "Finance",
-            "Dana Patel confirmed Phase 2 interest but budget must be approved by finance. Submitted 7 days ago — no response yet.",
-            &today,
-        ],
-    ).map_err(|e| format!("Insert delegation 2: {}", e))?;
-
     // --- Portfolio alerts: renewal ---
     // Set Globex contract_end to 45 days from now → triggers get_renewal_alerts(60).
     conn.execute(
@@ -1980,6 +3480,319 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
         rusqlite::params![days_ago_rfc(35)],
     )
     .map_err(|e| format!("Set Initech stale: {}", e))?;
+
+    // =========================================================================
+    // Entity Intelligence (DB rows for Account Detail + Person Detail intel sections)
+    // =========================================================================
+
+    let entity_intel_rows: Vec<(&str, &str, &str, &str, &str, &str, &str, Option<f64>, Option<&str>, Option<&str>, Option<&str>, Option<&str>, Option<&str>)> = vec![
+        // (entity_id, entity_type, executive_assessment, risks_json, recent_wins_json, current_state_json, stakeholder_insights_json,
+        //  health_score, health_trend, value_delivered, success_metrics, open_commitments, relationship_depth)
+        (
+            "acme-corp", "account",
+            "Acme Corp is our strongest enterprise account. Phase 1 completed ahead of schedule with 15% above-benchmark performance. Executive sponsorship for Phase 2 is secured via Sarah Chen. Primary risk is Alex Torres' departure creating a knowledge gap during the critical Phase 2 scoping window. NPS trending down with 3 detractors in engineering requires attention before QBR.",
+            r#"[{"text":"Alex Torres departing March — critical knowledge transfer gap","source":"meeting notes","urgency":"act_now"},{"text":"NPS trending down: 3 detractors in engineering team","source":"NPS survey","urgency":"watch"},{"text":"Legal review of MSA amendment stalled for 10 days","source":"email signal","urgency":"act_now"}]"#,
+            r#"[{"text":"Phase 1 migration completed ahead of schedule","source":"project tracker","impact":"High — demonstrates execution capability for Phase 2"},{"text":"Performance benchmarks exceeded targets by 15%","source":"analytics","impact":"Strong ROI narrative for expansion"}]"#,
+            r#"{"working":["Executive sponsorship strong — Sarah Chen fully bought in","Phase 1 delivered on time and above benchmark","Platform adoption across engineering team is solid"],"not_working":["NPS trending down with 3 detractors","Legal review bottleneck on MSA amendment","Knowledge transfer plan not started despite Alex's March departure"],"unknowns":["APAC expansion viability — Singapore pilot not yet scoped","Replacement for Alex Torres not yet identified"]}"#,
+            r#"[{"name":"Sarah Chen","role":"VP Engineering","assessment":"Strong champion. Secured Phase 2 budget independently. Prefers data-driven updates.","engagement":"active"},{"name":"Alex Torres","role":"Tech Lead","assessment":"Technical backbone of Phase 1. Departing March — urgency around KT.","engagement":"transitioning"},{"name":"Pat Kim","role":"CTO","assessment":"Strategic decision maker. Focused on APAC and cost consolidation.","engagement":"periodic"}]"#,
+            Some(82.0), Some("stable"),
+            Some(r#"[{"item":"Phase 1 deployment: $200K ARR expansion","when":"90 days ago"},{"item":"15% above performance benchmarks","when":"Phase 1 close"}]"#),
+            Some(r#"[{"name":"Time to Value","value":"45 days","target":"<60 days","status":"on_track"},{"name":"NPS Score","value":"42","target":"50+","status":"at_risk"}]"#),
+            Some(r#"["Finalize Phase 2 SOW with legal","Complete Alex Torres knowledge transfer","Address NPS detractor concerns"]"#),
+            Some("deep"),
+        ),
+        (
+            "globex-industries", "account",
+            "Globex presents a mixed picture. Strong expansion momentum — 3 new teams, 40% usage growth in Team A, CSAT improving. However, Team B usage is declining 20% MoM and Pat Reynolds (executive sponsor) is departing Q2. Competitor Contoso is actively pitching. The upcoming QBR is the pivotal moment — must control the Team B narrative and secure renewal commitment.",
+            r#"[{"text":"Pat Reynolds (executive sponsor) departing Q2 — successor unknown","source":"direct communication","urgency":"act_now"},{"text":"Team B usage declining 20% month-over-month","source":"usage analytics","urgency":"act_now"},{"text":"Contoso actively pitching to Globex leadership","source":"email intel from Jamie Morrison","urgency":"watch"}]"#,
+            r#"[{"text":"Expanded to 3 new teams this quarter","source":"deployment tracker","impact":"Demonstrates platform value at scale"},{"text":"Team A usage up 40% since January","source":"usage analytics","impact":"Strong adoption proof point"},{"text":"CSAT improved from 7.2 to 8.1","source":"survey results","impact":"Customer satisfaction trending positive"}]"#,
+            r#"{"working":["Team A adoption excellent — 40% growth","CSAT improving across active teams","Jamie Morrison is a strong internal champion"],"not_working":["Team B engagement declining 20% MoM","Executive sponsor departing with no named successor","Competitive threat from Contoso gaining traction with Casey Lee"],"unknowns":["Root cause of Team B decline — audit scheduled","Who will replace Pat Reynolds as executive sponsor","Impact of Contoso pitch on renewal decision"]}"#,
+            r#"[{"name":"Pat Reynolds","role":"VP Product","assessment":"Departing Q2 but still engaged. Will influence successor choice.","engagement":"transitioning"},{"name":"Jamie Morrison","role":"Eng Director","assessment":"Strongest champion. Could be elevated to executive sponsor.","engagement":"active"},{"name":"Casey Lee","role":"Head of Ops","assessment":"Skeptical about Team B ROI. Evaluating Contoso.","engagement":"at_risk"}]"#,
+            Some(64.0), Some("declining"),
+            Some(r#"[{"item":"3 new team deployments in Q1","when":"this quarter"},{"item":"CSAT improvement: 7.2 → 8.1","when":"trailing 90 days"}]"#),
+            Some(r#"[{"name":"Adoption Rate","value":"72%","target":"80%","status":"at_risk"},{"name":"Team B Usage","value":"-20% MoM","target":"stable","status":"critical"}]"#),
+            Some(r#"["Address Team B usage decline before QBR","Secure renewal commitment","Identify Pat Reynolds' successor"]"#),
+            Some("moderate"),
+        ),
+        (
+            "initech", "account",
+            "Initech is a promising expansion opportunity built on a solid Phase 1 foundation. Delivered on time and under budget, providing strong ROI data for the Phase 2 business case. The primary blocker is budget approval from a conservative finance team. Dana Patel is supportive but needs quantitative justification. Team bandwidth concerns from Priya Sharma are real but manageable with a phased rollout approach.",
+            r#"[{"text":"Phase 2 budget approval pending from finance — 7 days with no response","source":"email from Dana Patel","urgency":"watch"},{"text":"Team bandwidth constraints for Q2 — Priya Sharma flagged","source":"meeting notes","urgency":"watch"}]"#,
+            r#"[{"text":"Phase 1 delivered on time and under budget","source":"project tracker","impact":"Strong proof point for Phase 2 business case"}]"#,
+            r#"{"working":["Phase 1 execution was flawless — strong credibility","Dana Patel is championing Phase 2 internally","Technical integration is stable and performant"],"not_working":["Finance team slow to approve expansion budget","Team bandwidth concerns for Q2"],"unknowns":["When finance will approve Phase 2 budget","Exact scope of Phase 2 — pending kickoff discussion"]}"#,
+            r#"[{"name":"Dana Patel","role":"CTO","assessment":"Data-driven decision maker. Phase 1 ROI is the key argument.","engagement":"active"},{"name":"Priya Sharma","role":"VP Product","assessment":"Concerned about Q2 capacity. Needs phased rollout plan.","engagement":"active"}]"#,
+            Some(71.0), Some("stable"),
+            Some(r#"[{"item":"Phase 1 delivered on time and under budget","when":"10 days ago"}]"#),
+            Some(r#"[{"name":"Time to Value","value":"52 days","target":"<60 days","status":"on_track"},{"name":"Phase 1 Completion","value":"100%","target":"100%","status":"on_track"}]"#),
+            Some(r#"["Get Phase 2 budget approved","Schedule Phase 2 kickoff","Address team bandwidth concerns"]"#),
+            Some("developing"),
+        ),
+        (
+            "sarah-chen-acme-com", "person",
+            "Sarah Chen is our strongest executive sponsor across the portfolio. She independently secured budget approval for Phase 2 and proactively advocates for our platform within Acme's leadership team. She prefers data-driven communication and values transparency. Relationship is deep and growing. Key partner for the Acme expansion narrative.",
+            r#"[{"text":"May face internal pressure if NPS detractors aren't addressed","source":"inferred from NPS trend","urgency":"watch"}]"#,
+            r#"[{"text":"Secured Phase 2 budget approval independently","source":"meeting notes","impact":"Removed the biggest Phase 2 blocker"},{"text":"Confirmed executive sponsorship for expansion","source":"direct communication","impact":"Strategic alignment at VP level"}]"#,
+            r#"{"working":["Strong internal advocacy","Proactive communication on status and blockers","Budget approval secured for Phase 2"],"not_working":["NPS detractors in her engineering team need her attention"],"unknowns":["Her stance on APAC expansion timeline"]}"#,
+            r#"[{"name":"Sarah Chen","role":"VP Engineering","assessment":"Strongest champion in the portfolio. Data-driven, decisive, and well-connected internally.","engagement":"active"}]"#,
+            None, None, None, None, None, Some("deep"),
+        ),
+        (
+            "jamie-morrison-globex-com", "person",
+            "Jamie Morrison is our most enthusiastic champion at Globex. He proactively shares platform wins with leadership and could be the natural successor to Pat Reynolds as executive sponsor. Relationship is strong and growing — he's the key to the Globex renewal narrative. Needs visibility into our roadmap to strengthen his internal advocacy.",
+            r#"[{"text":"May lose influence if Team B decline isn't addressed — it's in his org","source":"inferred","urgency":"watch"}]"#,
+            r#"[{"text":"Drove 40% usage growth in Team A","source":"usage analytics","impact":"Strongest adoption success story at Globex"},{"text":"Offered to present at QBR — proactive champion behavior","source":"email","impact":"Internal advocacy momentum"}]"#,
+            r#"{"working":["Active champion behavior — offers to present wins","Team A adoption is strong under his leadership","Good relationship with Pat Reynolds"],"not_working":["Team B decline is partly in his org"],"unknowns":["Whether he'd accept executive sponsor role formally","His bandwidth for expanded responsibilities"]}"#,
+            r#"[{"name":"Jamie Morrison","role":"Eng Director","assessment":"Proactive champion. Best candidate for executive sponsor succession.","engagement":"active"}]"#,
+            None, None, None, None, None, Some("strong"),
+        ),
+        (
+            "dana-patel-initech-com", "person",
+            "Dana Patel is a data-driven CTO who values quantitative outcomes over relationship warmth. Phase 1 delivered strong ROI data that supports her Phase 2 business case. She's actively championing the expansion internally but the finance team is the bottleneck. She respects directness and speed — don't oversell, present the numbers and let them speak.",
+            r#"[{"text":"Finance approval delay could cool her enthusiasm if it drags past 2 weeks","source":"inferred from timeline","urgency":"watch"}]"#,
+            r#"[{"text":"Phase 1 success validates her technology bet","source":"project outcomes","impact":"Strengthens her credibility with finance and board"}]"#,
+            r#"{"working":["Actively championing Phase 2 internally","Escalated budget request to CFO","Clear about what she needs from us"],"not_working":["Finance team hasn't responded to budget request"],"unknowns":["CFO's appetite for the expansion","Whether she'll need us to present to finance directly"]}"#,
+            r#"[{"name":"Dana Patel","role":"CTO","assessment":"Data-driven, direct, values speed. Phase 1 ROI is her strongest argument.","engagement":"active"}]"#,
+            None, None, None, None, None, Some("developing"),
+        ),
+    ];
+
+    for (
+        entity_id,
+        entity_type,
+        exec_assessment,
+        risks,
+        wins,
+        state,
+        stakeholder,
+        health_score,
+        health_trend,
+        value_delivered,
+        success_metrics,
+        open_commitments,
+        rel_depth,
+    ) in &entity_intel_rows
+    {
+        conn.execute(
+            "INSERT OR REPLACE INTO entity_intelligence (entity_id, entity_type, enriched_at, executive_assessment, risks_json, recent_wins_json, current_state_json, stakeholder_insights_json, health_score, health_trend, value_delivered, success_metrics, open_commitments, relationship_depth) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            rusqlite::params![entity_id, entity_type, &today, exec_assessment, risks, wins, state, stakeholder, health_score, health_trend, value_delivered, success_metrics, open_commitments, rel_depth],
+        ).map_err(|e| format!("Entity intelligence {}: {}", entity_id, e))?;
+    }
+
+    // =========================================================================
+    // Workspace intelligence.json files (for IntelligenceJson reader)
+    // =========================================================================
+
+    // Account intelligence files
+    let account_intel_files: Vec<(&str, &str, serde_json::Value)> = vec![
+        (
+            "Accounts/Acme Corp",
+            "acme-corp",
+            serde_json::json!({
+                "version": 2,
+                "entityId": "acme-corp",
+                "entityType": "account",
+                "enrichedAt": &today,
+                "sourceFileCount": 4,
+                "executiveAssessment": "Acme Corp is our strongest enterprise account. Phase 1 completed ahead of schedule with 15% above-benchmark performance. Phase 2 expansion is on track with executive sponsorship secured.",
+                "risks": [
+                    {"text": "Alex Torres departing March — critical knowledge transfer gap", "source": "meeting notes", "urgency": "act_now"},
+                    {"text": "NPS trending down: 3 detractors in engineering", "source": "NPS survey", "urgency": "watch"},
+                    {"text": "Legal review of MSA amendment stalled", "source": "email signal", "urgency": "act_now"}
+                ],
+                "recentWins": [
+                    {"text": "Phase 1 completed ahead of schedule", "impact": "Execution credibility for Phase 2"},
+                    {"text": "Performance 15% above benchmarks", "impact": "Strong ROI proof point"}
+                ],
+                "currentState": {
+                    "working": ["Executive sponsorship strong", "Phase 1 delivered above benchmark", "Platform adoption solid across engineering"],
+                    "notWorking": ["NPS trending down", "Legal bottleneck on MSA", "KT plan not started"],
+                    "unknowns": ["APAC viability", "Alex's replacement"]
+                },
+                "stakeholderInsights": [
+                    {"name": "Sarah Chen", "role": "VP Engineering", "assessment": "Strong champion. Secured Phase 2 budget.", "engagement": "active"},
+                    {"name": "Alex Torres", "role": "Tech Lead", "assessment": "Departing March. KT urgency.", "engagement": "transitioning"},
+                    {"name": "Pat Kim", "role": "CTO", "assessment": "Strategic. Focused on APAC and cost reduction.", "engagement": "periodic"}
+                ],
+                "companyContext": {
+                    "description": "Enterprise SaaS company serving mid-market and enterprise customers",
+                    "industry": "Enterprise SaaS",
+                    "size": "500-1000 employees",
+                    "headquarters": "San Francisco, CA"
+                },
+                "healthScore": 82.0,
+                "healthTrend": {"direction": "stable", "rationale": "Strong Phase 1 execution offset by NPS concerns"}
+            }),
+        ),
+        (
+            "Accounts/Globex Industries",
+            "globex-industries",
+            serde_json::json!({
+                "version": 2,
+                "entityId": "globex-industries",
+                "entityType": "account",
+                "enrichedAt": &today,
+                "sourceFileCount": 5,
+                "executiveAssessment": "Globex presents a mixed picture: strong expansion momentum offset by Team B decline and executive sponsor departure. QBR is the pivotal moment.",
+                "risks": [
+                    {"text": "Pat Reynolds departing Q2 — successor unknown", "source": "direct communication", "urgency": "act_now"},
+                    {"text": "Team B usage declining 20% MoM", "source": "usage analytics", "urgency": "act_now"},
+                    {"text": "Contoso actively pitching", "source": "Jamie Morrison", "urgency": "watch"}
+                ],
+                "recentWins": [
+                    {"text": "Expanded to 3 new teams", "impact": "Scale validation"},
+                    {"text": "Team A usage up 40%", "impact": "Adoption proof point"},
+                    {"text": "CSAT improved 7.2 → 8.1", "impact": "Satisfaction trending positive"}
+                ],
+                "currentState": {
+                    "working": ["Team A adoption excellent", "CSAT improving", "Jamie is strong champion"],
+                    "notWorking": ["Team B declining", "Exec sponsor departing", "Competitive threat"],
+                    "unknowns": ["Team B root cause", "Successor sponsor", "Contoso pitch impact"]
+                },
+                "stakeholderInsights": [
+                    {"name": "Pat Reynolds", "role": "VP Product", "assessment": "Departing but still engaged.", "engagement": "transitioning"},
+                    {"name": "Jamie Morrison", "role": "Eng Director", "assessment": "Strongest champion. Successor candidate.", "engagement": "active"},
+                    {"name": "Casey Lee", "role": "Head of Ops", "assessment": "Skeptical. Evaluating Contoso.", "engagement": "at_risk"}
+                ],
+                "companyContext": {
+                    "description": "Manufacturing technology company with global operations",
+                    "industry": "Manufacturing Technology",
+                    "size": "1000-5000 employees",
+                    "headquarters": "Chicago, IL"
+                },
+                "healthScore": 64.0,
+                "healthTrend": {"direction": "declining", "rationale": "Team B decline and sponsor departure offsetting expansion wins"}
+            }),
+        ),
+        (
+            "Accounts/Initech",
+            "initech",
+            serde_json::json!({
+                "version": 2,
+                "entityId": "initech",
+                "entityType": "account",
+                "enrichedAt": &today,
+                "sourceFileCount": 2,
+                "executiveAssessment": "Initech is a promising expansion opportunity. Phase 1 success provides strong foundation. Budget approval is the key blocker.",
+                "risks": [
+                    {"text": "Budget approval pending from finance", "source": "Dana Patel", "urgency": "watch"},
+                    {"text": "Team bandwidth constraints for Q2", "source": "Priya Sharma", "urgency": "watch"}
+                ],
+                "recentWins": [
+                    {"text": "Phase 1 delivered on time and under budget", "impact": "Strong ROI proof for Phase 2 business case"}
+                ],
+                "currentState": {
+                    "working": ["Phase 1 execution flawless", "Dana championing internally", "Integration stable"],
+                    "notWorking": ["Finance slow on budget", "Bandwidth concerns"],
+                    "unknowns": ["Finance timeline", "Phase 2 exact scope"]
+                },
+                "stakeholderInsights": [
+                    {"name": "Dana Patel", "role": "CTO", "assessment": "Data-driven. Phase 1 ROI is key argument.", "engagement": "active"},
+                    {"name": "Priya Sharma", "role": "VP Product", "assessment": "Capacity concerns. Needs phased plan.", "engagement": "active"}
+                ],
+                "companyContext": {
+                    "description": "Financial technology company focused on enterprise automation",
+                    "industry": "Financial Technology",
+                    "size": "200-500 employees",
+                    "headquarters": "Boston, MA"
+                },
+                "healthScore": 71.0,
+                "healthTrend": {"direction": "stable", "rationale": "Phase 1 success builds credibility, budget delay is the only concern"}
+            }),
+        ),
+    ];
+
+    for (dir_path, _entity_id, intel_json) in &account_intel_files {
+        let dir = workspace.join(dir_path);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Create dir {}: {}", dir_path, e))?;
+        std::fs::write(
+            dir.join("intelligence.json"),
+            serde_json::to_string_pretty(intel_json).unwrap(),
+        )
+        .map_err(|e| format!("Write intelligence.json for {}: {}", dir_path, e))?;
+    }
+
+    // Person intelligence files
+    let person_intel_files: Vec<(&str, &str, serde_json::Value)> = vec![
+        (
+            "People/Sarah Chen",
+            "sarah-chen-acme-com",
+            serde_json::json!({
+                "version": 2,
+                "entityId": "sarah-chen-acme-com",
+                "entityType": "person",
+                "enrichedAt": &today,
+                "sourceFileCount": 3,
+                "executiveAssessment": "Sarah Chen is our strongest executive sponsor. Independently secured Phase 2 budget approval and proactively advocates for our platform.",
+                "risks": [{"text": "NPS detractors in her engineering team may affect her internal position", "urgency": "watch"}],
+                "recentWins": [
+                    {"text": "Secured Phase 2 budget approval independently", "impact": "Removed biggest Phase 2 blocker"},
+                    {"text": "Confirmed executive sponsorship", "impact": "Strategic alignment at VP level"}
+                ],
+                "currentState": {
+                    "working": ["Strong advocacy", "Proactive communication", "Budget secured"],
+                    "notWorking": ["NPS detractors need attention"],
+                    "unknowns": ["APAC expansion stance"]
+                },
+                "stakeholderInsights": [{"name": "Sarah Chen", "role": "VP Engineering", "assessment": "Strongest champion in portfolio.", "engagement": "active"}]
+            }),
+        ),
+        (
+            "People/Jamie Morrison",
+            "jamie-morrison-globex-com",
+            serde_json::json!({
+                "version": 2,
+                "entityId": "jamie-morrison-globex-com",
+                "entityType": "person",
+                "enrichedAt": &today,
+                "sourceFileCount": 2,
+                "executiveAssessment": "Jamie Morrison is our most enthusiastic champion at Globex. Natural successor to Pat Reynolds as executive sponsor.",
+                "risks": [{"text": "Team B decline is partly in his org", "urgency": "watch"}],
+                "recentWins": [
+                    {"text": "Drove 40% usage growth in Team A", "impact": "Strongest adoption story at Globex"},
+                    {"text": "Offered to present at QBR", "impact": "Proactive champion behavior"}
+                ],
+                "currentState": {
+                    "working": ["Active champion behavior", "Team A strong", "Good relationship with Pat Reynolds"],
+                    "notWorking": ["Team B in his org"],
+                    "unknowns": ["Willingness to take exec sponsor role"]
+                },
+                "stakeholderInsights": [{"name": "Jamie Morrison", "role": "Eng Director", "assessment": "Best exec sponsor successor candidate.", "engagement": "active"}]
+            }),
+        ),
+        (
+            "People/Dana Patel",
+            "dana-patel-initech-com",
+            serde_json::json!({
+                "version": 2,
+                "entityId": "dana-patel-initech-com",
+                "entityType": "person",
+                "enrichedAt": &today,
+                "sourceFileCount": 2,
+                "executiveAssessment": "Dana Patel is a data-driven CTO championing Phase 2 expansion. Finance approval is the bottleneck, not her commitment.",
+                "risks": [{"text": "Finance delay could cool enthusiasm", "urgency": "watch"}],
+                "recentWins": [
+                    {"text": "Phase 1 validates her technology bet", "impact": "Strengthens credibility with finance"}
+                ],
+                "currentState": {
+                    "working": ["Actively championing Phase 2", "Escalated to CFO", "Clear on needs"],
+                    "notWorking": ["Finance hasn't responded"],
+                    "unknowns": ["CFO's appetite", "Whether we need to present to finance"]
+                },
+                "stakeholderInsights": [{"name": "Dana Patel", "role": "CTO", "assessment": "Data-driven, direct, values speed.", "engagement": "active"}]
+            }),
+        ),
+    ];
+
+    for (dir_path, _entity_id, intel_json) in &person_intel_files {
+        let dir = workspace.join(dir_path);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Create dir {}: {}", dir_path, e))?;
+        std::fs::write(
+            dir.join("intelligence.json"),
+            serde_json::to_string_pretty(intel_json).unwrap(),
+        )
+        .map_err(|e| format!("Write intelligence.json for {}: {}", dir_path, e))?;
+    }
 
     // --- Skip-today signals via intelligence.json ---
     // The loader expects a flat JSON array of { item, reason } objects.
