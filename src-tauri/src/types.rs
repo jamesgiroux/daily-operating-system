@@ -1506,6 +1506,12 @@ pub struct FullMeetingPrep {
     /// Recent email signals linked to this meeting's entity context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
+    /// I527: Consistency status derived from deterministic contradiction checks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
+    /// I527: Findings retained for transparency in prep surfaces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consistency_findings: Vec<crate::intelligence::ConsistencyFinding>,
 }
 
 /// Unified meeting detail payload (ADR-0066).
