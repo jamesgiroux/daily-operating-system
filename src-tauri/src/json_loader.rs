@@ -496,6 +496,10 @@ pub struct JsonPrep {
     pub stakeholder_insights: Option<Vec<crate::intelligence::StakeholderInsight>>,
     /// Recent email-derived signals linked to this entity (I215)
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
+    /// I527: Deterministic consistency status propagated from intelligence.json.
+    pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
+    /// I527: Deterministic consistency findings propagated from intelligence.json.
+    pub consistency_findings: Option<Vec<crate::intelligence::ConsistencyFinding>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -767,6 +771,8 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         entity_readiness: data.entity_readiness,
         stakeholder_insights: data.stakeholder_insights,
         recent_email_signals: data.recent_email_signals,
+        consistency_status: data.consistency_status,
+        consistency_findings: data.consistency_findings.unwrap_or_default(),
     })
 }
 
@@ -935,6 +941,10 @@ pub struct DirectiveMeetingContext {
     pub stakeholder_insights: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub recent_email_signals: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
+    #[serde(default)]
+    pub consistency_findings: Option<Vec<crate::intelligence::ConsistencyFinding>>,
     /// Calendar event description (I185).
     #[serde(default)]
     pub description: Option<String>,

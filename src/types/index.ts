@@ -880,6 +880,10 @@ export interface FullMeetingPrep {
   stakeholderInsights?: StakeholderInsight[];
   /** Recent email-derived signals linked to meeting entity context (I215) */
   recentEmailSignals?: EmailSignal[];
+  /** I527: Deterministic consistency status from intelligence checks. */
+  consistencyStatus?: ConsistencyStatus;
+  /** I527: Deterministic consistency findings for trust transparency. */
+  consistencyFindings?: ConsistencyFinding[];
 }
 
 /** Account snapshot item for intelligence-enriched Quick Context (I186) */
@@ -1184,6 +1188,19 @@ export interface UserEdit {
   editedAt: string;
 }
 
+export type ConsistencyStatus = "ok" | "corrected" | "flagged";
+export type ConsistencySeverity = "high" | "medium" | "low";
+
+/** Deterministic contradiction finding recorded during consistency checks (I527). */
+export interface ConsistencyFinding {
+  code: string;
+  severity: ConsistencySeverity;
+  fieldPath: string;
+  claimText: string;
+  evidenceText: string;
+  autoFixed: boolean;
+}
+
 /** A child account flagged as a hotspot in a parent's portfolio assessment (I384). */
 export interface PortfolioHotspot {
   childId: string;
@@ -1270,6 +1287,12 @@ export interface EntityIntelligence {
   openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string }> | null;
   /** I396: Relationship depth assessment. */
   relationshipDepth?: { championStrength?: string; executiveAccess?: string; stakeholderCoverage?: string; coverageGaps?: string[] } | null;
+  /** I527: Deterministic consistency status. */
+  consistencyStatus?: ConsistencyStatus;
+  /** I527: Deterministic contradiction findings. */
+  consistencyFindings?: ConsistencyFinding[];
+  /** I527: Timestamp of latest consistency check. */
+  consistencyCheckedAt?: string;
 }
 
 export interface SourceManifestEntry {
@@ -1489,6 +1512,8 @@ export interface PrepContext {
     role?: string;
     assessment?: string;
   }>;
+  consistencyStatus?: ConsistencyStatus;
+  consistencyFindings?: ConsistencyFinding[];
 }
 
 /** Meeting search result (I183). */

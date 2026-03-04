@@ -767,6 +767,13 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
             })
             .collect::<Vec<_>>());
     }
+
+    if let Some(status) = intel.consistency_status.as_ref() {
+        ctx["consistency_status"] = json!(status);
+    }
+    if !intel.consistency_findings.is_empty() {
+        ctx["consistency_findings"] = json!(intel.consistency_findings);
+    }
 }
 
 /// I425: Inject active Linear issues linked to this entity via linear_entity_links.
@@ -879,7 +886,7 @@ fn inject_recent_email_signals(db: &crate::db::ActionDb, entity_id: &str, ctx: &
 
 /// Try resolving an account from an ID hint that encodes parent/child slugs.
 ///
-/// Example: `salesforce--digital-marketing-technology` -> `Salesforce/Digital-Marketing-Technology`.
+/// Example: `globex--digital-marketing-technology` -> `Globex/Digital-Marketing-Technology`.
 fn find_account_dir_by_id_hint(account_ref: &str, accounts_dir: &Path) -> Option<AccountMatch> {
     let (parent_hint, child_hint) = account_ref.split_once("--")?;
     let parent_key = normalize_account_key(parent_hint);
@@ -1764,7 +1771,7 @@ mod tests {
     #[test]
     fn test_guess_account_name_child_by_title_normalized() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
             .unwrap();
 
         // Title uses spaces while directory uses hyphens.
@@ -1776,28 +1783,28 @@ mod tests {
         assert_eq!(matched.name, "Digital-Marketing-Technology");
         assert_eq!(
             matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
+            "Globex/Digital-Marketing-Technology"
         );
     }
 
     #[test]
     fn test_guess_account_name_child_by_domain() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Engineering")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Engineering")).unwrap();
 
         let meeting = json!({
             "title": "Weekly Sync",
-            "external_domains": ["engineering.salesforce.com"],
+            "external_domains": ["engineering.globex.com"],
         });
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
         assert_eq!(matched.name, "Engineering");
-        assert_eq!(matched.relative_path, "Salesforce/Engineering");
+        assert_eq!(matched.relative_path, "Globex/Engineering");
     }
 
     #[test]
     fn test_find_account_dir_by_name_normalized() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
             .unwrap();
 
         let matched = find_account_dir_by_name("Digital Marketing Technology", dir.path())
@@ -1806,7 +1813,7 @@ mod tests {
         assert_eq!(matched.name, "Digital-Marketing-Technology");
         assert_eq!(
             matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
+            "Globex/Digital-Marketing-Technology"
         );
     }
 
@@ -1814,7 +1821,7 @@ mod tests {
     fn test_find_account_dir_by_name_prefers_child_over_top_level_duplicate() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
             .unwrap();
 
         let matched = find_account_dir_by_name("Digital-Marketing-Technology", dir.path())
@@ -1823,7 +1830,7 @@ mod tests {
         assert_eq!(matched.name, "Digital-Marketing-Technology");
         assert_eq!(
             matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
+            "Globex/Digital-Marketing-Technology"
         );
     }
 
@@ -1831,17 +1838,17 @@ mod tests {
     fn test_find_account_dir_by_id_hint_prefers_parent_child_path() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
             .unwrap();
 
         let matched =
-            find_account_dir_by_id_hint("salesforce--digital-marketing-technology", dir.path())
+            find_account_dir_by_id_hint("globex--digital-marketing-technology", dir.path())
                 .expect("should resolve parent/child from id hint");
 
         assert_eq!(matched.name, "Digital-Marketing-Technology");
         assert_eq!(
             matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
+            "Globex/Digital-Marketing-Technology"
         );
     }
 
