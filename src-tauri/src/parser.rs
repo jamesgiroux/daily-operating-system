@@ -1570,6 +1570,8 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         entity_readiness: None,
         stakeholder_insights: None,
         recent_email_signals: None,
+        consistency_status: None,
+        consistency_findings: Vec::new(),
     })
 }
 
