@@ -34,6 +34,42 @@ pub struct UserEdit {
     pub edited_at: String,
 }
 
+/// Consistency verification result status for intelligence output (I527).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConsistencyStatus {
+    Ok,
+    Corrected,
+    Flagged,
+}
+
+/// Severity classification for a consistency finding (I527).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConsistencySeverity {
+    High,
+    Medium,
+    Low,
+}
+
+/// A deterministic consistency finding with evidence (I527).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsistencyFinding {
+    /// Stable code identifier (e.g. ABSENCE_CONTRADICTION).
+    pub code: String,
+    pub severity: ConsistencySeverity,
+    /// JSON-path-like field location in IntelligenceJson.
+    pub field_path: String,
+    /// Original contradictory claim snippet.
+    pub claim_text: String,
+    /// Deterministic evidence used for contradiction detection.
+    pub evidence_text: String,
+    /// Whether deterministic repair fixed this finding.
+    #[serde(default)]
+    pub auto_fixed: bool,
+}
+
 // =============================================================================
 // Portfolio Intelligence (I384 — parent account hierarchy)
 // =============================================================================
@@ -251,6 +287,18 @@ pub struct IntelligenceJson {
     /// I396: Relationship depth assessment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relationship_depth: Option<RelationshipDepth>,
+
+    /// I527: Consistency pass status (ok/corrected/flagged).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consistency_status: Option<ConsistencyStatus>,
+
+    /// I527: Contradiction findings produced by deterministic checks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consistency_findings: Vec<ConsistencyFinding>,
+
+    /// I527: Timestamp of the most recent consistency pass.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consistency_checked_at: Option<String>,
 }
 
 fn default_version() -> u32 {
@@ -711,8 +759,9 @@ impl ActionDb {
                 current_state_json, stakeholder_insights_json,
                 next_meeting_readiness_json, company_context_json,
                 health_score, health_trend, value_delivered,
-                success_metrics, open_commitments, relationship_depth
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                success_metrics, open_commitments, relationship_depth,
+                consistency_status, consistency_findings_json, consistency_checked_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -729,7 +778,10 @@ impl ActionDb {
                 value_delivered = excluded.value_delivered,
                 success_metrics = excluded.success_metrics,
                 open_commitments = excluded.open_commitments,
-                relationship_depth = excluded.relationship_depth",
+                relationship_depth = excluded.relationship_depth,
+                consistency_status = excluded.consistency_status,
+                consistency_findings_json = excluded.consistency_findings_json,
+                consistency_checked_at = excluded.consistency_checked_at",
             rusqlite::params![
                 intel.entity_id,
                 intel.entity_type,
@@ -748,6 +800,9 @@ impl ActionDb {
                 serde_json::to_string(&intel.success_metrics).ok(),
                 serde_json::to_string(&intel.open_commitments).ok(),
                 serde_json::to_string(&intel.relationship_depth).ok(),
+                serde_json::to_string(&intel.consistency_status).ok(),
+                serde_json::to_string(&intel.consistency_findings).ok(),
+                intel.consistency_checked_at,
             ],
         )?;
         Ok(())
@@ -764,7 +819,8 @@ impl ActionDb {
                     current_state_json, stakeholder_insights_json,
                     next_meeting_readiness_json, company_context_json,
                     health_score, health_trend, value_delivered,
-                    success_metrics, open_commitments, relationship_depth
+                    success_metrics, open_commitments, relationship_depth,
+                    consistency_status, consistency_findings_json, consistency_checked_at
              FROM entity_intelligence WHERE entity_id = ?1",
         )?;
 
@@ -780,6 +836,8 @@ impl ActionDb {
             let success_metrics_json: Option<String> = row.get(14)?;
             let open_commitments_json: Option<String> = row.get(15)?;
             let relationship_depth_json: Option<String> = row.get(16)?;
+            let consistency_status_json: Option<String> = row.get(17)?;
+            let consistency_findings_json: Option<String> = row.get(18)?;
 
             Ok(IntelligenceJson {
                 version: 1,
@@ -813,6 +871,12 @@ impl ActionDb {
                 open_commitments: open_commitments_json.and_then(|j| serde_json::from_str(&j).ok()),
                 relationship_depth: relationship_depth_json
                     .and_then(|j| serde_json::from_str(&j).ok()),
+                consistency_status: consistency_status_json
+                    .and_then(|j| serde_json::from_str(&j).ok()),
+                consistency_findings: consistency_findings_json
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
+                consistency_checked_at: row.get(19)?,
             })
         });
 
@@ -1521,6 +1585,9 @@ mod tests {
             success_metrics: None,
             open_commitments: None,
             relationship_depth: None,
+            consistency_status: None,
+            consistency_findings: Vec::new(),
+            consistency_checked_at: None,
         }
     }
 
@@ -1556,6 +1623,39 @@ mod tests {
         assert!(parsed.executive_assessment.is_none());
         assert!(parsed.current_state.is_none());
         assert!(parsed.company_context.is_none());
+        assert!(parsed.consistency_status.is_none());
+        assert!(parsed.consistency_findings.is_empty());
+        assert!(parsed.consistency_checked_at.is_none());
+    }
+
+    #[test]
+    fn test_intelligence_json_consistency_roundtrip() {
+        let mut intel = sample_intel();
+        intel.consistency_status = Some(ConsistencyStatus::Corrected);
+        intel.consistency_findings = vec![ConsistencyFinding {
+            code: "ABSENCE_CONTRADICTION".to_string(),
+            severity: ConsistencySeverity::High,
+            field_path: "executiveAssessment".to_string(),
+            claim_text: "Matt has never appeared in a recorded meeting.".to_string(),
+            evidence_text: "Matt appears in 2 recorded meetings.".to_string(),
+            auto_fixed: true,
+        }];
+        intel.consistency_checked_at = Some("2026-03-03T18:00:00Z".to_string());
+
+        let json = serde_json::to_string(&intel).expect("serialize");
+        let parsed: IntelligenceJson = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(
+            parsed.consistency_status,
+            Some(ConsistencyStatus::Corrected)
+        );
+        assert_eq!(parsed.consistency_findings.len(), 1);
+        assert_eq!(parsed.consistency_findings[0].code, "ABSENCE_CONTRADICTION");
+        assert!(parsed.consistency_findings[0].auto_fixed);
+        assert_eq!(
+            parsed.consistency_checked_at.as_deref(),
+            Some("2026-03-03T18:00:00Z")
+        );
     }
 
     #[test]
@@ -1801,6 +1901,9 @@ mod tests {
             success_metrics: None,
             open_commitments: None,
             relationship_depth: None,
+            consistency_status: None,
+            consistency_findings: Vec::new(),
+            consistency_checked_at: None,
         };
 
         let md = format_intelligence_markdown(&intel);
