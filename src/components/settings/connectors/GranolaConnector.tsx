@@ -16,6 +16,7 @@ interface GranolaStatusData {
 }
 
 export default function GranolaConnection() {
+  const BACKFILL_DAYS = 365;
   const [status, setStatus] = useState<GranolaStatusData | null>(null);
   const [backfilling, setBackfilling] = useState(false);
 
@@ -192,7 +193,7 @@ export default function GranolaConnection() {
                 Historical backfill
               </span>
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Match Granola cache documents to past meetings
+                Match Granola cache documents to past meetings (last {BACKFILL_DAYS} days)
               </p>
             </div>
             <button
@@ -200,7 +201,9 @@ export default function GranolaConnection() {
               onClick={async () => {
                 setBackfilling(true);
                 try {
-                  const result = await invoke<{ created: number; eligible: number }>("start_granola_backfill");
+                  const result = await invoke<{ created: number; eligible: number }>("start_granola_backfill", {
+                    daysBack: BACKFILL_DAYS,
+                  });
                   toast(`Backfill: ${result.created} of ${result.eligible} documents matched`);
                   const refreshed = await invoke<GranolaStatusData>("get_granola_status");
                   setStatus(refreshed);

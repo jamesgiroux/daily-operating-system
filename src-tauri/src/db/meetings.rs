@@ -561,7 +561,7 @@ impl ActionDb {
                AND m.start_time >= datetime('now', ?1)
                AND m.end_time < datetime('now')
                AND m.meeting_type IN ('customer','qbr','partnership')
-               AND m.id NOT IN (SELECT meeting_id FROM quill_sync_state)
+               AND m.id NOT IN (SELECT meeting_id FROM quill_sync_state WHERE source = 'quill')
              ORDER BY m.start_time DESC",
         )?;
         let rows = stmt.query_map(params![offset], |row| row.get(0))?;
