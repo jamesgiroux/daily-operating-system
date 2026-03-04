@@ -6223,6 +6223,8 @@ mod tests {
             entity_readiness: None,
             stakeholder_insights: None,
             recent_email_signals: None,
+            consistency_status: None,
+            consistency_findings: Vec::new(),
         };
 
         let draft = build_agenda_draft_result(&meeting, Some(&prep), Some("Cover timeline risks"));
@@ -6736,12 +6738,19 @@ pub struct QuillBackfillResult {
 /// Create Quill sync rows for past meetings that never had transcript sync.
 #[tauri::command]
 pub async fn start_quill_backfill(
+    days_back: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<QuillBackfillResult, String> {
+    let days_back = days_back.unwrap_or(365);
+    if !(1..=3650).contains(&days_back) {
+        return Err("daysBack must be between 1 and 3650".to_string());
+    }
+    let days_back_i32 = days_back as i32;
+
     state
-        .db_write(|db| {
+        .db_write(move |db| {
             let ids = db
-                .get_backfill_eligible_meeting_ids(90)
+                .get_backfill_eligible_meeting_ids(days_back_i32)
                 .map_err(|e| e.to_string())?;
             let eligible = ids.len();
             let mut created = 0;
@@ -6806,7 +6815,7 @@ pub async fn trigger_quill_sync_for_meeting(
         .db_write(move |db| {
             // Check if a sync row already exists
             match db
-                .get_quill_sync_state(&meeting_id)
+                .get_quill_sync_state_by_source(&meeting_id, "quill")
                 .map_err(|e| e.to_string())?
             {
                 Some(existing) => {
@@ -6882,7 +6891,9 @@ pub async fn get_quill_sync_states(
     state
         .db_read(move |db| match meeting_id {
             Some(ref mid) => {
-                let row = db.get_quill_sync_state(mid).map_err(|e| e.to_string())?;
+                let row = db
+                    .get_quill_sync_state_by_source(mid, "quill")
+                    .map_err(|e| e.to_string())?;
                 Ok(row.into_iter().collect())
             }
             None => db.get_pending_quill_syncs().map_err(|e| e.to_string()),
@@ -7007,9 +7018,15 @@ pub struct GranolaBackfillResult {
 /// Create Granola sync rows for past meetings found in the cache.
 #[tauri::command]
 pub fn start_granola_backfill(
+    days_back: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<GranolaBackfillResult, String> {
-    let (created, eligible) = crate::granola::poller::run_granola_backfill(&state)?;
+    let days_back = days_back.unwrap_or(365);
+    if !(1..=3650).contains(&days_back) {
+        return Err("daysBack must be between 1 and 3650".to_string());
+    }
+    let (created, eligible) =
+        crate::granola::poller::run_granola_backfill(&state, days_back as i32)?;
     Ok(GranolaBackfillResult { created, eligible })
 }
 
