@@ -18,6 +18,7 @@ interface QuillStatusData {
 }
 
 export default function QuillConnection() {
+  const BACKFILL_DAYS = 365;
   const [status, setStatus] = useState<QuillStatusData | null>(null);
   const [testing, setTesting] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
@@ -262,7 +263,7 @@ export default function QuillConnection() {
                 Historical backfill
               </span>
               <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                Create sync rows for past meetings (last 90 days)
+                Create sync rows for past meetings (last {BACKFILL_DAYS} days)
               </p>
             </div>
             <button
@@ -270,7 +271,9 @@ export default function QuillConnection() {
               onClick={async () => {
                 setBackfilling(true);
                 try {
-                  const result = await invoke<{ created: number; eligible: number }>("start_quill_backfill");
+                  const result = await invoke<{ created: number; eligible: number }>("start_quill_backfill", {
+                    daysBack: BACKFILL_DAYS,
+                  });
                   toast(`Backfill: ${result.created} of ${result.eligible} eligible meetings queued`);
                   const refreshed = await invoke<QuillStatusData>("get_quill_status");
                   setStatus(refreshed);
