@@ -52,14 +52,14 @@ pub fn should_sync_meeting(event: &CalendarEvent) -> bool {
 /// Returns the sync row ID on success, or an error message.
 /// Uses INSERT OR IGNORE so it's safe to call multiple times for the same meeting.
 pub fn create_sync_for_meeting(db: &ActionDb, meeting_id: &str) -> Result<String, String> {
-    // Check if a sync row already exists
-    match db.get_quill_sync_state(meeting_id) {
+    // Check if a Quill-source sync row already exists
+    match db.get_quill_sync_state_by_source(meeting_id, "quill") {
         Ok(Some(existing)) => return Ok(existing.id),
         Ok(None) => {}
         Err(e) => return Err(format!("Failed to check sync state: {}", e)),
     }
 
-    db.insert_quill_sync_state(meeting_id)
+    db.insert_quill_sync_state_with_source(meeting_id, "quill")
         .map_err(|e| format!("Failed to create sync row: {}", e))
 }
 
