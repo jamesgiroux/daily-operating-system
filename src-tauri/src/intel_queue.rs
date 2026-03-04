@@ -491,14 +491,18 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            if let Err(e) = write_enrichment_results(&state, input, intel) {
-                log::warn!(
-                    "IntelProcessor: failed to write results for {}: {}",
-                    request.entity_id,
-                    e
-                );
-                continue;
-            }
+            let written_intel =
+                match write_enrichment_results(&state, input, intel, Some(&ai_config)) {
+                    Ok(intel) => intel,
+                    Err(e) => {
+                        log::warn!(
+                            "IntelProcessor: failed to write results for {}: {}",
+                            request.entity_id,
+                            e
+                        );
+                        continue;
+                    }
+                };
 
             let _ = app.emit(
                 "intelligence-updated",
@@ -535,8 +539,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             log::info!(
                 "IntelProcessor: completed {} ({} risks, {} wins)",
                 request.entity_id,
-                intel.risks.len(),
-                intel.recent_wins.len(),
+                written_intel.risks.len(),
+                written_intel.recent_wins.len(),
             );
         }
     }
@@ -815,6 +819,32 @@ pub fn run_enrichment(
     )
 }
 
+/// I527: One-shot repair retry when deterministic checks still report
+/// high-severity contradictions after local repairs.
+fn run_consistency_repair_retry(
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+    report: &crate::intelligence::ConsistencyReport,
+    facts: &crate::intelligence::FactContext,
+    ai_config: &AiModelConfig,
+) -> Result<IntelligenceJson, String> {
+    let prompt = crate::intelligence::build_repair_prompt(intel, report, facts);
+    let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
+        .with_timeout(45)
+        .with_nice_priority(10);
+    let output = pty
+        .spawn_claude(&input.workspace, &prompt)
+        .map_err(|e| format!("Consistency repair retry failed: {}", e))?;
+
+    parse_intelligence_response(
+        &output.stdout,
+        &input.entity_id,
+        &input.entity_type,
+        input.file_count,
+        input.file_manifest.clone(),
+    )
+}
+
 /// Run batched enrichment for multiple entities in a single PTY call (I289).
 ///
 /// Builds a combined prompt with per-entity delimiters, makes one PTY call,
@@ -1023,12 +1053,14 @@ pub fn write_enrichment_results(
     _state: &AppState,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
-) -> Result<(), String> {
+    ai_config: Option<&AiModelConfig>,
+) -> Result<IntelligenceJson, String> {
     // Preserve user-edited fields from existing intelligence (I261)
     let mut final_intel = intel.clone();
-    if let Ok(existing) = read_intelligence_json(&input.entity_dir) {
+    let existing_intel = read_intelligence_json(&input.entity_dir).ok();
+    if let Some(existing) = existing_intel.as_ref() {
         if !existing.user_edits.is_empty() {
-            crate::intelligence::preserve_user_edits(&mut final_intel, &existing);
+            crate::intelligence::preserve_user_edits(&mut final_intel, existing);
             log::info!(
                 "IntelProcessor: preserved {} user edits for {}",
                 existing.user_edits.len(),
@@ -1049,6 +1081,60 @@ pub fn write_enrichment_results(
                     &linked_people,
                     &final_intel.user_edits,
                 );
+            }
+        }
+    }
+
+    // Prevent sparse refreshes from wiping narrative intelligence.
+    // If the new response is structurally valid JSON but contains little/no
+    // usable narrative, keep prior core fields until enrichment recovers.
+    merge_missing_core_fields_from_existing(&mut final_intel, existing_intel.as_ref());
+
+    // I527: Deterministic contradiction checks + balanced repair pass.
+    if input.entity_type == "account" || input.entity_type == "project" {
+        if let Ok(db_for_consistency) = crate::db::ActionDb::open() {
+            if let Ok(facts) = crate::intelligence::build_fact_context(
+                &db_for_consistency,
+                &input.entity_id,
+                &input.entity_type,
+            ) {
+                let initial_report = crate::intelligence::check_consistency(&final_intel, &facts);
+                let repaired_intel = crate::intelligence::apply_deterministic_repairs(
+                    &final_intel,
+                    &initial_report,
+                    &facts,
+                );
+                let mut unresolved_report =
+                    crate::intelligence::check_consistency(&repaired_intel, &facts);
+                let mut post_repair_intel = repaired_intel;
+
+                // Balanced mode: one retry for unresolved high-severity findings.
+                if unresolved_report.has_high() {
+                    if let Some(cfg) = ai_config {
+                        if let Ok(retry_intel) = run_consistency_repair_retry(
+                            input,
+                            &post_repair_intel,
+                            &unresolved_report,
+                            &facts,
+                            cfg,
+                        ) {
+                            let retry_unresolved =
+                                crate::intelligence::check_consistency(&retry_intel, &facts);
+                            if retry_unresolved.findings.len() <= unresolved_report.findings.len() {
+                                post_repair_intel = retry_intel;
+                                unresolved_report = retry_unresolved;
+                            }
+                        }
+                    }
+                }
+
+                post_repair_intel.consistency_status = Some(
+                    crate::intelligence::status_from_reports(&initial_report, &unresolved_report),
+                );
+                post_repair_intel.consistency_findings =
+                    crate::intelligence::merge_fixed_flags(&initial_report, &unresolved_report);
+                post_repair_intel.consistency_checked_at = Some(Utc::now().to_rfc3339());
+                final_intel = post_repair_intel;
             }
         }
     }
@@ -1118,7 +1204,115 @@ pub fn write_enrichment_results(
         input.entity_id,
     );
 
-    Ok(())
+    Ok(final_intel)
+}
+
+/// Return true when the intelligence payload lacks meaningful narrative signal.
+fn is_sparse_intelligence(intel: &IntelligenceJson) -> bool {
+    let has_assessment = intel
+        .executive_assessment
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty());
+    let has_risks = !intel.risks.is_empty();
+    let has_wins = !intel.recent_wins.is_empty();
+    let has_value = !intel.value_delivered.is_empty();
+    let has_readiness = intel
+        .next_meeting_readiness
+        .as_ref()
+        .is_some_and(|r| !r.prep_items.is_empty());
+    let has_state = intel.current_state.as_ref().is_some_and(|s| {
+        !s.working.is_empty() || !s.not_working.is_empty() || !s.unknowns.is_empty()
+    });
+    let has_health = intel.health_score.is_some() || intel.health_trend.is_some();
+    let has_metrics = intel
+        .success_metrics
+        .as_ref()
+        .is_some_and(|m| !m.is_empty())
+        || intel
+            .open_commitments
+            .as_ref()
+            .is_some_and(|c| !c.is_empty());
+
+    !(has_assessment
+        || has_risks
+        || has_wins
+        || has_value
+        || has_readiness
+        || has_state
+        || has_health
+        || has_metrics)
+}
+
+/// Keep prior core intelligence fields when a fresh refresh returns sparse output.
+fn merge_missing_core_fields_from_existing(
+    final_intel: &mut IntelligenceJson,
+    existing: Option<&IntelligenceJson>,
+) {
+    let Some(existing) = existing else {
+        return;
+    };
+
+    // Always backfill executive assessment when missing.
+    if final_intel
+        .executive_assessment
+        .as_deref()
+        .is_none_or(|s| s.trim().is_empty())
+        && existing
+            .executive_assessment
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
+    {
+        final_intel.executive_assessment = existing.executive_assessment.clone();
+    }
+
+    // If the new payload is sparse, preserve prior narrative-bearing fields.
+    if !is_sparse_intelligence(final_intel) {
+        return;
+    }
+
+    if final_intel.risks.is_empty() && !existing.risks.is_empty() {
+        final_intel.risks = existing.risks.clone();
+    }
+    if final_intel.recent_wins.is_empty() && !existing.recent_wins.is_empty() {
+        final_intel.recent_wins = existing.recent_wins.clone();
+    }
+    if final_intel.value_delivered.is_empty() && !existing.value_delivered.is_empty() {
+        final_intel.value_delivered = existing.value_delivered.clone();
+    }
+    if final_intel.current_state.is_none() && existing.current_state.is_some() {
+        final_intel.current_state = existing.current_state.clone();
+    }
+    if final_intel.next_meeting_readiness.is_none() && existing.next_meeting_readiness.is_some() {
+        final_intel.next_meeting_readiness = existing.next_meeting_readiness.clone();
+    }
+    if final_intel.health_score.is_none() {
+        final_intel.health_score = existing.health_score;
+    }
+    if final_intel.health_trend.is_none() && existing.health_trend.is_some() {
+        final_intel.health_trend = existing.health_trend.clone();
+    }
+    if final_intel
+        .success_metrics
+        .as_ref()
+        .is_none_or(|m| m.is_empty())
+        && existing
+            .success_metrics
+            .as_ref()
+            .is_some_and(|m| !m.is_empty())
+    {
+        final_intel.success_metrics = existing.success_metrics.clone();
+    }
+    if final_intel
+        .open_commitments
+        .as_ref()
+        .is_none_or(|c| c.is_empty())
+        && existing
+            .open_commitments
+            .as_ref()
+            .is_some_and(|c| !c.is_empty())
+    {
+        final_intel.open_commitments = existing.open_commitments.clone();
+    }
 }
 
 /// After entity intelligence is refreshed, invalidate and requeue meeting preps
@@ -1199,6 +1393,44 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_merge_missing_core_fields_preserves_existing_assessment() {
+        let mut fresh = IntelligenceJson {
+            entity_id: "acme-corp".to_string(),
+            entity_type: "account".to_string(),
+            executive_assessment: None,
+            ..Default::default()
+        };
+        let existing = IntelligenceJson {
+            entity_id: "acme-corp".to_string(),
+            entity_type: "account".to_string(),
+            executive_assessment: Some("Prior narrative".to_string()),
+            risks: vec![crate::intelligence::IntelRisk {
+                text: "Renewal owner unresolved".to_string(),
+                source: None,
+                urgency: "high".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        merge_missing_core_fields_from_existing(&mut fresh, Some(&existing));
+
+        assert_eq!(
+            fresh.executive_assessment.as_deref(),
+            Some("Prior narrative")
+        );
+        assert!(fresh.risks.is_empty());
+    }
+
+    #[test]
+    fn test_is_sparse_intelligence_detects_non_sparse_when_assessment_present() {
+        let intel = IntelligenceJson {
+            executive_assessment: Some("Non-empty summary".to_string()),
+            ..Default::default()
+        };
+        assert!(!is_sparse_intelligence(&intel));
+    }
 
     #[test]
     fn test_intel_queue_enqueue_dequeue() {

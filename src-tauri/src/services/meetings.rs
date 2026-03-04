@@ -254,6 +254,8 @@ pub fn load_meeting_prep_from_sources(
                     entity_readiness: None,
                     stakeholder_insights: None,
                     recent_email_signals: None,
+                    consistency_status: None,
+                    consistency_findings: Vec::new(),
                 };
                 // Extract AI narrative into intelligenceSummary
                 if let Some(narrative) = ai.get("narrative").and_then(|v| v.as_str()) {
