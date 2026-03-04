@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{NaiveDateTime, Utc};
+use rusqlite::params;
 use tauri::{AppHandle, Emitter};
 
 use crate::state::AppState;
@@ -94,7 +95,7 @@ fn poll_once(
     let meetings_for_matching = {
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        get_recent_meetings_for_matching(db)?
+        get_recent_meetings_for_matching(db, 90)?
     };
 
     let mut synced = 0;
@@ -248,12 +249,13 @@ fn process_granola_document(
             );
 
             // Write captures (wins, risks, decisions) extracted by AI
+            let meeting_account_id = resolve_meeting_account_id(db, &calendar_event.id);
             let account = calendar_event.account.as_deref();
             for win in &tr.wins {
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
-                    account,
+                    meeting_account_id.as_deref(),
                     "win",
                     win,
                 );
@@ -262,7 +264,7 @@ fn process_granola_document(
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
-                    account,
+                    meeting_account_id.as_deref(),
                     "risk",
                     risk,
                 );
@@ -271,7 +273,7 @@ fn process_granola_document(
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
-                    account,
+                    meeting_account_id.as_deref(),
                     "decision",
                     decision,
                 );
@@ -288,15 +290,11 @@ fn process_granola_document(
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
-                    account_id: account
-                        .map(|a| {
-                            db.get_account_by_name(a)
-                                .ok()
-                                .flatten()
-                                .map(|acc| acc.id)
-                                .unwrap_or_default()
+                    account_id: meeting_account_id.clone().or_else(|| {
+                        account.and_then(|a| {
+                            db.get_account_by_name(a).ok().flatten().map(|acc| acc.id)
                         })
-                        .filter(|s| !s.is_empty()),
+                    }),
                     project_id: None,
                     source_type: Some("transcript".to_string()),
                     source_id: Some(calendar_event.id.clone()),
@@ -377,11 +375,45 @@ fn is_retry_due(next_attempt_at: Option<&str>) -> bool {
     true
 }
 
+/// Resolve the primary account_id for a meeting.
+///
+/// Prefers explicit account links in `meeting_entities`, then falls back to
+/// legacy `meetings_history.account_id` when available.
+fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Option<String> {
+    let from_entities = db
+        .conn_ref()
+        .query_row(
+            "SELECT me.entity_id
+             FROM meeting_entities me
+             WHERE me.meeting_id = ?1
+               AND me.entity_type = 'account'
+             ORDER BY me.rowid ASC
+             LIMIT 1",
+            params![meeting_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+
+    if from_entities.is_some() {
+        return from_entities;
+    }
+
+    db.conn_ref()
+        .query_row(
+            "SELECT account_id FROM meetings_history WHERE id = ?1",
+            params![meeting_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+}
+
 /// Get recent meetings (last 90 days) as (id, title, start_time) tuples for matching.
 fn get_recent_meetings_for_matching(
     db: &crate::db::ActionDb,
+    days_back: i32,
 ) -> Result<Vec<(String, String, String)>, String> {
-    db.get_meetings_for_transcript_matching(90)
+    db.get_meetings_for_transcript_matching(days_back)
         .map_err(|e| e.to_string())
 }
 
@@ -409,7 +441,7 @@ fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_i
 }
 
 /// Run a one-time backfill: match all Granola cache documents to meetings_history.
-pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> {
+pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, usize), String> {
     let granola_config = state
         .config
         .read()
@@ -427,7 +459,7 @@ pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> 
     let meetings_for_matching = {
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        get_recent_meetings_for_matching(db)?
+        get_recent_meetings_for_matching(db, days_back)?
     };
 
     let mut created = 0;
