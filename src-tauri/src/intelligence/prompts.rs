@@ -42,6 +42,8 @@ pub struct IntelligenceContext {
     pub stakeholders: String,
     /// Canonical contact names with IDs for stakeholder reconciliation (I420).
     pub canonical_contacts: Option<String>,
+    /// Deterministic attendance-backed stakeholder presence lines (I527).
+    pub verified_stakeholder_presence: Option<String>,
     /// Source file manifest.
     pub file_manifest: Vec<SourceManifestEntry>,
     /// Extracted text from workspace files (50KB initial, 20KB incremental).
@@ -379,6 +381,16 @@ pub fn build_intelligence_context(
         ctx.canonical_contacts = Some(canonical_lines.join("\n"));
     }
 
+    // I527: Deterministic stakeholder meeting presence lines for contradiction-resistant prompts.
+    if entity_type == "account" || entity_type == "project" {
+        if let Ok(facts) = crate::intelligence::build_fact_context(db, entity_id, entity_type) {
+            let lines = crate::intelligence::format_verified_presence_lines(&facts, 8);
+            if !lines.is_empty() {
+                ctx.verified_stakeholder_presence = Some(lines.join("\n"));
+            }
+        }
+    }
+
     // --- Entity connections (people only) ---
     if entity_type == "person" {
         let entities = db.get_entities_for_person(entity_id).unwrap_or_default();
@@ -571,17 +583,20 @@ pub fn build_intelligence_context(
         .take(30)
         .map(|f| {
             let is_selected = selected_filenames.contains(&f.filename);
+            let skip_reason = if is_selected {
+                None
+            } else if f.summary.is_none() {
+                Some("no_summary".to_string())
+            } else {
+                Some("budget".to_string())
+            };
             SourceManifestEntry {
                 filename: f.filename.clone(),
                 modified_at: f.modified_at.clone(),
                 format: Some(f.format.clone()),
                 content_type: Some(f.content_type.clone()),
                 selected: is_selected,
-                skip_reason: if is_selected {
-                    None
-                } else {
-                    Some("budget".to_string())
-                },
+                skip_reason,
             }
         })
         .collect();
@@ -1347,6 +1362,17 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
+    // I527: Attendance-backed presence facts. These are deterministic checks, not model inference.
+    if let Some(ref verified) = ctx.verified_stakeholder_presence {
+        prompt.push_str(
+            "## Verified Stakeholder Meeting Presence\n\
+             These lines are deterministic meeting-attendance facts from local records.\n\
+             Use them as source-of-truth for attendance claims.\n\n",
+        );
+        prompt.push_str(&wrap_user_data(verified));
+        prompt.push_str("\n\n");
+    }
+
     // File manifest (always shown so Claude knows what exists)
     if !ctx.file_manifest.is_empty() {
         prompt.push_str("## Workspace Files\n");
@@ -1419,6 +1445,8 @@ fn build_intelligence_prompt_inner(
            Use explicit local dates and times instead.\n\
          - Temporal hygiene: rewrite stale time framing from prior intelligence. \
            If text says a past date/time is still upcoming, correct it.\n\
+         - Do NOT claim someone \"never attended\" or \"never appeared\" when \
+           verified meeting presence data shows attendance.\n\
          - Write for a busy executive who has 60 seconds to understand this {}.\n\n",
         entity_label,
     ));
@@ -2208,6 +2236,9 @@ fn try_parse_json_response(
                 stakeholder_coverage: rd.stakeholder_coverage,
                 coverage_gaps: rd.coverage_gaps,
             }),
+        consistency_status: None,
+        consistency_findings: Vec::new(),
+        consistency_checked_at: None,
     })
 }
 
@@ -2547,6 +2578,7 @@ mod tests {
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
             portfolio_children_context: None,
             canonical_contacts: None,
+            verified_stakeholder_presence: None,
             relationship_edges: None,
             user_context: None,
             entity_context: None,
@@ -2583,6 +2615,22 @@ mod tests {
         assert!(prompt.contains("INCREMENTAL update"));
         assert!(prompt.contains("Prior."));
         assert!(!prompt.contains("\"companyContext\""));
+    }
+
+    #[test]
+    fn test_build_intelligence_prompt_includes_verified_presence() {
+        let ctx = IntelligenceContext {
+            verified_stakeholder_presence: Some(
+                "- Matt Wickham — appears in 2 recorded meetings (last seen 2026-03-01 10:00 AM EST)"
+                    .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let prompt = build_intelligence_prompt("Meridian Asset", "account", &ctx, None, None);
+        assert!(prompt.contains("Verified Stakeholder Meeting Presence"));
+        assert!(prompt.contains("appears in 2 recorded meetings"));
+        assert!(prompt.contains("Do NOT claim someone \"never attended\""));
     }
 
     #[test]

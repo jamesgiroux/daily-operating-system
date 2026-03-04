@@ -498,6 +498,38 @@ details[open] .detailsChevron {
   opacity: 0.5;
 }
 
+.consistencyBanner {
+  padding: 10px var(--space-md);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.consistencyBannerCorrected {
+  background: var(--color-garden-sage-12);
+  color: var(--color-garden-sage);
+}
+
+.consistencyBannerFlagged {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.consistencyCount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    KEY INSIGHT (pull quote)
    ───────────────────────────────────────────────────────────────────────────── */
