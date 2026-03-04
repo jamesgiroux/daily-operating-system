@@ -855,6 +855,30 @@ Thanks!`;
                 </div>
               )}
 
+              {/* I527: Deterministic consistency status banner */}
+              {data.consistencyStatus && data.consistencyStatus !== "ok" && (
+                <div
+                  className={clsx(
+                    styles.consistencyBanner,
+                    data.consistencyStatus === "flagged"
+                      ? styles.consistencyBannerFlagged
+                      : styles.consistencyBannerCorrected,
+                  )}
+                >
+                  <span>
+                    {data.consistencyStatus === "corrected"
+                      ? "Context auto-corrected against meeting records."
+                      : "Some context could not be fully verified from meeting records."}
+                  </span>
+                  {data.consistencyFindings && data.consistencyFindings.length > 0 && (
+                    <span className={styles.consistencyCount}>
+                      {data.consistencyFindings.length} check
+                      {data.consistencyFindings.length === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* The Key Insight — pull quote style */}
               {keyInsight && (
                 <blockquote className={styles.keyInsight}>

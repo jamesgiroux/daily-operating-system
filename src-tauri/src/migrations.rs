@@ -227,6 +227,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 53,
         sql: include_str!("migrations/053_app_state_demo.sql"),
     },
+    Migration {
+        version: 54,
+        sql: include_str!("migrations/054_intelligence_consistency_metadata.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -406,13 +410,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 53,
-            "should apply all migrations including app state demo"
+            applied, 54,
+            "should apply all migrations including consistency metadata"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 53);
+        assert_eq!(version, 54);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -953,16 +957,16 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v50 (49 pending migrations)
+        // Run migrations — should bootstrap v1 and apply v2 through v54.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 52,
-            "bootstrap should mark v1, then apply 52 pending migrations (v2-v53)"
+            applied, 53,
+            "bootstrap should mark v1, then apply 53 pending migrations (v2-v54)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 53);
+        assert_eq!(version, 54);
 
         // Verify existing data is untouched
         let title: String = conn
