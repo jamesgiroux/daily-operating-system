@@ -124,6 +124,33 @@ pub struct SignalState {
     pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
 }
 
+/// Startup database recovery status for migration/integrity failures (I539).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseRecoveryStatus {
+    pub required: bool,
+    pub reason: String,
+    pub detail: String,
+}
+
+impl DatabaseRecoveryStatus {
+    pub fn not_required() -> Self {
+        Self {
+            required: false,
+            reason: String::new(),
+            detail: String::new(),
+        }
+    }
+
+    pub fn required(reason: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            required: true,
+            reason: reason.into(),
+            detail: detail.into(),
+        }
+    }
+}
+
 /// Application state managed by Tauri
 pub struct AppState {
     pub config: RwLock<Option<Config>>,
@@ -170,6 +197,8 @@ pub struct AppState {
     /// True if the encryption key was not found in the Keychain on startup (I462).
     /// When set, the frontend shows a recovery screen instead of normal UI.
     pub encryption_key_missing: AtomicBool,
+    /// DB recovery state when migrations/schema integrity fail on startup (I539).
+    pub database_recovery_status: Mutex<DatabaseRecoveryStatus>,
     /// Tamper-evident audit log for enterprise observability (I471).
     pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
     /// Active role preset loaded from config (I309).
@@ -191,6 +220,27 @@ pub enum DbTryRead<T> {
     Busy,
     Unavailable,
     Poisoned,
+}
+
+fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoveryStatus {
+    match err {
+        crate::db::DbError::Migration(message) => {
+            DatabaseRecoveryStatus::required("migration_failed", message.clone())
+        }
+        crate::db::DbError::Sqlite(message) => {
+            DatabaseRecoveryStatus::required("database_open_failed", message.to_string())
+        }
+        crate::db::DbError::Encryption(message) => {
+            DatabaseRecoveryStatus::required("database_encryption_error", message.clone())
+        }
+        crate::db::DbError::CreateDir(message) => {
+            DatabaseRecoveryStatus::required("database_path_error", message.to_string())
+        }
+        crate::db::DbError::HomeDirNotFound => {
+            DatabaseRecoveryStatus::required("database_path_error", "Home directory not found")
+        }
+        crate::db::DbError::KeyMissing { .. } => DatabaseRecoveryStatus::not_required(),
+    }
 }
 
 impl AppState {
@@ -219,6 +269,7 @@ impl AppState {
         );
 
         let mut encryption_key_missing = false;
+        let mut database_recovery_status = DatabaseRecoveryStatus::not_required();
         let db = match crate::db::ActionDb::open() {
             Ok(db) => {
                 // Distinguish key generation (fresh install) from access (existing DB)
@@ -263,6 +314,18 @@ impl AppState {
             }
             Err(e) => {
                 log::warn!("Failed to open actions database: {e}. DB features disabled.");
+                let status = recovery_status_from_db_error(&e);
+                if status.required {
+                    let _ = audit_logger.append(
+                        "security",
+                        "db_recovery_required",
+                        serde_json::json!({
+                            "reason": status.reason.clone(),
+                            "detail": status.detail.clone(),
+                        }),
+                    );
+                    database_recovery_status = status;
+                }
                 None
             }
         };
@@ -294,6 +357,7 @@ impl AppState {
             serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "db_encrypted": !encryption_key_missing && db.is_some(),
+                "db_recovery_required": database_recovery_status.required,
             }),
         );
         let audit_log = Arc::new(Mutex::new(audit_logger));
@@ -402,6 +466,7 @@ impl AppState {
             last_failed_unlock: Mutex::new(None),
             failed_unlock_count: AtomicU32::new(0),
             encryption_key_missing: AtomicBool::new(encryption_key_missing),
+            database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
@@ -525,6 +590,40 @@ impl AppState {
             .as_ref()
             .ok_or_else(|| "Database unavailable".to_string())?;
         f(db)
+    }
+
+    /// Get startup database recovery status for the UI.
+    pub fn get_database_recovery_status(&self) -> DatabaseRecoveryStatus {
+        self.database_recovery_status
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|_| DatabaseRecoveryStatus::not_required())
+    }
+
+    /// Mark database recovery as required with a reason/detail payload.
+    pub fn set_database_recovery_required(
+        &self,
+        reason: impl Into<String>,
+        detail: impl Into<String>,
+    ) {
+        if let Ok(mut guard) = self.database_recovery_status.lock() {
+            *guard = DatabaseRecoveryStatus::required(reason, detail);
+        }
+    }
+
+    /// Clear database recovery-required state after successful restore.
+    pub fn clear_database_recovery_required(&self) {
+        if let Ok(mut guard) = self.database_recovery_status.lock() {
+            *guard = DatabaseRecoveryStatus::not_required();
+        }
+    }
+
+    /// True when startup should show DB recovery UI instead of the app.
+    pub fn is_database_recovery_required(&self) -> bool {
+        self.database_recovery_status
+            .lock()
+            .map(|guard| guard.required)
+            .unwrap_or(false)
     }
 
     // -------------------------------------------------------------------------
@@ -688,6 +787,11 @@ impl Default for AppState {
 /// Uses a fresh DB connection to avoid blocking UI reads on the global DB mutex
 /// during startup.
 pub fn run_startup_sync(state: &AppState) {
+    if state.is_database_recovery_required() {
+        log::warn!("Startup sync skipped: database recovery required");
+        return;
+    }
+
     let config = match state.config.read().ok().and_then(|g| g.clone()) {
         Some(cfg) => cfg,
         None => {
