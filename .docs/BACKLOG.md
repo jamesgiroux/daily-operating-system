@@ -203,6 +203,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I535** | Glean Agent integration — call purpose-built Glean Agents via REST API for org-level analysis during enrichment. Spec: `.docs/issues/i535.md` | P1 | Backend / Connectors |
 | **I536** | Dev tools mock data migration — rewrite seed data for v1.0.0 schema, consolidate scenarios (6→4), eliminate workspace file writes, rich 6-dimension intelligence data. Spec: `.docs/issues/i536.md` | P1 | Backend / Dev Tools |
 | **I537** | Gate role presets behind feature flag — hide preset selection UI (onboarding + settings), hard-default to CS. Preset infrastructure stays. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
+| **I538** | Meeting briefing refresh — rollback on failure. Snapshot existing prep before clearing, restore if enrichment fails. Spec: `.docs/issues/i538.md` | P1 | Backend / Pipeline |
 
 ---
 
