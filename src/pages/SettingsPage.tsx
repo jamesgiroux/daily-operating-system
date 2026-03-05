@@ -15,6 +15,7 @@ import ContextSourceSection from "@/components/settings/ContextSourceSection";
 import SystemStatus from "@/components/settings/SystemStatus";
 import ActivityLogSection from "@/components/settings/ActivityLogSection";
 import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
+import DatabaseRecoveryCard from "@/components/settings/DatabaseRecoveryCard";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ClaudeCodeSection
@@ -363,6 +364,7 @@ export default function SettingsPage() {
           title="Data"
           epigraph="What happened, when, and whether anything looks unusual."
         />
+        <DatabaseRecoveryCard />
         <ActivityLogSection />
       </section>
 
