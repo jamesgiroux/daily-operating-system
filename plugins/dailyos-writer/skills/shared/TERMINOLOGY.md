@@ -27,15 +27,14 @@ Universal terminology rules that apply to all content types.
 
 ### Follow Official Styling
 
-**Automattic** (not Automatic)
 **WordPress.com** (the hosting service)
 **WordPress.org** (the open source project)
 
 ### Customer Names
 
 Use the customer's official company name styling:
-- **Crestview Media** (not Crestview Media Auto)
-- **Salesforce** (not SalesForce)
+- **Acme Corp** (use official company name styling)
+- **Globex** (use official company name styling)
 - **Meta** (not Facebook, unless referring to pre-rebrand period)
 
 ## Internal Terminology
@@ -67,7 +66,7 @@ Use the customer's official company name styling:
 **Usage**: Capitalize ring names when referring to the specific methodology. Use lowercase when using as descriptive terms.
 
 Example:
-- "Nexus Analytics is in the Evolution ring" (specific methodology reference)
+- "Acme Corp is in the Evolution ring" (specific methodology reference)
 - "This account is evolving from infrastructure to strategic partnership" (descriptive)
 
 ## Competitive Terminology
