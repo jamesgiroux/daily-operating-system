@@ -138,13 +138,13 @@ Present the plan. Then offer:
 
 ```
 Would you like me to:
-1. Save this plan to Accounts/Nielsen/renewal-plan-2026-q1.md
+1. Save this plan to Accounts/Acme-Corp/renewal-plan-2026-q1.md
 2. Create {N} actions in data/actions.json from the milestones
    - "Prepare adoption metrics deck for EBR" — You, due Feb 28
    - "Schedule executive alignment meeting with Elena" — You, due Mar 5
    - "Complete integration testing review" — Sarah Chen, due Mar 12
    - ... (list all)
-3. Update Accounts/Nielsen/intelligence.json with the plan's risk mitigations
+3. Update Accounts/Acme-Corp/intelligence.json with the plan's risk mitigations
 
 Create all, or adjust first?
 ```
