@@ -458,6 +458,10 @@ details[open] .detailsChevron {
 
 .entityChipsWrap {
   margin-top: 10px;
+}
+
+.entityChipsWrapCentered {
+  composes: entityChipsWrap;
   display: flex;
   justify-content: center;
 }
