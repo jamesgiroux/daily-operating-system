@@ -15,13 +15,13 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     (SELECT m.title FROM meeting_entities me
-                     JOIN meetings_history m ON me.meeting_id = m.id
+                     JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
                        AND m.start_time < date('now', '+3 days')
                      ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_title,
                     (SELECT m.start_time FROM meeting_entities me
-                     JOIN meetings_history m ON me.meeting_id = m.id
+                     JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
                        AND m.start_time < date('now', '+3 days')
@@ -129,7 +129,7 @@ impl ActionDb {
                  OR (
                    a.source_type IN ('post_meeting', 'transcript')
                    AND a.source_id IN (
-                     SELECT m.id FROM meetings_history m
+                     SELECT m.id FROM meetings m
                      LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
                      LEFT JOIN meeting_entities me ON m.id = me.meeting_id
                      WHERE (ma.person_id = ?1
@@ -164,9 +164,10 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
                     m.calendar_event_id
-             FROM meetings_history m
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
              LEFT JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE (
@@ -302,27 +303,48 @@ impl ActionDb {
     /// Insert or update an action, but never overwrite a user-set `completed` status.
     ///
     /// Checks two conditions before inserting:
-    /// 1. **Title-based guard**: If a matching action (same title + account) is already
-    ///    completed under *any* ID, skip the insert. This catches cross-source duplicates
-    ///    where the same action arrives from briefing vs inbox vs post-meeting capture
-    ///    with different ID schemes.
+    /// 1. **Title-based guard**:
+    ///    - For transcript/post-meeting actions, dedup within the same source
+    ///      (`source_type` + `source_id`) so one meeting doesn't suppress another.
+    ///    - For all other actions, dedup by title + account across sources.
     /// 2. **ID-based guard**: If an action with this exact ID is already completed, skip.
     ///
     /// This ensures that daily briefing syncs don't resurrect completed actions (I23).
     pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
-        // Guard 1: Title-based cross-source dedup — skip if ANY action with the
-        // same title+account already exists (pending, waiting, or completed).
-        let title_exists: bool = self
-            .conn
-            .query_row(
-                "SELECT 1 FROM actions
-                 WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
-                   AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
-                 LIMIT 1",
-                params![action.title, action.account_id],
-                |_row| Ok(true),
-            )
-            .unwrap_or(false);
+        let is_meeting_scoped_source = matches!(
+            action.source_type.as_deref(),
+            Some("transcript") | Some("post_meeting")
+        ) && action
+            .source_id
+            .as_deref()
+            .is_some_and(|source_id| !source_id.trim().is_empty());
+
+        // Guard 1: Title-based dedup.
+        // Meeting-scoped sources dedup per meeting/source; all others dedup by title+account.
+        let title_exists = if is_meeting_scoped_source {
+            self.conn
+                .query_row(
+                    "SELECT 1 FROM actions
+                     WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
+                       AND source_type = ?2
+                       AND source_id = ?3
+                     LIMIT 1",
+                    params![action.title, action.source_type, action.source_id],
+                    |_row| Ok(true),
+                )
+                .unwrap_or(false)
+        } else {
+            self.conn
+                .query_row(
+                    "SELECT 1 FROM actions
+                     WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                     LIMIT 1",
+                    params![action.title, action.account_id],
+                    |_row| Ok(true),
+                )
+                .unwrap_or(false)
+        };
 
         if title_exists {
             return Ok(());

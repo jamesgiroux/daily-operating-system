@@ -203,7 +203,7 @@ pub fn run_reconciliation(workspace: &Path, db: Option<&ActionDb>) -> Reconcilia
     }
 }
 
-/// Record completed meetings in SQLite meetings_history.
+/// Record completed meetings in SQLite meetings/meeting_prep/meeting_transcripts tables.
 ///
 /// Also persists enriched prep context (I181) so prep data survives archival.
 pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace: &Path) {

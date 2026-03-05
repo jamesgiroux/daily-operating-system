@@ -1,6 +1,6 @@
 //! Account Health Review report (I399).
 //!
-//! Produces a structured health assessment reading entity_intelligence
+//! Produces a structured health assessment reading entity_assessment
 //! fields plus meeting cadence and email signal data.
 
 use crate::context_provider::ContextProvider;
@@ -97,7 +97,7 @@ fn build_account_health_prompt(
     let meeting_count_90d: i64 = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(*) FROM meetings_history m
+            "SELECT COUNT(*) FROM meetings m
              JOIN meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1 AND m.start_time > ?2
                AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",

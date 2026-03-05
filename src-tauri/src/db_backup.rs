@@ -55,7 +55,7 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
 ///
 /// **Known gaps** (acceptable per DEC48):
 /// - Email enrichment state is lost
-/// - Meeting history is lost (meetings_history table not rebuilt)
+/// - Meeting history is lost (meetings/meeting_prep/meeting_transcripts tables not rebuilt)
 /// - Action source references may not match if the source files were moved
 ///
 /// Returns `(accounts_synced, projects_synced, people_synced)`.

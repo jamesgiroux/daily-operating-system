@@ -269,24 +269,24 @@ impl ActionDb {
                    FROM people p
                    LEFT JOIN (
                        SELECT ma.person_id, COUNT(*) AS c FROM meeting_attendees ma
-                       JOIN meetings_history m ON m.id = ma.meeting_id
+                       JOIN meetings m ON m.id = ma.meeting_id
                        WHERE m.start_time >= date('now', '-30 days') GROUP BY ma.person_id
                    ) cnt30 ON cnt30.person_id = p.id
                    LEFT JOIN (
                        SELECT ma.person_id, COUNT(*) AS c FROM meeting_attendees ma
-                       JOIN meetings_history m ON m.id = ma.meeting_id
+                       JOIN meetings m ON m.id = ma.meeting_id
                        WHERE m.start_time >= date('now', '-90 days') GROUP BY ma.person_id
                    ) cnt90 ON cnt90.person_id = p.id
                    LEFT JOIN (
                        SELECT ma.person_id, MAX(m.start_time) AS max_start FROM meeting_attendees ma
-                       JOIN meetings_history m ON m.id = ma.meeting_id
+                       JOIN meetings m ON m.id = ma.meeting_id
                        WHERE m.start_time <= datetime('now') GROUP BY ma.person_id
                    ) last_m ON last_m.person_id = p.id
                    LEFT JOIN (
-                       SELECT ep.person_id, GROUP_CONCAT(e.name, ', ') AS names
-                       FROM entity_people ep
-                       JOIN entities e ON e.id = ep.entity_id AND e.entity_type = 'account'
-                       GROUP BY ep.person_id
+                       SELECT as_.person_id, GROUP_CONCAT(a.name, ', ') AS names
+                       FROM account_stakeholders as_
+                       JOIN accounts a ON a.id = as_.account_id
+                       GROUP BY as_.person_id
                    ) acct_names ON acct_names.person_id = p.id
                    WHERE p.archived = 0 AND (?1 IS NULL OR p.relationship = ?1)
                    ORDER BY p.name";
@@ -330,6 +330,7 @@ impl ActionDb {
     }
 
     /// Get people linked to an entity (account/project).
+    /// Routes to account_stakeholders for accounts, entity_members for projects.
     pub fn get_people_for_entity(&self, entity_id: &str) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
@@ -337,8 +338,11 @@ impl ActionDb {
                     p.linkedin_url, p.twitter_handle, p.phone, p.photo_url, p.bio, p.title_history,
                     p.company_industry, p.company_size, p.company_hq, p.last_enriched_at, p.enrichment_sources
              FROM people p
-             JOIN entity_people ep ON p.id = ep.person_id
-             WHERE ep.entity_id = ?1
+             WHERE p.id IN (
+                 SELECT as_.person_id FROM account_stakeholders as_ WHERE as_.account_id = ?1
+                 UNION
+                 SELECT em.person_id FROM entity_members em WHERE em.entity_id = ?1
+             )
              ORDER BY p.name",
         )?;
         let rows = stmt.query_map(params![entity_id], Self::map_person_row)?;
@@ -346,6 +350,7 @@ impl ActionDb {
     }
 
     /// Get entities linked to a person.
+    /// UNION across account_stakeholders (accounts) and entity_members (projects/other).
     pub fn get_entities_for_person(
         &self,
         person_id: &str,
@@ -353,8 +358,11 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT e.id, e.name, e.entity_type, e.tracker_path, e.updated_at
              FROM entities e
-             JOIN entity_people ep ON e.id = ep.entity_id
-             WHERE ep.person_id = ?1
+             WHERE e.id IN (
+                 SELECT as_.account_id FROM account_stakeholders as_ WHERE as_.person_id = ?1
+                 UNION
+                 SELECT em.entity_id FROM entity_members em WHERE em.person_id = ?1
+             )
              ORDER BY e.name",
         )?;
         let rows = stmt.query_map(params![person_id], |row| {
@@ -371,28 +379,53 @@ impl ActionDb {
     }
 
     /// Link a person to an entity (account/project). Idempotent.
+    /// Routes to account_stakeholders for accounts, entity_members for projects/other.
     pub fn link_person_to_entity(
         &self,
         person_id: &str,
         entity_id: &str,
         rel: &str,
     ) -> Result<(), DbError> {
-        self.conn.execute(
-            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
-             VALUES (?1, ?2, ?3)",
-            params![entity_id, person_id, rel],
-        )?;
+        // Check if entity_id is an account
+        let is_account: bool = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1)",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if is_account {
+            self.conn.execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type)
+                 VALUES (?1, ?2, 'associated', ?3)
+                 ON CONFLICT(account_id, person_id) DO NOTHING",
+                params![entity_id, person_id, rel],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO entity_members (entity_id, person_id, relationship_type)
+                 VALUES (?1, ?2, ?3)",
+                params![entity_id, person_id, rel],
+            )?;
+        }
         Ok(())
     }
 
     /// Unlink a person from an entity.
+    /// Deletes from both tables (only one will match per entity_id).
     pub fn unlink_person_from_entity(
         &self,
         person_id: &str,
         entity_id: &str,
     ) -> Result<(), DbError> {
         self.conn.execute(
-            "DELETE FROM entity_people WHERE entity_id = ?1 AND person_id = ?2",
+            "DELETE FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
+            params![entity_id, person_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM entity_members WHERE entity_id = ?1 AND person_id = ?2",
             params![entity_id, person_id],
         )?;
         Ok(())
@@ -418,7 +451,7 @@ impl ActionDb {
             let start_time: Option<String> = self
                 .conn
                 .query_row(
-                    "SELECT start_time FROM meetings_history WHERE id = ?1",
+                    "SELECT start_time FROM meetings WHERE id = ?1",
                     params![meeting_id],
                     |row| row.get(0),
                 )
@@ -465,9 +498,10 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
-                    m.calendar_event_id, m.transcript_path
-             FROM meetings_history m
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
+                    m.calendar_event_id, mt.transcript_path
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
              LEFT JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE ma.person_id = ?1
@@ -513,7 +547,7 @@ impl ActionDb {
         let count_30d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(DISTINCT m.id) FROM meetings_history m
+                "SELECT COUNT(DISTINCT m.id) FROM meetings m
                  WHERE m.start_time >= date('now', '-30 days')
                    AND (
                         EXISTS (
@@ -535,7 +569,7 @@ impl ActionDb {
         let count_90d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(DISTINCT m.id) FROM meetings_history m
+                "SELECT COUNT(DISTINCT m.id) FROM meetings m
                  WHERE m.start_time >= date('now', '-90 days')
                    AND (
                         EXISTS (
@@ -557,7 +591,7 @@ impl ActionDb {
         let last_meeting: Option<String> = self
             .conn
             .query_row(
-                "SELECT MAX(m.start_time) FROM meetings_history m
+                "SELECT MAX(m.start_time) FROM meetings m
                  WHERE m.start_time <= datetime('now')
                    AND (
                         EXISTS (
@@ -693,13 +727,13 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Entities with content files in content_index but no intelligence cache row
+    /// Entities with content files in content_index but no assessment cache row
     /// or NULL enriched_at. Returns (entity_id, entity_type) pairs.
     pub fn get_entities_without_intelligence(&self) -> Result<Vec<(String, String)>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT ci.entity_id, ci.entity_type
              FROM content_index ci
-             LEFT JOIN entity_intelligence ei ON ei.entity_id = ci.entity_id
+             LEFT JOIN entity_assessment ei ON ei.entity_id = ci.entity_id
              WHERE ei.enriched_at IS NULL OR ei.entity_id IS NULL
              ORDER BY ci.entity_id",
         )?;
@@ -717,7 +751,7 @@ impl ActionDb {
     ) -> Result<Vec<(String, String, String)>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT ei.entity_id, ei.entity_type, ei.enriched_at
-             FROM entity_intelligence ei
+             FROM entity_assessment ei
              WHERE ei.enriched_at < datetime('now', ?1 || ' days')
                AND EXISTS (
                    SELECT 1 FROM content_index ci
@@ -837,17 +871,32 @@ impl ActionDb {
                 )
                 .map_err(|e| e.to_string())?;
 
-            // 2. Transfer entity_people links
+            // 2. Transfer account_stakeholders links
             tx.conn
                 .execute(
-                    "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
-                 SELECT entity_id, ?1, relationship_type FROM entity_people WHERE person_id = ?2",
+                    "INSERT OR IGNORE INTO account_stakeholders (account_id, person_id, role, relationship_type)
+                 SELECT account_id, ?1, role, relationship_type FROM account_stakeholders WHERE person_id = ?2",
                     params![keep_id, remove_id],
                 )
                 .map_err(|e| e.to_string())?;
             tx.conn
                 .execute(
-                    "DELETE FROM entity_people WHERE person_id = ?1",
+                    "DELETE FROM account_stakeholders WHERE person_id = ?1",
+                    params![remove_id],
+                )
+                .map_err(|e| e.to_string())?;
+
+            // 2b. Transfer entity_members links
+            tx.conn
+                .execute(
+                    "INSERT OR IGNORE INTO entity_members (entity_id, person_id, relationship_type)
+                 SELECT entity_id, ?1, relationship_type FROM entity_members WHERE person_id = ?2",
+                    params![keep_id, remove_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entity_members WHERE person_id = ?1",
                     params![remove_id],
                 )
                 .map_err(|e| e.to_string())?;
@@ -860,10 +909,10 @@ impl ActionDb {
                 )
                 .map_err(|e| e.to_string())?;
 
-            // 4. Delete removed person's intelligence cache
+            // 4. Delete removed person's assessment cache
             tx.conn
                 .execute(
-                    "DELETE FROM entity_intelligence WHERE entity_id = ?1",
+                    "DELETE FROM entity_assessment WHERE entity_id = ?1",
                     params![remove_id],
                 )
                 .map_err(|e| e.to_string())?;
@@ -956,7 +1005,13 @@ impl ActionDb {
                 .map_err(|e| e.to_string())?;
             tx.conn
                 .execute(
-                    "DELETE FROM entity_people WHERE person_id = ?1",
+                    "DELETE FROM account_stakeholders WHERE person_id = ?1",
+                    params![person_id],
+                )
+                .map_err(|e| e.to_string())?;
+            tx.conn
+                .execute(
+                    "DELETE FROM entity_members WHERE person_id = ?1",
                     params![person_id],
                 )
                 .map_err(|e| e.to_string())?;
@@ -968,7 +1023,7 @@ impl ActionDb {
                 .map_err(|e| e.to_string())?;
             tx.conn
                 .execute(
-                    "DELETE FROM entity_intelligence WHERE entity_id = ?1",
+                    "DELETE FROM entity_assessment WHERE entity_id = ?1",
                     params![person_id],
                 )
                 .map_err(|e| e.to_string())?;
