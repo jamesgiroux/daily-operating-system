@@ -24,7 +24,7 @@ Process raw inputs — transcripts, notes, email threads, research documents —
 
 **If no argument provided:**
 - Scan `_inbox/` for files
-- List what is found: "Found 3 items in _inbox/: meeting-transcript-2026-02-14.txt, research-notes.md, email-thread-dataco.eml. Which should I process?"
+- List what is found: "Found 3 items in _inbox/: meeting-transcript-2026-02-14.txt, research-notes.md, email-thread-acme-corp.eml. Which should I process?"
 - If only one item, proceed with it after confirmation
 
 ### Step 2: Classify Input Type
@@ -97,17 +97,17 @@ Determine where each extracted artifact should go:
 Present a summary of everything extracted before writing anything:
 
 ```markdown
-## Capture Report: Nexus Analytics Weekly Sync — Feb 14
+## Capture Report: Acme Corp Weekly Sync — Feb 14
 
 ### Source
 Meeting transcript, 47 minutes, 4 attendees
 
 ### Extracted Actions (5)
-1. "Send updated proposal with revised pricing" — You, for Nexus Analytics, due Feb 20
-2. "Share API documentation with engineering team" — Sarah Chen, for Nexus Analytics, due Feb 18
-3. "Schedule EBR with executive sponsors" — You, for Nexus Analytics, due Feb 28
+1. "Send updated proposal with revised pricing" — You, for Acme Corp, due Feb 20
+2. "Share API documentation with engineering team" — Sarah Chen, for Acme Corp, due Feb 18
+3. "Schedule EBR with executive sponsors" — You, for Acme Corp, due Feb 28
 4. "Review integration test results" — David Park, due Feb 21
-5. "Prepare adoption metrics deck for QBR" — You, for Nexus Analytics, due Mar 3
+5. "Prepare adoption metrics deck for QBR" — You, for Acme Corp, due Mar 3
 
 ### People Signals
 - **Sarah Chen** — Engaged, asked detailed questions about roadmap. Temperature: warming.
@@ -115,7 +115,7 @@ Meeting transcript, 47 minutes, 4 attendees
 - **Elena Rodriguez** — First time attending weekly sync. Signal: increasing involvement.
 
 ### Entity Intelligence
-- **Nexus Analytics** — Expansion discussion initiated by their side (positive signal). Integration timeline is the primary dependency for renewal. Competitive mention: they are evaluating Datadog for monitoring layer.
+- **Acme Corp** — Expansion discussion initiated by their side (positive signal). Integration timeline is the primary dependency for renewal. Competitive mention: they are evaluating Atlas Analytics for monitoring layer.
 
 ### Decisions
 - Pricing revision approved — moving to volume-based model
@@ -132,12 +132,12 @@ Present the capture report and ask for confirmation:
 
 ```
 Ready to write:
-1. Archive summary to _archive/2026-02/dataco-weekly-sync-2026-02-14.md
+1. Archive summary to _archive/2026-02/acme-corp-weekly-sync-2026-02-14.md
 2. Create 5 actions in data/actions.json
 3. Update People/Sarah-Chen/person.md with warming signal
 4. Update People/David-Park/person.md with cooling signal
 5. Add Elena Rodriguez to People/ (new profile)
-6. Update Accounts/Nexus Analytics/intelligence.json with expansion signal and competitive mention
+6. Update Accounts/Acme-Corp/intelligence.json with expansion signal and competitive mention
 
 Proceed with all, or adjust first?
 ```
@@ -150,7 +150,7 @@ After confirmation, execute the approved writes:
 - Read existing files before modifying (preserve content, append/merge)
 - Create new directories as needed (_archive/YYYY-MM/, new People/ profiles)
 - For JSON files (actions.json, intelligence.json), merge carefully — do not overwrite existing entries
-- Report completion: "Done. 5 actions created, 3 people profiles updated, Nexus Analytics intelligence refreshed, summary archived."
+- Report completion: "Done. 5 actions created, 3 people profiles updated, Acme Corp intelligence refreshed, summary archived."
 
 ## Loop-Back
 

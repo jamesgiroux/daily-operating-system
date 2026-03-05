@@ -197,6 +197,12 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I529** | Intelligence quality feedback UI — thumbs up/down on hover for any intelligence item. Feeds Bayesian source weights. Spec: `.docs/issues/i529.md` | P1 | Frontend + Backend / Signals |
 | **I530** | Signal taxonomy: curation vs correction — delete = no source penalty, edit = correction, thumbs down = correction. Spec: `.docs/issues/i530.md` | P1 | Backend / Signals |
 | **I531** | Glean-powered proactive self-healing — hygiene detects gaps, searches Glean, fills intelligence. Signal emission fixes. Spec: `.docs/issues/i531.md` | P1 | Backend / Self-Healing / Connectors |
+| **I532** | Intelligence surfacing threshold model — significance scoring, surfacing budgets, fatigue prevention, feedback-driven learning. Spec: `.docs/issues/i532.md` | P1 | Backend / Signals + Frontend / Briefing |
+| **I533** | Publication engine — Google Drive output layer. Reports published as PDF/Google Doc to Shared Drive. Auto-indexed by Glean. Spec: `.docs/issues/i533.md` | P1 | Backend / Publication |
+| **I534** | Portfolio reader — read published intelligence from Shared Drive for cross-IC portfolio synthesis. JSON sidecar parsing. Spec: `.docs/issues/i534.md` | P1 | Backend + Frontend |
+| **I535** | Glean Agent integration — call purpose-built Glean Agents via REST API for org-level analysis during enrichment. Spec: `.docs/issues/i535.md` | P1 | Backend / Connectors |
+| **I536** | Dev tools mock data migration — rewrite seed data for v1.0.0 schema, consolidate scenarios (6→4), eliminate workspace file writes, rich 6-dimension intelligence data. Spec: `.docs/issues/i536.md` | P1 | Backend / Dev Tools |
+| **I537** | Gate role presets behind feature flag — hide preset selection UI (onboarding + settings), hard-default to CS. Preset infrastructure stays. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
 
 ---
 
@@ -502,15 +508,16 @@ Dissolved 2026-03-02. I494, I495 moved to v1.1.0 (Teams + Portfolio). See ADR-00
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| TBD | Publication engine — write curated outputs to Google Drive Shared folder (extends I426) | P1 | Backend / Publication |
-| TBD | Portfolio reader — read published intelligence from Shared Drive for portfolio synthesis | P1 | Backend + Frontend |
-| TBD | Glean Agent integration — extend GleanContextProvider to call Glean Agents for org-level analysis | P1 | Backend / Connectors |
+| I533 | Publication engine — Google Drive output layer, auto-publish, Glean auto-indexed. Spec: `.docs/issues/i533.md` | P1 | Backend / Publication |
+| I534 | Portfolio reader — cross-IC intelligence from Shared Drive, JSON sidecar. Spec: `.docs/issues/i534.md` | P1 | Backend + Frontend |
+| I535 | Glean Agent integration — REST API calls to purpose-built agents for org-level analysis. Spec: `.docs/issues/i535.md` | P1 | Backend / Connectors |
 | I492 | Portfolio Health page — editorial aggregate, exception list, renewal timeline | P1 | Frontend / Pages |
 | I494 | Glean account discovery — import CRM accounts, one-click add | P1 | Backend / Connectors + Frontend |
 | I495 | Ephemeral account query — transient briefing via Glean | P1 | Backend / Connectors + Frontend |
 | I531 | Glean-powered proactive self-healing — hygiene gaps trigger Glean searches, signal emission fixes. Spec: `.docs/issues/i531.md` | P1 | Backend / Self-Healing / Connectors |
+| I532 | Intelligence surfacing threshold model — when to tap the user on the shoulder vs stay quiet. Spec: `.docs/issues/i532.md` | P1 | Backend / Signals + Frontend / Briefing |
 
-Version brief: `.docs/plans/v1.1.0.md` (to be written). Research: `.docs/research/2026-03-01-portfolio-intelligence-architecture.md`, `.docs/research/2026-03-03-architecture-first-principles-review.md`.
+Version brief: `.docs/plans/v1.1.0.md`. Research: `.docs/research/2026-03-01-portfolio-intelligence-architecture.md`, `.docs/research/2026-03-03-architecture-first-principles-review.md`.
 
 ---
 
@@ -622,6 +629,12 @@ Requires v0.16.0 first. Full version brief: `.docs/plans/v1.0.0.md`.
 | I528 | ADR-0098 data lifecycle infrastructure — DataSource enum, purge_source(), data_lifecycle.rs. Prerequisite for I487 + I505 purge ACs. Spec: `.docs/issues/i528.md` | P1 | Backend / Data Governance |
 | I435 | Token optimization — ModelTier audit; Haiku for email enrichment | P1 | Backend / Pipeline |
 
+**Phase 2a — Dev Tools Mock Data Migration (after Phase 2, before Phase 3):**
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I536 | Dev tools mock data migration — rewrite seed data for v1.0.0 schema (I511 tables), 6-dimension intelligence (I508), health scores (I499), signal/feedback variety (I529/I530). Consolidate scenarios 6→4. Eliminate workspace file writes. `mock-` prefix IDs. Spec: `.docs/issues/i536.md` | P1 | Backend / Dev Tools |
+
 **Phase 3 — Structural Cleanup + Surfaces + GA Readiness:**
 
 | ID | Title | Priority | Area |
@@ -647,6 +660,7 @@ Requires v0.16.0 first. Full version brief: `.docs/plans/v1.0.0.md`.
 | I454 | Vocabulary pass — replace all remaining user-visible system terms per ADR-0083 | P1 | Frontend / Copy |
 | I529 | Intelligence quality feedback UI — thumbs up/down on hover for intelligence items. Spec: `.docs/issues/i529.md` | P1 | Frontend + Backend / Signals |
 | I530 | Signal taxonomy: curation vs correction — delete ≠ wrong. Spec: `.docs/issues/i530.md` | P1 | Backend / Signals |
+| I537 | Gate role presets behind feature flag — hide preset selection UI, hard-default to CS. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
 
 **CS Report Suite (after Phase 2):**
 

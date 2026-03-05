@@ -11,11 +11,11 @@ Apply rigorous strategy consulting frameworks to decisions that involve ambiguit
 - `$ARGUMENTS[0]` — The question (required). State the decision or question as specifically as possible.
 
 Examples:
-- "Should we invest in a dedicated CSM for Nexus Analytics before their Q3 renewal?"
+- "Should we invest in a dedicated CSM for Acme Corp before their Q3 renewal?"
 - "Why is mid-market churn accelerating despite improved NPS?"
 - "Which of these three expansion opportunities should we prioritize?"
 - "How big is the AI analytics opportunity for our platform?"
-- "What could go wrong with the Datadog partnership strategy?"
+- "What could go wrong with the Atlas Analytics partnership strategy?"
 
 ## Decision Types by Role Preset
 
@@ -38,16 +38,16 @@ Frame the question using the SCQA structure. Ground every element in workspace d
 
 **Situation** — What is the current state? Read from entity dashboards, intelligence, and portfolio context. This is factual baseline, not interpretation.
 
-"Nexus Analytics is a $2.4M ARR account in the Growth lifecycle stage with Green health as of February. They are 47 days from renewal. Sarah Chen is the champion (warming temperature, weekly engagement), David Park (CTO) is disengaged (has not attended in 4 months)."
+"Acme Corp is a $2.4M ARR account in the Growth lifecycle stage with Green health as of February. They are 47 days from renewal. Sarah Chen is the champion (warming temperature, weekly engagement), David Park (CTO) is disengaged (has not attended in 4 months)."
 
 **Complication** — What changed or is threatening? What makes this a decision point now?
 
-"David's vendor consolidation keynote at DataConf suggests he may be building a case to reduce vendor count. Datadog launched a competing analytics module in January. The renewal conversation starts in March, and we do not have CTO alignment."
+"David's vendor consolidation keynote at DataConf suggests he may be building a case to reduce vendor count. Atlas Analytics launched a competing analytics module in January. The renewal conversation starts in March, and we do not have CTO alignment."
 
 **Question** — State the specific, testable question. Refine until it is precise enough to answer with evidence.
 
-Not: "What should we do about Nexus Analytics?"
-Yes: "Should we invest $40K in a dedicated technical CSM for Nexus Analytics for the 8 weeks before renewal, specifically to re-engage the CTO and counter the Datadog competitive threat?"
+Not: "What should we do about Acme Corp?"
+Yes: "Should we invest $40K in a dedicated technical CSM for Acme Corp for the 8 weeks before renewal, specifically to re-engage the CTO and counter the Atlas Analytics competitive threat?"
 
 **Answer (Hypothesis)** — State your best guess before analyzing. This is what you will test.
 
@@ -72,16 +72,16 @@ Break the question into testable sub-questions. The tree must be MECE (Mutually 
 | "Where should we focus?" | 80/20 Analysis — rank by impact |
 | "What could go wrong?" | Pre-Mortem + Red Team — enumerate failure modes |
 
-**Example issue tree for the Nexus Analytics CSM question:**
+**Example issue tree for the Acme Corp CSM question:**
 
 ```
-Should we invest in dedicated CSM for Nexus Analytics?
+Should we invest in dedicated CSM for Acme Corp?
 ├── Is CTO re-engagement critical to renewal?
 │   ├── Does David have decision authority or veto power?
 │   ├── Can we renew without CTO alignment?
 │   └── What is the risk of not re-engaging?
 ├── Is the competitive threat real and imminent?
-│   ├── How far along is the Datadog evaluation?
+│   ├── How far along is the Atlas Analytics evaluation?
 │   ├── Is this a technical evaluation or a strategic comparison?
 │   └── Can our platform address the analytics gap?
 ├── Will a dedicated CSM achieve re-engagement?
@@ -104,8 +104,8 @@ For each branch of the issue tree, gather workspace evidence.
 
 **What Would Have to Be True (WWHTBT) for the hypothesis to be correct:**
 
-1. "David has meaningful decision authority over vendor renewals" — Check stakeholders.md, meeting history. **Evidence:** David is listed as Technical Buyer with veto power. Last vendor decision (Snowflake, per October meeting) was his call.
-2. "The Datadog evaluation is serious enough to threaten renewal" — Check intelligence.json, recent meeting notes. **Evidence:** Competitive mention in Feb 14 sync was initiated by their side. David's DataConf keynote on vendor sprawl was January 28. Timeline: serious.
+1. "David has meaningful decision authority over vendor renewals" — Check stakeholders.md, meeting history. **Evidence:** David is listed as Technical Buyer with veto power. Last vendor decision (CloudVault, per October meeting) was his call.
+2. "The Atlas Analytics evaluation is serious enough to threaten renewal" — Check intelligence.json, recent meeting notes. **Evidence:** Competitive mention in Feb 14 sync was initiated by their side. David's DataConf keynote on vendor sprawl was January 28. Timeline: serious.
 3. "A technical CSM can re-engage David within 8 weeks" — Check People/David-Park for preferences, check _archive/ for past engagement success patterns. **Evidence:** David engaged deeply when our platform architect joined the Q3 technical review. He responds to technical depth, not relationship management.
 4. "$2.4M ARR justifies $40K investment" — Calculate ROI. **Evidence:** 60:1 ARR to investment ratio. Even protecting 50% renewal probability makes this net positive.
 
@@ -122,13 +122,13 @@ This is not a formality. The red team pass must produce genuine counter-argument
 
 **Pre-mortem:** Assume the dedicated CSM was deployed and the strategy failed. What went wrong?
 
-"The CSM had technical depth but no relationship with David. David saw the engagement as sales pressure rather than genuine technical partnership. He doubled down on the Datadog evaluation to prove he had alternatives. The $40K was spent, and the renewal still downsized by 30%."
+"The CSM had technical depth but no relationship with David. David saw the engagement as sales pressure rather than genuine technical partnership. He doubled down on the Atlas Analytics evaluation to prove he had alternatives. The $40K was spent, and the renewal still downsized by 30%."
 
 **Red Team — strongest counter-argument:**
 
-"The real risk is not David's disengagement — it is that the product gap in analytics is real and a CSM cannot close it. If the platform genuinely does not compete with Datadog's analytics module, re-engaging David just accelerates his conclusion that we need to be replaced. The money would be better spent on an engineering sprint to close the product gap before renewal."
+"The real risk is not David's disengagement — it is that the product gap in analytics is real and a CSM cannot close it. If the platform genuinely does not compete with Atlas Analytics's analytics module, re-engaging David just accelerates his conclusion that we need to be replaced. The money would be better spent on an engineering sprint to close the product gap before renewal."
 
-**Partner-critic frame:** "If I were advising Nexus Analytics's CTO, I would tell him: the dedicated CSM is a retention play, not a value play. Push for a technical proof-of-concept instead. If they can match Datadog's analytics capabilities, great. If not, you have your answer."
+**Partner-critic frame:** "If I were advising Acme Corp's CTO, I would tell him: the dedicated CSM is a retention play, not a value play. Push for a technical proof-of-concept instead. If they can match Atlas Analytics's analytics capabilities, great. If not, you have your answer."
 
 **Quality gate:** Does the red team argument give the decision-maker pause? If it does not, the argument is too weak. Try harder. Find the genuinely uncomfortable counter-argument.
 
@@ -144,7 +144,7 @@ Structure the final output using the Pyramid Principle — Bottom Line first:
 ## Bottom Line
 {The recommendation in 1-2 sentences. Specific. Actionable. "Do X by Y with Z."}
 
-Deploy a dedicated technical CSM for Nexus Analytics for 8 weeks (Feb 17 - Apr 14), with the specific mandate to re-engage David Park through a technical proof-of-concept on analytics capabilities, not through relationship management. Cost: $40K. Expected outcome: CTO alignment restored before renewal conversation begins in March.
+Deploy a dedicated technical CSM for Acme Corp for 8 weeks (Feb 17 - Apr 14), with the specific mandate to re-engage David Park through a technical proof-of-concept on analytics capabilities, not through relationship management. Cost: $40K. Expected outcome: CTO alignment restored before renewal conversation begins in March.
 
 ## Key Arguments
 
@@ -152,7 +152,7 @@ Deploy a dedicated technical CSM for Nexus Analytics for 8 weeks (Feb 17 - Apr 1
 {Evidence chain: David has veto power (stakeholders.md), last vendor decision was his (Q3 meeting), he is disengaged (4 months absent). Without his alignment, renewal risk is HIGH regardless of champion strength.}
 
 ### 2. The competitive threat requires technical response
-{Evidence chain: Datadog evaluation mentioned in Feb 14 sync, David's vendor sprawl keynote, analytics gap is the specific attack vector. A relationship-only response will not counter a technical comparison.}
+{Evidence chain: Atlas Analytics evaluation mentioned in Feb 14 sync, David's vendor sprawl keynote, analytics gap is the specific attack vector. A relationship-only response will not counter a technical comparison.}
 
 ### 3. The investment math works at any reasonable probability
 {Evidence: $2.4M ARR, $40K cost. Even at 30% probability improvement (from 50% to 80% renewal), expected value is $720K.}
@@ -188,9 +188,9 @@ Present the P2 Memo. Then offer:
 
 ```
 Would you like me to:
-1. Save this decision memo to Accounts/Nexus Analytics/decision-csm-investment-2026-02.md
+1. Save this decision memo to Accounts/Acme-Corp/decision-csm-investment-2026-02.md
 2. Create {N} actions from Next Steps in data/actions.json
-3. Update Accounts/Nexus Analytics/intelligence.json with the competitive analysis and CTO re-engagement strategy
+3. Update Accounts/Acme-Corp/intelligence.json with the competitive analysis and CTO re-engagement strategy
 
 Or adjust the analysis first?
 ```
