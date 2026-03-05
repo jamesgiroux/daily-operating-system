@@ -195,7 +195,7 @@ fn build_monthly_wrapped_prompt(
     let meeting_count: i64 = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(*) FROM meetings_history WHERE start_time >= ?1 AND start_time <= ?2 AND meeting_type NOT IN ('personal', 'focus', 'blocked')",
+            "SELECT COUNT(*) FROM meetings WHERE start_time >= ?1 AND start_time <= ?2 AND meeting_type NOT IN ('personal', 'focus', 'blocked')",
             rusqlite::params![month_start_str, month_end_str],
             |row| row.get(0),
         )
@@ -205,7 +205,7 @@ fn build_monthly_wrapped_prompt(
     let meetings: String = db
         .conn_ref()
         .prepare(
-            "SELECT id, title, start_time, meeting_type FROM meetings_history
+            "SELECT id, title, start_time, meeting_type FROM meetings
              WHERE start_time >= ?1 AND start_time <= ?2
                AND meeting_type NOT IN ('personal', 'focus', 'blocked')
              ORDER BY start_time",
@@ -285,7 +285,7 @@ fn build_monthly_wrapped_prompt(
         .conn_ref()
         .query_row(
             "SELECT COUNT(DISTINCT me.entity_id) FROM meeting_entities me
-             JOIN meetings_history m ON m.id = me.meeting_id
+             JOIN meetings m ON m.id = me.meeting_id
              WHERE m.start_time >= ?1 AND m.start_time <= ?2 AND me.entity_type = 'account'",
             rusqlite::params![month_start_str, month_end_str],
             |row| row.get(0),
@@ -297,7 +297,7 @@ fn build_monthly_wrapped_prompt(
         .conn_ref()
         .query_row(
             "SELECT COUNT(DISTINCT ma.person_id) FROM meeting_attendees ma
-             JOIN meetings_history m ON m.id = ma.meeting_id
+             JOIN meetings m ON m.id = ma.meeting_id
              WHERE m.start_time >= ?1 AND m.start_time <= ?2",
             rusqlite::params![month_start_str, month_end_str],
             |row| row.get(0),
@@ -310,7 +310,7 @@ fn build_monthly_wrapped_prompt(
         .query_row(
             "SELECT a.name, COUNT(*) as cnt
              FROM meeting_entities me
-             JOIN meetings_history m ON m.id = me.meeting_id
+             JOIN meetings m ON m.id = me.meeting_id
              JOIN accounts a ON a.id = me.entity_id
              WHERE m.start_time >= ?1 AND m.start_time <= ?2 AND me.entity_type = 'account'
              GROUP BY me.entity_id ORDER BY cnt DESC LIMIT 1",

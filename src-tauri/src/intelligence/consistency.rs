@@ -98,7 +98,7 @@ pub fn build_fact_context(
              FROM meeting_entities me \
              JOIN meeting_attendees ma ON ma.meeting_id = me.meeting_id \
              JOIN people p ON p.id = ma.person_id \
-             JOIN meetings_history mh ON mh.id = me.meeting_id \
+             JOIN meetings mh ON mh.id = me.meeting_id \
              WHERE me.entity_id = ?1 \
              GROUP BY p.id, p.name, p.role",
         )

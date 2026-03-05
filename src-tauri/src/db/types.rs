@@ -122,7 +122,7 @@ pub struct DbAccount {
     pub metadata: Option<String>,
 }
 
-/// A row from `account_team`.
+/// A row from `account_stakeholders`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbAccountTeamMember {
@@ -167,7 +167,7 @@ pub struct ProjectParentAggregate {
     pub nearest_target_date: Option<String>,
 }
 
-/// A row from the `meetings_history` table.
+/// A row from the `meetings` table (joined with `meeting_prep` and `meeting_transcripts`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbMeeting {
@@ -242,7 +242,7 @@ pub struct EnsureMeetingHistoryInput<'a> {
     pub description: Option<&'a str>,
 }
 
-/// Outcome of syncing a meeting into meetings_history.
+/// Outcome of syncing a meeting into the meetings table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeetingSyncOutcome {
     /// Meeting was newly inserted.
@@ -435,7 +435,7 @@ pub struct PersonListItem {
     pub archived: bool,
     pub temperature: String,
     pub trend: String,
-    /// Comma-separated names of linked account entities (from entity_people).
+    /// Comma-separated names of linked accounts (from account_stakeholders).
     pub account_names: Option<String>,
     /// Days since last past meeting (None if never met).
     pub days_since_last_meeting: Option<i64>,

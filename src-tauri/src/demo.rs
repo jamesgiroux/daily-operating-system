@@ -112,11 +112,12 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         // Link to account if specified
         if let Some(acct) = account_id {
             conn.execute(
-                "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type) \
-                 VALUES (?1, ?2, 'stakeholder')",
+                "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type) \
+                 VALUES (?1, ?2, 'associated', 'stakeholder')
+                 ON CONFLICT(account_id, person_id) DO NOTHING",
                 rusqlite::params![acct, id],
             )
-            .map_err(|e| format!("Demo entity-people link: {}", e))?;
+            .map_err(|e| format!("Demo account-stakeholder link: {}", e))?;
         }
     }
 
@@ -262,25 +263,24 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
         });
 
         conn.execute(
-            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, \
-             summary, created_at, prep_frozen_json, prep_frozen_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![
-                id,
-                title,
-                mtype,
-                start_time,
-                summary,
-                &today,
-                prep_json,
-                if prep_json.is_some() {
-                    Some(today.as_str())
-                } else {
-                    None::<&str>
-                }
-            ],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, title, mtype, start_time, &today],
         )
         .map_err(|e| format!("Demo meeting insert: {}", e))?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_transcripts (meeting_id, summary) VALUES (?1, ?2)",
+            rusqlite::params![id, summary],
+        )
+        .map_err(|e| format!("Demo meeting transcript insert: {}", e))?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at) \
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![id, prep_json, &today],
+        )
+        .map_err(|e| format!("Demo meeting prep insert: {}", e))?;
 
         // Link customer meetings to their account entity
         if let Some(acct) = account_id {
@@ -342,12 +342,22 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
 
     for (id, title, mtype, start_time, account_id, summary) in &historical {
         conn.execute(
-            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, \
-             summary, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, title, mtype, start_time, summary, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, title, mtype, start_time, &today],
         )
         .map_err(|e| format!("Demo historical meeting: {}", e))?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_transcripts (meeting_id, summary) VALUES (?1, ?2)",
+            rusqlite::params![id, summary],
+        )
+        .map_err(|e| format!("Demo historical meeting transcript: {}", e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+            rusqlite::params![id],
+        )
+        .map_err(|e| format!("Demo historical meeting prep: {}", e))?;
 
         if let Some(acct) = account_id {
             conn.execute(
@@ -387,15 +397,22 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
     )
     .map_err(|e| format!("Clear demo meeting-entity links: {}", e))?;
 
-    // Clean up entity_people links for demo people
+    // Clean up account_stakeholders links for demo people
     conn.execute(
-        "DELETE FROM entity_people WHERE person_id LIKE 'demo-%'",
+        "DELETE FROM account_stakeholders WHERE person_id LIKE 'demo-%'",
         [],
     )
-    .map_err(|e| format!("Clear demo entity-people links: {}", e))?;
+    .map_err(|e| format!("Clear demo account-stakeholder links: {}", e))?;
 
-    // Clean up meetings_history for demo meetings
-    conn.execute("DELETE FROM meetings_history WHERE id LIKE 'demo-%'", [])
+    // Clean up entity_members links for demo people
+    conn.execute(
+        "DELETE FROM entity_members WHERE person_id LIKE 'demo-%'",
+        [],
+    )
+    .map_err(|e| format!("Clear demo entity-member links: {}", e))?;
+
+    // Clean up meetings for demo meetings (CASCADE handles meeting_prep + meeting_transcripts)
+    conn.execute("DELETE FROM meetings WHERE id LIKE 'demo-%'", [])
         .map_err(|e| format!("Clear demo meetings: {}", e))?;
 
     // Clean up email_signals for demo
