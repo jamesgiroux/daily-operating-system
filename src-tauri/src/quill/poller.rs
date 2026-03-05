@@ -516,11 +516,9 @@ fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_i
 
 /// Resolve the primary account_id for a meeting.
 ///
-/// Prefers explicit account links in `meeting_entities`, then falls back to
-/// legacy `meetings_history.account_id` when available.
+/// Uses explicit account links in `meeting_entities`.
 fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Option<String> {
-    let from_entities = db
-        .conn_ref()
+    db.conn_ref()
         .query_row(
             "SELECT me.entity_id
              FROM meeting_entities me
@@ -531,20 +529,7 @@ fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Opt
             params![meeting_id],
             |row| row.get::<_, String>(0),
         )
-        .ok();
-
-    if from_entities.is_some() {
-        return from_entities;
-    }
-
-    db.conn_ref()
-        .query_row(
-            "SELECT account_id FROM meetings_history WHERE id = ?1",
-            params![meeting_id],
-            |row| row.get::<_, Option<String>>(0),
-        )
         .ok()
-        .flatten()
 }
 
 /// Check recently-ended meetings and create Quill sync rows for eligible ones.

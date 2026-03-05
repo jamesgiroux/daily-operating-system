@@ -201,7 +201,7 @@ pub fn classify_meeting_multi(
 
     // ---- Entity resolution for ALL meetings (not just external) ----
     // Run entity hints against title/description/domains regardless of internal/external.
-    // This allows title-based entity matches (e.g., "Janus Henderson 1:1") to inform
+    // This allows title-based entity matches (e.g., "Acme Corp 1:1") to inform
     // classification even when all attendees are internal.
     resolve_entities(&mut result, entity_hints, user_domains, &external_domains);
 
@@ -231,7 +231,7 @@ pub fn classify_meeting_multi(
     if !has_external {
         // Entity-aware override: if an account entity was found in the title,
         // promote this meeting to account-level intelligence even though all
-        // attendees are internal (e.g., "Janus Henderson 1:1" with internal attendees).
+        // attendees are internal (e.g., "Acme Corp 1:1" with internal attendees).
         if has_account_entity {
             result.meeting_type = match title_override {
                 Some("one_on_one") => "one_on_one".to_string(),
@@ -935,23 +935,23 @@ mod tests {
     #[test]
     fn test_classify_internal_1on1_with_account_in_title() {
         let hints = vec![account_hint_with_domain(
-            "janus-id",
-            "Janus Henderson",
-            &["janushenderson.com"],
+            "acme-id",
+            "Acme Corp",
+            &["acmecorp.com"],
         )];
         // All attendees are internal — normally would be "one_on_one" with Person tier
         let event = make_event(
-            "Janus Henderson 1:1",
+            "Acme Corp 1:1",
             vec!["me@company.com", "colleague@company.com"],
             false,
         );
         let result = classify_meeting(&event, "company.com", &hints);
-        // Should be promoted to Entity tier because "Janus Henderson" is a known account
+        // Should be promoted to Entity tier because "Acme Corp" is a known account
         assert_eq!(result.meeting_type, "one_on_one");
         assert_eq!(result.intelligence_tier, IntelligenceTier::Entity);
         assert!(!result.resolved_entities.is_empty());
         assert_eq!(result.resolved_entities[0].entity_type, "account");
-        assert_eq!(result.resolved_entities[0].name, "Janus Henderson");
+        assert_eq!(result.resolved_entities[0].name, "Acme Corp");
     }
 
     #[test]
