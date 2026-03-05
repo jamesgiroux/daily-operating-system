@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { connectors } from "./connectors/registry";
 import ConnectorDetail from "./ConnectorDetail";
 import { styles } from "./styles";
@@ -64,24 +65,36 @@ export default function ConnectorsGrid() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Record<string, ConnectionStatus>>({});
 
+  const refreshConnector = useCallback((id: string, statusCommand: string) => {
+    invoke(statusCommand)
+      .then((result) => {
+        const resolved = resolveStatus(id, result);
+        setStatuses((prev) => ({
+          ...prev,
+          [id]: { id, ...resolved },
+        }));
+      })
+      .catch(() => {
+        setStatuses((prev) => ({
+          ...prev,
+          [id]: { id, connected: false, label: "Error" },
+        }));
+      });
+  }, []);
+
   useEffect(() => {
     for (const conn of connectors) {
-      invoke(conn.statusCommand)
-        .then((result) => {
-          const resolved = resolveStatus(conn.id, result);
-          setStatuses((prev) => ({
-            ...prev,
-            [conn.id]: { id: conn.id, ...resolved },
-          }));
-        })
-        .catch(() => {
-          setStatuses((prev) => ({
-            ...prev,
-            [conn.id]: { id: conn.id, connected: false, label: "Error" },
-          }));
-        });
+      refreshConnector(conn.id, conn.statusCommand);
     }
-  }, []);
+
+    // Listen for Google auth changes so the header dot updates live
+    const unlisten = listen("google-auth-changed", () => {
+      const google = connectors.find((c) => c.id === "google");
+      if (google) refreshConnector(google.id, google.statusCommand);
+    });
+
+    return () => { unlisten.then((fn) => fn()); };
+  }, [refreshConnector]);
 
   function handleToggle(id: string) {
     setExpandedId((prev) => (prev === id ? null : id));
