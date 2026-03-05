@@ -31,6 +31,19 @@ export type MeetingType =
   | "external"
   | "personal";
 
+export interface DatabaseRecoveryStatus {
+  required: boolean;
+  reason: string;
+  detail: string;
+}
+
+export interface BackupInfo {
+  path: string;
+  createdAt: string;
+  sizeBytes: number;
+  kind: string;
+}
+
 export type Priority = "P1" | "P2" | "P3";
 
 export type ActionStatus = "pending" | "completed" | "proposed" | "archived";
