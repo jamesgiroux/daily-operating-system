@@ -33,7 +33,7 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
         let recent_meeting_count: i32 = db
             .conn_ref()
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history mh
+                "SELECT COUNT(*) FROM meetings mh
                  JOIN meeting_entities me ON me.meeting_id = mh.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'account'
                  AND mh.start_time >= datetime('now', '-30 days')",
@@ -87,11 +87,11 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
 /// Person with 3+ historical meetings where current 30d freq < 50% of trailing 90d avg.
 pub fn detect_relationship_drift(db: &ActionDb, _ctx: &DetectorContext) -> Vec<RawInsight> {
     let sql = "SELECT p.id, p.name,
-        (SELECT COUNT(*) FROM meetings_history mh
+        (SELECT COUNT(*) FROM meetings mh
          JOIN meeting_entities me ON me.meeting_id = mh.id
          WHERE me.entity_id = p.id AND me.entity_type = 'person'
          AND mh.start_time >= datetime('now', '-30 days')) as meetings_30d,
-        (SELECT COUNT(*) FROM meetings_history mh
+        (SELECT COUNT(*) FROM meetings mh
          JOIN meeting_entities me ON me.meeting_id = mh.id
          WHERE me.entity_id = p.id AND me.entity_type = 'person'
          AND mh.start_time >= datetime('now', '-90 days')) as meetings_90d
@@ -255,7 +255,7 @@ pub fn detect_meeting_load_forecast(db: &ActionDb, ctx: &DetectorContext) -> Vec
     let this_week_count: i32 = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(*) FROM meetings_history
+            "SELECT COUNT(*) FROM meetings
              WHERE start_time >= ?1 AND start_time < ?2",
             params![this_week_start, next_week_start],
             |row| row.get(0),
@@ -265,7 +265,7 @@ pub fn detect_meeting_load_forecast(db: &ActionDb, ctx: &DetectorContext) -> Vec
     let next_week_count: i32 = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(*) FROM meetings_history
+            "SELECT COUNT(*) FROM meetings
              WHERE start_time >= ?1 AND start_time < ?2",
             params![next_week_start, week_after_start],
             |row| row.get(0),
@@ -337,7 +337,7 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
         // Find champion(s) for this account
         let champions: Vec<String> = conn
             .prepare(
-                "SELECT person_id FROM account_team WHERE account_id = ?1 AND role = 'champion'",
+                "SELECT person_id FROM account_stakeholders WHERE account_id = ?1 AND role = 'champion'",
             )
             .and_then(|mut stmt| {
                 stmt.query_map(params![account_id], |row| row.get(0))
@@ -349,7 +349,7 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
             // Check last meeting with this person
             let last_meeting: Option<String> = conn
                 .query_row(
-                    "SELECT MAX(mh.start_time) FROM meetings_history mh
+                    "SELECT MAX(mh.start_time) FROM meetings mh
                      JOIN meeting_entities me ON me.meeting_id = mh.id
                      WHERE me.entity_id = ?1 AND me.entity_type = 'person'",
                     params![person_id],
@@ -536,7 +536,7 @@ pub fn detect_prep_coverage_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<Raw
     // Get external meetings tomorrow
     let meetings: Vec<String> = conn
         .prepare(
-            "SELECT id FROM meetings_history
+            "SELECT id FROM meetings
              WHERE date(start_time) = ?1
                AND meeting_type NOT IN ('internal', 'personal', 'focus', 'blocked')",
         )
@@ -608,7 +608,7 @@ pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<R
             "SELECT a.id, a.name FROM accounts a
              WHERE a.archived = 0 AND a.account_type = 'customer'
              AND NOT EXISTS (
-                 SELECT 1 FROM meetings_history mh
+                 SELECT 1 FROM meetings mh
                  JOIN meeting_entities me ON me.meeting_id = mh.id
                  WHERE me.entity_id = a.id AND me.entity_type = 'account'
                    AND mh.start_time >= datetime('now', '-30 days')
@@ -781,8 +781,20 @@ mod tests {
 
         db.conn_ref()
             .execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES ('m1', 'QBR', 'external', '2026-02-10T10:00:00', '2026-02-10')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
                 [],
             )
             .unwrap();
@@ -829,9 +841,21 @@ mod tests {
             let date = format!("2025-12-{:02}T10:00:00", 5 + i);
             db.conn_ref()
                 .execute(
-                    "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                      VALUES (?1, 'Sync', 'external', ?2, ?2)",
                     params![meeting_id, date],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![meeting_id],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![meeting_id],
                 )
                 .unwrap();
             db.conn_ref()
@@ -866,9 +890,21 @@ mod tests {
             let date = format!("2025-12-{:02}T10:00:00", 10 + i * 10);
             db.conn_ref()
                 .execute(
-                    "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                      VALUES (?1, 'Chat', 'external', ?2, ?2)",
                     params![mid, date],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![mid],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![mid],
                 )
                 .unwrap();
             db.conn_ref()
@@ -945,9 +981,21 @@ mod tests {
             let date = format!("2026-02-{:02}T10:00:00", 16 + i);
             db.conn_ref()
                 .execute(
-                    "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                      VALUES (?1, 'This week', 'external', ?2, ?2)",
                     params![mid, date],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![mid],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![mid],
                 )
                 .unwrap();
         }
@@ -958,9 +1006,21 @@ mod tests {
             let date = format!("2026-02-{:02}T10:00:00", 23 + i);
             db.conn_ref()
                 .execute(
-                    "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                      VALUES (?1, 'Next week', 'external', ?2, ?2)",
                     params![mid, date],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![mid],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![mid],
                 )
                 .unwrap();
         }
@@ -982,9 +1042,21 @@ mod tests {
             let date = format!("2026-02-{:02}T10:00:00", 16 + i);
             db.conn_ref()
                 .execute(
-                    "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                      VALUES (?1, 'This week', 'external', ?2, ?2)",
                     params![mid, date],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![mid],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![mid],
                 )
                 .unwrap();
         }
@@ -995,9 +1067,21 @@ mod tests {
             let date = format!("2026-02-{:02}T10:00:00", 23 + i);
             db.conn_ref()
                 .execute(
-                    "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                      VALUES (?1, 'Next week', 'external', ?2, ?2)",
                     params![mid, date],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![mid],
+                )
+                .unwrap();
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![mid],
                 )
                 .unwrap();
         }
@@ -1031,14 +1115,24 @@ mod tests {
             [],
         ).unwrap();
         conn.execute(
-            "INSERT INTO account_team (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
+            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
             [],
         ).unwrap();
 
         // Old meeting (60 days ago)
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'Sync', 'external', '2026-01-14 10:00:00', '2026-01-14')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
             [],
         )
         .unwrap();
@@ -1074,14 +1168,24 @@ mod tests {
             [],
         ).unwrap();
         conn.execute(
-            "INSERT INTO account_team (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
+            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
             [],
         ).unwrap();
 
         // Recent meeting (10 days ago)
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'Sync', 'external', '2026-03-05 10:00:00', '2026-03-05')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
             [],
         )
         .unwrap();
@@ -1167,14 +1271,25 @@ mod tests {
 
         // Insert 4 external meetings tomorrow, none with entities
         for i in 0..4 {
+            let mid = format!("m{}", i);
             conn.execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, ?2, 'external', ?3, '2026-03-15')",
                 params![
-                    format!("m{}", i),
+                    &mid,
                     format!("Meeting {}", i),
                     format!("{} 10:00:00", tomorrow)
                 ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                params![&mid],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                params![&mid],
             )
             .unwrap();
         }
@@ -1195,14 +1310,25 @@ mod tests {
 
         // Insert 3 external meetings
         for i in 0..3 {
+            let mid = format!("m{}", i);
             conn.execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, ?2, 'external', ?3, '2026-03-15')",
                 params![
-                    format!("m{}", i),
+                    &mid,
                     format!("Meeting {}", i),
                     format!("{} 10:00:00", tomorrow)
                 ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                params![&mid],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                params![&mid],
             )
             .unwrap();
         }
@@ -1231,14 +1357,25 @@ mod tests {
 
         // Only 2 external meetings
         for i in 0..2 {
+            let mid = format!("m{}", i);
             conn.execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, ?2, 'external', ?3, '2026-03-15')",
                 params![
-                    format!("m{}", i),
+                    &mid,
                     format!("Meeting {}", i),
                     format!("{} 10:00:00", tomorrow)
                 ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                params![&mid],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                params![&mid],
             )
             .unwrap();
         }
@@ -1369,8 +1506,18 @@ mod tests {
 
         // Recent meeting (5 days ago)
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'Sync', 'external', '2026-03-10 10:00:00', '2026-03-10')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
             [],
         )
         .unwrap();

@@ -1,5 +1,51 @@
 use super::*;
 
+/// SQL fragment for a 3-table JOIN returning all DbMeeting columns.
+fn full_meeting_join_sql() -> &'static str {
+    "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+            m.attendees, m.notes_path, mt.summary, m.created_at,
+            m.calendar_event_id, m.description, mp.prep_context_json,
+            mp.user_agenda_json, mp.user_notes, mp.prep_frozen_json, mp.prep_frozen_at,
+            mp.prep_snapshot_path, mp.prep_snapshot_hash, mt.transcript_path, mt.transcript_processed_at,
+            mt.intelligence_state, mt.intelligence_quality, mt.last_enriched_at,
+            mt.signal_count, mt.has_new_signals, mt.last_viewed_at
+     FROM meetings m
+     LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+     LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id"
+}
+
+/// Map a row from the full 3-table JOIN into a DbMeeting.
+fn map_full_meeting_row(row: &rusqlite::Row) -> rusqlite::Result<DbMeeting> {
+    Ok(DbMeeting {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        meeting_type: row.get(2)?,
+        start_time: row.get(3)?,
+        end_time: row.get(4)?,
+        attendees: row.get(5)?,
+        notes_path: row.get(6)?,
+        summary: row.get(7)?,
+        created_at: row.get(8)?,
+        calendar_event_id: row.get(9)?,
+        description: row.get(10)?,
+        prep_context_json: row.get(11)?,
+        user_agenda_json: row.get(12)?,
+        user_notes: row.get(13)?,
+        prep_frozen_json: row.get(14)?,
+        prep_frozen_at: row.get(15)?,
+        prep_snapshot_path: row.get(16)?,
+        prep_snapshot_hash: row.get(17)?,
+        transcript_path: row.get(18)?,
+        transcript_processed_at: row.get(19)?,
+        intelligence_state: row.get(20)?,
+        intelligence_quality: row.get(21)?,
+        last_enriched_at: row.get(22)?,
+        signal_count: row.get(23)?,
+        has_new_signals: row.get(24)?,
+        last_viewed_at: row.get(25)?,
+    })
+}
+
 impl ActionDb {
     // =========================================================================
     // Meetings
@@ -14,10 +60,11 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
                     m.calendar_event_id
-             FROM meetings_history m
+             FROM meetings m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              WHERE me.entity_id = ?1
                AND m.start_time >= date('now', ?2 || ' days')
              ORDER BY m.start_time DESC
@@ -65,48 +112,10 @@ impl ActionDb {
 
     /// Look up a single meeting by its ID (includes prep_context_json).
     pub fn get_meeting_by_id(&self, id: &str) -> Result<Option<DbMeeting>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    attendees, notes_path, summary, created_at,
-                    calendar_event_id, description, prep_context_json,
-                    user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
-                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at,
-                    intelligence_state, intelligence_quality, last_enriched_at,
-                    signal_count, has_new_signals, last_viewed_at
-             FROM meetings_history
-             WHERE id = ?1",
-        )?;
+        let sql = format!("{} WHERE m.id = ?1", full_meeting_join_sql());
+        let mut stmt = self.conn.prepare(&sql)?;
 
-        let mut rows = stmt.query_map(params![id], |row| {
-            Ok(DbMeeting {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                meeting_type: row.get(2)?,
-                start_time: row.get(3)?,
-                end_time: row.get(4)?,
-                attendees: row.get(5)?,
-                notes_path: row.get(6)?,
-                summary: row.get(7)?,
-                created_at: row.get(8)?,
-                calendar_event_id: row.get(9)?,
-                description: row.get(10)?,
-                prep_context_json: row.get(11)?,
-                user_agenda_json: row.get(12)?,
-                user_notes: row.get(13)?,
-                prep_frozen_json: row.get(14)?,
-                prep_frozen_at: row.get(15)?,
-                prep_snapshot_path: row.get(16)?,
-                prep_snapshot_hash: row.get(17)?,
-                transcript_path: row.get(18)?,
-                transcript_processed_at: row.get(19)?,
-                intelligence_state: row.get(20)?,
-                intelligence_quality: row.get(21)?,
-                last_enriched_at: row.get(22)?,
-                signal_count: row.get(23)?,
-                has_new_signals: row.get(24)?,
-                last_viewed_at: row.get(25)?,
-            })
-        })?;
+        let mut rows = stmt.query_map(params![id], map_full_meeting_row)?;
 
         match rows.next() {
             Some(Ok(meeting)) => Ok(Some(meeting)),
@@ -126,10 +135,10 @@ impl ActionDb {
     /// Return all meetings that have persisted prep context JSON.
     pub fn list_meeting_prep_contexts(&self) -> Result<Vec<(String, String)>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, prep_context_json
-             FROM meetings_history
-             WHERE prep_context_json IS NOT NULL
-               AND trim(prep_context_json) != ''",
+            "SELECT mp.meeting_id, mp.prep_context_json
+             FROM meeting_prep mp
+             WHERE mp.prep_context_json IS NOT NULL
+               AND trim(mp.prep_context_json) != ''",
         )?;
         let rows = stmt.query_map([], |row| {
             let id: String = row.get(0)?;
@@ -151,9 +160,9 @@ impl ActionDb {
         prep_context_json: &str,
     ) -> Result<(), DbError> {
         self.conn.execute(
-            "UPDATE meetings_history
-             SET prep_context_json = ?1
-             WHERE id = ?2",
+            "INSERT INTO meeting_prep (meeting_id, prep_context_json)
+             VALUES (?2, ?1)
+             ON CONFLICT(meeting_id) DO UPDATE SET prep_context_json = excluded.prep_context_json",
             params![prep_context_json, meeting_id],
         )?;
         Ok(())
@@ -167,10 +176,11 @@ impl ActionDb {
         user_notes: Option<&str>,
     ) -> Result<(), DbError> {
         self.conn.execute(
-            "UPDATE meetings_history
-             SET user_agenda_json = ?1,
-                 user_notes = ?2
-             WHERE id = ?3",
+            "INSERT INTO meeting_prep (meeting_id, user_agenda_json, user_notes)
+             VALUES (?3, ?1, ?2)
+             ON CONFLICT(meeting_id) DO UPDATE SET
+                 user_agenda_json = excluded.user_agenda_json,
+                 user_notes = excluded.user_notes",
             params![user_agenda_json, user_notes, meeting_id],
         )?;
         Ok(())
@@ -186,12 +196,12 @@ impl ActionDb {
         snapshot_hash: &str,
     ) -> Result<bool, DbError> {
         let affected = self.conn.execute(
-            "UPDATE meetings_history
+            "UPDATE meeting_prep
              SET prep_frozen_json = ?1,
                  prep_frozen_at = ?2,
                  prep_snapshot_path = ?3,
                  prep_snapshot_hash = ?4
-             WHERE id = ?5
+             WHERE meeting_id = ?5
                AND prep_frozen_at IS NULL",
             params![
                 frozen_json,
@@ -204,7 +214,7 @@ impl ActionDb {
         Ok(affected > 0)
     }
 
-    /// Persist transcript metadata directly on the meeting row.
+    /// Persist transcript metadata directly on the meeting transcript row.
     pub fn update_meeting_transcript_metadata(
         &self,
         meeting_id: &str,
@@ -213,11 +223,12 @@ impl ActionDb {
         summary_opt: Option<&str>,
     ) -> Result<(), DbError> {
         self.conn.execute(
-            "UPDATE meetings_history
-             SET transcript_path = ?1,
-                 transcript_processed_at = ?2,
-                 summary = COALESCE(?3, summary)
-             WHERE id = ?4",
+            "INSERT INTO meeting_transcripts (meeting_id, transcript_path, transcript_processed_at, summary)
+             VALUES (?4, ?1, ?2, ?3)
+             ON CONFLICT(meeting_id) DO UPDATE SET
+                 transcript_path = excluded.transcript_path,
+                 transcript_processed_at = excluded.transcript_processed_at,
+                 summary = COALESCE(excluded.summary, meeting_transcripts.summary)",
             params![transcript_path, processed_at, summary_opt, meeting_id],
         )?;
         Ok(())
@@ -231,7 +242,7 @@ impl ActionDb {
         quality: Option<&str>,
         signal_count: Option<i32>,
     ) -> Result<(), DbError> {
-        let mut sql = "UPDATE meetings_history SET intelligence_state = ?1".to_string();
+        let mut sql = "UPDATE meeting_transcripts SET intelligence_state = ?1".to_string();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(state.to_string())];
         let mut idx = 2;
 
@@ -249,7 +260,7 @@ impl ActionDb {
         sql.push_str(&format!(", last_enriched_at = ?{idx}"));
         params.push(Box::new(chrono::Utc::now().to_rfc3339()));
         idx += 1;
-        sql.push_str(&format!(" WHERE id = ?{idx}"));
+        sql.push_str(&format!(" WHERE meeting_id = ?{idx}"));
         params.push(Box::new(meeting_id.to_string()));
 
         self.conn.execute(
@@ -262,7 +273,7 @@ impl ActionDb {
     /// Mark meeting as having new signals (ADR-0081).
     pub fn mark_meeting_new_signals(&self, meeting_id: &str) -> Result<(), DbError> {
         self.conn.execute(
-            "UPDATE meetings_history SET has_new_signals = 1 WHERE id = ?1",
+            "UPDATE meeting_transcripts SET has_new_signals = 1 WHERE meeting_id = ?1",
             params![meeting_id],
         )?;
         Ok(())
@@ -272,7 +283,7 @@ impl ActionDb {
     pub fn clear_meeting_new_signals(&self, meeting_id: &str) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
-            "UPDATE meetings_history SET has_new_signals = 0, last_viewed_at = ?2 WHERE id = ?1",
+            "UPDATE meeting_transcripts SET has_new_signals = 0, last_viewed_at = ?2 WHERE meeting_id = ?1",
             params![meeting_id, now],
         )?;
         Ok(())
@@ -516,7 +527,7 @@ impl ActionDb {
             "SELECT m.id, m.title, m.start_time,
                     (SELECT me.entity_id FROM meeting_entities me
                      WHERE me.meeting_id = m.id LIMIT 1) AS entity_id
-             FROM meetings_history m
+             FROM meetings m
              WHERE m.start_time >= datetime('now', ?1)
              ORDER BY m.start_time DESC",
         )?;
@@ -533,7 +544,7 @@ impl ActionDb {
     ) -> Result<Vec<(String, String, String)>, DbError> {
         let offset = format!("-{} days", days_back);
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, start_time FROM meetings_history
+            "SELECT id, title, start_time FROM meetings
              WHERE start_time >= datetime('now', ?1)
              ORDER BY start_time DESC",
         )?;
@@ -555,9 +566,10 @@ impl ActionDb {
     ) -> Result<Vec<String>, DbError> {
         let offset = format!("-{} days", days_back);
         let mut stmt = self.conn.prepare(
-            "SELECT m.id FROM meetings_history m
+            "SELECT m.id FROM meetings m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id AND me.entity_type = 'account'
-             WHERE m.transcript_path IS NULL AND m.transcript_processed_at IS NULL
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE mt.transcript_path IS NULL AND mt.transcript_processed_at IS NULL
                AND m.start_time >= datetime('now', ?1)
                AND m.end_time < datetime('now')
                AND m.meeting_type IN ('customer','qbr','partnership')
@@ -572,16 +584,15 @@ impl ActionDb {
     // Meetings
     // =========================================================================
 
-    /// Insert or update a meeting history record.
+    /// Insert or update a meeting history record (split across 3 tables).
     pub fn upsert_meeting(&self, meeting: &DbMeeting) -> Result<(), DbError> {
+        // 1. meetings table (core scheduling data)
         self.conn.execute(
-            "INSERT INTO meetings_history (
+            "INSERT INTO meetings (
                 id, title, meeting_type, start_time, end_time,
-                attendees, notes_path, summary, created_at,
-                calendar_event_id, description, prep_context_json,
-                user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
-                prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                attendees, notes_path, created_at,
+                calendar_event_id, description
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 meeting_type = excluded.meeting_type,
@@ -589,18 +600,8 @@ impl ActionDb {
                 end_time = excluded.end_time,
                 attendees = excluded.attendees,
                 notes_path = excluded.notes_path,
-                summary = excluded.summary,
                 calendar_event_id = excluded.calendar_event_id,
-                description = excluded.description,
-                prep_context_json = COALESCE(excluded.prep_context_json, meetings_history.prep_context_json),
-                user_agenda_json = COALESCE(excluded.user_agenda_json, meetings_history.user_agenda_json),
-                user_notes = COALESCE(excluded.user_notes, meetings_history.user_notes),
-                prep_frozen_json = COALESCE(meetings_history.prep_frozen_json, excluded.prep_frozen_json),
-                prep_frozen_at = COALESCE(meetings_history.prep_frozen_at, excluded.prep_frozen_at),
-                prep_snapshot_path = COALESCE(meetings_history.prep_snapshot_path, excluded.prep_snapshot_path),
-                prep_snapshot_hash = COALESCE(meetings_history.prep_snapshot_hash, excluded.prep_snapshot_hash),
-                transcript_path = COALESCE(excluded.transcript_path, meetings_history.transcript_path),
-                transcript_processed_at = COALESCE(excluded.transcript_processed_at, meetings_history.transcript_processed_at)",
+                description = excluded.description",
             params![
                 meeting.id,
                 meeting.title,
@@ -609,10 +610,28 @@ impl ActionDb {
                 meeting.end_time,
                 meeting.attendees,
                 meeting.notes_path,
-                meeting.summary,
                 meeting.created_at,
                 meeting.calendar_event_id,
                 meeting.description,
+            ],
+        )?;
+
+        // 2. meeting_prep table
+        self.conn.execute(
+            "INSERT INTO meeting_prep (
+                meeting_id, prep_context_json, user_agenda_json, user_notes,
+                prep_frozen_json, prep_frozen_at, prep_snapshot_path, prep_snapshot_hash
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(meeting_id) DO UPDATE SET
+                prep_context_json = COALESCE(excluded.prep_context_json, meeting_prep.prep_context_json),
+                user_agenda_json = COALESCE(excluded.user_agenda_json, meeting_prep.user_agenda_json),
+                user_notes = COALESCE(excluded.user_notes, meeting_prep.user_notes),
+                prep_frozen_json = COALESCE(meeting_prep.prep_frozen_json, excluded.prep_frozen_json),
+                prep_frozen_at = COALESCE(meeting_prep.prep_frozen_at, excluded.prep_frozen_at),
+                prep_snapshot_path = COALESCE(meeting_prep.prep_snapshot_path, excluded.prep_snapshot_path),
+                prep_snapshot_hash = COALESCE(meeting_prep.prep_snapshot_hash, excluded.prep_snapshot_hash)",
+            params![
+                meeting.id,
                 meeting.prep_context_json,
                 meeting.user_agenda_json,
                 meeting.user_notes,
@@ -620,6 +639,21 @@ impl ActionDb {
                 meeting.prep_frozen_at,
                 meeting.prep_snapshot_path,
                 meeting.prep_snapshot_hash,
+            ],
+        )?;
+
+        // 3. meeting_transcripts table
+        self.conn.execute(
+            "INSERT INTO meeting_transcripts (
+                meeting_id, summary, transcript_path, transcript_processed_at
+             ) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(meeting_id) DO UPDATE SET
+                summary = COALESCE(excluded.summary, meeting_transcripts.summary),
+                transcript_path = COALESCE(excluded.transcript_path, meeting_transcripts.transcript_path),
+                transcript_processed_at = COALESCE(excluded.transcript_processed_at, meeting_transcripts.transcript_processed_at)",
+            params![
+                meeting.id,
+                meeting.summary,
                 meeting.transcript_path,
                 meeting.transcript_processed_at,
             ],
@@ -633,55 +667,19 @@ impl ActionDb {
         &self,
         calendar_event_id: &str,
     ) -> Result<Option<DbMeeting>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    attendees, notes_path, summary, created_at,
-                    calendar_event_id, description, prep_context_json,
-                    user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
-                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at,
-                    intelligence_state, intelligence_quality, last_enriched_at,
-                    signal_count, has_new_signals, last_viewed_at
-             FROM meetings_history
-             WHERE calendar_event_id = ?1
-             LIMIT 1",
-        )?;
-        let mut rows = stmt.query_map(params![calendar_event_id], |row| {
-            Ok(DbMeeting {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                meeting_type: row.get(2)?,
-                start_time: row.get(3)?,
-                end_time: row.get(4)?,
-                attendees: row.get(5)?,
-                notes_path: row.get(6)?,
-                summary: row.get(7)?,
-                created_at: row.get(8)?,
-                calendar_event_id: row.get(9)?,
-                description: row.get(10)?,
-                prep_context_json: row.get(11)?,
-                user_agenda_json: row.get(12)?,
-                user_notes: row.get(13)?,
-                prep_frozen_json: row.get(14)?,
-                prep_frozen_at: row.get(15)?,
-                prep_snapshot_path: row.get(16)?,
-                prep_snapshot_hash: row.get(17)?,
-                transcript_path: row.get(18)?,
-                transcript_processed_at: row.get(19)?,
-                intelligence_state: row.get(20)?,
-                intelligence_quality: row.get(21)?,
-                last_enriched_at: row.get(22)?,
-                signal_count: row.get(23)?,
-                has_new_signals: row.get(24)?,
-                last_viewed_at: row.get(25)?,
-            })
-        })?;
+        let sql = format!(
+            "{} WHERE m.calendar_event_id = ?1 LIMIT 1",
+            full_meeting_join_sql()
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut rows = stmt.query_map(params![calendar_event_id], map_full_meeting_row)?;
         match rows.next() {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
     }
 
-    /// Ensure a meeting exists in meetings_history (INSERT OR IGNORE).
+    /// Ensure a meeting exists in the meetings table (INSERT OR IGNORE).
     /// Used by calendar polling to create lightweight records so
     /// record_meeting_attendance() can query start_time.
     /// Does NOT overwrite existing rows — reconcile.rs owns updates.
@@ -691,7 +689,7 @@ impl ActionDb {
     ) -> Result<MeetingSyncOutcome, DbError> {
         // Check if meeting already exists and detect changes
         let mut stmt = self.conn.prepare(
-            "SELECT title, start_time, attendees, description FROM meetings_history WHERE id = ?1",
+            "SELECT title, start_time, attendees, description FROM meetings WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![input.id], |row| {
             Ok((
@@ -705,9 +703,9 @@ impl ActionDb {
 
         match existing {
             None => {
-                // New meeting — insert with all available fields
+                // New meeting — insert into meetings table
                 self.conn.execute(
-                    "INSERT INTO meetings_history
+                    "INSERT INTO meetings
                         (id, title, meeting_type, start_time, end_time, created_at, calendar_event_id, attendees, description)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                     params![
@@ -722,6 +720,15 @@ impl ActionDb {
                         input.description,
                     ],
                 )?;
+                // Create stub rows in child tables
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![input.id],
+                )?;
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![input.id],
+                )?;
                 Ok(MeetingSyncOutcome::New)
             }
             Some((old_title, old_start, old_attendees, old_description)) => {
@@ -732,7 +739,7 @@ impl ActionDb {
                     || old_description.as_deref() != input.description;
                 if changed {
                     self.conn.execute(
-                        "UPDATE meetings_history SET title = ?1, start_time = ?2, end_time = ?3,
+                        "UPDATE meetings SET title = ?1, start_time = ?2, end_time = ?3,
                          attendees = ?4, description = ?5, meeting_type = ?6
                          WHERE id = ?7",
                         params![

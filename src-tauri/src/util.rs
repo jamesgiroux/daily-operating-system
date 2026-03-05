@@ -748,7 +748,7 @@ mod tests {
 
     #[test]
     fn test_slugify_preserves_hyphens() {
-        assert_eq!(slugify("REDACTED"), "REDACTED");
+        assert_eq!(slugify("Acme-Motors"), "acme-motors");
     }
 
     #[test]

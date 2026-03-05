@@ -286,7 +286,7 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                         db.conn_ref()
                             .query_row(
                                 "SELECT COUNT(*) FROM meeting_entities me
-                         JOIN meetings_history mh ON me.meeting_id = mh.id
+                         JOIN meetings mh ON me.meeting_id = mh.id
                          WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
                                 rusqlite::params![eid, start, end],
                                 |row| row.get::<_, i64>(0),
@@ -361,8 +361,8 @@ pub(crate) fn best_account_for_person(
 ) -> Option<String> {
     let mut stmt = match db.conn_ref().prepare(
         "SELECT a.id, a.name, a.keywords FROM accounts a
-         JOIN entity_people ep ON a.id = ep.entity_id
-         WHERE ep.person_id = ?1",
+         JOIN account_stakeholders as_ ON a.id = as_.account_id
+         WHERE as_.person_id = ?1",
     ) {
         Ok(s) => s,
         Err(_) => return None,
@@ -486,9 +486,9 @@ pub fn get_entity_emails(
         let mut stmt = db
             .conn_ref()
             .prepare(
-                "SELECT DISTINCT pe.email FROM entity_people ep
-                 JOIN person_emails pe ON ep.person_id = pe.person_id
-                 WHERE ep.entity_id = ?1",
+                "SELECT DISTINCT pe.email FROM account_stakeholders as_
+                 JOIN person_emails pe ON as_.person_id = pe.person_id
+                 WHERE as_.account_id = ?1",
             )
             .map_err(|e| format!("query error: {e}"))?;
         let emails_list: Vec<String> = stmt

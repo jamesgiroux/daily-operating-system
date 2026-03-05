@@ -747,21 +747,25 @@ pub fn migrate_company_overview_to_intelligence(
 // =============================================================================
 
 impl ActionDb {
-    /// Insert or update the entity_intelligence cache row.
+    /// Insert or update the entity_assessment cache row.
+    /// Health/coherence data goes to entity_quality.
     pub fn upsert_entity_intelligence(
         &self,
         intel: &IntelligenceJson,
     ) -> Result<(), rusqlite::Error> {
-        self.conn_ref().execute(
-            "INSERT INTO entity_intelligence (
+        let conn = self.conn_ref();
+
+        // 1. entity_assessment — all assessment/prose columns
+        conn.execute(
+            "INSERT INTO entity_assessment (
                 entity_id, entity_type, enriched_at, source_file_count,
                 executive_assessment, risks_json, recent_wins_json,
                 current_state_json, stakeholder_insights_json,
                 next_meeting_readiness_json, company_context_json,
-                health_score, health_trend, value_delivered,
-                success_metrics, open_commitments, relationship_depth,
-                consistency_status, consistency_findings_json, consistency_checked_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                value_delivered, success_metrics, open_commitments,
+                relationship_depth, consistency_status,
+                consistency_findings_json, consistency_checked_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -773,8 +777,6 @@ impl ActionDb {
                 stakeholder_insights_json = excluded.stakeholder_insights_json,
                 next_meeting_readiness_json = excluded.next_meeting_readiness_json,
                 company_context_json = excluded.company_context_json,
-                health_score = excluded.health_score,
-                health_trend = excluded.health_trend,
                 value_delivered = excluded.value_delivered,
                 success_metrics = excluded.success_metrics,
                 open_commitments = excluded.open_commitments,
@@ -794,8 +796,6 @@ impl ActionDb {
                 serde_json::to_string(&intel.stakeholder_insights).ok(),
                 serde_json::to_string(&intel.next_meeting_readiness).ok(),
                 serde_json::to_string(&intel.company_context).ok(),
-                intel.health_score,
-                serde_json::to_string(&intel.health_trend).ok(),
                 serde_json::to_string(&intel.value_delivered).ok(),
                 serde_json::to_string(&intel.success_metrics).ok(),
                 serde_json::to_string(&intel.open_commitments).ok(),
@@ -805,23 +805,43 @@ impl ActionDb {
                 intel.consistency_checked_at,
             ],
         )?;
+
+        // 2. entity_quality — health_score + health_trend (if present)
+        if intel.health_score.is_some() {
+            conn.execute(
+                "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(entity_id) DO UPDATE SET
+                     health_score = excluded.health_score,
+                     health_trend = excluded.health_trend",
+                rusqlite::params![
+                    intel.entity_id,
+                    intel.entity_type,
+                    intel.health_score,
+                    serde_json::to_string(&intel.health_trend).ok(),
+                ],
+            )?;
+        }
+
         Ok(())
     }
 
-    /// Get cached entity intelligence.
+    /// Get cached entity intelligence (from entity_assessment + entity_quality).
     pub fn get_entity_intelligence(
         &self,
         entity_id: &str,
     ) -> Result<Option<IntelligenceJson>, rusqlite::Error> {
         let mut stmt = self.conn_ref().prepare(
-            "SELECT entity_id, entity_type, enriched_at, source_file_count,
-                    executive_assessment, risks_json, recent_wins_json,
-                    current_state_json, stakeholder_insights_json,
-                    next_meeting_readiness_json, company_context_json,
-                    health_score, health_trend, value_delivered,
-                    success_metrics, open_commitments, relationship_depth,
-                    consistency_status, consistency_findings_json, consistency_checked_at
-             FROM entity_intelligence WHERE entity_id = ?1",
+            "SELECT ea.entity_id, ea.entity_type, ea.enriched_at, ea.source_file_count,
+                    ea.executive_assessment, ea.risks_json, ea.recent_wins_json,
+                    ea.current_state_json, ea.stakeholder_insights_json,
+                    ea.next_meeting_readiness_json, ea.company_context_json,
+                    eq.health_score, eq.health_trend, ea.value_delivered,
+                    ea.success_metrics, ea.open_commitments, ea.relationship_depth,
+                    ea.consistency_status, ea.consistency_findings_json, ea.consistency_checked_at
+             FROM entity_assessment ea
+             LEFT JOIN entity_quality eq ON eq.entity_id = ea.entity_id
+             WHERE ea.entity_id = ?1",
         )?;
 
         let result = stmt.query_row(rusqlite::params![entity_id], |row| {
@@ -890,7 +910,7 @@ impl ActionDb {
     /// Delete cached entity intelligence.
     pub fn delete_entity_intelligence(&self, entity_id: &str) -> Result<(), rusqlite::Error> {
         self.conn_ref().execute(
-            "DELETE FROM entity_intelligence WHERE entity_id = ?1",
+            "DELETE FROM entity_assessment WHERE entity_id = ?1",
             rusqlite::params![entity_id],
         )?;
         Ok(())

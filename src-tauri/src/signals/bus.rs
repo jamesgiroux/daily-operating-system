@@ -116,13 +116,14 @@ pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError
 
     // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
     let _ = db.conn_ref().execute(
-        "UPDATE meetings_history SET has_new_signals = 1
-         WHERE id IN (
+        "UPDATE meeting_transcripts SET has_new_signals = 1
+         WHERE meeting_id IN (
              SELECT me.meeting_id FROM meeting_entities me
+             INNER JOIN meetings m ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
-         )
-         AND julianday(start_time) > julianday('now')
-         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+             AND julianday(m.start_time) > julianday('now')
+             AND (meeting_transcripts.intelligence_state IS NULL OR meeting_transcripts.intelligence_state != 'archived')
+         )",
         rusqlite::params![signal.entity_id, signal.entity_type],
     );
 
@@ -161,13 +162,14 @@ pub fn emit_signal(
     // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
     // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
     let _ = db.conn_ref().execute(
-        "UPDATE meetings_history SET has_new_signals = 1
-         WHERE id IN (
+        "UPDATE meeting_transcripts SET has_new_signals = 1
+         WHERE meeting_id IN (
              SELECT me.meeting_id FROM meeting_entities me
+             INNER JOIN meetings m ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
-         )
-         AND julianday(start_time) > julianday('now')
-         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+             AND julianday(m.start_time) > julianday('now')
+             AND (meeting_transcripts.intelligence_state IS NULL OR meeting_transcripts.intelligence_state != 'archived')
+         )",
         rusqlite::params![entity_id, entity_type],
     );
 
@@ -262,10 +264,11 @@ pub fn propagate_signal_to_meetings(db: &ActionDb, entity_id: &str) -> Result<us
     let conn = db.conn_ref();
     let mut stmt = conn.prepare(
         "SELECT me.meeting_id FROM meeting_entities me
-         INNER JOIN meetings_history mh ON mh.id = me.meeting_id
+         INNER JOIN meetings m ON m.id = me.meeting_id
+         LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
          WHERE me.entity_id = ?1
-         AND mh.start_time > datetime('now')
-         AND mh.intelligence_state != 'archived'",
+         AND m.start_time > datetime('now')
+         AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
     )?;
 
     let meeting_ids: Vec<String> = stmt

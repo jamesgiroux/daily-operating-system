@@ -208,13 +208,14 @@ impl Scheduler {
             Ok(db) => {
                 let conn = db.conn_ref();
                 let mut stmt = match conn.prepare(
-                    "SELECT id FROM meetings_history
-                     WHERE julianday(start_time) > julianday('now')
-                     AND julianday(start_time) <= julianday('now', '+2 hours')
-                     AND intelligence_state != 'archived'
-                     AND (has_new_signals = 1
-                          OR last_enriched_at IS NULL
-                          OR julianday(last_enriched_at) < julianday('now', '-12 hours'))",
+                    "SELECT m.id FROM meetings m
+                     LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                     WHERE julianday(m.start_time) > julianday('now')
+                     AND julianday(m.start_time) <= julianday('now', '+2 hours')
+                     AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')
+                     AND (mt.has_new_signals = 1
+                          OR mt.last_enriched_at IS NULL
+                          OR julianday(mt.last_enriched_at) < julianday('now', '-12 hours'))",
                 ) {
                     Ok(s) => s,
                     Err(e) => {

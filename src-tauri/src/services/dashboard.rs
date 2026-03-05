@@ -87,15 +87,17 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         .db_read(move |db| {
             let conn = db.conn_ref();
 
-            // 1. Query today's meetings from meetings_history
+            // 1. Query today's meetings from meetings + LEFT JOINs for prep/transcript columns
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, title, meeting_type, start_time, end_time, attendees,
-                        notes_path, summary, created_at, calendar_event_id, description,
-                        prep_context_json, intelligence_state
-                 FROM meetings_history
-                 WHERE start_time >= ?1 AND start_time < ?2
-                 ORDER BY start_time ASC",
+                    "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time, m.attendees,
+                        m.notes_path, mt.summary, m.created_at, m.calendar_event_id, m.description,
+                        mp.prep_context_json, mt.intelligence_state
+                 FROM meetings m
+                 LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+                 LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE m.start_time >= ?1 AND m.start_time < ?2
+                 ORDER BY m.start_time ASC",
                 )
                 .map_err(|e| e.to_string())?;
             let meeting_rows = stmt
@@ -426,7 +428,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     let (overview, briefing_meetings) = match schedule_result {
         Some(data) => data,
         None => {
-            // Fallback: build dashboard from SQLite meetings_history
+            // Fallback: build dashboard from SQLite meetings
             if let Some(live_data) = build_live_dashboard_data(state).await {
                 if !live_data.meetings.is_empty() {
                     log::info!(
@@ -842,8 +844,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             db.conn_ref()
                                 .query_row(
                                     "SELECT COUNT(*) FROM meeting_entities me
-                                     JOIN meetings_history mh ON me.meeting_id = mh.id
-                                     WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
+                                     JOIN meetings m ON me.meeting_id = m.id
+                                     WHERE me.entity_id = ?1 AND m.start_time >= ?2 AND m.start_time <= ?3",
                                     rusqlite::params![eid, start, end],
                                     |row| row.get::<_, i64>(0),
                                 )

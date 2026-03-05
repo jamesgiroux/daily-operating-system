@@ -86,11 +86,11 @@ pub struct ReportRow {
 /// Compute a hash of the current intelligence state for an entity.
 /// Used to detect when intelligence changed and cached reports are stale.
 pub fn compute_intel_hash(entity_id: &str, entity_type: &str, db: &ActionDb) -> String {
-    // Hash the entity_intelligence row's enriched_at + a content sample
+    // Hash the entity_assessment row's enriched_at + a content sample
     let intel_str: String = db
         .conn_ref()
         .query_row(
-            "SELECT COALESCE(enriched_at, '') || '|' || COALESCE(executive_assessment, '') FROM entity_intelligence WHERE entity_id = ?1",
+            "SELECT COALESCE(enriched_at, '') || '|' || COALESCE(executive_assessment, '') FROM entity_assessment WHERE entity_id = ?1",
             params![entity_id],
             |row| row.get(0),
         )

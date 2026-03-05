@@ -698,7 +698,7 @@ fn backfill_db_prep_contexts(
 ///
 /// Targets:
 /// - `_today/data/preps/*.json`
-/// - `meetings_history.prep_context_json`
+/// - `meeting_prep.prep_context_json`
 #[tauri::command]
 pub async fn backfill_prep_semantics(
     dry_run: bool,
@@ -7477,7 +7477,7 @@ pub async fn enrich_account_from_clay(
         g.as_ref().and_then(|db| {
             db.conn_ref()
                 .query_row(
-                    "SELECT person_id FROM entity_people WHERE entity_id = ?1 LIMIT 1",
+                    "SELECT person_id FROM account_stakeholders WHERE account_id = ?1 LIMIT 1",
                     [&account_id],
                     |row| row.get(0),
                 )
@@ -8188,7 +8188,7 @@ pub async fn correct_email_disposition(
 
 /// Return meetings for +/-N days around today with intelligence quality data.
 ///
-/// Always-live: if no future meetings exist in `meetings_history`, fetches from
+/// Always-live: if no future meetings exist in `meetings`, fetches from
 /// Google Calendar and upserts stubs so the timeline populates on first load
 /// without waiting for scheduled workflows.
 #[tauri::command]
@@ -8216,10 +8216,11 @@ pub async fn get_meeting_timeline(
                 Ok(db
                     .conn_ref()
                     .prepare(
-                        "SELECT id FROM meetings_history
-                     WHERE start_time >= ?1
-                       AND prep_frozen_json IS NULL
-                       AND meeting_type NOT IN ('personal', 'focus', 'blocked')",
+                        "SELECT m.id FROM meetings m
+                     LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+                     WHERE m.start_time >= ?1
+                       AND mp.prep_frozen_json IS NULL
+                       AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
                     )
                     .and_then(|mut stmt| {
                         let rows =
@@ -8275,7 +8276,7 @@ pub async fn get_meeting_timeline(
         return Ok(result);
     }
 
-    // Classify and upsert into meetings_history (same pattern as prepare_today)
+    // Classify and upsert into meetings (same pattern as prepare_today)
     let user_domains = state
         .config
         .read()

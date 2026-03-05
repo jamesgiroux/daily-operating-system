@@ -93,7 +93,7 @@ pub fn generate_callouts(
         signals.iter().map(|s| (s.clone(), 0.0)).collect()
     };
 
-    // I414: Apply user-context relevance weighting and persist to entity_intelligence
+    // I414: Apply user-context relevance weighting and persist to entity_assessment
     if user_entity.is_some() {
         for (signal, relevance) in &mut scored_signals {
             let entity_name =
@@ -105,10 +105,10 @@ pub fn generate_callouts(
             );
             *relevance *= weight;
 
-            // Persist non-default weights to entity_intelligence (I414 AC4)
+            // Persist non-default weights to entity_assessment (I414 AC4)
             if (weight - 1.0).abs() > f64::EPSILON {
                 let _ = db.conn_ref().execute(
-                    "UPDATE entity_intelligence SET user_relevance_weight = ?1 WHERE entity_id = ?2",
+                    "UPDATE entity_assessment SET user_relevance_weight = ?1 WHERE entity_id = ?2",
                     params![weight, signal.entity_id],
                 );
             }
