@@ -46,7 +46,7 @@ Every structured analysis follows this workflow, regardless of which framework i
 Frame the question using SCQA:
 - **Situation** — What is the current state? Ground this in workspace data (entity dashboard, intelligence, signals).
 - **Complication** — What changed or is threatening to change? What makes this a problem now?
-- **Question** — State the specific question to answer. Must be precise enough to test — not "What should we do about Nexus Analytics?" but "Should we invest in a dedicated CSM for Nexus Analytics before their Q3 renewal given the declining health trajectory?"
+- **Question** — State the specific question to answer. Must be precise enough to test — not "What should we do about Acme Corp?" but "Should we invest in a dedicated CSM for Acme Corp before their Q3 renewal given the declining health trajectory?"
 - **Answer** — Hypothesis. State your best guess before analyzing. This creates a testable proposition.
 
 **Quality gate:** The question must be specific enough that you could definitively answer it with evidence. If it is too broad, decompose it.
@@ -77,7 +77,7 @@ For each branch of the issue tree:
 3. Assess evidence strength: strong (quantitative, recent), moderate (qualitative, recent), weak (old, indirect)
 4. Note contradictions — when two sources disagree, that is important, not inconvenient
 
-**Quality gate:** Every claim must be sourced to a specific file, meeting, signal, or data point. "Nexus Analytics health is declining" is not evidence. "Nexus Analytics health moved from Green to Yellow on January 15, with ARR declining 12% QoQ per dashboard.json" is evidence.
+**Quality gate:** Every claim must be sourced to a specific file, meeting, signal, or data point. "Acme Corp health is declining" is not evidence. "Acme Corp health moved from Green to Yellow on January 15, with ARR declining 12% QoQ per dashboard.json" is evidence.
 
 ### Step 5: Quality Check — WWHTBT Pass
 

@@ -127,43 +127,43 @@ Situation-Complication-Question-Answer framework from McKinsey. Best for framing
 ## Example
 
 ```markdown
-# WordPress VIP Should Formalize the Salesforce Partnership
+# WordPress VIP Should Formalize the Globex Partnership
 
 ## The Context
 
-Salesforce generated over $100M in Agentforce bookings in year one. Their sales teams are actively looking for implementation partners. WordPress VIP has a working connector (demonstrated at Dreamforce) and a lighthouse customer (Crestview Media) ready to deploy.
+Globex generated over $100M in Agentforce bookings in year one. Their sales teams are actively looking for implementation partners. WordPress VIP has a working connector (demonstrated at Dreamforce) and a lighthouse customer (Keystone Automotive) ready to deploy.
 
 The technical foundation is in place. The market interest is validated.
 
 ## The Challenge
 
 We're at a decision point. Without formal partnership status:
-- Salesforce AEs can recommend us but can't formally include us in deals
+- Globex AEs can recommend us but can't formally include us in deals
 - We miss AppExchange distribution (1000s of potential customers)
 - Competitors with formal partnerships get preference in co-sell motions
-- The NXP opportunity ($400K) is testing a model we can't scale without partnership infrastructure
+- The Vertex opportunity ($400K) is testing a model we can't scale without partnership infrastructure
 
 The Dreamforce momentum is creating demand we're not positioned to capture. Three AEs reached out in the same week. Without partnership infrastructure, each deal requires ad-hoc coordination.
 
-**The question**: Should we invest in formalizing the Salesforce partnership now?
+**The question**: Should we invest in formalizing the Globex partnership now?
 
 ## The Recommendation
 
 Yes. Formal partnership should be a Q1 priority. Here's why:
 
 ### The Demand Is Here Now
-Three enterprise opportunities in active discussion. NXP alone represents $400K. Waiting means losing deals to partners who can execute the co-sell motion.
+Three enterprise opportunities in active discussion. Vertex alone represents $400K. Waiting means losing deals to partners who can execute the co-sell motion.
 
 ### The Technical Risk Is Behind Us
-Dreamforce validated the approach. Crestview Media is deploying. The connector works. This isn't speculative investment; it's scaling what's proven.
+Dreamforce validated the approach. Keystone is deploying. The connector works. This isn't speculative investment; it's scaling what's proven.
 
 ### The Window May Close
-Salesforce is actively building their partner ecosystem for Agentforce. Early movers get preferred positioning. Waiting means competing against established partners later.
+Globex is actively building their partner ecosystem for Agentforce. Early movers get preferred positioning. Waiting means competing against established partners later.
 
 ## Next Steps
 
 - **Riley**: Lead partnership formalization (target: Feb legal close)
-- **James**: Support NXP as proof point for co-sell model
+- **Your Name**: Support Vertex as proof point for co-sell model
 - **Abdul**: Ensure MVP is ready for partner launch
 - **Decision needed**: Confirm this is a Q1 priority for leadership allocation
 ```
