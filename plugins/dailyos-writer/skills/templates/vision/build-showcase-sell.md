@@ -248,8 +248,8 @@ Before each phase transition:
 
 The Agentforce partnership follows this framework:
 
-**BUILD**: Connector MVP for Salesforce Data Cloud + Agentforce integration. Exit: Dreamforce demo-ready.
+**BUILD**: Connector MVP for Globex Data Cloud + Agentforce integration. Exit: Dreamforce demo-ready.
 
-**SHOWCASE**: Crestview Media as lighthouse. Exit: POC validated, case study material, reference call willing.
+**SHOWCASE**: Keystone Automotive as lighthouse. Exit: POC validated, case study material, reference call willing.
 
-**SELL**: Formal Salesforce partnership with co-sell motion. Exit: First non-Crestview Media deal closed through partner channel.
+**SELL**: Formal Globex partnership with co-sell motion. Exit: First non-Keystone deal closed through partner channel.

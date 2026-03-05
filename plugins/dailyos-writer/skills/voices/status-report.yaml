@@ -81,11 +81,11 @@ quality_checks:
 transformation_examples:
   # Activity → Outcome transformations
   bad_to_good:
-    - activity: "Had meeting with Salesforce team"
-      outcome: "Salesforce partnership advanced to legal review (targeting Feb close)"
+    - activity: "Had meeting with Globex team"
+      outcome: "Globex partnership advanced to legal review (targeting Feb close)"
 
-    - activity: "Worked on Crestview Media account"
-      outcome: "Crestview Media NADA project greenlit - $150K expansion opportunity identified"
+    - activity: "Worked on Keystone account"
+      outcome: "Keystone NADA project greenlit - $150K expansion opportunity identified"
 
     - activity: "Made progress on Agentforce"
       outcome: "Agentforce MVP scope finalized - on track for Feb launch"
@@ -101,13 +101,13 @@ metrics_guidance:
   format:
     - "Use specific numbers: '$400K pipeline' not 'significant pipeline'"
     - "Include comparisons: 'up 20% from last quarter'"
-    - "Note sources: '(per Salesforce CRM)'"
+    - "Note sources: '(per Globex CRM)'"
 
 example_phrases:
   good:
     - "Closed $250K renewal with 15% expansion"
-    - "Advanced NXP deal to technical evaluation (next: POC week of Jan 20)"
-    - "Identified $400K cross-sell opportunity at Crestview Media (NADA project)"
+    - "Advanced Vertex deal to technical evaluation (next: POC week of Jan 20)"
+    - "Identified $400K cross-sell opportunity at Keystone (NADA project)"
 
   avoid:
     - "Had a productive week"
