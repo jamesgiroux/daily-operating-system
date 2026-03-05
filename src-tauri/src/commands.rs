@@ -5100,6 +5100,83 @@ pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<S
 }
 
 #[tauri::command]
+pub fn get_database_recovery_status(
+    state: State<'_, Arc<AppState>>,
+) -> crate::state::DatabaseRecoveryStatus {
+    state.get_database_recovery_status()
+}
+
+#[tauri::command]
+pub fn list_database_backups() -> Result<Vec<crate::db_backup::BackupInfo>, String> {
+    crate::db_backup::list_database_backups()
+}
+
+#[tauri::command]
+pub async fn restore_database_from_backup(
+    backup_path: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let _permit = state
+        .heavy_work_semaphore
+        .acquire()
+        .await
+        .map_err(|_| "Failed to acquire restore lock".to_string())?;
+
+    // Drop existing DB handles before swapping files on disk.
+    {
+        let mut db_service_guard = state.db_service.write().await;
+        *db_service_guard = None;
+        let mut db_guard = state
+            .db
+            .lock()
+            .map_err(|_| "DB lock poisoned".to_string())?;
+        *db_guard = None;
+    }
+
+    if let Err(e) = crate::db_backup::restore_database_from_backup(Path::new(&backup_path)) {
+        // Best-effort recovery: re-open original DB handles if restore failed.
+        if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(mut db_guard) = state.db.lock() {
+                *db_guard = Some(db);
+            }
+            let _ = state.init_db_service().await;
+        } else {
+            state.set_database_recovery_required(
+                "restore_failed",
+                format!("Restore failed and database reopen failed: {e}"),
+            );
+        }
+        return Err(e);
+    }
+
+    let reopened = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            let detail = format!("Restore applied but database reopen failed: {e}");
+            state.set_database_recovery_required("restore_reopen_failed", detail.clone());
+            return Err(detail);
+        }
+    };
+    {
+        let mut db_guard = state
+            .db
+            .lock()
+            .map_err(|_| "DB lock poisoned".to_string())?;
+        *db_guard = Some(reopened);
+    }
+
+    if let Err(e) = state.init_db_service().await {
+        state.set_database_recovery_required("restore_reopen_failed", e.clone());
+        return Err(format!(
+            "Restore succeeded but failed to reinitialize DB service: {e}"
+        ));
+    }
+
+    state.clear_database_recovery_required();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn rebuild_database(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(usize, usize, usize), String> {
