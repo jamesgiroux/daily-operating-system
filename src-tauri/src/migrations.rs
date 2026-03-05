@@ -231,6 +231,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 54,
         sql: include_str!("migrations/054_intelligence_consistency_metadata.sql"),
     },
+    Migration {
+        version: 55,
+        sql: include_str!("migrations/055_schema_decomposition.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -410,13 +414,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 54,
+            applied, 55,
             "should apply all migrations including consistency metadata"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 54);
+        assert_eq!(version, 55);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -432,18 +436,28 @@ mod tests {
         )
         .expect("needs_decision column should exist");
 
-        // Verify meetings_history has all migrated columns
+        // Verify decomposed meeting tables have all columns
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at,
-             calendar_event_id, prep_context_json, description, user_agenda_json, user_notes,
-             prep_frozen_json, prep_frozen_at, prep_snapshot_path, prep_snapshot_hash,
-             transcript_path, transcript_processed_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at,
+             calendar_event_id, description)
              VALUES ('m1', 'Test', 'customer', '2025-01-01', '2025-01-01',
-             'cal1', '{}', 'desc', '[]', 'notes', '{}', '2025-01-01',
-             '/path', 'abc123', '/transcript', '2025-01-01')",
+             'cal1', 'desc')",
             [],
         )
-        .expect("meetings_history should have all columns");
+        .expect("meetings table should have all columns");
+        conn.execute(
+            "INSERT INTO meeting_prep (meeting_id, prep_context_json, user_agenda_json,
+             user_notes, prep_frozen_json, prep_frozen_at, prep_snapshot_path, prep_snapshot_hash)
+             VALUES ('m1', '{}', '[]', 'notes', '{}', '2025-01-01', '/path', 'abc123')",
+            [],
+        )
+        .expect("meeting_prep table should have all columns");
+        conn.execute(
+            "INSERT INTO meeting_transcripts (meeting_id, transcript_path, transcript_processed_at)
+             VALUES ('m1', '/transcript', '2025-01-01')",
+            [],
+        )
+        .expect("meeting_transcripts table should have all columns");
 
         // Verify captures has project_id and decision type
         conn.execute(
@@ -472,10 +486,10 @@ mod tests {
         .expect("accounts should include is_internal");
 
         conn.execute(
-            "INSERT INTO account_team (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
+            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
             [],
         )
-        .expect("account_team table should exist");
+        .expect("account_stakeholders table should exist");
 
         conn.execute(
             "INSERT INTO account_team_import_notes (account_id, legacy_field, legacy_value, note)
@@ -960,13 +974,13 @@ mod tests {
         // Run migrations — should bootstrap v1 and apply v2 through v54.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 53,
-            "bootstrap should mark v1, then apply 53 pending migrations (v2-v54)"
+            applied, 54,
+            "bootstrap should mark v1, then apply 54 pending migrations (v2-v55)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 54);
+        assert_eq!(version, 55);
 
         // Verify existing data is untouched
         let title: String = conn

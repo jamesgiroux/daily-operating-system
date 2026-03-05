@@ -602,7 +602,7 @@ fn populate_people_from_events(
         let old_title: Option<String> = db
             .conn_ref()
             .query_row(
-                "SELECT title FROM meetings_history WHERE id = ?1",
+                "SELECT title FROM meetings WHERE id = ?1",
                 rusqlite::params![meeting_id],
                 |row| row.get(0),
             )
@@ -814,10 +814,11 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
 
     // Query meetings in the polled range from DB that have a calendar_event_id (I386)
     let mut stmt = match db.conn_ref().prepare(
-        "SELECT id, calendar_event_id FROM meetings_history
-         WHERE start_time >= ?1 AND start_time < ?2
-         AND calendar_event_id IS NOT NULL
-         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+        "SELECT m.id, m.calendar_event_id FROM meetings m
+         LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+         WHERE m.start_time >= ?1 AND m.start_time < ?2
+         AND m.calendar_event_id IS NOT NULL
+         AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
     ) {
         Ok(s) => s,
         Err(_) => return,

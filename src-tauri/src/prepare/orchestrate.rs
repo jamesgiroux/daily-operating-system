@@ -1025,7 +1025,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     let (classified, _events, _meetings_by_type, _time_status, events_by_day) =
         fetch_and_classify_week(monday, friday, &user_domains, &entity_hints).await;
 
-    // Ensure classified meetings exist in meetings_history and generate intelligence (ADR-0081)
+    // Ensure classified meetings exist in meetings table and generate intelligence (ADR-0081)
     {
         let intel_guard = state.db.lock().ok();
         if let Some(db) = intel_guard.as_ref().and_then(|g| g.as_ref()) {
@@ -1046,7 +1046,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     .and_then(|v| v.as_str())
                     .unwrap_or("(untitled)");
 
-                // Upsert meeting into meetings_history so intelligence lifecycle can find it
+                // Upsert meeting into meetings table so intelligence lifecycle can find it
                 let existing = db
                     .get_meeting_by_calendar_event_id(calendar_event_id)
                     .ok()

@@ -89,7 +89,7 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
     let has_attendee_history = if has_entity_context {
         let past_meeting_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
+                "SELECT COUNT(*) FROM meetings m
                  JOIN meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id IN (
                      SELECT entity_id FROM meeting_entities WHERE meeting_id = ?1

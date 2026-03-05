@@ -1,6 +1,6 @@
 //! SWOT analysis report (Strengths, Weaknesses, Opportunities, Threats).
 //!
-//! One AI call: builds context from entity_intelligence + meeting history,
+//! One AI call: builds context from entity_assessment + meeting history,
 //! produces structured JSON with 4 quadrants.
 
 use crate::context_provider::ContextProvider;
