@@ -176,7 +176,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I497** | Success Plan report type (absorbs I460) — shared objectives, progress, customer-presentable | P1 | Backend / Reports |
 | **I498** | Coaching Patterns report type (absorbs I461) — meeting cadence, engagement patterns, book-level norms, coaching recommendations | P2 | Backend / Reports |
 | ~~I510~~ | ~~Supabase project provisioning~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
-| **I511** | Local schema decomposition — meetings→4 tables, entity_intelligence→2 tables, unified account_stakeholders | P0 | Backend / DB |
+| **I511** | Local schema decomposition + migration safety hardening (backend-only) — fail-hard runner, guaranteed backups, atomic decomposition migration, schema integrity checks | P0 | Backend / DB |
 | **I512** | ServiceLayer — every mutation → local DB write + signal emission (mandatory mutation path) | P0 | Backend / Architecture |
 | **I513** | Workspace file elimination — DB as sole local data layer, no _today/data/, no intelligence.json on disk | P0 | Backend / Architecture |
 | **I514** | Module decomposition — commands.rs→domain files, db.rs→domain modules | P1 | Backend / Architecture |
@@ -204,6 +204,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I536** | Dev tools mock data migration — rewrite seed data for v1.0.0 schema, consolidate scenarios (6→4), eliminate workspace file writes, rich 6-dimension intelligence data. Spec: `.docs/issues/i536.md` | P1 | Backend / Dev Tools |
 | **I537** | Gate role presets behind feature flag — hide preset selection UI (onboarding + settings), hard-default to CS. Preset infrastructure stays. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
 | **I538** | Meeting briefing refresh — rollback on failure. Snapshot existing prep before clearing, restore if enrichment fails. Spec: `.docs/issues/i538.md` | P1 | Backend / Pipeline |
+| **I539** | Database recovery UX for migration/DB failure — startup blocker + Settings/Data recovery controls; scope extracted from I511. Spec: `.docs/issues/i539.md` | P1 | Frontend + Backend / Settings + Startup Recovery |
 
 ---
 
@@ -609,7 +610,8 @@ Requires v0.16.0 first. Full version brief: `.docs/plans/v1.0.0.md`.
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I511 | Local schema decomposition — spec: `.docs/issues/i511.md` (absorbs I381) | P0 | Backend / DB |
+| I511 | Local schema decomposition + migration safety hardening (backend-only) — spec: `.docs/issues/i511.md` (absorbs I381) | P0 | Backend / DB |
+| I539 | Database recovery UX for migration/DB failure — startup blocker + Settings/Data recovery controls. Scope extracted from I511. Spec: `.docs/issues/i539.md` | P1 | Frontend + Backend / Settings + Startup Recovery |
 | I512 | ServiceLayer — mandatory mutation path + signal emission — spec: `.docs/issues/i512.md` (absorbs I380, I402) | P0 | Backend / Architecture |
 | I513 | DB as sole source of truth for app-generated state — spec: `.docs/issues/i513.md` (absorbs I436). Workspace dirs + user files stay; app stops reading intelligence.json, dashboard.json, _today/data/*.json as data sources | P0 | Backend / Architecture |
 
