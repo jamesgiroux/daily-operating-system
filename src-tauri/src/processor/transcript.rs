@@ -176,10 +176,7 @@ pub fn process_transcript(
         }
         // Parse for return value
         for line in actions_text.lines() {
-            let trimmed = line.trim();
-            let raw = if let Some(rest) = trimmed.strip_prefix("- ") {
-                rest.trim()
-            } else {
+            let Some(raw) = parse_action_line(line) else {
                 continue;
             };
             if !raw.is_empty() {
@@ -335,6 +332,64 @@ pub fn process_transcript(
     }
 }
 
+/// Parse a single action line from AI output.
+///
+/// Accepts common list formats so transcript extraction remains robust across
+/// provider/model style changes:
+/// - checkbox bullets (`- [ ]`, `- [x]`)
+/// - plain bullets (`-`, `*`, `•`)
+/// - numbered lists (`1.`, `2)`)
+fn parse_action_line(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    for prefix in ["- [ ] ", "- [x] ", "- [X] ", "- ", "* ", "• "] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            let title = rest.trim();
+            return (!title.is_empty()).then_some(title);
+        }
+    }
+
+    parse_numbered_action_line(trimmed)
+}
+
+/// Parse numbered action items like `1. Follow up` or `2) Send recap`.
+fn parse_numbered_action_line(line: &str) -> Option<&str> {
+    let digit_count = line.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digit_count == 0 {
+        return None;
+    }
+
+    let marker = line.chars().nth(digit_count)?;
+    if marker != '.' && marker != ')' {
+        return None;
+    }
+
+    let rest = line[(digit_count + marker.len_utf8())..].trim_start();
+    (!rest.is_empty()).then_some(rest)
+}
+
+/// Resolve a meeting/account identifier (ID or display name) to a canonical account ID.
+fn resolve_account_id(db: &ActionDb, candidate: &str) -> Option<String> {
+    let normalized = candidate.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    db.get_account(normalized)
+        .ok()
+        .flatten()
+        .map(|a| a.id)
+        .or_else(|| {
+            db.get_account_by_name(normalized)
+                .ok()
+                .flatten()
+                .map(|a| a.id)
+        })
+}
+
 /// Extract actions from AI output, using meeting ID as source_id for meeting-scoped queries.
 fn extract_transcript_actions(
     actions_text: &str,
@@ -347,12 +402,7 @@ fn extract_transcript_actions(
     let mut count = 0;
 
     for line in actions_text.lines() {
-        let trimmed = line.trim();
-        let raw_title = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
-            rest.trim()
-        } else if let Some(rest) = trimmed.strip_prefix("- ") {
-            rest.trim()
-        } else {
+        let Some(raw_title) = parse_action_line(line) else {
             continue;
         };
 
@@ -373,8 +423,8 @@ fn extract_transcript_actions(
         let account_id = meta
             .account
             .as_deref()
-            .and_then(|tag| db.get_account_by_name(tag).ok().flatten().map(|a| a.id))
-            .or_else(|| account_fallback.map(String::from));
+            .and_then(|tag| resolve_account_id(db, tag))
+            .or_else(|| account_fallback.and_then(|fallback| resolve_account_id(db, fallback)));
 
         let action = crate::db::DbAction {
             id: format!("transcript-{}-{}", meeting_id, count),
@@ -768,6 +818,35 @@ mod tests {
             "weekly-sync-team-alpha"
         );
         assert_eq!(slugify("simple"), "simple");
+    }
+
+    #[test]
+    fn test_parse_action_line_formats() {
+        assert_eq!(
+            parse_action_line("- [ ] Follow up on pricing"),
+            Some("Follow up on pricing")
+        );
+        assert_eq!(
+            parse_action_line("- [x] Send meeting recap"),
+            Some("Send meeting recap")
+        );
+        assert_eq!(
+            parse_action_line("* Confirm renewal owner"),
+            Some("Confirm renewal owner")
+        );
+        assert_eq!(
+            parse_action_line("• Draft scope document"),
+            Some("Draft scope document")
+        );
+        assert_eq!(
+            parse_action_line("1. Clarify success metrics"),
+            Some("Clarify success metrics")
+        );
+        assert_eq!(
+            parse_action_line("2) Assign implementation lead"),
+            Some("Assign implementation lead")
+        );
+        assert_eq!(parse_action_line("Not an action"), None);
     }
 
     #[test]
