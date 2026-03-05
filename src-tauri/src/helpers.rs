@@ -328,7 +328,7 @@ mod conferencing_noise_tests {
 
     #[test]
     fn test_no_noise_passes_through() {
-        let desc = "Here's the planned agenda:\n1. Salesforce DMT overview\n2. Review Q1 pipeline\n3. Discuss expansion";
+        let desc = "Here's the planned agenda:\n1. Globex DMT overview\n2. Review Q1 pipeline\n3. Discuss expansion";
         let cleaned = strip_conferencing_noise(desc);
         assert_eq!(cleaned, desc);
     }

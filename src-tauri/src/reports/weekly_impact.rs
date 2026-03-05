@@ -117,7 +117,7 @@ fn build_weekly_impact_prompt(
     let meetings: String = db
         .conn_ref()
         .prepare(
-            "SELECT title, start_time, meeting_type FROM meetings_history
+            "SELECT title, start_time, meeting_type FROM meetings
              WHERE start_time >= ?1 AND start_time <= ?2
                AND meeting_type NOT IN ('personal', 'focus', 'blocked')
              ORDER BY start_time",

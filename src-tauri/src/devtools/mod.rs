@@ -471,7 +471,7 @@ pub fn onboarding_scenario(scenario: &str, state: &AppState) -> Result<String, S
 ///
 /// Uses LIKE patterns to catch workspace-scanner variants (e.g., slugified
 /// folder names that differ from seed IDs). Also cleans content_index,
-/// content_embeddings, account_domains, account_events, account_team.
+/// content_embeddings, account_domains, account_events, account_stakeholders.
 ///
 /// Safe to run against the live DB — patterns are specific to mock entity names.
 pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
@@ -547,11 +547,14 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     ).unwrap_or(0);
     summary.push(format!("meeting_attendees: {}", n));
 
-    let n = delete_like("entity_people", entity_id_like_sql);
-    summary.push(format!("entity_people: {}", n));
+    let n = delete_like("account_stakeholders", account_id_like_sql);
+    summary.push(format!("account_stakeholders: {}", n));
 
-    let n = delete_like("entity_intelligence", entity_id_like_sql);
-    summary.push(format!("entity_intelligence: {}", n));
+    let n = delete_like("entity_members", entity_id_like_sql);
+    summary.push(format!("entity_members: {}", n));
+
+    let n = delete_like("entity_assessment", entity_id_like_sql);
+    summary.push(format!("entity_assessment: {}", n));
 
     // --- Account-specific tables ---
 
@@ -561,8 +564,7 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     let n = delete_like("account_events", account_id_like_sql);
     summary.push(format!("account_events: {}", n));
 
-    let n = delete_like("account_team", account_id_like_sql);
-    summary.push(format!("account_team: {}", n));
+    // account_team replaced by account_stakeholders (already deleted above)
 
     // --- Primary tables ---
 
@@ -585,11 +587,11 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     // Meetings: by known prefixes
     let n = conn
         .execute(
-            "DELETE FROM meetings_history WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
+            "DELETE FROM meetings WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
             [],
         )
         .unwrap_or(0);
-    summary.push(format!("meetings_history: {}", n));
+    summary.push(format!("meetings: {}", n));
 
     // Captures: by known prefixes
     let n = conn.execute(
@@ -720,7 +722,7 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
                         .unwrap_or(0);
                     let meetings = db
                         .conn_ref()
-                        .query_row("SELECT COUNT(*) FROM meetings_history", [], |r| {
+                        .query_row("SELECT COUNT(*) FROM meetings", [], |r| {
                             r.get::<_, usize>(0)
                         })
                         .unwrap_or(0);
@@ -1570,11 +1572,11 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Project action insert: {}", e))?;
     }
 
-    // NOTE: meeting_entities links are inserted AFTER meetings_history rows
-    // (see below) to satisfy FK constraint: meeting_entities.meeting_id → meetings_history.id
+    // NOTE: meeting_entities links are inserted AFTER meetings rows
+    // (see below) to satisfy FK constraint: meeting_entities.meeting_id → meetings.id
     let today_str = date_only(0);
 
-    // I298: Also seed today's customer meetings into meetings_history with ISO timestamps
+    // I298: Also seed today's customer meetings into meetings table with ISO timestamps
     // so DailyFocus/compute_focus_capacity() picks them up.
     let today_local = Local::now();
     let make_iso = |hour: u32, min: u32| -> String {
@@ -1591,7 +1593,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             .unwrap_or_default()
     };
     // (db_id, title, type, start_time, account_id, calendar_event_id)
-    let today_meetings_history: Vec<(String, &str, &str, String, Option<&str>, String)> = vec![
+    let today_meetings: Vec<(String, &str, &str, String, Option<&str>, String)> = vec![
         (
             format!("mtg-acme-weekly-{}", today_str),
             "Acme Corp Weekly Sync",
@@ -1657,14 +1659,22 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             format!("cal-all-hands-{}", today_str),
         ),
     ];
-    for (id, title, mtype, start_time, _account_id, cal_event_id) in &today_meetings_history {
+    for (id, title, mtype, start_time, _account_id, cal_event_id) in &today_meetings {
         conn.execute(
-            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, calendar_event_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, calendar_event_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![id, title, mtype, start_time, cal_event_id, &today],
-        ).map_err(|e| format!("Today meeting history: {}", e))?;
+        ).map_err(|e| format!("Today meeting insert: {}", e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+            rusqlite::params![id],
+        ).map_err(|e| format!("Today meeting prep stub: {}", e))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+            rusqlite::params![id],
+        ).map_err(|e| format!("Today meeting transcript stub: {}", e))?;
     }
 
-    // Project-linked people (via entity_people)
+    // Project-linked people (via entity_members)
     let project_people: Vec<(&str, &str, &str)> = vec![
         ("acme-phase-2", "sarah-chen-acme-com", "stakeholder"),
         ("acme-phase-2", "alex-torres-acme-com", "contributor"),
@@ -1688,7 +1698,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     for (entity_id, person_id, rel) in &project_people {
         conn.execute(
-            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type) VALUES (?1, ?2, ?3)",
+            "INSERT OR IGNORE INTO entity_members (entity_id, person_id, relationship_type) VALUES (?1, ?2, ?3)",
             rusqlite::params![entity_id, person_id, rel],
         ).map_err(|e| format!("Project-people link: {}", e))?;
     }
@@ -1766,9 +1776,17 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     for (id, title, mtype, start_time, account_id, summary) in &meeting_rows {
         conn.execute(
-            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, summary, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, title, mtype, start_time, summary, &today],
+            "INSERT OR REPLACE INTO meetings (id, title, meeting_type, start_time, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, title, mtype, start_time, &today],
         ).map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+            rusqlite::params![id],
+        ).map_err(|e| format!("Historical meeting prep: {}", e))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_transcripts (meeting_id, summary) VALUES (?1, ?2)",
+            rusqlite::params![id, summary],
+        ).map_err(|e| format!("Historical meeting transcript: {}", e))?;
 
         // I298: Also link historical customer meetings to their account entity
         if let Some(acct) = account_id {
@@ -1779,7 +1797,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         }
     }
 
-    // Project-linked meetings (meetings_history rows exist now, safe for FK)
+    // Project-linked meetings (meetings rows exist now, safe for FK)
     let project_meetings: Vec<(&str, &str, &str)> = vec![
         ("mh-acme-2d", "acme-phase-2", "project"),
         ("mh-acme-7d", "acme-phase-2", "project"),
@@ -2114,7 +2132,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             linkedin_url: Some("https://linkedin.com/in/patreynolds"),
             photo_url: Some("https://i.pravatar.cc/150?u=pat-reynolds"),
             bio: Some("VP Product at Globex Industries. Product leader with 12 years in B2B SaaS. Departing Q2 for new opportunity."),
-            title_history: Some(r#"[{"title":"VP Product","company":"Globex Industries","startDate":"2021-06"},{"title":"Senior Product Manager","company":"Salesforce","startDate":"2017-01","endDate":"2021-05"}]"#),
+            title_history: Some(r#"[{"title":"VP Product","company":"Globex Industries","startDate":"2021-06"},{"title":"Senior Product Manager","company":"Initech","startDate":"2017-01","endDate":"2021-05"}]"#),
             company_industry: Some("Manufacturing Technology"),
             company_size: Some("1000-5000"),
             company_hq: Some("Chicago, IL"),
@@ -2382,7 +2400,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 SELECT COUNT(*) FROM meeting_attendees WHERE person_id = people.id
             ),
             last_seen = (
-                SELECT MAX(m.start_time) FROM meetings_history m
+                SELECT MAX(m.start_time) FROM meetings m
                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
                 WHERE ma.person_id = people.id
             )
@@ -2407,11 +2425,12 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ("initech", "priya-sharma-initech-com", "technical_contact"),
     ];
 
-    for (entity_id, person_id, rel) in &entity_links {
+    for (account_id, person_id, rel) in &entity_links {
         conn.execute(
-            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type) VALUES (?1, ?2, ?3)",
-            rusqlite::params![entity_id, person_id, rel],
-        ).map_err(|e| format!("Entity-people link: {}", e))?;
+            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type) VALUES (?1, ?2, 'associated', ?3)
+             ON CONFLICT(account_id, person_id) DO NOTHING",
+            rusqlite::params![account_id, person_id, rel],
+        ).map_err(|e| format!("Account-stakeholder link: {}", e))?;
     }
 
     // =========================================================================
@@ -2608,7 +2627,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     });
 
     conn.execute(
-        "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+        "INSERT OR REPLACE INTO meeting_prep (meeting_id, prep_frozen_json) VALUES (?2, ?1)",
         rusqlite::params![
             acme_prep.to_string(),
             format!("mtg-acme-weekly-{}", today_str)
@@ -2667,7 +2686,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     });
 
     conn.execute(
-        "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+        "INSERT OR REPLACE INTO meeting_prep (meeting_id, prep_frozen_json) VALUES (?2, ?1)",
         rusqlite::params![
             globex_prep.to_string(),
             format!("mtg-globex-qbr-{}", today_str)
@@ -2718,7 +2737,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     });
 
     conn.execute(
-        "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+        "INSERT OR REPLACE INTO meeting_prep (meeting_id, prep_frozen_json) VALUES (?2, ?1)",
         rusqlite::params![
             initech_prep.to_string(),
             format!("mtg-initech-kickoff-{}", today_str)
@@ -2821,17 +2840,23 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // =========================================================================
 
     conn.execute(
-        "UPDATE meetings_history SET transcript_path = ?1, transcript_processed_at = ?2 WHERE id = 'mh-acme-2d'",
+        "INSERT INTO meeting_transcripts (meeting_id, transcript_path, transcript_processed_at) \
+         VALUES ('mh-acme-2d', ?1, ?2) ON CONFLICT(meeting_id) DO UPDATE SET \
+         transcript_path = excluded.transcript_path, transcript_processed_at = excluded.transcript_processed_at",
         rusqlite::params!["Accounts/Acme Corp/meetings/acme-status-call-2d.md", days_ago(2)],
     ).map_err(|e| format!("Transcript mh-acme-2d: {}", e))?;
 
     conn.execute(
-        "UPDATE meetings_history SET transcript_path = ?1, transcript_processed_at = ?2 WHERE id = 'mh-globex-3d'",
+        "INSERT INTO meeting_transcripts (meeting_id, transcript_path, transcript_processed_at) \
+         VALUES ('mh-globex-3d', ?1, ?2) ON CONFLICT(meeting_id) DO UPDATE SET \
+         transcript_path = excluded.transcript_path, transcript_processed_at = excluded.transcript_processed_at",
         rusqlite::params!["Accounts/Globex Industries/meetings/globex-checkin-3d.md", days_ago(3)],
     ).map_err(|e| format!("Transcript mh-globex-3d: {}", e))?;
 
     conn.execute(
-        "UPDATE meetings_history SET transcript_path = ?1, transcript_processed_at = ?2 WHERE id = 'mh-acme-7d'",
+        "INSERT INTO meeting_transcripts (meeting_id, transcript_path, transcript_processed_at) \
+         VALUES ('mh-acme-7d', ?1, ?2) ON CONFLICT(meeting_id) DO UPDATE SET \
+         transcript_path = excluded.transcript_path, transcript_processed_at = excluded.transcript_processed_at",
         rusqlite::params!["Accounts/Acme Corp/meetings/acme-weekly-7d.md", days_ago(7)],
     ).map_err(|e| format!("Transcript mh-acme-7d: {}", e))?;
 
@@ -2986,9 +3011,10 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     for (account_id, person_id, role) in &account_team_rows {
         conn.execute(
-            "INSERT OR IGNORE INTO account_team (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO account_stakeholders (account_id, person_id, role, created_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(account_id, person_id) DO UPDATE SET role = excluded.role",
             rusqlite::params![account_id, person_id, role, &today],
-        ).map_err(|e| format!("Account team insert: {}", e))?;
+        ).map_err(|e| format!("Account stakeholder insert: {}", e))?;
     }
 
     // =========================================================================
@@ -3182,7 +3208,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 SELECT COUNT(*) FROM meeting_attendees WHERE person_id = people.id
             ),
             last_seen = (
-                SELECT MAX(m.start_time) FROM meetings_history m
+                SELECT MAX(m.start_time) FROM meetings m
                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
                 WHERE ma.person_id = people.id
             )
@@ -3482,7 +3508,7 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
     .map_err(|e| format!("Set Initech stale: {}", e))?;
 
     // =========================================================================
-    // Entity Intelligence (DB rows for Account Detail + Person Detail intel sections)
+    // Entity Assessment (DB rows for Account Detail + Person Detail intel sections)
     // =========================================================================
 
     let entity_intel_rows: Vec<(&str, &str, &str, &str, &str, &str, &str, Option<f64>, Option<&str>, Option<&str>, Option<&str>, Option<&str>, Option<&str>)> = vec![
@@ -3573,10 +3599,22 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
     ) in &entity_intel_rows
     {
         conn.execute(
-            "INSERT OR REPLACE INTO entity_intelligence (entity_id, entity_type, enriched_at, executive_assessment, risks_json, recent_wins_json, current_state_json, stakeholder_insights_json, health_score, health_trend, value_delivered, success_metrics, open_commitments, relationship_depth) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            rusqlite::params![entity_id, entity_type, &today, exec_assessment, risks, wins, state, stakeholder, health_score, health_trend, value_delivered, success_metrics, open_commitments, rel_depth],
-        ).map_err(|e| format!("Entity intelligence {}: {}", entity_id, e))?;
+            "INSERT OR REPLACE INTO entity_assessment (entity_id, entity_type, enriched_at, executive_assessment, risks_json, recent_wins_json, current_state_json, stakeholder_insights_json, value_delivered, success_metrics, open_commitments, relationship_depth) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            rusqlite::params![entity_id, entity_type, &today, exec_assessment, risks, wins, state, stakeholder, value_delivered, success_metrics, open_commitments, rel_depth],
+        ).map_err(|e| format!("Entity assessment {}: {}", entity_id, e))?;
+
+        // health_score and health_trend now live in entity_quality
+        if health_score.is_some() || health_trend.is_some() {
+            conn.execute(
+                "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type) VALUES (?1, ?2)",
+                rusqlite::params![entity_id, entity_type],
+            ).map_err(|e| format!("Entity quality init {}: {}", entity_id, e))?;
+            conn.execute(
+                "UPDATE entity_quality SET health_score = ?1, health_trend = ?2 WHERE entity_id = ?3",
+                rusqlite::params![health_score, health_trend, entity_id],
+            ).map_err(|e| format!("Entity quality update {}: {}", entity_id, e))?;
+        }
     }
 
     // =========================================================================
