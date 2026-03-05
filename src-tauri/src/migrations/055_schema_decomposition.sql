@@ -7,6 +7,7 @@
 -- include orphaned FK references (e.g., attendees referencing deleted people).
 -- The new tables define FKs correctly; enforcement resumes after migration.
 PRAGMA foreign_keys = OFF;
+BEGIN IMMEDIATE;
 
 -- =========================================================================
 -- 1. meetings_history → meetings + meeting_prep + meeting_transcripts
@@ -263,11 +264,36 @@ CREATE TABLE IF NOT EXISTS entity_members (
     PRIMARY KEY (entity_id, person_id)
 );
 
--- Copy account_team rows into account_stakeholders (collapse multi-role to first alphabetically)
+-- Copy account_team rows into account_stakeholders.
+-- Multi-role collapse uses explicit business priority (not alphabetical MIN).
+WITH ranked_roles AS (
+    SELECT
+        account_id,
+        person_id,
+        role,
+        created_at,
+        ROW_NUMBER() OVER (
+            PARTITION BY account_id, person_id
+            ORDER BY
+                CASE LOWER(role)
+                    WHEN 'executive_sponsor' THEN 1
+                    WHEN 'champion' THEN 2
+                    WHEN 'decision_maker' THEN 3
+                    WHEN 'economic_buyer' THEN 4
+                    WHEN 'technical_buyer' THEN 5
+                    WHEN 'csm' THEN 6
+                    WHEN 'implementation' THEN 7
+                    WHEN 'associated' THEN 8
+                    ELSE 99
+                END,
+                created_at ASC
+        ) AS rn
+    FROM account_team
+)
 INSERT OR IGNORE INTO account_stakeholders (account_id, person_id, role, created_at)
-SELECT account_id, person_id, MIN(role), MIN(created_at)
-FROM account_team
-GROUP BY account_id, person_id;
+SELECT account_id, person_id, role, COALESCE(created_at, datetime('now'))
+FROM ranked_roles
+WHERE rn = 1;
 
 -- Merge entity_people account rows into account_stakeholders (add relationship_type)
 UPDATE account_stakeholders SET
@@ -308,3 +334,6 @@ DROP TABLE IF EXISTS entity_people;
 
 -- Clean up orphaned FK references (e.g., attendees referencing deleted people)
 DELETE FROM meeting_attendees WHERE person_id NOT IN (SELECT id FROM people);
+
+PRAGMA foreign_keys = ON;
+COMMIT;
