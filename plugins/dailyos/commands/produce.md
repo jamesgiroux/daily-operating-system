@@ -72,11 +72,11 @@ Present the complete deliverable.
 **Example: Board Contribution (Leadership preset, single entity)**
 
 ```markdown
-# Nielsen — Board Update
+# Acme Corp — Board Update
 **Period:** Q1 2026 | **Owner:** {workspace owner}
 
 ## Summary
-Nielsen ARR grew 18% QoQ to $2.4M, driven by platform expansion in their analytics division. Health status upgraded from Yellow to Green in January following successful EBR with their VP Data. The primary risk — champion departure — was mitigated when Sarah Chen was promoted to VP Customer Success, strengthening our executive alignment.
+Acme Corp ARR grew 18% QoQ to $2.4M, driven by platform expansion in their analytics division. Health status upgraded from Yellow to Green in January following successful EBR with their VP Data. The primary risk — champion departure — was mitigated when Sarah Chen was promoted to VP Customer Success, strengthening our executive alignment.
 
 ## Key Metrics
 | Metric | Q4 2025 | Q1 2026 | Trend |
@@ -107,7 +107,7 @@ After presenting the deliverable:
 
 ```
 Would you like me to:
-1. Save this to Accounts/Nielsen/board-update-2026-q1.md
+1. Save this to Accounts/Acme-Corp/board-update-2026-q1.md
 2. Create actions for the "Next Steps" items in data/actions.json
 
 Or adjust anything before finalizing?

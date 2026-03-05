@@ -127,8 +127,8 @@ Present the assessment to the user. Then offer loop-back options:
 
 ```
 Would you like me to:
-1. Save this assessment to Accounts/Nielsen/health-assessment-2026-02.md
-2. Update Accounts/Nielsen/intelligence.json with the revised risk factors and executive assessment
+1. Save this assessment to Accounts/Acme-Corp/health-assessment-2026-02.md
+2. Update Accounts/Acme-Corp/intelligence.json with the revised risk factors and executive assessment
 3. Create {N} actions in data/actions.json from the recommendations
 
 Or adjust anything first?

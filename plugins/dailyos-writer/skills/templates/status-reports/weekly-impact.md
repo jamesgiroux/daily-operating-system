@@ -23,8 +23,8 @@ Outcome-focused weekly summary. Emphasizes impact over activity.
 
 | Activity (Avoid) | Outcome (Prefer) |
 |------------------|------------------|
-| Had meeting with Salesforce | Partnership advanced to legal review |
-| Worked on Cox account | Cox NADA project greenlit ($150K opportunity) |
+| Had meeting with Globex | Partnership advanced to legal review |
+| Worked on Keystone account | Keystone NADA project greenlit ($150K opportunity) |
 | Made progress on Agentforce | MVP scope finalized, on track for Feb launch |
 
 ## Structure
@@ -126,9 +126,9 @@ Outcome-focused weekly summary. Emphasizes impact over activity.
 
 ## Key Wins
 
-- **Agentforce partnership cleared for legal review** - Jared confirmed legal engagement starting this week; targeting Feb close (Strategic: Salesforce partnership)
-- **Cox NADA project greenlit** - Tomasz confirmed go-ahead; $150K expansion opportunity identified (Strategic: Lighthouse customer)
-- **NXP co-sell advancing** - Technical POV delivered; next step is customer presentation Jan 15 (Strategic: First co-sell test)
+- **Agentforce partnership cleared for legal review** - Jared confirmed legal engagement starting this week; targeting Feb close (Strategic: Globex partnership)
+- **Keystone NADA project greenlit** - Tomasz confirmed go-ahead; $150K expansion opportunity identified (Strategic: Lighthouse customer)
+- **Vertex co-sell advancing** - Technical POV delivered; next step is customer presentation Jan 15 (Strategic: First co-sell test)
 
 ## Progress
 
@@ -138,12 +138,12 @@ Outcome-focused weekly summary. Emphasizes impact over activity.
 
 ## Blockers/Risks
 
-- **NXP timeline**: Customer requested acceleration; may need to prioritize over other work → Proposed: Reprioritize next week focus
+- **Vertex timeline**: Customer requested acceleration; may need to prioritize over other work → Proposed: Reprioritize next week focus
 - None blocking
 
 ## Next Week Focus
 
-1. NXP customer presentation (Jan 15)
+1. Vertex customer presentation (Jan 15)
 2. Agentforce legal support as needed
 3. Continue Foundation account assessments
 4. Week 3 Leadership Content draft

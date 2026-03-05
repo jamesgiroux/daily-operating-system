@@ -104,7 +104,7 @@ Good expansion proposals connect to genuine triggers:
 | **Strategic shift** | "Given your focus on personalization in 2026..." |
 | **Observed friction** | "The bottleneck you mentioned in APAC publishing..." |
 | **Success building** | "Given the results from the pilot..." |
-| **Market change** | "With Salesforce's Agentforce launch..." |
+| **Market change** | "With Globex's Agentforce launch..." |
 | **Organizational growth** | "As you bring on the European team..." |
 
 ## Template
@@ -156,21 +156,21 @@ Good expansion proposals connect to genuine triggers:
 ## Example
 
 ```markdown
-# Agentforce Integration: A Proposal for Cox Automotive
+# Agentforce Integration: A Proposal for Keystone Automotive
 
 ## The Opportunity
 
 During our September strategy session, you mentioned dealer response time as a key friction point. Dealers waiting hours for answers that should take minutes. You estimated this costs 15 dealer-hours per day across your network.
 
-With Salesforce's Agentforce now operational in your environment, there's an opportunity to address this directly. AI-powered dealer support that responds immediately, with human escalation for complex issues.
+With Globex's Agentforce now operational in your environment, there's an opportunity to address this directly. AI-powered dealer support that responds immediately, with human escalation for complex issues.
 
-You've already invested in the Salesforce infrastructure. This is about activating it for a high-impact use case.
+You've already invested in the Globex infrastructure. This is about activating it for a high-impact use case.
 
 ## Our Recommendation
 
 Implement the WordPress VIP Agentforce Connector to power intelligent dealer support on your existing content platform.
 
-This builds on your current WordPress VIP deployment and your Salesforce Data Cloud investment. No new infrastructure—just a bridge between what you already have.
+This builds on your current WordPress VIP deployment and your Globex Data Cloud investment. No new infrastructure—just a bridge between what you already have.
 
 ### What This Includes
 - Agentforce Connector deployment
@@ -208,5 +208,5 @@ Based on the POC results, we expect:
 
 Let's schedule a 30-minute call to review the pilot scope and dealer selection. I'll have the pilot agreement ready for your review.
 
-Contact: James Giroux, james@automattic.com
+Contact: Your Name, you@yourcompany.com
 ```

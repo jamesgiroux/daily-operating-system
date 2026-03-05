@@ -151,7 +151,7 @@ export default function AccountsPage() {
 
   // Potential parent accounts: same type, not archived.
   // Recursively flattens the full hierarchy from childrenCache so deeply
-  // nested accounts (e.g. Automattic > WPVIP > Sales > CS > Key Accounts)
+  // nested accounts (e.g. Globex > Enterprise > Sales > CS > Key Accounts)
   // all appear as selectable parents. Each entry carries its depth for
   // visual indentation in the dropdown.
   const parentOptions = useMemo(() => {

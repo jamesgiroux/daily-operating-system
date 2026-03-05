@@ -24,11 +24,11 @@ Actions in `data/actions.json` follow this structure:
 {
   "id": "unique-id",
   "text": "Send updated proposal with revised pricing",
-  "entity": "Nielsen",
+  "entity": "Acme Corp",
   "person": "Sarah Chen",
   "due_date": "2026-02-20",
   "status": "open",
-  "source_meeting": "Nielsen Weekly Sync - Feb 14",
+  "source_meeting": "Acme Corp Weekly Sync - Feb 14",
   "created_at": "2026-02-14T10:30:00Z"
 }
 ```
@@ -64,7 +64,7 @@ When preparing for a meeting (meeting-intelligence skill active), surface:
 When surfacing overdue actions, inform without nagging. The purpose is awareness, not shame.
 
 **Do this:**
-- "There are 3 open items for Nielsen from the Feb 7 sync, including the pricing proposal that was due Tuesday."
+- "There are 3 open items for Acme Corp from the Feb 7 sync, including the pricing proposal that was due Tuesday."
 - "You committed to the integration timeline for Sarah on Feb 10. It is still open."
 
 **Do not do this:**
@@ -87,7 +87,7 @@ When the user makes statements that imply a trackable commitment, recognize them
 - "Can you track that I need to [action]" — Direct tracking request
 
 When detected, acknowledge and offer to create:
-"Got it — 'Send updated proposal to Sarah by Friday.' Want me to add this to the action tracker for Nielsen?"
+"Got it — 'Send updated proposal to Sarah by Friday.' Want me to add this to the action tracker for Acme Corp?"
 
 Extract:
 - `text` — The action description
