@@ -754,7 +754,7 @@ Thanks!`;
               </>
             )}
             {meetingId && (
-              <div className={styles.entityChipsWrap}>
+              <div className={styles.entityChipsWrapCentered}>
                 <MeetingEntityChips
                   meetingId={meetingId}
                   meetingTitle={meetingMeta?.title ?? data.title}
