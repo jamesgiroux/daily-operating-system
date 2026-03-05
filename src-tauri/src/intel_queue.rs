@@ -1339,7 +1339,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     let meeting_ids: Vec<String> = db
         .conn_ref()
         .prepare(
-            "SELECT m.id FROM meetings_history m
+            "SELECT m.id FROM meetings m
              JOIN meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1
                AND m.start_time > ?2
@@ -1360,7 +1360,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     // Clear prep_frozen_json so the queue processor regenerates them
     for mid in &meeting_ids {
         let _ = db.conn_ref().execute(
-            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+            "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
             rusqlite::params![mid],
         );
     }

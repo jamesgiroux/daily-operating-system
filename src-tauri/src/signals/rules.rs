@@ -641,7 +641,7 @@ impl ActionDb {
         end: &str,
     ) -> Result<i32, crate::db::DbError> {
         let count: i32 = self.conn_ref().query_row(
-            "SELECT COUNT(*) FROM meetings_history mh
+            "SELECT COUNT(*) FROM meetings mh
              JOIN meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
             rusqlite::params![account_id, start, end],
@@ -815,7 +815,7 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
     let conn = db.conn_ref();
     let attendees_csv: String = conn
         .query_row(
-            "SELECT COALESCE(attendees, '') FROM meetings_history WHERE id = ?1",
+            "SELECT COALESCE(attendees, '') FROM meetings WHERE id = ?1",
             rusqlite::params![meeting_id],
             |row| row.get(0),
         )
@@ -918,7 +918,7 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO entity_people (entity_id, person_id) VALUES ('a1', 'p1')",
+            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'associated')",
             [],
         )
         .unwrap();
@@ -1031,13 +1031,7 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO entity_people (entity_id, person_id) VALUES ('a1', 'p1')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO account_team (account_id, person_id, role, created_at)
-             VALUES ('a1', 'p1', 'champion', '2026-01-01')",
+            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
             [],
         )
         .unwrap();
@@ -1103,10 +1097,20 @@ mod tests {
 
         // Recent meeting
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'Sync', 'external', datetime('now', '-5 days'), datetime('now', '-5 days'))",
             [],
         ).unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
              VALUES ('m1', 'a1', 'account')",

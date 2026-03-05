@@ -101,7 +101,7 @@ fn poll_once(
     let mut synced = 0;
 
     for doc in &documents {
-        // Match to a meetings_history row
+        // Match to a meetings row
         let match_result = matcher::match_to_meeting(doc, &meetings_for_matching);
         let matched = match match_result {
             Some(m) => m,
@@ -377,11 +377,9 @@ fn is_retry_due(next_attempt_at: Option<&str>) -> bool {
 
 /// Resolve the primary account_id for a meeting.
 ///
-/// Prefers explicit account links in `meeting_entities`, then falls back to
-/// legacy `meetings_history.account_id` when available.
+/// Uses explicit account links in `meeting_entities`.
 fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Option<String> {
-    let from_entities = db
-        .conn_ref()
+    db.conn_ref()
         .query_row(
             "SELECT me.entity_id
              FROM meeting_entities me
@@ -392,20 +390,7 @@ fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Opt
             params![meeting_id],
             |row| row.get::<_, String>(0),
         )
-        .ok();
-
-    if from_entities.is_some() {
-        return from_entities;
-    }
-
-    db.conn_ref()
-        .query_row(
-            "SELECT account_id FROM meetings_history WHERE id = ?1",
-            params![meeting_id],
-            |row| row.get::<_, Option<String>>(0),
-        )
         .ok()
-        .flatten()
 }
 
 /// Get recent meetings (last 90 days) as (id, title, start_time) tuples for matching.
@@ -440,7 +425,7 @@ fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_i
     }
 }
 
-/// Run a one-time backfill: match all Granola cache documents to meetings_history.
+/// Run a one-time backfill: match all Granola cache documents to meetings.
 pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, usize), String> {
     let granola_config = state
         .config

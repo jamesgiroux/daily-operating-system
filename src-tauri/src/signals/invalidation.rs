@@ -92,7 +92,7 @@ impl ActionDb {
         let mut stmt = self.conn_ref().prepare(
             "SELECT DISTINCT me.meeting_id
              FROM meeting_entities me
-             JOIN meetings_history mh ON mh.id = me.meeting_id
+             JOIN meetings mh ON mh.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
                AND mh.start_time >= datetime('now')
                AND mh.start_time <= datetime('now', ?3)",
@@ -169,8 +169,18 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
              VALUES ('m1', 'QBR', 'customer', datetime('now', '+2 hours'), datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
             [],
         )
         .unwrap();

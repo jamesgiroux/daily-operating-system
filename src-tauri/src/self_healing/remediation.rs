@@ -35,7 +35,7 @@ fn meeting_imminence_score(db: &ActionDb, entity_id: &str) -> f64 {
         .conn_ref()
         .query_row(
             "SELECT MIN((julianday(mh.start_time) - julianday('now')) * 24.0)
-             FROM meetings_history mh
+             FROM meetings mh
              INNER JOIN meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1 AND mh.start_time > datetime('now')",
             rusqlite::params![entity_id],
@@ -58,7 +58,7 @@ fn staleness_score(db: &ActionDb, entity_id: &str) -> f64 {
         .conn_ref()
         .query_row(
             "SELECT julianday('now') - julianday(enriched_at)
-             FROM entity_intelligence WHERE entity_id = ?1 AND enriched_at IS NOT NULL",
+             FROM entity_assessment WHERE entity_id = ?1 AND enriched_at IS NOT NULL",
             rusqlite::params![entity_id],
             |row| row.get(0),
         )
@@ -91,7 +91,7 @@ fn entity_importance_score(db: &ActionDb, entity_id: &str) -> f64 {
     let count: i64 = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(*) FROM meetings_history mh
+            "SELECT COUNT(*) FROM meetings mh
              INNER JOIN meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1 AND mh.start_time > datetime('now', '-90 days')",
             rusqlite::params![entity_id],
@@ -110,7 +110,7 @@ fn signal_delta_score(db: &ActionDb, entity_id: &str) -> f64 {
             "SELECT COUNT(*) FROM signal_events se
              WHERE se.entity_id = ?1
                AND se.created_at > COALESCE(
-                   (SELECT enriched_at FROM entity_intelligence WHERE entity_id = ?1),
+                   (SELECT enriched_at FROM entity_assessment WHERE entity_id = ?1),
                    '2000-01-01'
                )",
             rusqlite::params![entity_id],
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn test_staleness_score_never_enriched() {
         let db = test_db();
-        // No entity_intelligence row → should return 1.0
+        // No entity_assessment row → should return 1.0
         let score = staleness_score(&db, "nonexistent");
         assert!((score - 1.0).abs() < f64::EPSILON);
     }

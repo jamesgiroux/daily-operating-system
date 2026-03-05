@@ -38,7 +38,7 @@ pub struct IntelligenceContext {
     pub recent_captures: String,
     /// Recent email-derived signals linked to this entity.
     pub recent_email_signals: String,
-    /// Linked stakeholders from entity_people + people.
+    /// Linked stakeholders from account_stakeholders/entity_members + people.
     pub stakeholders: String,
     /// Canonical contact names with IDs for stakeholder reconciliation (I420).
     pub canonical_contacts: Option<String>,

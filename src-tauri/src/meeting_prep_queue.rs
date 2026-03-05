@@ -195,12 +195,14 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
     };
 
     // Find future meetings that have at least one linked entity but no prep
-    let sql = "SELECT DISTINCT mh.id
-               FROM meetings_history mh
-               INNER JOIN meeting_entities me ON mh.id = me.meeting_id
-               WHERE julianday(mh.start_time) > julianday('now')
-                 AND mh.prep_frozen_json IS NULL
-                 AND (mh.intelligence_state IS NULL OR mh.intelligence_state != 'archived')";
+    let sql = "SELECT DISTINCT m.id
+               FROM meetings m
+               INNER JOIN meeting_entities me ON m.id = me.meeting_id
+               LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+               LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+               WHERE julianday(m.start_time) > julianday('now')
+                 AND mp.prep_frozen_json IS NULL
+                 AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')";
 
     let meeting_ids: Vec<String> = {
         let conn = db.conn_ref();
@@ -434,7 +436,7 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
 
     db.conn_ref()
         .execute(
-            "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+            "UPDATE meeting_prep SET prep_frozen_json = ?1 WHERE meeting_id = ?2",
             rusqlite::params![frozen_str, meeting_id],
         )
         .map_err(|e| format!("Failed to write prep: {}", e))?;

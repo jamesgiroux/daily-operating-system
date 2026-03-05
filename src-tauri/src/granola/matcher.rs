@@ -1,7 +1,7 @@
 //! Granola → DailyOS meeting matching.
 //!
 //! Primary: match Google Calendar event ID from Granola document to
-//! meetings_history.id (both originate from Google Calendar).
+//! meetings.id (both originate from Google Calendar).
 //! Fallback: reuse the Quill matcher's title + time correlation algorithm.
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
@@ -28,7 +28,7 @@ pub enum MatchMethod {
 ///
 /// Strategy:
 /// 1. If the Granola document has a `google_calendar_event.id`, look it up
-///    directly in meetings_history (the `id` column stores the calendar event ID).
+///    directly in meetings (the `id` column stores the calendar event ID).
 /// 2. Fallback: match by title + time proximity using the Quill matcher algorithm.
 pub fn match_to_meeting(
     doc: &GranolaDocument,

@@ -1205,7 +1205,7 @@ pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, St
         .conn_ref()
         .prepare(
             "SELECT m.id, m.title, m.attendees
-             FROM meetings_history m
+             FROM meetings m
              LEFT JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_type = 'account'
              WHERE m.meeting_type IN ('internal', 'team_sync', 'one_on_one')
                AND me.meeting_id IS NULL",

@@ -96,7 +96,7 @@ pub fn score_emails(
 
 /// Build today's meeting context string for embedding similarity.
 ///
-/// Queries meetings_history for today's meetings, concatenates titles.
+/// Queries meetings for today's meetings, concatenates titles.
 /// Same pattern as callouts.rs build_meeting_context_string.
 pub fn build_meeting_context(db: &ActionDb) -> String {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -105,7 +105,7 @@ pub fn build_meeting_context(db: &ActionDb) -> String {
 
     let mut stmt = match db
         .conn_ref()
-        .prepare("SELECT title FROM meetings_history WHERE start_time >= ?1 AND start_time <= ?2")
+        .prepare("SELECT title FROM meetings WHERE start_time >= ?1 AND start_time <= ?2")
     {
         Ok(s) => s,
         Err(_) => return String::new(),

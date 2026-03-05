@@ -757,12 +757,15 @@ pub async fn search_meetings(
             let mut stmt = db
         .conn_ref()
         .prepare(
-            "SELECT id, title, meeting_type, start_time, account_id, summary, prep_context_json
-             FROM meetings_history
-             WHERE title LIKE ?1
-                OR summary LIKE ?1
-                OR prep_context_json LIKE ?1
-             ORDER BY start_time DESC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time,
+                    mt.summary, mp.prep_context_json
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+             WHERE m.title LIKE ?1
+                OR mt.summary LIKE ?1
+                OR mp.prep_context_json LIKE ?1
+             ORDER BY m.start_time DESC
              LIMIT 50",
         )
         .map_err(|e| e.to_string())?;
@@ -776,14 +779,13 @@ pub async fn search_meetings(
                         row.get::<_, String>(3)?,
                         row.get::<_, Option<String>>(4)?,
                         row.get::<_, Option<String>>(5)?,
-                        row.get::<_, Option<String>>(6)?,
                     ))
                 })
                 .map_err(|e| e.to_string())?;
 
             let mut results = Vec::new();
             for row in rows {
-                let (id, title, meeting_type, start_time, account_id, summary, prep_json) =
+                let (id, title, meeting_type, start_time, summary, prep_json) =
                     row.map_err(|e| e.to_string())?;
 
                 // Extract snippet: prefer summary, fall back to intelligence summary from prep
@@ -798,11 +800,15 @@ pub async fn search_meetings(
                     })
                 });
 
-                // Resolve account name
-                let account_name = account_id
-                    .as_ref()
-                    .and_then(|aid| db.get_account(aid).ok().flatten())
-                    .map(|a| a.name);
+                // Resolve account name from meeting_entities junction table
+                let account_name = db
+                    .get_meeting_entities(&id)
+                    .ok()
+                    .and_then(|ents| {
+                        ents.into_iter()
+                            .find(|e| e.entity_type == crate::entity::EntityType::Account)
+                    })
+                    .map(|e| e.name);
 
                 results.push(MeetingSearchResult {
                     id,
@@ -992,14 +998,16 @@ pub async fn get_meeting_timeline(
             // Query meetings in the date range
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, title, meeting_type, start_time, end_time, summary,
-                    transcript_processed_at, has_new_signals,
-                    (prep_frozen_json IS NOT NULL) as has_frozen_prep
-             FROM meetings_history
-             WHERE start_time >= ?1 AND start_time <= ?2
-               AND (intelligence_state IS NULL OR intelligence_state != 'archived')
-               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
-             ORDER BY start_time ASC",
+                    "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    mt.summary, mt.transcript_processed_at, mt.has_new_signals,
+                    (mp.prep_frozen_json IS NOT NULL) as has_frozen_prep
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2
+               AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')
+               AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')
+             ORDER BY m.start_time ASC",
                 )
                 .map_err(|e| format!("Failed to prepare timeline query: {}", e))?;
 
@@ -1167,12 +1175,12 @@ fn find_prior_meeting(
         .map(|i| format!("?{}", i + 3))
         .collect();
     let sql = format!(
-        "SELECT DISTINCT mh.id FROM meetings_history mh
-         INNER JOIN meeting_entities me ON me.meeting_id = mh.id
+        "SELECT DISTINCT m.id FROM meetings m
+         INNER JOIN meeting_entities me ON me.meeting_id = m.id
          WHERE me.entity_id IN ({})
-           AND mh.start_time < ?1
-           AND mh.id != ?2
-         ORDER BY mh.start_time DESC
+           AND m.start_time < ?1
+           AND m.id != ?2
+         ORDER BY m.start_time DESC
          LIMIT 1",
         placeholders.join(", ")
     );
@@ -1448,7 +1456,7 @@ pub async fn link_meeting_entity_with_prep_queue(
             db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
-                "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
             );
             Ok(())
@@ -1484,7 +1492,7 @@ pub async fn unlink_meeting_entity_with_prep_queue(
             db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
-                "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
             );
             Ok(())
@@ -1790,9 +1798,9 @@ pub async fn refresh_meeting_briefing_full(
 
             db.conn_ref()
                 .execute(
-                    "UPDATE meetings_history
+                    "UPDATE meeting_prep
                      SET prep_frozen_json = NULL, prep_frozen_at = NULL
-                     WHERE id = ?1",
+                     WHERE meeting_id = ?1",
                     rusqlite::params![meeting_id_for_phase1.as_str()],
                 )
                 .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
@@ -2014,10 +2022,11 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
         let meeting_ids: Vec<String> = db
             .conn_ref()
             .prepare(
-                "SELECT id FROM meetings_history
-                 WHERE start_time > ?1
-                   AND meeting_type NOT IN ('personal', 'focus', 'blocked')
-                   AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+                "SELECT m.id FROM meetings m
+                 LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE m.start_time > ?1
+                   AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')
+                   AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
             )
             .and_then(|mut stmt| {
                 let rows = stmt.query_map(rusqlite::params![now], |row| {
@@ -2029,7 +2038,7 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
 
         for mid in &meeting_ids {
             let _ = db.conn_ref().execute(
-                "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+                "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
                 rusqlite::params![mid],
             );
         }
@@ -2196,14 +2205,13 @@ pub async fn attach_meeting_transcript(
                 let _ = state
                     .db_write(move |db| {
                         let account_id: Option<String> = db
-                            .conn_ref()
-                            .query_row(
-                                "SELECT account_id FROM meetings_history WHERE id = ?1",
-                                rusqlite::params![mid],
-                                |row| row.get(0),
-                            )
+                            .get_meeting_entities(&mid)
                             .ok()
-                            .flatten();
+                            .and_then(|ents| {
+                                ents.into_iter()
+                                    .find(|e| e.entity_type == crate::entity::EntityType::Account)
+                                    .map(|e| e.id)
+                            });
                         if let Some(aid) = account_id {
                             let value = format!(
                             "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
