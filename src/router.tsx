@@ -64,8 +64,11 @@ import { ICloudWarningModal } from "@/components/ICloudWarningModal";
 import { LockOverlay } from "@/components/LockOverlay";
 import { useAppLock } from "@/hooks/useAppLock";
 import { EncryptionRecovery, useEncryptionStatus } from "@/components/EncryptionRecovery";
+import { DatabaseRecovery } from "@/components/DatabaseRecovery";
 import { AppStateCtx, useAppStateProvider } from "@/hooks/useAppState";
+import { useDatabaseRecoveryStatus } from "@/hooks/useDatabaseRecoveryStatus";
 import { TourTips } from "@/components/tour/TourTips";
+import { resolveStartupGate } from "@/routerStartupGate";
 
 const settingsTabs = new Set([
   "you",
@@ -98,6 +101,7 @@ function RootLayout() {
   const { autoShowOpen, dismissAutoShow } = useWhatsNewAutoShow();
   const { isLocked, setIsLocked } = useAppLock();
   const encryptionKeyMissing = useEncryptionStatus();
+  const { status: dbRecoveryStatus } = useDatabaseRecoveryStatus();
   const appStateCtx = useAppStateProvider();
 
   // Magazine shell context — pages register their config, layout consumes it
@@ -160,7 +164,15 @@ function RootLayout() {
     if (path) navigate({ to: path });
   }
 
-  if (checkingConfig) {
+  const startupGate = resolveStartupGate({
+    checkingConfig,
+    encryptionKeyMissing,
+    dbRecoveryRequired: dbRecoveryStatus.required,
+    isLocked,
+    needsOnboarding,
+  });
+
+  if (startupGate === "checking") {
     return (
       <ThemeProvider>
         <div className="flex h-screen items-center justify-center bg-background" />
@@ -169,8 +181,7 @@ function RootLayout() {
     );
   }
 
-  // Encryption key missing — recovery screen (I462)
-  if (encryptionKeyMissing) {
+  if (startupGate === "encryption-recovery") {
     return (
       <ThemeProvider>
         <EncryptionRecovery />
@@ -178,8 +189,15 @@ function RootLayout() {
     );
   }
 
-  // App lock renders INSTEAD of content, not on top (I465)
-  if (isLocked) {
+  if (startupGate === "database-recovery") {
+    return (
+      <ThemeProvider>
+        <DatabaseRecovery status={dbRecoveryStatus} />
+      </ThemeProvider>
+    );
+  }
+
+  if (startupGate === "lock") {
     return (
       <ThemeProvider>
         <LockOverlay onUnlock={() => setIsLocked(false)} />
@@ -187,7 +205,7 @@ function RootLayout() {
     );
   }
 
-  if (needsOnboarding) {
+  if (startupGate === "onboarding") {
     return (
       <ThemeProvider>
         <OnboardingFlow onComplete={handleOnboardingComplete} />

@@ -111,8 +111,11 @@ pub fn run() {
             }
 
             // Initialize async DbService (read/write separated connections).
-            // Runs in background — command handlers fall back to the sync mutex
-            // until this completes (typically <100ms).
+            // Skip when startup recovery screens are active.
+            if !state
+                .encryption_key_missing
+                .load(std::sync::atomic::Ordering::Relaxed)
+                && !state.is_database_recovery_required()
             {
                 let init_state = state.clone();
                 tauri::async_runtime::spawn(async move {
@@ -122,6 +125,8 @@ pub fn run() {
                         log::info!("DbService initialized (1 writer + 2 readers)");
                     }
                 });
+            } else {
+                log::warn!("DbService init skipped: startup recovery required");
             }
 
             // Initialize embedding model asynchronously (nomic-embed-text-v1.5).
@@ -577,6 +582,9 @@ pub fn run() {
             // I76: Database Backup & Rebuild
             commands::backup_database,
             commands::rebuild_database,
+            commands::get_database_recovery_status,
+            commands::list_database_backups,
+            commands::restore_database_from_backup,
             // I148: Hygiene
             commands::get_hygiene_report,
             commands::get_intelligence_hygiene_status,
