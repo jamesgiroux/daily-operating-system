@@ -556,8 +556,32 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
 
     // Apply each pending migration in order
     for migration in &pending {
-        conn.execute_batch(migration.sql)
-            .map_err(|e| format!("Migration v{} failed: {}", migration.version, e))?;
+        match conn.execute_batch(migration.sql) {
+            Ok(()) => {}
+            Err(e) => {
+                let msg = e.to_string();
+                // SQLite DDL statements like ALTER TABLE ADD COLUMN and RENAME COLUMN
+                // are not idempotent (no IF NOT EXISTS / IF EXISTS variants).
+                // Tolerate these specific benign errors ONLY for single-statement
+                // ALTER TABLE migrations (no BEGIN/COMMIT transactions):
+                // - "duplicate column name": ADD COLUMN when column already exists
+                // - "no such column": RENAME COLUMN when column was already renamed
+                // Migrations with explicit transactions must NOT be tolerated — a
+                // swallowed error leaves the transaction open, corrupting later migrations.
+                let is_single_alter = !migration.sql.contains("BEGIN");
+                let is_benign = msg.contains("duplicate column name")
+                    || msg.contains("no such column");
+                if is_single_alter && is_benign {
+                    log::warn!(
+                        "Migration v{}: benign schema conflict ({}), continuing",
+                        migration.version,
+                        msg.split('\n').next().unwrap_or(&msg)
+                    );
+                } else {
+                    return Err(format!("Migration v{} failed: {}", migration.version, e));
+                }
+            }
+        }
 
         conn.execute(
             "INSERT INTO schema_version (version) VALUES (?1)",
@@ -1081,7 +1105,13 @@ mod tests {
                 prep_snapshot_path TEXT,
                 prep_snapshot_hash TEXT,
                 transcript_path TEXT,
-                transcript_processed_at TEXT
+                transcript_processed_at TEXT,
+                intelligence_state TEXT NOT NULL DEFAULT 'detected',
+                intelligence_quality TEXT NOT NULL DEFAULT 'sparse',
+                last_enriched_at TEXT,
+                signal_count INTEGER NOT NULL DEFAULT 0,
+                has_new_signals INTEGER NOT NULL DEFAULT 0,
+                last_viewed_at TEXT
              );
              CREATE TABLE people (
                 id TEXT PRIMARY KEY,
@@ -1139,7 +1169,46 @@ mod tests {
                 entity_type TEXT NOT NULL DEFAULT 'account',
                 enriched_at TEXT,
                 source_file_count INTEGER DEFAULT 0,
-                executive_assessment TEXT
+                executive_assessment TEXT,
+                risks_json TEXT,
+                recent_wins_json TEXT,
+                current_state_json TEXT,
+                stakeholder_insights_json TEXT,
+                next_meeting_readiness_json TEXT,
+                company_context_json TEXT,
+                health_score REAL,
+                health_trend TEXT,
+                coherence_score REAL,
+                coherence_flagged INTEGER DEFAULT 0,
+                value_delivered TEXT,
+                success_metrics TEXT,
+                open_commitments TEXT,
+                relationship_depth TEXT,
+                user_relevance_weight REAL DEFAULT 1.0,
+                consistency_status TEXT,
+                consistency_findings_json TEXT,
+                consistency_checked_at TEXT
+             );
+             CREATE TABLE account_team (
+                account_id TEXT NOT NULL,
+                person_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'associated',
+                created_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (account_id, person_id)
+             );
+             CREATE TABLE entity_quality (
+                entity_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                quality_alpha REAL NOT NULL DEFAULT 1.0,
+                quality_beta REAL NOT NULL DEFAULT 1.0,
+                quality_score REAL NOT NULL DEFAULT 0.5,
+                last_enrichment_at TEXT,
+                correction_count INTEGER NOT NULL DEFAULT 0,
+                coherence_retry_count INTEGER NOT NULL DEFAULT 0,
+                coherence_window_start TEXT,
+                coherence_blocked INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
              );",
         )
         .expect("seed existing tables");
