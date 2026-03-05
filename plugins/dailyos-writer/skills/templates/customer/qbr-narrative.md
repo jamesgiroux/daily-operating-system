@@ -170,11 +170,11 @@ Based on your [stated priority], we recommend:
 ## Example
 
 ```markdown
-# Crestview Media Q4 2025 Partnership Review
+# Keystone Automotive Q4 2025 Partnership Review
 
 ## Executive Summary
 
-Crestview Media achieved zero revenue-impacting outages during your highest-traffic quarter, supporting $2.3B in vehicle transactions processed through your digital platforms. The NADA project kicked off successfully, positioning Crestview Media for AI-powered customer experiences in 2026.
+Keystone Automotive achieved zero revenue-impacting outages during your highest-traffic quarter, supporting $2.3B in vehicle transactions processed through your digital platforms. The NADA project kicked off successfully, positioning Keystone for AI-powered customer experiences in 2026.
 
 ---
 
@@ -188,7 +188,7 @@ At our September kickoff, you identified three priorities:
 | Agentforce POC launch | Achieved | POC environment live, demo ready for NADA |
 | Reduce time-to-publish for dealer content | In Progress | 30% improvement; targeting 50% by Q1 |
 
-The Agentforce POC represents a significant milestone. Crestview Media is now the lighthouse customer for WordPress VIP's Salesforce integration, with direct access to the product team during development.
+The Agentforce POC represents a significant milestone. Keystone is now the lighthouse customer for WordPress VIP's Globex integration, with direct access to the product team during development.
 
 ## Value Delivered
 

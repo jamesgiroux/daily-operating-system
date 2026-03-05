@@ -144,7 +144,7 @@ A quarterly review isn't a list—it's a narrative that connects individual wins
 | Segment | Accounts | ARR | Health | Change from Q[N-1] |
 |---------|----------|-----|--------|-------------------|
 | Summit | 3 | $1.2M | Strong | +1 account |
-| Influence | 6 | $890K | Mixed | NXP at risk |
+| Influence | 6 | $890K | Mixed | Vertex at risk |
 | Evolution | 8 | $620K | Stable | 2 renewals closed |
 | Foundation | 26 | $1.9M | Stable | New proactive model |
 ```
