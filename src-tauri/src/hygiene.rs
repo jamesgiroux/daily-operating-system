@@ -512,7 +512,7 @@ fn archive_phantom_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
                AND a.archived = 0
                AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)",
+               AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)",
         )
         .and_then(|mut stmt| {
             stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -609,7 +609,7 @@ fn archive_empty_shell_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>)
                AND a.updated_at <= datetime('now', '-30 days')
                AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account' AND es.deactivated_at IS NULL)",
         )
@@ -654,7 +654,7 @@ fn count_empty_shell_accounts(db: &ActionDb) -> usize {
                AND a.updated_at <= datetime('now', '-30 days')
                AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account' AND es.deactivated_at IS NULL)",
             [],
@@ -738,7 +738,7 @@ pub fn resolve_names_from_emails(
 /// Auto-link people to entities by matching email domain to account names.
 ///
 /// If `schen@acme.com` is a person and there's an account whose name contains
-/// "acme", link them via the entity_people junction table.
+/// "acme", link them via account_stakeholders.
 pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let accounts = match db.get_all_accounts() {
         Ok(a) => a,
@@ -1014,11 +1014,11 @@ fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
 /// Link people to accounts based on meeting co-attendance patterns.
 ///
 /// If a person attends 3+ meetings that are linked to an account (via
-/// `meeting_entities`) but has no `entity_people` link to that account,
+/// `meeting_entities`) but has no `account_stakeholders` link to that account,
 /// create the link automatically.
 fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     // Find (person_id, entity_id, shared_meeting_count) where the person
-    // co-attends meetings linked to an account but has no entity_people link.
+    // co-attends meetings linked to an account but has no account_stakeholders link.
     let candidates: Vec<(String, String, String, String, i64)> = db
         .conn_ref()
         .prepare(
@@ -1028,8 +1028,8 @@ fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
              JOIN people p ON p.id = ma.person_id AND p.archived = 0
              JOIN accounts a ON a.id = me.entity_id AND a.archived = 0
              WHERE NOT EXISTS (
-                 SELECT 1 FROM entity_people ep
-                 WHERE ep.person_id = ma.person_id AND ep.entity_id = me.entity_id
+                 SELECT 1 FROM account_stakeholders as_
+                 WHERE as_.person_id = ma.person_id AND as_.account_id = me.entity_id
              )
              GROUP BY ma.person_id, me.entity_id
              HAVING shared >= 3
@@ -1424,13 +1424,14 @@ pub fn check_upcoming_meeting_readiness(
     let upcoming: Vec<crate::db::DbMeeting> = db
         .conn_ref()
         .prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    attendees, notes_path, summary,
-                    created_at, calendar_event_id
-             FROM meetings_history
-             WHERE start_time > datetime('now')
-               AND start_time <= ?1
-             ORDER BY start_time ASC",
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.attendees, m.notes_path, mt.summary,
+                    m.created_at, m.calendar_event_id
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE m.start_time > datetime('now')
+               AND m.start_time <= ?1
+             ORDER BY m.start_time ASC",
         )
         .and_then(|mut stmt| {
             let rows = stmt.query_map(rusqlite::params![window_end.to_rfc3339()], |row| {
@@ -2791,9 +2792,21 @@ mod tests {
         let start = Utc::now() + chrono::Duration::hours(hours_from_now);
         db.conn_ref()
             .execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, 'Test Meeting', 'customer', ?2, ?2)",
                 rusqlite::params![meeting_id, start.to_rfc3339()],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                rusqlite::params![meeting_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                rusqlite::params![meeting_id],
             )
             .unwrap();
     }
@@ -2811,7 +2824,7 @@ mod tests {
     fn seed_entity_intelligence(db: &ActionDb, entity_id: &str, enriched_at: &str) {
         db.conn_ref()
             .execute(
-                "INSERT OR REPLACE INTO entity_intelligence (entity_id, entity_type, enriched_at)
+                "INSERT OR REPLACE INTO entity_assessment (entity_id, entity_type, enriched_at)
                  VALUES (?1, 'account', ?2)",
                 rusqlite::params![entity_id, enriched_at],
             )

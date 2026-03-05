@@ -1560,8 +1560,9 @@ fn get_meeting_history(
         let conn = db.conn_ref();
         let mut stmt = conn
             .prepare(
-                "SELECT m.id, m.title, m.meeting_type, m.start_time, m.summary
-             FROM meetings_history m
+                "SELECT m.id, m.title, m.meeting_type, m.start_time, mt.summary
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND m.start_time >= date('now', ?2)
@@ -1599,11 +1600,12 @@ fn get_meeting_history_by_title(
         let conn = db.conn_ref();
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, meeting_type, start_time, summary
-             FROM meetings_history
-             WHERE LOWER(title) = LOWER(?1)
-               AND start_time >= date('now', ?2)
-             ORDER BY start_time DESC
+                "SELECT m.id, m.title, m.meeting_type, m.start_time, mt.summary
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE LOWER(m.title) = LOWER(?1)
+               AND m.start_time >= date('now', ?2)
+             ORDER BY m.start_time DESC
              LIMIT ?3",
             )
             .ok()?;

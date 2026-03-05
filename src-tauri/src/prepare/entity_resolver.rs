@@ -4,7 +4,7 @@
 //! pluggable signal cascade that produces scored resolution outcomes.
 //!
 //! Signal producers:
-//! 1. Explicit assignment (`meetings_history.account_id`)
+//! 1. Explicit assignment (via `meeting_entities` junction table)
 //! 2. Junction table (`meeting_entities`)
 //! 3. Attendee inference (person → entity voting)
 //! 4. Keyword matching (entity `keywords` JSON arrays)
@@ -695,7 +695,7 @@ use crate::helpers::normalize_key;
 fn build_fuzzy_tokens(text: &str) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().filter(|w| w.len() >= 3).collect();
     let mut tokens: Vec<String> = words.iter().map(|w| w.to_string()).collect();
-    // Adjacent pairs (e.g. "sales force" for matching "Salesforce")
+    // Adjacent pairs (e.g. "acme corp" for matching "AcmeCorp")
     for pair in words.windows(2) {
         tokens.push(format!("{} {}", pair[0], pair[1]));
     }
@@ -856,12 +856,12 @@ mod tests {
 
     #[test]
     fn test_fuzzy_matching_jaro_winkler() {
-        // "Salesforce" vs "salesforc" (typo) should match
-        assert!(strsim::jaro_winkler("salesforce", "salesforc") >= 0.85);
+        // "globexcorp" vs "globexcor" (typo) should match
+        assert!(strsim::jaro_winkler("globexcorp", "globexcor") >= 0.85);
         // Completely different strings should not match
-        assert!(strsim::jaro_winkler("salesforce", "microsoft") < 0.85);
+        assert!(strsim::jaro_winkler("globexcorp", "microsoft") < 0.85);
         // Very similar strings should match
-        assert!(strsim::jaro_winkler("agentforce", "agentforc") >= 0.85);
+        assert!(strsim::jaro_winkler("initechco", "initechc") >= 0.85);
     }
 
     #[test]
@@ -878,9 +878,9 @@ mod tests {
 
     #[test]
     fn test_fuzzy_matches_tokens() {
-        let tokens = build_fuzzy_tokens("review salesforc demo");
-        // "salesforce" should fuzzy-match "salesforc" token
-        assert!(fuzzy_matches_tokens("salesforce", &tokens));
+        let tokens = build_fuzzy_tokens("review globexcor demo");
+        // "globexcorp" should fuzzy-match "globexcor" token
+        assert!(fuzzy_matches_tokens("globexcorp", &tokens));
         // "microsoft" should not match anything
         assert!(!fuzzy_matches_tokens("microsoft", &tokens));
     }

@@ -12,7 +12,7 @@ impl ActionDb {
         let count_30d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
+                "SELECT COUNT(*) FROM meetings m
                  INNER JOIN meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-30 days')",
@@ -24,7 +24,7 @@ impl ActionDb {
         let count_90d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
+                "SELECT COUNT(*) FROM meetings m
                  INNER JOIN meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-90 days')",
@@ -37,7 +37,7 @@ impl ActionDb {
         let last_meeting: Option<String> = self
             .conn
             .query_row(
-                "SELECT MAX(m.start_time) FROM meetings_history m
+                "SELECT MAX(m.start_time) FROM meetings m
                  INNER JOIN meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time <= datetime('now')",

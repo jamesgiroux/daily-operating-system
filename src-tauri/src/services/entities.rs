@@ -232,7 +232,7 @@ pub fn auto_extract_title_keywords(
     for w in &title_words {
         candidates.push(w.clone());
     }
-    // Adjacent pairs (e.g., "Janus Henderson" from title words)
+    // Adjacent pairs (e.g., "Acme Corp" from title words)
     for pair in title_words.windows(2) {
         candidates.push(format!("{} {}", pair[0], pair[1]));
     }

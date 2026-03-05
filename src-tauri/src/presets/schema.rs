@@ -13,11 +13,11 @@ pub struct RolePreset {
     pub vitals: PresetVitalsConfig,
     pub metadata: PresetMetadataConfig,
     /// Stakeholder roles for external contacts linked to entities.
-    /// Stored on `entity_people.relationship_type`.
+    /// Stored on `account_stakeholders.relationship_type` or `entity_members.relationship_type`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stakeholder_roles: Vec<PresetRoleDefinition>,
     /// Internal team roles for the account team.
-    /// Stored on `account_team.role`.
+    /// Stored on `account_stakeholders.role`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub internal_team_roles: Vec<PresetRoleDefinition>,
     pub lifecycle_events: Vec<String>,

@@ -335,7 +335,7 @@ impl ActionDb {
         let rows: Vec<(String, String)> = {
             let mut stmt = conn.prepare(
                 "SELECT id, calendar_event_id
-                 FROM meetings_history
+                 FROM meetings
                  WHERE calendar_event_id IS NOT NULL
                    AND trim(calendar_event_id) != ''",
             )?;
@@ -356,42 +356,53 @@ impl ActionDb {
             }
 
             let canonical_exists: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM meetings_history WHERE id = ?1",
+                "SELECT COUNT(*) FROM meetings WHERE id = ?1",
                 params![canonical_id],
                 |r| r.get(0),
             )?;
 
             if canonical_exists > 0 {
-                // Merge sparse fields from old row into canonical row.
+                // Merge sparse fields from old row into canonical row (meetings table).
                 conn.execute(
-                    "UPDATE meetings_history
-                     SET title = COALESCE(title, (SELECT title FROM meetings_history WHERE id = ?1)),
-                         meeting_type = COALESCE(meeting_type, (SELECT meeting_type FROM meetings_history WHERE id = ?1)),
-                         start_time = COALESCE(start_time, (SELECT start_time FROM meetings_history WHERE id = ?1)),
-                         end_time = COALESCE(end_time, (SELECT end_time FROM meetings_history WHERE id = ?1)),
-                         attendees = COALESCE(attendees, (SELECT attendees FROM meetings_history WHERE id = ?1)),
-                         notes_path = COALESCE(notes_path, (SELECT notes_path FROM meetings_history WHERE id = ?1)),
-                         summary = COALESCE(summary, (SELECT summary FROM meetings_history WHERE id = ?1)),
-                         prep_context_json = COALESCE(prep_context_json, (SELECT prep_context_json FROM meetings_history WHERE id = ?1)),
-                         description = COALESCE(description, (SELECT description FROM meetings_history WHERE id = ?1)),
-                         user_agenda_json = COALESCE(user_agenda_json, (SELECT user_agenda_json FROM meetings_history WHERE id = ?1)),
-                         user_notes = COALESCE(user_notes, (SELECT user_notes FROM meetings_history WHERE id = ?1)),
-                         prep_frozen_json = COALESCE(prep_frozen_json, (SELECT prep_frozen_json FROM meetings_history WHERE id = ?1)),
-                         prep_frozen_at = COALESCE(prep_frozen_at, (SELECT prep_frozen_at FROM meetings_history WHERE id = ?1)),
-                         prep_snapshot_path = COALESCE(prep_snapshot_path, (SELECT prep_snapshot_path FROM meetings_history WHERE id = ?1)),
-                         prep_snapshot_hash = COALESCE(prep_snapshot_hash, (SELECT prep_snapshot_hash FROM meetings_history WHERE id = ?1)),
-                         transcript_path = COALESCE(transcript_path, (SELECT transcript_path FROM meetings_history WHERE id = ?1)),
-                         transcript_processed_at = COALESCE(transcript_processed_at, (SELECT transcript_processed_at FROM meetings_history WHERE id = ?1))
+                    "UPDATE meetings
+                     SET title = COALESCE(title, (SELECT title FROM meetings WHERE id = ?1)),
+                         meeting_type = COALESCE(meeting_type, (SELECT meeting_type FROM meetings WHERE id = ?1)),
+                         start_time = COALESCE(start_time, (SELECT start_time FROM meetings WHERE id = ?1)),
+                         end_time = COALESCE(end_time, (SELECT end_time FROM meetings WHERE id = ?1)),
+                         attendees = COALESCE(attendees, (SELECT attendees FROM meetings WHERE id = ?1)),
+                         notes_path = COALESCE(notes_path, (SELECT notes_path FROM meetings WHERE id = ?1)),
+                         description = COALESCE(description, (SELECT description FROM meetings WHERE id = ?1))
                      WHERE id = ?2",
+                    params![old_id, canonical_id],
+                )?;
+                // Merge meeting_prep fields
+                conn.execute(
+                    "UPDATE meeting_prep
+                     SET prep_context_json = COALESCE(prep_context_json, (SELECT prep_context_json FROM meeting_prep WHERE meeting_id = ?1)),
+                         user_agenda_json = COALESCE(user_agenda_json, (SELECT user_agenda_json FROM meeting_prep WHERE meeting_id = ?1)),
+                         user_notes = COALESCE(user_notes, (SELECT user_notes FROM meeting_prep WHERE meeting_id = ?1)),
+                         prep_frozen_json = COALESCE(prep_frozen_json, (SELECT prep_frozen_json FROM meeting_prep WHERE meeting_id = ?1)),
+                         prep_frozen_at = COALESCE(prep_frozen_at, (SELECT prep_frozen_at FROM meeting_prep WHERE meeting_id = ?1)),
+                         prep_snapshot_path = COALESCE(prep_snapshot_path, (SELECT prep_snapshot_path FROM meeting_prep WHERE meeting_id = ?1)),
+                         prep_snapshot_hash = COALESCE(prep_snapshot_hash, (SELECT prep_snapshot_hash FROM meeting_prep WHERE meeting_id = ?1))
+                     WHERE meeting_id = ?2",
+                    params![old_id, canonical_id],
+                )?;
+                // Merge meeting_transcripts fields
+                conn.execute(
+                    "UPDATE meeting_transcripts
+                     SET summary = COALESCE(summary, (SELECT summary FROM meeting_transcripts WHERE meeting_id = ?1)),
+                         transcript_path = COALESCE(transcript_path, (SELECT transcript_path FROM meeting_transcripts WHERE meeting_id = ?1)),
+                         transcript_processed_at = COALESCE(transcript_processed_at, (SELECT transcript_processed_at FROM meeting_transcripts WHERE meeting_id = ?1))
+                     WHERE meeting_id = ?2",
                     params![old_id, canonical_id],
                 )?;
             } else {
                 conn.execute(
-                    "UPDATE meetings_history
-                     SET id = ?1
-                     WHERE id = ?2",
+                    "UPDATE meetings SET id = ?1 WHERE id = ?2",
                     params![canonical_id, old_id],
                 )?;
+                // Child tables updated via CASCADE on meetings.id
             }
 
             // Update foreign references.
@@ -423,8 +434,9 @@ impl ActionDb {
             )?;
 
             if canonical_exists > 0 {
+                // CASCADE will clean up meeting_prep and meeting_transcripts
                 conn.execute(
-                    "DELETE FROM meetings_history WHERE id = ?1",
+                    "DELETE FROM meetings WHERE id = ?1",
                     params![old_id],
                 )?;
             }
@@ -435,10 +447,10 @@ impl ActionDb {
     fn backfill_meeting_user_layer(conn: &Connection) -> Result<(), DbError> {
         let rows: Vec<(String, String, Option<String>, Option<String>)> = {
             let mut stmt = conn.prepare(
-                "SELECT id, prep_context_json, user_agenda_json, user_notes
-                 FROM meetings_history
-                 WHERE prep_context_json IS NOT NULL
-                   AND trim(prep_context_json) != ''",
+                "SELECT mp.meeting_id, mp.prep_context_json, mp.user_agenda_json, mp.user_notes
+                 FROM meeting_prep mp
+                 WHERE mp.prep_context_json IS NOT NULL
+                   AND trim(mp.prep_context_json) != ''",
             )?;
             let mapped = stmt.query_map([], |row| {
                 Ok((
@@ -483,10 +495,10 @@ impl ActionDb {
             }
 
             conn.execute(
-                "UPDATE meetings_history
+                "UPDATE meeting_prep
                  SET user_agenda_json = COALESCE(user_agenda_json, ?1),
                      user_notes = COALESCE(user_notes, ?2)
-                 WHERE id = ?3",
+                 WHERE meeting_id = ?3",
                 params![agenda_target, notes_target, meeting_id],
             )?;
         }
