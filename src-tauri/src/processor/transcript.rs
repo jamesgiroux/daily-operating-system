@@ -190,38 +190,7 @@ pub fn process_transcript(
         }
     }
 
-    // Store captures (wins, risks, decisions)
-    if let Some(db) = db {
-        for win in &wins {
-            let _ = db.insert_capture(
-                &meeting.id,
-                &meeting.title,
-                meeting.account.as_deref(),
-                "win",
-                win,
-            );
-        }
-        for risk in &risks {
-            let _ = db.insert_capture(
-                &meeting.id,
-                &meeting.title,
-                meeting.account.as_deref(),
-                "risk",
-                risk,
-            );
-        }
-        for decision in &decisions {
-            let _ = db.insert_capture(
-                &meeting.id,
-                &meeting.title,
-                meeting.account.as_deref(),
-                "decision",
-                decision,
-            );
-        }
-    }
-
-    // 4b. Emit transcript signals for entity intelligence (I307 learning)
+    // 4b. Persist transcript captures + emit outcomes signal transactionally.
     if let Some(db) = db {
         let entity_type = meeting
             .linked_entities
@@ -237,23 +206,23 @@ pub fn process_transcript(
             .or(meeting.account.as_deref())
             .unwrap_or(&meeting.id);
 
-        let capture_count = wins.len() + risks.len() + decisions.len();
-        if capture_count > 0 {
-            let _ = crate::signals::bus::emit_signal(
+        if !wins.is_empty() || !risks.is_empty() || !decisions.is_empty() {
+            if let Err(e) = crate::services::mutations::persist_transcript_outcomes(
                 db,
                 entity_type,
                 entity_id,
-                "transcript_outcomes",
-                "transcript",
-                Some(&format!(
-                    "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
-                    meeting.id,
-                    wins.len(),
-                    risks.len(),
-                    decisions.len()
-                )),
-                0.75,
-            );
+                &meeting.id,
+                &meeting.title,
+                meeting.account.as_deref(),
+                &wins,
+                &risks,
+                &decisions,
+            ) {
+                log::warn!(
+                    "Failed to persist transcript captures/outcomes signal transactionally: {}",
+                    e
+                );
+            }
         }
     }
 
@@ -296,7 +265,7 @@ pub fn process_transcript(
             error_message: None,
             created_at: Utc::now().to_rfc3339(),
         };
-        if let Err(e) = db.insert_processing_log(&log_entry) {
+        if let Err(e) = crate::services::mutations::insert_processing_log(db, &log_entry) {
             log::warn!("Failed to log transcript processing: {}", e);
         }
     }
@@ -452,7 +421,7 @@ fn extract_transcript_actions(
             next_meeting_start: None,
         };
 
-        if let Err(e) = db.upsert_action_if_not_completed(&action) {
+        if let Err(e) = crate::services::mutations::upsert_action_if_not_completed(db, &action) {
             log::warn!("Failed to insert transcript action: {}", e);
         } else {
             count += 1;
