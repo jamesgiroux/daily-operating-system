@@ -788,19 +788,18 @@ pub fn run_enrichment(
     if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
-            match input.entity_type.as_str() {
-                "account" => {
-                    let _ = db.update_account_keywords(&input.entity_id, &keywords_json);
-                }
-                "project" => {
-                    let _ = db.update_project_keywords(&input.entity_id, &keywords_json);
-                }
-                _ => {
-                    log::debug!(
-                        "intel_queue: keyword persistence not implemented for entity_type={}",
-                        input.entity_type
-                    );
-                }
+            if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &db,
+                &input.entity_type,
+                &input.entity_id,
+                &keywords_json,
+            ) {
+                log::warn!(
+                    "intel_queue: keyword persistence failed for {} {}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    err
+                );
             }
         }
     }
@@ -1144,7 +1143,13 @@ pub fn write_enrichment_results(
 
     // Own DB connection for cache update
     let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
-    let _ = db.upsert_entity_intelligence(&final_intel);
+    crate::services::intelligence::upsert_assessment_from_enrichment(
+        &db,
+        &_state.signals.engine,
+        &input.entity_type,
+        &input.entity_id,
+        &final_intel,
+    )?;
 
     // Invalidate cached reports when entity intelligence is refreshed (I397)
     let _ = crate::reports::invalidation::mark_reports_stale(&db, &input.entity_id);
@@ -1359,10 +1364,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
 
     // Clear prep_frozen_json so the queue processor regenerates them
     for mid in &meeting_ids {
-        let _ = db.conn_ref().execute(
-            "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
-            rusqlite::params![mid],
-        );
+        let _ = crate::services::meetings::clear_meeting_prep_frozen(&db, mid);
     }
 
     // Enqueue for regeneration at Background priority

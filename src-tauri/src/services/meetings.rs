@@ -11,6 +11,79 @@ use crate::db::ActionDb;
 use crate::state::AppState;
 use crate::types::{CapturedOutcome, IntelligenceQuality, MeetingIntelligence};
 
+pub fn upsert_meeting_for_reconcile(
+    db: &ActionDb,
+    meeting: &crate::db::DbMeeting,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.upsert_meeting(meeting).map_err(|e| e.to_string())?;
+        crate::services::signals::emit(
+            tx,
+            "meeting",
+            &meeting.id,
+            "meeting_upserted",
+            "reconcile",
+            None,
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+pub fn set_meeting_prep_context(
+    db: &ActionDb,
+    meeting_id: &str,
+    updated_json: &str,
+) -> Result<(), String> {
+    db.update_meeting_prep_context(meeting_id, updated_json)
+        .map_err(|e| e.to_string())
+}
+
+pub fn update_capture_content(
+    db: &ActionDb,
+    capture_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.update_capture(capture_id, content)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit(
+            tx,
+            "capture",
+            capture_id,
+            "capture_updated",
+            "user_edit",
+            None,
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+pub fn clear_meeting_prep_frozen(db: &ActionDb, meeting_id: &str) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit(
+            tx,
+            "meeting",
+            meeting_id,
+            "prep_invalidated",
+            "ai_enrichment",
+            None,
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
 /// Hydrate attendee context by matching calendar attendee emails to person entities.
 ///
 /// For external meetings: scoped to non-internal attendees (customers, prospects, etc.).
@@ -755,9 +828,9 @@ pub async fn search_meetings(
         .db_read(move |db| {
             let pattern = format!("%{}%", query.as_str().trim());
             let mut stmt = db
-        .conn_ref()
-        .prepare(
-            "SELECT m.id, m.title, m.meeting_type, m.start_time,
+                .conn_ref()
+                .prepare(
+                    "SELECT m.id, m.title, m.meeting_type, m.start_time,
                     mt.summary, mp.prep_context_json
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
@@ -767,8 +840,8 @@ pub async fn search_meetings(
                 OR mp.prep_context_json LIKE ?1
              ORDER BY m.start_time DESC
              LIMIT 50",
-        )
-        .map_err(|e| e.to_string())?;
+                )
+                .map_err(|e| e.to_string())?;
 
             let rows = stmt
                 .query_map(rusqlite::params![&pattern], |row| {
@@ -2204,10 +2277,8 @@ pub async fn attach_meeting_transcript(
                 let engine = std::sync::Arc::clone(&state.signals.engine);
                 let _ = state
                     .db_write(move |db| {
-                        let account_id: Option<String> = db
-                            .get_meeting_entities(&mid)
-                            .ok()
-                            .and_then(|ents| {
+                        let account_id: Option<String> =
+                            db.get_meeting_entities(&mid).ok().and_then(|ents| {
                                 ents.into_iter()
                                     .find(|e| e.entity_type == crate::entity::EntityType::Account)
                                     .map(|e| e.id)

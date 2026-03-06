@@ -365,7 +365,7 @@ pub fn update_account_field(
         .map_err(|e| e.to_string())?;
 
     // Emit field update signal + self-healing evaluation (I308, I410)
-    let _ = crate::services::signals::emit_propagate_and_evaluate(
+    crate::services::signals::emit_propagate_and_evaluate(
         db,
         &state.signals.engine,
         "account",
@@ -379,7 +379,8 @@ pub fn update_account_field(
         )),
         0.8,
         &state.intel_queue,
-    );
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
 
     // Self-healing: record user correction for Clay-enrichable fields (I409)
     if matches!(field, "lifecycle" | "arr" | "health" | "nps") {
@@ -448,7 +449,7 @@ pub fn update_account_notes(
     let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
 
     // Emit field update signal (I377)
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate(
         db,
         &state.signals.engine,
         "account",
@@ -464,7 +465,8 @@ pub fn update_account_notes(
                 .replace('"', "\\\"")
         )),
         0.8,
-    );
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
 
     Ok(())
 }
@@ -505,7 +507,7 @@ pub fn update_account_programs(
     let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
 
     // Emit field update signal (I377)
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate(
         db,
         &state.signals.engine,
         "account",
@@ -514,7 +516,8 @@ pub fn update_account_programs(
         "user_edit",
         Some("{\"field\":\"strategic_programs\"}"),
         0.8,
-    );
+    )
+    .map_err(|e| format!("signal emit failed: {e}"))?;
 
     Ok(())
 }
@@ -599,26 +602,27 @@ pub fn archive_account(
     id: &str,
     archived: bool,
 ) -> Result<(), String> {
-    db.archive_account(id, archived)
-        .map_err(|e| e.to_string())?;
-
     let signal_type = if archived {
         "entity_archived"
     } else {
         "entity_unarchived"
     };
-    let _ = crate::services::signals::emit_and_propagate(
-        db,
-        &state.signals.engine,
-        "account",
-        id,
-        signal_type,
-        "user_action",
-        None,
-        0.9,
-    );
-
-    Ok(())
+    db.with_transaction(|tx| {
+        tx.archive_account(id, archived)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            id,
+            signal_type,
+            "user_action",
+            None,
+            0.9,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
 }
 
 /// Merge source account into target account with signal emission.
@@ -628,22 +632,23 @@ pub fn merge_accounts(
     from_id: &str,
     into_id: &str,
 ) -> Result<crate::db::MergeResult, String> {
-    let result = db
-        .merge_accounts(from_id, into_id)
-        .map_err(|e| e.to_string())?;
-
-    let _ = crate::services::signals::emit_and_propagate(
-        db,
-        &state.signals.engine,
-        "account",
-        into_id,
-        "entity_merged",
-        "user_action",
-        Some(&format!("{{\"merged_from\":\"{}\"}}", from_id)),
-        0.9,
-    );
-
-    Ok(result)
+    db.with_transaction(|tx| {
+        let result = tx
+            .merge_accounts(from_id, into_id)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            into_id,
+            "entity_merged",
+            "user_action",
+            Some(&format!("{{\"merged_from\":\"{}\"}}", from_id)),
+            0.9,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(result)
+    })
 }
 
 /// Restore an archived account with optional child restoration.
@@ -668,24 +673,25 @@ pub fn add_account_team_member(
     if role.is_empty() {
         return Err("Role is required".to_string());
     }
-    db.add_account_team_member(account_id, person_id, &role)
-        .map_err(|e| e.to_string())?;
-
-    let _ = crate::services::signals::emit_and_propagate(
-        db,
-        &state.signals.engine,
-        "account",
-        account_id,
-        "team_member_added",
-        "user_action",
-        Some(&format!(
-            "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
-            person_id, role
-        )),
-        0.8,
-    );
-
-    Ok(())
+    db.with_transaction(|tx| {
+        tx.add_account_team_member(account_id, person_id, &role)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            account_id,
+            "team_member_added",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, role
+            )),
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
 }
 
 /// Remove a person-role pair from an account team with signal emission.
@@ -696,24 +702,25 @@ pub fn remove_account_team_member(
     person_id: &str,
     role: &str,
 ) -> Result<(), String> {
-    db.remove_account_team_member(account_id, person_id, role)
-        .map_err(|e| e.to_string())?;
-
-    let _ = crate::services::signals::emit_and_propagate(
-        db,
-        &state.signals.engine,
-        "account",
-        account_id,
-        "team_member_removed",
-        "user_action",
-        Some(&format!(
-            "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
-            person_id, role
-        )),
-        0.7,
-    );
-
-    Ok(())
+    db.with_transaction(|tx| {
+        tx.remove_account_team_member(account_id, person_id, role)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            account_id,
+            "team_member_removed",
+            "user_action",
+            Some(&format!(
+                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
+                person_id, role
+            )),
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
 }
 
 /// Record an account lifecycle event with signal emission.
@@ -726,25 +733,26 @@ pub fn record_account_event(
     arr_impact: Option<f64>,
     notes: Option<&str>,
 ) -> Result<i64, String> {
-    let event_id = db
-        .record_account_event(account_id, event_type, event_date, arr_impact, notes)
-        .map_err(|e| e.to_string())?;
-
-    let _ = crate::services::signals::emit_and_propagate(
-        db,
-        &state.signals.engine,
-        "account",
-        account_id,
-        "account_event_recorded",
-        "user_action",
-        Some(&format!(
-            "{{\"event_type\":\"{}\",\"event_date\":\"{}\"}}",
-            event_type, event_date
-        )),
-        0.8,
-    );
-
-    Ok(event_id)
+    db.with_transaction(|tx| {
+        let event_id = tx
+            .record_account_event(account_id, event_type, event_date, arr_impact, notes)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            &state.signals.engine,
+            "account",
+            account_id,
+            "account_event_recorded",
+            "user_action",
+            Some(&format!(
+                "{{\"event_type\":\"{}\",\"event_date\":\"{}\"}}",
+                event_type, event_date
+            )),
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(event_id)
+    })
 }
 
 /// Bulk-create accounts from a list of names. Returns created account IDs.
