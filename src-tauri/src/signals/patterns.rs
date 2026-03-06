@@ -284,14 +284,18 @@ mod tests {
                          '[\"alice@acme.com\",\"bob@partner.com\"]')",
                 params![meeting_id],
             ).expect("insert meeting");
-            db.conn_ref().execute(
-                "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
-                params![meeting_id],
-            ).expect("insert meeting_prep");
-            db.conn_ref().execute(
-                "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
-                params![meeting_id],
-            ).expect("insert meeting_transcripts");
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![meeting_id],
+                )
+                .expect("insert meeting_prep");
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![meeting_id],
+                )
+                .expect("insert meeting_transcripts");
 
             // Create entity if not exists (only once)
             if i == 1 {
