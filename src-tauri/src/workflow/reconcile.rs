@@ -280,7 +280,7 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
             last_viewed_at: None,
         };
 
-        if let Err(e) = db.upsert_meeting(&meeting) {
+        if let Err(e) = crate::services::meetings::upsert_meeting_for_reconcile(db, &meeting) {
             log::warn!("Failed to persist meeting '{}': {}", ms.title, e);
             continue;
         }

@@ -799,15 +799,34 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .iter()
         .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
         .collect();
+    let total_meetings = active_meetings.len();
+    let customer_meetings = active_meetings
+        .iter()
+        .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
+        .count();
     let stats = DayStats {
-        total_meetings: active_meetings.len(),
-        customer_meetings: active_meetings
-            .iter()
-            .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
-            .count(),
+        total_meetings,
+        customer_meetings,
         actions_due: actions.len(),
         inbox_count,
     };
+
+    // Recompute overview summary from merged meetings so it reflects live state,
+    // not the stale count baked into schedule.json at generation time.
+    let mut overview = overview;
+    let mut parts = vec![format!(
+        "You have {} meeting{} today",
+        total_meetings,
+        if total_meetings == 1 { "" } else { "s" }
+    )];
+    if customer_meetings > 0 {
+        parts.push(format!(
+            "{} customer call{}",
+            customer_meetings,
+            if customer_meetings != 1 { "s" } else { "" }
+        ));
+    }
+    overview.summary = parts.join(" with ");
 
     let freshness = check_data_freshness(&today_dir);
 
