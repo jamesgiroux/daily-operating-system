@@ -40,6 +40,8 @@ pub fn check_and_invalidate_preps(
         "stakeholders_updated",
         "team_member_added",
         "team_member_removed",
+        "relationship_graph_changed",
+        "relationship_reclassified",
         "transcript_outcomes", // manually attached transcript — invalidate linked future meeting preps
     ];
 
@@ -199,5 +201,61 @@ mod tests {
         let q = queue.lock().unwrap();
         assert_eq!(q.len(), 1);
         assert_eq!(q[0], "m1");
+    }
+
+    #[test]
+    fn test_relationship_graph_change_invalidates_person_prep() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO people (id, email, name, relationship, meeting_count, updated_at)
+             VALUES ('p1', 'person@example.com', 'Person One', 'external', 0, '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+             VALUES ('m-person', 'Intro', 'customer', datetime('now', '+4 hours'), datetime('now'))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m-person')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m-person')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+             VALUES ('m-person', 'p1', 'person')",
+            [],
+        )
+        .unwrap();
+
+        let queue = Mutex::new(Vec::<String>::new());
+        let signal = SignalEvent {
+            id: "sig-relationship".to_string(),
+            entity_type: "person".to_string(),
+            entity_id: "p1".to_string(),
+            signal_type: "relationship_graph_changed".to_string(),
+            source: "user_action".to_string(),
+            value: None,
+            confidence: 0.9,
+            decay_half_life_days: 30,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            superseded_by: None,
+            source_context: None,
+        };
+
+        check_and_invalidate_preps(&db, &signal, &queue);
+
+        let q = queue.lock().unwrap();
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0], "m-person");
     }
 }

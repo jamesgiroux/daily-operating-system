@@ -310,7 +310,10 @@ impl ActionDb {
     /// 2. **ID-based guard**: If an action with this exact ID is already completed, skip.
     ///
     /// This ensures that daily briefing syncs don't resurrect completed actions (I23).
-    pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
+    pub fn upsert_action_if_not_completed_with_status(
+        &self,
+        action: &DbAction,
+    ) -> Result<bool, DbError> {
         let is_meeting_scoped_source = matches!(
             action.source_type.as_deref(),
             Some("transcript") | Some("post_meeting")
@@ -347,7 +350,7 @@ impl ActionDb {
         };
 
         if title_exists {
-            return Ok(());
+            return Ok(false);
         }
 
         // Guard 2: ID-based check — don't overwrite a completed action
@@ -361,10 +364,16 @@ impl ActionDb {
             .ok();
 
         if existing_status.as_deref() == Some("completed") {
-            return Ok(());
+            return Ok(false);
         }
 
-        self.upsert_action(action)
+        self.upsert_action(action)?;
+        Ok(true)
+    }
+
+    pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
+        self.upsert_action_if_not_completed_with_status(action)
+            .map(|_| ())
     }
 
     /// Insert or update an action. Uses SQLite `ON CONFLICT` (upsert).
