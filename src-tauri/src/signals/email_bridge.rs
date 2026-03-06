@@ -468,11 +468,13 @@ mod tests {
         conn.execute(
             "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
             [],
-        ).expect("insert meeting_prep");
+        )
+        .expect("insert meeting_prep");
         conn.execute(
             "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
             [],
-        ).expect("insert meeting_transcripts");
+        )
+        .expect("insert meeting_transcripts");
 
         // Insert an email signal from alice
         conn.execute(
