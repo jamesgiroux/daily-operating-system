@@ -437,10 +437,7 @@ mod tests {
 
     #[test]
     fn test_slug_to_entity_id() {
-        assert_eq!(
-            slug_to_entity_id("Acme-Motors", "account"),
-            "acme-motors"
-        );
+        assert_eq!(slug_to_entity_id("Acme-Motors", "account"), "acme-motors");
         assert_eq!(
             slug_to_entity_id("Acme-Motors-(am)", "account"),
             "acme-motors-am"
