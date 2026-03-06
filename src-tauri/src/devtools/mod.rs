@@ -1667,11 +1667,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         conn.execute(
             "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
             rusqlite::params![id],
-        ).map_err(|e| format!("Today meeting prep stub: {}", e))?;
+        )
+        .map_err(|e| format!("Today meeting prep stub: {}", e))?;
         conn.execute(
             "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
             rusqlite::params![id],
-        ).map_err(|e| format!("Today meeting transcript stub: {}", e))?;
+        )
+        .map_err(|e| format!("Today meeting transcript stub: {}", e))?;
     }
 
     // Project-linked people (via entity_members)
@@ -1782,11 +1784,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         conn.execute(
             "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
             rusqlite::params![id],
-        ).map_err(|e| format!("Historical meeting prep: {}", e))?;
+        )
+        .map_err(|e| format!("Historical meeting prep: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO meeting_transcripts (meeting_id, summary) VALUES (?1, ?2)",
             rusqlite::params![id, summary],
-        ).map_err(|e| format!("Historical meeting transcript: {}", e))?;
+        )
+        .map_err(|e| format!("Historical meeting transcript: {}", e))?;
 
         // I298: Also link historical customer meetings to their account entity
         if let Some(acct) = account_id {
@@ -3609,7 +3613,8 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
             conn.execute(
                 "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type) VALUES (?1, ?2)",
                 rusqlite::params![entity_id, entity_type],
-            ).map_err(|e| format!("Entity quality init {}: {}", entity_id, e))?;
+            )
+            .map_err(|e| format!("Entity quality init {}: {}", entity_id, e))?;
             conn.execute(
                 "UPDATE entity_quality SET health_score = ?1, health_trend = ?2 WHERE entity_id = ?3",
                 rusqlite::params![health_score, health_trend, entity_id],

@@ -44,9 +44,7 @@ fn test_open_creates_tables() {
 
     let count: i32 = db
         .conn
-        .query_row("SELECT COUNT(*) FROM meetings", [], |row| {
-            row.get(0)
-        })
+        .query_row("SELECT COUNT(*) FROM meetings", [], |row| row.get(0))
         .expect("meetings table should exist");
     assert_eq!(count, 0);
 }
@@ -1430,8 +1428,11 @@ fn test_get_sibling_domains_for_email() {
 
     // Set up an account with multiple domains
     setup_account(&db, "acc1", "Globex");
-    db.set_account_domains("acc1", &["globex.com".to_string(), "globex-labs.com".to_string()])
-        .expect("set domains");
+    db.set_account_domains(
+        "acc1",
+        &["globex.com".to_string(), "globex-labs.com".to_string()],
+    )
+    .expect("set domains");
 
     // Email at globex.com should return globex-labs.com as sibling
     let siblings = db
@@ -1509,8 +1510,11 @@ fn test_alias_aware_person_resolution_integration() {
 
     // Set up account with two domains
     setup_account(&db, "acc1", "Globex");
-    db.set_account_domains("acc1", &["globex.com".to_string(), "globex-labs.com".to_string()])
-        .expect("set domains");
+    db.set_account_domains(
+        "acc1",
+        &["globex.com".to_string(), "globex-labs.com".to_string()],
+    )
+    .expect("set domains");
 
     // Create person from domain A
     let person = sample_person("renan@globex.com");

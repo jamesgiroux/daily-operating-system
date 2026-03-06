@@ -569,8 +569,8 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
                 // Migrations with explicit transactions must NOT be tolerated — a
                 // swallowed error leaves the transaction open, corrupting later migrations.
                 let is_single_alter = !migration.sql.contains("BEGIN");
-                let is_benign = msg.contains("duplicate column name")
-                    || msg.contains("no such column");
+                let is_benign =
+                    msg.contains("duplicate column name") || msg.contains("no such column");
                 if is_single_alter && is_benign {
                     log::warn!(
                         "Migration v{}: benign schema conflict ({}), continuing",
