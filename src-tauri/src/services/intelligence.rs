@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use crate::db::ActionDb;
+use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 
 /// Enrich an entity via the intelligence queue (split-lock pattern).
@@ -63,6 +64,67 @@ pub async fn enrich_entity(
     Ok(final_intel)
 }
 
+pub fn persist_entity_keywords(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    keywords_json: &str,
+) -> Result<(), String> {
+    if entity_type != "account" && entity_type != "project" {
+        return Ok(());
+    }
+
+    db.with_transaction(|tx| {
+        match entity_type {
+            "account" => tx
+                .update_account_keywords(entity_id, keywords_json)
+                .map_err(|e| format!("keywords update failed: {e}"))?,
+            "project" => tx
+                .update_project_keywords(entity_id, keywords_json)
+                .map_err(|e| format!("keywords update failed: {e}"))?,
+            _ => {}
+        }
+
+        crate::services::signals::emit(
+            tx,
+            entity_type,
+            entity_id,
+            "keywords_updated",
+            "ai_enrichment",
+            None,
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+
+        Ok(())
+    })
+}
+
+pub fn upsert_assessment_from_enrichment(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    intel: &crate::intelligence::IntelligenceJson,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.upsert_entity_intelligence(intel)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_and_propagate(
+            tx,
+            engine,
+            entity_type,
+            entity_id,
+            "entity_intelligence_updated",
+            "ai_enrichment",
+            None,
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
 /// Update a single field in an entity's intelligence.json with signal emission.
 pub async fn update_intelligence_field(
     entity_id: &str,
@@ -113,17 +175,21 @@ pub async fn update_intelligence_field(
             let intel =
                 crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?;
 
-            let _ = db.upsert_entity_intelligence(&intel);
-
-            let _ = crate::services::signals::emit(
-                db,
-                &entity_type,
-                &entity_id,
-                "user_correction",
-                "user_edit",
-                Some(&format!("{{\"field\":\"{}\"}}", field_path)),
-                1.0,
-            );
+            db.with_transaction(|tx| {
+                tx.upsert_entity_intelligence(&intel)
+                    .map_err(|e| e.to_string())?;
+                crate::services::signals::emit(
+                    tx,
+                    &entity_type,
+                    &entity_id,
+                    "user_correction",
+                    "user_edit",
+                    Some(&format!("{{\"field\":\"{}\"}}", field_path)),
+                    1.0,
+                )
+                .map_err(|e| format!("signal emit failed: {e}"))?;
+                Ok(())
+            })?;
 
             // Self-healing: record user correction to lower quality score (I409)
             crate::self_healing::feedback::record_enrichment_correction(
@@ -185,18 +251,22 @@ pub async fn update_stakeholders(
 
             let intel = crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?;
 
-            let _ = db.upsert_entity_intelligence(&intel);
-
-            let _ = crate::services::signals::emit_and_propagate(
-                db,
-                &engine,
-                &entity_type,
-                &entity_id,
-                "stakeholders_updated",
-                "user_edit",
-                None,
-                0.9,
-            );
+            db.with_transaction(|tx| {
+                tx.upsert_entity_intelligence(&intel)
+                    .map_err(|e| e.to_string())?;
+                crate::services::signals::emit_and_propagate(
+                    tx,
+                    &engine,
+                    &entity_type,
+                    &entity_id,
+                    "stakeholders_updated",
+                    "user_edit",
+                    None,
+                    0.9,
+                )
+                .map_err(|e| format!("signal emit failed: {e}"))?;
+                Ok(())
+            })?;
 
             Ok(())
         })
@@ -309,12 +379,12 @@ mod live_acceptance_tests {
     use chrono::Utc;
     use rusqlite::OptionalExtension;
 
+    use super::enrich_entity;
     use crate::intel_queue::{write_enrichment_results, EnrichmentInput};
     use crate::intelligence::{
-        read_intelligence_json, write_intelligence_json, ConsistencyStatus, IntelligenceJson,
-        IntelRisk,
+        read_intelligence_json, write_intelligence_json, ConsistencyStatus, IntelRisk,
+        IntelligenceJson,
     };
-    use super::enrich_entity;
     use crate::state::AppState;
 
     /// Live acceptance check for I527 using the user's real local dataset.
@@ -428,11 +498,10 @@ mod live_acceptance_tests {
             .expect("meeting lookup query failed")
             .expect("no linked meeting found for entity");
 
-        let refresh = crate::services::meetings::refresh_meeting_briefing_full(
-            &state, &meeting_id, None,
-        )
-        .await
-        .expect("refresh_meeting_briefing_full failed");
+        let refresh =
+            crate::services::meetings::refresh_meeting_briefing_full(&state, &meeting_id, None)
+                .await
+                .expect("refresh_meeting_briefing_full failed");
 
         assert!(
             refresh.prep_rebuilt_sync || refresh.prep_queued,
@@ -661,7 +730,10 @@ mod live_acceptance_tests {
         match previous_db {
             Some(prev) => {
                 let _ = state
-                    .db_write(move |db| db.upsert_entity_intelligence(&prev).map_err(|e| e.to_string()))
+                    .db_write(move |db| {
+                        db.upsert_entity_intelligence(&prev)
+                            .map_err(|e| e.to_string())
+                    })
                     .await;
             }
             None => {

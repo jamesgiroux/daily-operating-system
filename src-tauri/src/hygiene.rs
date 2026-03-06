@@ -279,7 +279,10 @@ fn fix_unknown_relationships(
     let mut details = Vec::new();
     for person in &people {
         let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
-        if new_rel != "unknown" && db.update_person_relationship(&person.id, &new_rel).is_ok() {
+        if new_rel != "unknown"
+            && crate::services::hygiene::update_person_relationship(db, &person.id, &new_rel)
+                .is_ok()
+        {
             details.push(HygieneFixDetail {
                 fix_type: "relationship_reclassified".to_string(),
                 entity_name: Some(person.name.clone()),
@@ -316,9 +319,11 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
 
         if !path.exists() {
             // File was deleted since indexing — mark so it exits the unsummarized pool
-            let _ = db.conn_ref().execute(
-                "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-                rusqlite::params![&now, "[file not found]", file.id],
+            let _ = crate::services::hygiene::mark_content_index_summary(
+                db,
+                &file.id,
+                &now,
+                "[file not found]",
             );
             continue;
         }
@@ -326,9 +331,8 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
         let (extracted_at, summary) = crate::intelligence::extract_and_summarize(path);
         match (extracted_at, summary) {
             (Some(ext_at), Some(summ)) => {
-                let _ = db.conn_ref().execute(
-                    "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-                    rusqlite::params![ext_at, summ, file.id],
+                let _ = crate::services::hygiene::mark_content_index_summary(
+                    db, &file.id, &ext_at, &summ,
                 );
                 if details.len() < 5 {
                     details.push(HygieneFixDetail {
@@ -342,9 +346,11 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             _ => {
                 // Extraction failed or returned empty — mark as attempted so the file
                 // doesn't reappear as an unsummarized gap on every scan forever.
-                let _ = db.conn_ref().execute(
-                    "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-                    rusqlite::params![&now, "[extraction failed]", file.id],
+                let _ = crate::services::hygiene::mark_content_index_summary(
+                    db,
+                    &file.id,
+                    &now,
+                    "[extraction failed]",
                 );
             }
         }
@@ -381,7 +387,7 @@ fn fix_meeting_counts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let mut fixed = 0;
     let mut details = Vec::new();
     for (person_id, name, old_count, new_count) in &mismatched {
-        if db.recompute_person_meeting_count(person_id).is_ok() {
+        if crate::services::hygiene::recompute_person_meeting_count(db, person_id).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "meeting_count_updated".to_string(),
                 entity_name: Some(name.clone()),
@@ -430,27 +436,21 @@ fn fix_renewal_rollovers(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             Err(_) => continue,
         };
 
-        // Record the implicit renewal event
-        if db
-            .record_account_event(
-                &account.id,
-                "renewal",
-                renewal_date,
-                account.arr,
-                Some("Auto-renewed (no churn recorded)"),
-            )
-            .is_err()
-        {
-            continue;
-        }
-
         // Advance contract_end by 12 months
         let next = parsed + chrono::Months::new(12);
         let next_str = next.format("%Y-%m-%d").to_string();
-        let _ = db.conn_ref().execute(
-            "UPDATE accounts SET contract_end = ?1 WHERE id = ?2",
-            rusqlite::params![next_str, account.id],
-        );
+        if crate::services::hygiene::rollover_account_renewal(
+            db,
+            &account.id,
+            &account.name,
+            renewal_date,
+            account.arr,
+            &next_str,
+        )
+        .is_err()
+        {
+            continue;
+        }
         details.push(HygieneFixDetail {
             fix_type: "renewal_rolled_over".to_string(),
             entity_name: Some(account.name.clone()),
@@ -475,7 +475,7 @@ fn retry_abandoned_quill_syncs(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) 
     let mut retried = 0;
     let mut details = Vec::new();
     for sync_row in &syncs {
-        if db.reset_quill_sync_for_retry(&sync_row.id).is_ok() {
+        if crate::services::hygiene::reset_quill_sync_for_retry(db, &sync_row.id).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "quill_sync_retried".to_string(),
                 entity_name: Some(sync_row.meeting_id.clone()),
@@ -720,7 +720,9 @@ pub fn resolve_names_from_emails(
                 }
 
                 let person_id = crate::util::person_id_from_email(&addr);
-                if db.update_person_name(&person_id, &display_name).is_ok() {
+                if crate::services::hygiene::update_person_name(db, &person_id, &display_name)
+                    .is_ok()
+                {
                     details.push(HygieneFixDetail {
                         fix_type: "name_resolved".to_string(),
                         entity_name: Some(display_name.clone()),
@@ -799,9 +801,15 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail
         // Match against account hints
         for (hint, account_id, account_name) in &account_hints {
             if (&domain_base == hint || (hint.len() >= 4 && domain_base.contains(hint.as_str())))
-                && db
-                    .link_person_to_entity(&person.id, account_id, "associated")
-                    .is_ok()
+                && crate::services::hygiene::link_person_to_entity(
+                    db,
+                    &person.id,
+                    account_id,
+                    "associated",
+                    0.75,
+                    &format!("domain:{} account:{}", domain, account_name),
+                )
+                .is_ok()
             {
                 details.push(HygieneFixDetail {
                     fix_type: "person_linked_by_domain".to_string(),
@@ -909,7 +917,9 @@ fn dedup_people_by_domain_alias(
 
         let keep = sorted[0];
         for &remove in &sorted[1..] {
-            if db.merge_people(&keep.id, &remove.id).is_ok() {
+            if crate::services::hygiene::merge_people(db, &keep.id, &remove.id, "hygiene_alias")
+                .is_ok()
+            {
                 if details.len() < 5 {
                     details.push(HygieneFixDetail {
                         fix_type: "people_deduped_by_alias".to_string(),
@@ -935,7 +945,7 @@ fn dedup_people_by_domain_alias(
 /// Auto-merge duplicate people with confidence >= 0.95.
 ///
 /// Uses `detect_duplicate_people()` to find candidates, then merges each pair
-/// via `db.merge_people()`. Keeps the person with the higher meeting count.
+/// via the people-merge persistence path. Keeps the person with the higher meeting count.
 /// Capped at 10 merges per scan to prevent cascades.
 fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let candidates = match detect_duplicate_people(db) {
@@ -979,9 +989,11 @@ fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             }
         };
 
-        if db.merge_people(&keep_id, &remove_id).is_ok() {
+        if crate::services::hygiene::merge_people(db, &keep_id, &remove_id, "hygiene_auto_merge")
+            .is_ok()
+        {
             // Emit audit signal on the kept person
-            let _ = crate::services::signals::emit(
+            if let Err(err) = crate::services::signals::emit(
                 db,
                 "person",
                 &keep_id,
@@ -989,7 +1001,9 @@ fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
                 "hygiene",
                 Some(&format!("merged {} into {}", remove_name, keep_name)),
                 candidate.confidence as f64,
-            );
+            ) {
+                log::warn!("hygiene auto-merged signal failed for {}: {}", keep_id, err);
+            }
 
             already_merged.insert(remove_id.clone());
             already_merged.insert(keep_id.clone());
@@ -1053,26 +1067,20 @@ fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let mut details = Vec::new();
 
     for (person_id, person_name, entity_id, account_name, shared_count) in &candidates {
-        if db
-            .link_person_to_entity(person_id, entity_id, "co-attendee")
-            .is_ok()
-        {
-            let confidence = match *shared_count {
+        if crate::services::hygiene::link_person_to_entity(
+            db,
+            person_id,
+            entity_id,
+            "co-attendee",
+            match *shared_count {
                 3..=4 => 0.75,
                 5..=9 => 0.85,
                 _ => 0.95,
-            };
-
-            let _ = crate::services::signals::emit(
-                db,
-                "person",
-                person_id,
-                "account_linked",
-                "hygiene",
-                Some(&format!("{} meetings with {}", shared_count, account_name)),
-                confidence,
-            );
-
+            },
+            &format!("{} meetings with {}", shared_count, account_name),
+        )
+        .is_ok()
+        {
             if details.len() < 5 {
                 details.push(HygieneFixDetail {
                     fix_type: "person_linked_co_attendance".to_string(),
@@ -1126,7 +1134,7 @@ fn resolve_names_from_calendar(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) 
     let mut details = Vec::new();
 
     for (person_id, email, display_name) in &candidates {
-        if db.update_person_name(person_id, display_name).is_ok() {
+        if crate::services::hygiene::update_person_name(db, person_id, display_name).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "name_resolved_calendar".to_string(),
                 entity_name: Some(display_name.clone()),
@@ -2379,13 +2387,11 @@ fn detect_low_confidence_matches(
                     "source": entity.source,
                 })
                 .to_string();
-                let _ = crate::services::signals::emit(
+                let _ = crate::services::hygiene::emit_low_confidence_match(
                     db,
                     entity.entity_type.as_str(),
                     &entity.entity_id,
-                    "low_confidence_match",
-                    "heuristic",
-                    Some(&value),
+                    &value,
                     entity.confidence,
                 );
 
