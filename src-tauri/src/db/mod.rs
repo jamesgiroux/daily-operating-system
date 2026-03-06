@@ -67,6 +67,13 @@ impl ActionDb {
     where
         F: FnOnce(&Self) -> Result<T, String>,
     {
+        // Nested transaction support: if we're already inside a transaction on this
+        // connection, execute the closure directly so all writes stay in the
+        // caller's transaction boundary.
+        if !self.conn.is_autocommit() {
+            return f(self);
+        }
+
         self.conn
             .execute_batch("BEGIN IMMEDIATE")
             .map_err(|e| format!("Failed to begin transaction: {e}"))?;
@@ -435,10 +442,7 @@ impl ActionDb {
 
             if canonical_exists > 0 {
                 // CASCADE will clean up meeting_prep and meeting_transcripts
-                conn.execute(
-                    "DELETE FROM meetings WHERE id = ?1",
-                    params![old_id],
-                )?;
+                conn.execute("DELETE FROM meetings WHERE id = ?1", params![old_id])?;
             }
         }
         Ok(())
