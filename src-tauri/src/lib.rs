@@ -157,6 +157,7 @@ pub fn run() {
 
             // Manage the state
             app.manage(state.clone());
+            app.manage(crate::services::ServiceLayer::new(state.clone()));
 
             // Defer startup workspace sync/indexing so app setup stays responsive.
             let startup_state = state.clone();
