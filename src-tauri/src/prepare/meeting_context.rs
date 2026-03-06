@@ -1773,8 +1773,7 @@ mod tests {
     #[test]
     fn test_guess_account_name_child_by_title_normalized() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         // Title uses spaces while directory uses hyphens.
         let meeting = json!({
@@ -1783,10 +1782,7 @@ mod tests {
         });
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Globex/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]
@@ -1806,52 +1802,40 @@ mod tests {
     #[test]
     fn test_find_account_dir_by_name_normalized() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         let matched = find_account_dir_by_name("Digital Marketing Technology", dir.path())
             .expect("should match normalized BU name");
 
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Globex/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]
     fn test_find_account_dir_by_name_prefers_child_over_top_level_duplicate() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
-        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         let matched = find_account_dir_by_name("Digital-Marketing-Technology", dir.path())
             .expect("should match child BU dir first");
 
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Globex/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]
     fn test_find_account_dir_by_id_hint_prefers_parent_child_path() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
-        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         let matched =
             find_account_dir_by_id_hint("globex--digital-marketing-technology", dir.path())
                 .expect("should resolve parent/child from id hint");
 
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Globex/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]
