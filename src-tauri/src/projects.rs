@@ -202,8 +202,7 @@ pub fn write_project_markdown(
 
     // === Intelligence sections (I134 — from intelligence.json) ===
 
-    let intel_dir = project_dir(workspace, &project.name);
-    if let Ok(intel) = crate::intelligence::read_intelligence_json(&intel_dir) {
+    if let Some(intel) = db.get_entity_intelligence(&project.id).ok().flatten() {
         let intel_md = crate::intelligence::format_intelligence_markdown(&intel);
         if !intel_md.is_empty() {
             md.push_str(&intel_md);
