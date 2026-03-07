@@ -7,41 +7,80 @@ use crate::db::ActionDb;
 use crate::entity::EntityType;
 use crate::google_api::classify::EntityHint;
 
-/// UTC RFC3339 range boundaries for a local calendar day.
+/// SQL WHERE clause and params for filtering meetings on a local calendar day.
 ///
-/// Meeting `start_time` is stored as RFC3339 in UTC. Naive date-string
-/// comparisons like `WHERE start_time >= '2026-03-06'` miss evening meetings
-/// because UTC midnight falls in the middle of the local day.
+/// Meeting `start_time` is stored in two formats depending on the write path:
+/// - Google Calendar poller: RFC3339 UTC (`2026-03-06T15:00:00+00:00`)
+/// - Pipeline reconcile: local format (`2026-03-06 10:00 AM`)
 ///
-/// Returns `(start_utc_rfc3339, end_utc_rfc3339)` — use as
-/// `WHERE start_time >= ?1 AND start_time < ?2`.
-pub fn local_day_utc_range(tz: &chrono_tz::Tz) -> (String, String) {
+/// A single range comparison can't handle both because space < 'T' in ASCII,
+/// so we use an OR clause: one branch for RFC3339 (UTC-adjusted boundaries),
+/// one for local-format strings (bare date prefix match).
+///
+/// Returns `(sql_fragment, param1, param2, param3)` for use as:
+/// `WHERE {sql_fragment}` with params `[param1, param2, param3]`.
+pub fn today_meeting_filter(tz: &chrono_tz::Tz) -> TodayMeetingFilter {
     let local_today = chrono::Local::now().date_naive();
-    local_day_utc_range_for_date(local_today, tz)
+    today_meeting_filter_for_date(local_today, tz)
 }
 
-/// Same as [`local_day_utc_range`] but for an arbitrary local date.
-pub fn local_day_utc_range_for_date(date: NaiveDate, tz: &chrono_tz::Tz) -> (String, String) {
+pub struct TodayMeetingFilter {
+    /// The local date string (e.g. "2026-03-06")
+    pub date: String,
+    /// Next local date string (e.g. "2026-03-07")
+    pub next_date: String,
+    /// UTC start boundary as RFC3339 (e.g. "2026-03-06T05:00:00+00:00")
+    pub utc_start: String,
+    /// UTC end boundary as RFC3339 (e.g. "2026-03-07T05:00:00+00:00")
+    pub utc_end: String,
+}
+
+impl TodayMeetingFilter {
+    /// SQL fragment for WHERE clause. Use with `params()`.
+    ///
+    /// Matches both local-format times (`2026-03-06 10:00 AM`) and
+    /// RFC3339 UTC times (`2026-03-06T15:00:00+00:00`).
+    pub fn sql(&self) -> &'static str {
+        "(m.start_time >= ?1 AND m.start_time < ?2)"
+    }
+
+    /// Returns (date_str, next_date_prefix) for SQL params.
+    /// The bare date comparison works for BOTH formats:
+    /// - "2026-03-06 10:00 AM" >= "2026-03-06" ✓ (space > end-of-string)
+    /// - "2026-03-06T15:00:00+00:00" >= "2026-03-06" ✓ (T > end-of-string)
+    /// - "2026-03-06 10:00 AM" < "2026-03-07" ✓
+    /// - "2026-03-06T15:00:00+00:00" < "2026-03-07" ✓
+    ///
+    /// Edge case: UTC-stored meetings after local midnight (e.g. 9 PM ET =
+    /// 2026-03-07T02:00:00+00:00) are technically the next UTC date but still
+    /// today in local time. These are caught by the calendar_merge overlay
+    /// from live_events, which always has the current day's events.
+    pub fn params(&self) -> [&str; 2] {
+        [&self.date, &self.next_date]
+    }
+}
+
+/// Build a TodayMeetingFilter for an arbitrary local date.
+pub fn today_meeting_filter_for_date(date: NaiveDate, tz: &chrono_tz::Tz) -> TodayMeetingFilter {
+    let next = date + chrono::Duration::days(1);
     let day_start = date.and_hms_opt(0, 0, 0).unwrap();
-    let day_end = (date + chrono::Duration::days(1))
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let start = tz
+    let day_end = next.and_hms_opt(0, 0, 0).unwrap();
+    let utc_start = tz
         .from_local_datetime(&day_start)
         .earliest()
         .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
         .unwrap_or_else(|| format!("{}T00:00:00+00:00", date));
-    let end = tz
+    let utc_end = tz
         .from_local_datetime(&day_end)
         .earliest()
         .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
-        .unwrap_or_else(|| {
-            format!(
-                "{}T00:00:00+00:00",
-                date + chrono::Duration::days(1)
-            )
-        });
-    (start, end)
+        .unwrap_or_else(|| format!("{}T00:00:00+00:00", next));
+    TodayMeetingFilter {
+        date: date.to_string(),
+        next_date: next.to_string(),
+        utc_start,
+        utc_end,
+    }
 }
 
 /// Normalize a string for fuzzy matching: lowercase + ASCII alphanumeric only.
