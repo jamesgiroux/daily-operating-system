@@ -1597,10 +1597,22 @@ fn build_intelligence_prompt_inner(
     // I396: Intelligence report fields for CS health tracking
     prompt.push_str(
         ",\n\
-           \"healthScore\": \"number 0-100. Overall account health score. Only populate when the \
-         account has 3+ signals and 2+ meetings. Return null for sparse accounts.\",\n\
-           \"healthTrend\": {\"direction\": \"improving|stable|declining|volatile\", \
-         \"rationale\": \"1 sentence explaining trend direction\"},\n\
+           \"health\": {\n\
+             \"score\": \"number 0-100. Return only when account has sufficient evidence; omit for sparse accounts.\",\n\
+             \"band\": \"green|yellow|red\",\n\
+             \"source\": \"computed\",\n\
+             \"confidence\": \"number 0.0-1.0\",\n\
+             \"trend\": {\"direction\": \"improving|stable|declining|volatile\", \"rationale\": \"1 sentence\", \"timeframe\": \"30d|90d\", \"confidence\": \"number 0.0-1.0\"},\n\
+             \"dimensions\": {\n\
+               \"meetingCadence\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+               \"emailEngagement\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+               \"stakeholderCoverage\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+               \"championHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+               \"financialProximity\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+               \"signalMomentum\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"}\n\
+             },\n\
+             \"recommendedActions\": [\"specific next action\"]\n\
+           },\n\
            \"valueDelivered\": [{\"date\": \"ISO date\", \"statement\": \"what value was delivered\", \
          \"source\": \"evidence source\", \"impact\": \"business impact\"}],\n\
            \"successMetrics\": [{\"name\": \"KPI name\", \"target\": \"target value\", \
@@ -1626,7 +1638,7 @@ fn build_intelligence_prompt_inner(
          - unknown = person not present in available transcripts\n\n\
          Max 3 nextMeetingReadiness.prepItems. Each should answer ONLY: \
          \"What do I need to do or ask before/during this meeting?\"\n\n\
-         For healthScore, healthTrend, successMetrics, openCommitments, and relationshipDepth: \
+         For health, successMetrics, openCommitments, and relationshipDepth: \
          return null/empty when the account has fewer than 2 signals. Do NOT hallucinate values \
          for sparse accounts. valueDelivered should include completed commitments and wins. \
          When the user's professional context includes a value proposition, frame valueDelivered \
@@ -1675,10 +1687,13 @@ struct AiIntelResponse {
     /// Auto-extracted keywords for entity resolution (I305).
     #[serde(default)]
     keywords: Vec<String>,
-    /// I396: Health score (0-100).
+    /// ADR-0097 structured account health payload.
+    #[serde(default)]
+    health: Option<super::io::AccountHealth>,
+    /// Legacy I396: health score (0-100).
     #[serde(default)]
     health_score: Option<f64>,
-    /// I396: Health trend direction + rationale.
+    /// Legacy I396: health trend direction + rationale.
     #[serde(default)]
     health_trend: Option<AiHealthTrend>,
     /// I396: Success metrics / KPIs the user tracks.
@@ -1699,6 +1714,39 @@ struct AiHealthTrend {
     direction: String,
     #[serde(default)]
     rationale: Option<String>,
+}
+
+fn legacy_health_to_account_health(
+    health_score: Option<f64>,
+    health_trend: Option<AiHealthTrend>,
+) -> Option<super::io::AccountHealth> {
+    let score = health_score?;
+    let band = if score >= 70.0 {
+        "green"
+    } else if score >= 40.0 {
+        "yellow"
+    } else {
+        "red"
+    };
+    Some(super::io::AccountHealth {
+        score,
+        band: band.to_string(),
+        source: super::io::HealthSource::Computed,
+        confidence: 0.3,
+        trend: super::io::HealthTrend {
+            direction: health_trend
+                .as_ref()
+                .map(|t| t.direction.clone())
+                .unwrap_or_else(|| "stable".to_string()),
+            rationale: health_trend.and_then(|t| t.rationale),
+            timeframe: "30d".to_string(),
+            confidence: 0.3,
+        },
+        dimensions: super::io::RelationshipDimensions::default(),
+        divergence: None,
+        narrative: None,
+        recommended_actions: Vec::new(),
+    })
 }
 
 /// I396: A success metric / KPI tracked for an entity.
@@ -1937,9 +1985,9 @@ pub fn parse_intelligence_response(
     if let Some(ref mut readiness) = intel.next_meeting_readiness {
         readiness.prep_items.truncate(10);
     }
-    // I396: Clamp health_score to 0-100 range
-    if let Some(ref mut score) = intel.health_score {
-        *score = score.clamp(0.0, 100.0);
+    // ADR-0097: Clamp structured health score to 0-100 range.
+    if let Some(ref mut health) = intel.health {
+        health.score = health.score.clamp(0.0, 100.0);
     }
     if let Some(ref mut metrics) = intel.success_metrics {
         metrics.truncate(20);
@@ -2199,11 +2247,10 @@ fn try_parse_json_response(
             cluster_summary: n.cluster_summary,
         }),
         user_edits: Vec::new(),
-        health_score: ai_resp.health_score,
-        health_trend: ai_resp.health_trend.map(|ht| super::io::HealthTrend {
-            direction: ht.direction,
-            rationale: ht.rationale,
-        }),
+        health: ai_resp
+            .health
+            .or_else(|| legacy_health_to_account_health(ai_resp.health_score, ai_resp.health_trend)),
+        org_health: None,
         success_metrics: ai_resp.success_metrics.map(|metrics| {
             metrics
                 .into_iter()

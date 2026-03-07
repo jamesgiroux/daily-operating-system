@@ -1278,6 +1278,70 @@ export interface PersonRelationshipEdge {
   lastReinforcedAt?: string;
 }
 
+/** ADR-0097: Structured health model used in entity intelligence payloads. */
+export interface IntelligenceAccountHealth {
+  score: number;
+  band: "green" | "yellow" | "red";
+  source: "org" | "computed" | "userSet";
+  confidence: number;
+  trend: IntelligenceHealthTrend;
+  dimensions: RelationshipDimensions;
+  divergence?: HealthDivergence | null;
+  narrative?: string | null;
+  recommendedActions?: string[];
+}
+
+export interface IntelligenceHealthTrend {
+  direction: "improving" | "stable" | "declining" | "volatile";
+  rationale?: string | null;
+  timeframe?: string;
+  confidence?: number;
+}
+
+export interface RelationshipDimensions {
+  meetingCadence: DimensionScore;
+  emailEngagement: DimensionScore;
+  stakeholderCoverage: DimensionScore;
+  championHealth: DimensionScore;
+  financialProximity: DimensionScore;
+  signalMomentum: DimensionScore;
+}
+
+export interface DimensionScore {
+  score: number;
+  weight: number;
+  evidence?: string[];
+  trend: "improving" | "stable" | "declining";
+}
+
+export interface HealthDivergence {
+  severity: "minor" | "notable" | "critical";
+  description: string;
+  leadingIndicator: boolean;
+}
+
+export interface OrgHealthData {
+  healthBand?: string;
+  healthScore?: number;
+  renewalLikelihood?: string;
+  growthTier?: string;
+  customerStage?: string;
+  supportTier?: string;
+  icpFit?: string;
+  source: string;
+  gatheredAt: string;
+}
+
+export interface TranscriptSentiment {
+  overall: string;
+  customer?: string;
+  engagement?: string;
+  forwardLooking?: boolean;
+  competitorMentions?: string[];
+  championPresent?: string;
+  championEngaged?: string;
+}
+
 /** Synthesized intelligence for an entity (account, project, or person). */
 export interface EntityIntelligence {
   version: number;
@@ -1298,10 +1362,10 @@ export interface EntityIntelligence {
   /** Network intelligence for person entities (I391) */
   network?: NetworkIntelligence;
   userEdits?: UserEdit[];
-  /** I396: Account health score (0-100). Null for sparse accounts. */
-  healthScore?: number | null;
-  /** I396: Health trend direction + rationale. */
-  healthTrend?: { direction: string; rationale?: string } | null;
+  /** ADR-0097 structured health payload. */
+  health?: IntelligenceAccountHealth | null;
+  /** I500 org-health baseline payload (when available). */
+  orgHealth?: OrgHealthData | null;
   /** I396: Value delivered to the account. */
   valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string }> | null;
   /** I396: Success metrics / KPIs tracked for this entity. */
