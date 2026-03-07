@@ -355,6 +355,7 @@ pub fn upsert_person_relationship(
             context_entity_id,
             context_entity_type,
             source,
+            rationale: None,
         })
         .map_err(|e| format!("Failed to upsert relationship: {}", e))?;
 

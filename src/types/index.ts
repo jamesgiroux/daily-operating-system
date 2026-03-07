@@ -1273,6 +1273,7 @@ export interface PersonRelationshipEdge {
   contextEntityType?: string;
   contextEntityName?: string;
   source: string;
+  rationale?: string;
   createdAt: string;
   updatedAt: string;
   lastReinforcedAt?: string;
