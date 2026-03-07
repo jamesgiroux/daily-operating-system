@@ -224,9 +224,11 @@ pub async fn get_account_detail(
                 } else {
                     (None, Vec::new(), None)
                 };
-                // Read intelligence.json (ADR-0057), migrate from CompanyOverview if needed
-                let intel = crate::intelligence::read_intelligence_json(&account_dir)
+                // Read intelligence from DB (I513), fall back to legacy migration
+                let intel = db
+                    .get_entity_intelligence(&account_id)
                     .ok()
+                    .flatten()
                     .or_else(|| {
                         // Auto-migrate from legacy CompanyOverview on first access
                         ov.as_ref().and_then(|overview| {

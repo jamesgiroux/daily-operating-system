@@ -5,7 +5,6 @@
 
 use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::read_intelligence_json;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -68,9 +67,9 @@ pub struct EbrQbrContent {
 fn build_ebr_qbr_prompt(
     entity_name: &str,
     db: &ActionDb,
-    workspace: &std::path::Path,
+    _workspace: &std::path::Path,
     entity_id: &str,
-    account: Option<&crate::db::DbAccount>,
+    _account: Option<&crate::db::DbAccount>,
     active_preset: &str,
     context_provider: &dyn ContextProvider,
 ) -> String {
@@ -98,10 +97,7 @@ fn build_ebr_qbr_prompt(
         "leadership" => "executive-facing",
         _ => "customer-facing",
     };
-    let prior = account.and_then(|a| {
-        let dir = crate::accounts::resolve_account_dir(workspace, a);
-        read_intelligence_json(&dir).ok()
-    });
+    let prior = db.get_entity_intelligence(entity_id).ok().flatten();
 
     let ctx = context_provider
         .gather_entity_context(db, entity_id, "account", prior.as_ref())

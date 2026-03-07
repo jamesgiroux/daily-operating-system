@@ -14,7 +14,7 @@ use std::path::PathBuf;
 
 use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::{read_intelligence_json, IntelligenceContext};
+use crate::intelligence::IntelligenceContext;
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::{AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover};
 use crate::util::{atomic_write_str, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
@@ -325,8 +325,8 @@ pub fn gather_risk_input(
 
     let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
 
-    // Gather context via ContextProvider (Glean-aware)
-    let prior_intel = read_intelligence_json(&account_dir).ok();
+    // Gather context via ContextProvider (Glean-aware), read from DB (I513)
+    let prior_intel = db.get_entity_intelligence(account_id).ok().flatten();
     let ctx = context_provider
         .gather_entity_context(db, account_id, "account", prior_intel.as_ref())
         .unwrap_or_default();
