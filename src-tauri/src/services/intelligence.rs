@@ -53,13 +53,31 @@ pub async fn enrich_entity(
         .map_err(|_| "Heavy work semaphore closed".to_string())?;
     let input_for_enrichment = input.clone();
     let ai_config_for_enrichment = ai_config.clone();
-    let intel = tauri::async_runtime::spawn_blocking(move || {
+    let parsed = tauri::async_runtime::spawn_blocking(move || {
         run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
     })
     .await
     .map_err(|e| format!("Enrichment task panicked: {}", e))??;
 
-    let final_intel = write_enrichment_results(state, &input, &intel, Some(&ai_config))?;
+    let final_intel = write_enrichment_results(state, &input, &parsed.intel, Some(&ai_config))?;
+    if !parsed.inferred_relationships.is_empty() {
+        let engine = state.signals.engine.clone();
+        let entity_id_for_persist = input.entity_id.clone();
+        let entity_type_for_persist = input.entity_type.clone();
+        let inferred = parsed.inferred_relationships.clone();
+        state
+            .db_write(move |db| {
+                upsert_inferred_relationships_from_enrichment(
+                    db,
+                    engine.as_ref(),
+                    &entity_type_for_persist,
+                    &entity_id_for_persist,
+                    &inferred,
+                )
+                .map(|_| ())
+            })
+            .await?;
+    }
 
     Ok(final_intel)
 }
@@ -122,6 +140,108 @@ pub fn upsert_assessment_from_enrichment(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
+    })
+}
+
+/// Persist AI-inferred person relationships for an enrichment run (I504).
+///
+/// - Skips invalid/self edges.
+/// - Never overwrites strong user-confirmed edges.
+/// - Uses deterministic IDs so re-enrichment reinforces instead of duplicating.
+/// - Emits `relationship_inferred` only when creating a new AI edge.
+pub fn upsert_inferred_relationships_from_enrichment(
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    inferred: &[crate::intelligence::prompts::InferredRelationship],
+) -> Result<usize, String> {
+    if inferred.is_empty() {
+        return Ok(0);
+    }
+
+    db.with_transaction(|tx| {
+        let mut inserted = 0usize;
+
+        for rel in inferred {
+            if rel.from_person_id.trim().is_empty()
+                || rel.to_person_id.trim().is_empty()
+                || rel.from_person_id == rel.to_person_id
+            {
+                continue;
+            }
+
+            if rel
+                .relationship_type
+                .parse::<crate::db::person_relationships::RelationshipType>()
+                .is_err()
+            {
+                log::warn!(
+                    "intelligence service: skipping invalid inferred relationship type '{}'",
+                    rel.relationship_type
+                );
+                continue;
+            }
+
+            let direction = if rel.relationship_type == "manager" {
+                "directed"
+            } else {
+                "symmetric"
+            };
+            let mut from_person_id = rel.from_person_id.clone();
+            let mut to_person_id = rel.to_person_id.clone();
+            if direction == "symmetric" && from_person_id > to_person_id {
+                std::mem::swap(&mut from_person_id, &mut to_person_id);
+            }
+
+            let existing = tx
+                .get_relationships_between(&from_person_id, &to_person_id)
+                .map_err(|e| format!("relationship lookup failed: {e}"))?;
+            if existing
+                .iter()
+                .any(|r| r.source == "user_confirmed" && r.confidence >= 0.8)
+            {
+                continue;
+            }
+
+            let existing_ai = existing.iter().find(|r| r.source == "ai_enrichment");
+            let relationship_id = existing_ai
+                .map(|r| r.id.clone())
+                .unwrap_or_else(|| format!("pr-ai-{from_person_id}-{to_person_id}"));
+
+            tx.upsert_person_relationship(&crate::db::person_relationships::UpsertRelationship {
+                id: &relationship_id,
+                from_person_id: &from_person_id,
+                to_person_id: &to_person_id,
+                relationship_type: &rel.relationship_type,
+                direction,
+                confidence: 0.6,
+                context_entity_id: Some(entity_id),
+                context_entity_type: Some(entity_type),
+                source: "ai_enrichment",
+                rationale: rel.rationale.as_deref(),
+            })
+            .map_err(|e| format!("relationship upsert failed: {e}"))?;
+
+            if existing_ai.is_none() {
+                let signal_value =
+                    format!("{from_person_id} -> {to_person_id} ({})", rel.relationship_type);
+                crate::services::signals::emit_and_propagate(
+                    tx,
+                    engine,
+                    entity_type,
+                    entity_id,
+                    "relationship_inferred",
+                    "ai_enrichment",
+                    Some(signal_value.as_str()),
+                    0.6,
+                )
+                .map_err(|e| format!("relationship_inferred signal failed: {e}"))?;
+                inserted += 1;
+            }
+        }
+
+        Ok(inserted)
     })
 }
 
@@ -370,6 +490,139 @@ pub fn save_risk_briefing(
     let workspace = std::path::Path::new(&config.workspace_path);
     let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
     crate::risk_briefing::write_risk_briefing(&account_dir, briefing)
+}
+
+#[cfg(test)]
+mod inferred_relationship_tests {
+    use super::upsert_inferred_relationships_from_enrichment;
+    use crate::db::person_relationships::UpsertRelationship;
+    use crate::db::test_utils::test_db;
+    use crate::intelligence::prompts::InferredRelationship;
+
+    fn seed_people(db: &crate::db::ActionDb) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p1', 'p1@example.com', 'Alice', '2026-03-01T00:00:00Z')",
+                [],
+            )
+            .expect("seed p1");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p2', 'p2@example.com', 'Bob', '2026-03-01T00:00:00Z')",
+                [],
+            )
+            .expect("seed p2");
+    }
+
+    #[test]
+    fn upsert_inferred_relationships_inserts_and_reinforces_without_duplicates() {
+        let db = test_db();
+        seed_people(&db);
+        let engine = crate::signals::propagation::PropagationEngine::default();
+        let inferred = vec![InferredRelationship {
+            from_person_id: "p1".to_string(),
+            to_person_id: "p2".to_string(),
+            relationship_type: "collaborator".to_string(),
+            rationale: Some("They co-own onboarding rollout workstreams.".to_string()),
+        }];
+
+        let inserted = upsert_inferred_relationships_from_enrichment(
+            &db,
+            &engine,
+            "account",
+            "acc-1",
+            &inferred,
+        )
+        .expect("first upsert");
+        assert_eq!(inserted, 1);
+
+        let rels = db
+            .get_relationships_between("p1", "p2")
+            .expect("relationship query");
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].source, "ai_enrichment");
+        assert!((rels[0].confidence - 0.6).abs() < f64::EPSILON);
+        assert_eq!(rels[0].direction, "symmetric");
+        assert_eq!(rels[0].context_entity_id.as_deref(), Some("acc-1"));
+        assert_eq!(
+            rels[0].rationale.as_deref(),
+            Some("They co-own onboarding rollout workstreams.")
+        );
+
+        let signal_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_type = 'account'
+                   AND entity_id = 'acc-1'
+                   AND signal_type = 'relationship_inferred'
+                   AND source = 'ai_enrichment'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("signal count");
+        assert_eq!(signal_count, 1);
+
+        let inserted_second = upsert_inferred_relationships_from_enrichment(
+            &db,
+            &engine,
+            "account",
+            "acc-1",
+            &inferred,
+        )
+        .expect("second upsert");
+        assert_eq!(inserted_second, 0, "re-enrichment should reinforce, not duplicate");
+        assert_eq!(
+            db.get_relationships_between("p1", "p2")
+                .expect("relationship query 2")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn upsert_inferred_relationships_skips_strong_user_confirmed_edges() {
+        let db = test_db();
+        seed_people(&db);
+        let engine = crate::signals::propagation::PropagationEngine::default();
+        db.upsert_person_relationship(&UpsertRelationship {
+            id: "rel-user-1",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "peer",
+            direction: "symmetric",
+            confidence: 0.9,
+            context_entity_id: Some("acc-1"),
+            context_entity_type: Some("account"),
+            source: "user_confirmed",
+            rationale: None,
+        })
+        .expect("seed user relationship");
+
+        let inferred = vec![InferredRelationship {
+            from_person_id: "p1".to_string(),
+            to_person_id: "p2".to_string(),
+            relationship_type: "manager".to_string(),
+            rationale: Some("Model inferred reporting relationship.".to_string()),
+        }];
+
+        let inserted = upsert_inferred_relationships_from_enrichment(
+            &db,
+            &engine,
+            "account",
+            "acc-1",
+            &inferred,
+        )
+        .expect("upsert");
+        assert_eq!(inserted, 0);
+
+        let rels = db
+            .get_relationships_between("p1", "p2")
+            .expect("relationship query");
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].source, "user_confirmed");
+        assert_eq!(rels[0].relationship_type.to_string(), "peer");
+    }
 }
 
 #[cfg(test)]
