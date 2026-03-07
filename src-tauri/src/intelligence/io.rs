@@ -150,13 +150,157 @@ pub(crate) fn default_network_health() -> String {
 // I396: Intelligence Report Types
 // =============================================================================
 
-/// Health trend direction with rationale (I396).
+/// ADR-0097: Structured account health representation.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountHealth {
+    /// 0-100
+    #[serde(default)]
+    pub score: f64,
+    /// green | yellow | red
+    #[serde(default = "default_health_band")]
+    pub band: String,
+    #[serde(default)]
+    pub source: HealthSource,
+    /// 0.0-1.0
+    #[serde(default)]
+    pub confidence: f64,
+    #[serde(default)]
+    pub trend: HealthTrend,
+    #[serde(default)]
+    pub dimensions: RelationshipDimensions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub divergence: Option<HealthDivergence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub narrative: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recommended_actions: Vec<String>,
+}
+
+/// ADR-0097: Health trend direction with rationale, timeframe, and confidence.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthTrend {
+    #[serde(default = "default_health_trend_direction")]
     pub direction: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
+    #[serde(default = "default_timeframe")]
+    pub timeframe: String,
+    #[serde(default)]
+    pub confidence: f64,
+}
+
+/// ADR-0097: Six-dimension relationship health breakdown.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipDimensions {
+    #[serde(default)]
+    pub meeting_cadence: DimensionScore,
+    #[serde(default)]
+    pub email_engagement: DimensionScore,
+    #[serde(default)]
+    pub stakeholder_coverage: DimensionScore,
+    #[serde(default)]
+    pub champion_health: DimensionScore,
+    #[serde(default)]
+    pub financial_proximity: DimensionScore,
+    #[serde(default)]
+    pub signal_momentum: DimensionScore,
+}
+
+/// ADR-0097: Per-dimension weighted score with supporting evidence.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DimensionScore {
+    #[serde(default)]
+    pub score: f64,
+    #[serde(default)]
+    pub weight: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<String>,
+    #[serde(default = "default_dimension_trend")]
+    pub trend: String,
+}
+
+/// Provenance for account health values.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum HealthSource {
+    Org,
+    #[default]
+    Computed,
+    #[serde(rename = "userSet", alias = "user_set")]
+    UserSet,
+}
+
+/// ADR-0097: Divergence signal between baseline and relationship dimensions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthDivergence {
+    pub severity: String,
+    pub description: String,
+    pub leading_indicator: bool,
+}
+
+/// I500 pluggability surface for external org-health data.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgHealthData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_band: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_likelihood: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub growth_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer_stage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icp_fit: Option<String>,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub gathered_at: String,
+}
+
+/// I509 local transcript sentiment signal shape (owned by I503 types).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSentiment {
+    #[serde(default)]
+    pub overall: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engagement: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forward_looking: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub competitor_mentions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_present: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_engaged: Option<String>,
+}
+
+fn default_health_band() -> String {
+    "yellow".to_string()
+}
+
+fn default_health_trend_direction() -> String {
+    "stable".to_string()
+}
+
+fn default_timeframe() -> String {
+    "30d".to_string()
+}
+
+fn default_dimension_trend() -> String {
+    "stable".to_string()
 }
 
 /// A success metric / KPI tracked for an entity (I396).
@@ -268,13 +412,13 @@ pub struct IntelligenceJson {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_edits: Vec<UserEdit>,
 
-    /// I396: Account health score (0-100). Null for sparse accounts.
+    /// ADR-0097: Structured account health with dimension-level evidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub health_score: Option<f64>,
+    pub health: Option<AccountHealth>,
 
-    /// I396: Health trend direction + rationale.
+    /// I500: Optional external/org health baseline payload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub health_trend: Option<HealthTrend>,
+    pub org_health: Option<OrgHealthData>,
 
     /// I396: Success metrics / KPIs tracked for this entity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -436,7 +580,58 @@ pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
     let path = dir.join(INTEL_FILENAME);
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    let mut value: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+
+    // Legacy compatibility: map healthScore/healthTrend payloads into ADR-0097 health.
+    if value.get("health").is_none() {
+        let legacy_score = value.get("healthScore").and_then(|v| v.as_f64());
+        let legacy_trend = value.get("healthTrend").cloned();
+        if let Some(score) = legacy_score {
+            let direction = legacy_trend
+                .as_ref()
+                .and_then(|v| v.get("direction"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("stable");
+            let rationale = legacy_trend
+                .as_ref()
+                .and_then(|v| v.get("rationale"))
+                .and_then(|v| v.as_str());
+            let band = if score >= 70.0 {
+                "green"
+            } else if score >= 40.0 {
+                "yellow"
+            } else {
+                "red"
+            };
+            let health = serde_json::json!({
+                "score": score,
+                "band": band,
+                "source": "computed",
+                "confidence": 0.3,
+                "trend": {
+                    "direction": direction,
+                    "rationale": rationale,
+                    "timeframe": "30d",
+                    "confidence": 0.3
+                },
+                "dimensions": {
+                    "meetingCadence": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
+                    "emailEngagement": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
+                    "stakeholderCoverage": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
+                    "championHealth": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
+                    "financialProximity": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"},
+                    "signalMomentum": {"score": 0.0, "weight": 0.0, "evidence": [], "trend": "stable"}
+                },
+                "recommendedActions": []
+            });
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("health".to_string(), health);
+            }
+        }
+    }
+
+    serde_json::from_value(value).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
 }
 
 /// Write intelligence.json atomically to an entity directory.
@@ -746,6 +941,34 @@ pub fn migrate_company_overview_to_intelligence(
 // DB Cache Operations
 // =============================================================================
 
+fn synthesize_health_from_legacy(
+    score: Option<f64>,
+    trend_json: Option<&str>,
+) -> Option<AccountHealth> {
+    let score = score?;
+    let trend = trend_json
+        .and_then(|j| serde_json::from_str::<HealthTrend>(j).ok())
+        .unwrap_or_default();
+    let band = if score >= 70.0 {
+        "green"
+    } else if score >= 40.0 {
+        "yellow"
+    } else {
+        "red"
+    };
+    Some(AccountHealth {
+        score,
+        band: band.to_string(),
+        source: HealthSource::Computed,
+        confidence: 0.3,
+        trend,
+        dimensions: RelationshipDimensions::default(),
+        divergence: None,
+        narrative: None,
+        recommended_actions: Vec::new(),
+    })
+}
+
 impl ActionDb {
     /// Insert or update the entity_assessment cache row.
     /// Health/coherence data goes to entity_quality.
@@ -763,10 +986,10 @@ impl ActionDb {
                 current_state_json, stakeholder_insights_json,
                 next_meeting_readiness_json, company_context_json,
                 value_delivered, success_metrics, open_commitments,
-                relationship_depth, consistency_status,
+                relationship_depth, health_json, org_health_json, consistency_status,
                 consistency_findings_json, consistency_checked_at,
                 portfolio_json, network_json, user_edits_json, source_manifest_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -782,6 +1005,8 @@ impl ActionDb {
                 success_metrics = excluded.success_metrics,
                 open_commitments = excluded.open_commitments,
                 relationship_depth = excluded.relationship_depth,
+                health_json = excluded.health_json,
+                org_health_json = excluded.org_health_json,
                 consistency_status = excluded.consistency_status,
                 consistency_findings_json = excluded.consistency_findings_json,
                 consistency_checked_at = excluded.consistency_checked_at,
@@ -805,6 +1030,8 @@ impl ActionDb {
                 serde_json::to_string(&intel.success_metrics).ok(),
                 serde_json::to_string(&intel.open_commitments).ok(),
                 serde_json::to_string(&intel.relationship_depth).ok(),
+                serde_json::to_string(&intel.health).ok(),
+                serde_json::to_string(&intel.org_health).ok(),
                 serde_json::to_string(&intel.consistency_status).ok(),
                 serde_json::to_string(&intel.consistency_findings).ok(),
                 intel.consistency_checked_at,
@@ -815,8 +1042,8 @@ impl ActionDb {
             ],
         )?;
 
-        // 2. entity_quality — health_score + health_trend (if present)
-        if intel.health_score.is_some() {
+        // 2. entity_quality — keep scalar health mirrors for transitional compatibility.
+        if let Some(health) = intel.health.as_ref() {
             conn.execute(
                 "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
                  VALUES (?1, ?2, ?3, ?4)
@@ -826,8 +1053,8 @@ impl ActionDb {
                 rusqlite::params![
                     intel.entity_id,
                     intel.entity_type,
-                    intel.health_score,
-                    serde_json::to_string(&intel.health_trend).ok(),
+                    health.score,
+                    serde_json::to_string(&health.trend).ok(),
                 ],
             )?;
         }
@@ -845,10 +1072,11 @@ impl ActionDb {
                     ea.executive_assessment, ea.risks_json, ea.recent_wins_json,
                     ea.current_state_json, ea.stakeholder_insights_json,
                     ea.next_meeting_readiness_json, ea.company_context_json,
-                    eq.health_score, eq.health_trend, ea.value_delivered,
-                    ea.success_metrics, ea.open_commitments, ea.relationship_depth,
-                    ea.consistency_status, ea.consistency_findings_json, ea.consistency_checked_at,
-                    ea.portfolio_json, ea.network_json, ea.user_edits_json, ea.source_manifest_json
+                    ea.health_json, ea.org_health_json, eq.health_score, eq.health_trend,
+                    ea.value_delivered, ea.success_metrics, ea.open_commitments,
+                    ea.relationship_depth, ea.consistency_status, ea.consistency_findings_json,
+                    ea.consistency_checked_at, ea.portfolio_json, ea.network_json,
+                    ea.user_edits_json, ea.source_manifest_json
              FROM entity_assessment ea
              LEFT JOIN entity_quality eq ON eq.entity_id = ea.entity_id
              WHERE ea.entity_id = ?1",
@@ -861,17 +1089,25 @@ impl ActionDb {
             let stakeholder_json: Option<String> = row.get(8)?;
             let readiness_json: Option<String> = row.get(9)?;
             let company_json: Option<String> = row.get(10)?;
-            let health_trend_json: Option<String> = row.get(12)?;
-            let value_delivered_json: Option<String> = row.get(13)?;
-            let success_metrics_json: Option<String> = row.get(14)?;
-            let open_commitments_json: Option<String> = row.get(15)?;
-            let relationship_depth_json: Option<String> = row.get(16)?;
-            let consistency_status_json: Option<String> = row.get(17)?;
-            let consistency_findings_json: Option<String> = row.get(18)?;
-            let portfolio_json: Option<String> = row.get(20)?;
-            let network_json: Option<String> = row.get(21)?;
-            let user_edits_json: Option<String> = row.get(22)?;
-            let source_manifest_json: Option<String> = row.get(23)?;
+            let health_json: Option<String> = row.get(11)?;
+            let org_health_json: Option<String> = row.get(12)?;
+            let health_score: Option<f64> = row.get(13)?;
+            let health_trend_json: Option<String> = row.get(14)?;
+            let value_delivered_json: Option<String> = row.get(15)?;
+            let success_metrics_json: Option<String> = row.get(16)?;
+            let open_commitments_json: Option<String> = row.get(17)?;
+            let relationship_depth_json: Option<String> = row.get(18)?;
+            let consistency_status_json: Option<String> = row.get(19)?;
+            let consistency_findings_json: Option<String> = row.get(20)?;
+            let portfolio_json: Option<String> = row.get(22)?;
+            let network_json: Option<String> = row.get(23)?;
+            let user_edits_json: Option<String> = row.get(24)?;
+            let source_manifest_json: Option<String> = row.get(25)?;
+
+            let health = health_json
+                .as_deref()
+                .and_then(|j| serde_json::from_str::<AccountHealth>(j).ok())
+                .or_else(|| synthesize_health_from_legacy(health_score, health_trend_json.as_deref()));
 
             Ok(IntelligenceJson {
                 version: 1,
@@ -903,8 +1139,8 @@ impl ActionDb {
                 user_edits: user_edits_json
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
-                health_score: row.get(11)?,
-                health_trend: health_trend_json.and_then(|j| serde_json::from_str(&j).ok()),
+                health,
+                org_health: org_health_json.and_then(|j| serde_json::from_str(&j).ok()),
                 success_metrics: success_metrics_json.and_then(|j| serde_json::from_str(&j).ok()),
                 open_commitments: open_commitments_json.and_then(|j| serde_json::from_str(&j).ok()),
                 relationship_depth: relationship_depth_json
@@ -914,7 +1150,7 @@ impl ActionDb {
                 consistency_findings: consistency_findings_json
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
-                consistency_checked_at: row.get(19)?,
+                consistency_checked_at: row.get(21)?,
             })
         });
 
@@ -1618,8 +1854,8 @@ mod tests {
             portfolio: None,
             network: None,
             user_edits: Vec::new(),
-            health_score: None,
-            health_trend: None,
+            health: None,
+            org_health: None,
             success_metrics: None,
             open_commitments: None,
             relationship_depth: None,
@@ -1934,8 +2170,8 @@ mod tests {
             portfolio: None,
             network: None,
             user_edits: Vec::new(),
-            health_score: None,
-            health_trend: None,
+            health: None,
+            org_health: None,
             success_metrics: None,
             open_commitments: None,
             relationship_depth: None,
