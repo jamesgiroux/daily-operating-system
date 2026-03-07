@@ -1,10 +1,48 @@
 use std::collections::HashSet;
 
+use chrono::{NaiveDate, TimeZone, Utc};
 use rusqlite::params;
 
 use crate::db::ActionDb;
 use crate::entity::EntityType;
 use crate::google_api::classify::EntityHint;
+
+/// UTC RFC3339 range boundaries for a local calendar day.
+///
+/// Meeting `start_time` is stored as RFC3339 in UTC. Naive date-string
+/// comparisons like `WHERE start_time >= '2026-03-06'` miss evening meetings
+/// because UTC midnight falls in the middle of the local day.
+///
+/// Returns `(start_utc_rfc3339, end_utc_rfc3339)` — use as
+/// `WHERE start_time >= ?1 AND start_time < ?2`.
+pub fn local_day_utc_range(tz: &chrono_tz::Tz) -> (String, String) {
+    let local_today = chrono::Local::now().date_naive();
+    local_day_utc_range_for_date(local_today, tz)
+}
+
+/// Same as [`local_day_utc_range`] but for an arbitrary local date.
+pub fn local_day_utc_range_for_date(date: NaiveDate, tz: &chrono_tz::Tz) -> (String, String) {
+    let day_start = date.and_hms_opt(0, 0, 0).unwrap();
+    let day_end = (date + chrono::Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let start = tz
+        .from_local_datetime(&day_start)
+        .earliest()
+        .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
+        .unwrap_or_else(|| format!("{}T00:00:00+00:00", date));
+    let end = tz
+        .from_local_datetime(&day_end)
+        .earliest()
+        .map(|dt| dt.with_timezone(&Utc).to_rfc3339())
+        .unwrap_or_else(|| {
+            format!(
+                "{}T00:00:00+00:00",
+                date + chrono::Duration::days(1)
+            )
+        });
+    (start, end)
+}
 
 /// Normalize a string for fuzzy matching: lowercase + ASCII alphanumeric only.
 pub fn normalize_key(value: &str) -> String {

@@ -76,10 +76,15 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
     }
 
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let tomorrow = (chrono::Local::now() + chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
+    // start_time is stored as RFC3339 in UTC — compute UTC boundaries for local day
+    let tz_for_live: chrono_tz::Tz = state
+        .config
+        .read()
+        .ok()
+        .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(chrono_tz::America::New_York);
+    let (today, tomorrow) = crate::helpers::local_day_utc_range(&tz_for_live);
 
     let snap = match state
         .db_read(move |db| {
@@ -424,14 +429,10 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .parse()
         .unwrap_or(chrono_tz::America::New_York);
 
-    // Query today's meetings from DB
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let tomorrow = (chrono::Local::now() + chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
-
-    let today_clone = today.clone();
-    let tomorrow_clone = tomorrow.clone();
+    // Query today's meetings from DB (UTC-aware range for local day)
+    let (today_utc, tomorrow_utc) = crate::helpers::local_day_utc_range(&tz);
+    let today_clone = today_utc.clone();
+    let tomorrow_clone = tomorrow_utc.clone();
     let db_meetings: Vec<crate::db::DbMeeting> = match state
         .db_read(move |db| {
             let conn = db.conn_ref();
@@ -930,6 +931,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     overview.summary = parts.join(" with ");
 
     // DB-based freshness: check app_state_kv for briefing timestamp, fall back to meeting existence
+    let freshness_today = today_utc.clone();
+    let freshness_tomorrow = tomorrow_utc.clone();
     let freshness = match state
         .db_read(move |db| {
             let conn = db.conn_ref();
@@ -962,7 +965,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM meetings WHERE start_time >= ?1 AND start_time < ?2",
-                    rusqlite::params![today, tomorrow],
+                    rusqlite::params![freshness_today, freshness_tomorrow],
                     |row| row.get(0),
                 )
                 .unwrap_or(0);
@@ -1005,17 +1008,16 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let meeting_linked = if entity_ids.is_empty() {
                 0usize
             } else {
+                let email_today = today_utc.clone();
+                let email_tomorrow = tomorrow_utc.clone();
                 state.db_read(move |db| {
-                        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                        let start = format!("{}T00:00:00", today);
-                        let end = format!("{}T23:59:59", today);
                         let count = entity_ids.iter().filter(|eid| {
                             db.conn_ref()
                                 .query_row(
                                     "SELECT COUNT(*) FROM meeting_entities me
                                      JOIN meetings m ON me.meeting_id = m.id
-                                     WHERE me.entity_id = ?1 AND m.start_time >= ?2 AND m.start_time <= ?3",
-                                    rusqlite::params![eid, start, end],
+                                     WHERE me.entity_id = ?1 AND m.start_time >= ?2 AND m.start_time < ?3",
+                                    rusqlite::params![eid, email_today, email_tomorrow],
                                     |row| row.get::<_, i64>(0),
                                 )
                                 .unwrap_or(0) > 0

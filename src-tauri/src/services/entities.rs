@@ -306,10 +306,13 @@ pub async fn get_executive_intelligence(
 
     // Load today's meetings from DB, merge with live calendar (I513)
     let meetings = {
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let tomorrow = (chrono::Local::now() + chrono::Duration::days(1))
-            .format("%Y-%m-%d")
-            .to_string();
+        let tz_ent: chrono_tz::Tz = config
+            .schedules
+            .today
+            .timezone
+            .parse()
+            .unwrap_or(chrono_tz::America::New_York);
+        let (today, tomorrow) = crate::helpers::local_day_utc_range(&tz_ent);
         let db_meetings: Vec<crate::types::Meeting> = state
             .db_read(move |db| {
                 let conn = db.conn_ref();
