@@ -1446,6 +1446,7 @@ mod tests {
             context_entity_id: None,
             context_entity_type: None,
             source: "user_confirmed",
+            rationale: None,
         })
         .unwrap();
 
@@ -1474,6 +1475,7 @@ mod tests {
             context_entity_id: None,
             context_entity_type: None,
             source: "user_confirmed",
+            rationale: None,
         })
         .unwrap();
 
@@ -1500,6 +1502,7 @@ mod tests {
             context_entity_id: None,
             context_entity_type: None,
             source: "user_confirmed",
+            rationale: None,
         })
         .unwrap();
 
@@ -1526,6 +1529,7 @@ mod tests {
             context_entity_id: None,
             context_entity_type: None,
             source: "user_confirmed",
+            rationale: None,
         })
         .unwrap();
 
@@ -1552,6 +1556,7 @@ mod tests {
             context_entity_id: None,
             context_entity_type: None,
             source: "user_confirmed",
+            rationale: None,
         })
         .unwrap();
 

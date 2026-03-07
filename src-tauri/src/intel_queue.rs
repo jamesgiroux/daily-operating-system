@@ -15,8 +15,9 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::intelligence::{
-    build_intelligence_prompt_with_preset, parse_intelligence_response,
-    write_intelligence_json, IntelligenceJson, SourceManifestEntry,
+    build_intelligence_prompt_with_preset, extract_inferred_relationships,
+    parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
+    SourceManifestEntry,
 };
 use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
@@ -246,6 +247,13 @@ pub struct EnrichmentInput {
     pub file_count: usize,
 }
 
+/// Parsed enrichment output from one model response section.
+#[derive(Debug, Clone)]
+pub struct EnrichmentParseResult {
+    pub intel: IntelligenceJson,
+    pub inferred_relationships: Vec<InferredRelationship>,
+}
+
 /// Background intelligence processor.
 ///
 /// Runs in a loop, checking the queue every `POLL_INTERVAL_SECS`.
@@ -370,11 +378,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         let mut error_categories: HashMap<String, &str> = HashMap::new();
 
         let enrichment_start = Instant::now();
-        let results: Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> = if inputs.len() == 1 {
+        let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> = if inputs.len() == 1 {
             // Single entity — use existing direct path (no batching overhead)
             let (request, input) = inputs.pop().unwrap();
             match run_enrichment(&input, &ai_config) {
-                Ok(intel) => vec![(request, input, intel)],
+                Ok(parsed) => vec![(request, input, parsed)],
                 Err(e) => {
                     let category = categorize_enrichment_error(&e);
                     error_categories.insert(request.entity_id.clone(), category);
@@ -473,7 +481,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         drop(_permit);
 
         // Phase 3 + 4: Write results and emit events for each entity
-        for (request, input, intel) in &results {
+        for (request, input, parsed) in &results {
+            let intel = &parsed.intel;
             // Check for anomalies in the enrichment output (I472)
             if let Ok(serialized) = serde_json::to_string(intel) {
                 let anomalies = crate::intelligence::validation::detect_anomalies(&serialized);
@@ -503,6 +512,34 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         continue;
                     }
                 };
+
+            if !parsed.inferred_relationships.is_empty() {
+                let db = match crate::db::ActionDb::open() {
+                    Ok(db) => db,
+                    Err(e) => {
+                        log::warn!(
+                            "IntelProcessor: failed to open DB for inferred relationship persistence on {}: {}",
+                            request.entity_id,
+                            e
+                        );
+                        continue;
+                    }
+                };
+                if let Err(e) = crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
+                    &db,
+                    state.signals.engine.as_ref(),
+                    &request.entity_type,
+                    &request.entity_id,
+                    &parsed.inferred_relationships,
+                ) {
+                    log::warn!(
+                        "IntelProcessor: failed to persist inferred relationships for {}: {}",
+                        request.entity_id,
+                        e
+                    );
+                    continue;
+                }
+            }
 
             let _ = app.emit(
                 "intelligence-updated",
@@ -756,7 +793,7 @@ fn categorize_enrichment_error(error: &str) -> &'static str {
 pub fn run_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
-) -> Result<IntelligenceJson, String> {
+) -> Result<EnrichmentParseResult, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
         .with_timeout(180)
         .with_nice_priority(10);
@@ -784,18 +821,19 @@ pub fn run_enrichment(
         }
     }
 
-    // NOTE: I391 inferred edge extraction deferred — requires name→ID resolution
-    // to produce valid person_relationships rows (FK constraint on to_person_id).
-    // The AI prompt still requests inferredRelationships for future use once
-    // co-attendee person rosters are included in the prompt context.
-
-    parse_intelligence_response(
+    let inferred_relationships = extract_inferred_relationships(&output.stdout);
+    let intel = parse_intelligence_response(
         &output.stdout,
         &input.entity_id,
         &input.entity_type,
         input.file_count,
         input.file_manifest.clone(),
-    )
+    )?;
+
+    Ok(EnrichmentParseResult {
+        intel,
+        inferred_relationships,
+    })
 }
 
 /// I527: One-shot repair retry when deterministic checks still report
@@ -832,7 +870,7 @@ fn run_consistency_repair_retry(
 fn run_batch_enrichment(
     inputs: Vec<(IntelRequest, EnrichmentInput)>,
     ai_config: &AiModelConfig,
-) -> Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> {
+) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
     let entity_names: Vec<&str> = inputs.iter().map(|(_, i)| i.entity_id.as_str()).collect();
     log::info!(
         "IntelProcessor: running batch enrichment for {} entities: {:?}",
@@ -868,15 +906,15 @@ fn run_batch_enrichment(
     let parsed = parse_batch_response(&output.stdout, &inputs);
 
     // Collect successful parses and entities that need individual fallback
-    let mut results: Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> = Vec::new();
+    let mut results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> = Vec::new();
     let mut fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
 
     // Match parsed results back to inputs by entity_id
-    let mut parsed_map: HashMap<String, IntelligenceJson> = parsed.into_iter().collect();
+    let mut parsed_map: HashMap<String, EnrichmentParseResult> = parsed.into_iter().collect();
 
     for (request, input) in inputs {
-        if let Some(intel) = parsed_map.remove(&input.entity_id) {
-            results.push((request, input, intel));
+        if let Some(parsed_output) = parsed_map.remove(&input.entity_id) {
+            results.push((request, input, parsed_output));
         } else {
             log::warn!(
                 "IntelProcessor: batch parse failed for {}, will retry individually",
@@ -945,12 +983,12 @@ fn build_batch_prompt(inputs: &[(IntelRequest, EnrichmentInput)]) -> String {
 /// Parse a batched PTY response back into per-entity results (I289).
 ///
 /// Splits on `=== RESULT: {entity_id} ===` delimiters and parses each section
-/// independently. Returns a vec of (entity_id, IntelligenceJson) pairs for
+/// independently. Returns a vec of (entity_id, parsed output) pairs for
 /// successfully parsed entities.
 fn parse_batch_response(
     response: &str,
     inputs: &[(IntelRequest, EnrichmentInput)],
-) -> Vec<(String, IntelligenceJson)> {
+) -> Vec<(String, EnrichmentParseResult)> {
     let mut results = Vec::new();
 
     for (_, input) in inputs {
@@ -988,7 +1026,13 @@ fn parse_batch_response(
             input.file_count,
             input.file_manifest.clone(),
         ) {
-            Ok(intel) => results.push((input.entity_id.clone(), intel)),
+            Ok(intel) => results.push((
+                input.entity_id.clone(),
+                EnrichmentParseResult {
+                    inferred_relationships: extract_inferred_relationships(section),
+                    intel,
+                },
+            )),
             Err(e) => {
                 log::warn!(
                     "IntelProcessor: failed to parse batch result for {}: {}",
@@ -1006,12 +1050,12 @@ fn parse_batch_response(
 fn run_individual_fallback(
     inputs: Vec<(IntelRequest, EnrichmentInput)>,
     ai_config: &AiModelConfig,
-) -> Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> {
+) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
     let mut results = Vec::new();
 
     for (request, input) in inputs {
         match run_enrichment(&input, ai_config) {
-            Ok(intel) => results.push((request, input, intel)),
+            Ok(parsed) => results.push((request, input, parsed)),
             Err(e) => {
                 log::warn!(
                     "IntelProcessor: individual fallback failed for {}: {}",
@@ -1799,7 +1843,8 @@ mod tests {
         assert_eq!(results.len(), 2, "Should parse both entities");
         assert_eq!(results[0].0, "acme");
         assert_eq!(results[1].0, "beta");
-        assert_eq!(results[1].1.risks.len(), 1);
+        assert_eq!(results[1].1.intel.risks.len(), 1);
+        assert!(results[0].1.inferred_relationships.is_empty());
     }
 
     #[test]
