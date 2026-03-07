@@ -247,6 +247,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 57,
         sql: include_str!("migrations/057_intelligence_db_columns.sql"),
     },
+    Migration {
+        version: 58,
+        sql: include_str!("migrations/058_health_schema_evolution.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -340,6 +344,17 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
                 "Schema integrity check failed: missing column account_stakeholders.data_source"
                     .to_string(),
             );
+        }
+    }
+
+    if version >= 58 {
+        let assessment_cols = table_columns(conn, "entity_assessment")?;
+        for col in ["health_json", "org_health_json"] {
+            if !assessment_cols.contains(col) {
+                return Err(format!(
+                    "Schema integrity check failed: missing column entity_assessment.{col}"
+                ));
+            }
         }
     }
 
@@ -615,13 +630,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 57,
+            applied, 58,
             "should apply all migrations including intelligence DB columns"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 57);
+        assert_eq!(version, 58);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -1217,16 +1232,16 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v57.
+        // Run migrations — should bootstrap v1 and apply v2 through v58.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 56,
-            "bootstrap should mark v1, then apply 56 pending migrations (v2-v57)"
+            applied, 57,
+            "bootstrap should mark v1, then apply 57 pending migrations (v2-v58)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 57);
+        assert_eq!(version, 58);
 
         // Verify existing data is untouched
         let title: String = conn
@@ -1324,10 +1339,10 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_integrity_check_blocks_invalid_v57_state() {
+    fn test_schema_integrity_check_blocks_invalid_v58_state() {
         let conn = mem_db();
         ensure_schema_version_table(&conn).expect("schema_version table");
-        conn.execute("INSERT INTO schema_version (version) VALUES (57)", [])
+        conn.execute("INSERT INTO schema_version (version) VALUES (58)", [])
             .expect("seed schema version");
 
         let err = run_migrations(&conn).expect_err("invalid schema should fail integrity check");

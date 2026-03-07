@@ -1210,7 +1210,7 @@ fn is_sparse_intelligence(intel: &IntelligenceJson) -> bool {
     let has_state = intel.current_state.as_ref().is_some_and(|s| {
         !s.working.is_empty() || !s.not_working.is_empty() || !s.unknowns.is_empty()
     });
-    let has_health = intel.health_score.is_some() || intel.health_trend.is_some();
+    let has_health = intel.health.is_some();
     let has_metrics = intel
         .success_metrics
         .as_ref()
@@ -1272,11 +1272,11 @@ fn merge_missing_core_fields_from_existing(
     if final_intel.next_meeting_readiness.is_none() && existing.next_meeting_readiness.is_some() {
         final_intel.next_meeting_readiness = existing.next_meeting_readiness.clone();
     }
-    if final_intel.health_score.is_none() {
-        final_intel.health_score = existing.health_score;
+    if final_intel.health.is_none() && existing.health.is_some() {
+        final_intel.health = existing.health.clone();
     }
-    if final_intel.health_trend.is_none() && existing.health_trend.is_some() {
-        final_intel.health_trend = existing.health_trend.clone();
+    if final_intel.org_health.is_none() && existing.org_health.is_some() {
+        final_intel.org_health = existing.org_health.clone();
     }
     if final_intel
         .success_metrics
