@@ -282,7 +282,9 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
             .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
             .and_then(|t| t.parse().ok())
             .unwrap_or(chrono_tz::America::New_York);
-        let (em_start, em_end) = crate::helpers::local_day_utc_range(&email_tz);
+        let tf_em = crate::helpers::today_meeting_filter(&email_tz);
+        let em_start = tf_em.date;
+        let em_end = tf_em.next_date;
         state
             .db_read(move |db| {
                 let count = ids

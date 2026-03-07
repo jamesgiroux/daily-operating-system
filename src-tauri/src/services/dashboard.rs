@@ -76,7 +76,6 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
     }
 
-    // start_time is stored as RFC3339 in UTC — compute UTC boundaries for local day
     let tz_for_live: chrono_tz::Tz = state
         .config
         .read()
@@ -84,7 +83,9 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
         .and_then(|t| t.parse().ok())
         .unwrap_or(chrono_tz::America::New_York);
-    let (today, tomorrow) = crate::helpers::local_day_utc_range(&tz_for_live);
+    let tf_live = crate::helpers::today_meeting_filter(&tz_for_live);
+    let today = tf_live.date;
+    let tomorrow = tf_live.next_date;
 
     let snap = match state
         .db_read(move |db| {
@@ -429,10 +430,13 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .parse()
         .unwrap_or(chrono_tz::America::New_York);
 
-    // Query today's meetings from DB (UTC-aware range for local day)
-    let (today_utc, tomorrow_utc) = crate::helpers::local_day_utc_range(&tz);
-    let today_clone = today_utc.clone();
-    let tomorrow_clone = tomorrow_utc.clone();
+    // Query today's meetings from DB.
+    // start_time is stored in two formats (RFC3339 UTC from calendar poller,
+    // local "YYYY-MM-DD HH:MM AM" from pipeline). Bare date comparison works
+    // for both. Evening UTC edge cases are caught by live calendar merge below.
+    let tf = crate::helpers::today_meeting_filter(&tz);
+    let today_clone = tf.date.clone();
+    let tomorrow_clone = tf.next_date.clone();
     let db_meetings: Vec<crate::db::DbMeeting> = match state
         .db_read(move |db| {
             let conn = db.conn_ref();
@@ -931,8 +935,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     overview.summary = parts.join(" with ");
 
     // DB-based freshness: check app_state_kv for briefing timestamp, fall back to meeting existence
-    let freshness_today = today_utc.clone();
-    let freshness_tomorrow = tomorrow_utc.clone();
+    let freshness_today = tf.date.clone();
+    let freshness_tomorrow = tf.next_date.clone();
     let freshness = match state
         .db_read(move |db| {
             let conn = db.conn_ref();
@@ -1008,8 +1012,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let meeting_linked = if entity_ids.is_empty() {
                 0usize
             } else {
-                let email_today = today_utc.clone();
-                let email_tomorrow = tomorrow_utc.clone();
+                let email_today = tf.date.clone();
+                let email_tomorrow = tf.next_date.clone();
                 state.db_read(move |db| {
                         let count = entity_ids.iter().filter(|eid| {
                             db.conn_ref()
