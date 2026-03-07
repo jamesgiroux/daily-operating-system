@@ -2406,12 +2406,17 @@ pub fn disconnect_google(
 ) -> Result<(), String> {
     crate::google::disconnect()?;
 
+    let purge_report = state.with_db_write(|db| {
+        crate::db::data_lifecycle::purge_source(db, crate::db::data_lifecycle::DataSource::Google)
+            .map_err(|e| e.to_string())
+    })?;
+
     // Audit: oauth_revoked
     if let Ok(mut audit) = state.audit_log.lock() {
         let _ = audit.append(
             "security",
             "oauth_revoked",
-            serde_json::json!({"provider": "google"}),
+            serde_json::json!({"provider": "google", "purge": purge_report}),
         );
     }
 
@@ -7804,6 +7809,11 @@ pub fn disconnect_smithery(state: State<'_, Arc<AppState>>) -> Result<(), String
         config.clay.smithery_namespace = None;
         config.clay.smithery_connection_id = None;
     })?;
+
+    let _ = state.with_db_write(|db| {
+        crate::db::data_lifecycle::purge_source(db, crate::db::data_lifecycle::DataSource::Clay)
+            .map_err(|e| e.to_string())
+    })?;
     Ok(())
 }
 
@@ -9020,12 +9030,17 @@ pub fn disconnect_glean(
 ) -> Result<(), String> {
     crate::glean::token_store::delete_token().map_err(|e| format!("{}", e))?;
 
+    let purge_report = state.with_db_write(|db| {
+        crate::db::data_lifecycle::purge_source(db, crate::db::data_lifecycle::DataSource::Glean)
+            .map_err(|e| e.to_string())
+    })?;
+
     // Audit: oauth_revoked
     if let Ok(mut audit) = state.audit_log.lock() {
         let _ = audit.append(
             "security",
             "oauth_revoked",
-            serde_json::json!({"provider": "glean"}),
+            serde_json::json!({"provider": "glean", "purge": purge_report}),
         );
     }
 
