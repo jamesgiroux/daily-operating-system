@@ -251,6 +251,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 58,
         sql: include_str!("migrations/058_health_schema_evolution.sql"),
     },
+    Migration {
+        version: 59,
+        sql: include_str!("migrations/059_person_relationships_rationale.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -355,6 +359,16 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
                     "Schema integrity check failed: missing column entity_assessment.{col}"
                 ));
             }
+        }
+    }
+
+    if version >= 59 {
+        let relationship_cols = table_columns(conn, "person_relationships")?;
+        if !relationship_cols.contains("rationale") {
+            return Err(
+                "Schema integrity check failed: missing column person_relationships.rationale"
+                    .to_string(),
+            );
         }
     }
 
@@ -630,13 +644,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 58,
+            applied, 59,
             "should apply all migrations including intelligence DB columns"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 58);
+        assert_eq!(version, 59);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -1232,16 +1246,16 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v58.
+        // Run migrations — should bootstrap v1 and apply v2 through v59.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 57,
-            "bootstrap should mark v1, then apply 57 pending migrations (v2-v58)"
+            applied, 58,
+            "bootstrap should mark v1, then apply 58 pending migrations (v2-v59)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 58);
+        assert_eq!(version, 59);
 
         // Verify existing data is untouched
         let title: String = conn
@@ -1339,10 +1353,10 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_integrity_check_blocks_invalid_v58_state() {
+    fn test_schema_integrity_check_blocks_invalid_v59_state() {
         let conn = mem_db();
         ensure_schema_version_table(&conn).expect("schema_version table");
-        conn.execute("INSERT INTO schema_version (version) VALUES (58)", [])
+        conn.execute("INSERT INTO schema_version (version) VALUES (59)", [])
             .expect("seed schema version");
 
         let err = run_migrations(&conn).expect_err("invalid schema should fail integrity check");

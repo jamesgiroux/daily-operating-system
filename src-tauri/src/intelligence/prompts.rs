@@ -1586,6 +1586,16 @@ fn build_intelligence_prompt_inner(
         );
     }
 
+    // I504: Inferred person-to-person relationships for account/project entities.
+    if ctx.canonical_contacts.is_some() && (entity_type == "account" || entity_type == "project") {
+        prompt.push_str(
+            ",\n\
+               \"inferredRelationships\": [\n\
+                 {\"fromPersonId\": \"person-id-from-canonical-contacts\", \"toPersonId\": \"person-id-from-canonical-contacts\", \"relationshipType\": \"peer|manager|mentor|collaborator|ally|partner|introduced_by\", \"rationale\": \"1 sentence explaining why this relationship is inferred\"}\n\
+               ]",
+        );
+    }
+
     // I305: Keyword extraction for entity resolution
     prompt.push_str(
         ",\n\
@@ -1645,6 +1655,19 @@ fn build_intelligence_prompt_inner(
          entries through that lens — describe value in terms the user would use to communicate \
          it to their stakeholders.\n",
     );
+
+    if ctx.canonical_contacts.is_some() && (entity_type == "account" || entity_type == "project") {
+        prompt.push_str(
+            "\n\
+             For inferredRelationships: analyze meeting co-attendance patterns, email threads, \
+             and content context to infer person-to-person relationships. Only use person IDs \
+             from the canonical contacts list. Only infer relationships with clear evidence — do \
+             not guess. Prefer 'collaborator' for people who work together on projects, \
+             'manager' when reporting lines are evident, and 'peer' when people appear at a \
+             similar organizational level. Return an empty array when no relationship can be \
+             confidently inferred.\n",
+        );
+    }
 
     prompt
 }
@@ -1836,8 +1859,8 @@ struct AiInferredRelationship {
     to_person_id: String,
     #[serde(default)]
     relationship_type: String,
-    #[serde(default)]
-    reason: Option<String>,
+    #[serde(default, alias = "reason")]
+    rationale: Option<String>,
 }
 
 /// AI response structure for portfolio intelligence (I384).
@@ -2000,10 +2023,12 @@ pub fn parse_intelligence_response(
 }
 
 /// An inferred person-to-person relationship extracted from AI enrichment (I391).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferredRelationship {
     pub from_person_id: String,
     pub to_person_id: String,
     pub relationship_type: String,
+    pub rationale: Option<String>,
 }
 
 /// Extract inferred relationships from an AI enrichment response (I391).
@@ -2039,10 +2064,17 @@ pub fn extract_inferred_relationships(response: &str) -> Vec<InferredRelationshi
             if from.is_empty() || to.is_empty() {
                 return None;
             }
+            let rationale = entry
+                .get("rationale")
+                .or_else(|| entry.get("reason"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
             Some(InferredRelationship {
                 from_person_id: from,
                 to_person_id: to,
                 relationship_type: rel_type,
+                rationale,
             })
         })
         .collect()
