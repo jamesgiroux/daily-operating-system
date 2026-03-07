@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import { AlertTriangle, DatabaseBackup, RefreshCw, ShieldCheck } from "lucide-react";
-import type { BackupInfo } from "@/types";
+import { AlertTriangle, DatabaseBackup, Download, RefreshCw, ShieldCheck } from "lucide-react";
+import type { BackupInfo, DatabaseInfo } from "@/types";
 import { useDatabaseRecoveryStatus } from "@/hooks/useDatabaseRecoveryStatus";
 import { styles } from "@/components/settings/styles";
 
@@ -18,6 +20,7 @@ export default function DatabaseRecoveryCard() {
   const [loadingBackups, setLoadingBackups] = useState(true);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [restoringPath, setRestoringPath] = useState<string | null>(null);
+  const [dbInfo, setDbInfo] = useState<DatabaseInfo | null>(null);
 
   async function loadBackups() {
     setLoadingBackups(true);
@@ -31,8 +34,18 @@ export default function DatabaseRecoveryCard() {
     }
   }
 
+  async function loadDbInfo() {
+    try {
+      const info = await invoke<DatabaseInfo>("get_database_info");
+      setDbInfo(info);
+    } catch {
+      // Non-critical — info section just won't show
+    }
+  }
+
   useEffect(() => {
     void loadBackups();
+    void loadDbInfo();
   }, []);
 
   async function handleCreateBackup() {
@@ -43,6 +56,7 @@ export default function DatabaseRecoveryCard() {
       toast.success("Backup created");
       console.info("Backup created at", path);
       await loadBackups();
+      await loadDbInfo();
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Backup failed");
     } finally {
@@ -53,7 +67,7 @@ export default function DatabaseRecoveryCard() {
   async function handleRestore(backupPath: string) {
     if (restoringPath) return;
     const confirmed = window.confirm(
-      "Restore this backup? Current database content will be replaced."
+      "Restore this backup? Current database content will be replaced.",
     );
     if (!confirmed) return;
 
@@ -61,8 +75,8 @@ export default function DatabaseRecoveryCard() {
     try {
       await invoke("restore_database_from_backup", { backupPath });
       await refresh();
-      toast.success("Backup restored. Reloading...");
-      setTimeout(() => window.location.reload(), 300);
+      toast.success("Backup restored. Relaunching...");
+      setTimeout(() => void relaunch(), 300);
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Restore failed");
     } finally {
@@ -70,9 +84,52 @@ export default function DatabaseRecoveryCard() {
     }
   }
 
+  async function handleExport() {
+    try {
+      const destination = await save({
+        defaultPath: "dailyos-backup.db",
+        filters: [{ name: "SQLite Database", extensions: ["db"] }],
+      });
+      if (!destination) return;
+      await invoke("export_database_copy", { destination });
+      toast.success("Database exported");
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Export failed");
+    }
+  }
+
   return (
     <div style={{ marginBottom: 24 }}>
       <p style={styles.subsectionLabel}>Database Recovery</p>
+
+      {dbInfo && (
+        <div
+          style={{
+            border: "1px solid var(--color-rule-light)",
+            borderRadius: 6,
+            padding: 14,
+            marginBottom: 12,
+            background: "var(--color-surface-secondary)",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ ...styles.description, fontSize: 12 }}>
+              <strong>Path:</strong>{" "}
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{dbInfo.path}</span>
+            </div>
+            <div style={{ ...styles.description, fontSize: 12 }}>
+              <strong>Size:</strong> {formatBytes(dbInfo.sizeBytes)} &bull;{" "}
+              <strong>Schema:</strong> v{dbInfo.schemaVersion}
+              {dbInfo.lastBackup && (
+                <>
+                  {" "}&bull; <strong>Last backup:</strong>{" "}
+                  {new Date(dbInfo.lastBackup).toLocaleString()}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div
         style={{
@@ -109,6 +166,18 @@ export default function DatabaseRecoveryCard() {
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <DatabaseBackup size={12} />
             {creatingBackup ? "Creating..." : "Create Backup"}
+          </span>
+        </button>
+
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost }}
+          onClick={handleExport}
+          disabled={status.required}
+          title="Export a copy of the database"
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Download size={12} />
+            Export
           </span>
         </button>
 
@@ -161,10 +230,11 @@ export default function DatabaseRecoveryCard() {
                     wordBreak: "break-all",
                   }}
                 >
-                  {backup.path}
+                  {backup.filename}
                 </div>
                 <div style={{ ...styles.description, fontSize: 12 }}>
                   {backup.kind} • {new Date(backup.createdAt).toLocaleString()} • {formatBytes(backup.sizeBytes)}
+                  {backup.schemaVersion != null && ` • v${backup.schemaVersion}`}
                 </div>
               </div>
               <button

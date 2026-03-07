@@ -5,7 +5,6 @@
 
 use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::read_intelligence_json;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -39,19 +38,12 @@ fn build_swot_prompt(
     entity_name: &str,
     entity_type: &str,
     db: &ActionDb,
-    workspace: &std::path::Path,
+    _workspace: &std::path::Path,
     entity_id: &str,
-    account: Option<&crate::db::DbAccount>,
+    _account: Option<&crate::db::DbAccount>,
     context_provider: &dyn ContextProvider,
 ) -> String {
-    let prior = if entity_type == "account" {
-        account.and_then(|a| {
-            let dir = crate::accounts::resolve_account_dir(workspace, a);
-            read_intelligence_json(&dir).ok()
-        })
-    } else {
-        None
-    };
+    let prior = db.get_entity_intelligence(entity_id).ok().flatten();
 
     let ctx = context_provider
         .gather_entity_context(db, entity_id, entity_type, prior.as_ref())

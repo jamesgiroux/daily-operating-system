@@ -586,6 +586,9 @@ pub fn run() {
             commands::get_database_recovery_status,
             commands::list_database_backups,
             commands::restore_database_from_backup,
+            commands::start_fresh_database,
+            commands::export_database_copy,
+            commands::get_database_info,
             // I148: Hygiene
             commands::get_hygiene_report,
             commands::get_intelligence_hygiene_status,

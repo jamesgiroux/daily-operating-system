@@ -570,8 +570,8 @@ fn gather_meeting_context(
             inject_linear_issues(db, &em.entity_id, &mut ctx);
         }
 
-        // I135: Entity-generic intelligence injection
-        inject_entity_intelligence(&em.workspace_path, &mut ctx);
+        // I135: Entity-generic intelligence injection (I513: DB-first)
+        inject_entity_intelligence(db, Some(&em.entity_id), &em.workspace_path, &mut ctx);
     } else {
         // No entity resolved — type-based fallbacks
 
@@ -609,7 +609,7 @@ fn gather_meeting_context(
                             ctx["account_data"] = data;
                         }
                     }
-                    inject_entity_intelligence(&account_path, &mut ctx);
+                    inject_entity_intelligence(db, None, &account_path, &mut ctx);
                 }
             }
         }
@@ -721,12 +721,23 @@ fn gather_meeting_context(
 // Entity intelligence injection (I135)
 // ---------------------------------------------------------------------------
 
-/// Read intelligence.json from an entity directory and inject relevant
+/// Read entity intelligence from DB (I513) and inject relevant
 /// fields into the meeting context for prep enrichment.
-fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
-    let intel = match crate::intelligence::read_intelligence_json(entity_dir) {
-        Ok(intel) => intel,
-        Err(_) => return,
+fn inject_entity_intelligence(
+    db: Option<&crate::db::ActionDb>,
+    entity_id: Option<&str>,
+    entity_dir: &Path,
+    ctx: &mut Value,
+) {
+    let intel = if let (Some(db), Some(eid)) = (db, entity_id) {
+        db.get_entity_intelligence(eid).ok().flatten()
+    } else {
+        None
+    }
+    .or_else(|| crate::intelligence::read_intelligence_json(entity_dir).ok());
+    let intel = match intel {
+        Some(intel) => intel,
+        None => return,
     };
 
     if let Some(ref assessment) = intel.executive_assessment {
