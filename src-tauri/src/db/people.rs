@@ -1203,11 +1203,12 @@ pub struct FieldSource {
 }
 
 /// Returns the numeric priority for a given enrichment source.
-/// Higher values win: User (4) > Clay (3) > Gravatar (2) > AI (1).
+/// Higher values win: User (4) > Clay (3) > Glean/Google/Gravatar (2) > AI (1).
 pub fn source_priority(source: &str) -> u8 {
     match source {
         "user" => 4,
         "clay" => 3,
+        "glean" | "google" => 2,
         "gravatar" => 2,
         "ai" => 1,
         _ => 0,
