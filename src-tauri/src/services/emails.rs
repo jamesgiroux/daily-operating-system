@@ -275,11 +275,16 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         0usize
     } else {
         let ids: Vec<String> = email_entity_ids.into_iter().collect();
+        let email_tz: chrono_tz::Tz = state
+            .config
+            .read()
+            .ok()
+            .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(chrono_tz::America::New_York);
+        let (em_start, em_end) = crate::helpers::local_day_utc_range(&email_tz);
         state
             .db_read(move |db| {
-                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                let start = format!("{}T00:00:00", today);
-                let end = format!("{}T23:59:59", today);
                 let count = ids
                     .iter()
                     .filter(|eid| {
@@ -287,8 +292,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                             .query_row(
                                 "SELECT COUNT(*) FROM meeting_entities me
                          JOIN meetings mh ON me.meeting_id = mh.id
-                         WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
-                                rusqlite::params![eid, start, end],
+                         WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time < ?3",
+                                rusqlite::params![eid, em_start, em_end],
                                 |row| row.get::<_, i64>(0),
                             )
                             .unwrap_or(0)
