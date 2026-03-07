@@ -3831,6 +3831,16 @@ pub fn deliver_manifest(
     }
 
     write_json(&data_dir.join("manifest.json"), &manifest)?;
+
+    // I513: Also store manifest in app_state_kv for DB-based freshness checks
+    if let Ok(db) = crate::db::ActionDb::open() {
+        let manifest_str = serde_json::to_string(&manifest).unwrap_or_default();
+        let _ = db.conn_ref().execute(
+            "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at) VALUES ('briefing_freshness', ?1, datetime('now'))",
+            rusqlite::params![manifest_str],
+        );
+    }
+
     log::info!(
         "deliver_manifest: partial={}, {} meetings, {} actions due, {} emails",
         partial,

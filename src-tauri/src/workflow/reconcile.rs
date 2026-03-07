@@ -579,8 +579,18 @@ pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> R
     // Ensure data/ exists (may have been cleaned, or may not exist yet)
     let _ = fs::create_dir_all(&data_dir);
 
-    fs::write(data_dir.join("next-morning-flags.json"), json)
-        .map_err(|e| format!("Failed to write next-morning-flags.json: {}", e))
+    fs::write(data_dir.join("next-morning-flags.json"), &json)
+        .map_err(|e| format!("Failed to write next-morning-flags.json: {}", e))?;
+
+    // I513: Also store in app_state_kv for DB-based reads
+    if let Ok(db) = crate::db::ActionDb::open() {
+        let _ = db.conn_ref().execute(
+            "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at) VALUES ('morning_flags', ?1, datetime('now'))",
+            rusqlite::params![json],
+        );
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
