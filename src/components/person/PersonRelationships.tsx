@@ -352,6 +352,7 @@ function EdgeRow({
     ? (rel.toPersonName ?? otherId)
     : (rel.fromPersonName ?? otherId);
   const label = resolveRelationshipLabel(rel.relationshipType, preset, !isFrom);
+  const isSuggested = rel.source === "ai_enrichment";
 
   return (
     <div className={s.edgeRow}>
@@ -364,6 +365,7 @@ function EdgeRow({
       </Link>
 
       <span className={s.edgeBadge}>{label}</span>
+      {isSuggested && <span className={s.suggestedBadge}>Suggested</span>}
 
       <span className={s.edgeMeta}>
         {rel.source !== "user_confirmed" && (
@@ -375,6 +377,16 @@ function EdgeRow({
               <TooltipContent side="top">
                 AI-inferred confidence — decays over time without reinforcing evidence
               </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+        {isSuggested && rel.rationale && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={s.edgeRationale}>why</span>
+              </TooltipTrigger>
+              <TooltipContent side="top">{rel.rationale}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}
