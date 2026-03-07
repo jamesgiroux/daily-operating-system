@@ -489,7 +489,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .await
     {
         Ok(meetings) => meetings,
-        Err(_) => {
+        Err(e) => {
+            log::warn!("Dashboard DB query failed: {e}");
             *db_busy = true;
             Vec::new()
         }

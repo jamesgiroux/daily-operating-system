@@ -54,7 +54,9 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 
     // Fetch a week of events so the timeline, cancellation detection,
     // and prep generation cover upcoming meetings (I386).
-    let today = Utc::now().date_naive();
+    // Use LOCAL date, not UTC — at 9 PM ET, UTC is already tomorrow,
+    // which would exclude today's events from the poll response.
+    let today = chrono::Local::now().date_naive();
     let end_date = today + chrono::Duration::days(7);
     let raw_events = google_api::calendar::fetch_events(&access_token, today, end_date)
         .await
@@ -795,7 +797,8 @@ fn populate_people_from_events(
 ///
 /// These are likely cancelled meetings. Updates their intelligence_state to "archived".
 fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState) {
-    let today = Utc::now().date_naive();
+    // Use local date — consistent with poll range (which also uses local date).
+    let today = chrono::Local::now().date_naive();
     let range_start = today.to_string(); // "YYYY-MM-DD"
     let range_end = (today + chrono::Duration::days(8)).to_string();
 
