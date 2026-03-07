@@ -513,6 +513,7 @@ impl ActionDb {
 pub mod accounts;
 pub mod actions;
 pub mod content;
+pub mod data_lifecycle;
 pub mod emails;
 pub mod encryption;
 pub mod entities;
