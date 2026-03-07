@@ -5144,6 +5144,33 @@ pub async fn restore_database_from_backup(
 }
 
 #[tauri::command]
+pub async fn start_fresh_database(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    // Drop DB handles before deleting files.
+    {
+        let mut db_service_guard = state.db_service.write().await;
+        *db_service_guard = None;
+        let mut db_guard = state
+            .db
+            .lock()
+            .map_err(|_| "DB lock poisoned".to_string())?;
+        *db_guard = None;
+    }
+    crate::db_backup::start_fresh_database()
+}
+
+#[tauri::command]
+pub async fn export_database_copy(destination: String) -> Result<(), String> {
+    crate::db_backup::export_database_copy(&destination)
+}
+
+#[tauri::command]
+pub fn get_database_info() -> Result<crate::db_backup::DatabaseInfo, String> {
+    crate::db_backup::get_database_info()
+}
+
+#[tauri::command]
 pub async fn rebuild_database(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(usize, usize, usize), String> {

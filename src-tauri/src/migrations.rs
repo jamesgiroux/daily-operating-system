@@ -243,6 +243,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 56,
         sql: include_str!("migrations/056_account_stakeholders_data_source.sql"),
     },
+    Migration {
+        version: 57,
+        sql: include_str!("migrations/057_intelligence_db_columns.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -611,13 +615,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 56,
-            "should apply all migrations including consistency metadata"
+            applied, 57,
+            "should apply all migrations including intelligence DB columns"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 56);
+        assert_eq!(version, 57);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -1213,16 +1217,16 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v56.
+        // Run migrations — should bootstrap v1 and apply v2 through v57.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 55,
-            "bootstrap should mark v1, then apply 55 pending migrations (v2-v56)"
+            applied, 56,
+            "bootstrap should mark v1, then apply 56 pending migrations (v2-v57)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 56);
+        assert_eq!(version, 57);
 
         // Verify existing data is untouched
         let title: String = conn
@@ -1320,10 +1324,10 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_integrity_check_blocks_invalid_v56_state() {
+    fn test_schema_integrity_check_blocks_invalid_v57_state() {
         let conn = mem_db();
         ensure_schema_version_table(&conn).expect("schema_version table");
-        conn.execute("INSERT INTO schema_version (version) VALUES (56)", [])
+        conn.execute("INSERT INTO schema_version (version) VALUES (57)", [])
             .expect("seed schema version");
 
         let err = run_migrations(&conn).expect_err("invalid schema should fail integrity check");

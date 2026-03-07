@@ -131,6 +131,7 @@ pub struct DatabaseRecoveryStatus {
     pub required: bool,
     pub reason: String,
     pub detail: String,
+    pub db_path: String,
 }
 
 impl DatabaseRecoveryStatus {
@@ -139,14 +140,19 @@ impl DatabaseRecoveryStatus {
             required: false,
             reason: String::new(),
             detail: String::new(),
+            db_path: String::new(),
         }
     }
 
     pub fn required(reason: impl Into<String>, detail: impl Into<String>) -> Self {
+        let db_path = crate::db::ActionDb::db_path_public()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
         Self {
             required: true,
             reason: reason.into(),
             detail: detail.into(),
+            db_path,
         }
     }
 }

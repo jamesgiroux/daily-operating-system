@@ -382,7 +382,7 @@ mod live_acceptance_tests {
     use super::enrich_entity;
     use crate::intel_queue::{write_enrichment_results, EnrichmentInput};
     use crate::intelligence::{
-        read_intelligence_json, write_intelligence_json, ConsistencyStatus, IntelRisk,
+        write_intelligence_json, ConsistencyStatus, IntelRisk,
         IntelligenceJson,
     };
     use crate::state::AppState;
@@ -646,7 +646,7 @@ mod live_acceptance_tests {
             })
             .await
             .expect("previous DB read failed");
-        let previous_file = read_intelligence_json(&entity_dir).ok();
+        let previous_file = previous_db.clone();
 
         let contradictory = IntelligenceJson {
             version: 1,

@@ -764,8 +764,9 @@ impl ActionDb {
                 next_meeting_readiness_json, company_context_json,
                 value_delivered, success_metrics, open_commitments,
                 relationship_depth, consistency_status,
-                consistency_findings_json, consistency_checked_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+                consistency_findings_json, consistency_checked_at,
+                portfolio_json, network_json, user_edits_json, source_manifest_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -783,7 +784,11 @@ impl ActionDb {
                 relationship_depth = excluded.relationship_depth,
                 consistency_status = excluded.consistency_status,
                 consistency_findings_json = excluded.consistency_findings_json,
-                consistency_checked_at = excluded.consistency_checked_at",
+                consistency_checked_at = excluded.consistency_checked_at,
+                portfolio_json = excluded.portfolio_json,
+                network_json = excluded.network_json,
+                user_edits_json = excluded.user_edits_json,
+                source_manifest_json = excluded.source_manifest_json",
             rusqlite::params![
                 intel.entity_id,
                 intel.entity_type,
@@ -803,6 +808,10 @@ impl ActionDb {
                 serde_json::to_string(&intel.consistency_status).ok(),
                 serde_json::to_string(&intel.consistency_findings).ok(),
                 intel.consistency_checked_at,
+                serde_json::to_string(&intel.portfolio).ok(),
+                serde_json::to_string(&intel.network).ok(),
+                serde_json::to_string(&intel.user_edits).ok(),
+                serde_json::to_string(&intel.source_manifest).ok(),
             ],
         )?;
 
@@ -838,7 +847,8 @@ impl ActionDb {
                     ea.next_meeting_readiness_json, ea.company_context_json,
                     eq.health_score, eq.health_trend, ea.value_delivered,
                     ea.success_metrics, ea.open_commitments, ea.relationship_depth,
-                    ea.consistency_status, ea.consistency_findings_json, ea.consistency_checked_at
+                    ea.consistency_status, ea.consistency_findings_json, ea.consistency_checked_at,
+                    ea.portfolio_json, ea.network_json, ea.user_edits_json, ea.source_manifest_json
              FROM entity_assessment ea
              LEFT JOIN entity_quality eq ON eq.entity_id = ea.entity_id
              WHERE ea.entity_id = ?1",
@@ -858,6 +868,10 @@ impl ActionDb {
             let relationship_depth_json: Option<String> = row.get(16)?;
             let consistency_status_json: Option<String> = row.get(17)?;
             let consistency_findings_json: Option<String> = row.get(18)?;
+            let portfolio_json: Option<String> = row.get(20)?;
+            let network_json: Option<String> = row.get(21)?;
+            let user_edits_json: Option<String> = row.get(22)?;
+            let source_manifest_json: Option<String> = row.get(23)?;
 
             Ok(IntelligenceJson {
                 version: 1,
@@ -865,7 +879,9 @@ impl ActionDb {
                 entity_type: row.get(1)?,
                 enriched_at: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 source_file_count: row.get::<_, Option<usize>>(3)?.unwrap_or(0),
-                source_manifest: Vec::new(), // Not cached in DB
+                source_manifest: source_manifest_json
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
                 executive_assessment: row.get(4)?,
                 risks: risks_json
                     .and_then(|j| serde_json::from_str(&j).ok())
@@ -882,9 +898,11 @@ impl ActionDb {
                     .unwrap_or_default(),
                 next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),
                 company_context: company_json.and_then(|j| serde_json::from_str(&j).ok()),
-                portfolio: None,        // Not cached in DB (stored in file only)
-                network: None,          // Not cached in DB (stored in file only)
-                user_edits: Vec::new(), // Not cached in DB (stored in file only)
+                portfolio: portfolio_json.and_then(|j| serde_json::from_str(&j).ok()),
+                network: network_json.and_then(|j| serde_json::from_str(&j).ok()),
+                user_edits: user_edits_json
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
                 health_score: row.get(11)?,
                 health_trend: health_trend_json.and_then(|j| serde_json::from_str(&j).ok()),
                 success_metrics: success_metrics_json.and_then(|j| serde_json::from_str(&j).ok()),

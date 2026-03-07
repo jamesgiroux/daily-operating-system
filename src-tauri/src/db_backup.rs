@@ -28,10 +28,37 @@ pub struct BackupInfo {
     pub created_at: String,
     pub size_bytes: u64,
     pub kind: String,
+    pub filename: String,
+    pub schema_version: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseInfo {
+    pub path: String,
+    pub size_bytes: u64,
+    pub schema_version: i64,
+    pub last_backup: Option<String>,
 }
 
 fn active_db_path() -> Result<PathBuf, String> {
     ActionDb::db_path_public().map_err(|e| format!("Failed to resolve database path: {e}"))
+}
+
+/// Read schema version (PRAGMA user_version) from a SQLite file.
+/// Returns None if the file cannot be opened or read.
+fn read_schema_version(path: &Path) -> Option<i64> {
+    let conn = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    // Apply encryption key if configured
+    if let Ok(hex_key) = crate::db::encryption::get_or_create_db_key(path) {
+        let _ = conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key));
+    }
+    conn.pragma_query_value(None, "user_version", |row| row.get(0))
+        .ok()
 }
 
 fn backup_kind(db_path: &Path, backup_path: &Path) -> Option<&'static str> {
@@ -195,11 +222,18 @@ fn list_database_backups_for_path(db_path: &Path) -> Result<Vec<BackupInfo>, Str
         let metadata = entry
             .metadata()
             .map_err(|e| format!("Failed to inspect backup metadata: {e}"))?;
+        let filename = path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let schema_version = read_schema_version(&path);
         backups.push(BackupInfo {
             path: path.to_string_lossy().to_string(),
             created_at: backup_created_at(&path, &metadata),
             size_bytes: metadata.len(),
             kind: kind.to_string(),
+            filename,
+            schema_version,
         });
     }
 
@@ -224,6 +258,8 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
     if backup_kind(db_path, &backup_path).is_none() {
         return Err("Backup path is not a valid DailyOS backup file".to_string());
     }
+
+    validate_backup(&backup_path)?;
 
     let snapshot_path = pre_restore_snapshot_path(db_path);
     let mut snapshot_created = false;
@@ -276,6 +312,85 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
         backup_path.to_string_lossy()
     );
     Ok(())
+}
+
+/// Validate a backup file's integrity before restoring.
+///
+/// Tries with the encryption key first. If that fails (e.g. backup is
+/// unencrypted), falls back to a plain connection.
+pub fn validate_backup(path: &Path) -> Result<(), String> {
+    // Attempt 1: with encryption key
+    let result = (|| -> Option<String> {
+        let conn = rusqlite::Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .ok()?;
+        if let Ok(hex_key) = crate::db::encryption::get_or_create_db_key(path) {
+            conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key))
+                .ok()?;
+        }
+        conn.pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
+            .ok()
+    })();
+
+    // Attempt 2: without encryption (plain SQLite)
+    let result = match result {
+        Some(ref r) if r == "ok" => return Ok(()),
+        _ => {
+            let conn = rusqlite::Connection::open_with_flags(
+                path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .map_err(|e| format!("Cannot open backup file: {e}"))?;
+            conn.pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
+                .map_err(|e| format!("Integrity check failed: {e}"))?
+        }
+    };
+
+    if result != "ok" {
+        return Err(format!("Backup integrity check failed: {result}"));
+    }
+    Ok(())
+}
+
+/// Delete the active database and all associated WAL/SHM files.
+pub fn start_fresh_database() -> Result<(), String> {
+    let db_path = active_db_path()?;
+    for path in [&db_path, &wal_path(&db_path), &shm_path(&db_path)] {
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("Failed to remove {}: {e}", path.display())),
+        }
+    }
+    Ok(())
+}
+
+/// Copy the active database to a user-chosen destination.
+pub fn export_database_copy(destination: &str) -> Result<(), String> {
+    let db_path = active_db_path()?;
+    fs::copy(&db_path, destination)
+        .map_err(|e| format!("Failed to export database: {e}"))?;
+    Ok(())
+}
+
+/// Get information about the active database.
+pub fn get_database_info() -> Result<DatabaseInfo, String> {
+    let db_path = active_db_path()?;
+    let size_bytes = fs::metadata(&db_path)
+        .map_err(|e| format!("Failed to read database metadata: {e}"))?
+        .len();
+    let schema_version = read_schema_version(&db_path).unwrap_or(0);
+    let last_backup = list_database_backups()?
+        .first()
+        .map(|b| b.created_at.clone());
+    Ok(DatabaseInfo {
+        path: db_path.to_string_lossy().to_string(),
+        size_bytes,
+        schema_version,
+        last_backup,
+    })
 }
 
 /// Rebuild SQLite tables from workspace JSON files.
