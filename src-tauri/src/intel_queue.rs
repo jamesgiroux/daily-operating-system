@@ -6,7 +6,7 @@
 //! during the 30-120s PTY operation.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -15,7 +15,7 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::intelligence::{
-    build_intelligence_prompt_with_preset, parse_intelligence_response, read_intelligence_json,
+    build_intelligence_prompt_with_preset, parse_intelligence_response,
     write_intelligence_json, IntelligenceJson, SourceManifestEntry,
 };
 use crate::pty::{ModelTier, PtyManager};
@@ -575,41 +575,18 @@ fn enrichment_age_check(enriched_at: &str, entity_id: &str) -> Option<String> {
 /// Resolves the entity directory and reads `intelligence.json` to check the
 /// `enriched_at` timestamp. Returns `Some(message)` if the entity should be
 /// skipped, `None` if it should proceed.
-fn check_enrichment_ttl(state: &AppState, request: &IntelRequest) -> Option<String> {
-    let workspace = {
-        let config_guard = state.config.read().ok()?;
-        let config = config_guard.as_ref()?;
-        PathBuf::from(&config.workspace_path)
-    };
-
-    let entity_dir = resolve_entity_dir(&workspace, request)?;
-    let intel = read_intelligence_json(&entity_dir).ok()?;
+fn check_enrichment_ttl(_state: &AppState, request: &IntelRequest) -> Option<String> {
+    let db = crate::db::ActionDb::open().ok()?;
+    let intel = db
+        .get_entity_intelligence(&request.entity_id)
+        .ok()
+        .flatten()?;
 
     enrichment_age_check(&intel.enriched_at, &request.entity_id)
 }
 
 /// Resolve an entity's directory from its request metadata.
 /// Lightweight helper that opens a short-lived DB connection.
-fn resolve_entity_dir(workspace: &Path, request: &IntelRequest) -> Option<PathBuf> {
-    let db = crate::db::ActionDb::open().ok()?;
-
-    match request.entity_type.as_str() {
-        "account" => {
-            let acct = db.get_account(&request.entity_id).ok()??;
-            Some(crate::accounts::resolve_account_dir(workspace, &acct))
-        }
-        "project" => {
-            let proj = db.get_project(&request.entity_id).ok()??;
-            Some(crate::projects::project_dir(workspace, &proj.name))
-        }
-        "person" => {
-            let person = db.get_person(&request.entity_id).ok()??;
-            Some(crate::people::person_dir(workspace, &person.name))
-        }
-        _ => None,
-    }
-}
-
 /// Phase 1: Open own DB connection to gather all context needed for enrichment.
 /// Uses `ActionDb::open()` instead of `state.db.lock()` to avoid blocking
 /// foreground IPC commands while background enrichment runs.
@@ -667,8 +644,11 @@ pub fn gather_enrichment_input(
         _ => return Err(format!("Unsupported entity type: {}", request.entity_type)),
     };
 
-    // Read prior intelligence
-    let prior = read_intelligence_json(&entity_dir).ok();
+    // Read prior intelligence from DB (I513)
+    let prior = db
+        .get_entity_intelligence(&request.entity_id)
+        .ok()
+        .flatten();
 
     // Build context via the context provider (ADR-0095).
     // In Local mode this delegates to build_intelligence_context() — same behavior.
@@ -1056,7 +1036,9 @@ pub fn write_enrichment_results(
 ) -> Result<IntelligenceJson, String> {
     // Preserve user-edited fields from existing intelligence (I261)
     let mut final_intel = intel.clone();
-    let existing_intel = read_intelligence_json(&input.entity_dir).ok();
+    let existing_intel = crate::db::ActionDb::open()
+        .ok()
+        .and_then(|db| db.get_entity_intelligence(&input.entity_id).ok().flatten());
     if let Some(existing) = existing_intel.as_ref() {
         if !existing.user_edits.is_empty() {
             crate::intelligence::preserve_user_edits(&mut final_intel, existing);

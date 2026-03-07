@@ -99,7 +99,7 @@ pub async fn get_person_detail(
     person_id: &str,
     state: &AppState,
 ) -> Result<PersonDetailResult, String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let _config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
 
     let person_id = person_id.to_string();
     state
@@ -141,14 +141,8 @@ pub async fn get_person_detail(
                 .list_recent_email_signals_for_entity(&person_id, 12)
                 .unwrap_or_default();
 
-            // Load intelligence from person dir (if exists)
-            let intelligence = if let Some(ref config) = config {
-                let person_dir =
-                    crate::people::person_dir(Path::new(&config.workspace_path), &person.name);
-                crate::intelligence::read_intelligence_json(&person_dir).ok()
-            } else {
-                None
-            };
+            // Load intelligence from DB (I513)
+            let intelligence = db.get_entity_intelligence(&person_id).ok().flatten();
 
             let open_actions = db
                 .get_person_actions(&person_id)
