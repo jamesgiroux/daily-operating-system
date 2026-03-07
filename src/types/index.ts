@@ -35,6 +35,7 @@ export interface DatabaseRecoveryStatus {
   required: boolean;
   reason: string;
   detail: string;
+  dbPath: string;
 }
 
 export interface BackupInfo {
@@ -42,6 +43,15 @@ export interface BackupInfo {
   createdAt: string;
   sizeBytes: number;
   kind: string;
+  filename: string;
+  schemaVersion: number | null;
+}
+
+export interface DatabaseInfo {
+  path: string;
+  sizeBytes: number;
+  schemaVersion: number;
+  lastBackup: string | null;
 }
 
 export type Priority = "P1" | "P2" | "P3";
