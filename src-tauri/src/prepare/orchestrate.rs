@@ -1677,7 +1677,12 @@ fn queue_person_intelligence(
             .unwrap_or(&entity_id);
         let person_dir = crate::people::person_dir(workspace, entity_name);
 
-        if let Ok(intel) = crate::intelligence::read_intelligence_json(&person_dir) {
+        let intel_opt = db
+            .get_entity_intelligence(&entity_id)
+            .ok()
+            .flatten()
+            .or_else(|| crate::intelligence::read_intelligence_json(&person_dir).ok());
+        if let Some(intel) = intel_opt {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&intel.enriched_at) {
                 let age_secs = (Utc::now() - ts.with_timezone(&Utc)).num_seconds();
                 if age_secs < 7200 {

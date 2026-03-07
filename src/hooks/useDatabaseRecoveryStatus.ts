@@ -6,6 +6,7 @@ const DEFAULT_STATUS: DatabaseRecoveryStatus = {
   required: false,
   reason: "",
   detail: "",
+  dbPath: "",
 };
 
 export function useDatabaseRecoveryStatus() {
