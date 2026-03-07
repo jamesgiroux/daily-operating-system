@@ -312,7 +312,9 @@ pub async fn get_executive_intelligence(
             .timezone
             .parse()
             .unwrap_or(chrono_tz::America::New_York);
-        let (today, tomorrow) = crate::helpers::local_day_utc_range(&tz_ent);
+        let tf_ent = crate::helpers::today_meeting_filter(&tz_ent);
+        let today = tf_ent.date;
+        let tomorrow = tf_ent.next_date;
         let db_meetings: Vec<crate::types::Meeting> = state
             .db_read(move |db| {
                 let conn = db.conn_ref();
