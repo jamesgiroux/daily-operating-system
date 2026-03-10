@@ -347,6 +347,260 @@ pub struct RelationshipDepth {
     pub coverage_gaps: Option<Vec<String>>,
 }
 
+// =============================================================================
+// I508a: Intelligence Dimension Sub-Structs
+// =============================================================================
+
+// -- Dimension 1: Strategic Assessment --
+
+/// A competitive insight detected from meetings, documents, or external sources.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompetitiveInsight {
+    /// Competitor name or product.
+    pub competitor: String,
+    /// "displacement" | "evaluation" | "mentioned" | "incumbent"
+    pub threat_level: Option<String>,
+    /// What was said or observed about this competitor.
+    pub context: Option<String>,
+    /// Source: "meeting" | "email" | "glean" | "user"
+    pub source: Option<String>,
+    /// When this was detected (ISO date).
+    pub detected_at: Option<String>,
+}
+
+/// A strategic priority tracked for this account or project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrategicPriority {
+    /// The priority or initiative.
+    pub priority: String,
+    /// "active" | "at_risk" | "completed" | "paused"
+    pub status: Option<String>,
+    /// Who owns this priority.
+    pub owner: Option<String>,
+    /// Source: "meeting" | "qbr" | "glean" | "user"
+    pub source: Option<String>,
+    /// Expected timeline or deadline.
+    pub timeline: Option<String>,
+}
+
+// -- Dimension 2: Relationship Health --
+
+/// Coverage assessment of stakeholder roles for an account.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverageAssessment {
+    /// Ratio of preset stakeholder_roles that have at least one person assigned (0.0-1.0).
+    pub role_fill_rate: Option<f64>,
+    /// Roles from preset that have no assigned person.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<String>,
+    /// Roles that are filled with assigned people.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub covered: Vec<String>,
+    /// Overall coverage level: "strong" | "adequate" | "thin" | "critical"
+    pub level: Option<String>,
+}
+
+/// An organizational change detected at the account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgChange {
+    /// What changed: "departure" | "hire" | "promotion" | "reorg" | "role_change"
+    pub change_type: String,
+    /// Person affected (name or person_id if known).
+    pub person: String,
+    /// Previous state (e.g., previous role, previous department).
+    pub from: Option<String>,
+    /// New state.
+    pub to: Option<String>,
+    /// When detected (ISO date).
+    pub detected_at: Option<String>,
+    /// Source: "glean" | "meeting" | "email" | "user"
+    pub source: Option<String>,
+}
+
+/// An internal team member assigned to this account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalTeamMember {
+    /// Person ID if known, otherwise None.
+    pub person_id: Option<String>,
+    /// Display name.
+    pub name: String,
+    /// Internal role on this account: "RM" | "AE" | "TAM" | "Division Lead" | etc.
+    pub role: String,
+    /// Source: "glean" | "user" | "crm"
+    pub source: Option<String>,
+}
+
+// -- Dimension 3: Engagement Cadence --
+
+/// Meeting cadence assessment for an account.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CadenceAssessment {
+    /// Meetings per month (30d rolling average).
+    pub meetings_per_month: Option<f64>,
+    /// Trend: "increasing" | "stable" | "declining" | "erratic"
+    pub trend: Option<String>,
+    /// Days since last meeting.
+    pub days_since_last: Option<u32>,
+    /// Assessment: "healthy" | "adequate" | "sparse" | "cold"
+    pub assessment: Option<String>,
+    /// Evidence strings for transparency.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<String>,
+}
+
+/// Email responsiveness assessment for an account.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ResponsivenessAssessment {
+    /// Trend in reply cadence: "improving" | "stable" | "slowing" | "gone_quiet"
+    pub trend: Option<String>,
+    /// Volume trend: "increasing" | "stable" | "decreasing"
+    pub volume_trend: Option<String>,
+    /// Assessment: "responsive" | "normal" | "slow" | "unresponsive"
+    pub assessment: Option<String>,
+    /// Evidence strings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<String>,
+}
+
+// -- Dimension 4: Value & Outcomes --
+
+/// An active blocker impeding progress on this account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Blocker {
+    /// What is blocked.
+    pub description: String,
+    /// Who owns resolving it (person name or team).
+    pub owner: Option<String>,
+    /// How long it's been blocked (ISO date or duration).
+    pub since: Option<String>,
+    /// Impact: "critical" | "high" | "moderate" | "low"
+    pub impact: Option<String>,
+    /// Source: "meeting" | "email" | "glean" | "user"
+    pub source: Option<String>,
+}
+
+// -- Dimension 5: Commercial Context --
+
+/// Contract and commercial context for an account.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ContractContext {
+    /// annual | multi_year | month_to_month
+    pub contract_type: Option<String>,
+    /// true if contract auto-renews unless cancelled.
+    pub auto_renew: Option<bool>,
+    /// ISO date — when the relationship began.
+    pub contract_start: Option<String>,
+    /// ISO date — from accounts.contract_end or Glean/CRM.
+    pub renewal_date: Option<String>,
+    /// Current ARR from vitals or Glean/CRM.
+    pub current_arr: Option<f64>,
+    /// For multi-year: years remaining on current term.
+    pub multi_year_remaining: Option<i32>,
+    /// Outcome of previous renewal: expanded | flat | contracted | contentious | first_term
+    pub previous_renewal_outcome: Option<String>,
+    /// Known procurement requirements (PO process, legal review timeline, budget approval chain).
+    pub procurement_notes: Option<String>,
+    /// Customer's fiscal year start month (1-12).
+    pub customer_fiscal_year_start: Option<i32>,
+}
+
+/// An expansion signal or upsell opportunity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpansionSignal {
+    /// What the expansion opportunity is.
+    pub opportunity: String,
+    /// Estimated ARR impact if known.
+    pub arr_impact: Option<f64>,
+    /// Source: meeting discussion, Glean doc, user-entered.
+    pub source: Option<String>,
+    /// exploring | evaluating | committed | blocked
+    pub stage: Option<String>,
+}
+
+/// Renewal outlook assessment for an account.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RenewalOutlook {
+    /// high | moderate | low — AI-assessed confidence in successful renewal.
+    pub confidence: Option<String>,
+    /// Specific risk factors for THIS renewal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub risk_factors: Vec<String>,
+    /// Is there upsell/expansion potential tied to the renewal conversation?
+    pub expansion_potential: Option<String>,
+    /// When to start the renewal conversation.
+    pub recommended_start: Option<String>,
+    /// What strengthens our position.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub negotiation_leverage: Vec<String>,
+    /// What weakens our position.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub negotiation_risk: Vec<String>,
+}
+
+// -- Dimension 6: External Health Signals --
+
+/// Support ticket health data from external systems.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportHealth {
+    /// Open ticket count.
+    pub open_tickets: Option<u32>,
+    /// Tickets with severity P1/P2.
+    pub critical_tickets: Option<u32>,
+    /// Average resolution time (hours or days).
+    pub avg_resolution_time: Option<String>,
+    /// Trend: "improving" | "stable" | "degrading"
+    pub trend: Option<String>,
+    /// CSAT score if available (0-100).
+    pub csat: Option<f64>,
+    /// Source: "glean_zendesk" | "glean_intercom" | etc.
+    pub source: Option<String>,
+}
+
+/// Product adoption signals from external systems.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AdoptionSignals {
+    /// Active users / licensed users ratio (0.0-1.0).
+    pub adoption_rate: Option<f64>,
+    /// Trend: "growing" | "stable" | "declining"
+    pub trend: Option<String>,
+    /// Key features adopted or not adopted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feature_adoption: Vec<String>,
+    /// Last login or usage date (ISO).
+    pub last_active: Option<String>,
+    /// Source: "glean" | "product_data"
+    pub source: Option<String>,
+}
+
+/// Customer satisfaction data (NPS/CSAT).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SatisfactionData {
+    /// NPS score (-100 to 100).
+    pub nps: Option<i32>,
+    /// CSAT score (0-100).
+    pub csat: Option<f64>,
+    /// Survey date (ISO).
+    pub survey_date: Option<String>,
+    /// Verbatim feedback if available.
+    pub verbatim: Option<String>,
+    /// Source: "glean" | "survey_tool"
+    pub source: Option<String>,
+}
+
 /// Top-level intelligence file (intelligence.json).
 ///
 /// Entity-generic — same schema for accounts, projects, and people per ADR-0057.
@@ -443,6 +697,134 @@ pub struct IntelligenceJson {
     /// I527: Timestamp of the most recent consistency pass.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub consistency_checked_at: Option<String>,
+
+    // =========================================================================
+    // I508a: Intelligence Dimension Fields
+    // =========================================================================
+
+    // Dimension 1: Strategic Assessment
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub competitive_context: Vec<CompetitiveInsight>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strategic_priorities: Vec<StrategicPriority>,
+
+    // Dimension 2: Relationship Health
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage_assessment: Option<CoverageAssessment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub organizational_changes: Vec<OrgChange>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub internal_team: Vec<InternalTeamMember>,
+
+    // Dimension 3: Engagement Cadence
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meeting_cadence: Option<CadenceAssessment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email_responsiveness: Option<ResponsivenessAssessment>,
+
+    // Dimension 4: Value & Outcomes
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blockers: Vec<Blocker>,
+
+    // Dimension 5: Commercial Context
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_context: Option<ContractContext>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expansion_signals: Vec<ExpansionSignal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renewal_outlook: Option<RenewalOutlook>,
+
+    // Dimension 6: External Health Signals
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub support_health: Option<SupportHealth>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_adoption: Option<AdoptionSignals>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nps_csat: Option<SatisfactionData>,
+
+    // Cross-cutting: source attribution (I507)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
+}
+
+/// I508a: Serialization wrapper for all dimension fields stored in `dimensions_json`.
+/// One blob column instead of 15 individual columns — these fields are always
+/// loaded/saved together and rarely queried individually.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DimensionsBlob {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub competitive_context: Vec<CompetitiveInsight>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strategic_priorities: Vec<StrategicPriority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage_assessment: Option<CoverageAssessment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub organizational_changes: Vec<OrgChange>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub internal_team: Vec<InternalTeamMember>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meeting_cadence: Option<CadenceAssessment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email_responsiveness: Option<ResponsivenessAssessment>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blockers: Vec<Blocker>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_context: Option<ContractContext>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expansion_signals: Vec<ExpansionSignal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renewal_outlook: Option<RenewalOutlook>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub support_health: Option<SupportHealth>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_adoption: Option<AdoptionSignals>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nps_csat: Option<SatisfactionData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
+}
+
+impl IntelligenceJson {
+    /// Pack I508a dimension fields into a single JSON blob for DB storage.
+    pub(crate) fn dimensions_blob(&self) -> DimensionsBlob {
+        DimensionsBlob {
+            competitive_context: self.competitive_context.clone(),
+            strategic_priorities: self.strategic_priorities.clone(),
+            coverage_assessment: self.coverage_assessment.clone(),
+            organizational_changes: self.organizational_changes.clone(),
+            internal_team: self.internal_team.clone(),
+            meeting_cadence: self.meeting_cadence.clone(),
+            email_responsiveness: self.email_responsiveness.clone(),
+            blockers: self.blockers.clone(),
+            contract_context: self.contract_context.clone(),
+            expansion_signals: self.expansion_signals.clone(),
+            renewal_outlook: self.renewal_outlook.clone(),
+            support_health: self.support_health.clone(),
+            product_adoption: self.product_adoption.clone(),
+            nps_csat: self.nps_csat.clone(),
+            source_attribution: self.source_attribution.clone(),
+        }
+    }
+
+    /// Unpack I508a dimension fields from DB blob into self.
+    pub(crate) fn apply_dimensions_blob(&mut self, blob: &DimensionsBlob) {
+        self.competitive_context = blob.competitive_context.clone();
+        self.strategic_priorities = blob.strategic_priorities.clone();
+        self.coverage_assessment = blob.coverage_assessment.clone();
+        self.organizational_changes = blob.organizational_changes.clone();
+        self.internal_team = blob.internal_team.clone();
+        self.meeting_cadence = blob.meeting_cadence.clone();
+        self.email_responsiveness = blob.email_responsiveness.clone();
+        self.blockers = blob.blockers.clone();
+        self.contract_context = blob.contract_context.clone();
+        self.expansion_signals = blob.expansion_signals.clone();
+        self.renewal_outlook = blob.renewal_outlook.clone();
+        self.support_health = blob.support_health.clone();
+        self.product_adoption = blob.product_adoption.clone();
+        self.nps_csat = blob.nps_csat.clone();
+        self.source_attribution = blob.source_attribution.clone();
+    }
 }
 
 fn default_version() -> u32 {
@@ -979,6 +1361,7 @@ impl ActionDb {
         let conn = self.conn_ref();
 
         // 1. entity_assessment — all assessment/prose columns
+        let dimensions_json = serde_json::to_string(&intel.dimensions_blob()).ok();
         conn.execute(
             "INSERT INTO entity_assessment (
                 entity_id, entity_type, enriched_at, source_file_count,
@@ -988,8 +1371,9 @@ impl ActionDb {
                 value_delivered, success_metrics, open_commitments,
                 relationship_depth, health_json, org_health_json, consistency_status,
                 consistency_findings_json, consistency_checked_at,
-                portfolio_json, network_json, user_edits_json, source_manifest_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+                portfolio_json, network_json, user_edits_json, source_manifest_json,
+                dimensions_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -1013,7 +1397,8 @@ impl ActionDb {
                 portfolio_json = excluded.portfolio_json,
                 network_json = excluded.network_json,
                 user_edits_json = excluded.user_edits_json,
-                source_manifest_json = excluded.source_manifest_json",
+                source_manifest_json = excluded.source_manifest_json,
+                dimensions_json = excluded.dimensions_json",
             rusqlite::params![
                 intel.entity_id,
                 intel.entity_type,
@@ -1039,6 +1424,7 @@ impl ActionDb {
                 serde_json::to_string(&intel.network).ok(),
                 serde_json::to_string(&intel.user_edits).ok(),
                 serde_json::to_string(&intel.source_manifest).ok(),
+                dimensions_json,
             ],
         )?;
 
@@ -1076,7 +1462,7 @@ impl ActionDb {
                     ea.value_delivered, ea.success_metrics, ea.open_commitments,
                     ea.relationship_depth, ea.consistency_status, ea.consistency_findings_json,
                     ea.consistency_checked_at, ea.portfolio_json, ea.network_json,
-                    ea.user_edits_json, ea.source_manifest_json
+                    ea.user_edits_json, ea.source_manifest_json, ea.dimensions_json
              FROM entity_assessment ea
              LEFT JOIN entity_quality eq ON eq.entity_id = ea.entity_id
              WHERE ea.entity_id = ?1",
@@ -1103,13 +1489,14 @@ impl ActionDb {
             let network_json: Option<String> = row.get(23)?;
             let user_edits_json: Option<String> = row.get(24)?;
             let source_manifest_json: Option<String> = row.get(25)?;
+            let dimensions_json_raw: Option<String> = row.get(26)?;
 
             let health = health_json
                 .as_deref()
                 .and_then(|j| serde_json::from_str::<AccountHealth>(j).ok())
                 .or_else(|| synthesize_health_from_legacy(health_score, health_trend_json.as_deref()));
 
-            Ok(IntelligenceJson {
+            let mut intel = IntelligenceJson {
                 version: 1,
                 entity_id: row.get(0)?,
                 entity_type: row.get(1)?,
@@ -1151,7 +1538,15 @@ impl ActionDb {
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
                 consistency_checked_at: row.get(21)?,
-            })
+                ..Default::default()
+            };
+            // Unpack I508a dimensions blob if present
+            if let Some(ref dj) = dimensions_json_raw {
+                if let Ok(blob) = serde_json::from_str::<DimensionsBlob>(dj) {
+                    intel.apply_dimensions_blob(&blob);
+                }
+            }
+            Ok(intel)
         });
 
         match result {
@@ -1862,6 +2257,7 @@ mod tests {
             consistency_status: None,
             consistency_findings: Vec::new(),
             consistency_checked_at: None,
+            ..Default::default()
         }
     }
 
@@ -2108,6 +2504,181 @@ mod tests {
         assert_eq!(fetched.risks.len(), 2);
     }
 
+    #[test]
+    fn test_db_dimensions_roundtrip() {
+        let db = test_db();
+        let mut intel = sample_intel();
+
+        // Populate I508a dimension fields across all 6 dimensions
+        intel.competitive_context = vec![CompetitiveInsight {
+            competitor: "Rival Corp".to_string(),
+            threat_level: Some("high".to_string()),
+            context: Some("Competing for same segment".to_string()),
+            source: Some("qbr-notes.md".to_string()),
+            detected_at: Some("2026-02-01".to_string()),
+        }];
+        intel.strategic_priorities = vec![StrategicPriority {
+            priority: "Expand enterprise tier".to_string(),
+            status: Some("in_progress".to_string()),
+            owner: Some("VP Sales".to_string()),
+            source: Some("strategy-deck.pdf".to_string()),
+            timeline: Some("Q2 2026".to_string()),
+        }];
+        intel.coverage_assessment = Some(CoverageAssessment {
+            role_fill_rate: Some(0.75),
+            gaps: vec!["No executive sponsor".to_string()],
+            covered: vec!["Technical champion".to_string()],
+            level: Some("partial".to_string()),
+        });
+        intel.organizational_changes = vec![OrgChange {
+            change_type: "departure".to_string(),
+            person: "Jane CTO".to_string(),
+            from: Some("CTO".to_string()),
+            to: None,
+            detected_at: Some("2026-01-20".to_string()),
+            source: Some("email".to_string()),
+        }];
+        intel.internal_team = vec![InternalTeamMember {
+            person_id: Some("p-alice".to_string()),
+            name: "Alice".to_string(),
+            role: "CSM".to_string(),
+            source: Some("crm".to_string()),
+        }];
+        intel.meeting_cadence = Some(CadenceAssessment {
+            meetings_per_month: Some(4.0),
+            trend: Some("stable".to_string()),
+            days_since_last: Some(3),
+            assessment: Some("Healthy cadence".to_string()),
+            evidence: vec!["Weekly sync on Tuesdays".to_string()],
+        });
+        intel.email_responsiveness = Some(ResponsivenessAssessment {
+            trend: Some("improving".to_string()),
+            volume_trend: Some("increasing".to_string()),
+            assessment: Some("Responsive within 24h".to_string()),
+            evidence: vec!["Reply time < 4h last month".to_string()],
+        });
+        intel.blockers = vec![Blocker {
+            description: "SSO integration stalled".to_string(),
+            owner: Some("Engineering".to_string()),
+            since: Some("2026-01-10".to_string()),
+            impact: Some("Blocking 200-seat rollout".to_string()),
+            source: Some("meeting-notes.md".to_string()),
+        }];
+        intel.contract_context = Some(ContractContext {
+            contract_type: Some("annual".to_string()),
+            auto_renew: Some(true),
+            contract_start: Some("2025-03-01".to_string()),
+            renewal_date: Some("2026-03-01".to_string()),
+            current_arr: Some(120_000.0),
+            multi_year_remaining: None,
+            previous_renewal_outcome: Some("expanded".to_string()),
+            procurement_notes: None,
+            customer_fiscal_year_start: Some(1),
+        });
+        intel.expansion_signals = vec![ExpansionSignal {
+            opportunity: "APAC team onboarding".to_string(),
+            arr_impact: Some(30_000.0),
+            source: Some("champion-email".to_string()),
+            stage: Some("discovery".to_string()),
+        }];
+        intel.renewal_outlook = Some(RenewalOutlook {
+            confidence: Some("high".to_string()),
+            risk_factors: vec!["Budget freeze possible".to_string()],
+            expansion_potential: Some("$30k APAC".to_string()),
+            recommended_start: Some("2026-01-15".to_string()),
+            negotiation_leverage: vec!["Multi-year discount".to_string()],
+            negotiation_risk: vec!["Competitor POC".to_string()],
+        });
+        intel.support_health = Some(SupportHealth {
+            open_tickets: Some(3),
+            critical_tickets: Some(0),
+            avg_resolution_time: Some("2.5 days".to_string()),
+            trend: Some("improving".to_string()),
+            csat: Some(4.5),
+            source: Some("zendesk".to_string()),
+        });
+        intel.product_adoption = Some(AdoptionSignals {
+            adoption_rate: Some(0.72),
+            trend: Some("growing".to_string()),
+            feature_adoption: vec!["dashboard".to_string(), "reports".to_string()],
+            last_active: Some("2026-02-28".to_string()),
+            source: Some("product-analytics".to_string()),
+        });
+        intel.nps_csat = Some(SatisfactionData {
+            nps: Some(45),
+            csat: Some(4.2),
+            survey_date: Some("2026-01-15".to_string()),
+            verbatim: Some("Great product, needs better reporting".to_string()),
+            source: Some("survey-tool".to_string()),
+        });
+        let mut source_attr = std::collections::HashMap::new();
+        source_attr.insert(
+            "competitive_context".to_string(),
+            vec!["qbr-notes.md".to_string()],
+        );
+        intel.source_attribution = Some(source_attr);
+
+        // Write to DB
+        db.upsert_entity_intelligence(&intel).expect("upsert with dimensions");
+
+        // Read back
+        let fetched = db
+            .get_entity_intelligence("acme-corp")
+            .expect("get")
+            .expect("should exist");
+
+        // Verify all 15 I508a fields survived the roundtrip
+        assert_eq!(fetched.competitive_context.len(), 1);
+        assert_eq!(fetched.competitive_context[0].competitor, "Rival Corp");
+        assert_eq!(fetched.strategic_priorities.len(), 1);
+        assert_eq!(
+            fetched.strategic_priorities[0].priority,
+            "Expand enterprise tier"
+        );
+        assert!(fetched.coverage_assessment.is_some());
+        assert_eq!(
+            fetched.coverage_assessment.as_ref().unwrap().role_fill_rate,
+            Some(0.75)
+        );
+        assert_eq!(fetched.organizational_changes.len(), 1);
+        assert_eq!(fetched.internal_team.len(), 1);
+        assert_eq!(fetched.internal_team[0].name, "Alice");
+        assert!(fetched.meeting_cadence.is_some());
+        assert_eq!(
+            fetched.meeting_cadence.as_ref().unwrap().meetings_per_month,
+            Some(4.0)
+        );
+        assert!(fetched.email_responsiveness.is_some());
+        assert_eq!(fetched.blockers.len(), 1);
+        assert_eq!(fetched.blockers[0].description, "SSO integration stalled");
+        assert!(fetched.contract_context.is_some());
+        assert_eq!(
+            fetched.contract_context.as_ref().unwrap().current_arr,
+            Some(120_000.0)
+        );
+        assert_eq!(fetched.expansion_signals.len(), 1);
+        assert!(fetched.renewal_outlook.is_some());
+        assert_eq!(
+            fetched.renewal_outlook.as_ref().unwrap().confidence,
+            Some("high".to_string())
+        );
+        assert!(fetched.support_health.is_some());
+        assert_eq!(fetched.support_health.as_ref().unwrap().open_tickets, Some(3));
+        assert!(fetched.product_adoption.is_some());
+        assert_eq!(
+            fetched.product_adoption.as_ref().unwrap().adoption_rate,
+            Some(0.72)
+        );
+        assert!(fetched.nps_csat.is_some());
+        assert_eq!(fetched.nps_csat.as_ref().unwrap().nps, Some(45));
+        assert!(fetched.source_attribution.is_some());
+        assert!(fetched
+            .source_attribution
+            .as_ref()
+            .unwrap()
+            .contains_key("competitive_context"));
+    }
+
     // =========================================================================
     // I134: format_intelligence_markdown
     // =========================================================================
@@ -2178,6 +2749,7 @@ mod tests {
             consistency_status: None,
             consistency_findings: Vec::new(),
             consistency_checked_at: None,
+            ..Default::default()
         };
 
         let md = format_intelligence_markdown(&intel);

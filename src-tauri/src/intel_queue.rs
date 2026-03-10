@@ -245,6 +245,8 @@ pub struct EnrichmentInput {
     pub prompt: String,
     pub file_manifest: Vec<SourceManifestEntry>,
     pub file_count: usize,
+    /// I499: Pre-computed algorithmic health for accounts.
+    pub computed_health: Option<crate::intelligence::io::AccountHealth>,
 }
 
 /// Parsed enrichment output from one model response section.
@@ -738,6 +740,22 @@ pub fn gather_enrichment_input(
         }
     }
 
+    // I499: Compute algorithmic health for accounts before prompt building.
+    // This populates ctx.computed_health so the prompt uses narrative-only health schema.
+    let mut ctx = ctx;
+    let computed_health = if request.entity_type == "account" {
+        account.as_ref().map(|acct| {
+            crate::intelligence::health_scoring::compute_account_health(
+                &db,
+                acct,
+                ctx.org_health.as_ref(),
+            )
+        })
+    } else {
+        None
+    };
+    ctx.computed_health = computed_health.clone();
+
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing.
     // For accounts, pass account_type so prompts can adapt for partner vs customer (I382).
@@ -770,6 +788,7 @@ pub fn gather_enrichment_input(
         prompt,
         file_manifest,
         file_count,
+        computed_health,
     })
 }
 
@@ -1162,6 +1181,26 @@ pub fn write_enrichment_results(
                 final_intel = post_repair_intel;
             }
         }
+    }
+
+    // I499: Merge computed health dimensions with LLM narrative.
+    // The algorithmic engine provides score/band/dimensions/confidence;
+    // the LLM provides only narrative + recommended_actions.
+    if let Some(ref computed) = input.computed_health {
+        let llm_narrative = final_intel
+            .health
+            .as_ref()
+            .and_then(|h| h.narrative.clone());
+        let llm_actions = final_intel
+            .health
+            .as_ref()
+            .map(|h| h.recommended_actions.clone())
+            .unwrap_or_default();
+        final_intel.health = Some(crate::intelligence::io::AccountHealth {
+            narrative: llm_narrative,
+            recommended_actions: llm_actions,
+            ..computed.clone()
+        });
     }
 
     // Write intelligence.json to disk (no DB needed)
@@ -1793,6 +1832,7 @@ mod tests {
                     prompt: String::new(),
                     file_manifest: vec![],
                     file_count: 0,
+                    computed_health: None,
                 },
             ),
             (
@@ -1811,6 +1851,7 @@ mod tests {
                     prompt: String::new(),
                     file_manifest: vec![],
                     file_count: 0,
+                    computed_health: None,
                 },
             ),
         ];
@@ -1867,6 +1908,7 @@ mod tests {
                 prompt: String::new(),
                 file_manifest: vec![],
                 file_count: 0,
+                computed_health: None,
             },
         )];
 
@@ -1901,6 +1943,7 @@ mod tests {
                     prompt: "Prompt for acme".to_string(),
                     file_manifest: vec![],
                     file_count: 0,
+                    computed_health: None,
                 },
             ),
             (
@@ -1919,6 +1962,7 @@ mod tests {
                     prompt: "Prompt for beta".to_string(),
                     file_manifest: vec![],
                     file_count: 0,
+                    computed_health: None,
                 },
             ),
         ];

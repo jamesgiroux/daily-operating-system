@@ -2261,17 +2261,28 @@ pub async fn attach_meeting_transcript(
             let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);
             let _ = app_handle.emit("transcript-processed", &outcome_data);
 
-            // Emit transcript_outcomes signal via the main DB connection so the
-            // propagation engine can invalidate linked meeting preps. The signal
-            // emitted inside process_transcript uses a dedicated connection and the
-            // wrong entity fallback (meeting.id instead of account_id) — this
-            // corrects both issues.
+            // Emit transcript signals via the main DB connection so the
+            // propagation engine can invalidate linked meeting preps.
             {
                 let mid = meeting_id.clone();
                 let wins = result.wins.len();
                 let risks = result.risks.len();
                 let decisions = result.decisions.len();
                 let engine = std::sync::Arc::clone(&state.signals.engine);
+                let sentiment_json = result.sentiment.as_ref()
+                    .and_then(|s| serde_json::to_string(s).ok());
+                let competitor_mentions: Vec<String> = result.sentiment.as_ref()
+                    .map(|s| s.competitor_mentions.clone())
+                    .unwrap_or_default();
+                let escalation_signals: Vec<String> = result.interaction_dynamics.as_ref()
+                    .map(|d| d.escalation_signals.iter().map(|e| e.quote.clone()).collect())
+                    .unwrap_or_default();
+                let decision_maker_inactive = result.interaction_dynamics.as_ref()
+                    .and_then(|d| d.engagement_signals.as_ref())
+                    .and_then(|e| e.decision_maker_active.as_deref())
+                    .map(|v| v == "no")
+                    .unwrap_or(false);
+                let meeting_title = meeting.title.clone();
                 let _ = state
                     .db_write(move |db| {
                         let account_id: Option<String> =
@@ -2280,22 +2291,64 @@ pub async fn attach_meeting_transcript(
                                     .find(|e| e.entity_type == crate::entity::EntityType::Account)
                                     .map(|e| e.id)
                             });
-                        if let Some(aid) = account_id {
+                        if let Some(ref aid) = account_id {
                             let value = format!(
-                            "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
-                            mid, wins, risks, decisions
-                        );
+                                "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
+                                mid, wins, risks, decisions
+                            );
                             let _ = crate::signals::bus::emit_signal_and_propagate(
                                 db,
                                 &engine,
                                 "account",
-                                &aid,
+                                aid,
                                 "transcript_outcomes",
                                 "transcript",
                                 Some(&value),
                                 0.75,
                             );
+
+                            // I509: Emit sentiment-derived signals
+                            if let Some(ref sj) = sentiment_json {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "transcript_sentiment", "transcript",
+                                    Some(sj), 0.8,
+                                );
+                            }
+                            for competitor in &competitor_mentions {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "competitor_mentioned", "transcript",
+                                    Some(competitor), 0.7,
+                                );
+                            }
+                            for escalation in &escalation_signals {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "escalation_detected", "transcript",
+                                    Some(escalation), 0.8,
+                                );
+                            }
+                            if decision_maker_inactive {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "stakeholder_disengagement", "transcript",
+                                    Some("decision_maker_inactive"), 0.6,
+                                );
+                            }
                         }
+
+                        // I509: Store sentiment as DB capture
+                        if let Some(ref sj) = sentiment_json {
+                            let _ = db.insert_capture(
+                                &mid,
+                                &meeting_title,
+                                account_id.as_deref(),
+                                "sentiment",
+                                sj,
+                            );
+                        }
+
                         Ok(())
                     })
                     .await;
