@@ -76,14 +76,20 @@ pub fn persist_co_attendance(db: &ActionDb, pairs: &[CoAttendancePair]) -> Resul
     let mut persisted = 0;
 
     for pair in pairs {
-        let rel_id = format!("pr-coatt-{}-{}", pair.person_a_id, pair.person_b_id);
-
         // Check for existing user-confirmed relationship — don't overwrite
         let skip: bool = db
             .conn_ref()
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM person_relationships WHERE id = ?1 AND (source = 'user_confirmed' OR confidence >= 1.0))",
-                rusqlite::params![rel_id],
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM person_relationships
+                    WHERE (
+                        (from_person_id = ?1 AND to_person_id = ?2)
+                        OR (from_person_id = ?2 AND to_person_id = ?1)
+                    )
+                    AND (source = 'user_confirmed' OR confidence >= 1.0)
+                )",
+                rusqlite::params![pair.person_a_id, pair.person_b_id],
                 |row| row.get(0),
             )
             .unwrap_or(false);
@@ -91,6 +97,7 @@ pub fn persist_co_attendance(db: &ActionDb, pairs: &[CoAttendancePair]) -> Resul
             continue;
         }
 
+        let rel_id = format!("pr-coatt-{}-{}", pair.person_a_id, pair.person_b_id);
         let (confidence, rel_type) = confidence_and_type(pair.meeting_count);
 
         db.upsert_person_relationship(&UpsertRelationship {

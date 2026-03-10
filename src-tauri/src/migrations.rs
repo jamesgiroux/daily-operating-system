@@ -263,6 +263,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 61,
         sql: include_str!("migrations/061_stakeholder_glean_staleness.sql"),
     },
+    Migration {
+        version: 62,
+        sql: include_str!("migrations/062_intelligence_feedback.sql"),
+    },
+    Migration {
+        version: 63,
+        sql: include_str!("migrations/063_email_signals_source.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -376,6 +384,20 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
             return Err(
                 "Schema integrity check failed: missing column person_relationships.rationale"
                     .to_string(),
+            );
+        }
+    }
+
+    if version >= 63 {
+        if !table_exists(conn, "email_signals")? {
+            return Err(
+                "Schema integrity check failed: missing required table 'email_signals'".to_string(),
+            );
+        }
+        let email_signal_cols = table_columns(conn, "email_signals")?;
+        if !email_signal_cols.contains("source") {
+            return Err(
+                "Schema integrity check failed: missing column email_signals.source".to_string(),
             );
         }
     }
@@ -652,13 +674,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 61,
-            "should apply all migrations including stakeholder Glean staleness"
+            applied, 63,
+            "should apply all migrations including email signal source attribution"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 61);
+        assert_eq!(version, 63);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -1016,6 +1038,13 @@ mod tests {
         )
         .expect("email_signals should have deactivated_at column");
 
+        // Verify source column on email_signals (migration 063)
+        conn.execute(
+            "UPDATE email_signals SET source = 'email_enrichment' WHERE email_id = 'em-1'",
+            [],
+        )
+        .expect("email_signals should have source column");
+
         // Verify account_type column exists with correct default (migration 036)
         let acct_type: String = conn
             .query_row(
@@ -1254,16 +1283,16 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v61.
+        // Run migrations — should bootstrap v1 and apply v2 through v63.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 60,
-            "bootstrap should mark v1, then apply 60 pending migrations (v2-v61)"
+            applied, 62,
+            "bootstrap should mark v1, then apply 62 pending migrations (v2-v63)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 61);
+        assert_eq!(version, 63);
 
         // Verify existing data is untouched
         let title: String = conn

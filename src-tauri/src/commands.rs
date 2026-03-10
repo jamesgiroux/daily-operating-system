@@ -8260,26 +8260,25 @@ pub async fn correct_email_disposition(
 
     state
         .db_write(move |db| {
+            let scoring_source = db
+                .get_email_signal_source_for_feedback(&email_id)
+                .map_err(|e| format!("Failed to resolve email signal source: {}", e))?
+                .unwrap_or_else(|| "email_enrichment".to_string());
+
             crate::services::mutations::upsert_email_feedback_signal(
                 db,
                 &email_id,
                 &corrected_priority,
             )?;
 
-            // I507: Penalize the email enrichment source that produced the wrong disposition.
-            // email_signals has no source column, so we use "email_enrichment" as the default.
-            let _ = db.upsert_signal_weight(
-                "email_enrichment",
-                "email",
-                "email_priority",
-                0.0,
-                1.0,
-            );
+            db.upsert_signal_weight(&scoring_source, "email", "email_priority", 0.0, 1.0)
+                .map_err(|e| format!("Failed to update signal weights: {}", e))?;
 
             log::info!(
-                "correct_email_disposition: {} corrected to {}",
+                "correct_email_disposition: {} corrected to {} (penalized source: {})",
                 email_id,
-                corrected_priority
+                corrected_priority,
+                scoring_source
             );
             Ok(format!("Disposition corrected to {}", corrected_priority))
         })
