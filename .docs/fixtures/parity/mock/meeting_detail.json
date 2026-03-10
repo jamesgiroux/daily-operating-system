@@ -1,0 +1,32 @@
+{
+  "surfaceId": "meeting_detail",
+  "commands": {
+    "get_meeting_intelligence": {
+      "meeting": {
+        "id": "mtg-1",
+        "title": "Acme check-in"
+      },
+      "isPast": false,
+      "linkedEntities": [
+        {
+          "id": "acc-1",
+          "name": "Acme",
+          "entityType": "account"
+        }
+      ]
+    },
+    "get_meeting_outcomes": {
+      "meetingId": "mtg-1",
+      "wins": ["Usage up 10%"],
+      "risks": ["Budget pressure"],
+      "actions": []
+    }
+  },
+  "errors": {
+    "get_meeting_intelligence": {
+      "code": "MEETING_NOT_FOUND",
+      "message": "Meeting not found",
+      "retryable": false
+    }
+  }
+}
