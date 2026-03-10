@@ -1,4 +1,5 @@
 use super::*;
+use rusqlite::OptionalExtension;
 
 impl ActionDb {
     // =========================================================================
@@ -346,6 +347,39 @@ impl ActionDb {
         urgency: Option<&str>,
         detected_at: Option<&str>,
     ) -> Result<bool, DbError> {
+        self.upsert_email_signal_with_source(
+            email_id,
+            sender_email,
+            person_id,
+            entity_id,
+            entity_type,
+            signal_type,
+            signal_text,
+            confidence,
+            sentiment,
+            urgency,
+            detected_at,
+            None,
+        )
+    }
+
+    /// Insert an email signal with explicit source attribution.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_email_signal_with_source(
+        &self,
+        email_id: &str,
+        sender_email: Option<&str>,
+        person_id: Option<&str>,
+        entity_id: &str,
+        entity_type: &str,
+        signal_type: &str,
+        signal_text: &str,
+        confidence: Option<f64>,
+        sentiment: Option<&str>,
+        urgency: Option<&str>,
+        detected_at: Option<&str>,
+        source: Option<&str>,
+    ) -> Result<bool, DbError> {
         if !Self::VALID_SIGNAL_TYPES.contains(&signal_type) {
             log::warn!(
                 "Ignoring unknown email signal type '{}' for entity {}",
@@ -365,8 +399,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT OR IGNORE INTO email_signals (
                 email_id, sender_email, person_id, entity_id, entity_type,
-                signal_type, signal_text, confidence, sentiment, urgency, detected_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, COALESCE(?11, datetime('now')))",
+                signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, COALESCE(?11, datetime('now')), COALESCE(?12, 'email_enrichment'))",
             params![
                 email_id,
                 sender_email,
@@ -379,9 +413,31 @@ impl ActionDb {
                 sentiment,
                 urgency,
                 detected_at,
+                source,
             ],
         )?;
         Ok(self.conn.changes() > 0)
+    }
+
+    /// Get the most recent non-feedback email signal source for a given email.
+    pub fn get_email_signal_source_for_feedback(
+        &self,
+        email_id: &str,
+    ) -> Result<Option<String>, DbError> {
+        self.conn
+            .query_row(
+                "SELECT source
+                 FROM email_signals
+                 WHERE email_id = ?1
+                   AND signal_type != 'feedback'
+                   AND deactivated_at IS NULL
+                 ORDER BY detected_at DESC, id DESC
+                 LIMIT 1",
+                params![email_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(DbError::Sqlite)
     }
 
     /// Dismiss a single email signal by setting `deactivated_at`.
@@ -417,7 +473,7 @@ impl ActionDb {
     ) -> Result<Vec<DbEmailSignal>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
-                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
              FROM email_signals
              WHERE entity_id = ?1 AND deactivated_at IS NULL
              ORDER BY detected_at DESC, id DESC
@@ -438,6 +494,7 @@ impl ActionDb {
                 sentiment: row.get(9)?,
                 urgency: row.get(10)?,
                 detected_at: row.get(11)?,
+                source: row.get(12)?,
             })
         })?;
 
@@ -460,7 +517,7 @@ impl ActionDb {
         let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{}", i)).collect();
         let sql = format!(
             "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
-                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
              FROM email_signals
              WHERE email_id IN ({}) AND deactivated_at IS NULL
              ORDER BY detected_at DESC, id DESC",
@@ -487,6 +544,7 @@ impl ActionDb {
                 sentiment: row.get(9)?,
                 urgency: row.get(10)?,
                 detected_at: row.get(11)?,
+                source: row.get(12)?,
             })
         })?;
 
