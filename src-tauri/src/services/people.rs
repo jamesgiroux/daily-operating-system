@@ -183,6 +183,19 @@ pub fn update_person_field(
     field: &str,
     value: &str,
 ) -> Result<(), String> {
+    let prior_source = db
+        .get_person(person_id)
+        .ok()
+        .flatten()
+        .and_then(|person| person.enrichment_sources)
+        .and_then(|sources_json| serde_json::from_str::<serde_json::Value>(&sources_json).ok())
+        .and_then(|sources| {
+            sources[field]
+                .get("source")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        });
+
     db.update_person_field(person_id, field, value)
         .map_err(|e| e.to_string())?;
 
@@ -210,21 +223,21 @@ pub fn update_person_field(
         );
     }
 
-    // I507: Source-attributed correction feedback — penalize the source that provided
-    // the wrong value. Read enrichment_sources JSON to find the prior source for this field.
-    if let Ok(Some(person)) = db.get_person(person_id) {
-        if let Some(ref sources_json) = person.enrichment_sources {
-            if let Ok(sources) = serde_json::from_str::<serde_json::Value>(sources_json) {
-                if let Some(prior_source) = sources[field]["source"].as_str() {
-                    let _ = db.upsert_signal_weight(
-                        prior_source,
-                        "person",
-                        "profile_enrichment",
-                        0.0,
-                        1.0,
-                    );
-                }
-            }
+    // Mark this field as user-owned so lower-priority enrichment sources cannot overwrite it.
+    if let Err(e) = db.set_person_field_source(person_id, field, "user") {
+        log::warn!(
+            "I507: Failed to stamp user provenance for person {} field {}: {}",
+            person_id,
+            field,
+            e
+        );
+    }
+
+    // I507: Source-attributed correction feedback — penalize the prior source that
+    // wrote the field, then mark user as the new owner in provenance.
+    if let Some(prior_source) = prior_source.as_deref() {
+        if prior_source != "user" {
+            let _ = db.upsert_signal_weight(prior_source, "person", "profile_enrichment", 0.0, 1.0);
         }
     }
 

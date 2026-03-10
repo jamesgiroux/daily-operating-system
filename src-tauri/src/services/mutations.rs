@@ -288,7 +288,7 @@ pub fn upsert_email_feedback_signal(
         "User corrected auto-archived email to {}",
         corrected_priority
     );
-    db.upsert_email_signal(
+    db.upsert_email_signal_with_source(
         email_id,
         None,
         None,
@@ -300,6 +300,7 @@ pub fn upsert_email_feedback_signal(
         None,
         None,
         None,
+        Some("user_feedback"),
     )
     .map(|_| ())
     .map_err(|e| format!("Failed to record correction signal: {}", e))
