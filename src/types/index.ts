@@ -695,6 +695,53 @@ export interface CapturedAction {
 // Transcript & Meeting Outcomes (I44 / I45 / ADR-0044)
 // =============================================================================
 
+/** Sentiment analysis from transcript processing (I509) */
+export interface TranscriptSentiment {
+  overall?: string;
+  customer?: string;
+  engagement?: string;
+  forwardLooking: boolean;
+  competitorMentions: string[];
+  championPresent?: boolean;
+  championEngaged?: boolean;
+}
+
+/** Per-speaker sentiment from a transcript (I509) */
+export interface SpeakerSentiment {
+  name: string;
+  sentiment: string;
+  evidence?: string;
+}
+
+/** Engagement quality signals from a transcript (I509) */
+export interface EngagementSignals {
+  questionDensity?: string;
+  decisionMakerActive?: string;
+  forwardLooking?: string;
+  monologueRisk?: boolean;
+}
+
+/** A competitor mentioned during a meeting (I509) */
+export interface CompetitorMention {
+  competitor: string;
+  context: string;
+}
+
+/** An escalation signal detected in meeting language (I509) */
+export interface EscalationSignal {
+  quote: string;
+  speaker?: string;
+}
+
+/** Interaction dynamics extracted from transcript analysis (I509) */
+export interface InteractionDynamics {
+  talkBalance?: string;
+  speakerSentiment: SpeakerSentiment[];
+  engagementSignals?: EngagementSignals;
+  competitorMentions: CompetitorMention[];
+  escalationSignals: EscalationSignal[];
+}
+
 /** Result of transcript processing */
 export interface TranscriptResult {
   status: "success" | "error";
@@ -707,6 +754,8 @@ export interface TranscriptResult {
   discussion: string[];
   analysis?: string;
   message?: string;
+  sentiment?: TranscriptSentiment;
+  interactionDynamics?: InteractionDynamics;
 }
 
 /** Meeting outcomes (from transcript processing or manual capture) */
@@ -1037,7 +1086,6 @@ export interface AccountListItem {
   arr?: number;
   health?: AccountHealth;
   nps?: number;
-  teamSummary?: string;
   renewalDate?: string;
   openActionCount: number;
   daysSinceLastMeeting?: number;
@@ -1333,7 +1381,8 @@ export interface OrgHealthData {
   gatheredAt: string;
 }
 
-export interface TranscriptSentiment {
+/** Intelligence-layer transcript sentiment (from io.rs TranscriptSentiment, used in entity assessment) */
+export interface IntelligenceTranscriptSentiment {
   overall: string;
   customer?: string;
   engagement?: string;
@@ -1341,6 +1390,137 @@ export interface TranscriptSentiment {
   competitorMentions?: string[];
   championPresent?: string;
   championEngaged?: string;
+}
+
+// =============================================================================
+// I508a: Intelligence Dimension Sub-Types
+// =============================================================================
+
+// -- Dimension 1: Strategic Assessment --
+
+export interface CompetitiveInsight {
+  competitor: string;
+  threatLevel?: string;
+  context?: string;
+  source?: string;
+  detectedAt?: string;
+}
+
+export interface StrategicPriority {
+  priority: string;
+  status?: string;
+  owner?: string;
+  source?: string;
+  timeline?: string;
+}
+
+// -- Dimension 2: Relationship Health --
+
+export interface CoverageAssessment {
+  roleFillRate?: number;
+  gaps?: string[];
+  covered?: string[];
+  level?: string;
+}
+
+export interface OrgChange {
+  changeType: string;
+  person: string;
+  from?: string;
+  to?: string;
+  detectedAt?: string;
+  source?: string;
+}
+
+export interface InternalTeamMember {
+  personId?: string;
+  name: string;
+  role: string;
+  source?: string;
+}
+
+// -- Dimension 3: Engagement Cadence --
+
+export interface CadenceAssessment {
+  meetingsPerMonth?: number;
+  trend?: string;
+  daysSinceLast?: number;
+  assessment?: string;
+  evidence?: string[];
+}
+
+export interface ResponsivenessAssessment {
+  trend?: string;
+  volumeTrend?: string;
+  assessment?: string;
+  evidence?: string[];
+}
+
+// -- Dimension 4: Value & Outcomes --
+
+export interface Blocker {
+  description: string;
+  owner?: string;
+  since?: string;
+  impact?: string;
+  source?: string;
+}
+
+// -- Dimension 5: Commercial Context --
+
+export interface ContractContext {
+  contractType?: string;
+  autoRenew?: boolean;
+  contractStart?: string;
+  renewalDate?: string;
+  currentArr?: number;
+  multiYearRemaining?: number;
+  previousRenewalOutcome?: string;
+  procurementNotes?: string;
+  customerFiscalYearStart?: number;
+}
+
+export interface ExpansionSignal {
+  opportunity: string;
+  arrImpact?: number;
+  source?: string;
+  stage?: string;
+}
+
+export interface RenewalOutlook {
+  confidence?: string;
+  riskFactors?: string[];
+  expansionPotential?: string;
+  recommendedStart?: string;
+  negotiationLeverage?: string[];
+  negotiationRisk?: string[];
+}
+
+// -- Dimension 6: External Health Signals --
+
+export interface SupportHealth {
+  openTickets?: number;
+  criticalTickets?: number;
+  avgResolutionTime?: string;
+  trend?: string;
+  csat?: number;
+  source?: string;
+}
+
+export interface AdoptionSignals {
+  adoptionRate?: number;
+  trend?: string;
+  featureAdoption?: string[];
+  lastActive?: string;
+  source?: string;
+}
+
+export interface SatisfactionData {
+  nps?: number;
+  csat?: number;
+  surveyDate?: string;
+  verbatim?: string;
+  source?: string;
 }
 
 /** Synthesized intelligence for an entity (account, project, or person). */
@@ -1381,6 +1561,45 @@ export interface EntityIntelligence {
   consistencyFindings?: ConsistencyFinding[];
   /** I527: Timestamp of latest consistency check. */
   consistencyCheckedAt?: string;
+
+  // I508a: Intelligence Dimension Fields
+
+  /** Dimension 1: Competitive insights. */
+  competitiveContext?: CompetitiveInsight[];
+  /** Dimension 1: Strategic priorities. */
+  strategicPriorities?: StrategicPriority[];
+
+  /** Dimension 2: Stakeholder coverage assessment. */
+  coverageAssessment?: CoverageAssessment | null;
+  /** Dimension 2: Organizational changes detected. */
+  organizationalChanges?: OrgChange[];
+  /** Dimension 2: Internal team assigned to this account. */
+  internalTeam?: InternalTeamMember[];
+
+  /** Dimension 3: Meeting cadence assessment. */
+  meetingCadence?: CadenceAssessment | null;
+  /** Dimension 3: Email responsiveness assessment. */
+  emailResponsiveness?: ResponsivenessAssessment | null;
+
+  /** Dimension 4: Active blockers. */
+  blockers?: Blocker[];
+
+  /** Dimension 5: Contract and commercial context. */
+  contractContext?: ContractContext | null;
+  /** Dimension 5: Expansion signals. */
+  expansionSignals?: ExpansionSignal[];
+  /** Dimension 5: Renewal outlook. */
+  renewalOutlook?: RenewalOutlook | null;
+
+  /** Dimension 6: Support ticket health. */
+  supportHealth?: SupportHealth | null;
+  /** Dimension 6: Product adoption signals. */
+  productAdoption?: AdoptionSignals | null;
+  /** Dimension 6: NPS/CSAT satisfaction data. */
+  npsCsat?: SatisfactionData | null;
+
+  /** Cross-cutting: source attribution (I507). */
+  sourceAttribution?: Record<string, string[]> | null;
 }
 
 export interface SourceManifestEntry {

@@ -698,4 +698,71 @@ impl ActionDb {
             .map_err(|e| format!("Failed to deactivate email signals: {e}"))?;
         Ok(rows)
     }
+
+    /// I487: Check if a Glean document signal already exists for a URL.
+    ///
+    /// If `updated_at` is provided, checks if a signal exists with that URL
+    /// created since the document's update time. Otherwise uses max_age_days.
+    pub fn has_glean_signal_for_url(
+        &self,
+        entity_id: &str,
+        url: &str,
+        updated_at: Option<&str>,
+        max_age_days: i32,
+    ) -> Result<bool, DbError> {
+        let count: i32 = if let Some(doc_updated) = updated_at {
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_id = ?1
+                   AND signal_type = 'glean_document'
+                   AND value LIKE '%' || ?2 || '%'
+                   AND created_at >= ?3",
+                params![entity_id, url, doc_updated],
+                |row| row.get(0),
+            )?
+        } else {
+            let days_param = format!("-{max_age_days} days");
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_id = ?1
+                   AND signal_type = 'glean_document'
+                   AND value LIKE '%' || ?2 || '%'
+                   AND created_at >= datetime('now', ?3)",
+                params![entity_id, url, days_param],
+                |row| row.get(0),
+            )?
+        };
+        Ok(count > 0)
+    }
+
+    /// I499: Get recent signal events for an entity within a time window.
+    pub fn get_recent_signals_for_entity(
+        &self,
+        entity_id: &str,
+        days: i32,
+    ) -> Result<Vec<(String, String, f64, String)>, DbError> {
+        let days_param = format!("-{days} days");
+        let mut stmt = self.conn.prepare(
+            "SELECT signal_type, source, confidence, created_at
+             FROM signal_events
+             WHERE entity_id = ?1
+               AND created_at >= datetime('now', ?2)
+             ORDER BY created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![entity_id, days_param], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+
+        let mut signals = Vec::new();
+        for row in rows {
+            signals.push(row?);
+        }
+        Ok(signals)
+    }
 }
