@@ -1885,8 +1885,14 @@ fn test_update_person_field() {
 
     db.update_person_field(&person.id, "role", "VP Engineering")
         .expect("update role");
+    db.set_person_field_source(&person.id, "role", "user")
+        .expect("set field source");
     let updated = db.get_person(&person.id).expect("get").unwrap();
     assert_eq!(updated.role, Some("VP Engineering".to_string()));
+    let sources_json = updated.enrichment_sources.expect("enrichment_sources should exist");
+    let sources: serde_json::Value =
+        serde_json::from_str(&sources_json).expect("parse enrichment_sources");
+    assert_eq!(sources["role"]["source"].as_str(), Some("user"));
 
     // Invalid field should error
     let err = db.update_person_field(&person.id, "invalid_field", "val");
@@ -3617,6 +3623,76 @@ fn test_insert_and_query_email_signals() {
     assert_eq!(signals.len(), 1);
     assert_eq!(signals[0].signal_type, "timeline");
     assert!(signals[0].signal_text.contains("launch date"));
+    assert_eq!(signals[0].source, "email_enrichment");
+}
+
+#[test]
+fn test_email_signal_source_attribution_roundtrip() {
+    let db = test_db();
+    setup_account(&db, "acc1", "Acme Corp");
+
+    db.upsert_email_signal_with_source(
+        "email-source",
+        Some("owner@acme.com"),
+        None,
+        "acc1",
+        "account",
+        "timeline",
+        "Updated timeline requested",
+        Some(0.8),
+        Some("neutral"),
+        Some("medium"),
+        Some("2026-02-20T10:00:00Z"),
+        Some("ai_classification"),
+    )
+    .expect("insert signal with source");
+
+    let source = db
+        .get_email_signal_source_for_feedback("email-source")
+        .expect("lookup source");
+    assert_eq!(source.as_deref(), Some("ai_classification"));
+}
+
+#[test]
+fn test_email_signal_source_lookup_ignores_feedback_rows() {
+    let db = test_db();
+    setup_account(&db, "acc1", "Acme Corp");
+
+    db.upsert_email_signal_with_source(
+        "email-feedback",
+        Some("owner@acme.com"),
+        None,
+        "acc1",
+        "account",
+        "timeline",
+        "Original signal",
+        Some(0.8),
+        Some("neutral"),
+        Some("medium"),
+        Some("2026-02-20T10:00:00Z"),
+        Some("ai_classification"),
+    )
+    .expect("insert original signal");
+    db.upsert_email_signal_with_source(
+        "email-feedback",
+        None,
+        None,
+        "system",
+        "account",
+        "feedback",
+        "User corrected priority",
+        Some(1.0),
+        None,
+        None,
+        Some("2026-02-20T11:00:00Z"),
+        Some("user_feedback"),
+    )
+    .expect("insert feedback row");
+
+    let source = db
+        .get_email_signal_source_for_feedback("email-feedback")
+        .expect("lookup source");
+    assert_eq!(source.as_deref(), Some("ai_classification"));
 }
 
 #[test]
