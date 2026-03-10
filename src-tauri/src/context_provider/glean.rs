@@ -287,6 +287,133 @@ impl GleanMcpClient {
 }
 
 // ---------------------------------------------------------------------------
+// I500: Org Health Data Parsing
+// ---------------------------------------------------------------------------
+
+/// I500: Parse org-level health data from Glean search results.
+///
+/// Looks for health signals in Salesforce, Zendesk, and other CRM-type documents.
+/// Priority: salesforce_account > zendesk_organization > other doc types.
+fn parse_org_health_data(
+    results: &[GleanSearchResult],
+    _account_name: &str,
+) -> Option<crate::intelligence::io::OrgHealthData> {
+    // Sort results by doc_type priority
+    let mut prioritized: Vec<&GleanSearchResult> = results
+        .iter()
+        .filter(|r| r.snippet.is_some())
+        .collect();
+
+    prioritized.sort_by(|a, b| {
+        let priority = |dt: Option<&str>| match dt {
+            Some(t) if t.contains("salesforce") => 0,
+            Some(t) if t.contains("zendesk") => 1,
+            Some(t) if t.contains("hubspot") || t.contains("gainsight") => 2,
+            _ => 3,
+        };
+        priority(a.doc_type.as_deref()).cmp(&priority(b.doc_type.as_deref()))
+    });
+
+    let mut health_band: Option<String> = None;
+    let mut renewal_likelihood: Option<String> = None;
+    let mut growth_tier: Option<String> = None;
+    let mut customer_stage: Option<String> = None;
+    let mut support_tier: Option<String> = None;
+    let mut icp_fit: Option<String> = None;
+    let mut best_source = String::new();
+
+    for result in &prioritized {
+        let snippet = result.snippet.as_deref().unwrap_or("");
+        let title = result.title.as_deref().unwrap_or("");
+        let combined = format!("{} {}", title, snippet).to_lowercase();
+
+        // Health band detection
+        if health_band.is_none() {
+            if combined.contains("health_score_3_green")
+                || combined.contains("health score: green")
+                || combined.contains("health: green")
+            {
+                health_band = Some("green".to_string());
+            } else if combined.contains("health_score_2_yellow")
+                || combined.contains("health score: yellow")
+                || combined.contains("health: yellow")
+            {
+                health_band = Some("yellow".to_string());
+            } else if combined.contains("health_score_1_red")
+                || combined.contains("health score: red")
+                || combined.contains("health: red")
+            {
+                health_band = Some("red".to_string());
+            }
+        }
+
+        // Field pattern matching (case-insensitive on combined text)
+        for line in snippet.lines().chain(title.lines()) {
+            let line_lower = line.to_lowercase();
+
+            if renewal_likelihood.is_none() {
+                if let Some(rest) = line_lower.strip_prefix("renewal likelihood:") {
+                    renewal_likelihood = Some(rest.trim().to_string());
+                }
+            }
+            if growth_tier.is_none() {
+                if let Some(rest) = line_lower.strip_prefix("growth tier:") {
+                    growth_tier = Some(rest.trim().to_string());
+                }
+            }
+            if customer_stage.is_none() {
+                if let Some(rest) = line_lower.strip_prefix("customer stage:") {
+                    customer_stage = Some(rest.trim().to_string());
+                }
+            }
+            if support_tier.is_none() {
+                if let Some(rest) = line_lower.strip_prefix("support tier:") {
+                    support_tier = Some(rest.trim().to_string());
+                }
+            }
+            if icp_fit.is_none() {
+                if let Some(rest) = line_lower.strip_prefix("icp fit:") {
+                    icp_fit = Some(rest.trim().to_string());
+                }
+            }
+        }
+
+        // Track best source
+        if best_source.is_empty()
+            && (health_band.is_some()
+                || renewal_likelihood.is_some()
+                || growth_tier.is_some()
+                || customer_stage.is_some())
+        {
+            best_source = result.doc_type.as_deref().unwrap_or("unknown").to_string();
+        }
+    }
+
+    // Only return if we found at least one health-relevant field
+    if health_band.is_none()
+        && renewal_likelihood.is_none()
+        && growth_tier.is_none()
+        && customer_stage.is_none()
+        && support_tier.is_none()
+        && icp_fit.is_none()
+    {
+        return None;
+    }
+
+    Some(crate::intelligence::io::OrgHealthData {
+        health_band,
+        health_score: None,
+        renewal_likelihood,
+        growth_tier,
+        customer_stage,
+        support_tier,
+        icp_fit,
+        source: best_source,
+        gathered_at: chrono::Utc::now().to_rfc3339(),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // GleanContextProvider
 // ---------------------------------------------------------------------------
 
@@ -360,15 +487,22 @@ impl GleanContextProvider {
     }
 
     /// Gather Glean-sourced context for file_contents and stakeholders.
+    ///
+    /// `gap_queries`: I508c dimension-aware gap queries for fan-out search.
     async fn gather_glean_context(
         &self,
         db: &ActionDb,
         entity_id: &str,
         entity_type: &str,
+        gap_queries: &[String],
     ) -> Result<GleanEntityData, ContextError> {
         let client = GleanMcpClient::new(&self.endpoint);
 
-        let queries = self.entity_search_queries(db, entity_id, entity_type);
+        let mut queries = self.entity_search_queries(db, entity_id, entity_type);
+        // I508c: Append gap queries for dimension-aware Glean fan-out (cap at 3)
+        for q in gap_queries.iter().take(3) {
+            queries.push(q.clone());
+        }
         let mut all_results: Vec<GleanSearchResult> = Vec::new();
         let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -417,6 +551,58 @@ impl GleanContextProvider {
                 Err(e) => return Err(e),
             }
         }
+
+        // I487: Emit Glean document signals for new/updated results
+        for result in &all_results {
+            let Some(ref snippet) = result.snippet else {
+                continue;
+            };
+            if snippet.is_empty() {
+                continue;
+            }
+            let url = result.url.as_deref().unwrap_or("");
+            if url.is_empty() {
+                continue;
+            }
+
+            let updated_at = result.updated_at.as_deref();
+            // Skip if we already have a fresh signal for this document
+            if db
+                .has_glean_signal_for_url(entity_id, url, updated_at, 30)
+                .unwrap_or(true)
+            {
+                continue;
+            }
+
+            let value = format!(
+                "{}|{}|{}",
+                result.title.as_deref().unwrap_or(""),
+                result.doc_type.as_deref().unwrap_or(""),
+                url,
+            );
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                entity_type,
+                entity_id,
+                "glean_document",
+                "glean_search",
+                Some(&value),
+                0.7,
+            );
+        }
+
+        // I500: Parse org health data from CRM-type documents (accounts only)
+        let org_health = if entity_type == "account" {
+            let account_name = db
+                .get_account(entity_id)
+                .ok()
+                .flatten()
+                .map(|a| a.name)
+                .unwrap_or_default();
+            parse_org_health_data(&all_results, &account_name)
+        } else {
+            None
+        };
 
         // Build file_contents from search results (snippets)
         let mut file_parts: Vec<String> = Vec::new();
@@ -484,6 +670,7 @@ impl GleanContextProvider {
             },
             people: people_results,
             search_results: all_results,
+            org_health,
         })
     }
 }
@@ -493,6 +680,8 @@ struct GleanEntityData {
     file_contents: String,
     people: Vec<GleanPersonResult>,
     search_results: Vec<GleanSearchResult>,
+    /// I500: Parsed org-level health data from CRM docs.
+    org_health: Option<crate::intelligence::io::OrgHealthData>,
 }
 
 impl ContextProvider for GleanContextProvider {
@@ -517,8 +706,9 @@ impl ContextProvider for GleanContextProvider {
         let glean_data = match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 // We're inside a tokio runtime — use block_in_place to avoid deadlock
+                let gap_q = ctx.gap_queries.clone();
                 match tokio::task::block_in_place(|| {
-                    handle.block_on(self.gather_glean_context(db, entity_id, entity_type))
+                    handle.block_on(self.gather_glean_context(db, entity_id, entity_type, &gap_q))
                 }) {
                     Ok(data) => Some(data),
                     Err(ContextError::Timeout(msg)) => {
@@ -590,6 +780,29 @@ impl ContextProvider for GleanContextProvider {
                     );
                     ctx.stakeholders.push_str(&glean_section);
                 }
+            }
+
+            // I500: Store org health in DB and make available on context
+            if let Some(ref org_health) = glean.org_health {
+                if let Ok(json) = serde_json::to_string(org_health) {
+                    // Write to entity_assessment.org_health column
+                    let _ = db.conn_ref().execute(
+                        "INSERT INTO entity_assessment (entity_id, entity_type, org_health_json, updated_at)
+                         VALUES (?1, ?2, ?3, datetime('now'))
+                         ON CONFLICT(entity_id) DO UPDATE SET
+                             org_health_json = excluded.org_health_json,
+                             updated_at = datetime('now')",
+                        rusqlite::params![entity_id, entity_type, json],
+                    );
+                    log::info!(
+                        "I500: Stored org health for {} (band={:?}, source={})",
+                        entity_id,
+                        org_health.health_band,
+                        org_health.source,
+                    );
+                }
+                // Make org_health available on context for I499 health scoring
+                ctx.org_health = Some(org_health.clone());
             }
         }
 

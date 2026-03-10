@@ -846,24 +846,6 @@ pub fn account_to_list_item(
         })
     });
 
-    let team_summary = db.get_account_team(&a.id).ok().and_then(|members| {
-        if members.is_empty() {
-            None
-        } else {
-            let labels: Vec<String> = members
-                .iter()
-                .take(2)
-                .map(|m| format!("{} ({})", m.person_name, m.role.to_uppercase()))
-                .collect();
-            let suffix = if members.len() > 2 {
-                format!(" +{}", members.len() - 2)
-            } else {
-                String::new()
-            };
-            Some(format!("Team: {}{}", labels.join(", "), suffix))
-        }
-    });
-
     AccountListItem {
         id: a.id.clone(),
         name: a.name.clone(),
@@ -871,7 +853,6 @@ pub fn account_to_list_item(
         arr,
         health: a.health.clone(),
         nps: a.nps,
-        team_summary,
         renewal_date: a.contract_end.clone(),
         open_action_count,
         days_since_last_meeting,
