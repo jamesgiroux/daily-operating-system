@@ -705,6 +705,7 @@ impl ActionDb {
     /// created since the document's update time. Otherwise uses max_age_days.
     pub fn has_glean_signal_for_url(
         &self,
+        entity_type: &str,
         entity_id: &str,
         url: &str,
         updated_at: Option<&str>,
@@ -713,22 +714,24 @@ impl ActionDb {
         let count: i32 = if let Some(doc_updated) = updated_at {
             self.conn.query_row(
                 "SELECT COUNT(*) FROM signal_events
-                 WHERE entity_id = ?1
+                 WHERE entity_type = ?1
+                   AND entity_id = ?2
                    AND signal_type = 'glean_document'
-                   AND value LIKE '%' || ?2 || '%'
-                   AND created_at >= ?3",
-                params![entity_id, url, doc_updated],
+                   AND value LIKE '%|' || ?3
+                   AND created_at >= ?4",
+                params![entity_type, entity_id, url, doc_updated],
                 |row| row.get(0),
             )?
         } else {
             let days_param = format!("-{max_age_days} days");
             self.conn.query_row(
                 "SELECT COUNT(*) FROM signal_events
-                 WHERE entity_id = ?1
+                 WHERE entity_type = ?1
+                   AND entity_id = ?2
                    AND signal_type = 'glean_document'
-                   AND value LIKE '%' || ?2 || '%'
-                   AND created_at >= datetime('now', ?3)",
-                params![entity_id, url, days_param],
+                   AND value LIKE '%|' || ?3
+                   AND created_at >= datetime('now', ?4)",
+                params![entity_type, entity_id, url, days_param],
                 |row| row.get(0),
             )?
         };

@@ -65,11 +65,20 @@ pub struct IntelligenceContext {
     /// Entity-specific context entries from entity_context_entries table.
     pub entity_context: Option<String>,
     /// I508c: Dimension-aware gap queries for Glean fan-out.
-    pub gap_queries: Vec<String>,
+    pub gap_queries: Vec<GapQueryItem>,
     /// I499: Pre-computed account health from algorithmic scoring.
     pub computed_health: Option<super::io::AccountHealth>,
     /// I500: Org-level health data from external sources (Glean/CRM).
     pub org_health: Option<super::io::OrgHealthData>,
+}
+
+/// I508c structured gap query item used for local ranking + remote fan-out.
+#[derive(Debug, Clone)]
+pub struct GapQueryItem {
+    /// Dimension key when the gap query targets a specific intelligence dimension.
+    pub dimension: Option<String>,
+    /// Search query text used for vector ranking / Glean search.
+    pub query: String,
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
@@ -505,7 +514,10 @@ pub fn build_intelligence_context(
     let mut seen_file_ids = std::collections::HashSet::new();
 
     let gap_queries = semantic_gap_queries(prior);
-    let semantic_query = gap_queries.first().cloned().unwrap_or_default();
+    let semantic_query = gap_queries
+        .first()
+        .map(|q| q.query.clone())
+        .unwrap_or_default();
     if let Ok(matches) = crate::queries::search::search_entity_content(
         db,
         embedding_model,
@@ -1144,63 +1156,105 @@ fn build_project_portfolio_children_context(db: &ActionDb, children: &[DbProject
 
 /// I508c: Dimension-aware semantic gap queries for entity enrichment.
 ///
-/// Returns a Vec of search queries — the first is used for local vector search,
-/// and the full set can be used for Glean fan-out via `IntelligenceContext.gap_queries`.
-fn semantic_gap_queries(prior: Option<&IntelligenceJson>) -> Vec<String> {
+/// Returns structured gap query items — the first query is used for local vector
+/// ranking, and the full set is used for Glean fan-out.
+fn semantic_gap_queries(prior: Option<&IntelligenceJson>) -> Vec<GapQueryItem> {
     let mut queries = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut push_query = |dimension: Option<&str>, query: &str| {
+        if seen.insert(query.to_string()) {
+            queries.push(GapQueryItem {
+                dimension: dimension.map(|d| d.to_string()),
+                query: query.to_string(),
+            });
+        }
+    };
 
     // Core query — always included
-    queries.push("account status risks wins blockers next steps".to_string());
+    push_query(None, "account status risks wins blockers next steps");
 
     if let Some(p) = prior {
         // Legacy checks
         if p.risks.is_empty() {
-            queries.push("risks concerns blockers challenges".to_string());
+            push_query(Some("risks"), "risks concerns blockers challenges");
         }
         if p.recent_wins.is_empty() {
-            queries.push("recent wins outcomes delivered value".to_string());
+            push_query(Some("recent_wins"), "recent wins outcomes delivered value");
         }
         if p.current_state.is_none() {
-            queries.push("working not working unknowns".to_string());
+            push_query(Some("current_state"), "working not working unknowns");
         }
         // I508a dimension-aware gap checks
         if p.competitive_context.is_empty() {
-            queries.push("competitive landscape alternatives threats".to_string());
+            push_query(
+                Some("competitive_context"),
+                "competitive landscape alternatives threats",
+            );
         }
         if p.strategic_priorities.is_empty() {
-            queries.push("strategic priorities initiatives roadmap goals".to_string());
+            push_query(
+                Some("strategic_priorities"),
+                "strategic priorities initiatives roadmap goals",
+            );
         }
         if p.coverage_assessment.is_none() {
-            queries.push("stakeholder map org chart role coverage".to_string());
+            push_query(
+                Some("coverage_assessment"),
+                "stakeholder map org chart role coverage",
+            );
         }
         if p.organizational_changes.is_empty() {
-            queries.push("leadership changes reorg hiring departures".to_string());
+            push_query(
+                Some("organizational_changes"),
+                "leadership changes reorg hiring departures",
+            );
         }
         if p.meeting_cadence.is_none() {
-            queries.push("meeting frequency engagement cadence".to_string());
+            push_query(Some("meeting_cadence"), "meeting frequency engagement cadence");
         }
         if p.blockers.is_empty() {
-            queries.push("blockers obstacles delays impediments".to_string());
+            push_query(Some("blockers"), "blockers obstacles delays impediments");
         }
         if p.contract_context.is_none() {
-            queries.push("contract renewal ARR pricing commercial terms".to_string());
+            push_query(
+                Some("contract_context"),
+                "contract renewal ARR pricing commercial terms",
+            );
         }
         if p.expansion_signals.is_empty() {
-            queries.push("expansion upsell growth opportunity".to_string());
+            push_query(
+                Some("expansion_signals"),
+                "expansion upsell growth opportunity",
+            );
         }
         if p.support_health.is_none() {
-            queries.push("support tickets SLA issues incidents".to_string());
+            push_query(Some("support_health"), "support tickets SLA issues incidents");
         }
         if p.nps_csat.is_none() {
-            queries.push("NPS CSAT satisfaction survey score feedback".to_string());
+            push_query(
+                Some("nps_csat"),
+                "NPS CSAT satisfaction survey score feedback",
+            );
         }
     } else {
         // Initial enrichment — broad set
-        queries.push("executive assessment context renewal sentiment".to_string());
-        queries.push("competitive landscape alternatives threats".to_string());
-        queries.push("strategic priorities initiatives roadmap".to_string());
-        queries.push("contract renewal ARR pricing terms".to_string());
-        queries.push("support tickets satisfaction NPS".to_string());
+        push_query(
+            Some("executive_assessment"),
+            "executive assessment context renewal sentiment",
+        );
+        push_query(
+            Some("competitive_context"),
+            "competitive landscape alternatives threats",
+        );
+        push_query(
+            Some("strategic_priorities"),
+            "strategic priorities initiatives roadmap",
+        );
+        push_query(
+            Some("contract_context"),
+            "contract renewal ARR pricing terms",
+        );
+        push_query(Some("support_health"), "support tickets satisfaction NPS");
     }
 
     queries
@@ -1764,7 +1818,7 @@ fn build_intelligence_prompt_inner(
                \"coverageAssessment\": {\"roleFillRate\": 0.0, \"gaps\": [\"missing role\"], \"covered\": [\"filled role\"], \"level\": \"strong|adequate|thin|critical\"},\n\
                \"organizationalChanges\": [{\"changeType\": \"departure|hire|promotion|reorg|role_change\", \"person\": \"name\", \"from\": \"...\", \"to\": \"...\", \"detectedAt\": \"ISO date\"}],\n\
                \"internalTeam\": [{\"name\": \"...\", \"role\": \"RM|AE|TAM|Division Lead|etc\"}],\n\
-               \"meetingCadenceAssessment\": {\"meetingsPerMonth\": 0.0, \"trend\": \"increasing|stable|declining|erratic\", \"daysSinceLast\": 0, \"assessment\": \"healthy|adequate|sparse|cold\"},\n\
+               \"meetingCadence\": {\"meetingsPerMonth\": 0.0, \"trend\": \"increasing|stable|declining|erratic\", \"daysSinceLast\": 0, \"assessment\": \"healthy|adequate|sparse|cold\"},\n\
                \"emailResponsiveness\": {\"trend\": \"improving|stable|slowing|gone_quiet\", \"assessment\": \"responsive|normal|slow|unresponsive\"},\n\
                \"blockers\": [{\"description\": \"...\", \"owner\": \"...\", \"since\": \"ISO date\", \"impact\": \"critical|high|moderate|low\"}],\n\
                \"contractContext\": {\"contractType\": \"annual|multi_year|month_to_month\", \"autoRenew\": true, \"renewalDate\": \"ISO date\", \"currentArr\": 0.0},\n\
@@ -1889,8 +1943,8 @@ struct AiIntelResponse {
     organizational_changes: Vec<super::io::OrgChange>,
     #[serde(default)]
     internal_team: Vec<super::io::InternalTeamMember>,
-    #[serde(default, alias = "meetingCadence")]
-    meeting_cadence_assessment: Option<super::io::CadenceAssessment>,
+    #[serde(default, alias = "meetingCadenceAssessment")]
+    meeting_cadence: Option<super::io::CadenceAssessment>,
     #[serde(default)]
     email_responsiveness: Option<super::io::ResponsivenessAssessment>,
     #[serde(default)]
@@ -2505,7 +2559,7 @@ fn try_parse_json_response(
         coverage_assessment: ai_resp.coverage_assessment,
         organizational_changes: ai_resp.organizational_changes,
         internal_team: ai_resp.internal_team,
-        meeting_cadence: ai_resp.meeting_cadence_assessment, // renamed to avoid health.dimensions clash
+        meeting_cadence: ai_resp.meeting_cadence,
         email_responsiveness: ai_resp.email_responsiveness,
         blockers: ai_resp.blockers,
         contract_context: ai_resp.contract_context,

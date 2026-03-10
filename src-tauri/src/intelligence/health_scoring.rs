@@ -116,6 +116,69 @@ fn score_to_band(score: f64) -> String {
     }
 }
 
+/// Strategic operating bucket derived from multi-dimension health context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccountBucket {
+    GrowthFocus,
+    AtRiskSaveable,
+    AtRiskSaveUnlikely,
+    Autopilot,
+}
+
+/// Classify an account into an operating bucket with a concise rationale.
+pub fn classify_account_bucket(health: &AccountHealth) -> (AccountBucket, String) {
+    let cadence = health.dimensions.meeting_cadence.score;
+    let champion = health.dimensions.champion_health.score;
+    let cadence_present = health.dimensions.meeting_cadence.weight > 0.0;
+    let champion_present = health.dimensions.champion_health.weight > 0.0;
+    let any_declining = [
+        &health.dimensions.meeting_cadence,
+        &health.dimensions.email_engagement,
+        &health.dimensions.stakeholder_coverage,
+        &health.dimensions.champion_health,
+        &health.dimensions.financial_proximity,
+        &health.dimensions.signal_momentum,
+    ]
+    .iter()
+    .any(|d| d.weight > 0.0 && d.trend == "declining");
+
+    if health.score >= 70.0 && !any_declining {
+        return (
+            AccountBucket::Autopilot,
+            "Healthy score with stable dimensions; monitor and maintain momentum.".to_string(),
+        );
+    }
+    if health.score >= 60.0 && champion_present && cadence_present && champion >= 60.0 && cadence >= 60.0 {
+        return (
+            AccountBucket::GrowthFocus,
+            "Strong champion and active cadence indicate expansion-ready engagement.".to_string(),
+        );
+    }
+    if health.score < 70.0 && champion_present && cadence_present && champion >= 50.0 && cadence >= 40.0 {
+        return (
+            AccountBucket::AtRiskSaveable,
+            "Risk signals exist, but champion strength and cadence suggest recoverable trajectory.".to_string(),
+        );
+    }
+    if health.score < 70.0 && (!champion_present || champion < 30.0 || !cadence_present || cadence < 30.0) {
+        return (
+            AccountBucket::AtRiskSaveUnlikely,
+            "Low relationship coverage and weak engagement indicate structural risk.".to_string(),
+        );
+    }
+    if health.score >= 60.0 {
+        (
+            AccountBucket::Autopilot,
+            "Moderately healthy score with limited risk indicators.".to_string(),
+        )
+    } else {
+        (
+            AccountBucket::AtRiskSaveable,
+            "Sub-60 score with partial engagement signals; intervention can still recover.".to_string(),
+        )
+    }
+}
+
 fn null_dimension(reason: &str) -> DimensionScore {
     DimensionScore {
         score: 0.0,
@@ -409,17 +472,32 @@ fn redistribute_weights(dims: &RelationshipDimensions, raw: [f64; 6]) -> [f64; 6
 }
 
 /// Confidence = fraction of non-null dimensions.
+fn is_neutral_momentum_placeholder(dim: &DimensionScore) -> bool {
+    dim.weight > 0.0
+        && (dim.score - 50.0).abs() < f64::EPSILON
+        && dim.evidence.len() == 1
+        && dim.evidence[0].contains("No recent signals")
+}
+
 fn compute_confidence(dims: &RelationshipDimensions) -> f64 {
-    let dim_weights = [
-        dims.meeting_cadence.weight,
-        dims.email_engagement.weight,
-        dims.stakeholder_coverage.weight,
-        dims.champion_health.weight,
-        dims.financial_proximity.weight,
-        dims.signal_momentum.weight,
-    ];
-    let non_null = dim_weights.iter().filter(|&&w| w > 0.0).count() as f64;
-    non_null / 6.0
+    let populated = [
+        &dims.meeting_cadence,
+        &dims.email_engagement,
+        &dims.stakeholder_coverage,
+        &dims.champion_health,
+        &dims.financial_proximity,
+        &dims.signal_momentum,
+    ]
+    .iter()
+    .filter(|d| d.weight > 0.0 && !is_neutral_momentum_placeholder(d))
+    .count();
+
+    match populated {
+        5 | 6 => 0.9,
+        3 | 4 => 0.6,
+        1 | 2 => 0.3,
+        _ => 0.1,
+    }
 }
 
 /// Detect divergence between org-level health band and computed relationship score.
@@ -434,9 +512,11 @@ fn detect_divergence(
 
     if delta.abs() > 20.0 {
         let severity = if delta.abs() > 40.0 {
-            "high"
+            "critical"
+        } else if delta.abs() > 30.0 {
+            "notable"
         } else {
-            "moderate"
+            "minor"
         };
         let description = if delta > 0.0 {
             format!(
@@ -491,7 +571,7 @@ mod tests {
             financial_proximity: active_dim(40.0),
             signal_momentum: active_dim(50.0),
         };
-        assert!((compute_confidence(&dims) - 1.0).abs() < f64::EPSILON);
+        assert!((compute_confidence(&dims) - 0.9).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -504,7 +584,25 @@ mod tests {
             financial_proximity: null_dim(),
             signal_momentum: active_dim(50.0),
         };
-        assert!((compute_confidence(&dims) - 0.5).abs() < f64::EPSILON);
+        assert!((compute_confidence(&dims) - 0.6).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_confidence_zero_data_uses_lowest_band() {
+        let dims = RelationshipDimensions {
+            meeting_cadence: null_dim(),
+            email_engagement: null_dim(),
+            stakeholder_coverage: null_dim(),
+            champion_health: null_dim(),
+            financial_proximity: null_dim(),
+            signal_momentum: DimensionScore {
+                score: 50.0,
+                weight: 1.0,
+                evidence: vec!["No recent signals — neutral baseline".to_string()],
+                trend: "stable".to_string(),
+            },
+        };
+        assert!((compute_confidence(&dims) - 0.1).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -553,7 +651,7 @@ mod tests {
         let result = detect_divergence(Some(&org), 40.0);
         assert!(result.is_some(), "Should detect divergence");
         let div = result.unwrap();
-        assert_eq!(div.severity, "moderate");
+        assert_eq!(div.severity, "notable");
         assert!(div.description.contains("trails"));
         assert!(!div.leading_indicator);
     }
@@ -575,7 +673,7 @@ mod tests {
         let result = detect_divergence(Some(&org), 70.0);
         assert!(result.is_some(), "Should detect divergence");
         let div = result.unwrap();
-        assert_eq!(div.severity, "high");
+        assert_eq!(div.severity, "critical");
         assert!(div.description.contains("exceeds"));
         assert!(div.leading_indicator);
     }
@@ -623,5 +721,61 @@ mod tests {
         };
         assert!((dim.score - 50.0).abs() < f64::EPSILON);
         assert!((dim.weight - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_classify_account_bucket_growth_focus() {
+        let health = AccountHealth {
+            score: 65.0,
+            band: "yellow".to_string(),
+            source: HealthSource::Computed,
+            confidence: 0.6,
+            trend: HealthTrend::default(),
+            dimensions: RelationshipDimensions {
+                meeting_cadence: active_dim(70.0),
+                email_engagement: active_dim(55.0),
+                stakeholder_coverage: active_dim(60.0),
+                champion_health: active_dim(75.0),
+                financial_proximity: active_dim(45.0),
+                signal_momentum: active_dim(60.0),
+            },
+            divergence: None,
+            narrative: None,
+            recommended_actions: Vec::new(),
+        };
+        let (bucket, rationale) = classify_account_bucket(&health);
+        assert_eq!(bucket, AccountBucket::GrowthFocus);
+        assert!(
+            !rationale.is_empty(),
+            "classification should return a rationale"
+        );
+    }
+
+    #[test]
+    fn test_classify_account_bucket_at_risk_save_unlikely() {
+        let health = AccountHealth {
+            score: 55.0,
+            band: "yellow".to_string(),
+            source: HealthSource::Computed,
+            confidence: 0.6,
+            trend: HealthTrend::default(),
+            dimensions: RelationshipDimensions {
+                meeting_cadence: active_dim(20.0),
+                email_engagement: active_dim(45.0),
+                stakeholder_coverage: active_dim(30.0),
+                champion_health: active_dim(15.0),
+                financial_proximity: active_dim(50.0),
+                signal_momentum: active_dim(40.0),
+            },
+            divergence: None,
+            narrative: None,
+            recommended_actions: Vec::new(),
+        };
+        let (bucket, rationale) = classify_account_bucket(&health);
+        assert_eq!(bucket, AccountBucket::AtRiskSaveUnlikely);
+        assert!(
+            !rationale.is_empty(),
+            "classification should return a rationale"
+        );
     }
 }
