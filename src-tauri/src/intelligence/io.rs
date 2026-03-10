@@ -1415,8 +1415,11 @@ impl ActionDb {
                 serde_json::to_string(&intel.success_metrics).ok(),
                 serde_json::to_string(&intel.open_commitments).ok(),
                 serde_json::to_string(&intel.relationship_depth).ok(),
-                serde_json::to_string(&intel.health).ok(),
-                serde_json::to_string(&intel.org_health).ok(),
+                intel.health.as_ref().and_then(|v| serde_json::to_string(v).ok()),
+                intel
+                    .org_health
+                    .as_ref()
+                    .and_then(|v| serde_json::to_string(v).ok()),
                 serde_json::to_string(&intel.consistency_status).ok(),
                 serde_json::to_string(&intel.consistency_findings).ok(),
                 intel.consistency_checked_at,

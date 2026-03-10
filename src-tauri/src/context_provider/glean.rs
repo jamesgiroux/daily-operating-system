@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::context_provider::cache::{CacheKind, GleanCache};
 use crate::context_provider::{ContextError, ContextProvider};
 use crate::db::ActionDb;
-use crate::intelligence::prompts::IntelligenceContext;
+use crate::intelligence::prompts::{GapQueryItem, IntelligenceContext};
 use crate::intelligence::IntelligenceJson;
 
 /// Timeout for individual Glean API calls.
@@ -494,14 +494,14 @@ impl GleanContextProvider {
         db: &ActionDb,
         entity_id: &str,
         entity_type: &str,
-        gap_queries: &[String],
+        gap_queries: &[GapQueryItem],
     ) -> Result<GleanEntityData, ContextError> {
         let client = GleanMcpClient::new(&self.endpoint);
 
         let mut queries = self.entity_search_queries(db, entity_id, entity_type);
         // I508c: Append gap queries for dimension-aware Glean fan-out (cap at 3)
         for q in gap_queries.iter().take(3) {
-            queries.push(q.clone());
+            queries.push(q.query.clone());
         }
         let mut all_results: Vec<GleanSearchResult> = Vec::new();
         let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -567,10 +567,21 @@ impl GleanContextProvider {
 
             let updated_at = result.updated_at.as_deref();
             // Skip if we already have a fresh signal for this document
-            if db
-                .has_glean_signal_for_url(entity_id, url, updated_at, 30)
-                .unwrap_or(true)
-            {
+            let has_existing =
+                match db.has_glean_signal_for_url(entity_type, entity_id, url, updated_at, 30) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::warn!(
+                            "I487: failed dedupe check for {} {} url={}: {}",
+                            entity_type,
+                            entity_id,
+                            url,
+                            e
+                        );
+                        false
+                    }
+                };
+            if has_existing {
                 continue;
             }
 
@@ -642,7 +653,7 @@ impl GleanContextProvider {
                 if let Some(cached) = self.cache.get_with_db(CacheKind::OrgGraph, &cache_key, db) {
                     serde_json::from_str(&cached).unwrap_or_default()
                 } else {
-                    match client.search_people(&name, 20).await {
+                    match client.search_people(&name, 50).await {
                         Ok(results) => {
                             if let Ok(json) = serde_json::to_string(&results) {
                                 self.cache.put(CacheKind::OrgGraph, &cache_key, &json, db);
@@ -673,6 +684,197 @@ impl GleanContextProvider {
             org_health,
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// I505: Glean contact processing — DB writes from Glean people results
+// ---------------------------------------------------------------------------
+
+/// Map a Glean title to an account stakeholder role context.
+fn map_glean_role(glean_title: &str) -> String {
+    let lower = glean_title.to_lowercase();
+    if lower.contains("primary") {
+        "primary_contact".into()
+    } else if lower.contains("support") {
+        "support_contact".into()
+    } else if lower.contains("developer")
+        || lower.contains("engineer")
+        || lower.contains("technical")
+    {
+        "technical".into()
+    } else {
+        "associated".into()
+    }
+}
+
+/// Process Glean people results into DB records (I505).
+///
+/// Two-pass approach:
+/// - Pass 1: Create/update all people, link to account, detect internal team
+/// - Pass 2: Extract manager relationships (needs all people created first)
+///
+/// Returns count of newly created contacts.
+fn process_glean_contacts(
+    db: &ActionDb,
+    entity_id: &str,
+    people: &[GleanPersonResult],
+    user_domain: Option<&str>,
+) -> usize {
+    use crate::db::people::ProfileUpdate;
+
+    let mut new_count = 0;
+    // Map email → person_id for pass 2 manager lookups
+    let mut email_to_person: Vec<(String, String)> = Vec::new();
+
+    // --- Pass 1: Create/update people, link to account, internal team ---
+    for contact in people {
+        let email = match contact.email.as_deref() {
+            Some(e) if !e.is_empty() => e,
+            _ => continue,
+        };
+
+        // Look up existing person by email
+        let person_id = match db.get_person_by_email_or_alias(email) {
+            Ok(Some(existing)) => {
+                // Update profile with Glean fields (respects source priority)
+                let update = ProfileUpdate {
+                    role: contact.title.clone(),
+                    organization: contact.department.clone(),
+                    company_hq: contact.location.clone(),
+                    linkedin_url: None,
+                    twitter_handle: None,
+                    phone: None,
+                    photo_url: None,
+                    bio: None,
+                    title_history: None,
+                    company_industry: None,
+                    company_size: None,
+                };
+                let _ = db.update_person_profile(&existing.id, &update, "glean");
+
+                // Emit profile_enriched signal
+                let _ = crate::services::signals::emit(
+                    db,
+                    "person",
+                    &existing.id,
+                    "profile_enriched",
+                    "glean",
+                    None,
+                    0.7,
+                );
+
+                existing.id
+            }
+            _ => {
+                // New discovery — create minimal person
+                let pid = format!("p-glean-{}", uuid::Uuid::new_v4());
+                if let Err(e) = db.create_person_minimal(
+                    &pid,
+                    email,
+                    contact.name.as_deref(),
+                    contact.title.as_deref(),
+                    contact.department.as_deref(),
+                    contact.location.as_deref(),
+                ) {
+                    log::warn!("I505: Failed to create person for {}: {}", email, e);
+                    continue;
+                }
+
+                // Emit glean_contact_discovered signal
+                let _ = crate::services::signals::emit(
+                    db,
+                    "person",
+                    &pid,
+                    "glean_contact_discovered",
+                    "glean",
+                    Some(email),
+                    0.8,
+                );
+
+                new_count += 1;
+                pid
+            }
+        };
+
+        // Link to account with source tracking
+        let role_context = map_glean_role(contact.title.as_deref().unwrap_or(""));
+        let _ = db.link_person_to_account_with_source(
+            entity_id,
+            &person_id,
+            &role_context,
+            "glean",
+        );
+
+        // Internal team detection: any internal-domain contact gets added
+        if let Some(domain) = user_domain {
+            if email.ends_with(&format!("@{}", domain)) {
+                let team_role = map_glean_role(contact.title.as_deref().unwrap_or(""));
+                let _ = db.add_account_team_member(entity_id, &person_id, &team_role);
+            }
+        }
+
+        email_to_person.push((email.to_string(), person_id));
+    }
+
+    // --- Pass 2: Manager relationships (all people exist in DB now) ---
+    let has_managers = people.iter().any(|c| {
+        c.manager
+            .as_deref()
+            .is_some_and(|m| !m.trim().is_empty())
+    });
+    if has_managers {
+        // Load people list once for name matching (not per-contact)
+        let all_people = db.get_people(None).unwrap_or_default();
+
+        for contact in people {
+            let manager_name = match contact.manager.as_deref() {
+                Some(m) if !m.trim().is_empty() => m.trim(),
+                _ => continue,
+            };
+
+            // Find the person_id for this contact
+            let email = match contact.email.as_deref() {
+                Some(e) if !e.is_empty() => e,
+                _ => continue,
+            };
+            let person_id = match email_to_person.iter().find(|(e, _)| e == email) {
+                Some((_, pid)) => pid,
+                None => continue,
+            };
+
+            // Search for exact name match (case-insensitive)
+            let matches: Vec<&crate::db::types::DbPerson> = all_people
+                .iter()
+                .filter(|p| p.name.eq_ignore_ascii_case(manager_name))
+                .collect();
+
+            if matches.len() == 1 {
+                let manager = &matches[0];
+                let rel_id = format!("pr-glean-mgr-{}-{}", person_id, manager.id);
+                let _ = db.upsert_person_relationship(
+                    &crate::db::person_relationships::UpsertRelationship {
+                        id: &rel_id,
+                        from_person_id: person_id,
+                        to_person_id: &manager.id,
+                        relationship_type: "manager",
+                        direction: "directed",
+                        confidence: 0.8,
+                        context_entity_id: Some(entity_id),
+                        context_entity_type: Some("account"),
+                        source: "glean",
+                        rationale: Some(&format!(
+                            "Manager relationship from Glean org graph: {} reports to {}",
+                            contact.name.as_deref().unwrap_or(email),
+                            manager_name
+                        )),
+                    },
+                );
+            }
+            // Zero or multiple matches: skip (no phantom people, no wrong guesses)
+        }
+    }
+
+    new_count
 }
 
 /// Intermediate struct holding Glean-sourced data before merging into IntelligenceContext.
@@ -756,6 +958,28 @@ impl ContextProvider for GleanContextProvider {
                             );
                         }
                     }
+                }
+            }
+
+            // I505: Process Glean contacts into DB (person records, account links, relationships)
+            if !glean.people.is_empty()
+                && (entity_type == "account" || entity_type == "project")
+            {
+                let user_domain = crate::google_api::token_store::peek_account_email()
+                    .and_then(|email| email.split('@').nth(1).map(|d| d.to_string()));
+                let new_count = process_glean_contacts(
+                    db,
+                    entity_id,
+                    &glean.people,
+                    user_domain.as_deref(),
+                );
+                if new_count > 0 {
+                    log::info!(
+                        "I505: Created {} new contacts from Glean for {} {}",
+                        new_count,
+                        entity_type,
+                        entity_id
+                    );
                 }
             }
 
