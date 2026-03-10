@@ -756,6 +756,38 @@ pub fn gather_enrichment_input(
     };
     ctx.computed_health = computed_health.clone();
 
+    // I506: Compute and persist co-attendance relationships for account entities
+    if request.entity_type == "account" {
+        match crate::intelligence::relationships::compute_co_attendance(
+            &db,
+            &request.entity_id,
+            90,
+            3,
+        ) {
+            Ok(pairs) => {
+                if !pairs.is_empty() {
+                    match crate::intelligence::relationships::persist_co_attendance(&db, &pairs) {
+                        Ok(count) => {
+                            if count > 0 {
+                                log::info!(
+                                    "I506: Persisted {} co-attendance relationships for {}",
+                                    count,
+                                    request.entity_id
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("I506: Failed to persist co-attendance: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("I506: Co-attendance query failed for {}: {}", request.entity_id, e);
+            }
+        }
+    }
+
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing.
     // For accounts, pass account_type so prompts can adapt for partner vs customer (I382).
@@ -1335,6 +1367,12 @@ fn merge_missing_core_fields_from_existing(
         final_intel.executive_assessment = existing.executive_assessment.clone();
     }
 
+    // Preserve persisted org-health baseline unless the new payload explicitly
+    // provides one. This field is computed outside the LLM response path.
+    if final_intel.org_health.is_none() && existing.org_health.is_some() {
+        final_intel.org_health = existing.org_health.clone();
+    }
+
     // If the new payload is sparse, preserve prior narrative-bearing fields.
     if !is_sparse_intelligence(final_intel) {
         return;
@@ -1357,9 +1395,6 @@ fn merge_missing_core_fields_from_existing(
     }
     if final_intel.health.is_none() && existing.health.is_some() {
         final_intel.health = existing.health.clone();
-    }
-    if final_intel.org_health.is_none() && existing.org_health.is_some() {
-        final_intel.org_health = existing.org_health.clone();
     }
     if final_intel
         .success_metrics
