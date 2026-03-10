@@ -259,6 +259,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 60,
         sql: include_str!("migrations/060_intelligence_dimensions.sql"),
     },
+    Migration {
+        version: 61,
+        sql: include_str!("migrations/061_stakeholder_glean_staleness.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -648,13 +652,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 60,
-            "should apply all migrations including intelligence DB columns"
+            applied, 61,
+            "should apply all migrations including stakeholder Glean staleness"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 60);
+        assert_eq!(version, 61);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -1250,16 +1254,16 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v59.
+        // Run migrations — should bootstrap v1 and apply v2 through v61.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 59,
-            "bootstrap should mark v1, then apply 59 pending migrations (v2-v60)"
+            applied, 60,
+            "bootstrap should mark v1, then apply 60 pending migrations (v2-v61)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 60);
+        assert_eq!(version, 61);
 
         // Verify existing data is untouched
         let title: String = conn
@@ -1360,7 +1364,7 @@ mod tests {
     fn test_schema_integrity_check_blocks_invalid_v60_state() {
         let conn = mem_db();
         ensure_schema_version_table(&conn).expect("schema_version table");
-        conn.execute("INSERT INTO schema_version (version) VALUES (60)", [])
+        conn.execute("INSERT INTO schema_version (version) VALUES (61)", [])
             .expect("seed schema version");
 
         let err = run_migrations(&conn).expect_err("invalid schema should fail integrity check");
