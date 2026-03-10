@@ -1795,6 +1795,90 @@ pub struct CapturedAction {
 // Transcript Processing Types (I44 / ADR-0044)
 // =============================================================================
 
+/// Sentiment analysis from transcript processing (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSentiment {
+    /// Overall meeting sentiment: positive, neutral, negative, mixed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overall: Option<String>,
+    /// Customer-specific sentiment: positive, neutral, negative, mixed, n/a
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer: Option<String>,
+    /// Engagement level: high, moderate, low, disengaged
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engagement: Option<String>,
+    /// Whether discussion was forward-looking
+    #[serde(default)]
+    pub forward_looking: bool,
+    /// Competitors mentioned during the call
+    #[serde(default)]
+    pub competitor_mentions: Vec<String>,
+    /// Whether a champion was present
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_present: Option<bool>,
+    /// Whether the champion was actively engaged
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_engaged: Option<bool>,
+}
+
+/// Per-speaker sentiment from a transcript (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerSentiment {
+    pub name: String,
+    pub sentiment: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+}
+
+/// Engagement quality signals from a transcript (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngagementSignals {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question_density: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_maker_active: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forward_looking: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub monologue_risk: Option<bool>,
+}
+
+/// A competitor mentioned during a meeting (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompetitorMention {
+    pub competitor: String,
+    pub context: String,
+}
+
+/// An escalation signal detected in meeting language (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EscalationSignal {
+    pub quote: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+}
+
+/// Interaction dynamics extracted from transcript analysis (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionDynamics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub talk_balance: Option<String>,
+    #[serde(default)]
+    pub speaker_sentiment: Vec<SpeakerSentiment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engagement_signals: Option<EngagementSignals>,
+    #[serde(default)]
+    pub competitor_mentions: Vec<CompetitorMention>,
+    #[serde(default)]
+    pub escalation_signals: Vec<EscalationSignal>,
+}
+
 /// Result of transcript processing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1818,6 +1902,12 @@ pub struct TranscriptResult {
     pub analysis: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Sentiment analysis from transcript (I509)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentiment: Option<TranscriptSentiment>,
+    /// Interaction dynamics from transcript (I509)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interaction_dynamics: Option<InteractionDynamics>,
 }
 
 /// Outcomes for a meeting (query response)

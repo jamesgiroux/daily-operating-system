@@ -64,6 +64,12 @@ pub struct IntelligenceContext {
     pub user_context: Option<String>,
     /// Entity-specific context entries from entity_context_entries table.
     pub entity_context: Option<String>,
+    /// I508c: Dimension-aware gap queries for Glean fan-out.
+    pub gap_queries: Vec<String>,
+    /// I499: Pre-computed account health from algorithmic scoring.
+    pub computed_health: Option<super::io::AccountHealth>,
+    /// I500: Org-level health data from external sources (Glean/CRM).
+    pub org_health: Option<super::io::OrgHealthData>,
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
@@ -498,7 +504,8 @@ pub fn build_intelligence_context(
     let mut ranked_files: Vec<&crate::db::DbContentFile> = Vec::new();
     let mut seen_file_ids = std::collections::HashSet::new();
 
-    let semantic_query = semantic_gap_query(prior);
+    let gap_queries = semantic_gap_queries(prior);
+    let semantic_query = gap_queries.first().cloned().unwrap_or_default();
     if let Ok(matches) = crate::queries::search::search_entity_content(
         db,
         embedding_model,
@@ -636,6 +643,30 @@ pub fn build_intelligence_context(
         }
     }
 
+    // --- Recent transcript sentiment captures (I509) ---
+    if entity_type == "account" {
+        if let Ok(captures) = db.get_captures_for_account(entity_id, 90) {
+            let sentiment_captures: Vec<_> = captures
+                .iter()
+                .filter(|c| c.capture_type == "sentiment")
+                .take(5)
+                .collect();
+            if !sentiment_captures.is_empty() {
+                let mut parts = Vec::new();
+                for cap in &sentiment_captures {
+                    parts.push(format!(
+                        "- {} ({}): {}",
+                        cap.meeting_title, cap.captured_at, cap.content
+                    ));
+                }
+                ctx.recent_transcripts.push_str(&format!(
+                    "\n\n## Recent Meeting Sentiment Signals\n{}",
+                    parts.join("\n")
+                ));
+            }
+        }
+    }
+
     // --- Prior intelligence (for incremental mode) ---
     if let Some(p) = prior {
         ctx.prior_intelligence = serde_json::to_string_pretty(p).ok();
@@ -700,6 +731,9 @@ pub fn build_intelligence_context(
         }
         ctx.entity_context = Some(block);
     }
+
+    // I508c: Store gap queries for Glean fan-out
+    ctx.gap_queries = gap_queries;
 
     ctx
 }
@@ -1108,24 +1142,68 @@ fn build_project_portfolio_children_context(db: &ActionDb, children: &[DbProject
     parts.join("\n")
 }
 
-fn semantic_gap_query(prior: Option<&IntelligenceJson>) -> String {
-    let mut terms = vec!["account status", "risks", "wins", "blockers", "next steps"];
+/// I508c: Dimension-aware semantic gap queries for entity enrichment.
+///
+/// Returns a Vec of search queries — the first is used for local vector search,
+/// and the full set can be used for Glean fan-out via `IntelligenceContext.gap_queries`.
+fn semantic_gap_queries(prior: Option<&IntelligenceJson>) -> Vec<String> {
+    let mut queries = Vec::new();
+
+    // Core query — always included
+    queries.push("account status risks wins blockers next steps".to_string());
 
     if let Some(p) = prior {
+        // Legacy checks
         if p.risks.is_empty() {
-            terms.push("risks concerns blockers challenges");
+            queries.push("risks concerns blockers challenges".to_string());
         }
         if p.recent_wins.is_empty() {
-            terms.push("recent wins outcomes delivered value");
+            queries.push("recent wins outcomes delivered value".to_string());
         }
         if p.current_state.is_none() {
-            terms.push("working not working unknowns");
+            queries.push("working not working unknowns".to_string());
+        }
+        // I508a dimension-aware gap checks
+        if p.competitive_context.is_empty() {
+            queries.push("competitive landscape alternatives threats".to_string());
+        }
+        if p.strategic_priorities.is_empty() {
+            queries.push("strategic priorities initiatives roadmap goals".to_string());
+        }
+        if p.coverage_assessment.is_none() {
+            queries.push("stakeholder map org chart role coverage".to_string());
+        }
+        if p.organizational_changes.is_empty() {
+            queries.push("leadership changes reorg hiring departures".to_string());
+        }
+        if p.meeting_cadence.is_none() {
+            queries.push("meeting frequency engagement cadence".to_string());
+        }
+        if p.blockers.is_empty() {
+            queries.push("blockers obstacles delays impediments".to_string());
+        }
+        if p.contract_context.is_none() {
+            queries.push("contract renewal ARR pricing commercial terms".to_string());
+        }
+        if p.expansion_signals.is_empty() {
+            queries.push("expansion upsell growth opportunity".to_string());
+        }
+        if p.support_health.is_none() {
+            queries.push("support tickets SLA issues incidents".to_string());
+        }
+        if p.nps_csat.is_none() {
+            queries.push("NPS CSAT satisfaction survey score feedback".to_string());
         }
     } else {
-        terms.push("executive assessment context renewal sentiment");
+        // Initial enrichment — broad set
+        queries.push("executive assessment context renewal sentiment".to_string());
+        queries.push("competitive landscape alternatives threats".to_string());
+        queries.push("strategic priorities initiatives roadmap".to_string());
+        queries.push("contract renewal ARR pricing terms".to_string());
+        queries.push("support tickets satisfaction NPS".to_string());
     }
 
-    terms.join(" ")
+    queries
 }
 
 fn format_meeting_time_for_prompt(raw: &str) -> String {
@@ -1507,6 +1585,29 @@ fn build_intelligence_prompt_inner(
         },
         _ => "overall assessment",
     };
+    // I499: Inject pre-computed account health when available
+    if let Some(ref computed) = ctx.computed_health {
+        prompt.push_str(&format!(
+            "## Pre-Computed Account Health (Algorithmic — ADR-0097)\n\
+             Score: {score:.0}/100 ({band}) | Confidence: {conf:.0}%\n\
+             Dimensions: meeting_cadence={mc:.0} email={em:.0} stakeholder={sc:.0} \
+             champion={ch:.0} financial={fp:.0} signal={sm:.0}\n\n\
+             Given the pre-computed health above, for the \"health\" field return ONLY \
+             \"narrative\" (2-3 sentences explaining the score in business context) and \
+             \"recommendedActions\" (3 specific next actions). Do NOT return score, band, \
+             dimensions, or confidence — those are computed algorithmically.\n\n",
+            score = computed.score,
+            band = computed.band,
+            conf = computed.confidence * 100.0,
+            mc = computed.dimensions.meeting_cadence.score,
+            em = computed.dimensions.email_engagement.score,
+            sc = computed.dimensions.stakeholder_coverage.score,
+            ch = computed.dimensions.champion_health.score,
+            fp = computed.dimensions.financial_proximity.score,
+            sm = computed.dimensions.signal_momentum.score,
+        ));
+    }
+
     // JSON output format (I288)
     prompt.push_str(&format!(
         "Return ONLY a JSON object — no other text before or after.\n\
@@ -1604,25 +1705,42 @@ fn build_intelligence_prompt_inner(
          abbreviations, and commonly used references.\"]",
     );
 
-    // I396: Intelligence report fields for CS health tracking
+    // I396/I499: Health section — narrative-only when pre-computed, full when not
+    if ctx.computed_health.is_some() {
+        // I499: Pre-computed health available — LLM only provides narrative + actions
+        prompt.push_str(
+            ",\n\
+               \"health\": {\n\
+                 \"narrative\": \"2-3 sentences explaining the pre-computed health score in business context. Connect the dimension scores to the account's situation.\",\n\
+                 \"recommendedActions\": [\"3 specific actions to improve or maintain account health\"]\n\
+               }",
+        );
+    } else {
+        // Full health schema — LLM computes everything (no algorithmic baseline available)
+        prompt.push_str(
+            ",\n\
+               \"health\": {\n\
+                 \"score\": \"number 0-100. Return only when account has sufficient evidence; omit for sparse accounts.\",\n\
+                 \"band\": \"green|yellow|red\",\n\
+                 \"source\": \"computed\",\n\
+                 \"confidence\": \"number 0.0-1.0\",\n\
+                 \"trend\": {\"direction\": \"improving|stable|declining|volatile\", \"rationale\": \"1 sentence\", \"timeframe\": \"30d|90d\", \"confidence\": \"number 0.0-1.0\"},\n\
+                 \"dimensions\": {\n\
+                   \"meetingCadence\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"emailEngagement\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"stakeholderCoverage\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"championHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"financialProximity\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"signalMomentum\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"}\n\
+                 },\n\
+                 \"recommendedActions\": [\"specific next action\"]\n\
+               }",
+        );
+    }
+
+    // Shared fields — always present regardless of health mode
     prompt.push_str(
         ",\n\
-           \"health\": {\n\
-             \"score\": \"number 0-100. Return only when account has sufficient evidence; omit for sparse accounts.\",\n\
-             \"band\": \"green|yellow|red\",\n\
-             \"source\": \"computed\",\n\
-             \"confidence\": \"number 0.0-1.0\",\n\
-             \"trend\": {\"direction\": \"improving|stable|declining|volatile\", \"rationale\": \"1 sentence\", \"timeframe\": \"30d|90d\", \"confidence\": \"number 0.0-1.0\"},\n\
-             \"dimensions\": {\n\
-               \"meetingCadence\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
-               \"emailEngagement\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
-               \"stakeholderCoverage\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
-               \"championHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
-               \"financialProximity\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
-               \"signalMomentum\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"}\n\
-             },\n\
-             \"recommendedActions\": [\"specific next action\"]\n\
-           },\n\
            \"valueDelivered\": [{\"date\": \"ISO date\", \"statement\": \"what value was delivered\", \
          \"source\": \"evidence source\", \"impact\": \"business impact\"}],\n\
            \"successMetrics\": [{\"name\": \"KPI name\", \"target\": \"target value\", \
@@ -1636,6 +1754,28 @@ fn build_intelligence_prompt_inner(
          \"stakeholderCoverage\": \"broad|narrow|single_threaded\", \
          \"coverageGaps\": [\"role or team with no relationship\"]}",
     );
+
+    // I508b: Dimension fields — only for accounts
+    if entity_type == "account" {
+        prompt.push_str(
+            ",\n\
+               \"competitiveContext\": [{\"competitor\": \"name\", \"threatLevel\": \"displacement|evaluation|mentioned|incumbent\", \"context\": \"1 sentence\", \"detectedAt\": \"ISO date or null\"}],\n\
+               \"strategicPriorities\": [{\"priority\": \"...\", \"status\": \"active|at_risk|completed|paused\", \"owner\": \"...\", \"timeline\": \"...\"}],\n\
+               \"coverageAssessment\": {\"roleFillRate\": 0.0, \"gaps\": [\"missing role\"], \"covered\": [\"filled role\"], \"level\": \"strong|adequate|thin|critical\"},\n\
+               \"organizationalChanges\": [{\"changeType\": \"departure|hire|promotion|reorg|role_change\", \"person\": \"name\", \"from\": \"...\", \"to\": \"...\", \"detectedAt\": \"ISO date\"}],\n\
+               \"internalTeam\": [{\"name\": \"...\", \"role\": \"RM|AE|TAM|Division Lead|etc\"}],\n\
+               \"meetingCadenceAssessment\": {\"meetingsPerMonth\": 0.0, \"trend\": \"increasing|stable|declining|erratic\", \"daysSinceLast\": 0, \"assessment\": \"healthy|adequate|sparse|cold\"},\n\
+               \"emailResponsiveness\": {\"trend\": \"improving|stable|slowing|gone_quiet\", \"assessment\": \"responsive|normal|slow|unresponsive\"},\n\
+               \"blockers\": [{\"description\": \"...\", \"owner\": \"...\", \"since\": \"ISO date\", \"impact\": \"critical|high|moderate|low\"}],\n\
+               \"contractContext\": {\"contractType\": \"annual|multi_year|month_to_month\", \"autoRenew\": true, \"renewalDate\": \"ISO date\", \"currentArr\": 0.0},\n\
+               \"expansionSignals\": [{\"opportunity\": \"...\", \"arrImpact\": 0.0, \"stage\": \"exploring|evaluating|committed|blocked\"}],\n\
+               \"renewalOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date\"},\n\
+               \"supportHealth\": {\"openTickets\": 0, \"criticalTickets\": 0, \"trend\": \"improving|stable|degrading\", \"csat\": 0.0},\n\
+               \"productAdoption\": {\"adoptionRate\": 0.0, \"trend\": \"growing|stable|declining\", \"featureAdoption\": [\"...\"], \"lastActive\": \"ISO date\"},\n\
+               \"npsCsat\": {\"nps\": 0, \"csat\": 0.0, \"surveyDate\": \"ISO date\", \"verbatim\": \"quote\"},\n\
+               \"sourceAttribution\": {\"fieldName\": [\"source1\"]}",
+        );
+    }
 
     prompt.push_str(
         "\n\
@@ -1655,6 +1795,16 @@ fn build_intelligence_prompt_inner(
          entries through that lens — describe value in terms the user would use to communicate \
          it to their stakeholders.\n",
     );
+
+    if entity_type == "account" {
+        prompt.push_str(
+            "\nFor I508 dimension fields (competitiveContext through sourceAttribution): \
+             include ONLY when evidence exists in the provided context (Glean snippets, \
+             meeting notes, files, email signals). Return null or empty array when no evidence. \
+             Do NOT fabricate. Evidence sources may include workspace files, meeting transcripts, \
+             email signals, and Glean documents — extract intelligence from all available sources.\n",
+        );
+    }
 
     if ctx.canonical_contacts.is_some() && (entity_type == "account" || entity_type == "project") {
         prompt.push_str(
@@ -1728,6 +1878,37 @@ struct AiIntelResponse {
     /// I396: Relationship depth assessment.
     #[serde(default)]
     relationship_depth: Option<AiRelationshipDepth>,
+    // I508b: dimension fields — deserialize directly from LLM JSON output
+    #[serde(default)]
+    competitive_context: Vec<super::io::CompetitiveInsight>,
+    #[serde(default)]
+    strategic_priorities: Vec<super::io::StrategicPriority>,
+    #[serde(default)]
+    coverage_assessment: Option<super::io::CoverageAssessment>,
+    #[serde(default)]
+    organizational_changes: Vec<super::io::OrgChange>,
+    #[serde(default)]
+    internal_team: Vec<super::io::InternalTeamMember>,
+    #[serde(default, alias = "meetingCadence")]
+    meeting_cadence_assessment: Option<super::io::CadenceAssessment>,
+    #[serde(default)]
+    email_responsiveness: Option<super::io::ResponsivenessAssessment>,
+    #[serde(default)]
+    blockers: Vec<super::io::Blocker>,
+    #[serde(default)]
+    contract_context: Option<super::io::ContractContext>,
+    #[serde(default)]
+    expansion_signals: Vec<super::io::ExpansionSignal>,
+    #[serde(default)]
+    renewal_outlook: Option<super::io::RenewalOutlook>,
+    #[serde(default)]
+    support_health: Option<super::io::SupportHealth>,
+    #[serde(default)]
+    product_adoption: Option<super::io::AdoptionSignals>,
+    #[serde(default)]
+    nps_csat: Option<super::io::SatisfactionData>,
+    #[serde(default)]
+    source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 /// I396: Health trend direction with rationale.
@@ -2318,6 +2499,22 @@ fn try_parse_json_response(
         consistency_status: None,
         consistency_findings: Vec::new(),
         consistency_checked_at: None,
+        // I508b: map LLM-returned dimension fields into IntelligenceJson
+        competitive_context: ai_resp.competitive_context,
+        strategic_priorities: ai_resp.strategic_priorities,
+        coverage_assessment: ai_resp.coverage_assessment,
+        organizational_changes: ai_resp.organizational_changes,
+        internal_team: ai_resp.internal_team,
+        meeting_cadence: ai_resp.meeting_cadence_assessment, // renamed to avoid health.dimensions clash
+        email_responsiveness: ai_resp.email_responsiveness,
+        blockers: ai_resp.blockers,
+        contract_context: ai_resp.contract_context,
+        expansion_signals: ai_resp.expansion_signals,
+        renewal_outlook: ai_resp.renewal_outlook,
+        support_health: ai_resp.support_health,
+        product_adoption: ai_resp.product_adoption,
+        nps_csat: ai_resp.nps_csat,
+        source_attribution: ai_resp.source_attribution,
     })
 }
 
@@ -2661,6 +2858,9 @@ mod tests {
             relationship_edges: None,
             user_context: None,
             entity_context: None,
+            gap_queries: Vec::new(),
+            computed_health: None,
+            org_health: None,
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);

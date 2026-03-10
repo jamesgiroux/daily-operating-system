@@ -56,7 +56,7 @@ impl ContextProvider for LocalContextProvider {
             None
         };
 
-        let ctx = crate::intelligence::build_intelligence_context(
+        let mut ctx = crate::intelligence::build_intelligence_context(
             &self.workspace,
             db,
             entity_id,
@@ -66,6 +66,19 @@ impl ContextProvider for LocalContextProvider {
             prior,
             embedding,
         );
+
+        // I500: Load org_health from DB if available (may have been stored by a prior Glean enrichment)
+        if entity_type == "account" {
+            if let Ok(Some(json)) = db.conn_ref().query_row(
+                "SELECT org_health_json FROM entity_assessment WHERE entity_id = ?1",
+                [entity_id],
+                |row| row.get::<_, Option<String>>(0),
+            ) {
+                if let Ok(org_health) = serde_json::from_str(&json) {
+                    ctx.org_health = Some(org_health);
+                }
+            }
+        }
 
         Ok(ctx)
     }

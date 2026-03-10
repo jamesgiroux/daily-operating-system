@@ -231,7 +231,7 @@ export default function AccountsPage() {
     if (!searchQuery) return lifecycleFiltered;
     const q = searchQuery.toLowerCase();
     return lifecycleFiltered.filter((a) => {
-      if (a.name.toLowerCase().includes(q) || (a.teamSummary ?? "").toLowerCase().includes(q)) {
+      if (a.name.toLowerCase().includes(q)) {
         return true;
       }
       const children = childrenCache[a.id];
@@ -636,15 +636,6 @@ function AccountRow({
   depth?: number;
   showBorder: boolean;
 }) {
-  const subtitle = account.teamSummary ? (
-    <>
-      {account.teamSummary}
-      {account.openActionCount > 0 && (
-        <span> &middot; {account.openActionCount} action{account.openActionCount !== 1 ? "s" : ""}</span>
-      )}
-    </>
-  ) : undefined;
-
   const nameSuffix = (
     <>
       {account.accountType !== "customer" && (
@@ -693,7 +684,7 @@ function AccountRow({
       showBorder={showBorder}
       paddingLeft={depth > 0 ? depth * 28 : 0}
       nameSuffix={nameSuffix}
-      subtitle={subtitle}
+      subtitle={undefined}
     >
       {account.arr != null && (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>

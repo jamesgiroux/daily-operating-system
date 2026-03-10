@@ -627,16 +627,20 @@ mod inferred_relationship_tests {
 
 #[cfg(test)]
 mod live_acceptance_tests {
+    use std::collections::HashSet;
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     use chrono::Utc;
-    use rusqlite::OptionalExtension;
+    use rusqlite::{params, OptionalExtension};
 
     use super::enrich_entity;
+    use crate::db::data_lifecycle::{purge_source, DataSource};
+    use crate::db::{ActionDb, DbPerson};
     use crate::intel_queue::{write_enrichment_results, EnrichmentInput};
     use crate::intelligence::{
-        write_intelligence_json, ConsistencyStatus, IntelRisk,
-        IntelligenceJson,
+        write_intelligence_json, AccountHealth, ConsistencyStatus, DimensionScore, HealthSource,
+        HealthTrend, IntelRisk, IntelligenceJson, RelationshipDimensions,
     };
     use crate::state::AppState;
 
@@ -929,6 +933,7 @@ mod live_acceptance_tests {
             prompt: String::new(),
             file_manifest: Vec::new(),
             file_count: 0,
+            computed_health: None,
         };
 
         let first = write_enrichment_results(&state, &input, &contradictory, None)
@@ -1080,6 +1085,780 @@ mod live_acceptance_tests {
                 .iter()
                 .all(|f| f.code != "ABSENCE_CONTRADICTION"),
             "Deterministic repair should clear Janus/Matt absence contradiction"
+        );
+    }
+
+    /// Wave 1 live acceptance (I503 + I528) on an encrypted snapshot of the
+    /// user's real DB. Safe: mutates backup only.
+    #[test]
+    #[ignore = "Live validation: uses real DB snapshot and performs destructive purge checks on snapshot only"]
+    fn wave1_live_snapshot_i503_i528_acceptance() {
+        let live_db = ActionDb::open().expect("open live DB");
+        let backup_path = crate::db_backup::backup_database(&live_db).expect("create live backup");
+        let snapshot_db =
+            ActionDb::open_at(PathBuf::from(&backup_path)).expect("open snapshot backup DB");
+
+        // ---------------------------------------------------------------------
+        // I503: structured health write/read + legacy compatibility
+        // ---------------------------------------------------------------------
+        let structured = IntelligenceJson {
+            version: 1,
+            entity_id: "wave1-i503-structured".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: Utc::now().to_rfc3339(),
+            health: Some(AccountHealth {
+                score: 82.0,
+                band: "green".to_string(),
+                source: HealthSource::Computed,
+                confidence: 0.78,
+                trend: HealthTrend {
+                    direction: "improving".to_string(),
+                    rationale: Some("Usage and expansion improved".to_string()),
+                    timeframe: "30d".to_string(),
+                    confidence: 0.7,
+                },
+                dimensions: RelationshipDimensions {
+                    meeting_cadence: DimensionScore {
+                        score: 80.0,
+                        weight: 0.2,
+                        evidence: vec!["weekly exec sync".to_string()],
+                        trend: "improving".to_string(),
+                    },
+                    email_engagement: DimensionScore::default(),
+                    stakeholder_coverage: DimensionScore::default(),
+                    champion_health: DimensionScore::default(),
+                    financial_proximity: DimensionScore::default(),
+                    signal_momentum: DimensionScore::default(),
+                },
+                divergence: None,
+                narrative: Some("Healthy multi-threaded account".to_string()),
+                recommended_actions: vec!["Expand to procurement".to_string()],
+            }),
+            ..Default::default()
+        };
+        snapshot_db
+            .upsert_entity_intelligence(&structured)
+            .expect("upsert structured health");
+        let structured_back = snapshot_db
+            .get_entity_intelligence("wave1-i503-structured")
+            .expect("get structured health row")
+            .expect("structured row missing");
+        let structured_health = structured_back
+            .health
+            .expect("structured health should deserialize");
+        assert_eq!(structured_health.score, 82.0);
+        assert_eq!(structured_health.band, "green");
+        assert_eq!(structured_health.trend.direction, "improving");
+
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT OR REPLACE INTO entity_assessment (entity_id, entity_type, enriched_at, source_file_count)
+                 VALUES (?1, 'account', ?2, 0)",
+                params!["wave1-i503-legacy", Utc::now().to_rfc3339()],
+            )
+            .expect("seed legacy entity_assessment row");
+        let legacy_trend_json = serde_json::json!({
+            "direction": "declining",
+            "rationale": "Legacy trend payload"
+        })
+        .to_string();
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT OR REPLACE INTO entity_quality (entity_id, entity_type, health_score, health_trend)
+                 VALUES (?1, 'account', 35.0, ?2)",
+                params!["wave1-i503-legacy", legacy_trend_json],
+            )
+            .expect("seed legacy entity_quality row");
+        let legacy_back = snapshot_db
+            .get_entity_intelligence("wave1-i503-legacy")
+            .expect("get legacy compatibility row")
+            .expect("legacy row missing");
+        let legacy_health = legacy_back
+            .health
+            .expect("legacy scalar health should synthesize into structured health");
+        assert_eq!(legacy_health.band, "red");
+        assert_eq!(legacy_health.score, 35.0);
+        assert_eq!(legacy_health.trend.direction, "declining");
+
+        let legacy_dir = tempfile::tempdir().expect("legacy tempdir");
+        let legacy_json = serde_json::json!({
+            "entityId": "legacy-file-entity",
+            "entityType": "account",
+            "healthScore": 73.0,
+            "healthTrend": {
+                "direction": "stable",
+                "rationale": "Legacy file compatibility"
+            }
+        });
+        std::fs::write(
+            legacy_dir.path().join("intelligence.json"),
+            serde_json::to_string_pretty(&legacy_json).expect("serialize legacy intelligence file"),
+        )
+        .expect("write legacy intelligence file");
+        let parsed_legacy_file = crate::intelligence::read_intelligence_json(legacy_dir.path())
+            .expect("read legacy intelligence file");
+        let file_health = parsed_legacy_file
+            .health
+            .expect("healthScore/healthTrend should map to structured health");
+        assert_eq!(file_health.score, 73.0);
+        assert_eq!(file_health.band, "green");
+        assert_eq!(file_health.trend.direction, "stable");
+
+        // ---------------------------------------------------------------------
+        // I528: purge semantics (glean + google) against snapshot
+        // ---------------------------------------------------------------------
+        let marker = format!("wave1-i528-{}", Utc::now().timestamp());
+        let account_id: String = snapshot_db
+            .conn_ref()
+            .query_row("SELECT id FROM accounts LIMIT 1", [], |row| row.get(0))
+            .expect("load existing account id for FK-safe purge seeding");
+
+        let google_person_id = format!("{marker}-p-google");
+        let glean_person_id = format!("{marker}-p-glean");
+        let user_person_id = format!("{marker}-p-user");
+        let person = DbPerson {
+            id: google_person_id.clone(),
+            email: format!("{marker}-google@example.com"),
+            name: format!("{marker}-google"),
+            organization: Some("Wave1 Org".to_string()),
+            role: Some("Director".to_string()),
+            relationship: "external".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: None,
+            first_seen: None,
+            meeting_count: 0,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            linkedin_url: Some("https://linkedin.com/in/wave1".to_string()),
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: Some("Wave1 profile".to_string()),
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: Some(
+                serde_json::json!({
+                    "linkedin_url": {"source": "google", "at": "2026-03-07T00:00:00Z"},
+                    "bio": {"source": "user", "at": "2026-03-07T00:00:00Z"}
+                })
+                .to_string(),
+            ),
+        };
+        snapshot_db.upsert_person(&person).expect("seed snapshot person");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "UPDATE people
+                 SET linkedin_url = ?1, bio = ?2
+                 WHERE id = ?3",
+                params![
+                    "https://linkedin.com/in/wave1",
+                    "Wave1 profile",
+                    google_person_id.clone()
+                ],
+            )
+            .expect("seed people profile fields");
+        snapshot_db
+            .upsert_person(&DbPerson {
+                id: glean_person_id.clone(),
+                email: format!("{marker}-glean@example.com"),
+                name: format!("{marker}-glean"),
+                organization: Some("Wave1 Org".to_string()),
+                role: Some("Champion".to_string()),
+                relationship: "external".to_string(),
+                notes: None,
+                tracker_path: None,
+                last_seen: None,
+                first_seen: None,
+                meeting_count: 0,
+                updated_at: Utc::now().to_rfc3339(),
+                archived: false,
+                linkedin_url: None,
+                twitter_handle: None,
+                phone: None,
+                photo_url: None,
+                bio: None,
+                title_history: None,
+                company_industry: None,
+                company_size: None,
+                company_hq: None,
+                last_enriched_at: None,
+                enrichment_sources: None,
+            })
+            .expect("seed glean person");
+        snapshot_db
+            .upsert_person(&DbPerson {
+                id: user_person_id.clone(),
+                email: format!("{marker}-user@example.com"),
+                name: format!("{marker}-user"),
+                organization: Some("Wave1 Org".to_string()),
+                role: Some("Champion".to_string()),
+                relationship: "external".to_string(),
+                notes: None,
+                tracker_path: None,
+                last_seen: None,
+                first_seen: None,
+                meeting_count: 0,
+                updated_at: Utc::now().to_rfc3339(),
+                archived: false,
+                linkedin_url: None,
+                twitter_handle: None,
+                phone: None,
+                photo_url: None,
+                bio: None,
+                title_history: None,
+                company_industry: None,
+                company_size: None,
+                company_hq: None,
+                last_enriched_at: None,
+                enrichment_sources: None,
+            })
+            .expect("seed user person");
+
+        let account_glean = account_id.clone();
+        let account_google = account_id.clone();
+        let account_user = account_id.clone();
+
+        let user_stakeholders_before: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholders WHERE data_source = 'user'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user stakeholders before");
+        let user_signals_before: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE source = 'user'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user signals before");
+        let user_relationships_before: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM person_relationships WHERE source = 'user_confirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user relationships before");
+
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'glean')",
+                params![account_glean, glean_person_id],
+            )
+            .expect("seed glean stakeholder");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'google')",
+                params![account_google, google_person_id],
+            )
+            .expect("seed google stakeholder");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, role, data_source)
+                 VALUES (?1, ?2, 'champion', 'user')",
+                params![account_user, user_person_id],
+            )
+            .expect("seed user stakeholder");
+
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
+                 VALUES (?1, 'account', ?2, 'profile_update', 'glean', 0.8)",
+                params![format!("{marker}-sig-glean"), account_glean],
+            )
+            .expect("seed glean signal");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
+                 VALUES (?1, 'account', ?2, 'profile_update', 'google', 0.8)",
+                params![format!("{marker}-sig-google"), account_google],
+            )
+            .expect("seed google signal");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
+                 VALUES (?1, 'account', ?2, 'profile_update', 'user', 0.8)",
+                params![format!("{marker}-sig-user"), account_user],
+            )
+            .expect("seed user signal");
+
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO person_relationships
+                 (id, from_person_id, to_person_id, relationship_type, direction, confidence, source)
+                 VALUES (?1, ?2, ?2, 'peer', 'symmetric', 0.8, 'glean')",
+                params![format!("{marker}-rel-glean"), glean_person_id],
+            )
+            .expect("seed glean relationship");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO person_relationships
+                 (id, from_person_id, to_person_id, relationship_type, direction, confidence, source)
+                 VALUES (?1, ?2, ?2, 'peer', 'symmetric', 0.8, 'google')",
+                params![format!("{marker}-rel-google"), google_person_id],
+            )
+            .expect("seed google relationship");
+        snapshot_db
+            .conn_ref()
+            .execute(
+                "INSERT INTO person_relationships
+                 (id, from_person_id, to_person_id, relationship_type, direction, confidence, source)
+                 VALUES (?1, ?2, ?2, 'peer', 'symmetric', 0.9, 'user_confirmed')",
+                params![format!("{marker}-rel-user"), user_person_id],
+            )
+            .expect("seed user relationship");
+
+        let glean_report = purge_source(&snapshot_db, DataSource::Glean).expect("purge glean");
+        assert_eq!(glean_report.source, "glean");
+        assert!(
+            glean_report.people_cleared >= 1
+                && glean_report.signals_deleted >= 1
+                && glean_report.relationships_deleted >= 1,
+            "glean purge should remove source-owned records"
+        );
+
+        let glean_stakeholders_left: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholders WHERE data_source = 'glean'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count glean stakeholders");
+        let glean_signals_left: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE source = 'glean'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count glean signals");
+        let glean_relationships_left: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM person_relationships WHERE source = 'glean'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count glean relationships");
+        assert_eq!(glean_stakeholders_left, 0);
+        assert_eq!(glean_signals_left, 0);
+        assert_eq!(glean_relationships_left, 0);
+
+        let user_stakeholders_mid: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholders WHERE data_source = 'user'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user stakeholders after glean purge");
+        let user_signals_mid: i64 = snapshot_db
+            .conn_ref()
+            .query_row("SELECT COUNT(*) FROM signal_events WHERE source = 'user'", [], |row| {
+                row.get(0)
+            })
+            .expect("count user signals after glean purge");
+        let user_relationships_mid: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM person_relationships WHERE source = 'user_confirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user relationships after glean purge");
+        assert_eq!(user_stakeholders_mid, user_stakeholders_before + 1);
+        assert_eq!(user_signals_mid, user_signals_before + 1);
+        assert_eq!(user_relationships_mid, user_relationships_before + 1);
+
+        let google_report = purge_source(&snapshot_db, DataSource::Google).expect("purge google");
+        assert_eq!(google_report.source, "google");
+        assert!(
+            google_report.people_cleared >= 1
+                && google_report.signals_deleted >= 1
+                && google_report.relationships_deleted >= 1,
+            "google purge should remove source-owned records"
+        );
+
+        let google_stakeholders_left: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholders WHERE data_source = 'google'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count google stakeholders");
+        let google_signals_left: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE source = 'google'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count google signals");
+        let google_relationships_left: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM person_relationships WHERE source = 'google'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count google relationships");
+        assert_eq!(google_stakeholders_left, 0);
+        assert_eq!(google_signals_left, 0);
+        assert_eq!(google_relationships_left, 0);
+
+        let user_stakeholders_after: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholders WHERE data_source = 'user'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user stakeholders after google purge");
+        let user_signals_after: i64 = snapshot_db
+            .conn_ref()
+            .query_row("SELECT COUNT(*) FROM signal_events WHERE source = 'user'", [], |row| {
+                row.get(0)
+            })
+            .expect("count user signals after google purge");
+        let user_relationships_after: i64 = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM person_relationships WHERE source = 'user_confirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user relationships after google purge");
+        assert_eq!(user_stakeholders_after, user_stakeholders_before + 1);
+        assert_eq!(user_signals_after, user_signals_before + 1);
+        assert_eq!(user_relationships_after, user_relationships_before + 1);
+
+        let (linkedin_after, bio_after, sources_after): (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = snapshot_db
+            .conn_ref()
+            .query_row(
+                "SELECT linkedin_url, bio, enrichment_sources FROM people WHERE id = ?1",
+                params![google_person_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read person profile after google purge");
+        assert!(
+            linkedin_after.is_none(),
+            "google-owned linkedin_url should be cleared; got linkedin={:?}, sources={:?}",
+            linkedin_after,
+            sources_after
+        );
+        assert_eq!(
+            bio_after.as_deref(),
+            Some("Wave1 profile"),
+            "user-owned bio should remain"
+        );
+    }
+
+    /// Wave 1 live acceptance (I504) against real data enrichment path.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "Live validation: runs real AI enrichment and checks inferred relationships in local DB"]
+    async fn wave1_live_i504_end_to_end_relationship_acceptance() {
+        let state = Arc::new(AppState::new());
+        let _ = state.init_db_service().await;
+
+        // Prefer an account that already has AI-inferred edges and >=3 stakeholders
+        // for deterministic validation across reruns.
+        let candidate = state
+            .db_read(|db| {
+                db.conn_ref()
+                    .query_row(
+                        "SELECT pr.context_entity_id
+                         FROM person_relationships pr
+                         JOIN account_stakeholders s
+                           ON s.account_id = pr.context_entity_id
+                         WHERE pr.source = 'ai_enrichment'
+                           AND pr.context_entity_type = 'account'
+                         GROUP BY pr.context_entity_id
+                         HAVING COUNT(DISTINCT s.person_id) >= 3
+                         ORDER BY COUNT(*) ASC, COUNT(DISTINCT s.person_id) ASC
+                         LIMIT 1",
+                        [],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+                    .map_err(|e| format!("preferred candidate query failed: {e}"))
+            })
+            .await
+            .expect("preferred candidate query error");
+
+        let account_id = if let Some(id) = candidate {
+            id
+        } else {
+            state
+                .db_read(|db| {
+                    db.conn_ref()
+                        .query_row(
+                            "SELECT s.account_id
+                             FROM account_stakeholders s
+                             GROUP BY s.account_id
+                             HAVING COUNT(DISTINCT s.person_id) >= 3
+                             ORDER BY COUNT(DISTINCT s.person_id) ASC
+                             LIMIT 1",
+                            [],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .map_err(|e| format!("fallback candidate query failed: {e}"))
+                })
+                .await
+                .expect("fallback candidate query error")
+        };
+
+        let (before_rows, before_signals): (i64, i64) = state
+            .db_read({
+                let account_id = account_id.clone();
+                move |db| {
+                    let rows: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM person_relationships
+                             WHERE source = 'ai_enrichment'
+                               AND context_entity_type = 'account'
+                               AND context_entity_id = ?1",
+                            params![account_id],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("count AI relationships before failed: {e}"))?;
+                    let signals: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM signal_events
+                             WHERE entity_type = 'account'
+                               AND entity_id = ?1
+                               AND signal_type = 'relationship_inferred'
+                               AND source = 'ai_enrichment'",
+                            params![account_id],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("count relationship signals before failed: {e}"))?;
+                    Ok((rows, signals))
+                }
+            })
+            .await
+            .expect("read i504 pre-state failed");
+
+        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state)
+            .await
+            .expect("manual enrich_entity for i504 validation failed");
+
+        let (rows_after_first, ids_after_first, manager_bad, peer_bad, signals_after_first): (
+            Vec<(String, f64, String, String, Option<String>)>,
+            HashSet<String>,
+            i64,
+            i64,
+            i64,
+        ) = state
+            .db_read({
+                let account_id = account_id.clone();
+                move |db| {
+                    let mut stmt = db
+                        .conn_ref()
+                        .prepare(
+                            "SELECT id, confidence, relationship_type, direction, context_entity_id
+                             FROM person_relationships
+                             WHERE source = 'ai_enrichment'
+                               AND context_entity_type = 'account'
+                               AND context_entity_id = ?1",
+                        )
+                        .map_err(|e| format!("prepare relationship read failed: {e}"))?;
+                    let mapped = stmt
+                        .query_map(params![account_id.clone()], |row| {
+                            Ok((
+                                row.get::<_, String>(0)?,
+                                row.get::<_, f64>(1)?,
+                                row.get::<_, String>(2)?,
+                                row.get::<_, String>(3)?,
+                                row.get::<_, Option<String>>(4)?,
+                            ))
+                        })
+                        .map_err(|e| format!("query relationship read failed: {e}"))?;
+                    let mut rows = Vec::new();
+                    let mut ids = HashSet::new();
+                    for row in mapped {
+                        let row = row.map_err(|e| format!("relationship row decode failed: {e}"))?;
+                        ids.insert(row.0.clone());
+                        rows.push(row);
+                    }
+
+                    let manager_bad: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM person_relationships
+                             WHERE source = 'ai_enrichment'
+                               AND context_entity_type = 'account'
+                               AND context_entity_id = ?1
+                               AND relationship_type = 'manager'
+                               AND direction != 'directed'",
+                            params![account_id.clone()],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("manager direction check failed: {e}"))?;
+                    let peer_bad: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM person_relationships
+                             WHERE source = 'ai_enrichment'
+                               AND context_entity_type = 'account'
+                               AND context_entity_id = ?1
+                               AND relationship_type IN ('peer', 'collaborator')
+                               AND direction != 'symmetric'",
+                            params![account_id.clone()],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("peer/collaborator direction check failed: {e}"))?;
+                    let signals: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM signal_events
+                             WHERE entity_type = 'account'
+                               AND entity_id = ?1
+                               AND signal_type = 'relationship_inferred'
+                               AND source = 'ai_enrichment'",
+                            params![account_id],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("count relationship signals after first failed: {e}"))?;
+
+                    Ok((rows, ids, manager_bad, peer_bad, signals))
+                }
+            })
+            .await
+            .expect("read i504 post-first-run state failed");
+
+        assert!(
+            !rows_after_first.is_empty(),
+            "I504 AC1: account enrichment with >=3 stakeholders should produce ai_enrichment relationship rows"
+        );
+        for (_, confidence, _, _, context_entity_id) in &rows_after_first {
+            assert!(
+                (*confidence - 0.6).abs() < 1e-9,
+                "I504 AC2: inferred relationship confidence must be 0.6"
+            );
+            assert_eq!(
+                context_entity_id.as_deref(),
+                Some(account_id.as_str()),
+                "I504 AC2: context_entity_id must be the enriched account"
+            );
+        }
+        assert_eq!(
+            manager_bad, 0,
+            "I504 AC3: manager relationships must be directed"
+        );
+        assert_eq!(
+            peer_bad, 0,
+            "I504 AC3: peer/collaborator relationships must be symmetric"
+        );
+
+        let inserted_first_run = (rows_after_first.len() as i64 - before_rows).max(0);
+        if inserted_first_run > 0 {
+            assert!(
+                signals_after_first >= before_signals + inserted_first_run,
+                "I504 AC6: relationship_inferred signals should grow with new inserted edges"
+            );
+        } else {
+            assert!(
+                signals_after_first > 0,
+                "I504 AC6: account should have relationship_inferred signal history for ai_enrichment edges"
+            );
+        }
+
+        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state)
+            .await
+            .expect("second enrich_entity for i504 validation failed");
+
+        let (rows_after_second, ids_after_second, reinforced_after_second): (i64, i64, i64) = state
+            .db_read({
+                let account_id = account_id.clone();
+                move |db| {
+                    let rows: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM person_relationships
+                             WHERE source = 'ai_enrichment'
+                               AND context_entity_type = 'account'
+                               AND context_entity_id = ?1",
+                            params![account_id.clone()],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("count rows after second enrichment failed: {e}"))?;
+                    let ids: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(DISTINCT id)
+                             FROM person_relationships
+                             WHERE source = 'ai_enrichment'
+                               AND context_entity_type = 'account'
+                               AND context_entity_id = ?1",
+                            params![account_id],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("count distinct ids after second enrichment failed: {e}"))?;
+                    let reinforced: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM person_relationships
+                             WHERE source = 'ai_enrichment'
+                               AND context_entity_type = 'account'
+                               AND context_entity_id = ?1
+                               AND last_reinforced_at IS NOT NULL",
+                            params![account_id],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| format!("count reinforced edges after second enrichment failed: {e}"))?;
+                    Ok((rows, ids, reinforced))
+                }
+            })
+            .await
+            .expect("read i504 post-second-run state failed");
+
+        assert_eq!(
+            rows_after_second, ids_after_second,
+            "I504 AC4: re-enrichment must not create duplicate AI relationship IDs"
+        );
+        assert!(
+            rows_after_second >= rows_after_first.len() as i64
+                && ids_after_second as usize >= ids_after_first.len(),
+            "I504 AC4: second enrichment should preserve or reinforce existing inferred edges"
+        );
+        assert!(
+            reinforced_after_second > 0,
+            "I504 AC4: re-enrichment should reinforce existing edges (last_reinforced_at set)"
         );
     }
 }
