@@ -85,16 +85,24 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
 // ---------------------------------------------------------------------------
 
 /// Person with 3+ historical meetings where current 30d freq < 50% of trailing 90d avg.
-pub fn detect_relationship_drift(db: &ActionDb, _ctx: &DetectorContext) -> Vec<RawInsight> {
+pub fn detect_relationship_drift(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
+    let window_30_start = (ctx.today - Duration::days(30))
+        .format("%Y-%m-%d")
+        .to_string();
+    let window_90_start = (ctx.today - Duration::days(90))
+        .format("%Y-%m-%d")
+        .to_string();
+    let window_end = (ctx.today + Duration::days(1)).format("%Y-%m-%d").to_string();
+
     let sql = "SELECT p.id, p.name,
         (SELECT COUNT(*) FROM meetings mh
          JOIN meeting_entities me ON me.meeting_id = mh.id
          WHERE me.entity_id = p.id AND me.entity_type = 'person'
-         AND mh.start_time >= datetime('now', '-30 days')) as meetings_30d,
+         AND mh.start_time >= ?1 AND mh.start_time < ?3) as meetings_30d,
         (SELECT COUNT(*) FROM meetings mh
          JOIN meeting_entities me ON me.meeting_id = mh.id
          WHERE me.entity_id = p.id AND me.entity_type = 'person'
-         AND mh.start_time >= datetime('now', '-90 days')) as meetings_90d
+         AND mh.start_time >= ?2 AND mh.start_time < ?3) as meetings_90d
     FROM people p
     WHERE p.archived = 0";
 
@@ -104,7 +112,7 @@ pub fn detect_relationship_drift(db: &ActionDb, _ctx: &DetectorContext) -> Vec<R
         Err(_) => return Vec::new(),
     };
 
-    let rows = match stmt.query_map([], |row| {
+    let rows = match stmt.query_map(params![window_30_start, window_90_start, window_end], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,

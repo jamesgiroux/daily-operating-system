@@ -735,6 +735,55 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Stamp/override provenance for a single person field in `enrichment_sources`.
+    pub fn set_person_field_source(
+        &self,
+        person_id: &str,
+        field: &str,
+        source: &str,
+    ) -> Result<(), DbError> {
+        if field.trim().is_empty() {
+            return Err(DbError::Migration(
+                "set_person_field_source: field cannot be empty".to_string(),
+            ));
+        }
+        if source_priority(source) == 0 {
+            return Err(DbError::Migration(format!(
+                "set_person_field_source: unknown source '{}'",
+                source
+            )));
+        }
+
+        let current_sources_json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT enrichment_sources FROM people WHERE id = ?1",
+                params![person_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| DbError::Migration(format!("read enrichment_sources: {}", e)))?;
+
+        let mut sources: std::collections::HashMap<String, FieldSource> = current_sources_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+
+        let now = Utc::now().to_rfc3339();
+        sources.insert(
+            field.to_string(),
+            FieldSource {
+                source: source.to_string(),
+                at: now.clone(),
+            },
+        );
+        let sources_json = serde_json::to_string(&sources).unwrap_or_else(|_| "{}".to_string());
+        self.conn.execute(
+            "UPDATE people SET enrichment_sources = ?1, updated_at = ?2 WHERE id = ?3",
+            params![sources_json, now, person_id],
+        )?;
+        Ok(())
+    }
+
     /// Helper: map a row to `DbPerson`.
     fn map_person_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbPerson> {
         Ok(DbPerson {

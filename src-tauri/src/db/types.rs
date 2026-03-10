@@ -4,6 +4,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+fn default_email_signal_source() -> String {
+    "email_enrichment".to_string()
+}
+
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -298,6 +302,8 @@ pub struct DbEmailSignal {
     pub sentiment: Option<String>,
     pub urgency: Option<String>,
     pub detected_at: String,
+    #[serde(default = "default_email_signal_source")]
+    pub source: String,
 }
 
 /// A row from the `emails` table (I368).
