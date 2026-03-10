@@ -284,7 +284,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           }}
         >
           <Loader2 className="h-3 w-3 animate-spin" style={{ width: 12, height: 12 }} />
-          Morning refresh in progress
+          Refresh in progress
         </div>
       )}
 
