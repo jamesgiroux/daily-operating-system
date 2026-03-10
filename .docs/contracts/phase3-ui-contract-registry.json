@@ -1,0 +1,155 @@
+{
+  "version": "1.0.0-phase3",
+  "description": "Page-level command contracts for production-data parity gating",
+  "surfaces": [
+    {
+      "id": "dashboard_briefing",
+      "label": "Dashboard / Briefing",
+      "consumers": ["hooks/useDashboardData.ts", "components/dashboard/DailyBriefing.tsx"],
+      "commands": [
+        {
+          "command": "get_dashboard_data",
+          "requiredPaths": [
+            "overview.greeting",
+            "overview.date",
+            "meetings",
+            "actions",
+            "freshness.freshness"
+          ]
+        },
+        {
+          "command": "get_week_data",
+          "requiredPaths": ["days", "weekNumber", "dateRange"]
+        }
+      ]
+    },
+    {
+      "id": "actions",
+      "label": "Actions",
+      "consumers": ["hooks/useActions.ts", "pages/ActionsPage.tsx"],
+      "commands": [
+        {
+          "command": "get_actions_from_db",
+          "requiredPaths": ["pending", "proposed", "completed", "pending.0.id", "pending.0.title"]
+        },
+        {
+          "command": "get_proposed_actions",
+          "requiredPaths": ["0.id", "0.title", "0.priority", "0.status"]
+        }
+      ]
+    },
+    {
+      "id": "account_detail",
+      "label": "Account Detail",
+      "consumers": ["hooks/useAccountDetail.ts", "pages/AccountDetailEditorial.tsx"],
+      "commands": [
+        {
+          "command": "get_account_detail",
+          "requiredPaths": ["id", "name", "updatedAt", "archived"]
+        },
+        {
+          "command": "get_account_team",
+          "requiredPaths": ["0.personId", "0.personName", "0.role"]
+        }
+      ]
+    },
+    {
+      "id": "project_detail",
+      "label": "Project Detail",
+      "consumers": ["hooks/useProjectDetail.ts", "pages/ProjectDetailEditorial.tsx"],
+      "commands": [
+        {
+          "command": "get_project_detail",
+          "requiredPaths": ["id", "name", "updatedAt", "archived"]
+        },
+        {
+          "command": "get_project_ancestors",
+          "requiredPaths": ["0.id", "0.name"]
+        }
+      ]
+    },
+    {
+      "id": "person_detail",
+      "label": "Person Detail",
+      "consumers": ["hooks/usePersonDetail.ts", "pages/PersonDetailEditorial.tsx"],
+      "commands": [
+        {
+          "command": "get_person_detail",
+          "requiredPaths": ["id", "name", "email", "relationship"]
+        },
+        {
+          "command": "get_person_relationships",
+          "requiredPaths": ["0.id", "0.relationshipType"]
+        }
+      ]
+    },
+    {
+      "id": "meeting_detail",
+      "label": "Meeting Detail",
+      "consumers": ["pages/MeetingDetailPage.tsx"],
+      "commands": [
+        {
+          "command": "get_meeting_intelligence",
+          "requiredPaths": ["meeting.id", "meeting.title", "isPast", "linkedEntities"]
+        },
+        {
+          "command": "get_meeting_outcomes",
+          "requiredPaths": ["meetingId", "actions", "wins", "risks"]
+        }
+      ]
+    },
+    {
+      "id": "inbox_emails",
+      "label": "Inbox / Emails",
+      "consumers": ["pages/InboxPage.tsx", "pages/EmailsPage.tsx"],
+      "commands": [
+        {
+          "command": "get_inbox_files",
+          "requiredPaths": ["files", "files.0.filename", "files.0.path"]
+        },
+        {
+          "command": "get_all_emails",
+          "requiredPaths": ["highPriority", "stats", "stats.highCount"]
+        },
+        {
+          "command": "get_email_sync_status",
+          "requiredPaths": ["state", "stage"]
+        }
+      ]
+    },
+    {
+      "id": "settings_data",
+      "label": "Settings / Data",
+      "consumers": ["components/settings/DatabaseRecoveryCard.tsx", "pages/SettingsPage.tsx"],
+      "commands": [
+        {
+          "command": "get_database_info",
+          "requiredPaths": ["path", "sizeBytes", "modifiedAt"]
+        },
+        {
+          "command": "list_database_backups",
+          "requiredPaths": ["0.path", "0.createdAt", "0.sizeBytes", "0.kind"]
+        },
+        {
+          "command": "get_database_recovery_status",
+          "requiredPaths": ["required", "reason", "detail"]
+        }
+      ]
+    },
+    {
+      "id": "reports",
+      "label": "Reports",
+      "consumers": ["pages/RiskBriefingPage.tsx", "pages/AccountHealthPage.tsx", "pages/EbrQbrPage.tsx"],
+      "commands": [
+        {
+          "command": "get_report",
+          "requiredPaths": ["id", "entityId", "reportType", "contentJson", "generatedAt"]
+        },
+        {
+          "command": "get_reports_for_entity",
+          "requiredPaths": ["0.id", "0.reportType", "0.generatedAt"]
+        }
+      ]
+    }
+  ]
+}
