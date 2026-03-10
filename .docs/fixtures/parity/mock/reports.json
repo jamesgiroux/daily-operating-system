@@ -1,0 +1,26 @@
+{
+  "surfaceId": "reports",
+  "commands": {
+    "get_report": {
+      "id": "r-1",
+      "entityId": "acc-1",
+      "reportType": "risk_briefing",
+      "contentJson": "{\"headline\":\"Risk stable\"}",
+      "generatedAt": "2026-03-10T08:00:00Z"
+    },
+    "get_reports_for_entity": [
+      {
+        "id": "r-1",
+        "reportType": "risk_briefing",
+        "generatedAt": "2026-03-10T08:00:00Z"
+      }
+    ]
+  },
+  "errors": {
+    "get_report": {
+      "code": "REPORT_NOT_FOUND",
+      "message": "Report not found",
+      "retryable": false
+    }
+  }
+}
