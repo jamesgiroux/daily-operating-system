@@ -1,0 +1,27 @@
+{
+  "surfaceId": "reports",
+  "commands": {
+    "get_report": {
+      "id": "rep-811",
+      "entityId": "acc-91",
+      "reportType": "account_health",
+      "contentJson": "{\"headline\":\"Renewal risk rising\",\"confidence\":\"medium\"}",
+      "generatedAt": "2026-03-10T07:34:51Z",
+      "intelHash": "e3b0c44298"
+    },
+    "get_reports_for_entity": [
+      {
+        "id": "rep-811",
+        "reportType": "account_health",
+        "generatedAt": "2026-03-10T07:34:51Z"
+      }
+    ]
+  },
+  "errors": {
+    "get_report": {
+      "code": "REPORT_NOT_FOUND",
+      "message": "Report not found",
+      "retryable": false
+    }
+  }
+}
