@@ -664,6 +664,7 @@ Requires v0.16.0 first. Full version brief: `.docs/plans/v1.0.0.md`.
 | I529 | Intelligence quality feedback UI — thumbs up/down on hover for intelligence items. Spec: `.docs/issues/i529.md` | P1 | Frontend + Backend / Signals |
 | I530 | Signal taxonomy: curation vs correction — delete ≠ wrong. Spec: `.docs/issues/i530.md` | P1 | Backend / Signals |
 | I537 | Gate role presets behind feature flag — hide preset selection UI, hard-default to CS. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
+| I540 | Actions pipeline integrity + lifecycle — 6 broken paths: Granola metadata loss, briefing blind to DB actions, archive never called, rejection source "unknown", thin free-tier summaries, deceptive tooltip. 30-day pending archive, Granola enrichment, briefing integration. Spec: `.docs/issues/i540.md` | P0 | Backend / Pipeline + Frontend / Actions |
 
 **CS Report Suite (after Phase 2):**
 

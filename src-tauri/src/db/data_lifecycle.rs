@@ -156,10 +156,20 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             )
             .map_err(|e| format!("purge account_stakeholders failed: {e}"))?;
 
-        let signals_deleted = tx
-            .conn_ref()
-            .execute("DELETE FROM signal_events WHERE source = ?1", [source_str])
-            .map_err(|e| format!("purge signal_events failed: {e}"))?;
+        // I487: Glean signals use sub-sources (glean_search, glean_org) in addition
+        // to the base "glean" source. Purge all of them when revoking Glean access.
+        let signals_deleted = if source == DataSource::Glean {
+            tx.conn_ref()
+                .execute(
+                    "DELETE FROM signal_events WHERE source IN ('glean', 'glean_search', 'glean_org')",
+                    [],
+                )
+                .map_err(|e| format!("purge signal_events failed: {e}"))?
+        } else {
+            tx.conn_ref()
+                .execute("DELETE FROM signal_events WHERE source = ?1", [source_str])
+                .map_err(|e| format!("purge signal_events failed: {e}"))?
+        };
 
         let relationships_deleted = tx
             .conn_ref()

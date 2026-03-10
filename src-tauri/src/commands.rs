@@ -3895,8 +3895,6 @@ pub struct AccountListItem {
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub nps: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub team_summary: Option<String>,
     pub renewal_date: Option<String>,
     pub open_action_count: usize,
     pub days_since_last_meeting: Option<i64>,

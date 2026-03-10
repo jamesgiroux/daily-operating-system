@@ -1,5 +1,6 @@
 pub mod compute;
 pub mod consistency;
+pub mod health_scoring;
 pub mod io;
 pub mod lifecycle;
 pub mod prompts;
