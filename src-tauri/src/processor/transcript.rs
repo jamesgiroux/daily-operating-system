@@ -11,7 +11,10 @@ use chrono::Utc;
 use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
-use crate::types::{CalendarEvent, CapturedAction, TranscriptResult};
+use crate::types::{
+    CalendarEvent, CapturedAction, CompetitorMention, EngagementSignals, EscalationSignal,
+    InteractionDynamics, SpeakerSentiment, TranscriptResult, TranscriptSentiment,
+};
 use crate::util::{
     encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE,
 };
@@ -275,6 +278,10 @@ pub fn process_transcript(
         append_to_impact_log(workspace, meeting, &wins);
     }
 
+    // 7b. Parse sentiment and interaction dynamics (I509)
+    let sentiment = parse_sentiment_block(&output);
+    let interaction_dynamics = parse_interaction_dynamics(&output);
+
     // If summary is empty after parsing, include truncated raw output for debugging
     let debug_message = if summary.is_empty() {
         let preview = if output.len() > 200 {
@@ -298,6 +305,8 @@ pub fn process_transcript(
         discussion,
         analysis,
         message: debug_message,
+        sentiment,
+        interaction_dynamics,
     }
 }
 
@@ -544,6 +553,50 @@ Rules for decisions:
 - Note any conditions or caveats attached to the decision
 - If no decisions were made, leave the section empty
 
+SENTIMENT:
+- overall: positive|neutral|negative|mixed
+- customer: positive|neutral|negative|mixed|n/a
+- engagement: high|moderate|low|disengaged
+- forward_looking: yes|no
+- competitor_mentions: comma-separated list or "none"
+- champion_present: yes|no|unknown
+- champion_engaged: yes|no|n/a
+END_SENTIMENT
+
+INTERACTION_DYNAMICS:
+TALK_BALANCE: <customer_pct>/<internal_pct> or "unclear"
+SPEAKER_SENTIMENT:
+- <Name>: <positive|neutral|cautious|negative|mixed> — <evidence>
+END_SPEAKER_SENTIMENT
+ENGAGEMENT_SIGNALS:
+- question_density: <high|moderate|low>
+- decision_maker_active: <yes|no|unclear>
+- forward_looking: <high|moderate|low>
+- monologue_risk: <yes|no>
+END_ENGAGEMENT_SIGNALS
+COMPETITOR_MENTIONS:
+- <Competitor>: <context>
+END_COMPETITOR_MENTIONS
+ESCALATION_LANGUAGE:
+- <quote or paraphrase> — <speaker>
+END_ESCALATION_LANGUAGE
+END_INTERACTION_DYNAMICS
+
+Rules for sentiment:
+- Overall sentiment reflects the general tone of the entire meeting
+- Customer sentiment focuses specifically on the customer's tone and language
+- Engagement measures how actively participants contributed
+- Champion = internal advocate for your product/service at the customer org
+- If you cannot determine champion presence, use "unknown"
+
+Rules for interaction dynamics:
+- Talk balance approximates speaking time split between customer and internal team
+- Speaker sentiment should cover the 2-4 most prominent speakers
+- Evidence should be a brief quote or paraphrase supporting the sentiment assessment
+- Only include competitor mentions if competitors were explicitly named
+- Escalation language captures quotes suggesting frustration, urgency, or risk
+- If a sub-section has no data, leave it empty (just the markers)
+
 Transcript:
 {content}
 "#,
@@ -611,6 +664,255 @@ fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[Strin
 
 use crate::util::slugify;
 
+// =============================================================================
+// Sentiment & Interaction Dynamics Parsing (I509)
+// =============================================================================
+
+/// Extract the text between `start` and `end` markers from a response.
+fn extract_block(response: &str, start: &str, end: &str) -> Option<String> {
+    let start_idx = response.find(start)?;
+    let content_start = start_idx + start.len();
+    let end_idx = response[content_start..].find(end)?;
+    Some(response[content_start..content_start + end_idx].to_string())
+}
+
+/// Parse the SENTIMENT block from AI transcript response.
+///
+/// Returns `None` if the block is missing entirely. Returns a partial struct
+/// if some fields are invalid — only fields that fail to parse are left as
+/// their default/None values.
+pub fn parse_sentiment_block(response: &str) -> Option<TranscriptSentiment> {
+    let block = extract_block(response, "SENTIMENT:", "END_SENTIMENT")?;
+
+    let mut overall = None;
+    let mut customer = None;
+    let mut engagement = None;
+    let mut forward_looking = false;
+    let mut competitor_mentions = Vec::new();
+    let mut champion_present = None;
+    let mut champion_engaged = None;
+
+    for line in block.lines() {
+        let trimmed = line.trim();
+        let kv = if let Some(rest) = trimmed.strip_prefix("- ") {
+            rest.trim()
+        } else {
+            continue;
+        };
+
+        if let Some((key, value)) = kv.split_once(':') {
+            let key = key.trim().to_lowercase();
+            let value = value.trim();
+
+            match key.as_str() {
+                "overall" => {
+                    let v = value.to_lowercase();
+                    if ["positive", "neutral", "negative", "mixed"].contains(&v.as_str()) {
+                        overall = Some(v);
+                    }
+                }
+                "customer" => {
+                    let v = value.to_lowercase();
+                    if ["positive", "neutral", "negative", "mixed", "n/a"].contains(&v.as_str()) {
+                        customer = Some(v);
+                    }
+                }
+                "engagement" => {
+                    let v = value.to_lowercase();
+                    if ["high", "moderate", "low", "disengaged"].contains(&v.as_str()) {
+                        engagement = Some(v);
+                    }
+                }
+                "forward_looking" => {
+                    forward_looking = value.to_lowercase().trim() == "yes";
+                }
+                "competitor_mentions" => {
+                    let v = value.trim();
+                    if !v.is_empty() && v.to_lowercase() != "none" {
+                        competitor_mentions =
+                            v.split(',').map(|s| s.trim().to_string()).collect();
+                    }
+                }
+                "champion_present" => match value.to_lowercase().trim() {
+                    "yes" => champion_present = Some(true),
+                    "no" => champion_present = Some(false),
+                    _ => {} // "unknown" or invalid → None
+                },
+                "champion_engaged" => match value.to_lowercase().trim() {
+                    "yes" => champion_engaged = Some(true),
+                    "no" => champion_engaged = Some(false),
+                    _ => {} // "n/a" or invalid → None
+                },
+                _ => {}
+            }
+        }
+    }
+
+    Some(TranscriptSentiment {
+        overall,
+        customer,
+        engagement,
+        forward_looking,
+        competitor_mentions,
+        champion_present,
+        champion_engaged,
+    })
+}
+
+/// Parse the INTERACTION_DYNAMICS block from AI transcript response.
+///
+/// Returns `None` if the block is missing entirely. Gracefully handles
+/// missing or malformed sub-blocks by leaving those fields empty/None.
+pub fn parse_interaction_dynamics(response: &str) -> Option<InteractionDynamics> {
+    let block = extract_block(response, "INTERACTION_DYNAMICS:", "END_INTERACTION_DYNAMICS")?;
+
+    // Parse TALK_BALANCE
+    let talk_balance = block
+        .lines()
+        .find(|l| l.trim().starts_with("TALK_BALANCE:"))
+        .and_then(|l| l.trim().strip_prefix("TALK_BALANCE:"))
+        .map(|v| v.trim().to_string());
+
+    // Parse SPEAKER_SENTIMENT sub-block
+    let speaker_sentiment = extract_block(&block, "SPEAKER_SENTIMENT:", "END_SPEAKER_SENTIMENT")
+        .map(|sub| {
+            sub.lines()
+                .filter_map(|line| {
+                    let trimmed = line.trim();
+                    let entry = trimmed.strip_prefix("- ")?;
+                    // Format: Name: sentiment — evidence
+                    let (name, rest) = entry.split_once(':')?;
+                    let name = name.trim().to_string();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    let rest = rest.trim();
+                    // Split on " — " (em dash with spaces) for evidence
+                    let (sentiment, evidence) = if let Some(idx) = rest.find(" — ") {
+                        (
+                            rest[..idx].trim().to_string(),
+                            Some(rest[idx + " — ".len()..].trim().to_string()),
+                        )
+                    } else if let Some(idx) = rest.find(" - ") {
+                        // Fallback: plain hyphen with spaces
+                        (
+                            rest[..idx].trim().to_string(),
+                            Some(rest[idx + " - ".len()..].trim().to_string()),
+                        )
+                    } else {
+                        (rest.to_string(), None)
+                    };
+                    Some(SpeakerSentiment {
+                        name,
+                        sentiment,
+                        evidence,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Parse ENGAGEMENT_SIGNALS sub-block
+    let engagement_signals =
+        extract_block(&block, "ENGAGEMENT_SIGNALS:", "END_ENGAGEMENT_SIGNALS").map(|sub| {
+            let mut question_density = None;
+            let mut decision_maker_active = None;
+            let mut forward_looking = None;
+            let mut monologue_risk = None;
+
+            for line in sub.lines() {
+                let trimmed = line.trim();
+                let entry = if let Some(rest) = trimmed.strip_prefix("- ") {
+                    rest.trim()
+                } else {
+                    continue;
+                };
+                if let Some((key, value)) = entry.split_once(':') {
+                    let key = key.trim().to_lowercase();
+                    let value = value.trim().to_string();
+                    match key.as_str() {
+                        "question_density" => question_density = Some(value),
+                        "decision_maker_active" => decision_maker_active = Some(value),
+                        "forward_looking" => forward_looking = Some(value),
+                        "monologue_risk" => {
+                            monologue_risk = Some(value.to_lowercase() == "yes");
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            EngagementSignals {
+                question_density,
+                decision_maker_active,
+                forward_looking,
+                monologue_risk,
+            }
+        });
+
+    // Parse COMPETITOR_MENTIONS sub-block
+    let competitor_mentions =
+        extract_block(&block, "COMPETITOR_MENTIONS:", "END_COMPETITOR_MENTIONS")
+            .map(|sub| {
+                sub.lines()
+                    .filter_map(|line| {
+                        let trimmed = line.trim();
+                        let entry = trimmed.strip_prefix("- ")?;
+                        let (competitor, context) = entry.split_once(':')?;
+                        let competitor = competitor.trim().to_string();
+                        let context = context.trim().to_string();
+                        if competitor.is_empty() {
+                            return None;
+                        }
+                        Some(CompetitorMention {
+                            competitor,
+                            context,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+    // Parse ESCALATION_LANGUAGE sub-block
+    let escalation_signals =
+        extract_block(&block, "ESCALATION_LANGUAGE:", "END_ESCALATION_LANGUAGE")
+            .map(|sub| {
+                sub.lines()
+                    .filter_map(|line| {
+                        let trimmed = line.trim();
+                        let entry = trimmed.strip_prefix("- ")?;
+                        if entry.trim().is_empty() {
+                            return None;
+                        }
+                        // Format: quote — speaker
+                        let (quote, speaker) = if let Some(idx) = entry.find(" — ") {
+                            (
+                                entry[..idx].trim().to_string(),
+                                Some(entry[idx + " — ".len()..].trim().to_string()),
+                            )
+                        } else if let Some(idx) = entry.find(" - ") {
+                            (
+                                entry[..idx].trim().to_string(),
+                                Some(entry[idx + " - ".len()..].trim().to_string()),
+                            )
+                        } else {
+                            (entry.trim().to_string(), None)
+                        };
+                        Some(EscalationSignal { quote, speaker })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+    Some(InteractionDynamics {
+        talk_balance,
+        speaker_sentiment,
+        engagement_signals,
+        competitor_mentions,
+        escalation_signals,
+    })
+}
+
 /// Title-case and hyphenate account name for directory routing.
 fn sanitize_account_dir(name: &str) -> String {
     name.split_whitespace()
@@ -638,6 +940,8 @@ impl Default for TranscriptResult {
             discussion: Vec::new(),
             analysis: None,
             message: None,
+            sentiment: None,
+            interaction_dynamics: None,
         }
     }
 }
@@ -677,6 +981,11 @@ mod tests {
         assert!(prompt.contains("DECISIONS:"));
         assert!(prompt.contains("DISCUSSION:"));
         assert!(prompt.contains("ANALYSIS:"));
+        // I509 — sentiment and interaction dynamics sections
+        assert!(prompt.contains("SENTIMENT:"));
+        assert!(prompt.contains("END_SENTIMENT"));
+        assert!(prompt.contains("INTERACTION_DYNAMICS:"));
+        assert!(prompt.contains("END_INTERACTION_DYNAMICS"));
         // Verify focus on substance over chitchat
         assert!(prompt.contains("Skip social chitchat"));
         // Verify concise title instructions
@@ -787,6 +1096,164 @@ mod tests {
             "weekly-sync-team-alpha"
         );
         assert_eq!(slugify("simple"), "simple");
+    }
+
+    // =========================================================================
+    // I509 — Sentiment & Interaction Dynamics Parsing
+    // =========================================================================
+
+    #[test]
+    fn test_parse_sentiment_block_valid() {
+        let input = "\
+SUMMARY: Test meeting
+SENTIMENT:
+- overall: positive
+- customer: neutral
+- engagement: high
+- forward_looking: yes
+- competitor_mentions: Salesforce, HubSpot
+- champion_present: yes
+- champion_engaged: no
+END_SENTIMENT
+ACTIONS:
+END_ACTIONS";
+
+        let result = parse_sentiment_block(input).expect("should parse");
+        assert_eq!(result.overall.as_deref(), Some("positive"));
+        assert_eq!(result.customer.as_deref(), Some("neutral"));
+        assert_eq!(result.engagement.as_deref(), Some("high"));
+        assert!(result.forward_looking);
+        assert_eq!(result.competitor_mentions, vec!["Salesforce", "HubSpot"]);
+        assert_eq!(result.champion_present, Some(true));
+        assert_eq!(result.champion_engaged, Some(false));
+    }
+
+    #[test]
+    fn test_parse_sentiment_block_missing() {
+        let input = "SUMMARY: No sentiment here\nACTIONS:\nEND_ACTIONS";
+        assert!(parse_sentiment_block(input).is_none());
+    }
+
+    #[test]
+    fn test_parse_sentiment_block_invalid_enums() {
+        let input = "\
+SENTIMENT:
+- overall: fantastic
+- customer: amazing
+- engagement: moderate
+- forward_looking: maybe
+- competitor_mentions: none
+- champion_present: unknown
+- champion_engaged: n/a
+END_SENTIMENT";
+
+        let result = parse_sentiment_block(input).expect("should parse partial");
+        // Invalid enums → None
+        assert!(result.overall.is_none());
+        assert!(result.customer.is_none());
+        // Valid enum
+        assert_eq!(result.engagement.as_deref(), Some("moderate"));
+        // "maybe" is not "yes" → false
+        assert!(!result.forward_looking);
+        // "none" → empty vec
+        assert!(result.competitor_mentions.is_empty());
+        // "unknown" → None
+        assert!(result.champion_present.is_none());
+        // "n/a" → None
+        assert!(result.champion_engaged.is_none());
+    }
+
+    #[test]
+    fn test_parse_sentiment_competitor_list() {
+        let input = "\
+SENTIMENT:
+- overall: mixed
+- competitor_mentions: Salesforce, HubSpot
+END_SENTIMENT";
+
+        let result = parse_sentiment_block(input).expect("should parse");
+        assert_eq!(
+            result.competitor_mentions,
+            vec!["Salesforce", "HubSpot"]
+        );
+    }
+
+    #[test]
+    fn test_parse_sentiment_competitor_none() {
+        let input = "\
+SENTIMENT:
+- overall: positive
+- competitor_mentions: none
+END_SENTIMENT";
+
+        let result = parse_sentiment_block(input).expect("should parse");
+        assert!(result.competitor_mentions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_interaction_dynamics_valid() {
+        let input = "\
+INTERACTION_DYNAMICS:
+TALK_BALANCE: 60/40
+SPEAKER_SENTIMENT:
+- Alice: positive — Very enthusiastic about the roadmap
+- Bob: cautious — Raised concerns about timeline
+END_SPEAKER_SENTIMENT
+ENGAGEMENT_SIGNALS:
+- question_density: high
+- decision_maker_active: yes
+- forward_looking: moderate
+- monologue_risk: no
+END_ENGAGEMENT_SIGNALS
+COMPETITOR_MENTIONS:
+- Salesforce: Mentioned as current CRM provider
+- HubSpot: Evaluated but rejected last quarter
+END_COMPETITOR_MENTIONS
+ESCALATION_LANGUAGE:
+- \"We need this resolved by Friday\" — Alice
+- \"This is becoming a blocker\" — Bob
+END_ESCALATION_LANGUAGE
+END_INTERACTION_DYNAMICS";
+
+        let result = parse_interaction_dynamics(input).expect("should parse");
+        assert_eq!(result.talk_balance.as_deref(), Some("60/40"));
+
+        assert_eq!(result.speaker_sentiment.len(), 2);
+        assert_eq!(result.speaker_sentiment[0].name, "Alice");
+        assert_eq!(result.speaker_sentiment[0].sentiment, "positive");
+        assert_eq!(
+            result.speaker_sentiment[0].evidence.as_deref(),
+            Some("Very enthusiastic about the roadmap")
+        );
+        assert_eq!(result.speaker_sentiment[1].name, "Bob");
+
+        let eng = result.engagement_signals.as_ref().expect("should have engagement");
+        assert_eq!(eng.question_density.as_deref(), Some("high"));
+        assert_eq!(eng.decision_maker_active.as_deref(), Some("yes"));
+        assert_eq!(eng.forward_looking.as_deref(), Some("moderate"));
+        assert_eq!(eng.monologue_risk, Some(false));
+
+        assert_eq!(result.competitor_mentions.len(), 2);
+        assert_eq!(result.competitor_mentions[0].competitor, "Salesforce");
+        assert_eq!(
+            result.competitor_mentions[0].context,
+            "Mentioned as current CRM provider"
+        );
+
+        assert_eq!(result.escalation_signals.len(), 2);
+        assert!(result.escalation_signals[0]
+            .quote
+            .contains("need this resolved"));
+        assert_eq!(
+            result.escalation_signals[0].speaker.as_deref(),
+            Some("Alice")
+        );
+    }
+
+    #[test]
+    fn test_parse_interaction_dynamics_missing() {
+        let input = "SUMMARY: No dynamics here\nACTIONS:\nEND_ACTIONS";
+        assert!(parse_interaction_dynamics(input).is_none());
     }
 
     #[test]
