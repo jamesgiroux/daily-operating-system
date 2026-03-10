@@ -8266,6 +8266,16 @@ pub async fn correct_email_disposition(
                 &corrected_priority,
             )?;
 
+            // I507: Penalize the email enrichment source that produced the wrong disposition.
+            // email_signals has no source column, so we use "email_enrichment" as the default.
+            let _ = db.upsert_signal_weight(
+                "email_enrichment",
+                "email",
+                "email_priority",
+                0.0,
+                1.0,
+            );
+
             log::info!(
                 "correct_email_disposition: {} corrected to {}",
                 email_id,
