@@ -179,14 +179,14 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I511** | Local schema decomposition + migration safety hardening (backend-only) — fail-hard runner, guaranteed backups, atomic decomposition migration, schema integrity checks | P0 | Backend / DB |
 | **I512** | ServiceLayer — every mutation → local DB write + signal emission (mandatory mutation path) | P0 | Backend / Architecture |
 | **I513** | Workspace file elimination — DB as sole local data layer, no _today/data/, no intelligence.json on disk | P0 | Backend / Architecture |
-| **I514** | Module decomposition — commands.rs→domain files, db.rs→domain modules | P1 | Backend / Architecture |
+| **I514** | Module decomposition — commands.rs→domain files, db.rs→domain modules. Spec: `.docs/issues/i514.md` | P1 | Backend / Architecture |
 | **I515** | Pipeline reliability — retry with backoff, circuit breaker, partial result preservation, pipeline_failures table. Spec: `.docs/issues/i515.md` | P1 | Backend / Architecture |
 | ~~I516~~ | ~~Sync engine~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I517~~ | ~~Supabase Auth~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I518~~ | ~~Organization + territory model~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I519~~ | ~~RLS policy design~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I520~~ | ~~Auth-first onboarding~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
-| **I521** | Frontend structural cleanup — remove ghost components, fix duplicate patterns, type alignment | P1 | Frontend / Architecture |
+| **I521** | Frontend structural cleanup + production-data parity gate — remove ghost components, consolidate duplicate patterns, lock command/field contracts, enforce mock+production fixture parity. Spec: `.docs/issues/i521.md` | P1 | Frontend / Architecture + QA |
 | ~~I522~~ | ~~Server-side embedding pipeline~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I523~~ | ~~Admin panel~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I524~~ | ~~Conflict resolution~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
@@ -640,11 +640,13 @@ Requires v0.16.0 first. Full version brief: `.docs/plans/v1.0.0.md`.
 
 **Phase 3 — Structural Cleanup + Surfaces + GA Readiness:**
 
+Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches, with mandatory mock+production parity gate before merge to `main`. Tracker: `.docs/plans/phase-3-execution-tracker.md`.
+
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I514 | Module decomposition — commands.rs → domain files, db.rs → re-export hub | P1 | Backend / Architecture |
+| I514 | Module decomposition — commands.rs → domain files, db.rs → re-export hub. Spec: `.docs/issues/i514.md` | P1 | Backend / Architecture |
 | I515 | Pipeline reliability — retry with backoff, circuit breaker, partial result preservation, pipeline_failures table. Spec: `.docs/issues/i515.md` | P1 | Backend / Architecture |
-| I521 | Frontend structural cleanup — remove ghost components, fix duplicate patterns, type alignment | P1 | Frontend / Architecture |
+| I521 | Frontend structural cleanup + production-data parity gate — ghost removal, duplicate consolidation, command/field contract registry, mock+production parity gate. Spec: `.docs/issues/i521.md` | P1 | Frontend / Architecture + QA |
 | I502 | Health surfaces — render health band, dimensions, divergence across all pages | P1 | Frontend / UX |
 | I493 | Account detail enriched intelligence — Glean-sourced titles, coverage gaps, reports chapter | P1 | Frontend / Entity |
 | I427 | Full-text search — Cmd+K via SQLite FTS5, < 300ms (build on clean schema post-I511) | P1 | Frontend + Backend |
