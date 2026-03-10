@@ -1,6 +1,6 @@
 # Phase 2 Execution Tracker (v1.0.0)
 
-**Last updated:** 2026-03-07  
+**Last updated:** 2026-03-10  
 **Plan mode:** 3-lane execution  
 **Policy:** No deferrals without documented follow-up issue, owner, and target wave/date.
 
@@ -24,40 +24,33 @@
 | I504 | None | Unassigned | C | Done | ACs in `.docs/issues/i504.md` + relationship persistence assertions |
 | I506 | None | Unassigned | C (opportunistic) | Planned | ACs in `.docs/issues/i506.md` + no overwrite regressions |
 | I508a | I503 | Unassigned | A/B/C | Done | Type coverage in Rust + TypeScript + DB persistence roundtrip verified |
-| I508b | I508a | Unassigned | A | Planned | Prompt schema coverage + local/remote fill behavior checks |
-| I508c | I508a | Unassigned | C | Planned | `semantic_gap_queries` dimension coverage and dedupe checks |
-| I499 | I503 | Unassigned | B | Planned | Health scoring ACs + sparse handling tests |
-| I500 | I503 | Unassigned | B | Planned | Org-score parsing ACs + fallback behavior |
-| I487 | I528 | Unassigned | C | Planned | New-only signal emission + purge compliance |
-| I509 | I503, I508a | Unassigned | C | Planned | Transcript interpretation + sentiment ACs |
+| I508b | I508a | Unassigned | A | Done | Prompt schema coverage + local/remote fill behavior checks |
+| I508c | I508a | Unassigned | C | Done | `semantic_gap_queries` dimension coverage and dedupe checks |
+| I499 | I503 | Unassigned | B | Done | Health scoring ACs + sparse handling tests |
+| I500 | I503 | Unassigned | B | Done | Org-score parsing ACs + fallback behavior |
+| I487 | I528 | Unassigned | C | Done | New-only signal emission + purge compliance |
+| I509 | I503, I508a | Unassigned | C | Done | Transcript interpretation + sentiment ACs |
 | I505 | I528 | Unassigned | A/B/C | Planned | Glean stakeholder ACs + validation gate |
 | I507 | I487, I504, I505 | Unassigned | A/B/C | Planned | Scoped v1.0.0 feedback ACs |
 | I536 (Phase 2a) | I511, I508a, I508b, I499, I503, I512 | Unassigned | Post-Phase-2 | Planned | Devtools scenario and seed integrity ACs |
 
-## Baseline findings for delta implementation
+## Baseline findings for delta implementation (historical snapshot)
 
 1. I503 baseline
-- Missing foundation types in current code: no `AccountHealth`, `RelationshipDimensions`, `OrgHealthData` definitions found.
-- Current intelligence model still uses legacy scalar health fields (`health_score`, `health_trend`) in runtime read/write paths.
-- Evidence: `src-tauri/src/intelligence/io.rs:273`, `src-tauri/src/intelligence/io.rs:277`, `src-tauri/src/intelligence/prompts.rs:1680`, `src-tauri/src/intelligence/prompts.rs:1683`.
+- **Resolved in Wave 1.** Foundation types are implemented and runtime now reads/writes structured `health` + `org_health` payloads.
 
 2. I508a/b/c baseline
-- `IntelligenceJson` is present but not yet migrated to the full dimensioned schema from I508.
-- Gap-query path is singular string API (`semantic_gap_query`) and not multi-query/dimension-aware.
-- Evidence: `src-tauri/src/intelligence/io.rs:213`, `src-tauri/src/intelligence/prompts.rs:501`, `src-tauri/src/intelligence/prompts.rs:1111`.
+- **Resolved in Waves 2-3.** `IntelligenceJson` includes dimension fields and gap-query flow is dimension-aware for local ranking + Glean fan-out.
 
 3. I504 baseline
-- Relationship extraction helper exists (`extract_inferred_relationships`), and `person_relationships` persistence primitives exist.
-- Queue flow notes indicate inferred relationship write path is not fully active.
-- Evidence: `src-tauri/src/intelligence/prompts.rs:1963`, `src-tauri/src/db/person_relationships.rs:130`, `src-tauri/src/intel_queue.rs:789`.
+- **Resolved in Wave 1.** Inferred relationship extraction, persistence, and reinforcement are active in enrichment flow.
 
 4. I506 baseline
 - Co-attendance linkage exists in hygiene and signal-rule hooks, giving a partial implementation base.
 - Evidence: `src-tauri/src/hygiene.rs:1033`, `src-tauri/src/signals/rules.rs:810`.
 
 5. I528 baseline
-- No `data_lifecycle.rs`, `DataSource` enum, or `purge_source()` implementation found in `src-tauri/src/db`.
-- Evidence: no symbol matches for `enum DataSource` and `purge_source` in `src-tauri/src`.
+- **Resolved in Wave 1.** `data_lifecycle.rs`, `DataSource`, and `purge_source()` are implemented and wired.
 
 ## Execution notes
 
@@ -123,4 +116,3 @@
 - No additional gating from Phase 1 remains for Phase 2 kickoff.
 - If any issue is discovered partially implemented, finish by AC compliance rather than rewriting.
 - No deferrals without a documented follow-up issue, owner, and target wave/date.
-
