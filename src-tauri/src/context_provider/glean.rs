@@ -732,6 +732,18 @@ fn process_glean_contacts(
             Some(e) if !e.is_empty() => e,
             _ => continue,
         };
+        let title_raw = contact.title.as_deref().unwrap_or("").trim();
+        let mapped_role = map_glean_role(title_raw);
+        let is_internal = user_domain.is_some_and(|domain| {
+            email
+                .to_ascii_lowercase()
+                .ends_with(&format!("@{}", domain.to_ascii_lowercase()))
+        });
+        let role_for_link = if is_internal && !title_raw.is_empty() {
+            title_raw.to_string()
+        } else {
+            mapped_role
+        };
 
         // Look up existing person by email
         let person_id = match db.get_person_by_email_or_alias(email) {
@@ -750,18 +762,31 @@ fn process_glean_contacts(
                     company_industry: None,
                     company_size: None,
                 };
-                let _ = db.update_person_profile(&existing.id, &update, "glean");
-
-                // Emit profile_enriched signal
-                let _ = crate::services::signals::emit(
-                    db,
-                    "person",
-                    &existing.id,
-                    "profile_enriched",
-                    "glean",
-                    None,
-                    0.7,
-                );
+                match db.update_person_profile(&existing.id, &update, "glean") {
+                    Ok(result) => {
+                        // Avoid false-positive profile_enriched signals when no fields were written.
+                        if !result.fields_updated.is_empty() {
+                            if let Err(e) = crate::services::signals::emit(
+                                db,
+                                "person",
+                                &existing.id,
+                                "profile_enriched",
+                                "glean",
+                                None,
+                                0.7,
+                            ) {
+                                log::warn!(
+                                    "I505: Failed emitting profile_enriched for {}: {}",
+                                    existing.id,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("I505: Failed to update profile for {}: {}", existing.id, e);
+                    }
+                }
 
                 existing.id
             }
@@ -797,20 +822,15 @@ fn process_glean_contacts(
         };
 
         // Link to account with source tracking
-        let role_context = map_glean_role(contact.title.as_deref().unwrap_or(""));
-        let _ = db.link_person_to_account_with_source(
-            entity_id,
-            &person_id,
-            &role_context,
-            "glean",
-        );
-
-        // Internal team detection: any internal-domain contact gets added
-        if let Some(domain) = user_domain {
-            if email.ends_with(&format!("@{}", domain)) {
-                let team_role = map_glean_role(contact.title.as_deref().unwrap_or(""));
-                let _ = db.add_account_team_member(entity_id, &person_id, &team_role);
-            }
+        if let Err(e) =
+            db.link_person_to_account_with_source(entity_id, &person_id, &role_for_link, "glean")
+        {
+            log::warn!(
+                "I505: Failed linking person {} to account {}: {}",
+                person_id,
+                entity_id,
+                e
+            );
         }
 
         email_to_person.push((email.to_string(), person_id));
@@ -851,7 +871,7 @@ fn process_glean_contacts(
             if matches.len() == 1 {
                 let manager = &matches[0];
                 let rel_id = format!("pr-glean-mgr-{}-{}", person_id, manager.id);
-                let _ = db.upsert_person_relationship(
+                if let Err(e) = db.upsert_person_relationship(
                     &crate::db::person_relationships::UpsertRelationship {
                         id: &rel_id,
                         from_person_id: person_id,
@@ -868,7 +888,14 @@ fn process_glean_contacts(
                             manager_name
                         )),
                     },
-                );
+                ) {
+                    log::warn!(
+                        "I505: Failed upserting manager relationship {} -> {}: {}",
+                        person_id,
+                        manager.id,
+                        e
+                    );
+                }
             }
             // Zero or multiple matches: skip (no phantom people, no wrong guesses)
         }
@@ -962,9 +989,7 @@ impl ContextProvider for GleanContextProvider {
             }
 
             // I505: Process Glean contacts into DB (person records, account links, relationships)
-            if !glean.people.is_empty()
-                && (entity_type == "account" || entity_type == "project")
-            {
+            if !glean.people.is_empty() && entity_type == "account" {
                 let user_domain = crate::google_api::token_store::peek_account_email()
                     .and_then(|email| email.split('@').nth(1).map(|d| d.to_string()));
                 let new_count = process_glean_contacts(

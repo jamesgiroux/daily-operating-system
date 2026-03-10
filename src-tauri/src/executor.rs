@@ -284,6 +284,11 @@ impl Executor {
                             .and_then(|v| v.as_str())
                             .map(|s| s.trim())
                             .filter(|s| !s.is_empty());
+                        let signal_source = signal
+                            .get("source")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty());
                         let detected_at = signal
                             .get("detectedAt")
                             .and_then(|v| v.as_str())
@@ -291,7 +296,7 @@ impl Executor {
 
                         for (entity_id, entity_type) in &targets {
                             let was_inserted = db
-                                .upsert_email_signal(
+                                .upsert_email_signal_with_source(
                                     email_id,
                                     sender_email.as_deref(),
                                     person_id.as_deref(),
@@ -303,6 +308,7 @@ impl Executor {
                                     sentiment,
                                     urgency,
                                     detected_at,
+                                    signal_source,
                                 )
                                 .map_err(|e| e.to_string())?;
                             if was_inserted {
