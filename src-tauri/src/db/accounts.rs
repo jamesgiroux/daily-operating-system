@@ -384,6 +384,30 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Link a person to an account with explicit data source (I505).
+    ///
+    /// Sets `last_seen_in_glean` on insert/update. Does NOT overwrite `data_source`
+    /// or `role` if the existing row was user-owned (`data_source = 'user'`).
+    pub fn link_person_to_account_with_source(
+        &self,
+        account_id: &str,
+        person_id: &str,
+        role: &str,
+        data_source: &str,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type, data_source, last_seen_in_glean, created_at)
+             VALUES (?1, ?2, ?3, 'associated', ?4, ?5, ?5)
+             ON CONFLICT(account_id, person_id) DO UPDATE SET
+                last_seen_in_glean = excluded.last_seen_in_glean,
+                role = CASE WHEN account_stakeholders.data_source = 'user' THEN account_stakeholders.role ELSE excluded.role END,
+                data_source = CASE WHEN account_stakeholders.data_source = 'user' THEN account_stakeholders.data_source ELSE excluded.data_source END",
+            params![account_id, person_id, role, data_source, now],
+        )?;
+        Ok(())
+    }
+
     /// Remove an account team member link.
     pub fn remove_account_team_member(
         &self,
