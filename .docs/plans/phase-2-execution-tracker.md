@@ -22,7 +22,6 @@
 | I503 | I511 | Unassigned | A | Done | ACs in `.docs/issues/i503.md` + cargo test + clippy |
 | I528 | I511 | Unassigned | B | Done | ACs in `.docs/issues/i528.md` + revocation purge verification |
 | I504 | None | Unassigned | C | Done | ACs in `.docs/issues/i504.md` + relationship persistence assertions |
-| I506 | None | Unassigned | C (opportunistic) | Planned | ACs in `.docs/issues/i506.md` + no overwrite regressions |
 | I508a | I503 | Unassigned | A/B/C | Done | Type coverage in Rust + TypeScript + DB persistence roundtrip verified |
 | I508b | I508a | Unassigned | A | Done | Prompt schema coverage + local/remote fill behavior checks |
 | I508c | I508a | Unassigned | C | Done | `semantic_gap_queries` dimension coverage and dedupe checks |
@@ -30,8 +29,9 @@
 | I500 | I503 | Unassigned | B | Done | Org-score parsing ACs + fallback behavior |
 | I487 | I528 | Unassigned | C | Done | New-only signal emission + purge compliance |
 | I509 | I503, I508a | Unassigned | C | Done | Transcript interpretation + sentiment ACs |
-| I505 | I528 | Unassigned | A/B/C | Planned | Glean stakeholder ACs + validation gate |
-| I507 | I487, I504, I505 | Unassigned | A/B/C | Planned | Scoped v1.0.0 feedback ACs |
+| I505 | I528 | Unassigned | A/B/C | Done | Glean stakeholder ACs + validation gate |
+| I506 | None | Unassigned | C | Done | Co-attendance ACs + deterministic ID dedup |
+| I507 | I487, I504, I505 | Unassigned | A/B/C | Done | Scoped v1.0.0 feedback ACs |
 | I536 (Phase 2a) | I511, I508a, I508b, I499, I503, I512 | Unassigned | Post-Phase-2 | Planned | Devtools scenario and seed integrity ACs |
 
 ## Baseline findings for delta implementation (historical snapshot)
