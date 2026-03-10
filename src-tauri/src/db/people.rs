@@ -62,6 +62,79 @@ impl ActionDb {
         Ok(!existed)
     }
 
+    /// Create a person from minimal Glean-sourced fields (I505).
+    ///
+    /// Idempotent: if the email already exists, returns Ok without changes
+    /// (the existing person is left untouched — use `update_person_profile` for updates).
+    pub fn create_person_minimal(
+        &self,
+        id: &str,
+        email: &str,
+        name: Option<&str>,
+        title: Option<&str>,
+        department: Option<&str>,
+        location: Option<&str>,
+    ) -> Result<(), DbError> {
+        // Check if email already exists — idempotent guard
+        if self.get_person_by_email(email)?.is_some() {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Build enrichment_sources JSON for each non-null field
+        let mut sources = serde_json::Map::new();
+        let source_entry = serde_json::json!({"source": "glean", "at": &now});
+        if name.is_some() {
+            sources.insert("name".into(), source_entry.clone());
+        }
+        if title.is_some() {
+            sources.insert("role".into(), source_entry.clone());
+        }
+        if department.is_some() {
+            sources.insert("organization".into(), source_entry.clone());
+        }
+        if location.is_some() {
+            sources.insert("company_hq".into(), source_entry);
+        }
+
+        let enrichment_sources = if sources.is_empty() {
+            None
+        } else {
+            Some(serde_json::Value::Object(sources).to_string())
+        };
+
+        let person = super::types::DbPerson {
+            id: id.to_string(),
+            email: email.to_lowercase(),
+            name: name.unwrap_or(email).to_string(),
+            organization: department.map(|s| s.to_string()),
+            role: title.map(|s| s.to_string()),
+            relationship: "unknown".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: None,
+            first_seen: Some(now.clone()),
+            meeting_count: 0,
+            updated_at: now,
+            archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: location.map(|s| s.to_string()),
+            last_enriched_at: None,
+            enrichment_sources,
+        };
+
+        self.upsert_person(&person)?;
+        Ok(())
+    }
+
     /// Mirror a person to the entities table.
     fn ensure_entity_for_person(&self, person: &DbPerson) -> Result<(), DbError> {
         let entity = crate::entity::DbEntity {

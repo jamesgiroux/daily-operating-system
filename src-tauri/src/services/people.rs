@@ -204,10 +204,28 @@ pub fn update_person_field(
     );
 
     // Self-healing: record user correction for Clay-enrichable fields (I409)
-    if matches!(field, "linkedin_url" | "title" | "company" | "name") {
+    if matches!(field, "linkedin_url" | "role" | "organization" | "name") {
         crate::self_healing::feedback::record_enrichment_correction(
             db, person_id, "person", "clay",
         );
+    }
+
+    // I507: Source-attributed correction feedback — penalize the source that provided
+    // the wrong value. Read enrichment_sources JSON to find the prior source for this field.
+    if let Ok(Some(person)) = db.get_person(person_id) {
+        if let Some(ref sources_json) = person.enrichment_sources {
+            if let Ok(sources) = serde_json::from_str::<serde_json::Value>(sources_json) {
+                if let Some(prior_source) = sources[field]["source"].as_str() {
+                    let _ = db.upsert_signal_weight(
+                        prior_source,
+                        "person",
+                        "profile_enrichment",
+                        0.0,
+                        1.0,
+                    );
+                }
+            }
+        }
     }
 
     // Regenerate workspace files
