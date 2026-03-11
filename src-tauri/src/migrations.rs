@@ -283,6 +283,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 66,
         sql: include_str!("migrations/066_sync_metadata.sql"),
     },
+    Migration {
+        version: 67,
+        sql: include_str!("migrations/067_feedback_unique_constraint.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -1299,13 +1303,13 @@ mod tests {
         // Run migrations — should bootstrap v1 and apply v2 through v63.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 65,
-            "bootstrap should mark v1, then apply 65 pending migrations (v2-v66)"
+            applied, 66,
+            "bootstrap should mark v1, then apply 66 pending migrations (v2-v67)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 66);
+        assert_eq!(version, 67);
 
         // Verify existing data is untouched
         let title: String = conn
