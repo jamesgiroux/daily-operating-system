@@ -368,7 +368,7 @@ export default function MeetingDetailPage() {
       await loadMeetingIntelligence();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to prefill prep context"
+        err instanceof Error ? err.message : "Failed to prefill briefing context"
       );
     } finally {
       setPrefilling(false);
