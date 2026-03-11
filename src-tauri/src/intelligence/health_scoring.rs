@@ -3,12 +3,12 @@
 //! "LLM explains numbers, doesn't pick them." Six dimensions compute a score;
 //! the LLM provides narrative only.
 
-use crate::db::ActionDb;
 use crate::db::types::DbAccount;
+use crate::db::ActionDb;
 
 use super::io::{
-    AccountHealth, DimensionScore, HealthDivergence, HealthSource, HealthTrend,
-    OrgHealthData, RelationshipDimensions,
+    AccountHealth, DimensionScore, HealthDivergence, HealthSource, HealthTrend, OrgHealthData,
+    RelationshipDimensions,
 };
 
 /// Compute algorithmic health for an account using 6 dimensions.
@@ -66,9 +66,7 @@ pub fn compute_account_health(
     };
 
     // Blend with org health baseline if available
-    let org_baseline = org_health.and_then(|oh| {
-        oh.health_band.as_deref().map(band_to_score)
-    });
+    let org_baseline = org_health.and_then(|oh| oh.health_band.as_deref().map(band_to_score));
 
     let score = if let Some(baseline) = org_baseline {
         0.4 * baseline + 0.6 * computed_avg
@@ -148,19 +146,32 @@ pub fn classify_account_bucket(health: &AccountHealth) -> (AccountBucket, String
             "Healthy score with stable dimensions; monitor and maintain momentum.".to_string(),
         );
     }
-    if health.score >= 60.0 && champion_present && cadence_present && champion >= 60.0 && cadence >= 60.0 {
+    if health.score >= 60.0
+        && champion_present
+        && cadence_present
+        && champion >= 60.0
+        && cadence >= 60.0
+    {
         return (
             AccountBucket::GrowthFocus,
             "Strong champion and active cadence indicate expansion-ready engagement.".to_string(),
         );
     }
-    if health.score < 70.0 && champion_present && cadence_present && champion >= 50.0 && cadence >= 40.0 {
+    if health.score < 70.0
+        && champion_present
+        && cadence_present
+        && champion >= 50.0
+        && cadence >= 40.0
+    {
         return (
             AccountBucket::AtRiskSaveable,
-            "Risk signals exist, but champion strength and cadence suggest recoverable trajectory.".to_string(),
+            "Risk signals exist, but champion strength and cadence suggest recoverable trajectory."
+                .to_string(),
         );
     }
-    if health.score < 70.0 && (!champion_present || champion < 30.0 || !cadence_present || cadence < 30.0) {
+    if health.score < 70.0
+        && (!champion_present || champion < 30.0 || !cadence_present || cadence < 30.0)
+    {
         return (
             AccountBucket::AtRiskSaveUnlikely,
             "Low relationship coverage and weak engagement indicate structural risk.".to_string(),
@@ -174,7 +185,8 @@ pub fn classify_account_bucket(health: &AccountHealth) -> (AccountBucket, String
     } else {
         (
             AccountBucket::AtRiskSaveable,
-            "Sub-60 score with partial engagement signals; intervention can still recover.".to_string(),
+            "Sub-60 score with partial engagement signals; intervention can still recover."
+                .to_string(),
         )
     }
 }
