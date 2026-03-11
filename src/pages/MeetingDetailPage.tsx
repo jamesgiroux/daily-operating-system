@@ -598,16 +598,6 @@ Thanks!`;
             Draft Agenda
           </button>
         )}
-        {isPastMeeting && quillEnabled && (
-          <button
-            onClick={handleSyncTranscript}
-            disabled={syncing}
-            className={clsx(styles.folioBtnInline, syncing && styles.folioBtnDisabled)}
-          >
-            {syncing ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconSm} />}
-            {syncing ? "Syncing…" : "Sync Transcript"}
-          </button>
-        )}
         <FolioRefreshButton
           onClick={handleRefreshIntelligence}
           loading={refreshingIntel}
@@ -615,7 +605,7 @@ Thanks!`;
         />
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, quillEnabled, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -958,13 +948,13 @@ Thanks!`;
                 <ChapterHeading title="Recent Correspondence" />
                 <div className={styles.risksContainer}>
                   {data.recentEmailSignals.map((signal, i) => (
-                    <Link key={i} to="/emails" className={styles.subordinateRisk} style={{ textDecoration: "none", display: "block" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em", color: "var(--color-text-tertiary)" }}>
+                    <Link key={i} to="/emails" className={styles.emailSignalLink}>
+                      <div className={styles.emailSignalHeader}>
+                        <span className={styles.emailSignalSender}>
                           {signal.senderEmail}
                         </span>
                         {signal.detectedAt && (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)" }}>
+                          <span className={styles.emailSignalDate}>
                             {new Date(signal.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                           </span>
                         )}
@@ -1088,37 +1078,44 @@ function UnifiedAttendeeList({
   const visible = showAll ? filtered : filtered.slice(0, 4);
   const remaining = filtered.length - 4;
 
-  const tempColorMap: Record<string, string> = {
-    hot: "var(--color-garden-sage)",
-    warm: "var(--color-spice-turmeric)",
-    cool: "var(--color-text-tertiary)",
-    cold: "var(--color-spice-terracotta)",
+  const tempIndicatorClass: Record<string, string> = {
+    hot: styles.tempIndicatorHot,
+    warm: styles.tempIndicatorWarm,
+    cool: styles.tempIndicatorCool,
+    cold: styles.tempIndicatorCold,
   };
 
-  const engagementColor: Record<string, string> = {
-    champion: "var(--color-garden-sage)",
-    detractor: "var(--color-spice-terracotta)",
-    neutral: "var(--color-text-tertiary)",
+  const tempLabelClass: Record<string, string> = {
+    hot: styles.tempLabelHot,
+    warm: styles.tempLabelWarm,
+    cool: styles.tempLabelCool,
+    cold: styles.tempLabelCold,
+  };
+
+  const engagementClass: Record<string, string> = {
+    champion: styles.engagementChampion,
+    detractor: styles.engagementDetractor,
+    neutral: styles.engagementNeutral,
   };
 
   return (
     <div className={styles.attendeeList}>
       {visible.map((person, i) => {
-        const tempColor = tempColorMap[person.temperature ?? ""] ?? "var(--color-text-tertiary)";
+        const tempIndCls = tempIndicatorClass[person.temperature ?? ""] ?? styles.tempIndicatorDefault;
+        const tempLblCls = tempLabelClass[person.temperature ?? ""] ?? styles.tempLabelDefault;
         const isNew = person.meetingCount === 0;
         const isCold = person.temperature === "cold";
-        const circleColor = isCold
-          ? { bg: "var(--color-spice-terracotta-10)", fg: "var(--color-spice-terracotta)" }
+        const avatarClass = isCold
+          ? styles.attendeeAvatarCold
           : isNew
-          ? { bg: "var(--color-garden-sage-10)", fg: "var(--color-garden-sage)" }
-          : { bg: "var(--color-spice-turmeric-10)", fg: "var(--color-spice-turmeric)" };
+          ? styles.attendeeAvatarNew
+          : styles.attendeeAvatarDefault;
 
         const inner = (
           <div className={styles.attendeeRow}>
             {/* Avatar */}
             <div
-              className={styles.attendeeAvatar}
-              style={{ background: circleColor.bg, color: circleColor.fg }}
+              className={clsx(styles.attendeeAvatar, avatarClass)}
             >
               {person.name.charAt(0)}
             </div>
@@ -1154,16 +1151,15 @@ function UnifiedAttendeeList({
                 )}
                 {person.temperature && (
                   <span className={styles.attendeeTempDot}>
-                    <span className={styles.attendeeTempIndicator} style={{ background: tempColor }} />
-                    <span className={styles.attendeeTempLabel} style={{ color: tempColor }}>
+                    <span className={clsx(styles.attendeeTempIndicator, tempIndCls)} />
+                    <span className={clsx(styles.attendeeTempLabel, tempLblCls)}>
                       {person.temperature}
                     </span>
                   </span>
                 )}
                 {person.engagement && (
                   <span
-                    className={styles.attendeeEngagement}
-                    style={{ color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)" }}
+                    className={clsx(styles.attendeeEngagement, engagementClass[person.engagement] ?? styles.engagementDefault)}
                   >
                     {person.engagement}
                   </span>

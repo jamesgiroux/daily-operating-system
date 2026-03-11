@@ -1124,6 +1124,115 @@ details[open] .detailsChevron {
   color: var(--color-text-tertiary);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   RECENT CORRESPONDENCE (email signals)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.emailSignalLink {
+  composes: subordinateRisk;
+  text-decoration: none;
+  display: block;
+}
+
+.emailSignalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--space-xs);
+}
+
+.emailSignalSender {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.emailSignalDate {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ATTENDEE COLOR VARIANTS — Avatar, temperature, engagement
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Avatar background/foreground by relationship temperature */
+.attendeeAvatarCold {
+  background: var(--color-spice-terracotta-10);
+  color: var(--color-spice-terracotta);
+}
+
+.attendeeAvatarNew {
+  background: var(--color-garden-sage-10);
+  color: var(--color-garden-sage);
+}
+
+.attendeeAvatarDefault {
+  background: var(--color-spice-turmeric-10);
+  color: var(--color-spice-turmeric);
+}
+
+/* Temperature indicator (dot) background variants */
+.tempIndicatorHot {
+  background: var(--color-garden-sage);
+}
+
+.tempIndicatorWarm {
+  background: var(--color-spice-turmeric);
+}
+
+.tempIndicatorCool {
+  background: var(--color-text-tertiary);
+}
+
+.tempIndicatorCold {
+  background: var(--color-spice-terracotta);
+}
+
+.tempIndicatorDefault {
+  background: var(--color-text-tertiary);
+}
+
+/* Temperature label color variants */
+.tempLabelHot {
+  color: var(--color-garden-sage);
+}
+
+.tempLabelWarm {
+  color: var(--color-spice-turmeric);
+}
+
+.tempLabelCool {
+  color: var(--color-text-tertiary);
+}
+
+.tempLabelCold {
+  color: var(--color-spice-terracotta);
+}
+
+.tempLabelDefault {
+  color: var(--color-text-tertiary);
+}
+
+/* Engagement badge color variants */
+.engagementChampion {
+  color: var(--color-garden-sage);
+}
+
+.engagementDetractor {
+  color: var(--color-spice-terracotta);
+}
+
+.engagementNeutral {
+  color: var(--color-text-tertiary);
+}
+
+.engagementDefault {
+  color: var(--color-text-tertiary);
+}
+
 /* I477 — Briefing updating banner during entity mutation */
 .updatingBanner {
   display: inline-flex;
