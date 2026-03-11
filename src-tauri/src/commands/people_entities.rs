@@ -399,3 +399,45 @@ pub async fn enrich_person(
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
     crate::services::intelligence::enrich_entity(person_id, "person".to_string(), &state).await
 }
+
+// =========================================================================
+// I529: Intelligence Quality Feedback
+// =========================================================================
+
+/// Submit feedback (positive/negative) on an intelligence field for an entity.
+#[tauri::command]
+pub async fn submit_intelligence_feedback(
+    entity_id: String,
+    entity_type: String,
+    field: String,
+    feedback_type: String,
+    context: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            crate::services::feedback::submit_intelligence_feedback(
+                db,
+                &entity_id,
+                &entity_type,
+                &field,
+                &feedback_type,
+                context.as_deref(),
+            )
+        })
+        .await
+}
+
+/// Get all feedback records for an entity.
+#[tauri::command]
+pub async fn get_entity_feedback(
+    entity_id: String,
+    entity_type: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::db::intelligence_feedback::FeedbackRow>, String> {
+    state
+        .db_read(move |db| {
+            db.get_entity_feedback(&entity_id, &entity_type)
+        })
+        .await
+}
