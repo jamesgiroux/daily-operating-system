@@ -499,7 +499,7 @@ export default function MePage() {
       <section id="context-entries" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
         <ChapterHeading
           title="Context"
-          epigraph="Professional knowledge that enriches your briefings. Embedding happens in the background."
+          epigraph="Professional knowledge that shapes your briefings. Embedding happens in the background."
         />
 
         <ContextEntryList

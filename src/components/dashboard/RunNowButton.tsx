@@ -63,8 +63,8 @@ export function RunNowButton({
           {isRunning
             ? "Workflow is currently running"
             : aiUnavailable
-            ? "Run the daily briefing in base prep mode"
-            : "Run the daily briefing workflow now"}
+            ? "Run the daily briefing in base mode"
+            : "Run the daily briefing now"}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -111,8 +111,8 @@ export function RunNowIconButton({
           {isRunning
             ? "Workflow is currently running"
             : aiUnavailable
-            ? "Run the daily briefing in base prep mode"
-            : "Run the daily briefing workflow now"}
+            ? "Run the daily briefing in base mode"
+            : "Run the daily briefing now"}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

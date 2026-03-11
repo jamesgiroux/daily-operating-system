@@ -116,7 +116,7 @@ export function AccountHealthReport({ content }: AccountHealthReportProps) {
       )}
 
       {content.expansionSignals.length > 0 && (
-        <ReportSection heading="Expansion Signals">
+        <ReportSection heading="Expansion Indicators">
           <ul style={{ paddingLeft: "1.25rem", fontSize: "0.9rem", lineHeight: 1.8, color: "var(--color-desk-charcoal)" }}>
             {content.expansionSignals.map((item, i) => (
               <li key={i} style={{ marginBottom: "0.25rem" }}>{item}</li>

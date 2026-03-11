@@ -58,15 +58,15 @@ const EVENT_NAMES: Record<string, EventTranslation> = {
   google_calendar_sync: (d) =>
     `Calendar synced (${d.events_fetched ?? 0} events)`,
   gmail_sync: (d) => `Email synced (${d.emails_fetched ?? 0} emails)`,
-  clay_enrichment: "Contact enrichment (Clay)",
+  clay_enrichment: "Contact updated (Clay)",
   gravatar_lookup: "Avatar lookup (Gravatar)",
-  entity_enrichment_completed: "Intelligence updated",
-  entity_enrichment_failed: "Intelligence enrichment failed",
-  email_enrichment_batch: "Email enrichment batch",
+  entity_enrichment_completed: "Context updated",
+  entity_enrichment_failed: "Context update failed",
+  email_enrichment_batch: "Email batch processed",
   meeting_prep_generated: "Meeting briefing generated",
   injection_tag_escape_detected: "Injection attempt detected and blocked",
   injection_instruction_in_output: "Suspicious output detected",
-  schema_validation_failed: "AI output rejected (unexpected format)",
+  schema_validation_failed: "AI output dismissed (unexpected format)",
   workspace_path_changed: "Workspace path changed",
   ai_provider_changed: "AI provider changed",
   context_mode_changed: (d) =>
@@ -150,10 +150,13 @@ function groupByDay(
 // Component
 // ---------------------------------------------------------------------------
 
+const PAGE_SIZE = 50;
+
 export default function ActivityLogSection() {
   const [records, setRecords] = useState<AuditRecord[]>([]);
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [expandedIdx, setExpandedIdx] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [integrityResult, setIntegrityResult] = useState<{
     ok: boolean;
     message: string;
@@ -162,10 +165,11 @@ export default function ActivityLogSection() {
   const loadRecords = useCallback(async () => {
     try {
       const data = await invoke<AuditRecord[]>("get_audit_log_records", {
-        limit: 200,
+        limit: 500,
         categoryFilter: filter === "all" ? null : filter,
       });
       setRecords(data);
+      setVisibleCount(PAGE_SIZE);
     } catch (e) {
       console.warn("Failed to load audit records:", e);
     }
@@ -199,7 +203,11 @@ export default function ActivityLogSection() {
     }
   };
 
-  const grouped = groupByDay(records);
+  // Paginate: records arrive chronological; take the most recent N from the tail
+  const totalCount = records.length;
+  const visibleRecords = records.slice(Math.max(0, totalCount - visibleCount));
+  const grouped = groupByDay(visibleRecords);
+  const hasMore = visibleCount < totalCount;
 
   return (
     <div className={s.container}>
@@ -268,6 +276,23 @@ export default function ActivityLogSection() {
             })}
           </div>
         ))
+      )}
+
+      {/* Pagination */}
+      {totalCount > 0 && (
+        <div className={s.pagination}>
+          <span className={s.paginationCount}>
+            Showing {Math.min(visibleCount, totalCount)} of {totalCount} entries
+          </span>
+          {hasMore && (
+            <button
+              className={s.loadMoreButton}
+              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+            >
+              Load more
+            </button>
+          )}
+        </div>
       )}
 
       {/* Actions */}

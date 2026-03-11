@@ -74,10 +74,10 @@ function WatchItemRow({ type, text, isCallout, isLast, onTextChange }: WatchItem
         flexShrink: 0,
         marginTop: 6,
         ...(isCallout && type === "risk"
-          ? { boxShadow: "0 0 0 3px rgba(196,101,74,0.2)" }
+          ? { boxShadow: "0 0 0 3px var(--color-spice-terracotta-20)" }
           : {}),
         ...(isCallout && type === "win"
-          ? { boxShadow: "0 0 0 3px rgba(126,170,123,0.2)" }
+          ? { boxShadow: "0 0 0 3px var(--color-garden-sage-20)" }
           : {}),
       }}
     />
@@ -121,7 +121,7 @@ function WatchItemRow({ type, text, isCallout, isLast, onTextChange }: WatchItem
     return (
       <div
         style={{
-          background: "rgba(30,37,48,0.04)",
+          background: "var(--color-desk-charcoal-4)",
           borderLeft: `3px solid ${borderColor}`,
           borderRadius: "0 6px 6px 0",
           padding: "16px 20px",
@@ -142,7 +142,7 @@ function WatchItemRow({ type, text, isCallout, isLast, onTextChange }: WatchItem
         display: "flex",
         gap: 14,
         padding: "16px 0",
-        borderBottom: isLast ? "none" : "1px solid rgba(30,37,48,0.06)",
+        borderBottom: isLast ? "none" : "1px solid var(--color-rule-light)",
         alignItems: "flex-start",
       }}
     >

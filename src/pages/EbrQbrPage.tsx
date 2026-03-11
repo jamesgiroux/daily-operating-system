@@ -81,7 +81,7 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering quarter data",
-    detail: "Reading meeting history, signals, and account intelligence",
+    detail: "Reading meeting history, updates, and account context",
   },
   {
     key: "synthesizing",

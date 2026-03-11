@@ -109,7 +109,7 @@ export function MeetingCard({
           {intelligenceQuality ? (
             <IntelligenceQualityBadge quality={intelligenceQuality as { level: "sparse" | "developing" | "ready" | "fresh"; hasNewSignals: boolean; lastEnriched?: string }} />
           ) : hasPrep ? (
-            <span className={s.prepDot} title="Prep available" />
+            <span className={s.prepDot} title="Briefing available" />
           ) : null}
         </div>
         {children}

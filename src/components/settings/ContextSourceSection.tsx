@@ -370,8 +370,8 @@ export default function ContextSourceSection() {
                 }}
               >
                 {strategy === "Additive"
-                  ? "Glean is the primary context source. Local signals (Gmail, Calendar) are still active."
-                  : "Glean is the only context source. Gmail polling and local file enrichment are disabled."}
+                  ? "Glean is the primary context source. Local sources (Gmail, Calendar) are still active."
+                  : "Glean is the only context source. Gmail polling and local file processing are disabled."}
               </p>
 
               {/* Actions */}
