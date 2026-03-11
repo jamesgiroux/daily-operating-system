@@ -211,7 +211,7 @@ export default function AccountDetailEditorial() {
                   background: "var(--color-paper-warm-white)",
                   border: "1px solid var(--color-paper-linen)",
                   borderRadius: 6,
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+                  boxShadow: "var(--shadow-xl)",
                   minWidth: 180,
                   zIndex: 100,
                   overflow: "hidden",
@@ -579,7 +579,7 @@ export default function AccountDetailEditorial() {
                     borderBottom:
                       i === intelligence.portfolio!.hotspots.length - 1
                         ? "none"
-                        : "1px solid rgba(30,37,48,0.06)",
+                        : "1px solid var(--color-rule-light)",
                     alignItems: "flex-start",
                   }}
                 >
@@ -636,7 +636,7 @@ export default function AccountDetailEditorial() {
           {intelligence?.portfolio?.crossBuPatterns && intelligence.portfolio.crossBuPatterns.length > 0 && (
             <div
               style={{
-                background: "rgba(30,37,48,0.04)",
+                background: "var(--color-desk-charcoal-4)",
                 borderLeft: "3px solid var(--color-garden-larkspur)",
                 borderRadius: "0 6px 6px 0",
                 padding: "16px 20px",
@@ -699,7 +699,7 @@ export default function AccountDetailEditorial() {
                   borderBottom:
                     i === detail.children.length - 1
                       ? "none"
-                      : "1px solid rgba(30,37,48,0.06)",
+                      : "1px solid var(--color-rule-light)",
                 }}
               >
                 <button

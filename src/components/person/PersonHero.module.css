@@ -31,7 +31,7 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: rgba(143, 163, 196, 0.15);
+  background: var(--color-garden-larkspur-15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -80,37 +80,37 @@
 }
 
 .relationshipExternal {
-  background: rgba(201, 162, 39, 0.15);
+  background: var(--color-spice-turmeric-15);
   color: var(--color-spice-turmeric);
 }
 
 .relationshipInternal {
-  background: rgba(30, 37, 48, 0.08);
+  background: var(--color-desk-charcoal-8);
   color: var(--color-text-secondary);
 }
 
 .relationshipUnknown {
-  background: rgba(30, 37, 48, 0.04);
+  background: var(--color-desk-charcoal-4);
   color: var(--color-text-tertiary);
 }
 
 .temperatureHot {
-  background: rgba(126, 170, 123, 0.15);
+  background: var(--color-garden-sage-15);
   color: var(--color-garden-sage);
 }
 
 .temperatureWarm {
-  background: rgba(201, 162, 39, 0.15);
+  background: var(--color-spice-turmeric-15);
   color: var(--color-spice-turmeric);
 }
 
 .temperatureCool {
-  background: rgba(30, 37, 48, 0.06);
+  background: var(--color-rule-light);
   color: var(--color-text-secondary);
 }
 
 .temperatureCold {
-  background: rgba(196, 101, 74, 0.15);
+  background: var(--color-spice-terracotta-15);
   color: var(--color-spice-terracotta);
 }
 
