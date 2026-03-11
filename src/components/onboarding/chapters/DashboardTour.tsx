@@ -242,7 +242,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
                       i === currentStop
                         ? "var(--color-spice-turmeric)"
                         : i < currentStop
-                          ? "rgba(201, 162, 39, 0.4)"
+                          ? "var(--color-spice-turmeric-40)"
                           : "var(--color-rule-light)",
                     transition: "background 0.15s ease",
                     padding: 0,
