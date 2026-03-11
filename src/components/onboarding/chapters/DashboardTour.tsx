@@ -20,7 +20,7 @@ const TOUR_STOPS = [
   {
     key: "schedule",
     title: "Your schedule, front and center",
-    body: "Meetings appear immediately. Highlighted ones have full prep ready. Click 'View Prep' to see context, talking points, and risks.",
+    body: "Meetings appear immediately. Highlighted ones have a full briefing ready. Click 'View Briefing' to see context, talking points, and risks.",
   },
   {
     key: "actions",
