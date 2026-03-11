@@ -54,6 +54,8 @@ import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import shared from "@/styles/entity-detail.module.css";
+import styles from "./AccountDetailEditorial.module.css";
 
 /* ── Vitals assembly (moved from old account/VitalsStrip) ── */
 
@@ -137,6 +139,18 @@ function buildChapters(isParent: boolean) {
   return [BASE_CHAPTERS[0], PORTFOLIO_CHAPTER, ...BASE_CHAPTERS.slice(1)];
 }
 
+function getHealthColorClass(health: string): string {
+  if (health === "green") return styles.healthGreen;
+  if (health === "red") return styles.healthRed;
+  return styles.healthYellow;
+}
+
+function getHealthDotClass(health: string): string {
+  if (health === "green") return styles.healthDotGreen;
+  if (health === "red") return styles.healthDotRed;
+  return styles.healthDotYellow;
+}
+
 export default function AccountDetailEditorial() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -162,61 +176,24 @@ export default function AccountDetailEditorial() {
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
       chapters: buildChapters(acct.detail?.isParent ?? false),
       folioActions: (
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className={shared.folioActions}>
           {acct.detail && (
             <button
               onClick={() => acct.setCreateChildOpen(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-garden-eucalyptus)",
-                background: "none",
-                border: "1px solid var(--color-garden-eucalyptus)",
-                borderRadius: 4,
-                padding: "2px 10px",
-                cursor: "pointer",
-              }}
+              className={styles.addChildButton}
             >
               + Business Unit
             </button>
           )}
-          <div style={{ position: "relative" }}>
+          <div className={styles.reportsDropdownWrapper}>
             <button
               onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-spice-turmeric)",
-                background: "none",
-                border: "1px solid var(--color-spice-turmeric)",
-                borderRadius: 4,
-                padding: "2px 10px",
-                cursor: "pointer",
-              }}
+              className={styles.reportsButton}
             >
               Reports {reportsOpen ? "▴" : "▾"}
             </button>
             {reportsOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 6px)",
-                  right: 0,
-                  background: "var(--color-paper-warm-white)",
-                  border: "1px solid var(--color-paper-linen)",
-                  borderRadius: 6,
-                  boxShadow: "var(--shadow-xl)",
-                  minWidth: 180,
-                  zIndex: 100,
-                  overflow: "hidden",
-                }}
-              >
+              <div className={styles.reportsDropdown}>
                 {getAccountReports(preset?.id).map((item) => (
                   <button
                     key={item.label}
@@ -232,24 +209,7 @@ export default function AccountDetailEditorial() {
                         navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
                       }
                     }}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "left",
-                      padding: "10px 16px",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      textTransform: "uppercase" as const,
-                      letterSpacing: "0.06em",
-                      color: "var(--color-desk-charcoal)",
-                      background: "none",
-                      border: "none",
-                      borderBottom: "1px solid var(--color-paper-linen)",
-                      cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--color-paper-linen)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                    className={styles.reportsDropdownItem}
                   >
                     {item.label}
                   </button>
@@ -314,37 +274,16 @@ export default function AccountDetailEditorial() {
     <>
       {/* I316: Ancestor breadcrumbs for nested accounts */}
       {ancestors.length > 0 && (
-        <nav
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: "var(--color-text-tertiary)",
-            padding: "8px 0 4px",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            flexWrap: "wrap",
-          }}
-        >
+        <nav className={shared.breadcrumbNav}>
           <button
             onClick={() => navigate({ to: "/accounts" })}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              color: "var(--color-text-tertiary)",
-              fontFamily: "inherit",
-              fontSize: "inherit",
-              letterSpacing: "inherit",
-            }}
+            className={shared.breadcrumbButton}
           >
             Accounts
           </button>
           {ancestors.map((anc) => (
             <React.Fragment key={anc.id}>
-              <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+              <span className={shared.breadcrumbSeparator}>/</span>
               <button
                 onClick={() =>
                   navigate({
@@ -352,28 +291,19 @@ export default function AccountDetailEditorial() {
                     params: { accountId: anc.id },
                   })
                 }
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  color: "var(--color-spice-turmeric)",
-                  fontFamily: "inherit",
-                  fontSize: "inherit",
-                  letterSpacing: "inherit",
-                }}
+                className={styles.breadcrumbAncestorLink}
               >
                 {anc.name}
               </button>
             </React.Fragment>
           ))}
-          <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
-          <span style={{ color: "var(--color-text-primary)" }}>{detail?.name ?? ""}</span>
+          <span className={shared.breadcrumbSeparator}>/</span>
+          <span className={shared.breadcrumbCurrent}>{detail?.name ?? ""}</span>
         </nav>
       )}
 
       {/* Chapter 1: The Headline (Hero) — no reveal, visible immediately */}
-      <section id="headline" style={{ scrollMarginTop: 60 }}>
+      <section id="headline" className={shared.chapterSection}>
         <AccountHero
           detail={detail}
           intelligence={intelligence}
@@ -428,7 +358,7 @@ export default function AccountDetailEditorial() {
         </div>
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.account.length > 0 && (
-          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
             <PresetFieldsEditor
               fields={preset.metadata.account}
               values={metadataValues}
@@ -448,23 +378,9 @@ export default function AccountDetailEditorial() {
         )}
         {/* Auto-rollover prompt for past renewal dates */}
         {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
-          <div
-            style={{
-              margin: "24px 0",
-              padding: "16px 20px",
-              background: "var(--color-spice-saffron-8)",
-              borderLeft: "3px solid var(--color-spice-saffron)",
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-primary)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 16,
-            }}
-          >
+          <div className={styles.rolloverPrompt}>
             <span>Renewal date has passed — what happened?</span>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className={styles.rolloverActions}>
               <Button
                 variant="outline"
                 size="sm"
@@ -473,7 +389,7 @@ export default function AccountDetailEditorial() {
                   acct.setNewEventDate(detail.renewalDate!);
                   setEventDrawerOpen(true);
                 }}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+                className={styles.rolloverButton}
               >
                 Renewed
               </Button>
@@ -485,22 +401,13 @@ export default function AccountDetailEditorial() {
                   acct.setNewEventDate(detail.renewalDate!);
                   setEventDrawerOpen(true);
                 }}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+                className={styles.rolloverButton}
               >
                 Churned
               </Button>
               <button
                 onClick={() => setRolloverDismissed(true)}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-text-tertiary)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
+                className={styles.rolloverDismiss}
               >
                 Dismiss
               </button>
@@ -511,23 +418,13 @@ export default function AccountDetailEditorial() {
 
       {/* I393: Portfolio chapter — only for parent accounts */}
       {detail.isParent && detail.children.length > 0 && (
-        <section id="portfolio" className="editorial-reveal" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+        <section id="portfolio" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
           <ChapterHeading title="Portfolio" />
 
           {/* Health summary — one-sentence portfolio health statement */}
           {intelligence?.portfolio?.healthSummary && (
-            <div style={{ marginBottom: 32 }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 18,
-                  fontWeight: 600,
-                  lineHeight: 1.5,
-                  color: "var(--color-text-primary)",
-                  maxWidth: 640,
-                  margin: 0,
-                }}
-              >
+            <div className={shared.portfolioHealthSummary}>
+              <p className={shared.portfolioHealthSummaryText}>
                 {intelligence.portfolio.healthSummary}
               </p>
             </div>
@@ -535,19 +432,8 @@ export default function AccountDetailEditorial() {
 
           {/* Portfolio narrative */}
           {intelligence?.portfolio?.portfolioNarrative && (
-            <div style={{ marginBottom: 48 }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 21,
-                  fontStyle: "italic",
-                  fontWeight: 300,
-                  lineHeight: 1.65,
-                  color: "var(--color-text-primary)",
-                  maxWidth: 640,
-                  margin: 0,
-                }}
-              >
+            <div className={shared.portfolioNarrative}>
+              <p className={shared.portfolioNarrativeText}>
                 {intelligence.portfolio.portfolioNarrative}
               </p>
             </div>
@@ -555,45 +441,21 @@ export default function AccountDetailEditorial() {
 
           {/* Hotspots — child accounts needing attention */}
           {intelligence?.portfolio?.hotspots && intelligence.portfolio.hotspots.length > 0 && (
-            <div style={{ marginBottom: 48 }}>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-spice-terracotta)",
-                  marginBottom: 20,
-                }}
-              >
+            <div className={shared.portfolioHotspotsSection}>
+              <div className={shared.portfolioSectionLabelTerracotta}>
                 Needs Attention
               </div>
               {intelligence.portfolio.hotspots.map((hotspot, i) => (
                 <div
                   key={hotspot.childId}
-                  style={{
-                    display: "flex",
-                    gap: 14,
-                    padding: "16px 0",
-                    borderBottom:
-                      i === intelligence.portfolio!.hotspots.length - 1
-                        ? "none"
-                        : "1px solid var(--color-rule-light)",
-                    alignItems: "flex-start",
-                  }}
+                  className={
+                    i === intelligence.portfolio!.hotspots.length - 1
+                      ? shared.hotspotRow
+                      : shared.hotspotRowBorder
+                  }
                 >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "var(--color-spice-terracotta)",
-                      flexShrink: 0,
-                      marginTop: 6,
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <span className={shared.hotspotDot} />
+                  <div className={shared.hotspotContent}>
                     <button
                       onClick={() =>
                         navigate({
@@ -601,29 +463,11 @@ export default function AccountDetailEditorial() {
                           params: { accountId: hotspot.childId },
                         })
                       }
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-spice-turmeric)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: 0,
-                        textAlign: "left",
-                      }}
+                      className={styles.hotspotLinkTurmeric}
                     >
                       {hotspot.childName}
                     </button>
-                    <p
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        lineHeight: 1.6,
-                        color: "var(--color-text-secondary)",
-                        margin: "4px 0 0",
-                      }}
-                    >
+                    <p className={shared.hotspotReason}>
                       {hotspot.reason}
                     </p>
                   </div>
@@ -634,38 +478,14 @@ export default function AccountDetailEditorial() {
 
           {/* Cross-BU patterns — only shown when non-empty */}
           {intelligence?.portfolio?.crossBuPatterns && intelligence.portfolio.crossBuPatterns.length > 0 && (
-            <div
-              style={{
-                background: "var(--color-desk-charcoal-4)",
-                borderLeft: "3px solid var(--color-garden-larkspur)",
-                borderRadius: "0 6px 6px 0",
-                padding: "16px 20px",
-                marginBottom: 48,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-garden-larkspur)",
-                  marginBottom: 12,
-                }}
-              >
+            <div className={shared.crossPatternsBlock}>
+              <div className={shared.portfolioSectionLabelLarkspur}>
                 Cross-BU Patterns
               </div>
               {intelligence.portfolio.crossBuPatterns.map((pattern, i) => (
                 <p
                   key={i}
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    color: "var(--color-text-primary)",
-                    margin: i === 0 ? 0 : "8px 0 0",
-                  }}
+                  className={i === 0 ? shared.crossPatternTextFirst : shared.crossPatternTextSubsequent}
                 >
                   {pattern}
                 </p>
@@ -674,33 +494,18 @@ export default function AccountDetailEditorial() {
           )}
 
           {/* Condensed child list */}
-          <div style={{ marginBottom: 24 }}>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: "var(--color-text-tertiary)",
-                marginBottom: 16,
-              }}
-            >
+          <div className={shared.childListSection}>
+            <div className={shared.portfolioSectionLabelTertiary}>
               Business Units
             </div>
             {detail.children.map((child, i) => (
               <div
                 key={child.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "12px 0",
-                  borderBottom:
-                    i === detail.children.length - 1
-                      ? "none"
-                      : "1px solid var(--color-rule-light)",
-                }}
+                className={
+                  i === detail.children.length - 1
+                    ? shared.childRow
+                    : shared.childRowBorder
+                }
               >
                 <button
                   onClick={() =>
@@ -709,67 +514,19 @@ export default function AccountDetailEditorial() {
                       params: { accountId: child.id },
                     })
                   }
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 400,
-                    color: "var(--color-text-primary)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                    textAlign: "left",
-                    flex: 1,
-                    minWidth: 0,
-                  }}
+                  className={shared.childNameButton}
                 >
                   {child.name}
                   {child.accountType && child.accountType !== "customer" && (
-                    <span style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-text-tertiary)",
-                      marginLeft: 4,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}>
+                    <span className={shared.childTypeBadge}>
                       {child.accountType === "partner" ? "Partner" : "Internal"}
                     </span>
                   )}
                 </button>
                 {/* Health indicator */}
                 {child.health && (
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                      color:
-                        child.health === "green"
-                          ? "var(--color-garden-sage)"
-                          : child.health === "red"
-                            ? "var(--color-spice-terracotta)"
-                            : "var(--color-spice-saffron)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background:
-                          child.health === "green"
-                            ? "var(--color-garden-sage)"
-                            : child.health === "red"
-                              ? "var(--color-spice-terracotta)"
-                              : "var(--color-spice-saffron)",
-                      }}
-                    />
+                  <span className={`${shared.statusIndicator} ${getHealthColorClass(child.health)}`}>
+                    <span className={getHealthDotClass(child.health)} />
                     {child.health === "green"
                       ? "Healthy"
                       : child.health === "red"
@@ -779,15 +536,7 @@ export default function AccountDetailEditorial() {
                 )}
                 {/* ARR if available */}
                 {child.arr != null && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      letterSpacing: "0.04em",
-                      color: "var(--color-text-tertiary)",
-                    }}
-                  >
+                  <span className={shared.secondaryMetric}>
                     ${formatArr(child.arr)}
                   </span>
                 )}
@@ -798,12 +547,12 @@ export default function AccountDetailEditorial() {
       )}
 
       {/* Chapter 2: State of Play */}
-      <div id="state-of-play" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="state-of-play" className={`editorial-reveal ${shared.chapterSection}`}>
         <StateOfPlay intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Room */}
-      <div id="the-room" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-room" className={`editorial-reveal ${shared.chapterSection}`}>
         <StakeholderGallery
           intelligence={intelligence}
           linkedPeople={detail.linkedPeople}
@@ -815,7 +564,7 @@ export default function AccountDetailEditorial() {
       </div>
 
       {/* Chapter 4: Watch List (full-bleed linen band) */}
-      <div id="watch-list" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="watch-list" className={`editorial-reveal ${shared.chapterSection}`}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
@@ -823,12 +572,12 @@ export default function AccountDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Record */}
-      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
         <UnifiedTimeline data={{ ...detail, accountEvents: events }} />
       </div>
 
       {/* Chapter 6: The Work */}
-      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-work" className={`editorial-reveal ${shared.chapterSection}`}>
         <TheWork
           data={detail}
           addingAction={acct.addingAction}
@@ -906,7 +655,7 @@ export default function AccountDetailEditorial() {
               Create a new {detail.accountType === "internal" ? "team" : "business unit"} under {detail.name}.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+          <div className={shared.dialogForm}>
             <Input
               value={acct.childName}
               onChange={(e) => acct.setChildName(e.target.value)}
@@ -917,18 +666,18 @@ export default function AccountDetailEditorial() {
               onChange={(e) => acct.setChildDescription(e.target.value)}
               placeholder="Description (optional)"
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+            <div className={shared.dialogActions}>
               <Button
                 variant="ghost"
                 onClick={() => acct.setCreateChildOpen(false)}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={shared.dialogButton}
               >
                 Cancel
               </Button>
               <Button
                 onClick={acct.handleCreateChild}
                 disabled={acct.creatingChild || !acct.childName.trim()}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={shared.dialogButton}
               >
                 {acct.creatingChild ? "Creating…" : "Create"}
               </Button>
