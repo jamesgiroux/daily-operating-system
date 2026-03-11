@@ -12,38 +12,12 @@ import { ArrowRight, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import styles from "../onboarding.module.css";
 
 interface FirstAccountStepProps {
   onNext: () => void;
   onSkip: () => void;
 }
-
-const inputStyle: React.CSSProperties = {
-  background: "var(--color-paper-warm-white)",
-  border: "1px solid var(--color-desk-charcoal)",
-  borderRadius: 4,
-};
-
-const chipStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 4,
-  fontFamily: "var(--font-mono)",
-  fontSize: 12,
-  background: "var(--color-paper-linen)",
-  borderRadius: 4,
-  padding: "4px 8px",
-};
-
-const chipRemoveStyle: React.CSSProperties = {
-  background: "none",
-  border: "none",
-  cursor: "pointer",
-  color: "var(--color-text-tertiary)",
-  padding: 0,
-  display: "inline-flex",
-  alignItems: "center",
-};
 
 export function FirstAccountStep({ onNext, onSkip }: FirstAccountStepProps) {
   const [name, setName] = useState("");
@@ -114,27 +88,14 @@ export function FirstAccountStep({ onNext, onSkip }: FirstAccountStepProps) {
   const canContinue = accounts.length > 0 || name.trim().length > 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="Your accounts"
         epigraph="Add your customer accounts to get started. Briefings get smarter with context."
       />
 
-      <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-        }}
-      >
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: "var(--color-text-secondary)",
-            margin: "0 0 16px",
-          }}
-        >
+      <div className={styles.ruleSection}>
+        <p className={`${styles.bodyText} ${styles.mb16}`}>
           Accounts track customer relationships, health, and context.
           When you meet with someone from an account, your briefing will
           include account history and recent updates.
@@ -142,20 +103,13 @@ export function FirstAccountStep({ onNext, onSkip }: FirstAccountStepProps) {
 
         {/* Chips for added accounts */}
         {accounts.length > 0 && (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              marginBottom: 12,
-            }}
-          >
+          <div className={`${styles.flexWrap} ${styles.mb12}`}>
             {accounts.map((account, index) => (
-              <span key={account} style={chipStyle}>
+              <span key={account} className={styles.accountChipSimple}>
                 {account}
                 <button
                   type="button"
-                  style={chipRemoveStyle}
+                  className={styles.chipRemoveButton}
                   onClick={() => removeAccount(index)}
                   aria-label={`Remove ${account}`}
                 >
@@ -166,26 +120,17 @@ export function FirstAccountStep({ onNext, onSkip }: FirstAccountStepProps) {
           </div>
         )}
 
-        <label
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            fontWeight: 500,
-            color: "var(--color-text-secondary)",
-            display: "block",
-            marginBottom: 6,
-          }}
-        >
+        <label className={styles.fieldLabel}>
           Account name
         </label>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={`${styles.flexRow} ${styles.gap8}`}>
           <Input
             type="text"
             placeholder="e.g. Acme Corp"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={handleKeyDown}
-            style={{ ...inputStyle, flex: 1 }}
+            className={`${styles.editorialInput} ${styles.flex1}`}
             autoFocus
           />
           <Button
@@ -202,17 +147,9 @@ export function FirstAccountStep({ onNext, onSkip }: FirstAccountStepProps) {
       </div>
 
       {/* Continue / Skip */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className={styles.flexBetween}>
         <button
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-          }}
+          className={styles.skipButton}
           onClick={() => {
             invoke("set_wizard_step", { step: "first-account" }).catch(() => {});
             onSkip();

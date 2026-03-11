@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { EntityMode } from "@/types";
+import styles from "../onboarding.module.css";
 
 export interface PopulateFormData {
   accounts: string[];
@@ -40,31 +41,6 @@ const COPY = {
     placeholder: "e.g. Acme Corp",
     prompt: "Start with a few of each — you can always add more later.",
   },
-};
-
-/** Mono uppercase section label */
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        fontWeight: 500,
-        textTransform: "uppercase" as const,
-        letterSpacing: "0.1em",
-        color: "var(--color-text-tertiary)",
-        marginBottom: 8,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  background: "var(--color-paper-warm-white)",
-  border: "1px solid var(--color-desk-charcoal)",
-  borderRadius: 4,
 };
 
 export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }: PopulateWorkspaceProps) {
@@ -113,13 +89,13 @@ export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading title={copy.title} epigraph={copy.subtitle} />
 
       {/* Account input */}
       {showAccounts && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {entityMode === "both" && <SectionLabel>Accounts</SectionLabel>}
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
+          {entityMode === "both" && <div className={styles.sectionLabel}>Accounts</div>}
           <div className="flex gap-2">
             <Input
               type="text"
@@ -127,39 +103,20 @@ export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }
               value={accountInput}
               onChange={(e) => setAccountInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addAccount()}
-              style={inputStyle}
+              className={styles.editorialInput}
             />
             <Button variant="outline" size="icon" onClick={addAccount} disabled={!accountInput.trim()}>
               <Plus className="size-4" />
             </Button>
           </div>
           {accounts.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <div className={styles.flexWrap}>
               {accounts.map((name) => (
-                <span
-                  key={name}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    border: "1px solid var(--color-spice-turmeric)",
-                    borderRadius: 4,
-                    padding: "4px 10px",
-                    fontSize: 13,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
+                <span key={name} className={styles.accountChip}>
                   {name}
                   <button
                     onClick={() => removeAccount(name)}
-                    style={{
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      lineHeight: 1,
-                    }}
+                    className={styles.ghostButton}
                   >
                     <X size={12} />
                   </button>
@@ -172,8 +129,8 @@ export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }
 
       {/* Project input */}
       {showProjects && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {entityMode === "both" && <SectionLabel>Projects</SectionLabel>}
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
+          {entityMode === "both" && <div className={styles.sectionLabel}>Projects</div>}
           <div className="flex gap-2">
             <Input
               type="text"
@@ -181,39 +138,20 @@ export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }
               value={projectInput}
               onChange={(e) => setProjectInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addProject()}
-              style={inputStyle}
+              className={styles.editorialInput}
             />
             <Button variant="outline" size="icon" onClick={addProject} disabled={!projectInput.trim()}>
               <Plus className="size-4" />
             </Button>
           </div>
           {projects.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <div className={styles.flexWrap}>
               {projects.map((name) => (
-                <span
-                  key={name}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    border: "1px solid var(--color-garden-olive)",
-                    borderRadius: 4,
-                    padding: "4px 10px",
-                    fontSize: 13,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
+                <span key={name} className={styles.projectChip}>
                   {name}
                   <button
                     onClick={() => removeProject(name)}
-                    style={{
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      lineHeight: 1,
-                    }}
+                    className={styles.ghostButton}
                   >
                     <X size={12} />
                   </button>
@@ -224,7 +162,7 @@ export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }
         </div>
       )}
 
-      <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{copy.prompt}</p>
+      <p className={styles.hintText}>{copy.prompt}</p>
 
       <div className="flex justify-end">
         <Button onClick={handleContinue} disabled={!hasEntries}>
