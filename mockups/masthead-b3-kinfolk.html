@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS — Variant B3: Kinfolk Refinement</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Montserrat:wght@700;800&family=Newsreader:ital,wght@0,200;0,300;0,400;0,500;0,600;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream: #f5f2ef;
+  --linen: #e8e2d9;
+  --warm-white: #faf8f6;
+  --charcoal: #1e2530;
+  --turmeric: #c9a227;
+  --saffron: #deb841;
+  --terracotta: #c4654a;
+  --sage: #7eaa7b;
+  --olive: #6b7c52;
+  --larkspur: #8fa3c4;
+  --text-primary: #1e2530;
+  --text-secondary: #5a6370;
+  --text-tertiary: #8a919a;
+  --rule-heavy: rgba(30, 37, 48, 0.12);
+  --rule-light: rgba(30, 37, 48, 0.06);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-brand: 'Montserrat', sans-serif;
+}
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  background: var(--cream);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Folio Bar ---- */
+.folio-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: rgba(245, 242, 239, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--rule-light);
+}
+
+.folio-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.folio-brand .asterisk {
+  font-family: var(--font-brand);
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--turmeric);
+  line-height: 1;
+}
+
+.folio-brand .wordmark {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.folio-date {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.06em;
+}
+
+.folio-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.folio-actions svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.folio-actions svg:hover {
+  color: var(--text-secondary);
+}
+
+/* ---- Main Layout ---- */
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: 100vh;
+  padding-top: 40px;
+}
+
+/* ---- Left Panel ---- */
+.left-panel {
+  background: var(--warm-white);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* Soft gradient divider instead of hard line */
+.left-panel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--rule-light) 15%,
+    var(--rule-heavy) 50%,
+    var(--rule-light) 85%,
+    transparent 100%
+  );
+}
+
+/* Temporal Nav */
+.temporal-nav {
+  padding: 28px 24px 20px;
+}
+
+.temporal-tabs {
+  display: flex;
+  gap: 24px;
+}
+
+.temporal-tab {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding-bottom: 2px;
+  transition: color 0.2s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.temporal-tab:hover {
+  color: var(--text-secondary);
+}
+
+.temporal-tab.active {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.temporal-tab.active::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--turmeric);
+}
+
+/* Schedule Timeline */
+.schedule-timeline {
+  flex: 1;
+  padding: 0 24px;
+}
+
+.meeting-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 0;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  position: relative;
+}
+
+.meeting-row + .meeting-row {
+  border-top: 1px solid var(--rule-light);
+}
+
+.meeting-row.past {
+  opacity: 0.4;
+}
+
+.meeting-row:hover {
+  opacity: 1;
+}
+
+.meeting-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  min-width: 70px;
+  padding-top: 2px;
+  line-height: 1.4;
+}
+
+.meeting-time .duration {
+  display: block;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+.meeting-info {
+  flex: 1;
+}
+
+.meeting-title {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  margin-bottom: 3px;
+}
+
+.meeting-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.meeting-meta.customer { color: var(--turmeric); }
+.meeting-meta.internal { color: var(--text-tertiary); }
+.meeting-meta.one-on-one { color: var(--sage); }
+
+/* NOW indicator */
+.now-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  position: relative;
+}
+
+.now-indicator::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--terracotta);
+  opacity: 0.5;
+}
+
+.now-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--terracotta);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.now-indicator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--terracotta);
+  opacity: 0.5;
+}
+
+/* Schedule Footer */
+.schedule-footer {
+  padding: 20px 24px 28px;
+  border-top: 1px solid var(--rule-light);
+}
+
+.footer-stat {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+
+.footer-stat .highlight {
+  color: var(--sage);
+  font-weight: 500;
+}
+
+/* ---- Right Panel ---- */
+.right-panel {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--cream);
+}
+
+/* Paper grain texture overlay */
+.paper-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.4;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* Alternative grain using CSS for browsers that don't render SVG filters in data URIs */
+.paper-grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(180, 160, 130, 0.02) 0%, transparent 50%),
+    radial-gradient(circle at 70% 60%, rgba(160, 140, 120, 0.015) 0%, transparent 40%),
+    radial-gradient(circle at 50% 80%, rgba(170, 150, 125, 0.018) 0%, transparent 45%);
+}
+
+/* Background visual layers */
+.bg-layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.organic-shape-1 {
+  position: absolute;
+  top: -60px;
+  right: -80px;
+  width: 600px;
+  height: 520px;
+  z-index: 0;
+}
+
+.organic-shape-2 {
+  position: absolute;
+  top: 280px;
+  left: -40px;
+  width: 380px;
+  height: 340px;
+  z-index: 0;
+}
+
+.organic-shape-3 {
+  position: absolute;
+  bottom: 40px;
+  right: 60px;
+  width: 280px;
+  height: 260px;
+  z-index: 0;
+}
+
+.bg-asterisk {
+  position: absolute;
+  bottom: 60px;
+  right: 40px;
+  font-family: var(--font-brand);
+  font-weight: 800;
+  font-size: 180px;
+  line-height: 1;
+  color: var(--charcoal);
+  opacity: 0.05;
+  z-index: 0;
+  user-select: none;
+  /* partially cropped */
+  transform: translate(30px, 20px);
+}
+
+.bg-date-ghost {
+  position: absolute;
+  top: 60px;
+  left: 48px;
+  font-family: var(--font-serif);
+  font-weight: 200;
+  font-size: 280px;
+  line-height: 1;
+  color: var(--charcoal);
+  opacity: 0.035;
+  z-index: 0;
+  user-select: none;
+  letter-spacing: -0.04em;
+}
+
+/* ---- Masthead Content ---- */
+.masthead {
+  position: relative;
+  z-index: 2;
+  padding: 112px 64px 80px 72px;
+  max-width: 800px;
+}
+
+/* Date Kicker */
+.date-kicker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.date-kicker .pull-tab {
+  width: 24px;
+  height: 1.5px;
+  background: var(--turmeric);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.date-kicker .label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-secondary);
+}
+
+/* Headline */
+.headline {
+  font-family: var(--font-serif);
+  font-size: 68px;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  color: var(--text-primary);
+  max-width: 680px;
+  margin-bottom: 28px;
+}
+
+/* Deck */
+.deck {
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 580px;
+  margin-bottom: 40px;
+}
+
+/* Stats strip */
+.stats-strip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+  margin-bottom: 56px;
+}
+
+.stats-strip .separator {
+  margin: 0 8px;
+  opacity: 0.4;
+}
+
+/* Focus Block — editorial callout */
+.focus-block {
+  background: rgba(201, 162, 39, 0.04);
+  border-radius: 12px;
+  padding: 24px 28px;
+  border-left: 3px solid var(--turmeric);
+  max-width: 600px;
+  margin-bottom: 48px;
+  position: relative;
+}
+
+/* Soft glow behind focus block for depth */
+.focus-block::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  background: rgba(201, 162, 39, 0.02);
+  border-radius: 18px;
+  z-index: -1;
+  filter: blur(8px);
+}
+
+.focus-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--turmeric);
+  margin-bottom: 10px;
+}
+
+.focus-text {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+/* Attention Strip */
+.attention-strip {
+  background: var(--warm-white);
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 600px;
+  margin-bottom: 80px;
+}
+
+.attention-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.attention-item + .attention-item {
+  border-top: 1px solid var(--rule-light);
+}
+
+.attention-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.attention-dot.overdue {
+  background: var(--terracotta);
+}
+
+.attention-dot.email {
+  background: var(--larkspur);
+}
+
+.attention-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.attention-label strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .left-panel {
+    display: none;
+  }
+
+  .left-panel::after {
+    display: none;
+  }
+
+  .masthead {
+    padding: 80px 32px 60px;
+  }
+
+  .headline {
+    font-size: 44px;
+  }
+
+  .bg-date-ghost {
+    font-size: 160px;
+    top: 40px;
+    left: 24px;
+  }
+
+  .organic-shape-1 {
+    width: 400px;
+    height: 350px;
+    right: -100px;
+    top: -40px;
+  }
+
+  .organic-shape-2 {
+    width: 260px;
+    height: 230px;
+  }
+
+  .organic-shape-3 {
+    display: none;
+  }
+
+  .bg-asterisk {
+    font-size: 120px;
+  }
+
+  .focus-block,
+  .attention-strip {
+    max-width: 100%;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ Folio Bar ============ -->
+<header class="folio-bar">
+  <div class="folio-brand">
+    <span class="asterisk">*</span>
+    <span class="wordmark">DailyOS</span>
+  </div>
+  <span class="folio-date">March 3, 2026</span>
+  <div class="folio-actions">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+    </svg>
+  </div>
+</header>
+
+<!-- ============ Main Layout ============ -->
+<div class="layout">
+
+  <!-- ======== Left Panel: Temporal Navigator + Schedule ======== -->
+  <aside class="left-panel">
+    <nav class="temporal-nav">
+      <div class="temporal-tabs">
+        <span class="temporal-tab">Yesterday</span>
+        <span class="temporal-tab active">Today</span>
+        <span class="temporal-tab">Tomorrow</span>
+      </div>
+    </nav>
+
+    <div class="schedule-timeline">
+      <!-- Past meeting -->
+      <div class="meeting-row past">
+        <div class="meeting-time">
+          9:00 AM
+          <span class="duration">30m</span>
+        </div>
+        <div class="meeting-info">
+          <div class="meeting-title">Engineering Standup</div>
+          <div class="meeting-meta internal">INTERNAL</div>
+        </div>
+      </div>
+
+      <!-- Upcoming meetings -->
+      <div class="meeting-row">
+        <div class="meeting-time">
+          10:30 AM
+          <span class="duration">60m</span>
+        </div>
+        <div class="meeting-info">
+          <div class="meeting-title">Acme Corp QBR</div>
+          <div class="meeting-meta customer">CUSTOMER</div>
+        </div>
+      </div>
+
+      <div class="meeting-row">
+        <div class="meeting-time">
+          11:15 AM
+          <span class="duration">30m</span>
+        </div>
+        <div class="meeting-info">
+          <div class="meeting-title">1:1 with Sarah Chen</div>
+          <div class="meeting-meta one-on-one">1:1</div>
+        </div>
+      </div>
+
+      <!-- NOW indicator -->
+      <div class="now-indicator">
+        <span class="now-label">NOW &middot; 12:47 PM</span>
+      </div>
+
+      <div class="meeting-row">
+        <div class="meeting-time">
+          2:00 PM
+          <span class="duration">45m</span>
+        </div>
+        <div class="meeting-info">
+          <div class="meeting-title">CloudCorp Status</div>
+          <div class="meeting-meta customer">CUSTOMER</div>
+        </div>
+      </div>
+
+      <div class="meeting-row">
+        <div class="meeting-time">
+          3:30 PM
+          <span class="duration">60m</span>
+        </div>
+        <div class="meeting-info">
+          <div class="meeting-title">Sprint Retro</div>
+          <div class="meeting-meta internal">INTERNAL</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="schedule-footer">
+      <div class="footer-stat"><span class="highlight">Clear until 2:00 PM</span></div>
+      <div class="footer-stat">4h 12m open today</div>
+    </div>
+  </aside>
+
+  <!-- ======== Right Panel: Kinfolk Masthead ======== -->
+  <main class="right-panel">
+
+    <!-- Paper grain texture -->
+    <div class="paper-grain"></div>
+
+    <!-- Background visual layers -->
+    <div class="bg-layers">
+
+      <!-- Organic shape 1: large flowing form, top-right, turmeric -->
+      <svg class="organic-shape-1" viewBox="0 0 600 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 180,30 C 280,-20 440,10 520,90 C 590,165 570,280 520,360 C 460,445 340,480 240,460 C 150,442 80,380 50,300 C 15,210 70,90 180,30 Z"
+              fill="rgba(201, 162, 39, 0.04)" />
+        <path d="M 220,60 C 310,15 430,45 500,120 C 560,185 545,310 480,390 C 410,465 290,485 200,450 C 120,420 65,340 55,260 C 40,170 130,105 220,60 Z"
+              fill="rgba(201, 162, 39, 0.025)" />
+      </svg>
+
+      <!-- Organic shape 2: smaller flowing form, center-left, sage -->
+      <svg class="organic-shape-2" viewBox="0 0 380 340" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 100,20 C 170,-10 280,15 330,80 C 375,140 360,230 310,290 C 255,345 150,350 80,310 C 15,270 -10,180 20,110 C 45,55 100,20 100,20 Z"
+              fill="rgba(126, 170, 123, 0.03)" />
+      </svg>
+
+      <!-- Organic shape 3: small accent, bottom-right, olive -->
+      <svg class="organic-shape-3" viewBox="0 0 280 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 80,30 C 140,5 220,25 250,80 C 275,130 260,200 210,235 C 160,265 90,260 50,220 C 10,180 15,110 40,65 C 55,40 80,30 80,30 Z"
+              fill="rgba(107, 124, 82, 0.025)" />
+      </svg>
+
+      <!-- Ghosted date number -->
+      <div class="bg-date-ghost">03</div>
+
+      <!-- Brand asterisk, smaller, partially cropped bottom-right -->
+      <div class="bg-asterisk">*</div>
+
+    </div>
+
+    <!-- ---- Masthead Content ---- -->
+    <article class="masthead">
+
+      <!-- Date Kicker -->
+      <div class="date-kicker">
+        <span class="pull-tab"></span>
+        <span class="label">Monday, March 3</span>
+      </div>
+
+      <!-- Headline -->
+      <h1 class="headline">The Acme Conversation</h1>
+
+      <!-- Deck -->
+      <p class="deck">Your quarterly review is the day's centerpiece. CloudCorp's escalation needs containment before Thursday.</p>
+
+      <!-- Stats Strip -->
+      <div class="stats-strip">
+        6 meetings<span class="separator">&middot;</span>4h 30m open<span class="separator">&middot;</span>2 deep work blocks
+      </div>
+
+      <!-- Focus Block -->
+      <div class="focus-block">
+        <div class="focus-kicker">Focus</div>
+        <p class="focus-text">Prepare the renewal narrative for Acme. They need to see Q1 impact data before the QBR, and Sarah has context on the technical blockers they raised last month.</p>
+      </div>
+
+      <!-- Attention Strip -->
+      <div class="attention-strip">
+        <div class="attention-item">
+          <span class="attention-dot overdue"></span>
+          <span class="attention-label"><strong>2 overdue actions</strong> from last week</span>
+        </div>
+        <div class="attention-item">
+          <span class="attention-dot email"></span>
+          <span class="attention-label"><strong>1 email</strong> needs a response today</span>
+        </div>
+      </div>
+
+    </article>
+
+  </main>
+
+</div>
+
+</body>
+</html>

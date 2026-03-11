@@ -31,6 +31,7 @@ import { ClaudeCode } from "./chapters/ClaudeCode";
 import { YouCardStep, type YouCardFormData } from "./chapters/YouCardStep";
 import { FirstAccountStep } from "./chapters/FirstAccountStep";
 import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
+import { PrimeBriefing } from "./chapters/PrimeBriefing";
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -43,6 +44,7 @@ const CHAPTERS = [
   "youcard",
   "first-account",
   "role",
+  "prime",
 ] as const;
 
 type Chapter = (typeof CHAPTERS)[number];
@@ -54,6 +56,7 @@ const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
   "youcard": <User size={16} strokeWidth={1.8} />,
   "first-account": <Building size={16} strokeWidth={1.8} />,
   "role": <Briefcase size={16} strokeWidth={1.8} />,
+  "prime": <Sparkles size={16} strokeWidth={1.8} />,
 };
 
 const CHAPTER_LABELS: Record<Chapter, string> = {
@@ -63,6 +66,7 @@ const CHAPTER_LABELS: Record<Chapter, string> = {
   "youcard": "About You",
   "first-account": "Account",
   "role": "Your Role",
+  "prime": "Prime",
 };
 
 const DEFAULT_WORKSPACE = "~/Documents/DailyOS";
@@ -292,7 +296,16 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "role" && (
           <EntityModeChapter
-            onNext={handleWizardComplete}
+            onNext={async (_mode) => {
+              await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+              goToChapter("prime");
+            }}
+          />
+        )}
+
+        {chapter === "prime" && (
+          <PrimeBriefing
+            onComplete={() => handleWizardComplete("both")}
           />
         )}
       </div>

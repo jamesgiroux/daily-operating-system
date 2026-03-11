@@ -124,8 +124,10 @@ fn purge_people_profile_fields_by_source(
             serde_json::to_string(&sources).ok()
         };
 
-        db.conn_ref()
-            .execute(&sql, params![new_sources, Utc::now().to_rfc3339(), person_id])?;
+        db.conn_ref().execute(
+            &sql,
+            params![new_sources, Utc::now().to_rfc3339(), person_id],
+        )?;
     }
 
     Ok(fields_cleared)
@@ -344,8 +346,15 @@ mod tests {
             )
             .expect("person after purge");
 
-        assert!(linkedin.is_none(), "clay-sourced linkedin should be cleared");
-        assert_eq!(bio.as_deref(), Some("Profile"), "user-sourced bio should remain");
+        assert!(
+            linkedin.is_none(),
+            "clay-sourced linkedin should be cleared"
+        );
+        assert_eq!(
+            bio.as_deref(),
+            Some("Profile"),
+            "user-sourced bio should remain"
+        );
 
         let sources_json = sources.expect("remaining enrichment sources");
         assert!(

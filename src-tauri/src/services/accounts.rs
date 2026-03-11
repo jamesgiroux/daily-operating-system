@@ -1178,13 +1178,13 @@ pub async fn create_child_account_cmd(
         })
         .await?;
 
-    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id: child_id.clone(),
-        entity_type: "account".to_string(),
-        priority: crate::intel_queue::IntelPriority::ContentChange,
-        requested_at: std::time::Instant::now(),
-        retry_count: 0,
-    });
+    state
+        .intel_queue
+        .enqueue(crate::intel_queue::IntelRequest::new(
+            child_id.clone(),
+            "account".to_string(),
+            crate::intel_queue::IntelPriority::ContentChange,
+        ));
     state.integrations.intel_queue_wake.notify_one();
 
     Ok(crate::commands::CreateChildAccountResult { id: child_id })

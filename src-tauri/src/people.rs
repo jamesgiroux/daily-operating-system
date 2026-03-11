@@ -621,13 +621,10 @@ mod tests {
             entity_id: person.id.clone(),
             entity_type: "person".to_string(),
             enriched_at: Utc::now().to_rfc3339(),
-            executive_assessment: Some(
-                "Alice is a key technical leader at Acme.".to_string(),
-            ),
+            executive_assessment: Some("Alice is a key technical leader at Acme.".to_string()),
             ..Default::default()
         };
-        db.upsert_entity_intelligence(&intel)
-            .expect("upsert intel");
+        db.upsert_entity_intelligence(&intel).expect("upsert intel");
 
         // Regenerate person.md — it should pick up intelligence from DB
         write_person_markdown(workspace.path(), &person, &db).expect("regen md");

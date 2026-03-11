@@ -26,6 +26,7 @@ interface ActionRowFullProps {
     status: string;
     priority: string;
     dueDate?: string | null;
+    context?: string | null;
     accountName?: string | null;
     accountId?: string | null;
     sourceLabel?: string | null;
@@ -215,6 +216,20 @@ function FullActionRow({
         >
           {stripMarkdown(action.title)}
         </Link>
+        {action.context && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              fontWeight: 400,
+              color: "var(--color-text-secondary)",
+              marginTop: 4,
+              lineHeight: 1.45,
+            }}
+          >
+            {stripMarkdown(action.context)}
+          </div>
+        )}
         {contextParts.length > 0 && (
           <div
             style={{
@@ -222,7 +237,7 @@ function FullActionRow({
               fontSize: 13,
               fontWeight: isOverdue ? 500 : 300,
               color: isOverdue ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-              marginTop: 2,
+              marginTop: action.context ? 6 : 2,
             }}
           >
             {contextParts.join(" \u00B7 ")}

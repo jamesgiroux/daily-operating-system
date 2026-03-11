@@ -1,5 +1,7 @@
 use super::test_utils::test_db;
 use super::*;
+use crate::entity::{DbEntity, EntityType};
+use chrono::Utc;
 
 fn sample_action(id: &str, title: &str) -> DbAction {
     let now = Utc::now().to_rfc3339();
@@ -1889,7 +1891,9 @@ fn test_update_person_field() {
         .expect("set field source");
     let updated = db.get_person(&person.id).expect("get").unwrap();
     assert_eq!(updated.role, Some("VP Engineering".to_string()));
-    let sources_json = updated.enrichment_sources.expect("enrichment_sources should exist");
+    let sources_json = updated
+        .enrichment_sources
+        .expect("enrichment_sources should exist");
     let sources: serde_json::Value =
         serde_json::from_str(&sources_json).expect("parse enrichment_sources");
     assert_eq!(sources["role"]["source"].as_str(), Some("user"));
