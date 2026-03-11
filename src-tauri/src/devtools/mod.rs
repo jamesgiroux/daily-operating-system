@@ -944,9 +944,7 @@ pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
     let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
 
     let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
-    if let Some(db) = db_ref {
-        let _ = crate::workflow::today::sync_actions_to_db(&workspace, db);
-    }
+    // I513: sync_actions_to_db removed — DB is the source of truth for actions.
     drop(db_guard);
 
     let prep_paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)?;
@@ -995,9 +993,7 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
 
     let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
-    if let Some(db) = db_ref {
-        let _ = crate::workflow::today::sync_actions_to_db(&workspace, db);
-    }
+    // I513: sync_actions_to_db removed — DB is the source of truth for actions.
     drop(db_guard);
 
     let prep_paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)?;

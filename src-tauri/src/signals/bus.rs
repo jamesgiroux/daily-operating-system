@@ -1,4 +1,21 @@
 //! Signal event CRUD and source tier weights (ADR-0080).
+//!
+//! ## Signal Taxonomy (I530)
+//!
+//! User-facing actions emit these signal types:
+//!
+//! | Signal Type              | Source           | Weight Change       | Trigger                |
+//! |--------------------------|------------------|---------------------|------------------------|
+//! | `intelligence_confirmed` | `user_feedback`  | alpha += 1          | Thumbs up (I529)       |
+//! | `intelligence_rejected`  | `user_feedback`  | beta  += 1          | Thumbs down (I529)     |
+//! | `user_correction`        | `user_edit`      | beta  += 1          | Edit intelligence field |
+//! | `intelligence_curated`   | `user_curation`  | (no weight change)  | Delete / remove item   |
+//! | `email_signal_dismissed` | `user_correction`| (no weight change)  | Dismiss email signal   |
+//! | `email_item_dismissed`   | (item_type)      | (no weight change)  | Dismiss email item     |
+//!
+//! Corrections (edit, thumbs-down) penalize the wrong source. Curation (delete,
+//! dismiss) records user preference without penalizing—the AI wasn't necessarily
+//! wrong, the user just doesn't need that item.
 
 use chrono::Utc;
 use rusqlite::params;
@@ -42,7 +59,8 @@ pub struct SignalEvent {
 /// Tier 4 (lowest): keyword heuristics, AI inference
 pub fn source_base_weight(source: &str) -> f64 {
     match source {
-        "user_correction" | "explicit" => 1.0,
+        "user_correction" | "user_feedback" | "explicit" => 1.0,
+        "user_curation" => 0.9, // I530: curation signals — no weight penalty but high trust
         "transcript" | "notes" => 0.9,
         "attendee" | "attendee_vote" | "email_thread" | "junction" => 0.8,
         "group_pattern" => 0.75,
@@ -57,7 +75,8 @@ pub fn source_base_weight(source: &str) -> f64 {
 /// Default half-life in days for a signal source.
 pub fn default_half_life(source: &str) -> i32 {
     match source {
-        "user_correction" | "explicit" => 365,
+        "user_correction" | "user_feedback" | "explicit" => 365,
+        "user_curation" => 180, // I530: curation decays faster than corrections
         "transcript" | "notes" => 60,
         "attendee" | "attendee_vote" | "junction" => 30,
         "group_pattern" => 60,
@@ -505,6 +524,8 @@ mod tests {
     #[test]
     fn test_source_base_weights() {
         assert_eq!(source_base_weight("user_correction"), 1.0);
+        assert_eq!(source_base_weight("user_feedback"), 1.0); // I529
+        assert_eq!(source_base_weight("user_curation"), 0.9); // I530
         assert_eq!(source_base_weight("transcript"), 0.9);
         assert_eq!(source_base_weight("attendee_vote"), 0.8);
         assert_eq!(source_base_weight("clay"), 0.6);
@@ -515,6 +536,8 @@ mod tests {
     #[test]
     fn test_default_half_lives() {
         assert_eq!(default_half_life("user_correction"), 365);
+        assert_eq!(default_half_life("user_feedback"), 365); // I529
+        assert_eq!(default_half_life("user_curation"), 180); // I530
         assert_eq!(default_half_life("transcript"), 60);
         assert_eq!(default_half_life("clay"), 90);
         assert_eq!(default_half_life("heuristic"), 7);
