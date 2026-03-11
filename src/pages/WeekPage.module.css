@@ -145,3 +145,239 @@
   color: var(--color-text-tertiary);
   margin: var(--space-md) 0 0;
 }
+
+/* ── Shape Days Column ──────────────────────────────────────────────────── */
+
+.shapeDaysColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* ── Page Layout ────────────────────────────────────────────────────────── */
+
+.pageContainer {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* ── Loading Skeleton ───────────────────────────────────────────────────── */
+
+.skeletonBg {
+  background: var(--color-rule-light);
+}
+
+.skeletonHeader {
+  padding-top: var(--space-5xl);
+}
+
+.skeletonShape {
+  padding-top: var(--space-3xl);
+}
+
+.skeletonShapeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.skeletonTimeline {
+  padding-top: 64px;
+}
+
+.skeletonTimelineRule {
+  border-top: 2px solid var(--color-rule-light);
+  margin-bottom: var(--space-md);
+}
+
+.skeletonDayGroup {
+  margin-bottom: 20px;
+}
+
+.skeletonDayRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+  margin-left: var(--space-md);
+}
+
+.skeletonFinis {
+  text-align: center;
+  padding: var(--space-4xl) 0 var(--space-2xl);
+}
+
+/* ── Timeline Section ───────────────────────────────────────────────────── */
+
+.timelineSection {
+  padding-top: 64px;
+}
+
+.timelineGroupSpacing {
+  margin-bottom: var(--space-lg);
+}
+
+.timelineGroupSpacingTop {
+  margin-top: var(--space-lg);
+}
+
+/* ── Timeline Section Headers (Earlier / Today / Ahead) ─────────────────── */
+
+.timelineSectionHeader {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding-bottom: 6px;
+}
+
+.timelineSectionHeaderToday {
+  color: var(--color-garden-larkspur);
+  border-bottom: 2px solid var(--color-garden-larkspur);
+}
+
+/* ── Earlier Toggle ─────────────────────────────────────────────────────── */
+
+.earlierToggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding-bottom: 6px;
+  cursor: pointer;
+}
+
+.earlierToggleExpanded {
+  margin-bottom: var(--space-md);
+}
+
+.earlierToggleLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.earlierToggleCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Timeline Day Group ─────────────────────────────────────────────────── */
+
+.dayGroupContainer {
+  margin-bottom: 20px;
+}
+
+.dayGroupLabel {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-sm);
+}
+
+.dayGroupLabelToday {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  border-left: 3px solid var(--color-garden-larkspur);
+  padding-left: var(--space-md);
+}
+
+.dayGroupMeetings {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dayGroupMeetingsToday {
+  padding-left: 15px;
+}
+
+/* ── Meeting Subtitle Extras ────────────────────────────────────────────── */
+
+.noPrepBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+}
+
+.daysUntilLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Past Meeting Outcomes ──────────────────────────────────────────────── */
+
+.outcomeRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-garden-sage);
+  margin-top: var(--space-xs);
+}
+
+.outcomeSummaryText {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.followUpBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-10);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+  margin-left: var(--space-xs);
+}
+
+.followUpBadgeStandalone {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-10);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+  margin-top: var(--space-xs);
+}
+
+/* ── Error + Finis ──────────────────────────────────────────────────────── */
+
+.errorSpacing {
+  margin-top: var(--space-2xl);
+}
+
+.finisCaption {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding-bottom: var(--space-2xl);
+}

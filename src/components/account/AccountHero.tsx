@@ -9,6 +9,7 @@ import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { EditableText } from "@/components/ui/EditableText";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 import { ChevronDown } from "lucide-react";
 import styles from "./AccountHero.module.css";
 
@@ -158,6 +159,21 @@ export function AccountHero({
         )}
       </div>
 
+      {/* Intelligence health (hero size) — I502 */}
+      {intelligence?.health && (
+        <div style={{ marginTop: 24 }}>
+          <HealthBadge
+            score={intelligence.health.score}
+            band={intelligence.health.band}
+            trend={intelligence.health.trend}
+            confidence={intelligence.health.confidence}
+            source={intelligence.health.source === "org" ? "Org data" : intelligence.health.source === "userSet" ? "Your assessment" : undefined}
+            divergence={intelligence.health.divergence}
+            size="hero"
+          />
+        </div>
+      )}
+
       {/* Meta row: action links */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
         {onEnrich && (
@@ -238,7 +254,7 @@ function AccountTypeBadge({
             background: "var(--color-paper-cream)",
             border: "1px solid var(--color-rule-light)",
             borderRadius: 4,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            boxShadow: "var(--shadow-lg)",
             zIndex: 50,
             minWidth: 120,
             padding: "4px 0",
@@ -259,7 +275,7 @@ function AccountTypeBadge({
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
                 color: opt.value === value ? opt.color : "var(--color-text-tertiary)",
-                background: opt.value === value ? "rgba(30,37,48,0.04)" : "transparent",
+                background: opt.value === value ? "var(--color-desk-charcoal-4)" : "transparent",
                 border: "none",
                 cursor: "pointer",
               }}
