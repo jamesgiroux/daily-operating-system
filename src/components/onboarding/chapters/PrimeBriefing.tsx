@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import styles from "../onboarding.module.css";
+import type { CopyToInboxReport } from "@/types";
 
 interface PrimeBriefingProps {
   onComplete: () => void;
@@ -63,10 +64,9 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
     setProcessing(true);
 
     try {
-      const copiedCount = await invoke<number>("copy_to_inbox", { paths });
-      if (copiedCount > 0) {
-        const names = paths.map(p => p.split("/").pop() ?? p);
-        setFilesAdded(prev => [...prev, ...names.slice(0, copiedCount)]);
+      const report = await invoke<CopyToInboxReport>("copy_to_inbox", { paths });
+      if (report.copiedCount > 0) {
+        setFilesAdded(prev => [...prev, ...report.copiedFilenames]);
       } else {
         console.warn("No files were copied — they may be outside permitted directories");
       }
