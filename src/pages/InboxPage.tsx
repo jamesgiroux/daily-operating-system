@@ -144,7 +144,7 @@ const processingQuotes = [
   "Doing the boring parts. You're welcome.",
   "AI is reading your files so you don't have to.",
   "Crunching the hard stuff...",
-  "Filing, sorting, enriching. Living the dream.",
+  "Filing, sorting, processing. Living the dream.",
   "This is what peak productivity looks like.",
 ];
 
@@ -691,7 +691,7 @@ export default function InboxPage() {
             borderRadius: 8,
             textAlign: "center",
             transition: "border-color 0.2s ease, background 0.2s ease",
-            background: isDragging ? "rgba(201, 162, 39, 0.04)" : "transparent",
+            background: isDragging ? "var(--color-spice-turmeric-4)" : "transparent",
           }}
         >
           <p
@@ -881,7 +881,7 @@ export default function InboxPage() {
           border: `1px dashed ${isDragging ? "var(--color-spice-turmeric)" : "var(--color-rule-heavy)"}`,
           borderRadius: 6,
           transition: "border-color 0.2s ease, background 0.2s ease",
-          background: isDragging ? "rgba(201, 162, 39, 0.04)" : "transparent",
+          background: isDragging ? "var(--color-spice-turmeric-4)" : "transparent",
         }}
       >
         <span

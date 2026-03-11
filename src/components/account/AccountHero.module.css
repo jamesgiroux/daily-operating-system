@@ -58,32 +58,32 @@
 }
 
 .healthGreen {
-  background: rgba(126, 170, 123, 0.15);
+  background: var(--color-garden-sage-15);
   color: var(--color-garden-sage);
 }
 
 .healthYellow {
-  background: rgba(201, 162, 39, 0.15);
+  background: var(--color-spice-turmeric-15);
   color: var(--color-spice-turmeric);
 }
 
 .healthRed {
-  background: rgba(196, 101, 74, 0.15);
+  background: var(--color-spice-terracotta-15);
   color: var(--color-spice-terracotta);
 }
 
 .lifecycleBadge {
-  background: rgba(30, 37, 48, 0.06);
+  background: var(--color-rule-light);
   color: var(--color-text-secondary);
 }
 
 .internalBadge {
-  background: rgba(201, 162, 39, 0.12);
+  background: var(--color-spice-turmeric-12);
   color: var(--color-spice-turmeric);
 }
 
 .partnerBadge {
-  background: rgba(74, 103, 65, 0.12);
+  background: var(--color-garden-rosemary-12);
   color: var(--color-garden-rosemary);
 }
 
