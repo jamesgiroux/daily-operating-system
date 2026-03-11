@@ -37,6 +37,7 @@ const ENTITY_TYPE_ICON: Record<string, React.ElementType> = {
   project: FolderKanban,
   meeting: CalendarDays,
   action: CheckSquare,
+  email: Mail,
 };
 
 const ENTITY_TYPE_LABEL: Record<string, string> = {
@@ -45,6 +46,7 @@ const ENTITY_TYPE_LABEL: Record<string, string> = {
   project: "Projects",
   meeting: "Meetings",
   action: "Actions",
+  email: "Emails",
 };
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
