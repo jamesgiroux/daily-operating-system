@@ -11,15 +11,15 @@ interface WatchListMilestonesProps {
 function milestoneStatusStyle(status: string): { background: string; color: string } {
   const lower = status.toLowerCase();
   if (lower === "in_progress" || lower === "active") {
-    return { background: "rgba(126,170,123,0.14)", color: "var(--color-garden-rosemary)" };
+    return { background: "var(--color-garden-sage-14)", color: "var(--color-garden-rosemary)" };
   }
   if (lower === "planned") {
-    return { background: "rgba(143,163,196,0.14)", color: "var(--color-garden-larkspur)" };
+    return { background: "var(--color-garden-larkspur-14)", color: "var(--color-garden-larkspur)" };
   }
   if (lower === "completed" || lower === "done") {
-    return { background: "rgba(30,37,48,0.06)", color: "var(--color-text-tertiary)" };
+    return { background: "var(--color-rule-light)", color: "var(--color-text-tertiary)" };
   }
-  return { background: "rgba(30,37,48,0.06)", color: "var(--color-text-tertiary)" };
+  return { background: "var(--color-rule-light)", color: "var(--color-text-tertiary)" };
 }
 
 export function WatchListMilestones({ milestones }: WatchListMilestonesProps) {
@@ -54,7 +54,7 @@ export function WatchListMilestones({ milestones }: WatchListMilestonesProps) {
               gap: 12,
               padding: "12px 0",
               borderBottom:
-                i === active.length - 1 ? "none" : "1px solid rgba(30,37,48,0.06)",
+                i === active.length - 1 ? "none" : "1px solid var(--color-rule-light)",
             }}
           >
             <span
