@@ -299,10 +299,8 @@ fn parse_org_health_data(
     _account_name: &str,
 ) -> Option<crate::intelligence::io::OrgHealthData> {
     // Sort results by doc_type priority
-    let mut prioritized: Vec<&GleanSearchResult> = results
-        .iter()
-        .filter(|r| r.snippet.is_some())
-        .collect();
+    let mut prioritized: Vec<&GleanSearchResult> =
+        results.iter().filter(|r| r.snippet.is_some()).collect();
 
     prioritized.sort_by(|a, b| {
         let priority = |dt: Option<&str>| match dt {
@@ -837,11 +835,9 @@ fn process_glean_contacts(
     }
 
     // --- Pass 2: Manager relationships (all people exist in DB now) ---
-    let has_managers = people.iter().any(|c| {
-        c.manager
-            .as_deref()
-            .is_some_and(|m| !m.trim().is_empty())
-    });
+    let has_managers = people
+        .iter()
+        .any(|c| c.manager.as_deref().is_some_and(|m| !m.trim().is_empty()));
     if has_managers {
         // Load people list once for name matching (not per-contact)
         let all_people = db.get_people(None).unwrap_or_default();
@@ -992,12 +988,8 @@ impl ContextProvider for GleanContextProvider {
             if !glean.people.is_empty() && entity_type == "account" {
                 let user_domain = crate::google_api::token_store::peek_account_email()
                     .and_then(|email| email.split('@').nth(1).map(|d| d.to_string()));
-                let new_count = process_glean_contacts(
-                    db,
-                    entity_id,
-                    &glean.people,
-                    user_domain.as_deref(),
-                );
+                let new_count =
+                    process_glean_contacts(db, entity_id, &glean.people, user_domain.as_deref());
                 if new_count > 0 {
                     log::info!(
                         "I505: Created {} new contacts from Glean for {} {}",
