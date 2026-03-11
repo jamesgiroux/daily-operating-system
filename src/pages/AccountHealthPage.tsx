@@ -58,17 +58,17 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering account data",
-    detail: "Reading meeting history, signals, and stakeholder records",
+    detail: "Reading meeting history, updates, and stakeholder records",
   },
   {
     key: "assessing",
-    label: "Assessing health signals",
+    label: "Assessing health indicators",
     detail: "Analyzing engagement patterns and risk indicators",
   },
   {
     key: "building",
     label: "Synthesizing insights",
-    detail: "Identifying what's working, what's struggling, expansion signals",
+    detail: "Identifying what's working, what's struggling, expansion indicators",
   },
   {
     key: "finalizing",

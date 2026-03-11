@@ -38,9 +38,9 @@ const entityColor: Record<string, string> = {
 };
 
 const entityBg: Record<string, string> = {
-  account: "rgba(201, 162, 39, 0.08)",
-  project: "rgba(107, 124, 82, 0.08)",
-  person: "rgba(95, 130, 173, 0.08)",
+  account: "var(--color-spice-turmeric-8)",
+  project: "var(--color-garden-olive-8)",
+  person: "var(--color-garden-larkspur-8)",
 };
 
 export function MeetingEntityChips({
@@ -131,7 +131,7 @@ export function MeetingEntityChips({
     >
       {localEntities.map((entity) => {
         const color = entityColor[entity.entityType] ?? "var(--color-text-tertiary)";
-        const bg = entityBg[entity.entityType] ?? "rgba(30, 37, 48, 0.04)";
+        const bg = entityBg[entity.entityType] ?? "var(--color-desk-charcoal-4)";
         const Icon = entity.entityType === "project"
           ? FolderKanban
           : entity.entityType === "person"
@@ -212,7 +212,7 @@ export function MeetingEntityChips({
       <EntityPicker
         value={null}
         onChange={handleAdd}
-        placeholder={localEntities.length === 0 ? "Link entity..." : "+"}
+        placeholder={localEntities.length === 0 ? "Link to account or project..." : "+"}
         className={compact ? "h-6 text-[10px] px-1.5" : undefined}
       />
     </div>

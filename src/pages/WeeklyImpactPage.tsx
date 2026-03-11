@@ -61,7 +61,7 @@ const SLIDES = [
 // =============================================================================
 
 const ANALYSIS_PHASES = [
-  { key: "gathering", label: "Gathering this week's data", detail: "Reading meetings, actions, and signals from the past 7 days" },
+  { key: "gathering", label: "Gathering this week's data", detail: "Reading meetings, actions, and updates from the past 7 days" },
   { key: "priorities", label: "Checking priority movement", detail: "Finding what actually moved forward this week" },
   { key: "patterns", label: "Spotting patterns", detail: "Looking for wins and things worth watching" },
   { key: "finalizing", label: "Finalizing", detail: "Building your weekly view" },

@@ -38,7 +38,7 @@ export function ICloudWarningModal() {
         .icloud-warning-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.5);
+          background: var(--color-overlay-medium);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -50,7 +50,7 @@ export function ICloudWarningModal() {
           padding: 32px;
           max-width: 480px;
           margin: 16px;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+          box-shadow: var(--shadow-2xl);
         }
         .icloud-warning-modal h2 {
           font-family: var(--font-serif, 'Newsreader', Georgia, serif);

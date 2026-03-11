@@ -177,7 +177,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 2px 8px;
-  background: rgba(201, 162, 39, 0.15);
+  background: var(--color-spice-turmeric-15);
   color: var(--color-spice-turmeric);
   margin-left: 8px;
 }
@@ -557,7 +557,7 @@
 
 /* In-progress: warm glow background */
 .scheduleRowActive {
-  background: rgba(201, 162, 39, 0.05);
+  background: var(--color-spice-turmeric-5);
   margin: 0 -20px;
   padding: 14px 20px;
   border-bottom-color: transparent;
@@ -593,11 +593,11 @@
 }
 
 .scheduleRowExpandable:hover {
-  background: rgba(30, 37, 48, 0.015);
+  background: var(--color-desk-charcoal-15);
 }
 
 .scheduleRowActive.scheduleRowExpandable:hover {
-  background: rgba(201, 162, 39, 0.07);
+  background: var(--color-spice-turmeric-7);
 }
 
 /* Past rows: navigate affordance */
@@ -653,7 +653,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 2px 8px;
-  background: rgba(201, 162, 39, 0.18);
+  background: var(--color-spice-turmeric-18);
   color: var(--color-spice-turmeric);
   flex-shrink: 0;
 }
@@ -665,7 +665,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 2px 8px;
-  background: rgba(126, 170, 123, 0.15);
+  background: var(--color-garden-sage-15);
   color: var(--color-garden-sage);
   flex-shrink: 0;
 }
@@ -1174,7 +1174,7 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--color-spice-terracotta);
-  background: rgba(196, 101, 74, 0.08);
+  background: var(--color-spice-terracotta-8);
   border-radius: var(--radius-editorial-sm);
   padding: 1px 6px;
 }

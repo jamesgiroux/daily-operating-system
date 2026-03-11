@@ -389,7 +389,7 @@ export default function ProjectDetailEditorial() {
                     borderBottom:
                       i === intelligence.portfolio!.hotspots.length - 1
                         ? "none"
-                        : "1px solid rgba(30,37,48,0.06)",
+                        : "1px solid var(--color-rule-light)",
                     alignItems: "flex-start",
                   }}
                 >
@@ -446,7 +446,7 @@ export default function ProjectDetailEditorial() {
           {intelligence?.portfolio?.crossBuPatterns && intelligence.portfolio.crossBuPatterns.length > 0 && (
             <div
               style={{
-                background: "rgba(30,37,48,0.04)",
+                background: "var(--color-desk-charcoal-4)",
                 borderLeft: "3px solid var(--color-garden-larkspur)",
                 borderRadius: "0 6px 6px 0",
                 padding: "16px 20px",
@@ -509,7 +509,7 @@ export default function ProjectDetailEditorial() {
                   borderBottom:
                     i === detail.children.length - 1
                       ? "none"
-                      : "1px solid rgba(30,37,48,0.06)",
+                      : "1px solid var(--color-rule-light)",
                 }}
               >
                 <button

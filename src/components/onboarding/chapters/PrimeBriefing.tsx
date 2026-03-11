@@ -106,7 +106,7 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
           borderRadius: 8,
           padding: 32,
           textAlign: "center",
-          background: dragOver ? "rgba(196, 164, 75, 0.05)" : "transparent",
+          background: dragOver ? "var(--color-spice-turmeric-5)" : "transparent",
           transition: "all 0.2s ease",
           cursor: "pointer",
         }}

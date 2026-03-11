@@ -361,7 +361,7 @@ export default function EmailsPage() {
               <span>{allCommitments.length} COMMITMENT{allCommitments.length !== 1 ? "S" : ""}</span>
             )}
             {riskSignalCount > 0 && (
-              <span>{riskSignalCount} RISK SIGNAL{riskSignalCount !== 1 ? "S" : ""}</span>
+              <span>{riskSignalCount} RISK FLAG{riskSignalCount !== 1 ? "S" : ""}</span>
             )}
           </div>
         )}
@@ -618,7 +618,7 @@ export default function EmailsPage() {
                             opacity: 0.5,
                             flexShrink: 0,
                           }}
-                          title="Dismiss signal"
+                          title="Dismiss"
                         >
                           <X size={12} />
                         </button>
