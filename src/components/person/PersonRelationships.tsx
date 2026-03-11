@@ -170,7 +170,7 @@ export function PersonRelationships({
     if (rel.contextEntityId) {
       const key = rel.contextEntityId;
       if (!grouped[key]) {
-        grouped[key] = { type: rel.contextEntityType ?? "entity", name: rel.contextEntityName, edges: [] };
+        grouped[key] = { type: rel.contextEntityType ?? "account", name: rel.contextEntityName, edges: [] };
       }
       grouped[key].edges.push(rel);
     } else {

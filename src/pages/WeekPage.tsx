@@ -81,7 +81,7 @@ export default function WeekPage() {
       await loadTimeline();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to refresh meeting preps"
+        err instanceof Error ? err.message : "Failed to refresh briefings"
       );
     } finally {
       setRefreshing(false);
@@ -124,7 +124,7 @@ export default function WeekPage() {
     const stats: { label: string; color: "sage" | "terracotta" }[] = [];
     stats.push({ label: `${readyCount} ready`, color: "sage" });
     if (needsPrepCount > 0) {
-      stats.push({ label: `${needsPrepCount} needs prep`, color: "terracotta" });
+      stats.push({ label: `${needsPrepCount} building`, color: "terracotta" });
     }
     return stats;
   }, [futureMeetings]);
@@ -136,7 +136,7 @@ export default function WeekPage() {
       <FolioRefreshButton
         onClick={handleRefresh}
         loading={refreshing}
-        title="Refresh meeting preps"
+        title="Refresh briefings"
       />
     ),
     [handleRefresh]
@@ -155,7 +155,7 @@ export default function WeekPage() {
       stats.push({ label: `${readyCount} ready`, color: "sage" });
       const needsPrepCount = total - readyCount;
       if (needsPrepCount > 0) {
-        stats.push({ label: `${needsPrepCount} needs prep`, color: "terracotta" });
+        stats.push({ label: `${needsPrepCount} building`, color: "terracotta" });
       }
     }
     return stats;
