@@ -958,6 +958,10 @@ const INTEL_FILENAME: &str = "intelligence.json";
 /// Maximum bytes of file content to include in the intelligence prompt context.
 /// Keeps prompt size manageable (~10KB) while preserving the most relevant signals.
 /// Read intelligence.json from an entity directory.
+///
+/// I513: Deprecated for Tauri app call sites — DB is the sole source of truth.
+/// Remaining callers: MCP sidecar (mcp/main.rs), internal io.rs (apply_stakeholders_update).
+/// Do NOT add new callers — use `db.get_entity_intelligence()` instead.
 pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
     let path = dir.join(INTEL_FILENAME);
     let content = std::fs::read_to_string(&path)

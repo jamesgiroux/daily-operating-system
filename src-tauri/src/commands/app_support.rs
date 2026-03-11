@@ -916,5 +916,15 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
 }
 
 // =============================================================================
+// Feature Flags (I537)
+// =============================================================================
+
+/// Returns current feature flags. Role presets are gated off for GA.
+#[tauri::command]
+pub async fn get_feature_flags() -> Result<crate::types::FeatureFlags, String> {
+    Ok(crate::types::FeatureFlags::default())
+}
+
+// =============================================================================
 // People Commands (I51)
 // =============================================================================

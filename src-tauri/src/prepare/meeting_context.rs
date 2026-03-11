@@ -571,7 +571,7 @@ fn gather_meeting_context(
         }
 
         // I135: Entity-generic intelligence injection (I513: DB-first)
-        inject_entity_intelligence(db, Some(&em.entity_id), &em.workspace_path, &mut ctx);
+        inject_entity_intelligence(db, Some(&em.entity_id), &mut ctx);
     } else {
         // No entity resolved — type-based fallbacks
 
@@ -609,7 +609,7 @@ fn gather_meeting_context(
                             ctx["account_data"] = data;
                         }
                     }
-                    inject_entity_intelligence(db, None, &account_path, &mut ctx);
+                    inject_entity_intelligence(db, None, &mut ctx);
                 }
             }
         }
@@ -726,15 +726,14 @@ fn gather_meeting_context(
 fn inject_entity_intelligence(
     db: Option<&crate::db::ActionDb>,
     entity_id: Option<&str>,
-    entity_dir: &Path,
     ctx: &mut Value,
 ) {
+    // I513: DB is the sole source for entity intelligence — no file fallback.
     let intel = if let (Some(db), Some(eid)) = (db, entity_id) {
         db.get_entity_intelligence(eid).ok().flatten()
     } else {
         None
-    }
-    .or_else(|| crate::intelligence::read_intelligence_json(entity_dir).ok());
+    };
     let intel = match intel {
         Some(intel) => intel,
         None => return,
