@@ -182,7 +182,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
         }
       } else {
-        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} prepped`, color: "sage" });
+        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} ready`, color: "sage" });
       }
     }
     if (readiness.overdueCount > 0) {
