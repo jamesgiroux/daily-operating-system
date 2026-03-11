@@ -975,7 +975,6 @@ const SOURCE_LABELS: Record<string, string> = {
   google_calendar: "Google Calendar",
   gmail: "Gmail",
   claude_code: "Claude Code",
-  glean: "Glean",
 };
 
 const statusDotColor: Record<string, string> = {
