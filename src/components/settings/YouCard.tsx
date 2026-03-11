@@ -5,6 +5,7 @@ import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
 import { Check, X, Loader2 } from "lucide-react";
 import { styles } from "./styles";
+import type { FeatureFlags } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -607,6 +608,7 @@ export default function YouCard() {
     };
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
 
   useEffect(() => {
     invoke<{
@@ -624,6 +626,9 @@ export default function YouCard() {
       .then(setConfig)
       .catch((err) => console.error("get_config (you) failed:", err))
       .finally(() => setLoading(false));
+    invoke<FeatureFlags>("get_feature_flags")
+      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
+      .catch(() => setRolePresetsEnabled(false));
   }, []);
 
   if (loading) {
@@ -645,8 +650,12 @@ export default function YouCard() {
   return (
     <div>
       <DomainsSection config={config} />
-      <hr style={styles.thinRule} />
-      <RoleSection />
+      {rolePresetsEnabled && (
+        <>
+          <hr style={styles.thinRule} />
+          <RoleSection />
+        </>
+      )}
       <hr style={styles.thinRule} />
       <WorkspaceSection workspacePath={config?.workspacePath ?? ""} />
       <hr style={styles.thinRule} />
