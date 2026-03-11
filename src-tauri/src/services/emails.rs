@@ -130,11 +130,28 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         }
     }
 
-    // Load replies_needed from directive (I355).
-    // I448: The directive narrative is baked into the file at generation time with
-    // counts that go stale as emails are archived. Build it dynamically from real data.
-    let replies_needed = crate::json_loader::load_directive(&today_dir)
-        .map(|d| d.emails.replies_needed)
+    // I513: Build replies_needed from DB instead of directive file.
+    let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
+        .db_read(|db| {
+            let now = chrono::Utc::now();
+            Ok(db
+                .get_threads_awaiting_reply()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(thread_id, subject, from, date)| {
+                    let wait_duration =
+                        crate::prepare::orchestrate::compute_wait_duration_public(&date, &now);
+                    crate::json_loader::DirectiveReplyNeeded {
+                        thread_id,
+                        subject,
+                        from,
+                        date: Some(date),
+                        wait_duration: Some(wait_duration),
+                    }
+                })
+                .collect())
+        })
+        .await
         .unwrap_or_default();
 
     // Collect email IDs for batch signal lookup
