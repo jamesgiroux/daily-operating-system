@@ -24,6 +24,7 @@ import { formatDisplayTime, formatDurationFromIso } from "@/lib/meeting-time";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { AlertTriangle } from "lucide-react";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 
 // =============================================================================
 // WeekPage — Single data source: get_meeting_timeline
@@ -247,64 +248,39 @@ export default function WeekPage() {
   // ─── Loading skeleton ─────────────────────────────────────────────────────
 
   if (loading) {
-    const skeletonBg = { background: "var(--color-rule-light)" };
     return (
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 40px" }}>
-        <div style={{ paddingTop: 80 }}>
-          <Skeleton className="h-3 w-20 mb-2" style={skeletonBg} />
-          <Skeleton className="h-7 w-44 mb-6" style={skeletonBg} />
-          <Skeleton className="h-3 w-52" style={skeletonBg} />
+      <div className={w.pageContainer}>
+        <div className={w.skeletonHeader}>
+          <Skeleton className={cn("h-3 w-20 mb-2", w.skeletonBg)} />
+          <Skeleton className={cn("h-7 w-44 mb-6", w.skeletonBg)} />
+          <Skeleton className={cn("h-3 w-52", w.skeletonBg)} />
         </div>
-        <div style={{ paddingTop: 56 }}>
-          <Skeleton className="h-2.5 w-20 mb-4" style={skeletonBg} />
+        <div className={w.skeletonShape}>
+          <Skeleton className={cn("h-2.5 w-20 mb-4", w.skeletonBg)} />
           {[1, 2, 3, 4, 5].map((i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                marginBottom: 24,
-              }}
-            >
-              <Skeleton className="h-3 w-9" style={skeletonBg} />
-              <Skeleton className="h-2 flex-1 rounded-full" style={skeletonBg} />
-              <Skeleton className="h-3 w-20" style={skeletonBg} />
+            <div key={i} className={w.skeletonShapeRow}>
+              <Skeleton className={cn("h-3 w-9", w.skeletonBg)} />
+              <Skeleton className={cn("h-2 flex-1 rounded-full", w.skeletonBg)} />
+              <Skeleton className={cn("h-3 w-20", w.skeletonBg)} />
             </div>
           ))}
         </div>
-        <div style={{ paddingTop: 64 }}>
-          <div
-            style={{
-              borderTop: "2px solid var(--color-rule-light)",
-              marginBottom: 16,
-            }}
-          />
-          <Skeleton className="h-7 w-36 mb-8" style={skeletonBg} />
+        <div className={w.skeletonTimeline}>
+          <div className={w.skeletonTimelineRule} />
+          <Skeleton className={cn("h-7 w-36 mb-8", w.skeletonBg)} />
           {[1, 2, 3].map((d) => (
-            <div key={d} style={{ marginBottom: 20 }}>
-              <Skeleton className="h-4 w-40 mb-3" style={skeletonBg} />
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  marginBottom: 8,
-                  marginLeft: 12,
-                }}
-              >
-                <Skeleton
-                  className="h-2 w-2 rounded-full"
-                  style={skeletonBg}
-                />
-                <Skeleton className="h-4 w-48" style={skeletonBg} />
-                <Skeleton className="h-3 w-16" style={skeletonBg} />
+            <div key={d} className={w.skeletonDayGroup}>
+              <Skeleton className={cn("h-4 w-40 mb-3", w.skeletonBg)} />
+              <div className={w.skeletonDayRow}>
+                <Skeleton className={cn("h-2 w-2 rounded-full", w.skeletonBg)} />
+                <Skeleton className={cn("h-4 w-48", w.skeletonBg)} />
+                <Skeleton className={cn("h-3 w-16", w.skeletonBg)} />
               </div>
             </div>
           ))}
         </div>
-        <div style={{ textAlign: "center", padding: "72px 0 48px" }}>
-          <Skeleton className="mx-auto h-4 w-16" style={skeletonBg} />
+        <div className={w.skeletonFinis}>
+          <Skeleton className={cn("mx-auto h-4 w-16", w.skeletonBg)} />
         </div>
       </div>
     );
@@ -331,7 +307,7 @@ export default function WeekPage() {
 
   return (
     <>
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 40px" }}>
+      <div className={w.pageContainer}>
         {/* ── Week Header ───────────────────────────────────────────── */}
         <section className={w.weekHeader}>
           <p className={w.weekLabel}>Week {weekMeta.weekNumber}</p>
@@ -362,7 +338,7 @@ export default function WeekPage() {
         {shapeDays.length > 0 && (
           <section className={cn("editorial-reveal", w.shapeSection)}>
             <p className={w.shapeLabel}>This Week</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            <div className={w.shapeDaysColumn}>
               {shapeDays.map((day) => {
                 const barPct = Math.min(
                   100,
@@ -416,8 +392,7 @@ export default function WeekPage() {
         {/* ── The Timeline ───────────────────────────────────────────── */}
         <section
           id="the-timeline"
-          className="editorial-reveal"
-          style={{ paddingTop: 64 }}
+          className={cn("editorial-reveal", w.timelineSection)}
         >
           <ChapterHeading
             title="The Timeline"
@@ -426,7 +401,7 @@ export default function WeekPage() {
 
           {/* Past — Earlier (collapsed) */}
           {timelineGroups.earlierPast.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
+            <div className={w.timelineGroupSpacing}>
               <div
                 role="button"
                 tabIndex={0}
@@ -434,35 +409,12 @@ export default function WeekPage() {
                 onKeyDown={(e) =>
                   e.key === "Enter" && setShowEarlier(!showEarlier)
                 }
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "baseline",
-                  borderBottom: "1px solid var(--color-rule-heavy)",
-                  paddingBottom: 6,
-                  marginBottom: showEarlier ? 16 : 0,
-                  cursor: "pointer",
-                }}
+                className={cn(w.earlierToggle, showEarlier && w.earlierToggleExpanded)}
               >
-                <p
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    color: "var(--color-text-tertiary)",
-                    margin: 0,
-                  }}
-                >
+                <p className={w.earlierToggleLabel}>
                   Earlier
                 </p>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--color-text-tertiary)",
-                  }}
-                >
+                <span className={w.earlierToggleCount}>
                   {showEarlier
                     ? "hide"
                     : `${timelineGroups.earlierPast.reduce((n, g) => n + g.meetings.length, 0)} meetings`}
@@ -483,18 +435,7 @@ export default function WeekPage() {
           {/* Past — Recent */}
           {timelineGroups.recentPast.length > 0 && (
             <div>
-              <p
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: 16,
-                  borderBottom: "1px solid var(--color-rule-heavy)",
-                  paddingBottom: 6,
-                }}
-              >
+              <p className={w.timelineSectionHeader}>
                 Earlier
               </p>
               {timelineGroups.recentPast.map((group) => (
@@ -510,19 +451,8 @@ export default function WeekPage() {
 
           {/* Today */}
           {timelineGroups.today.length > 0 && (
-            <div style={{ marginTop: 24 }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--color-garden-larkspur)",
-                  marginBottom: 16,
-                  borderBottom: "2px solid var(--color-garden-larkspur)",
-                  paddingBottom: 6,
-                }}
-              >
+            <div className={w.timelineGroupSpacingTop}>
+              <p className={cn(w.timelineSectionHeader, w.timelineSectionHeaderToday)}>
                 Today
               </p>
               {timelineGroups.today.map((group) => (
@@ -538,19 +468,8 @@ export default function WeekPage() {
 
           {/* Future */}
           {timelineGroups.future.length > 0 && (
-            <div style={{ marginTop: 24 }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--color-text-tertiary)",
-                  marginBottom: 16,
-                  borderBottom: "1px solid var(--color-rule-heavy)",
-                  paddingBottom: 6,
-                }}
-              >
+            <div className={w.timelineGroupSpacingTop}>
+              <p className={w.timelineSectionHeader}>
                 Ahead
               </p>
               {timelineGroups.future.map((group) => (
@@ -566,7 +485,7 @@ export default function WeekPage() {
 
         {/* ── Error ──────────────────────────────────────────────────── */}
         {error && (
-          <div style={{ marginTop: 48 }}>
+          <div className={w.errorSpacing}>
             <ErrorCard error={error} />
           </div>
         )}
@@ -574,16 +493,7 @@ export default function WeekPage() {
         {/* ── Finis ──────────────────────────────────────────────────── */}
         <section className="editorial-reveal">
           <FinisMarker enrichedAt={undefined} />
-          <p
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 15,
-              fontStyle: "italic",
-              color: "var(--color-text-tertiary)",
-              textAlign: "center",
-              paddingBottom: 48,
-            }}
-          >
+          <p className={w.finisCaption}>
             Your week at a glance.
           </p>
         </section>
@@ -649,34 +559,11 @@ function TimelineDayGroup({
   isToday?: boolean;
 }) {
   return (
-    <div style={{ marginBottom: 20 }}>
-      <p
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: isToday ? 16 : 14,
-          fontWeight: isToday ? 500 : 400,
-          color: isToday
-            ? "var(--color-text-primary)"
-            : "var(--color-text-secondary)",
-          margin: "0 0 8px",
-          ...(isToday
-            ? {
-                borderLeft: "3px solid var(--color-garden-larkspur)",
-                paddingLeft: 12,
-              }
-            : {}),
-        }}
-      >
+    <div className={w.dayGroupContainer}>
+      <p className={cn(w.dayGroupLabel, isToday && w.dayGroupLabelToday)}>
         {label}
       </p>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 0,
-          paddingLeft: isToday ? 15 : 0,
-        }}
-      >
+      <div className={cn(w.dayGroupMeetings, isToday && w.dayGroupMeetingsToday)}>
         {meetings.map((m) => {
           const daysUntil = !isPast ? computeDaysUntil(m.startTime) : null;
           const needsPrep = !m.hasPrep;
@@ -705,30 +592,12 @@ function TimelineDayGroup({
                 !isPast ? (
                   <>
                     {needsPrep && (
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 10,
-                          fontWeight: 600,
-                          letterSpacing: "0.04em",
-                          color: "var(--color-spice-terracotta)",
-                          background: "var(--color-spice-terracotta-8)",
-                          borderRadius: 4,
-                          padding: "1px 6px",
-                        }}
-                      >
+                      <span className={w.noPrepBadge}>
                         No prep
                       </span>
                     )}
                     {daysUntil != null && daysUntil > 0 && (
-                      <span
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 10,
-                          fontWeight: 500,
-                          color: "var(--color-text-tertiary)",
-                        }}
-                      >
+                      <span className={w.daysUntilLabel}>
                         {daysUntil === 1 ? "1 day" : `${daysUntil} days`}
                       </span>
                     )}
@@ -738,17 +607,7 @@ function TimelineDayGroup({
             >
               {/* Past meetings: outcome summary + follow-up count */}
               {isPast && m.hasOutcomes && m.outcomeSummary && (
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--color-garden-sage)",
-                    marginTop: 4,
-                  }}
-                >
+                <span className={w.outcomeRow}>
                   <svg
                     width="12"
                     height="12"
@@ -761,29 +620,11 @@ function TimelineDayGroup({
                   >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  <span
-                    style={{
-                      maxWidth: 240,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <span className={w.outcomeSummaryText}>
                     {m.outcomeSummary}
                   </span>
                   {m.followUpCount != null && m.followUpCount > 0 && (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: "var(--color-garden-sage)",
-                        background: "var(--color-garden-sage-10)",
-                        borderRadius: 4,
-                        padding: "1px 6px",
-                        marginLeft: 4,
-                      }}
-                    >
+                    <span className={w.followUpBadge}>
                       {m.followUpCount} follow-up
                       {m.followUpCount !== 1 ? "s" : ""}
                     </span>
@@ -794,21 +635,7 @@ function TimelineDayGroup({
                 !(m.hasOutcomes && m.outcomeSummary) &&
                 m.followUpCount != null &&
                 m.followUpCount > 0 && (
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color: "var(--color-garden-sage)",
-                      background: "var(--color-garden-sage-10)",
-                      borderRadius: 4,
-                      padding: "1px 6px",
-                      marginTop: 4,
-                    }}
-                  >
+                  <span className={w.followUpBadgeStandalone}>
                     {m.followUpCount} follow-up
                     {m.followUpCount !== 1 ? "s" : ""}
                   </span>
