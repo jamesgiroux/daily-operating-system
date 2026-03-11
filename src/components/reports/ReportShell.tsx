@@ -17,7 +17,7 @@ interface ReportShellProps {
 }
 
 const GENERATING_PHASES = [
-  { key: "gathering", label: "Gathering intelligence", detail: "Reading entity data, signals, and meeting history" },
+  { key: "gathering", label: "Gathering context", detail: "Reading account data, updates, and meeting history" },
   { key: "analyzing", label: "Analyzing context", detail: "Synthesizing insights across connected data" },
   { key: "writing", label: "Writing report", detail: "Producing structured output" },
 ];
@@ -112,7 +112,7 @@ export function ReportShell({
           }}
         >
           <AlertTriangle size={14} />
-          <span>Intelligence has updated — this report may be outdated.</span>
+          <span>Context has updated — this report may be outdated.</span>
           <Button
             variant="ghost"
             size="sm"

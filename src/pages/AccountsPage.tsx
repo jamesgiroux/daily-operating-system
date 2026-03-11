@@ -727,7 +727,7 @@ function AccountTypeSelector({
               letterSpacing: "0.08em",
               textTransform: "uppercase",
               color: isActive ? opt.color : "var(--color-text-tertiary)",
-              background: isActive ? "rgba(30,37,48,0.04)" : "transparent",
+              background: isActive ? "var(--color-desk-charcoal-4)" : "transparent",
               border: "none",
               borderRight: opt.value !== "partner" ? "1px solid var(--color-paper-linen)" : "none",
               cursor: "pointer",

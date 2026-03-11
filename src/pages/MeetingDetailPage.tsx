@@ -582,7 +582,7 @@ Thanks!`;
           </span>
         )}
         {isFutureMeeting && isReadyOrFresh && (
-          <button onClick={handleShareIntelligence} title="Share Intelligence" className={styles.folioBtnInline}>
+          <button onClick={handleShareIntelligence} title="Share Briefing" className={styles.folioBtnInline}>
             <Copy className={styles.iconSm} />
             Share
           </button>
@@ -726,7 +726,7 @@ Thanks!`;
             </div>
             <div className={styles.outcomesDivider} />
             <p className={styles.preMeetingLabel}>
-              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Prep"}
+              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Briefing"}
             </p>
           </>
         )}
@@ -1108,10 +1108,10 @@ function UnifiedAttendeeList({
         const isNew = person.meetingCount === 0;
         const isCold = person.temperature === "cold";
         const circleColor = isCold
-          ? { bg: "rgba(196, 101, 74, 0.1)", fg: "var(--color-spice-terracotta)" }
+          ? { bg: "var(--color-spice-terracotta-10)", fg: "var(--color-spice-terracotta)" }
           : isNew
-          ? { bg: "rgba(126, 170, 123, 0.1)", fg: "var(--color-garden-sage)" }
-          : { bg: "rgba(201, 162, 39, 0.1)", fg: "var(--color-spice-turmeric)" };
+          ? { bg: "var(--color-garden-sage-10)", fg: "var(--color-garden-sage)" }
+          : { bg: "var(--color-spice-turmeric-10)", fg: "var(--color-spice-turmeric)" };
 
         const inner = (
           <div className={styles.attendeeRow}>

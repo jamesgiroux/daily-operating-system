@@ -16,9 +16,9 @@ import type { ActionDetail } from "@/types";
 // =============================================================================
 
 const PRIORITY_STYLE: Record<string, { bg: string; text: string }> = {
-  P1: { bg: "rgba(196,101,74,0.10)", text: "var(--color-spice-terracotta)" },
-  P2: { bg: "rgba(201,162,39,0.10)", text: "var(--color-spice-turmeric)" },
-  P3: { bg: "rgba(143,163,196,0.12)", text: "var(--color-garden-larkspur)" },
+  P1: { bg: "var(--color-spice-terracotta-10)", text: "var(--color-spice-terracotta)" },
+  P2: { bg: "var(--color-spice-turmeric-10)", text: "var(--color-spice-turmeric)" },
+  P3: { bg: "var(--color-garden-larkspur-12)", text: "var(--color-garden-larkspur)" },
 };
 
 function priorityAccent(priority: string): string {
@@ -299,7 +299,7 @@ export default function ActionDetailPage() {
               letterSpacing: "0.06em",
               padding: "2px 7px",
               borderRadius: 3,
-              background: "rgba(30,37,48,0.06)",
+              background: "var(--color-rule-light)",
               color: "var(--color-text-tertiary)",
               whiteSpace: "nowrap",
             }}>
@@ -320,7 +320,7 @@ export default function ActionDetailPage() {
                 letterSpacing: "0.06em",
                 padding: "2px 7px",
                 borderRadius: 3,
-                background: "rgba(30,37,48,0.06)",
+                background: "var(--color-rule-light)",
                 color: "var(--color-text-tertiary)",
                 textDecoration: "none",
                 whiteSpace: "nowrap",

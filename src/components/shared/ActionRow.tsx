@@ -311,7 +311,7 @@ function OutcomeActionRow({
           </button>
           <button
             onClick={onReject}
-            title="Reject"
+            title="Dismiss"
             style={{
               width: 20, height: 20, borderRadius: 3,
               border: "1px solid var(--color-spice-terracotta)",
@@ -330,7 +330,7 @@ function OutcomeActionRow({
           style={{
             width: 16, height: 16, borderRadius: 3,
             border: isCompleted ? "1px solid var(--color-garden-sage)" : "1px solid var(--color-text-tertiary)",
-            background: isCompleted ? "rgba(126, 170, 123, 0.2)" : "transparent",
+            background: isCompleted ? "var(--color-garden-sage-20)" : "transparent",
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
             flexShrink: 0, padding: 0,
           }}

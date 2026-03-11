@@ -172,7 +172,7 @@ export function AccountAppendix({
                     letterSpacing: "0.06em",
                     padding: "2px 6px",
                     borderRadius: 2,
-                    background: "rgba(222, 184, 65, 0.10)",
+                    background: "var(--color-spice-saffron-10)",
                     color: "var(--color-spice-saffron)",
                   }}
                 >

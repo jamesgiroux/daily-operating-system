@@ -108,7 +108,7 @@ details[open] .detailsChevron {
 .bulletDotTurmericMuted {
   composes: bulletDot;
   /* Turmeric at 60% opacity — from --color-spice-turmeric #c9a227 */
-  background: rgba(201, 162, 39, 0.6);
+  background: var(--color-spice-turmeric-60);
 }
 
 .sectionRule {
