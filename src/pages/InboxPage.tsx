@@ -10,7 +10,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { GoogleDriveImportModal } from "@/components/inbox/GoogleDriveImportModal";
-import type { InboxFile, InboxFileType } from "@/types";
+import type { CopyToInboxReport, InboxFile, InboxFileType } from "@/types";
 
 // =============================================================================
 // Types
@@ -226,10 +226,10 @@ export default function InboxPage() {
               }
               lastDropRef.current = { signature, at: now };
 
-              invoke<number>("copy_to_inbox", { paths: uniquePaths })
-                .then((count) => {
-                  if (count > 0) {
-                    setDropResult({ count });
+              invoke<CopyToInboxReport>("copy_to_inbox", { paths: uniquePaths })
+                .then((report) => {
+                  if (report.copiedCount > 0) {
+                    setDropResult({ count: report.copiedCount });
                     setTimeout(() => setDropResult(null), 3000);
                     refresh();
                   }
