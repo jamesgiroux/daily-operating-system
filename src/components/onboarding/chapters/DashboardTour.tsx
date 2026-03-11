@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TourHighlight } from "@/components/onboarding/TourHighlight";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { DashboardData, DataFreshness } from "@/types";
+import styles from "../onboarding.module.css";
 
 interface DashboardTourProps {
   onNext: () => void;
@@ -20,7 +21,7 @@ const TOUR_STOPS = [
   {
     key: "schedule",
     title: "Your schedule, front and center",
-    body: "Meetings appear immediately. Highlighted ones have full prep ready. Click 'View Prep' to see context, talking points, and risks.",
+    body: "Meetings appear immediately. Highlighted ones have a full briefing ready. Click 'View Briefing' to see context, talking points, and risks.",
   },
   {
     key: "actions",
@@ -80,9 +81,9 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: "64px 0" }}>
-        <Loader2 size={32} className="animate-spin" style={{ color: "var(--color-spice-turmeric)" }} />
-        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>
+      <div className={styles.tourLoadingContainer}>
+        <Loader2 size={32} className={`animate-spin ${styles.accentColor}`} />
+        <p className={`${styles.bodyText} ${styles.tertiaryText}`}>
           Loading your briefing...
         </p>
       </div>
@@ -91,8 +92,8 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
   if (!data) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "32px 0" }}>
-        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>
+      <div className={styles.tourEmptyContainer}>
+        <p className={`${styles.bodyText} ${styles.tertiaryText}`}>
           No briefing data yet. You can explore the dashboard after setup.
         </p>
         <Button onClick={onNext}>
@@ -108,24 +109,16 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 24, paddingBottom: 32 }}>
+      <div className={`${styles.flexCol} ${styles.gap24} ${styles.pb32}`}>
         <ChapterHeading
           title="Anatomy of your day"
           epigraph="This is what a real briefing looks like. Let's walk through each section."
         />
 
         {/* Single-column layout matching the actual dashboard */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+        <div className={`${styles.flexCol} ${styles.gap32}`}>
           <div>
-            <h1
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 24,
-                fontWeight: 400,
-                color: "var(--color-text-primary)",
-                margin: 0,
-              }}
-            >
+            <h1 className={styles.dateHeadline}>
               {new Date().toLocaleDateString("en-US", {
                 weekday: "long",
                 month: "long",
@@ -137,22 +130,15 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
           {data.overview.focus && (
             <TourHighlight ref={setStopRef(0)} active={stop.key === "focus"}>
-              <div
-                style={{
-                  borderLeft: "3px solid var(--color-garden-sage)",
-                  paddingLeft: 16,
-                  paddingTop: 12,
-                  paddingBottom: 12,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Target size={18} style={{ color: "var(--color-garden-sage)" }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-garden-sage)" }}>Focus</span>
+              <div className={styles.focusStrip}>
+                <div className={`${styles.flexBetween} ${styles.mb8}`}>
+                  <div className={`${styles.flexRow} ${styles.gap8}`}>
+                    <Target size={18} className={styles.sageColor} />
+                    <span className={styles.focusLabel}>Focus</span>
                   </div>
-                  <ChevronRight size={16} style={{ color: "var(--color-text-tertiary)" }} />
+                  <ChevronRight size={16} className={styles.tertiaryText} />
                 </div>
-                <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-secondary)", lineHeight: 1.5, margin: 0 }}>
+                <p className={styles.focusText}>
                   {data.overview.focus}
                 </p>
               </div>
@@ -160,48 +146,42 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           )}
 
           <TourHighlight ref={setStopRef(1)} active={stop.key === "schedule"}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            <div className={`${styles.flexCol} ${styles.gap12}`}>
+              <div className={styles.tourCountLabel}>
                 {data.meetings.filter(m => m.overlayStatus !== "cancelled").length} meeting{data.meetings.filter(m => m.overlayStatus !== "cancelled").length !== 1 ? "s" : ""} today
               </div>
               {data.meetings.map((m) => (
-                <div
-                  key={m.id}
-                  style={{
-                    borderTop: "1px solid var(--color-rule-light)",
-                    paddingTop: 12,
-                  }}
-                >
-                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{m.title}</p>
-                  <p style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>{m.time}</p>
+                <div key={m.id} className={styles.tourMeetingCard}>
+                  <p className={styles.tourItemTitle}>{m.title}</p>
+                  <p className={styles.tourItemMeta}>{m.time}</p>
                 </div>
               ))}
             </div>
           </TourHighlight>
 
           <TourHighlight ref={setStopRef(2)} active={stop.key === "actions"}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            <div className={`${styles.flexCol} ${styles.gap8}`}>
+              <div className={styles.tourCountLabel}>
                 {data.actions.length} action{data.actions.length !== 1 ? "s" : ""}
               </div>
               {data.actions.slice(0, 5).map((a) => (
-                <div key={a.id} style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 8 }}>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{a.title}</p>
-                  <p style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>{a.priority}</p>
+                <div key={a.id} className={styles.tourMeetingCard}>
+                  <p className={styles.tourItemTitle}>{a.title}</p>
+                  <p className={styles.tourItemMeta}>{a.priority}</p>
                 </div>
               ))}
             </div>
           </TourHighlight>
 
           <TourHighlight ref={setStopRef(3)} active={stop.key === "emails"}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            <div className={`${styles.flexCol} ${styles.gap8}`}>
+              <div className={styles.tourCountLabel}>
                 {emails.length} email{emails.length !== 1 ? "s" : ""}
               </div>
               {emails.slice(0, 5).map((e, i) => (
-                <div key={i} style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 8 }}>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>{e.subject}</p>
-                  <p style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>{e.sender}</p>
+                <div key={i} className={styles.tourMeetingCard}>
+                  <p className={styles.tourItemTitle}>{e.subject}</p>
+                  <p className={styles.tourItemMeta}>{e.sender}</p>
                 </div>
               ))}
             </div>
@@ -210,43 +190,22 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
       </div>
 
       {/* Floating tour card — editorial styling */}
-      <div
-        style={{
-          position: "fixed",
-          bottom: 24,
-          right: 24,
-          zIndex: 50,
-          width: 320,
-          background: "var(--color-paper-warm-white)",
-          border: "1px solid var(--color-rule-heavy)",
-          borderRadius: "var(--radius-editorial-lg)",
-          padding: 20,
-          boxShadow: "var(--shadow-md)",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className={styles.tourCard}>
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
           {/* Progress indicator */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--color-text-tertiary)" }}>
+          <div className={styles.tourProgress}>
             <span>{currentStop + 1} of {TOUR_STOPS.length}</span>
-            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <div className={styles.tourDots}>
               {TOUR_STOPS.map((_, i) => (
                 <button
                   key={i}
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    border: "none",
-                    cursor: "pointer",
-                    background:
-                      i === currentStop
-                        ? "var(--color-spice-turmeric)"
-                        : i < currentStop
-                          ? "rgba(201, 162, 39, 0.4)"
-                          : "var(--color-rule-light)",
-                    transition: "background 0.15s ease",
-                    padding: 0,
-                  }}
+                  className={`${styles.tourDot} ${
+                    i === currentStop
+                      ? styles.tourDotActive
+                      : i < currentStop
+                        ? styles.tourDotVisited
+                        : styles.tourDotPending
+                  }`}
                   onClick={() => setCurrentStop(i)}
                 />
               ))}
@@ -255,16 +214,16 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
           {/* Annotation */}
           <div>
-            <h4 style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)", margin: 0 }}>
+            <h4 className={styles.tourTitle}>
               {stop.title}
             </h4>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 4, marginBottom: 0, lineHeight: 1.5 }}>
+            <p className={styles.tourBody}>
               {stop.body}
             </p>
           </div>
 
           {/* Navigation */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
+          <div className={styles.tourNav}>
             <Button
               variant="ghost"
               size="sm"
@@ -290,18 +249,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
           {/* Skip */}
           <button
-            style={{
-              width: "100%",
-              textAlign: "center",
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              letterSpacing: "0.04em",
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              transition: "color 0.15s ease",
-            }}
+            className={styles.tourSkipButton}
             onClick={onSkipTour}
           >
             Skip tour

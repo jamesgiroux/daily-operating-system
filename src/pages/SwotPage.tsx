@@ -52,7 +52,7 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering account data",
-    detail: "Reading meeting history, signals, and stakeholder data",
+    detail: "Reading meeting history, updates, and stakeholder data",
   },
   {
     key: "analyzing",
