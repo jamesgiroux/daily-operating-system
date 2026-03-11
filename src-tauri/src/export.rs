@@ -52,8 +52,11 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, industry, tier, status, health_score, notes, created_at, updated_at
-             FROM entity_accounts WHERE archived = 0",
+                "SELECT a.id, a.name, a.lifecycle, a.account_type, a.updated_at,
+                        eq.health_score
+                 FROM accounts a
+                 LEFT JOIN entity_quality eq ON eq.entity_id = a.id
+                 WHERE a.archived = 0",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<serde_json::Value> = stmt
@@ -61,13 +64,10 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
                 Ok(serde_json::json!({
                     "id": row.get::<_, String>(0)?,
                     "name": row.get::<_, String>(1)?,
-                    "industry": row.get::<_, Option<String>>(2)?,
-                    "tier": row.get::<_, Option<String>>(3)?,
-                    "status": row.get::<_, Option<String>>(4)?,
+                    "lifecycle": row.get::<_, Option<String>>(2)?,
+                    "accountType": row.get::<_, Option<String>>(3)?,
+                    "updatedAt": row.get::<_, Option<String>>(4)?,
                     "healthScore": row.get::<_, Option<f64>>(5)?,
-                    "notes": row.get::<_, Option<String>>(6)?,
-                    "createdAt": row.get::<_, Option<String>>(7)?,
-                    "updatedAt": row.get::<_, Option<String>>(8)?,
                 }))
             })
             .map_err(|e| e.to_string())?
@@ -84,8 +84,8 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, email, title, organization, phone, linkedin_url, notes, created_at, updated_at
-             FROM entity_people WHERE archived = 0",
+                "SELECT id, name, email, role, organization, phone, linkedin_url, notes, updated_at
+                 FROM people WHERE archived = 0",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<serde_json::Value> = stmt
@@ -94,13 +94,12 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
                     "id": row.get::<_, String>(0)?,
                     "name": row.get::<_, String>(1)?,
                     "email": row.get::<_, Option<String>>(2)?,
-                    "title": row.get::<_, Option<String>>(3)?,
+                    "role": row.get::<_, Option<String>>(3)?,
                     "organization": row.get::<_, Option<String>>(4)?,
                     "phone": row.get::<_, Option<String>>(5)?,
                     "linkedinUrl": row.get::<_, Option<String>>(6)?,
                     "notes": row.get::<_, Option<String>>(7)?,
-                    "createdAt": row.get::<_, Option<String>>(8)?,
-                    "updatedAt": row.get::<_, Option<String>>(9)?,
+                    "updatedAt": row.get::<_, Option<String>>(8)?,
                 }))
             })
             .map_err(|e| e.to_string())?
@@ -117,8 +116,8 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, status, notes, created_at, updated_at
-             FROM entity_projects WHERE archived = 0",
+                "SELECT id, name, status, owner, target_date, updated_at
+                 FROM projects WHERE archived = 0",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<serde_json::Value> = stmt
@@ -127,8 +126,8 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
                     "id": row.get::<_, String>(0)?,
                     "name": row.get::<_, String>(1)?,
                     "status": row.get::<_, Option<String>>(2)?,
-                    "notes": row.get::<_, Option<String>>(3)?,
-                    "createdAt": row.get::<_, Option<String>>(4)?,
+                    "owner": row.get::<_, Option<String>>(3)?,
+                    "targetDate": row.get::<_, Option<String>>(4)?,
                     "updatedAt": row.get::<_, Option<String>>(5)?,
                 }))
             })
@@ -146,10 +145,10 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time, m.location, m.notes
-             FROM meetings m
-             WHERE m.start_time > datetime('now', '-90 days')
-             ORDER BY m.start_time DESC",
+                "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time, m.description
+                 FROM meetings m
+                 WHERE m.start_time > datetime('now', '-90 days')
+                 ORDER BY m.start_time DESC",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<serde_json::Value> = stmt
@@ -160,8 +159,7 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
                     "meetingType": row.get::<_, Option<String>>(2)?,
                     "startTime": row.get::<_, Option<String>>(3)?,
                     "endTime": row.get::<_, Option<String>>(4)?,
-                    "location": row.get::<_, Option<String>>(5)?,
-                    "notes": row.get::<_, Option<String>>(6)?,
+                    "description": row.get::<_, Option<String>>(5)?,
                 }))
             })
             .map_err(|e| e.to_string())?
@@ -178,8 +176,8 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, status, priority, source, due_date, completed_at, created_at
-             FROM actions ORDER BY created_at DESC",
+                "SELECT id, title, status, priority, source_type, due_date, completed_at, created_at
+                 FROM actions ORDER BY created_at DESC",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<serde_json::Value> = stmt
@@ -189,7 +187,7 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
                     "title": row.get::<_, String>(1)?,
                     "status": row.get::<_, String>(2)?,
                     "priority": row.get::<_, Option<String>>(3)?,
-                    "source": row.get::<_, Option<String>>(4)?,
+                    "sourceType": row.get::<_, Option<String>>(4)?,
                     "dueDate": row.get::<_, Option<String>>(5)?,
                     "completedAt": row.get::<_, Option<String>>(6)?,
                     "createdAt": row.get::<_, Option<String>>(7)?,
@@ -209,10 +207,10 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, entity_id, entity_type, signal_type, source, confidence, payload, created_at
-             FROM signal_events
-             WHERE created_at > datetime('now', '-90 days')
-             ORDER BY created_at DESC",
+                "SELECT id, entity_id, entity_type, signal_type, source, confidence, value, created_at
+                 FROM signal_events
+                 WHERE created_at > datetime('now', '-90 days')
+                 ORDER BY created_at DESC",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<serde_json::Value> = stmt
@@ -224,7 +222,7 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
                     "signalType": row.get::<_, Option<String>>(3)?,
                     "source": row.get::<_, Option<String>>(4)?,
                     "confidence": row.get::<_, Option<f64>>(5)?,
-                    "payload": row.get::<_, Option<String>>(6)?,
+                    "value": row.get::<_, Option<String>>(6)?,
                     "createdAt": row.get::<_, Option<String>>(7)?,
                 }))
             })
@@ -242,21 +240,22 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT ea.id, ea.entity_id, ea.entity_type, ea.assessment_type, ea.content, ea.created_at, ea.updated_at
-             FROM entity_assessment ea
-             ORDER BY ea.updated_at DESC",
+                "SELECT entity_id, entity_type, enriched_at, executive_assessment,
+                        risks_json, recent_wins_json, current_state_json
+                 FROM entity_assessment
+                 ORDER BY enriched_at DESC",
             )
             .map_err(|e| e.to_string())?;
         let rows: Vec<serde_json::Value> = stmt
             .query_map([], |row| {
                 Ok(serde_json::json!({
-                    "id": row.get::<_, String>(0)?,
-                    "entityId": row.get::<_, Option<String>>(1)?,
-                    "entityType": row.get::<_, Option<String>>(2)?,
-                    "assessmentType": row.get::<_, Option<String>>(3)?,
-                    "content": row.get::<_, Option<String>>(4)?,
-                    "createdAt": row.get::<_, Option<String>>(5)?,
-                    "updatedAt": row.get::<_, Option<String>>(6)?,
+                    "entityId": row.get::<_, String>(0)?,
+                    "entityType": row.get::<_, Option<String>>(1)?,
+                    "enrichedAt": row.get::<_, Option<String>>(2)?,
+                    "executiveAssessment": row.get::<_, Option<String>>(3)?,
+                    "risks": row.get::<_, Option<String>>(4)?,
+                    "recentWins": row.get::<_, Option<String>>(5)?,
+                    "currentState": row.get::<_, Option<String>>(6)?,
                 }))
             })
             .map_err(|e| e.to_string())?

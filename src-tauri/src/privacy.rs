@@ -47,9 +47,9 @@ pub fn get_data_summary(db: &ActionDb) -> Result<DataSummary, String> {
     };
 
     Ok(DataSummary {
-        accounts: count_where("entity_accounts", "archived = 0"),
-        people: count_where("entity_people", "archived = 0"),
-        projects: count_where("entity_projects", "archived = 0"),
+        accounts: count_where("accounts", "archived = 0"),
+        people: count_where("people", "archived = 0"),
+        projects: count_where("projects", "archived = 0"),
         meetings: count("meetings"),
         actions: count("actions"),
         insights: count("entity_assessment"),
@@ -82,9 +82,9 @@ pub fn clear_intelligence(db: &ActionDb) -> Result<ClearReport, String> {
         )
         .map_err(|e| e.to_string())?;
 
-    // NULL out entity_accounts health columns
+    // NULL out entity_quality health columns
     let _ = conn.execute(
-        "UPDATE entity_accounts SET health_score = NULL, health_trend = NULL WHERE health_score IS NOT NULL",
+        "UPDATE entity_quality SET health_score = NULL, health_trend = NULL WHERE health_score IS NOT NULL",
         [],
     );
 
