@@ -17,6 +17,7 @@ import {
   Eye,
   Activity,
   CheckSquare2,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,6 +126,7 @@ const BASE_CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "watch-list", label: "Watch List", icon: <Eye size={18} strokeWidth={1.5} /> },
   { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
   { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
+  { id: "reports", label: "Reports", icon: <FileText size={18} strokeWidth={1.5} /> },
 ];
 
 const PORTFOLIO_CHAPTER = {
@@ -589,12 +591,43 @@ export default function AccountDetailEditorial() {
         />
       </div>
 
-      {/* Finis marker — inside The Work per mockup */}
+      {/* Chapter 7: Reports */}
+      <div id="reports" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
+        <ChapterHeading title="Reports" />
+        <div className={styles.reportsChapter}>
+          {getAccountReports(preset?.id).map((item) => {
+            const handleClick = () => {
+              if (item.reportType === null) {
+                navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+              } else if (item.reportType === "account_health") {
+                navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
+              } else if (item.reportType === "ebr_qbr") {
+                navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
+              } else {
+                navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
+              }
+            };
+            return (
+              <button
+                key={item.label}
+                onClick={handleClick}
+                className={styles.reportRow}
+              >
+                <FileText size={16} strokeWidth={1.5} className={styles.reportIcon} />
+                <span className={styles.reportName}>{item.label}</span>
+                <span className={styles.reportAction}>View</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Finis marker */}
       <div className="editorial-reveal">
         <FinisMarker enrichedAt={intelligence?.enrichedAt} />
       </div>
 
-      {/* Chapter 7: Appendix */}
+      {/* Chapter 8: Appendix */}
       <div className="editorial-reveal">
         <AccountAppendix
           detail={detail}
