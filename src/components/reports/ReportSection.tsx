@@ -1,13 +1,18 @@
+import type { ReactNode } from "react";
+
 interface ReportSectionProps {
   heading: string;
   children: React.ReactNode;
   className?: string;
+  /** I529: Optional inline feedback controls rendered after the heading */
+  feedbackSlot?: ReactNode;
 }
 
 export function ReportSection({
   heading,
   children,
   className,
+  feedbackSlot,
 }: ReportSectionProps) {
   return (
     <section
@@ -25,9 +30,13 @@ export function ReportSection({
           borderBottom: "2px solid var(--color-spice-turmeric)",
           paddingBottom: "0.4rem",
           marginBottom: "1rem",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
         }}
       >
         {heading}
+        {feedbackSlot}
       </h2>
       {children}
     </section>
