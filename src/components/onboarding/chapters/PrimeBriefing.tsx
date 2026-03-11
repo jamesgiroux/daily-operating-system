@@ -6,6 +6,7 @@ import { ArrowRight, Upload, FileText, Headphones, HardDrive, Loader2, Check } f
 import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import styles from "../onboarding.module.css";
 
 interface PrimeBriefingProps {
   onComplete: () => void;
@@ -92,7 +93,7 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
   }, [handleFilePaths]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="Prime Your Briefings"
         epigraph="Give DailyOS context about your work — the more it knows, the better your briefings."
@@ -101,41 +102,22 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
       {/* Path A: Drop zone */}
       <div
         onClick={handleBrowse}
-        style={{
-          border: `2px dashed ${dragOver ? "var(--color-spice-turmeric)" : "var(--color-rule-heavy)"}`,
-          borderRadius: 8,
-          padding: 32,
-          textAlign: "center",
-          background: dragOver ? "var(--color-spice-turmeric-5)" : "transparent",
-          transition: "all 0.2s ease",
-          cursor: "pointer",
-        }}
+        className={`${styles.dropZone} ${dragOver ? styles.dropZoneActive : ""}`}
       >
         {processing ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-tertiary)" }}>
+          <div className={styles.flexCenterGap8}>
+            <Loader2 size={20} className={`animate-spin ${styles.tertiaryText}`} />
+            <span className={styles.processingIndicator}>
               Processing...
             </span>
           </div>
         ) : (
           <>
-            <Upload size={24} style={{ color: "var(--color-text-tertiary)", margin: "0 auto 8px" }} />
-            <p style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              fontWeight: 500,
-              color: "var(--color-text-primary)",
-              margin: "0 0 4px",
-            }}>
+            <Upload size={24} className={styles.uploadIcon} />
+            <p className={styles.dropZoneLabel}>
               Drop files here or click to browse
             </p>
-            <p style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              margin: 0,
-            }}>
+            <p className={styles.dropZoneHint}>
               .txt, .md, .pdf, .docx — meeting notes, account briefs, anything relevant
             </p>
           </>
@@ -144,40 +126,27 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
 
       {/* Files added feedback */}
       {filesAdded.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className={`${styles.flexCol} ${styles.gap8}`}>
           {filesAdded.map((name, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Check size={14} style={{ color: "var(--color-garden-sage)" }} />
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-secondary)" }}>
+            <div key={i} className={`${styles.flexRow} ${styles.gap8}`}>
+              <Check size={14} className={styles.sageColor} />
+              <span className={styles.fileAddedName}>
                 {name}
               </span>
             </div>
           ))}
-          <p style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            color: "var(--color-garden-sage)",
-            margin: "8px 0 0",
-          }}>
+          <p className={styles.fileAddedMessage}>
             DailyOS is primed. Context will build from what you just gave it, and from your connectors as they run.
           </p>
         </div>
       )}
 
       {/* Path B: Connect feeders */}
-      <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 20 }}>
-        <p style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          color: "var(--color-text-tertiary)",
-          margin: "0 0 12px",
-        }}>
+      <div className={styles.ruleSection}>
+        <p className={styles.sectionLabelLg}>
           Or connect a source
         </p>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div className={styles.flexWrapRow}>
           {[
             { icon: <Headphones size={16} />, name: "Quill", desc: "Meeting transcripts" },
             { icon: <FileText size={16} />, name: "Granola", desc: "Meeting notes" },
@@ -185,51 +154,33 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
           ].map((source) => (
             <div
               key={source.name}
-              style={{
-                flex: "1 1 140px",
-                padding: 16,
-                borderTop: "1px solid var(--color-rule-light)",
-                opacity: 0.5,
-              }}
+              className={styles.sourceCard}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, color: "var(--color-text-tertiary)" }}>
+              <div className={styles.sourceHeader}>
                 {source.icon}
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500 }}>
+                <span className={styles.sourceName}>
                   {source.name}
                 </span>
               </div>
-              <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>
+              <p className={styles.sourceDesc}>
                 {source.desc}
               </p>
-              <p style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", margin: "4px 0 0", letterSpacing: "0.04em" }}>
+              <p className={styles.sourceComingSoon}>
                 Coming soon
               </p>
             </div>
           ))}
         </div>
-        <p style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 12,
-          color: "var(--color-text-tertiary)",
-          marginTop: 8,
-        }}>
+        <p className={styles.settingsHint}>
           You can set these up any time in Settings.
         </p>
       </div>
 
       {/* Actions */}
-      <div className="flex justify-between" style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 20 }}>
+      <div className={`flex justify-between ${styles.ruleSection}`}>
         <button
           onClick={onComplete}
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
-          }}
+          className={styles.skipLink}
         >
           Skip — I'll feed it manually later
         </button>
