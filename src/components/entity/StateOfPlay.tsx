@@ -11,6 +11,7 @@ import type { EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { StateBlock } from "@/components/editorial/StateBlock";
 import { PullQuote } from "@/components/editorial/PullQuote";
+import { DimensionBar } from "@/components/shared/DimensionBar";
 
 interface StateOfPlayProps {
   intelligence: EntityIntelligence | null;
@@ -95,6 +96,14 @@ export function StateOfPlay({
         </button>
       )}
       {pullQuote && <PullQuote text={pullQuote} />}
+
+      {/* Relationship Health dimensions — I502 */}
+      {intelligence?.health?.dimensions && (
+        <div style={{ paddingTop: 48 }}>
+          <ChapterHeading title="Relationship Health" />
+          <DimensionBar dimensions={intelligence.health.dimensions} />
+        </div>
+      )}
     </section>
   );
 }
