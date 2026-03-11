@@ -53,6 +53,8 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import shared from "@/styles/entity-detail.module.css";
+import styles from "./ProjectDetailEditorial.module.css";
 
 /* ── Vitals assembly ── */
 
@@ -127,6 +129,18 @@ function buildChapters(isParent: boolean) {
   return [BASE_CHAPTERS[0], PORTFOLIO_CHAPTER, ...BASE_CHAPTERS.slice(1)];
 }
 
+function getStatusColorClass(status: string): string {
+  if (status === "active") return styles.statusActive;
+  if (status === "on_hold") return styles.statusOnHold;
+  return styles.statusCompleted;
+}
+
+function getStatusDotClass(status: string): string {
+  if (status === "active") return styles.statusDotActive;
+  if (status === "on_hold") return styles.statusDotOnHold;
+  return styles.statusDotCompleted;
+}
+
 export default function ProjectDetailEditorial() {
   const { projectId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -144,19 +158,7 @@ export default function ProjectDetailEditorial() {
       folioActions: proj.detail?.isParent ? (
         <button
           onClick={() => proj.setCreateChildOpen(true)}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: "var(--color-garden-olive)",
-            background: "none",
-            border: "1px solid var(--color-garden-olive)",
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: "pointer",
-          }}
+          className={styles.addChildButton}
         >
           + Sub-Project
         </button>
@@ -212,37 +214,16 @@ export default function ProjectDetailEditorial() {
     <>
       {/* I388: Ancestor breadcrumbs for nested projects */}
       {ancestors.length > 0 && (
-        <nav
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: "var(--color-text-tertiary)",
-            padding: "8px 0 4px",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            flexWrap: "wrap",
-          }}
-        >
+        <nav className={shared.breadcrumbNav}>
           <button
             onClick={() => navigate({ to: "/projects" })}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              color: "var(--color-text-tertiary)",
-              fontFamily: "inherit",
-              fontSize: "inherit",
-              letterSpacing: "inherit",
-            }}
+            className={shared.breadcrumbButton}
           >
             Projects
           </button>
           {ancestors.map((anc) => (
             <React.Fragment key={anc.id}>
-              <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+              <span className={shared.breadcrumbSeparator}>/</span>
               <button
                 onClick={() =>
                   navigate({
@@ -250,28 +231,19 @@ export default function ProjectDetailEditorial() {
                     params: { projectId: anc.id },
                   })
                 }
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  color: "var(--color-garden-olive)",
-                  fontFamily: "inherit",
-                  fontSize: "inherit",
-                  letterSpacing: "inherit",
-                }}
+                className={styles.breadcrumbAncestorLink}
               >
                 {anc.name}
               </button>
             </React.Fragment>
           ))}
-          <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
-          <span style={{ color: "var(--color-text-primary)" }}>{detail?.name ?? ""}</span>
+          <span className={shared.breadcrumbSeparator}>/</span>
+          <span className={shared.breadcrumbCurrent}>{detail?.name ?? ""}</span>
         </nav>
       )}
 
       {/* Chapter 1: The Mission (Hero) */}
-      <section id="headline" style={{ scrollMarginTop: 60 }}>
+      <section id="headline" className={shared.chapterSection}>
         <ProjectHero
           detail={detail}
           intelligence={intelligence}
@@ -318,7 +290,7 @@ export default function ProjectDetailEditorial() {
         </div>
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.project.length > 0 && (
-          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
             <PresetFieldsEditor
               fields={preset.metadata.project}
               values={metadataValues}
@@ -340,24 +312,13 @@ export default function ProjectDetailEditorial() {
 
       {/* I388: Portfolio chapter — only for parent projects */}
       {detail.isParent && detail.children.length > 0 && (
-        <section id="portfolio" className="editorial-reveal" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+        <section id="portfolio" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
           <ChapterHeading title="Portfolio" />
 
           {/* Portfolio narrative */}
           {intelligence?.portfolio?.portfolioNarrative && (
-            <div style={{ marginBottom: 48 }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 21,
-                  fontStyle: "italic",
-                  fontWeight: 300,
-                  lineHeight: 1.65,
-                  color: "var(--color-text-primary)",
-                  maxWidth: 640,
-                  margin: 0,
-                }}
-              >
+            <div className={shared.portfolioNarrative}>
+              <p className={shared.portfolioNarrativeText}>
                 {intelligence.portfolio.portfolioNarrative}
               </p>
             </div>
@@ -365,45 +326,21 @@ export default function ProjectDetailEditorial() {
 
           {/* Hotspots — child projects needing attention */}
           {intelligence?.portfolio?.hotspots && intelligence.portfolio.hotspots.length > 0 && (
-            <div style={{ marginBottom: 48 }}>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-spice-terracotta)",
-                  marginBottom: 20,
-                }}
-              >
+            <div className={shared.portfolioHotspotsSection}>
+              <div className={shared.portfolioSectionLabelTerracotta}>
                 Needs Attention
               </div>
               {intelligence.portfolio.hotspots.map((hotspot, i) => (
                 <div
                   key={hotspot.childId}
-                  style={{
-                    display: "flex",
-                    gap: 14,
-                    padding: "16px 0",
-                    borderBottom:
-                      i === intelligence.portfolio!.hotspots.length - 1
-                        ? "none"
-                        : "1px solid var(--color-rule-light)",
-                    alignItems: "flex-start",
-                  }}
+                  className={
+                    i === intelligence.portfolio!.hotspots.length - 1
+                      ? shared.hotspotRow
+                      : shared.hotspotRowBorder
+                  }
                 >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "var(--color-spice-terracotta)",
-                      flexShrink: 0,
-                      marginTop: 6,
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <span className={shared.hotspotDot} />
+                  <div className={shared.hotspotContent}>
                     <button
                       onClick={() =>
                         navigate({
@@ -411,29 +348,11 @@ export default function ProjectDetailEditorial() {
                           params: { projectId: hotspot.childId },
                         })
                       }
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-garden-olive)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: 0,
-                        textAlign: "left",
-                      }}
+                      className={styles.hotspotLinkOlive}
                     >
                       {hotspot.childName}
                     </button>
-                    <p
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        lineHeight: 1.6,
-                        color: "var(--color-text-secondary)",
-                        margin: "4px 0 0",
-                      }}
-                    >
+                    <p className={shared.hotspotReason}>
                       {hotspot.reason}
                     </p>
                   </div>
@@ -444,38 +363,14 @@ export default function ProjectDetailEditorial() {
 
           {/* Cross-project patterns — only shown when non-empty */}
           {intelligence?.portfolio?.crossBuPatterns && intelligence.portfolio.crossBuPatterns.length > 0 && (
-            <div
-              style={{
-                background: "var(--color-desk-charcoal-4)",
-                borderLeft: "3px solid var(--color-garden-larkspur)",
-                borderRadius: "0 6px 6px 0",
-                padding: "16px 20px",
-                marginBottom: 48,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-garden-larkspur)",
-                  marginBottom: 12,
-                }}
-              >
+            <div className={shared.crossPatternsBlock}>
+              <div className={shared.portfolioSectionLabelLarkspur}>
                 Cross-Project Patterns
               </div>
               {intelligence.portfolio.crossBuPatterns.map((pattern, i) => (
                 <p
                   key={i}
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    color: "var(--color-text-primary)",
-                    margin: i === 0 ? 0 : "8px 0 0",
-                  }}
+                  className={i === 0 ? shared.crossPatternTextFirst : shared.crossPatternTextSubsequent}
                 >
                   {pattern}
                 </p>
@@ -484,33 +379,18 @@ export default function ProjectDetailEditorial() {
           )}
 
           {/* Condensed child list */}
-          <div style={{ marginBottom: 24 }}>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: "var(--color-text-tertiary)",
-                marginBottom: 16,
-              }}
-            >
+          <div className={shared.childListSection}>
+            <div className={shared.portfolioSectionLabelTertiary}>
               Sub-Projects
             </div>
             {detail.children.map((child, i) => (
               <div
                 key={child.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "12px 0",
-                  borderBottom:
-                    i === detail.children.length - 1
-                      ? "none"
-                      : "1px solid var(--color-rule-light)",
-                }}
+                className={
+                  i === detail.children.length - 1
+                    ? shared.childRow
+                    : shared.childRowBorder
+                }
               >
                 <button
                   onClick={() =>
@@ -519,54 +399,13 @@ export default function ProjectDetailEditorial() {
                       params: { projectId: child.id },
                     })
                   }
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 400,
-                    color: "var(--color-text-primary)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                    textAlign: "left",
-                    flex: 1,
-                    minWidth: 0,
-                  }}
+                  className={shared.childNameButton}
                 >
                   {child.name}
                 </button>
                 {/* Status indicator */}
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color:
-                      child.status === "active"
-                        ? "var(--color-garden-sage)"
-                        : child.status === "on_hold"
-                          ? "var(--color-spice-turmeric)"
-                          : "var(--color-garden-larkspur)",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background:
-                        child.status === "active"
-                          ? "var(--color-garden-sage)"
-                          : child.status === "on_hold"
-                            ? "var(--color-spice-turmeric)"
-                            : "var(--color-garden-larkspur)",
-                    }}
-                  />
+                <span className={`${shared.statusIndicator} ${getStatusColorClass(child.status)}`}>
+                  <span className={getStatusDotClass(child.status)} />
                   {child.status === "active"
                     ? "Active"
                     : child.status === "on_hold"
@@ -575,15 +414,7 @@ export default function ProjectDetailEditorial() {
                 </span>
                 {/* Open actions count */}
                 {child.openActionCount > 0 && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      letterSpacing: "0.04em",
-                      color: "var(--color-text-tertiary)",
-                    }}
-                  >
+                  <span className={shared.secondaryMetric}>
                     {child.openActionCount} action{child.openActionCount !== 1 ? "s" : ""}
                   </span>
                 )}
@@ -594,17 +425,17 @@ export default function ProjectDetailEditorial() {
       )}
 
       {/* Chapter 2: Trajectory */}
-      <div id="trajectory" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="trajectory" className={`editorial-reveal ${shared.chapterSection}`}>
         <TrajectoryChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Horizon */}
-      <div id="the-horizon" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-horizon" className={`editorial-reveal ${shared.chapterSection}`}>
         <HorizonChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 4: The Landscape */}
-      <div id="the-landscape" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-landscape" className={`editorial-reveal ${shared.chapterSection}`}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
@@ -619,7 +450,7 @@ export default function ProjectDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Team */}
-      <div id="the-room" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-room" className={`editorial-reveal ${shared.chapterSection}`}>
         <StakeholderGallery
           intelligence={intelligence}
           linkedPeople={detail.linkedPeople}
@@ -632,12 +463,12 @@ export default function ProjectDetailEditorial() {
       </div>
 
       {/* Chapter 6: The Record */}
-      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
         <UnifiedTimeline data={detail} />
       </div>
 
       {/* Chapter 7: The Work (I351) */}
-      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-work" className={`editorial-reveal ${shared.chapterSection}`}>
         <TheWork
           data={detail}
           addingAction={proj.addingAction}
@@ -695,7 +526,7 @@ export default function ProjectDetailEditorial() {
               Create a new sub-project under {detail.name}.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+          <div className={shared.dialogForm}>
             <Input
               value={proj.childName}
               onChange={(e) => proj.setChildName(e.target.value)}
@@ -706,18 +537,18 @@ export default function ProjectDetailEditorial() {
               onChange={(e) => proj.setChildDescription(e.target.value)}
               placeholder="Description (optional)"
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+            <div className={shared.dialogActions}>
               <Button
                 variant="ghost"
                 onClick={() => proj.setCreateChildOpen(false)}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={shared.dialogButton}
               >
                 Cancel
               </Button>
               <Button
                 onClick={proj.handleCreateChild}
                 disabled={proj.creatingChild || !proj.childName.trim()}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={shared.dialogButton}
               >
                 {proj.creatingChild ? "Creating..." : "Create"}
               </Button>
