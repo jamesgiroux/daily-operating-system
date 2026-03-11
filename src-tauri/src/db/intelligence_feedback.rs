@@ -2,6 +2,20 @@
 
 use super::ActionDb;
 
+/// A row from the `intelligence_feedback` table.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackRow {
+    pub id: String,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub field: String,
+    pub feedback_type: String,
+    pub previous_value: Option<String>,
+    pub context: Option<String>,
+    pub created_at: String,
+}
+
 impl ActionDb {
     /// Insert an intelligence feedback record.
     #[allow(clippy::too_many_arguments)]
@@ -32,5 +46,39 @@ impl ActionDb {
             )
             .map_err(|e| format!("Insert intelligence feedback: {e}"))?;
         Ok(())
+    }
+
+    /// Get all feedback for an entity, newest first.
+    pub fn get_entity_feedback(
+        &self,
+        entity_id: &str,
+        entity_type: &str,
+    ) -> Result<Vec<FeedbackRow>, String> {
+        let conn = self.conn_ref();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, entity_id, entity_type, field, feedback_type, \
+                 previous_value, context, created_at \
+                 FROM intelligence_feedback \
+                 WHERE entity_id = ?1 AND entity_type = ?2 \
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("Prepare get_entity_feedback: {e}"))?;
+        let rows = stmt
+            .query_map(rusqlite::params![entity_id, entity_type], |row| {
+                Ok(FeedbackRow {
+                    id: row.get(0)?,
+                    entity_id: row.get(1)?,
+                    entity_type: row.get(2)?,
+                    field: row.get(3)?,
+                    feedback_type: row.get(4)?,
+                    previous_value: row.get(5)?,
+                    context: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Query get_entity_feedback: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Collect get_entity_feedback: {e}"))
     }
 }

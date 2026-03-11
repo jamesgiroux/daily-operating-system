@@ -19,6 +19,8 @@ interface WatchListProps {
   bottomSection?: React.ReactNode;
   /** When provided, items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
+  /** I529: Optional feedback controls for chapter heading */
+  feedbackSlot?: React.ReactNode;
 }
 
 /* ── type-specific colors ── */
@@ -160,6 +162,7 @@ export function WatchList({
   chapterTitle = "Watch List",
   bottomSection,
   onUpdateField,
+  feedbackSlot,
 }: WatchListProps) {
   const [expandedRisks, setExpandedRisks] = useState(false);
   const [expandedWins, setExpandedWins] = useState(false);
@@ -199,7 +202,7 @@ export function WatchList({
         }}
       >
         <div style={{ maxWidth: 820, margin: "0 auto", padding: "80px 48px" }}>
-          <ChapterHeading title={chapterTitle} />
+          <ChapterHeading title={chapterTitle} feedbackSlot={feedbackSlot} />
 
           {visibleRisks.length > 0 && (
             <div style={{ marginBottom: 48 }}>

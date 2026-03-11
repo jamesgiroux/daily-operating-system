@@ -54,6 +54,8 @@ import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 
 /* ── Vitals assembly (moved from old account/VitalsStrip) ── */
 
@@ -298,6 +300,9 @@ export default function AccountDetailEditorial() {
 
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
+
+  // I529: Intelligence quality feedback
+  const feedback = useIntelligenceFeedback(accountId, "account");
 
   // Context entries — must be before early returns (React hooks rule)
   const entityCtx = useEntityContextEntries("account", accountId ?? null);
@@ -799,7 +804,16 @@ export default function AccountDetailEditorial() {
 
       {/* Chapter 2: State of Play */}
       <div id="state-of-play" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <StateOfPlay intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
+        <StateOfPlay
+          intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
+          feedbackSlot={
+            <IntelligenceFeedback
+              value={feedback.getFeedback("state_of_play")}
+              onFeedback={(type) => feedback.submitFeedback("state_of_play", type)}
+            />
+          }
+        />
       </div>
 
       {/* Chapter 3: The Room */}
@@ -819,6 +833,12 @@ export default function AccountDetailEditorial() {
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
+          feedbackSlot={
+            <IntelligenceFeedback
+              value={feedback.getFeedback("watch_list")}
+              onFeedback={(type) => feedback.submitFeedback("watch_list", type)}
+            />
+          }
         />
       </div>
 
