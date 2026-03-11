@@ -7,6 +7,7 @@
  * I261: List truncation (5 per section) + empty section collapse.
  */
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type { EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { StateBlock } from "@/components/editorial/StateBlock";
@@ -19,6 +20,8 @@ interface StateOfPlayProps {
   chapterTitle?: string;
   /** When provided, items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
+  /** I529: Optional feedback controls for chapter heading */
+  feedbackSlot?: ReactNode;
 }
 
 export function StateOfPlay({
@@ -26,6 +29,7 @@ export function StateOfPlay({
   sectionId = "state-of-play",
   chapterTitle = "State of Play",
   onUpdateField,
+  feedbackSlot,
 }: StateOfPlayProps) {
   const working = intelligence?.currentState?.working ?? [];
   const struggling = intelligence?.currentState?.notWorking ?? [];
@@ -63,7 +67,7 @@ export function StateOfPlay({
 
   return (
     <section id={sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading title={chapterTitle} />
+      <ChapterHeading title={chapterTitle} feedbackSlot={feedbackSlot} />
 
       <StateBlock
         label="What's Working"

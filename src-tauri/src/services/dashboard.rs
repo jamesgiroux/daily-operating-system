@@ -4,7 +4,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::json_loader::{load_directive, DataFreshness};
+use chrono::Datelike;
+
+use crate::json_loader::DataFreshness;
 use crate::parser::count_inbox;
 use crate::state::AppState;
 use crate::types::{
@@ -414,7 +416,6 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         };
 
     let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
 
     // Build meetings from SQLite (DB-first, I513)
     let live_events = state
@@ -988,10 +989,28 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         Err(_) => DataFreshness::Unknown,
     };
 
-    // Load replies_needed from directive (I355).
-    // I448: Directive narrative is baked into the file — build dynamically from real data.
-    let replies_needed = load_directive(&today_dir)
-        .map(|d| d.emails.replies_needed)
+    // I513: Build replies_needed from DB instead of directive file.
+    let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
+        .db_read(|db| {
+            let now = chrono::Utc::now();
+            Ok(db
+                .get_threads_awaiting_reply()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(thread_id, subject, from, date)| {
+                    let wait_duration =
+                        crate::prepare::orchestrate::compute_wait_duration_public(&date, &now);
+                    crate::json_loader::DirectiveReplyNeeded {
+                        thread_id,
+                        subject,
+                        from,
+                        date: Some(date),
+                        wait_duration: Some(wait_duration),
+                    }
+                })
+                .collect())
+        })
+        .await
         .unwrap_or_default();
 
     let email_narrative: Option<String> = {
@@ -1096,59 +1115,152 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     }
 }
 
-/// Get week overview data from workspace _today/data/ JSON files.
-pub fn get_week_data(state: &AppState) -> WeekResult {
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return WeekResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
+/// Get week overview data from DB (I513: no JSON file reads).
+pub fn get_week_data(_state: &AppState) -> WeekResult {
+    let started = std::time::Instant::now();
+
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
             return WeekResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
+                message: format!("Failed to open DB: {}", e),
             }
         }
     };
 
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
+    // Compute Monday..Sunday of current week
+    let today = chrono::Local::now().date_naive();
+    let weekday = today.weekday().num_days_from_monday(); // Mon=0 .. Sun=6
+    let monday = today - chrono::Duration::days(weekday as i64);
+    let next_monday = monday + chrono::Duration::days(7);
 
-    let started = std::time::Instant::now();
+    let week_number = format!("W{:02}", today.iso_week().week());
+    let friday = monday + chrono::Duration::days(4);
+    let date_range = format!(
+        "{} – {}",
+        monday.format("%b %d"),
+        friday.format("%b %d, %Y")
+    );
 
-    let mut week = match crate::json_loader::load_week_json(&today_dir) {
-        Ok(w) => w,
-        Err(e) => {
-            return WeekResult::NotFound {
-                message: format!("No week data: {}", e),
-            }
-        }
+    // Query all meetings Mon–Sun
+    let meetings_raw = db
+        .get_meetings_in_range(&monday.to_string(), &next_monday.to_string())
+        .unwrap_or_default();
+
+    // Group by day
+    static DAY_NAMES: [&str; 7] = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+    let mut days = Vec::new();
+    for i in 0..7 {
+        let day_date = monday + chrono::Duration::days(i);
+        let day_str = day_date.to_string();
+        let day_meetings: Vec<crate::types::WeekMeeting> = meetings_raw
+            .iter()
+            .filter(|(_, _, _, start, _, _)| start.starts_with(&day_str))
+            .filter_map(|(id, title, mtype, start, _, has_prep)| {
+                // Skip personal meetings
+                if mtype == "personal" {
+                    return None;
+                }
+                let time = chrono::NaiveDateTime::parse_from_str(start, "%Y-%m-%dT%H:%M:%S")
+                    .or_else(|_| chrono::NaiveDateTime::parse_from_str(start, "%Y-%m-%d %H:%M:%S"))
+                    .map(|dt| dt.format("%l:%M %p").to_string().trim().to_string())
+                    .unwrap_or_else(|_| {
+                        // Try parsing with timezone info
+                        chrono::DateTime::parse_from_rfc3339(start)
+                            .map(|dt| {
+                                dt.with_timezone(&chrono::Local)
+                                    .format("%l:%M %p")
+                                    .to_string()
+                                    .trim()
+                                    .to_string()
+                            })
+                            .unwrap_or_default()
+                    });
+                let meeting_type = match mtype.as_str() {
+                    "customer" => MeetingType::Customer,
+                    "qbr" => MeetingType::Qbr,
+                    "training" => MeetingType::Training,
+                    "team_sync" => MeetingType::TeamSync,
+                    "one_on_one" => MeetingType::OneOnOne,
+                    "partnership" => MeetingType::Partnership,
+                    "all_hands" => MeetingType::AllHands,
+                    "external" => MeetingType::External,
+                    "personal" => MeetingType::Personal,
+                    _ => MeetingType::Internal,
+                };
+                let prep_status = if *has_prep {
+                    crate::types::PrepStatus::PrepReady
+                } else {
+                    crate::types::PrepStatus::PrepNeeded
+                };
+                Some(crate::types::WeekMeeting {
+                    time,
+                    title: title.clone(),
+                    meeting_id: Some(id.clone()),
+                    meeting_type,
+                    prep_status,
+                    linked_entities: None,
+                })
+            })
+            .collect();
+        days.push(crate::types::WeekDay {
+            date: day_str,
+            day_name: DAY_NAMES[i as usize].to_string(),
+            meetings: day_meetings,
+        });
+    }
+
+    // Action summary from DB
+    let action_summary = db.get_pending_action_counts().ok().map(
+        |(total, _p1, _p2, overdue)| crate::types::WeekActionSummary {
+            overdue_count: overdue as usize,
+            due_this_week: total as usize,
+            critical_items: Vec::new(),
+            overdue: None,
+            due_this_week_items: None,
+        },
+    );
+
+    let mut week = WeekOverview {
+        week_number,
+        date_range,
+        days,
+        action_summary,
+        hygiene_alerts: None,
+        focus_areas: None,
+        available_time_blocks: None,
+        week_narrative: None,
+        top_priority: None,
+        readiness_checks: None,
+        day_shapes: None,
     };
 
     // Enrich dayShapes with live per-day action priorities (I279)
     if let Some(ref mut shapes) = week.day_shapes {
-        if let Ok(db) = crate::db::ActionDb::open() {
-            if let Ok(candidates) = db.get_focus_candidate_actions(7) {
-                for shape in shapes.iter_mut() {
-                    let available_minutes: u32 = shape
-                        .available_blocks
-                        .iter()
-                        .map(|b| b.duration_minutes)
-                        .sum();
+        if let Ok(candidates) = db.get_focus_candidate_actions(7) {
+            for shape in shapes.iter_mut() {
+                let available_minutes: u32 = shape
+                    .available_blocks
+                    .iter()
+                    .map(|b| b.duration_minutes)
+                    .sum();
 
-                    let (prioritized, _top_three, implications) =
-                        crate::focus_prioritization::prioritize_actions(
-                            candidates.clone(),
-                            available_minutes,
-                        );
+                let (prioritized, _top_three, implications) =
+                    crate::focus_prioritization::prioritize_actions(
+                        candidates.clone(),
+                        available_minutes,
+                    );
 
-                    shape.prioritized_actions = Some(prioritized);
-                    shape.focus_implications = Some(implications);
-                }
+                shape.prioritized_actions = Some(prioritized);
+                shape.focus_implications = Some(implications);
             }
         }
     }

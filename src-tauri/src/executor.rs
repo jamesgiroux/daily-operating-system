@@ -989,13 +989,7 @@ impl Executor {
         let _ = self.app_handle.emit("operation-delivered", "actions");
         log::info!("Today pipeline: actions delivered");
 
-        // Sync actions to SQLite (same as old post-processing)
-        if let Some(ref db) = own_db {
-            match crate::workflow::today::sync_actions_to_db(workspace, db) {
-                Ok(count) => log::info!("Today pipeline: synced {} actions to DB", count),
-                Err(e) => log::warn!("Today pipeline: action sync failed (non-fatal): {}", e),
-            }
-        }
+        // I513: sync_actions_to_db removed — DB is the source of truth for actions.
 
         // Deliver preps (feature-gated I39)
         let prep_enabled = self

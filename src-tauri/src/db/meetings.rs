@@ -580,6 +580,36 @@ impl ActionDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
+    /// Get meetings in a date range [start, end) as lightweight tuples.
+    ///
+    /// Returns (id, title, meeting_type, start_time, end_time, prep_frozen_json IS NOT NULL).
+    /// Used by I513 to build WeekOverview from DB instead of JSON files.
+    pub fn get_meetings_in_range(
+        &self,
+        start: &str,
+        end: &str,
+    ) -> Result<Vec<(String, String, String, String, Option<String>, bool)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    (mp.prep_frozen_json IS NOT NULL) AS has_prep
+             FROM meetings m
+             LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+             WHERE m.start_time >= ?1 AND m.start_time < ?2
+             ORDER BY m.start_time ASC",
+        )?;
+        let rows = stmt.query_map(params![start, end], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, bool>(5)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
     // =========================================================================
     // Meetings
     // =========================================================================
