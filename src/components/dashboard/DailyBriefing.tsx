@@ -30,6 +30,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -182,7 +183,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
         }
       } else {
-        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} prepped`, color: "sage" });
+        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} ready`, color: "sage" });
       }
     }
     if (readiness.overdueCount > 0) {
@@ -201,7 +202,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         onClick={onRunBriefing}
         loading={!!isRunning}
         loadingLabel={phaseLabel ?? "Running\u2026"}
-        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and intelligence"}
+        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and context"}
       />
     );
   }, [onRunBriefing, isRunning, workflowStatus]);
@@ -339,28 +340,55 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     params={{ meetingId: m.id }}
                     style={{ textDecoration: "none", color: "inherit" }}
                   >
-                    &#9888; {m.title} at {m.time} — no prep yet
+                    &#9888; {m.title} at {m.time} — no briefing yet
                   </Link>
                 </div>
               ))}
 
               <div className={s.scheduleRows}>
-                {scheduleMeetings.map((meeting) => (
-                  <BriefingMeetingCard
-                    key={meeting.id}
-                    meeting={meeting}
-                    now={now}
-                    currentMeeting={currentMeeting}
-                    meetingActions={getActionsForMeeting(meeting.id)}
-                    onComplete={handleComplete}
-                    completedIds={completedIds}
-                    onEntitiesChanged={onRefresh}
-                    capturedActionCount={getCapturedActionCount(meeting.id)}
-                    proposedActionCount={getProposedActionCount(meeting.id)}
-                    isUpNext={upNext?.id === meeting.id}
-                    userDomain={data.userDomains?.[0]}
-                  />
-                ))}
+                {scheduleMeetings.map((meeting) => {
+                  // I502: Find health data for first linked account
+                  const healthMap = data.entityHealthMap;
+                  const linkedAccountHealth = healthMap && meeting.linkedEntities
+                    ? meeting.linkedEntities
+                        .filter((e) => e.entityType === "account" && healthMap[e.id])
+                        .map((e) => ({ entity: e, health: healthMap[e.id] }))[0]
+                    : undefined;
+
+                  return (
+                    <div key={meeting.id}>
+                      <BriefingMeetingCard
+                        meeting={meeting}
+                        now={now}
+                        currentMeeting={currentMeeting}
+                        meetingActions={getActionsForMeeting(meeting.id)}
+                        onComplete={handleComplete}
+                        completedIds={completedIds}
+                        onEntitiesChanged={onRefresh}
+                        capturedActionCount={getCapturedActionCount(meeting.id)}
+                        proposedActionCount={getProposedActionCount(meeting.id)}
+                        isUpNext={upNext?.id === meeting.id}
+                        userDomain={data.userDomains?.[0]}
+                      />
+                      {linkedAccountHealth && (
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingLeft: 52,
+                          paddingBottom: 4,
+                        }}>
+                          <HealthBadge
+                            score={linkedAccountHealth.health.score}
+                            band={linkedAccountHealth.health.band}
+                            trend={linkedAccountHealth.health.trend}
+                            size="compact"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

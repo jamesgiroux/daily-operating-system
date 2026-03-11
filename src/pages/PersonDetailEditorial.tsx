@@ -51,6 +51,11 @@ import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import shared from "@/styles/entity-detail.module.css";
+import styles from "./PersonDetailEditorial.module.css";
+
+// Suppress unused import warning — styles reserved for future person-specific classes
+void styles;
 
 /* ── Vitals assembly ── */
 
@@ -178,7 +183,7 @@ export default function PersonDetailEditorial() {
   return (
     <>
       {/* Chapter 1: The Profile (Hero) */}
-      <section id="headline" style={{ scrollMarginTop: 60 }}>
+      <section id="headline" className={shared.chapterSection}>
         <PersonHero
           detail={detail}
           intelligence={intelligence}
@@ -222,7 +227,7 @@ export default function PersonDetailEditorial() {
         </div>
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.person.length > 0 && (
-          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
             <PresetFieldsEditor
               fields={preset.metadata.person}
               values={metadataValues}
@@ -243,12 +248,12 @@ export default function PersonDetailEditorial() {
       </section>
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
-      <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className={`editorial-reveal ${shared.chapterSection}`}>
         <PersonInsightChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: Their Orbit */}
-      <div id="their-orbit" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="their-orbit" className={`editorial-reveal ${shared.chapterSection}`}>
         <PersonNetwork
           entities={detail.entities}
           onLink={person.handleLinkEntity}
@@ -258,7 +263,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 4: Their Network */}
-      <div id="their-network" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="their-network" className={`editorial-reveal ${shared.chapterSection}`}>
         <PersonRelationships
           personId={personId ?? ""}
           network={intelligence?.network}
@@ -270,7 +275,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Landscape */}
-      <div id="the-landscape" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-landscape" className={`editorial-reveal ${shared.chapterSection}`}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
@@ -280,7 +285,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Record */}
-      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
         <UnifiedTimeline data={{
           recentMeetings: detail.recentMeetings ?? [],
           recentCaptures: detail.recentCaptures,
@@ -290,7 +295,7 @@ export default function PersonDetailEditorial() {
 
       {/* Chapter 6: The Work (suppressed when empty per I351) */}
       {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0) && (
-        <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+        <div id="the-work" className={`editorial-reveal ${shared.chapterSection}`}>
           <TheWork
             data={detail}
             addingAction={person.addingAction}
@@ -345,7 +350,7 @@ export default function PersonDetailEditorial() {
             autoFocus
           />
           {person.mergeSearchResults.length > 0 && (
-            <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+            <div className={shared.mergeSearchResults}>
               {person.mergeSearchResults.map((p) => (
                 <button
                   key={p.id}
@@ -354,43 +359,16 @@ export default function PersonDetailEditorial() {
                     person.setMergeDialogOpen(false);
                     person.setMergeConfirmOpen(true);
                   }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--space-sm)",
-                    padding: "var(--space-sm) var(--space-md)",
-                    borderRadius: 6,
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    width: "100%",
-                  }}
-                  className="hover:bg-muted"
+                  className={`${shared.mergeSearchButton} hover:bg-muted`}
                 >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: "50%",
-                      background: "var(--color-garden-larkspur-15)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: "var(--color-garden-larkspur)",
-                      flexShrink: 0,
-                    }}
-                  >
+                  <div className={shared.mergeAvatar}>
                     {p.name.charAt(0).toUpperCase()}
                   </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div className={shared.mergePersonInfo}>
+                    <div className={shared.mergePersonName}>
                       {p.name}
                     </div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div className={shared.mergePersonEmail}>
                       {p.email}
                       {p.organization && ` \u00B7 ${p.organization}`}
                     </div>
@@ -400,7 +378,7 @@ export default function PersonDetailEditorial() {
             </div>
           )}
           {person.mergeSearchQuery.length >= 2 && person.mergeSearchResults.length === 0 && (
-            <p style={{ textAlign: "center", padding: "16px 0", fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-tertiary)" }}>
+            <p className={shared.mergeEmptyState}>
               No matching people found
             </p>
           )}

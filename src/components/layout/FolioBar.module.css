@@ -183,7 +183,7 @@
 }
 
 .folioSearch:hover {
-  border-color: rgba(30, 37, 48, 0.25);
+  border-color: var(--color-desk-charcoal-25);
 }
 
 .folioSearch:active {

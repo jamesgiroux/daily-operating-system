@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import styles from "../onboarding.module.css";
 
 interface ColleagueRow {
   _key: number;
@@ -26,46 +27,6 @@ interface AboutYouProps {
   onFormChange: (data: AboutYouFormData) => void;
   onNext: () => void;
 }
-
-/** Editorial form label */
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <label
-      style={{
-        fontFamily: "var(--font-sans)",
-        fontSize: 13,
-        fontWeight: 500,
-        color: "var(--color-text-secondary)",
-        display: "block",
-        marginBottom: 6,
-      }}
-    >
-      {children}
-    </label>
-  );
-}
-
-/** Editorial helper text */
-function HelperText({ children }: { children: React.ReactNode }) {
-  return (
-    <p
-      style={{
-        fontFamily: "var(--font-sans)",
-        fontSize: 12,
-        color: "var(--color-text-tertiary)",
-        margin: "4px 0 0",
-      }}
-    >
-      {children}
-    </p>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  background: "var(--color-paper-warm-white)",
-  border: "1px solid var(--color-desk-charcoal)",
-  borderRadius: 4,
-};
 
 export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
   const { email } = useGoogleAuth();
@@ -179,52 +140,52 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="About you"
         epigraph="A little context helps DailyOS tailor your briefings. Everything here is optional."
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className={`${styles.flexCol} ${styles.gap20}`}>
         {/* Name */}
         <div>
-          <FieldLabel>Your name</FieldLabel>
+          <label className={styles.fieldLabel}>Your name</label>
           <Input
             type="text"
             placeholder="e.g. Alex Chen"
             value={name}
             onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
-            style={inputStyle}
+            className={styles.editorialInput}
           />
         </div>
 
         {/* Company */}
         <div>
-          <FieldLabel>Company</FieldLabel>
+          <label className={styles.fieldLabel}>Company</label>
           <Input
             type="text"
             placeholder="e.g. Acme Inc."
             value={company}
             onChange={(e) => onFormChange({ ...formData, company: e.target.value })}
-            style={inputStyle}
+            className={styles.editorialInput}
           />
         </div>
 
         {/* Title */}
         <div>
-          <FieldLabel>Title</FieldLabel>
+          <label className={styles.fieldLabel}>Title</label>
           <Input
             type="text"
             placeholder="e.g. Customer Success Manager"
             value={title}
             onChange={(e) => onFormChange({ ...formData, title: e.target.value })}
-            style={inputStyle}
+            className={styles.editorialInput}
           />
         </div>
 
         {/* Domains */}
         <div>
-          <FieldLabel>Company domains</FieldLabel>
+          <label className={styles.fieldLabel}>Company domains</label>
           <div className="flex gap-2">
             <Input
               type="text"
@@ -232,7 +193,7 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
               value={domainInput}
               onChange={(e) => setDomainInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addDomain()}
-              style={inputStyle}
+              className={styles.editorialInput}
             />
             <Button
               variant="outline"
@@ -244,33 +205,13 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
             </Button>
           </div>
           {domains.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            <div className={`${styles.flexWrap} ${styles.mt8}`}>
               {domains.map((d) => (
-                <span
-                  key={d}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    border: "1px solid var(--color-rule-heavy)",
-                    borderRadius: 4,
-                    padding: "4px 10px",
-                    color: "var(--color-text-primary)",
-                  }}
-                >
+                <span key={d} className={styles.domainChip}>
                   {d}
                   <button
                     onClick={() => removeDomain(d)}
-                    style={{
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      lineHeight: 1,
-                    }}
+                    className={styles.ghostButton}
                   >
                     <X size={12} />
                   </button>
@@ -278,85 +219,52 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
               ))}
             </div>
           )}
-          <HelperText>
+          <p className={styles.helperText}>
             Add every domain your company uses for email (e.g. acme.com and acme.io).
             Helps DailyOS tell internal meetings from external ones.
-          </HelperText>
+          </p>
         </div>
 
         {/* Focus / priorities */}
         <div>
-          <FieldLabel>Current priorities</FieldLabel>
+          <label className={styles.fieldLabel}>Current priorities</label>
           <textarea
-            style={{
-              width: "100%",
-              minHeight: 80,
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              background: "var(--color-paper-warm-white)",
-              border: "1px solid var(--color-desk-charcoal)",
-              borderRadius: 4,
-              padding: "8px 12px",
-              color: "var(--color-text-primary)",
-              resize: "vertical",
-              outline: "none",
-            }}
+            className={styles.editorialTextarea}
             placeholder="e.g. Driving renewals for Q2, onboarding three new accounts"
             value={focus}
             onChange={(e) => onFormChange({ ...formData, focus: e.target.value })}
           />
-          <HelperText>Share what you're focused on. This helps AI tailor your briefings.</HelperText>
+          <p className={styles.helperText}>Share what you're focused on. This helps AI tailor your briefings.</p>
         </div>
 
         {/* Teammates — collapsible section */}
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-light)",
-            paddingTop: 20,
-          }}
-        >
+        <div className={styles.ruleSection}>
           <button
             onClick={() => {
               setShowTeammates(!showTeammates);
               if (!showTeammates && colleagues.length === 0) addColleague();
             }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
+            className={styles.toggleButton}
           >
-            <FieldLabel>Closest teammates</FieldLabel>
+            <label className={styles.fieldLabel}>Closest teammates</label>
             {showTeammates ? (
-              <ChevronUp size={14} style={{ color: "var(--color-text-tertiary)" }} />
+              <ChevronUp size={14} className={styles.tertiaryText} />
             ) : (
-              <ChevronDown size={14} style={{ color: "var(--color-text-tertiary)" }} />
+              <ChevronDown size={14} className={styles.tertiaryText} />
             )}
           </button>
-          <HelperText>
+          <p className={styles.helperText}>
             People you work with daily. DailyOS uses this to distinguish internal from external attendees.
-          </HelperText>
+          </p>
 
           {showTeammates && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+            <div className={`${styles.flexCol} ${styles.gap12} ${styles.mt12}`}>
               {filteredSuggestions.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    color: "var(--color-text-tertiary)",
-                    marginBottom: 8,
-                  }}>
+                <div className={styles.mb12}>
+                  <p className={styles.sectionLabel}>
                     Suggested from Gmail
                   </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <div className={styles.flexWrap}>
                     {filteredSuggestions.map((s) => (
                       <button
                         key={s.email}
@@ -367,19 +275,7 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
                             colleagues: [...formData.colleagues, { _key: key, name: s.name, email: s.email }],
                           });
                         }}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          border: "1px solid var(--color-spice-turmeric)",
-                          borderRadius: 4,
-                          padding: "4px 10px",
-                          background: "none",
-                          cursor: "pointer",
-                          color: "var(--color-text-primary)",
-                        }}
+                        className={styles.suggestionChip}
                       >
                         <Plus size={12} />
                         {s.name || s.email}
@@ -391,34 +287,23 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
               {colleagues.map((row, idx) => (
                 <div
                   key={row._key}
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                  }}
+                  className={`${styles.flexRow} ${styles.gap8}`}
                 >
                   <Input
                     placeholder="Name"
                     value={row.name}
                     onChange={(e) => updateColleague(idx, { name: e.target.value })}
-                    style={inputStyle}
+                    className={styles.editorialInput}
                   />
                   <Input
                     placeholder="Email"
                     value={row.email}
                     onChange={(e) => updateColleague(idx, { email: e.target.value })}
-                    style={inputStyle}
+                    className={styles.editorialInput}
                   />
                   <button
                     onClick={() => removeColleague(idx)}
-                    style={{
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 4,
-                      flexShrink: 0,
-                    }}
+                    className={styles.removeButton}
                   >
                     <X size={14} />
                   </button>
@@ -428,7 +313,7 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
                 variant="outline"
                 size="sm"
                 onClick={addColleague}
-                style={{ alignSelf: "flex-start" }}
+                className={styles.selfStart}
               >
                 <Plus className="mr-1 size-3" />
                 Add another

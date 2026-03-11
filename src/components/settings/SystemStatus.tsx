@@ -421,7 +421,7 @@ function HygieneSection() {
   if (loading) {
     return (
       <div>
-        <p style={styles.subsectionLabel}>Intelligence Hygiene</p>
+        <p style={styles.subsectionLabel}>Data Quality</p>
         <div
           style={{
             height: 24,
@@ -447,7 +447,7 @@ function HygieneSection() {
   if (!status) {
     return (
       <div>
-        <p style={styles.subsectionLabel}>Intelligence Hygiene</p>
+        <p style={styles.subsectionLabel}>Data Quality</p>
         <p style={styles.description}>
           No scan completed yet -- runs automatically after startup.
         </p>
@@ -468,7 +468,7 @@ function HygieneSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Intelligence Hygiene</p>
+      <p style={styles.subsectionLabel}>Data Quality</p>
 
       {/* Narrative prose (when available) */}
       {narrative && (

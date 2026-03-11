@@ -176,7 +176,7 @@ export function ProposedActionRow({
         </button>
         <button
           onClick={onReject}
-          title={compact ? "Dismiss" : "Reject"}
+          title="Dismiss"
           style={{
             width: btnSize,
             height: btnSize,

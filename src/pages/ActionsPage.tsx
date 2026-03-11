@@ -15,7 +15,11 @@ import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
 import { DatePicker } from "@/components/ui/date-picker";
+import s from "./ActionsPage.module.css";
 
 // ─── Action Group Types ──────────────────────────────────────────────────────
 
@@ -150,6 +154,7 @@ const statusTabs: StatusTab[] = ["proposed", "pending", "completed"];
 const statusTabLabels: Record<StatusTab, string> = { proposed: "Suggested", pending: "Pending", completed: "Completed" };
 const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
 
+
 export default function ActionsPage() {
   const { personality } = usePersonality();
   const { search: initialSearch } = useSearch({ strict: false });
@@ -219,19 +224,7 @@ export default function ActionsPage() {
       folioActions: (
         <button
           onClick={() => setShowCreate(true)}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: "var(--color-spice-terracotta)",
-            background: "none",
-            border: "1px solid var(--color-spice-terracotta)",
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: "pointer",
-          }}
+          className={s.folioAddButton}
         >
           + Add
         </button>
@@ -243,149 +236,53 @@ export default function ActionsPage() {
 
   // Loading state
   if (loading) {
-    return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
-        {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            style={{
-              height: 60,
-              background: "var(--color-rule-light)",
-              borderRadius: 8,
-              marginBottom: "var(--space-sm)",
-              animation: "pulse 1.5s ease-in-out infinite",
-            }}
-          />
-        ))}
-      </div>
-    );
+    return <EditorialLoading count={4} />;
   }
 
   // Error state
   if (error) {
-    return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80, textAlign: "center" }}>
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-spice-terracotta)" }}>
-          {error}
-        </p>
-        <button
-          onClick={refresh}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "1px solid var(--color-rule-heavy)",
-            borderRadius: 4,
-            padding: "4px 12px",
-            cursor: "pointer",
-            marginTop: 12,
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    );
+    return <EditorialError message={error} onRetry={refresh} />;
   }
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={s.pageContainer}>
       {/* ═══ PAGE HEADER ═══ */}
-      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h1
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 36,
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--color-text-primary)",
-              margin: 0,
-            }}
-          >
-            Actions
-          </h1>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              color: "var(--color-text-tertiary)",
-            }}
-          >
+      <section className={s.headerSection}>
+        <div className={s.headerRow}>
+          <h1 className={s.pageTitle}>Actions</h1>
+          <span className={s.itemCount}>
             {actions.length} item{actions.length !== 1 ? "s" : ""}
           </span>
         </div>
 
         {/* Section rule */}
-        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
+        <div className={s.sectionRule} />
 
         {/* Status filter toggles */}
-        <div style={{ display: "flex", gap: "var(--space-lg)", marginBottom: "var(--space-sm)" }}>
+        <div className={s.tabRow}>
           {statusTabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setStatusFilter(tab)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: statusFilter === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                textDecoration: statusFilter === tab ? "underline" : "none",
-                textUnderlineOffset: "4px",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                transition: "color 0.15s ease",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
+              className={`${s.tabButton} ${statusFilter === tab ? s.tabButtonActive : ""}`}
             >
-              {statusTabLabels[tab]}
-              {tab === "proposed" && proposedCount > 0 && (
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: "var(--color-spice-turmeric)",
-                    background: "var(--color-spice-saffron-12)",
-                    borderRadius: 8,
-                    padding: "1px 6px",
-                    lineHeight: "16px",
-                  }}
-                >
-                  {proposedCount}
-                </span>
-              )}
+              <span className={s.statusTabInner}>
+                {statusTabLabels[tab]}
+                {tab === "proposed" && proposedCount > 0 && (
+                  <span className={s.proposedBadge}>{proposedCount}</span>
+                )}
+              </span>
             </button>
           ))}
         </div>
 
         {/* Priority filter toggles */}
-        <div style={{ display: "flex", gap: "var(--space-lg)", marginBottom: "var(--space-md)" }}>
+        <div className={s.tabRowPriority}>
           {priorityTabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setPriorityFilter(tab)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: priorityFilter === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                textDecoration: priorityFilter === tab ? "underline" : "none",
-                textUnderlineOffset: "4px",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                transition: "color 0.15s ease",
-              }}
+              className={`${s.tabButton} ${priorityFilter === tab ? s.tabButtonActive : ""}`}
             >
               {tab}
             </button>
@@ -398,17 +295,7 @@ export default function ActionsPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="⌘  Search actions..."
-          style={{
-            width: "100%",
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            color: "var(--color-text-primary)",
-            background: "none",
-            border: "none",
-            borderBottom: "1px solid var(--color-rule-light)",
-            padding: "8px 0",
-            outline: "none",
-          }}
+          className={s.searchInput}
         />
       </section>
 
@@ -433,7 +320,7 @@ export default function ActionsPage() {
               benefit="Action items, captured without lifting a finger."
             />
           ) : (
-            <div style={{ display: "flex", flexDirection: "column" }}>
+            <div className={s.actionColumn}>
               {proposedActions.map((action, i) => (
                 <SharedProposedActionRow
                   key={action.id}
@@ -465,7 +352,7 @@ export default function ActionsPage() {
           // Grouped view for pending tab
           <PendingGroupedView actions={actions} onToggle={toggleAction} />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
+          <div className={s.actionColumn}>
             {actions.map((action, i) => (
               <SharedActionRow
                 key={action.id}
@@ -498,12 +385,6 @@ function PendingGroupedView({
 }) {
   const groups = useMemo(() => groupByMeeting(actions), [actions]);
 
-  const timeBandColors: Record<string, string> = {
-    Overdue: "var(--color-spice-terracotta)",
-    "This Week": "var(--color-spice-turmeric)",
-    Later: "var(--color-text-tertiary)",
-  };
-
   // Track when we transition from meeting groups to time-band (Everything Else)
   const firstTimeBandIdx = groups.findIndex((g) => g.kind === "time-band");
   const hasTimeBands = firstTimeBandIdx !== -1;
@@ -515,43 +396,11 @@ function PendingGroupedView({
       {groups.map((group, idx) => (
         <div key={group.label}>
           {hasTimeBands && hasMeetingGroups && idx === firstTimeBandIdx && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 500,
-                letterSpacing: "0.10em",
-                textTransform: "uppercase",
-                color: "var(--color-text-tertiary)",
-                paddingBottom: 8,
-                borderBottom: "2px solid var(--color-rule-heavy)",
-                marginBottom: 16,
-                marginTop: 32,
-              }}
-            >
-              Everything Else
-            </div>
+            <ChapterHeading title="Everything Else" />
           )}
-          <div style={{ marginBottom: 32 }}>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: group.kind === "meeting"
-                  ? "var(--color-garden-larkspur)"
-                  : timeBandColors[group.label] ?? "var(--color-text-tertiary)",
-                paddingBottom: 8,
-                borderBottom: "1px solid var(--color-rule-light)",
-                marginBottom: 0,
-              }}
-            >
-              {group.label}
-              <span style={{ fontWeight: 400, opacity: 0.7, marginLeft: 8 }}>{group.actions.length}</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column" }}>
+          <div className={s.groupBlock}>
+            <ChapterHeading title={group.label} epigraph={`${group.actions.length} action${group.actions.length !== 1 ? "s" : ""}`} />
+            <div className={s.actionColumn}>
               {group.actions.map((action, i) => (
                 <SharedActionRow
                   key={action.id}
@@ -608,25 +457,13 @@ function ActionCreateForm({
     }
   }
 
+  const createBtnClass = `${s.createButton} ${!title.trim() ? s.createButtonDisabled : s.createButtonEnabled}`;
+
   return (
-    <div
-      style={{
-        borderBottom: "1px solid var(--color-rule-heavy)",
-        paddingBottom: 20,
-        marginBottom: 8,
-      }}
-    >
+    <div className={s.createForm}>
       {/* Title input */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-        <div
-          style={{
-            width: 20,
-            height: 20,
-            borderRadius: 10,
-            border: "2px solid var(--color-rule-heavy)",
-            flexShrink: 0,
-          }}
-        />
+      <div className={s.createTitleRow}>
+        <div className={s.createCheckCircle} />
         <input
           type="text"
           autoFocus
@@ -637,91 +474,43 @@ function ActionCreateForm({
             if (e.key === "Escape") onCancel();
           }}
           placeholder="What needs to be done?"
-          style={{
-            flex: 1,
-            fontFamily: "var(--font-serif)",
-            fontSize: 17,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            background: "none",
-            border: "none",
-            outline: "none",
-          }}
+          className={s.createTitleInput}
         />
       </div>
 
       {/* Details toggle */}
       {!showDetails ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 32 }}>
+        <div className={s.createActionsRow}>
           <button
             type="button"
             onClick={() => setShowDetails(true)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
+            className={s.detailsToggle}
           >
             + details
           </button>
-          <div style={{ flex: 1 }} />
+          <div className={s.spacer} />
           <button
             onClick={handleSubmit}
             disabled={!title.trim() || submitting}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              color: !title.trim() ? "var(--color-text-tertiary)" : "var(--color-spice-terracotta)",
-              background: "none",
-              border: "1px solid",
-              borderColor: !title.trim() ? "var(--color-rule-heavy)" : "var(--color-spice-terracotta)",
-              borderRadius: 4,
-              padding: "3px 12px",
-              cursor: !title.trim() ? "default" : "pointer",
-            }}
+            className={createBtnClass}
           >
             Create
           </button>
-          <button
-            onClick={onCancel}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
-          >
+          <button onClick={onCancel} className={s.cancelButton}>
             Cancel
           </button>
         </div>
       ) : (
-        <div style={{ paddingLeft: 32 }}>
+        <div className={s.createDetailsPanel}>
           <button
             type="button"
             onClick={() => setShowDetails(false)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              marginBottom: 12,
-            }}
+            className={s.detailsToggleMargin}
           >
             - hide details
           </button>
 
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div className={s.detailsFieldsRow}>
             <PriorityPicker value={priority} onChange={setPriority} />
             <DatePicker
               value={dueDate}
@@ -740,18 +529,7 @@ function ActionCreateForm({
             value={sourceLabel}
             onChange={(e) => setSourceLabel(e.target.value)}
             placeholder="Source (e.g., Slack, call with Jane)"
-            style={{
-              width: "100%",
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-text-primary)",
-              background: "none",
-              border: "none",
-              borderBottom: "1px solid var(--color-rule-light)",
-              padding: "6px 0",
-              outline: "none",
-              marginBottom: 8,
-            }}
+            className={s.formInput}
           />
 
           <textarea
@@ -759,52 +537,18 @@ function ActionCreateForm({
             onChange={(e) => setContext(e.target.value)}
             placeholder="Additional context..."
             rows={2}
-            style={{
-              width: "100%",
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-text-primary)",
-              background: "none",
-              border: "none",
-              borderBottom: "1px solid var(--color-rule-light)",
-              padding: "6px 0",
-              outline: "none",
-              resize: "none",
-              marginBottom: 12,
-            }}
+            className={s.formTextarea}
           />
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
+          <div className={s.createActionsEnd}>
             <button
               onClick={handleSubmit}
               disabled={!title.trim() || submitting}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                color: !title.trim() ? "var(--color-text-tertiary)" : "var(--color-spice-terracotta)",
-                background: "none",
-                border: "1px solid",
-                borderColor: !title.trim() ? "var(--color-rule-heavy)" : "var(--color-spice-terracotta)",
-                borderRadius: 4,
-                padding: "3px 12px",
-                cursor: !title.trim() ? "default" : "pointer",
-              }}
+              className={createBtnClass}
             >
               Create
             </button>
-            <button
-              onClick={onCancel}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
+            <button onClick={onCancel} className={s.cancelButton}>
               Cancel
             </button>
           </div>
