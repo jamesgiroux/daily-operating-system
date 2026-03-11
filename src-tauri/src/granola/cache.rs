@@ -84,6 +84,13 @@ struct GranolaPersonAttendee {
 }
 
 /// A parsed, validated Granola document ready for sync.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GranolaContentType {
+    Transcript,
+    Notes,
+}
+
+/// A parsed, validated Granola document ready for sync.
 #[derive(Debug, Clone)]
 pub struct GranolaDocument {
     pub id: String,
@@ -91,6 +98,7 @@ pub struct GranolaDocument {
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
     pub content: String,
+    pub content_type: GranolaContentType,
     pub google_calendar_event: Option<GoogleCalendarEvent>,
     pub attendee_emails: Vec<String>,
 }
@@ -139,8 +147,8 @@ pub fn read_cache(cache_path: &Path) -> Result<Vec<GranolaDocument>, String> {
             &cache_state.state.transcripts,
         );
 
-        let content = match content {
-            Some(c) if !c.trim().is_empty() => c,
+        let (content, content_type) = match content {
+            Some((text, kind)) if !text.trim().is_empty() => (text, kind),
             _ => continue,
         };
 
@@ -170,6 +178,7 @@ pub fn read_cache(cache_path: &Path) -> Result<Vec<GranolaDocument>, String> {
             created_at: doc.created_at.clone(),
             updated_at: doc.updated_at.clone(),
             content,
+            content_type,
             google_calendar_event: doc.google_calendar_event.clone(),
             attendee_emails,
         });
@@ -185,18 +194,18 @@ fn extract_content(
     doc_id: &str,
     notes_markdown: Option<&str>,
     transcripts: &HashMap<String, serde_json::Value>,
-) -> Option<String> {
+) -> Option<(String, GranolaContentType)> {
     // Check for raw transcript data (paid tier only)
     if let Some(transcript_data) = transcripts.get(doc_id) {
         if let Some(text) = extract_transcript_text(transcript_data) {
             if !text.trim().is_empty() {
-                return Some(text);
+                return Some((text, GranolaContentType::Transcript));
             }
         }
     }
 
     // Fall back to notes_markdown
-    notes_markdown.map(|s| s.to_string())
+    notes_markdown.map(|s| (s.to_string(), GranolaContentType::Notes))
 }
 
 /// Extract text from a transcript value.
@@ -252,14 +261,23 @@ mod tests {
         );
 
         let result = extract_content("doc1", Some("Notes markdown"), &transcripts);
-        assert_eq!(result, Some("Raw transcript text here".to_string()));
+        assert_eq!(
+            result,
+            Some((
+                "Raw transcript text here".to_string(),
+                GranolaContentType::Transcript,
+            ))
+        );
     }
 
     #[test]
     fn test_extract_content_falls_back_to_notes() {
         let transcripts = HashMap::new();
         let result = extract_content("doc1", Some("Notes markdown"), &transcripts);
-        assert_eq!(result, Some("Notes markdown".to_string()));
+        assert_eq!(
+            result,
+            Some(("Notes markdown".to_string(), GranolaContentType::Notes))
+        );
     }
 
     #[test]
@@ -350,6 +368,7 @@ mod tests {
         assert_eq!(docs[0].id, "doc-1");
         assert_eq!(docs[0].title, "Weekly Sync");
         assert!(docs[0].content.contains("Q1 goals"));
+        assert_eq!(docs[0].content_type, GranolaContentType::Notes);
         assert_eq!(docs[0].attendee_emails.len(), 2);
         assert!(docs[0].google_calendar_event.is_some());
         assert_eq!(
@@ -402,5 +421,6 @@ mod tests {
         assert_eq!(docs[0].title, "Team Standup");
         assert!(docs[0].content.contains("Good morning everyone."));
         assert!(docs[0].content.contains("Let's get started."));
+        assert_eq!(docs[0].content_type, GranolaContentType::Transcript);
     }
 }

@@ -2165,3 +2165,72 @@ export interface QuarterlyPriority {
   linkedEntityType: string | null;
   createdAt: string;
 }
+
+// =============================================================================
+// I427: Global Search
+// =============================================================================
+
+export interface GlobalSearchResult {
+  entityId: string;
+  entityType: "account" | "project" | "person" | "meeting" | "action";
+  name: string;
+  secondaryText: string;
+  route: string;
+  rank: number;
+}
+
+// =============================================================================
+// I428: Connectivity / Sync Freshness
+// =============================================================================
+
+export interface SyncFreshness {
+  source: string;
+  status: "green" | "amber" | "red" | "unknown";
+  lastSuccessAt: string | null;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  ageDescription: string;
+}
+
+// =============================================================================
+// I429: Data Export
+// =============================================================================
+
+export interface ExportReport {
+  path: string;
+  timestamp: string;
+  counts: ExportCounts;
+}
+
+export interface ExportCounts {
+  accounts: number;
+  people: number;
+  projects: number;
+  meetings: number;
+  actions: number;
+  signals: number;
+  intelligence: number;
+}
+
+// =============================================================================
+// I430: Privacy Controls
+// =============================================================================
+
+export interface DataSummary {
+  accounts: number;
+  people: number;
+  projects: number;
+  meetings: number;
+  actions: number;
+  insights: number;
+  signals: number;
+  emails: number;
+}
+
+export interface ClearReport {
+  assessmentsDeleted: number;
+  feedbackDeleted: number;
+  signalsDeleted: number;
+  summariesCleared: number;
+}
