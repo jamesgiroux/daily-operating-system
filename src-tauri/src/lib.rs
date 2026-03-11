@@ -14,6 +14,7 @@ mod calendar_merge;
 mod capture;
 pub mod clay;
 mod commands;
+mod connectivity;
 pub mod context_provider;
 pub mod db;
 mod db_backup;
@@ -23,6 +24,7 @@ mod devtools;
 pub mod embeddings;
 mod enrichment;
 pub mod entity;
+mod export;
 pub mod entity_io;
 mod error;
 mod executor;
@@ -50,6 +52,7 @@ pub mod people;
 pub mod prepare;
 pub mod presets;
 pub mod proactive;
+mod privacy;
 mod processor;
 pub mod projects;
 mod pty;
@@ -732,6 +735,17 @@ pub fn run() {
             commands::start_glean_auth,
             commands::get_glean_auth_status,
             commands::disconnect_glean,
+            // I427: Global Search
+            commands::search_global,
+            commands::rebuild_search_index,
+            // I428: Connectivity
+            commands::get_sync_freshness,
+            // I429: Data Export
+            commands::export_all_data,
+            // I430: Privacy Controls
+            commands::get_data_summary,
+            commands::clear_intelligence,
+            commands::delete_all_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -26,17 +26,17 @@ That's fixed.
 
 ---
 
-## v0.15.2 — Observability & Enterprise Context
+## v0.15.2 — Observability & Company Knowledge
 
 Now you can see what DailyOS does — and connect it to your company's knowledge.
 
 Every action DailyOS takes is now recorded in a tamper-evident activity log: calendar syncs, briefing updates, security events, and anything unusual. You can browse it, export it, and verify it hasn't been tampered with. It's the kind of transparency a chief of staff should have — you trust it because you can audit it.
 
-**Activity Log** — Go to **Settings → Data → Activity Log** to see what the app has been doing. Events are grouped by day, color-coded by category, and written in plain English ("Calendar synced (47 events)", "Intelligence updated", "Database opened"). Click any entry to see the raw details. Use the category filters to focus on what matters — Security, Data, AI, or Anomalies.
+**Activity Log** — Go to **Settings → Data → Activity Log** to see what the app has been doing. Events are grouped by day, color-coded by category, and written in plain English ("Calendar synced (47 events)", "Briefing updated", "Database opened"). Click any entry to see the raw details. Use the category filters to focus on what matters — Security, Data, AI, or Anomalies.
 
 **Export & Verify** — Hit *Export Log* to save a copy of the full audit trail as a JSON file. Hit *Verify Integrity* to confirm the hash chain is intact — if anyone (or anything) has modified a record, you'll know.
 
-**Enterprise Context (Glean)** — If your company uses Glean, DailyOS can now pull from your organization's knowledge graph to enrich briefings and reports. Go to **Settings → Context Source**, switch to Glean mode, and enter your endpoint. Choose Additive (Glean supplements local data) or Governed (Glean replaces local connectors). When Glean is unavailable, everything falls back to local data seamlessly.
+**Company Knowledge (Glean)** — If your company uses Glean, DailyOS can now pull from your organization's knowledge to improve briefings and reports. Go to **Settings → Context Source**, switch to Glean mode, and enter your endpoint. Choose whether Glean supplements your local data or replaces Google Calendar and Gmail as the primary source. When Glean is unavailable, everything falls back to local data seamlessly.
 
 **Touch ID (improved)** — App unlock is now native and instant. The old approach could occasionally stall — the new one won't.
 
@@ -62,7 +62,7 @@ DailyOS now encrypts everything on disk. Your database, your briefings, your rel
 
 Your work, made presentable.
 
-DailyOS now generates reports — slide decks you can actually share. Account Health Reviews for your internal team, EBR/QBRs for your customers, SWOT analyses, and personal impact reports for yourself. All generated from the intelligence DailyOS has already been building. Every report is a live document: click any field to edit it, and your changes save automatically.
+DailyOS now generates reports — slide decks you can actually share. Account Health Reviews for your internal team, EBR/QBRs for your customers, SWOT analyses, and personal impact reports for yourself. All generated from the context DailyOS has already been building. Every report is a live document: click any field to edit it, and your changes save automatically.
 
 **Account Reports** — open any account and click the **Reports ▾** button in the top bar.
 
@@ -98,7 +98,7 @@ Every role preset — Customer Success, Sales, Partnerships, Product, Leadership
 - **Role-aware language** — Meeting prep, actions, and notifications now use your role's vocabulary. If you haven't set your role yet, go to **Settings → You** and pick the preset that fits.
 - **Stakeholder and team roles** — Role badges on stakeholder cards now come from your preset's role definitions. Open any account and check the stakeholder section to see the updated options.
 - **Preset-driven account sorting** — Accounts now sort by what matters to your role: renewal proximity for CS, deal stage for Sales, ARR for Leadership. You can still override the sort manually.
-- **1:1 meeting intelligence** — When you have a one-on-one, the briefing now focuses on that person — their history, notes, and open actions — not just the account.
+- **1:1 meeting briefings** — When you have a one-on-one, the briefing now focuses on that person — their history, notes, and open actions — not just the account.
 - **Background task throttling** — The app is significantly quieter when you're actively working. No action needed; this just happens.
 
 ---

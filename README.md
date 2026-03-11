@@ -2,11 +2,11 @@
 
 > Open the app. Your day is ready.
 
-Operational intelligence for your accounts, projects, and people.
+Your workday, already prepared.
 
 ## What is DailyOS?
 
-DailyOS is a native desktop app that connects to your Google Calendar and Gmail, builds persistent intelligence about your accounts, projects, and people, and prepares your day every morning. It runs locally on your machine -- your data stays in markdown and JSON files you own. AI enrichment is powered by Claude Code (your existing subscription, no API keys).
+DailyOS is a native desktop app that connects to your Google Calendar and Gmail, builds persistent context about your accounts, projects, and people, and prepares your day every morning. It runs locally on your machine -- your data lives in a local SQLite database with supplementary markdown files, all on your filesystem. AI features are powered by Claude Code (requires Claude Pro or Max subscription).
 
 ## Install
 
@@ -16,15 +16,15 @@ On first launch, macOS Gatekeeper may block the app. Right-click the app, select
 
 **Prerequisites:**
 
-- macOS (Apple Silicon)
+- macOS (Apple Silicon or Intel)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 - Google account (Calendar + Gmail access, configured during onboarding)
 
 ## Features
 
 - Editorial magazine-style interface — every page reads like a document, not a dashboard
-- Daily briefing with AI-enriched meeting prep, focus priorities, and tapering density
-- Account and project intelligence (executive assessments, risks, wins, stakeholder insights)
+- Daily briefing with AI meeting briefings, focus priorities, and tapering density
+- Account and project insights (executive assessments, risks, wins, stakeholder context)
 - People tracking with relationship history and meeting patterns
 - Semantic search over workspace files using local embedding model (nomic-embed-text-v1.5) — works offline
 - MCP server for Claude Desktop integration — query entities, search content, retrieve briefings
@@ -33,8 +33,8 @@ On first launch, macOS Gatekeeper may block the app. Right-click the app, select
 - Executive risk briefing as a 6-slide presentation with inline editing
 - Transcript processing with outcome extraction (actions, decisions, captures)
 - Weekly narrative with priority synthesis and gap analysis
-- Background scheduling (daily briefing, archive, intelligence refresh)
-- Local-first: markdown + JSON on your filesystem, SQLite working store
+- Background scheduling (daily briefing, archive, context refresh)
+- Local-first: SQLite (primary data store) with supplementary markdown files
 - Open source (GPL-3.0)
 
 ## Development
@@ -52,7 +52,7 @@ pnpm tauri dev
 cd src-tauri && cargo test
 ```
 
-There are approximately 684 Rust tests covering the backend.
+There are approximately 700 Rust tests covering the backend.
 
 ### Google OAuth Secret Management
 
@@ -70,7 +70,7 @@ Rotation procedure:
 
 ## Architecture
 
-Tauri v2 app with a Rust backend and React/TypeScript frontend. Data flows through three tiers: filesystem (durable markdown + JSON), SQLite (working store), and app memory (ephemeral). AI enrichment runs through Claude Code CLI spawned as a PTY subprocess.
+Tauri v2 app with a Rust backend and React/TypeScript frontend. SQLite is the primary data store with supplementary markdown files on the filesystem. AI features run through Claude Code CLI spawned as a PTY subprocess.
 
 ## Documentation
 

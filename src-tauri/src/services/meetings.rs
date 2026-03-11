@@ -597,13 +597,13 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     entities_to_refresh.dedup();
     if !entities_to_refresh.is_empty() {
         for (entity_id, entity_type) in entities_to_refresh {
-            state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-                entity_id,
-                entity_type,
-                priority: crate::intel_queue::IntelPriority::CalendarChange,
-                requested_at: std::time::Instant::now(),
-                retry_count: 0,
-            });
+            state
+                .intel_queue
+                .enqueue(crate::intel_queue::IntelRequest::new(
+                    entity_id,
+                    entity_type,
+                    crate::intel_queue::IntelPriority::CalendarChange,
+                ));
         }
         state.integrations.intel_queue_wake.notify_one();
     }
@@ -652,11 +652,10 @@ async fn mutate_meeting_entities_and_refresh_briefing(
         // will emit prep-ready when it completes.
         state
             .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: meeting_id_s,
-                priority: crate::meeting_prep_queue::PrepPriority::Manual,
-                requested_at: std::time::Instant::now(),
-            });
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                meeting_id_s,
+                crate::meeting_prep_queue::PrepPriority::Manual,
+            ));
         state.integrations.prep_queue_wake.notify_one();
     }
 
@@ -1534,11 +1533,10 @@ pub async fn link_meeting_entity_with_prep_queue(
         .await?;
     state
         .meeting_prep_queue
-        .enqueue(crate::meeting_prep_queue::PrepRequest {
-            meeting_id: meeting_id.to_string(),
-            priority: crate::meeting_prep_queue::PrepPriority::Manual,
-            requested_at: std::time::Instant::now(),
-        });
+        .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+            meeting_id.to_string(),
+            crate::meeting_prep_queue::PrepPriority::Manual,
+        ));
     state.integrations.prep_queue_wake.notify_one();
     log::info!(
         "link_meeting_entity: relinked {} to {} ({}), enqueued prep re-assembly",
@@ -1570,11 +1568,10 @@ pub async fn unlink_meeting_entity_with_prep_queue(
         .await?;
     state
         .meeting_prep_queue
-        .enqueue(crate::meeting_prep_queue::PrepRequest {
-            meeting_id: meeting_id.to_string(),
-            priority: crate::meeting_prep_queue::PrepPriority::Manual,
-            requested_at: std::time::Instant::now(),
-        });
+        .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+            meeting_id.to_string(),
+            crate::meeting_prep_queue::PrepPriority::Manual,
+        ));
     state.integrations.prep_queue_wake.notify_one();
     log::info!(
         "unlink_meeting_entity: unlinked {} from {}, enqueued prep re-assembly",
@@ -1808,6 +1805,90 @@ pub struct MeetingBriefingRefreshResult {
     pub quality: IntelligenceQuality,
 }
 
+#[derive(Debug, Clone)]
+struct MeetingBriefingSnapshot {
+    prep_frozen_json: Option<String>,
+    prep_frozen_at: Option<String>,
+    intelligence_state: Option<String>,
+    intelligence_quality: Option<String>,
+    signal_count: Option<i32>,
+    last_enriched_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RefreshCompletionPlan {
+    restore_snapshot: bool,
+    queue_rebuild: bool,
+    return_error: bool,
+}
+
+fn plan_refresh_completion(
+    had_snapshot: bool,
+    refreshed_entities: u32,
+    prep_rebuilt_sync: bool,
+) -> RefreshCompletionPlan {
+    if prep_rebuilt_sync {
+        return RefreshCompletionPlan {
+            restore_snapshot: false,
+            queue_rebuild: false,
+            return_error: false,
+        };
+    }
+
+    if had_snapshot && refreshed_entities == 0 {
+        return RefreshCompletionPlan {
+            restore_snapshot: true,
+            queue_rebuild: true,
+            return_error: true,
+        };
+    }
+
+    RefreshCompletionPlan {
+        restore_snapshot: false,
+        queue_rebuild: true,
+        return_error: false,
+    }
+}
+
+fn restore_meeting_briefing_snapshot(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    snapshot: &MeetingBriefingSnapshot,
+) -> Result<(), String> {
+    db.conn_ref()
+        .execute(
+            "UPDATE meeting_prep
+             SET prep_frozen_json = ?1, prep_frozen_at = ?2
+             WHERE meeting_id = ?3",
+            rusqlite::params![
+                snapshot.prep_frozen_json.as_deref(),
+                snapshot.prep_frozen_at.as_deref(),
+                meeting_id
+            ],
+        )
+        .map_err(|e| format!("Failed to restore previous briefing: {}", e))?;
+
+    db.conn_ref()
+        .execute(
+            "UPDATE meeting_transcripts
+             SET intelligence_state = ?1,
+                 intelligence_quality = ?2,
+                 signal_count = ?3,
+                 last_enriched_at = ?4
+             WHERE meeting_id = ?5",
+            rusqlite::params![
+                snapshot.intelligence_state.as_deref(),
+                snapshot.intelligence_quality.as_deref(),
+                snapshot.signal_count,
+                snapshot.last_enriched_at.as_deref(),
+                meeting_id
+            ],
+        )
+        .map_err(|e| format!("Failed to restore previous meeting state: {}", e))?;
+
+    Ok(())
+}
+
 fn emit_briefing_refresh_progress(
     app_handle: Option<&tauri::AppHandle>,
     payload: MeetingBriefingRefreshProgress,
@@ -1820,7 +1901,10 @@ fn emit_briefing_refresh_progress(
 /// Single-service full briefing refresh for one meeting.
 ///
 /// This is the deterministic manual refresh path:
-/// 1) clear frozen prep, 2) refresh linked entity intelligence, 3) rebuild prep.
+/// 1) snapshot current prep,
+/// 2) refresh linked entity intelligence,
+/// 3) rebuild prep,
+/// 4) swap only when the replacement is ready.
 pub async fn refresh_meeting_briefing_full(
     state: &AppState,
     meeting_id: &str,
@@ -1842,13 +1926,13 @@ pub async fn refresh_meeting_briefing_full(
         },
     );
 
-    // Phase 1: clear current prep + collect linked entities.
+    // Phase 1: snapshot current prep + collect linked entities.
     emit_briefing_refresh_progress(
         app_handle,
         MeetingBriefingRefreshProgress {
             meeting_id: meeting_id_owned.clone(),
-            stage: "clearing_prep".to_string(),
-            message: "Clearing existing briefing snapshot".to_string(),
+            stage: "snapshotting_prep".to_string(),
+            message: "Preserving current briefing while refresh runs".to_string(),
             entity_id: None,
             entity_type: None,
             entity_name: None,
@@ -1858,27 +1942,36 @@ pub async fn refresh_meeting_briefing_full(
     );
 
     let meeting_id_for_phase1 = meeting_id_owned.clone();
-    let linked_entities = state
+    let (linked_entities, previous_snapshot) = state
         .db_write(move |db| {
-            db.get_meeting_by_id(&meeting_id_for_phase1)
+            let meeting = db
+                .get_meeting_by_id(&meeting_id_for_phase1)
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Meeting not found: {}", meeting_id_for_phase1))?;
 
+            let snapshot = MeetingBriefingSnapshot {
+                prep_frozen_json: meeting.prep_frozen_json.clone(),
+                prep_frozen_at: meeting.prep_frozen_at.clone(),
+                intelligence_state: meeting.intelligence_state.clone(),
+                intelligence_quality: meeting.intelligence_quality.clone(),
+                signal_count: meeting.signal_count,
+                last_enriched_at: meeting.last_enriched_at.clone(),
+            };
+
             let _ = db.update_intelligence_state(&meeting_id_for_phase1, "enriching", None, None);
 
-            db.conn_ref()
-                .execute(
-                    "UPDATE meeting_prep
-                     SET prep_frozen_json = NULL, prep_frozen_at = NULL
-                     WHERE meeting_id = ?1",
-                    rusqlite::params![meeting_id_for_phase1.as_str()],
-                )
-                .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
+            let linked_entities = db
+                .get_meeting_entities(&meeting_id_for_phase1)
+                .map_err(|e| format!("Failed to load linked entities: {}", e))?;
 
-            db.get_meeting_entities(&meeting_id_for_phase1)
-                .map_err(|e| format!("Failed to load linked entities: {}", e))
+            Ok::<(Vec<crate::entity::DbEntity>, MeetingBriefingSnapshot), String>((
+                linked_entities,
+                snapshot,
+            ))
         })
         .await?;
+
+    let had_snapshot = previous_snapshot.prep_frozen_json.is_some();
 
     let total_entities = linked_entities.len() as u32;
     if total_entities > 0 {
@@ -1976,18 +2069,20 @@ pub async fn refresh_meeting_briefing_full(
     // Failed entity refreshes are queued for retry.
     if !failed_entities.is_empty() {
         for (entity_id, entity_type) in &failed_entities {
-            state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-                entity_id: entity_id.clone(),
-                entity_type: entity_type.clone(),
-                priority: crate::intel_queue::IntelPriority::Manual,
-                requested_at: std::time::Instant::now(),
-                retry_count: 0,
-            });
+            state
+                .intel_queue
+                .enqueue(crate::intel_queue::IntelRequest::new(
+                    entity_id.clone(),
+                    entity_type.clone(),
+                    crate::intel_queue::IntelPriority::Manual,
+                ));
         }
         state.integrations.intel_queue_wake.notify_one();
     }
 
-    // Phase 3: rebuild mechanical prep now; fallback to queue if needed.
+    // Phase 3: rebuild mechanical prep now; fallback to queue only when no
+    // previous snapshot exists. Snapshot-backed refreshes keep the prior prep
+    // visible instead of queueing a no-op rebuild behind the existing snapshot.
     emit_briefing_refresh_progress(
         app_handle,
         MeetingBriefingRefreshProgress {
@@ -2003,9 +2098,9 @@ pub async fn refresh_meeting_briefing_full(
     );
 
     let prep_rebuilt_sync = match tokio::task::block_in_place(|| {
-        crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_owned)
+        crate::meeting_prep_queue::regenerate_mechanical_prep_now(state, &meeting_id_owned)
     }) {
-        Ok(_) => true,
+        Ok(wrote) => wrote,
         Err(err) => {
             log::warn!(
                 "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
@@ -2016,36 +2111,82 @@ pub async fn refresh_meeting_briefing_full(
         }
     };
 
-    let prep_queued = !prep_rebuilt_sync;
-    if prep_queued {
-        state
-            .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: meeting_id_owned.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::Manual,
-                requested_at: std::time::Instant::now(),
-            });
+    let completion_plan =
+        plan_refresh_completion(had_snapshot, refreshed_entities, prep_rebuilt_sync);
+
+    if completion_plan.queue_rebuild {
+        state.meeting_prep_queue.enqueue(
+            crate::meeting_prep_queue::PrepRequest::overwrite_existing(
+                meeting_id_owned.clone(),
+                crate::meeting_prep_queue::PrepPriority::Manual,
+            ),
+        );
         state.integrations.prep_queue_wake.notify_one();
     }
 
-    // Phase 4: finalize meeting intelligence metadata.
-    let meeting_id_for_phase4 = meeting_id_owned.clone();
-    let quality = state
-        .db_write(move |db| {
-            let quality =
-                crate::intelligence::assess_intelligence_quality(db, &meeting_id_for_phase4);
-            db.update_intelligence_state(
-                &meeting_id_for_phase4,
-                "enriched",
-                Some(&quality.level.to_string()),
-                Some(quality.signal_count as i32),
-            )
-            .map_err(|e| e.to_string())?;
-            let _ = db.clear_meeting_new_signals(&meeting_id_for_phase4);
-            Ok::<IntelligenceQuality, String>(quality)
-        })
-        .await?;
+    if completion_plan.restore_snapshot {
+        let meeting_id_for_restore = meeting_id_owned.clone();
+        let snapshot_for_restore = previous_snapshot.clone();
+        state
+            .db_write(move |db| {
+                restore_meeting_briefing_snapshot(
+                    db,
+                    &meeting_id_for_restore,
+                    &snapshot_for_restore,
+                )
+            })
+            .await?;
 
+        emit_briefing_refresh_progress(
+            app_handle,
+            MeetingBriefingRefreshProgress {
+                meeting_id: meeting_id_owned.clone(),
+                stage: "failed".to_string(),
+                message: "Update failed - showing previous briefing".to_string(),
+                entity_id: None,
+                entity_type: None,
+                entity_name: None,
+                current: Some(refreshed_entities),
+                total: Some(total_entities),
+            },
+        );
+
+        if completion_plan.return_error {
+            return Err("Update failed - showing previous briefing".to_string());
+        }
+    }
+
+    // Phase 4: finalize meeting intelligence metadata only when a new prep was written.
+    let quality = if prep_rebuilt_sync {
+        let meeting_id_for_phase4 = meeting_id_owned.clone();
+        state
+            .db_write(move |db| {
+                let quality =
+                    crate::intelligence::assess_intelligence_quality(db, &meeting_id_for_phase4);
+                db.update_intelligence_state(
+                    &meeting_id_for_phase4,
+                    "enriched",
+                    Some(&quality.level.to_string()),
+                    Some(quality.signal_count as i32),
+                )
+                .map_err(|e| e.to_string())?;
+                let _ = db.clear_meeting_new_signals(&meeting_id_for_phase4);
+                Ok::<IntelligenceQuality, String>(quality)
+            })
+            .await?
+    } else {
+        let meeting_id_for_quality = meeting_id_owned.clone();
+        state
+            .db_read(move |db| {
+                Ok(crate::intelligence::assess_intelligence_quality(
+                    db,
+                    &meeting_id_for_quality,
+                ))
+            })
+            .await?
+    };
+
+    let prep_queued = completion_plan.queue_rebuild;
     let result = MeetingBriefingRefreshResult {
         meeting_id: meeting_id_owned.clone(),
         refreshed_entities,
@@ -2123,11 +2264,10 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
     for mid in &meeting_ids {
         state
             .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: mid.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::Manual,
-                requested_at: std::time::Instant::now(),
-            });
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                mid.clone(),
+                crate::meeting_prep_queue::PrepPriority::Manual,
+            ));
     }
 
     let count = meeting_ids.len();
@@ -2269,15 +2409,28 @@ pub async fn attach_meeting_transcript(
                 let risks = result.risks.len();
                 let decisions = result.decisions.len();
                 let engine = std::sync::Arc::clone(&state.signals.engine);
-                let sentiment_json = result.sentiment.as_ref()
+                let sentiment_json = result
+                    .sentiment
+                    .as_ref()
                     .and_then(|s| serde_json::to_string(s).ok());
-                let competitor_mentions: Vec<String> = result.sentiment.as_ref()
+                let competitor_mentions: Vec<String> = result
+                    .sentiment
+                    .as_ref()
                     .map(|s| s.competitor_mentions.clone())
                     .unwrap_or_default();
-                let escalation_signals: Vec<String> = result.interaction_dynamics.as_ref()
-                    .map(|d| d.escalation_signals.iter().map(|e| e.quote.clone()).collect())
+                let escalation_signals: Vec<String> = result
+                    .interaction_dynamics
+                    .as_ref()
+                    .map(|d| {
+                        d.escalation_signals
+                            .iter()
+                            .map(|e| e.quote.clone())
+                            .collect()
+                    })
                     .unwrap_or_default();
-                let decision_maker_inactive = result.interaction_dynamics.as_ref()
+                let decision_maker_inactive = result
+                    .interaction_dynamics
+                    .as_ref()
                     .and_then(|d| d.engagement_signals.as_ref())
                     .and_then(|e| e.decision_maker_active.as_deref())
                     .map(|v| v == "no")
@@ -2366,4 +2519,45 @@ pub async fn attach_meeting_transcript(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plan_refresh_completion;
+
+    #[test]
+    fn refresh_completion_restores_snapshot_on_full_failure() {
+        let plan = plan_refresh_completion(true, 0, false);
+
+        assert!(plan.restore_snapshot);
+        assert!(plan.queue_rebuild);
+        assert!(plan.return_error);
+    }
+
+    #[test]
+    fn refresh_completion_keeps_successful_swap() {
+        let plan = plan_refresh_completion(true, 1, true);
+
+        assert!(!plan.restore_snapshot);
+        assert!(!plan.queue_rebuild);
+        assert!(!plan.return_error);
+    }
+
+    #[test]
+    fn refresh_completion_queues_when_no_snapshot_exists() {
+        let plan = plan_refresh_completion(false, 0, false);
+
+        assert!(!plan.restore_snapshot);
+        assert!(plan.queue_rebuild);
+        assert!(!plan.return_error);
+    }
+
+    #[test]
+    fn refresh_completion_queues_retry_for_partial_success() {
+        let plan = plan_refresh_completion(true, 1, false);
+
+        assert!(!plan.restore_snapshot);
+        assert!(plan.queue_rebuild);
+        assert!(!plan.return_error);
+    }
 }
