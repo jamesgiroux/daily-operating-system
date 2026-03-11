@@ -12,8 +12,12 @@ HOTSPOT_FILES=(
   "src-tauri/src/hygiene.rs"
 )
 
-METHOD_PATTERN='([[:<:]]db[[:>:]]|[[:<:]]tx[[:>:]])\.(upsert|insert|update|delete|remove|reset|create|append|bump|link|unlink|merge|archive|record|mark|clear|copy|set_)[A-Za-z0-9_]*\('
-RAW_SQL_PATTERN='conn_ref\(\)\.execute\('
+while IFS= read -r command_file; do
+  HOTSPOT_FILES+=("${command_file#$ROOT_DIR/}")
+done < <(find "$ROOT_DIR/src-tauri/src/commands" -maxdepth 1 -name '*.rs' | sort)
+
+METHOD_PATTERN='(db|tx)\.(upsert|insert|update|delete|remove|reset|create|append|bump|link|unlink|merge|archive|record|mark|clear|copy|set_)[A-Za-z0-9_]*'
+RAW_SQL_PATTERN='conn_ref\(\)\.execute'
 
 violations=0
 
@@ -30,41 +34,60 @@ for rel_path in "${HOTSPOT_FILES[@]}"; do
     cutoff_line=999999
   fi
 
-  allow_next=0
-  while IFS= read -r numbered_line; do
-    line_no="${numbered_line%%:*}"
-    line="${numbered_line#*:}"
-    trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"
+  awk \
+    -v cutoff="$cutoff_line" \
+    -v method="$METHOD_PATTERN" \
+    -v raw="$RAW_SQL_PATTERN" \
+    -v rel="$rel_path" '
+      NR >= cutoff { exit }
+      {
+        line = $0
+        trimmed = line
+        sub(/^[[:space:]]+/, "", trimmed)
 
-    if [[ "$line" == *"DIRECT_DB_ALLOWED:"* ]]; then
-      allow_next=1
-      continue
-    fi
+        if (index(line, "DIRECT_DB_ALLOWED:") > 0) {
+          allow_next = 1
+          next
+        }
 
-    if [[ "$trimmed" =~ ^// ]]; then
-      continue
-    fi
+        if (trimmed ~ /^\/\//) {
+          next
+        }
 
-    if [[ "$allow_next" -eq 1 ]]; then
-      if [[ -n "$trimmed" ]]; then
-        allow_next=0
-      fi
-      continue
-    fi
+        if (allow_next) {
+          if (trimmed != "") {
+            allow_next = 0
+          }
+          next
+        }
 
-    if printf '%s\n' "$line" | grep -Eq "$METHOD_PATTERN"; then
-      echo "Service-layer boundary violation: $rel_path:$line_no"
-      echo "  direct mutation method call detected"
-      violations=1
-      continue
-    fi
+        if (line ~ method) {
+          printf("Service-layer boundary violation: %s:%d\n", rel, NR)
+          print "  direct mutation method call detected"
+          violations = 1
+          next
+        }
 
-    if printf '%s\n' "$line" | grep -Eq "$RAW_SQL_PATTERN"; then
-      echo "Service-layer boundary violation: $rel_path:$line_no"
-      echo "  raw SQL write via conn_ref().execute(...) detected"
-      violations=1
-    fi
-  done < <(awk -v cutoff="$cutoff_line" 'NR < cutoff { print NR ":" $0 }' "$file_path")
+        if (line ~ raw) {
+          printf("Service-layer boundary violation: %s:%d\n", rel, NR)
+          print "  raw SQL write via conn_ref().execute(...) detected"
+          violations = 1
+        }
+      }
+      END {
+        if (violations) {
+          exit 10
+        }
+      }
+    ' "$file_path"
+  status=$?
+  if [[ "$status" -eq 10 ]]; then
+    violations=1
+    continue
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    exit "$status"
+  fi
 done
 
 if [[ "$violations" -ne 0 ]]; then

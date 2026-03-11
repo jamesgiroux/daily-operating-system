@@ -880,6 +880,15 @@ pub fn run_startup_sync(state: &AppState) {
         Err(e) => log::warn!("Startup sync: legacy notes migration failed: {}", e),
     }
 
+    // Rebuild search index (I427)
+    {
+        use crate::db::search::SearchDb;
+        match db.conn_ref().rebuild_search_index() {
+            Ok(count) => log::info!("Search index rebuilt: {} entries", count),
+            Err(e) => log::warn!("Search index rebuild failed: {}", e),
+        }
+    }
+
     // One-off: import master-task-list.md into SQLite (DELETE after confirmed)
     import_master_task_list(workspace, &db);
 }

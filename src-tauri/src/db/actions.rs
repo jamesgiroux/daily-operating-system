@@ -543,7 +543,11 @@ impl ActionDb {
             "UPDATE actions SET status = 'archived', updated_at = ?1
              WHERE status = 'pending'
                AND completed_at IS NULL
-               AND created_at < datetime('now', ?2)",
+               AND (
+                   (due_date IS NOT NULL AND due_date <= date('now', ?2))
+                   OR
+                   (due_date IS NULL AND created_at < datetime('now', ?2))
+               )",
             params![now, cutoff_param],
         )?;
         Ok(changed)
@@ -741,5 +745,123 @@ impl ActionDb {
             next_meeting_title: None,
             next_meeting_start: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::test_utils::test_db;
+    use rusqlite::params;
+
+    #[test]
+    fn archive_stale_actions_archives_past_due_pending_actions() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, due_date, updated_at
+                 ) VALUES (
+                    ?1, ?2, 'P2', 'pending', datetime('now'), date('now', '-40 days'), datetime('now')
+                 )",
+                params!["action-past-due", "Old follow-up"],
+            )
+            .expect("insert pending action");
+
+        let archived = db.archive_stale_actions(30).expect("archive stale actions");
+        assert_eq!(archived, 1);
+
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM actions WHERE id = ?1",
+                params!["action-past-due"],
+                |row| row.get(0),
+            )
+            .expect("read action");
+        assert_eq!(status, "archived");
+    }
+
+    #[test]
+    fn archive_stale_actions_archives_old_undated_pending_actions() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, updated_at
+                 ) VALUES (
+                    ?1, ?2, 'P2', 'pending', datetime('now', '-40 days'), datetime('now', '-40 days')
+                 )",
+                params!["action-undated", "Eventually follow up"],
+            )
+            .expect("insert undated action");
+
+        let archived = db.archive_stale_actions(30).expect("archive stale actions");
+        assert_eq!(archived, 1);
+
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM actions WHERE id = ?1",
+                params!["action-undated"],
+                |row| row.get(0),
+            )
+            .expect("read action");
+        assert_eq!(status, "archived");
+    }
+
+    #[test]
+    fn archive_stale_actions_keeps_recent_pending_actions_active() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, due_date, updated_at
+                 ) VALUES (
+                    ?1, ?2, 'P2', 'pending', datetime('now', '-5 days'), date('now', '+2 days'), datetime('now', '-5 days')
+                 )",
+                params!["action-fresh", "Upcoming follow-up"],
+            )
+            .expect("insert fresh action");
+
+        let archived = db.archive_stale_actions(30).expect("archive stale actions");
+        assert_eq!(archived, 0);
+
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM actions WHERE id = ?1",
+                params!["action-fresh"],
+                |row| row.get(0),
+            )
+            .expect("read action");
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn reject_proposed_action_with_source_persists_surface() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, updated_at
+                 ) VALUES (?1, ?2, 'P2', 'proposed', datetime('now'), datetime('now'))",
+                params!["action-1", "Follow up"],
+            )
+            .expect("insert action");
+
+        db.reject_proposed_action_with_source("action-1", "daily_briefing")
+            .expect("reject action");
+
+        let row: (String, Option<String>) = db
+            .conn
+            .query_row(
+                "SELECT status, rejection_source FROM actions WHERE id = ?1",
+                params!["action-1"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read action");
+
+        assert_eq!(row.0, "archived");
+        assert_eq!(row.1.as_deref(), Some("daily_briefing"));
     }
 }
