@@ -150,10 +150,13 @@ function groupByDay(
 // Component
 // ---------------------------------------------------------------------------
 
+const PAGE_SIZE = 50;
+
 export default function ActivityLogSection() {
   const [records, setRecords] = useState<AuditRecord[]>([]);
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [expandedIdx, setExpandedIdx] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [integrityResult, setIntegrityResult] = useState<{
     ok: boolean;
     message: string;
@@ -162,10 +165,11 @@ export default function ActivityLogSection() {
   const loadRecords = useCallback(async () => {
     try {
       const data = await invoke<AuditRecord[]>("get_audit_log_records", {
-        limit: 200,
+        limit: 500,
         categoryFilter: filter === "all" ? null : filter,
       });
       setRecords(data);
+      setVisibleCount(PAGE_SIZE);
     } catch (e) {
       console.warn("Failed to load audit records:", e);
     }
@@ -199,7 +203,11 @@ export default function ActivityLogSection() {
     }
   };
 
-  const grouped = groupByDay(records);
+  // Paginate: records arrive chronological; take the most recent N from the tail
+  const totalCount = records.length;
+  const visibleRecords = records.slice(Math.max(0, totalCount - visibleCount));
+  const grouped = groupByDay(visibleRecords);
+  const hasMore = visibleCount < totalCount;
 
   return (
     <div className={s.container}>
@@ -268,6 +276,23 @@ export default function ActivityLogSection() {
             })}
           </div>
         ))
+      )}
+
+      {/* Pagination */}
+      {totalCount > 0 && (
+        <div className={s.pagination}>
+          <span className={s.paginationCount}>
+            Showing {Math.min(visibleCount, totalCount)} of {totalCount} entries
+          </span>
+          {hasMore && (
+            <button
+              className={s.loadMoreButton}
+              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+            >
+              Load more
+            </button>
+          )}
+        </div>
       )}
 
       {/* Actions */}

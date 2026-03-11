@@ -1,0 +1,226 @@
+/* YouCard — Restructured identity settings (I541) */
+
+/* ── Subsection groups ── */
+
+.subsectionGroup {
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.subsectionGroup:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.subsectionTitle {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0 0 16px 0;
+}
+
+/* ── Loading skeleton ── */
+
+.skeleton {
+  height: 40px;
+  background: var(--color-rule-light);
+  border-radius: 4px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── Domains ── */
+
+.domainsInput {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 8px 0;
+  min-height: 36px;
+}
+
+.domainChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background: var(--color-rule-light);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.domainChipRemove {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+}
+
+.domainTextInput {
+  min-width: 120px;
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+/* ── Role presets ── */
+
+.roleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.roleCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.roleCard:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.roleCardActive {
+  border: 2px solid var(--color-spice-turmeric);
+}
+
+.roleCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.roleCardName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.roleCardDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+/* ── Workspace ── */
+
+.workspacePath {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.savingInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Day start ── */
+
+.dayStartLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.dayStartBold {
+  font-weight: 500;
+}
+
+.timeInput {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.timeInput:disabled {
+  opacity: 0.5;
+}
+
+.timeInputRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Personality ── */
+
+.personalityList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.personalityCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.personalityCardActive {
+  border-color: var(--color-desk-charcoal);
+}
+
+.personalityCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.personalityCardLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.personalityExample {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
