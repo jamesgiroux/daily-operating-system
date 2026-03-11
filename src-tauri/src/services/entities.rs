@@ -341,14 +341,21 @@ pub async fn get_executive_intelligence(
                     .filter_map(|r| r.ok())
                     .map(|(id, title, mt, start, end, cal_id)| {
                         let meeting_type = crate::parser::parse_meeting_type(&mt);
-                        let time = chrono::NaiveDateTime::parse_from_str(&start, "%Y-%m-%dT%H:%M:%S")
-                            .map(|dt| dt.format("%-I:%M %p").to_string())
-                            .or_else(|_| chrono::DateTime::parse_from_rfc3339(&start).map(|dt| dt.format("%-I:%M %p").to_string()))
-                            .unwrap_or_else(|_| start.clone());
+                        let time =
+                            chrono::NaiveDateTime::parse_from_str(&start, "%Y-%m-%dT%H:%M:%S")
+                                .map(|dt| dt.format("%-I:%M %p").to_string())
+                                .or_else(|_| {
+                                    chrono::DateTime::parse_from_rfc3339(&start)
+                                        .map(|dt| dt.format("%-I:%M %p").to_string())
+                                })
+                                .unwrap_or_else(|_| start.clone());
                         let end_time = end.as_ref().and_then(|et| {
                             chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%dT%H:%M:%S")
                                 .map(|dt| dt.format("%-I:%M %p").to_string())
-                                .or_else(|_| chrono::DateTime::parse_from_rfc3339(et).map(|dt| dt.format("%-I:%M %p").to_string()))
+                                .or_else(|_| {
+                                    chrono::DateTime::parse_from_rfc3339(et)
+                                        .map(|dt| dt.format("%-I:%M %p").to_string())
+                                })
                                 .ok()
                         });
                         crate::types::Meeting {

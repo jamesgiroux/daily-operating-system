@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::Utc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 
 use crate::error::ExecutionError;
@@ -29,6 +29,9 @@ pub struct Executor {
     state: Arc<AppState>,
     app_handle: AppHandle,
 }
+
+const WORKFLOW_RETRY_DELAY_SECS: u64 = 3600;
+const MAX_SCHEDULED_WORKFLOW_RETRIES: u8 = 3;
 
 impl Executor {
     pub fn new(state: Arc<AppState>, app_handle: AppHandle) -> Self {
@@ -382,15 +385,102 @@ impl Executor {
     pub async fn run(&self, mut receiver: mpsc::Receiver<SchedulerMessage>) {
         while let Some(msg) = receiver.recv().await {
             log::info!(
-                "Executing workflow {:?} (trigger: {:?})",
+                "Executing workflow {:?} (trigger: {:?}, retry_attempt: {})",
                 msg.workflow,
-                msg.trigger
+                msg.trigger,
+                msg.retry_attempt,
             );
 
             if let Err(e) = self.execute_workflow(msg.workflow, msg.trigger).await {
                 log::error!("Workflow {:?} failed: {}", msg.workflow, e);
+                if matches!(
+                    msg.trigger,
+                    ExecutionTrigger::Scheduled | ExecutionTrigger::Missed
+                ) {
+                    self.handle_scheduled_workflow_failure(&msg, &e.to_string())
+                        .await;
+                }
+            } else if matches!(
+                msg.trigger,
+                ExecutionTrigger::Scheduled | ExecutionTrigger::Missed
+            ) {
+                self.resolve_scheduled_workflow_failure(msg.workflow).await;
             }
         }
+    }
+
+    async fn resolve_scheduled_workflow_failure(&self, workflow: WorkflowId) {
+        let entity_id = workflow.to_string();
+        let _ = self
+            .state
+            .db_write(move |db| {
+                crate::services::mutations::resolve_pipeline_failures(
+                    db,
+                    "scheduler",
+                    Some(&entity_id),
+                    Some("workflow"),
+                )
+            })
+            .await;
+    }
+
+    async fn handle_scheduled_workflow_failure(&self, msg: &SchedulerMessage, error: &str) {
+        let entity_id = msg.workflow.to_string();
+        let error_message = error.to_string();
+        let attempt = i32::from(msg.retry_attempt) + 1;
+        let _ = self
+            .state
+            .db_write(move |db| {
+                crate::services::mutations::record_pipeline_failure(
+                    db,
+                    "scheduler",
+                    Some(&entity_id),
+                    Some("workflow"),
+                    "workflow_execution",
+                    Some(&error_message),
+                    attempt,
+                )
+            })
+            .await;
+
+        if msg.retry_attempt >= MAX_SCHEDULED_WORKFLOW_RETRIES {
+            log::error!(
+                "Workflow {:?} exhausted scheduled retries after {} attempts",
+                msg.workflow,
+                msg.retry_attempt
+            );
+            return;
+        }
+
+        let Some(sender) = self.app_handle.try_state::<crate::SchedulerSender>() else {
+            log::error!(
+                "Workflow {:?} failed and scheduler sender is unavailable for retry",
+                msg.workflow
+            );
+            return;
+        };
+
+        let sender = sender.0.clone();
+        let workflow = msg.workflow;
+        let trigger = msg.trigger;
+        let retry_attempt = msg.retry_attempt + 1;
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(WORKFLOW_RETRY_DELAY_SECS)).await;
+            if sender
+                .send(SchedulerMessage {
+                    workflow,
+                    trigger,
+                    retry_attempt,
+                })
+                .await
+                .is_err()
+            {
+                log::error!(
+                    "Failed to queue scheduled workflow retry for {:?}",
+                    workflow
+                );
+            }
+        });
     }
 
     /// Execute a workflow
@@ -1300,10 +1390,7 @@ pub fn request_workflow_execution(
     workflow: WorkflowId,
 ) -> Result<(), String> {
     sender
-        .try_send(SchedulerMessage {
-            workflow,
-            trigger: ExecutionTrigger::Manual,
-        })
+        .try_send(SchedulerMessage::new(workflow, ExecutionTrigger::Manual))
         .map_err(|e| format!("Failed to queue workflow: {}", e))
 }
 

@@ -1652,7 +1652,7 @@ function OutcomesSection({
                     catch (err) { console.error("Failed to accept action:", err); }
                   }}
                   onReject={async () => {
-                    try { await invoke("reject_proposed_action", { id: action.id }); onRefresh(); }
+                    try { await invoke("reject_proposed_action", { id: action.id, source: "meeting_detail" }); onRefresh(); }
                     catch (err) { console.error("Failed to reject action:", err); }
                   }}
                   onCyclePriority={async () => {

@@ -1348,7 +1348,6 @@ fn enqueue_ai_enrichments(
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> usize {
     use crate::intel_queue::{IntelPriority, IntelRequest};
-    use std::time::Instant;
 
     let mut enqueued = 0;
 
@@ -1362,13 +1361,11 @@ fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            queue.enqueue(IntelRequest {
+            queue.enqueue(IntelRequest::new(
                 entity_id,
                 entity_type,
-                priority: IntelPriority::ProactiveHygiene,
-                requested_at: Instant::now(),
-                retry_count: 0,
-            });
+                IntelPriority::ProactiveHygiene,
+            ));
             enqueued += 1;
         }
     }
@@ -1383,13 +1380,11 @@ fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            queue.enqueue(IntelRequest {
+            queue.enqueue(IntelRequest::new(
                 entity_id,
                 entity_type,
-                priority: IntelPriority::ProactiveHygiene,
-                requested_at: Instant::now(),
-                retry_count: 0,
-            });
+                IntelPriority::ProactiveHygiene,
+            ));
             enqueued += 1;
         }
     }
@@ -1421,7 +1416,6 @@ pub fn check_upcoming_meeting_readiness(
     config: Option<&Config>,
 ) -> Vec<String> {
     use crate::intel_queue::{IntelPriority, IntelRequest};
-    use std::time::Instant;
 
     let window_hours = config
         .map(|c| c.hygiene_pre_meeting_hours as i64)
@@ -1498,13 +1492,11 @@ pub fn check_upcoming_meeting_readiness(
             // Pre-meeting window: enqueue if trigger score >= 0.4 (lower than the
             // signal-driven 0.7 threshold because we're in a time-critical window)
             if trigger_score >= 0.4 {
-                queue.enqueue(IntelRequest {
-                    entity_id: entity.id.clone(),
+                queue.enqueue(IntelRequest::new(
+                    entity.id.clone(),
                     entity_type,
-                    priority: IntelPriority::CalendarChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                });
+                    IntelPriority::CalendarChange,
+                ));
                 enqueued_ids.push(entity.id.clone());
                 log::debug!(
                     "PreMeeting: enqueued {} (trigger_score={:.2})",

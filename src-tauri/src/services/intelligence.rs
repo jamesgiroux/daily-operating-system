@@ -18,13 +18,7 @@ pub async fn enrich_entity(
         IntelRequest,
     };
 
-    let request = IntelRequest {
-        entity_id,
-        entity_type,
-        priority: IntelPriority::Manual,
-        requested_at: std::time::Instant::now(),
-        retry_count: 0,
-    };
+    let request = IntelRequest::new(entity_id, entity_type, IntelPriority::Manual);
 
     // Manual refresh: clear circuit breaker so enrichment proceeds (I410)
     let entity_id_for_reset = request.entity_id.clone();
@@ -224,8 +218,10 @@ pub fn upsert_inferred_relationships_from_enrichment(
             .map_err(|e| format!("relationship upsert failed: {e}"))?;
 
             if existing_ai.is_none() {
-                let signal_value =
-                    format!("{from_person_id} -> {to_person_id} ({})", rel.relationship_type);
+                let signal_value = format!(
+                    "{from_person_id} -> {to_person_id} ({})",
+                    rel.relationship_type
+                );
                 crate::services::signals::emit_and_propagate(
                     tx,
                     engine,
@@ -527,11 +523,7 @@ mod inferred_relationship_tests {
         }];
 
         let inserted = upsert_inferred_relationships_from_enrichment(
-            &db,
-            &engine,
-            "account",
-            "acc-1",
-            &inferred,
+            &db, &engine, "account", "acc-1", &inferred,
         )
         .expect("first upsert");
         assert_eq!(inserted, 1);
@@ -564,14 +556,13 @@ mod inferred_relationship_tests {
         assert_eq!(signal_count, 1);
 
         let inserted_second = upsert_inferred_relationships_from_enrichment(
-            &db,
-            &engine,
-            "account",
-            "acc-1",
-            &inferred,
+            &db, &engine, "account", "acc-1", &inferred,
         )
         .expect("second upsert");
-        assert_eq!(inserted_second, 0, "re-enrichment should reinforce, not duplicate");
+        assert_eq!(
+            inserted_second, 0,
+            "re-enrichment should reinforce, not duplicate"
+        );
         assert_eq!(
             db.get_relationships_between("p1", "p2")
                 .expect("relationship query 2")
@@ -607,11 +598,7 @@ mod inferred_relationship_tests {
         }];
 
         let inserted = upsert_inferred_relationships_from_enrichment(
-            &db,
-            &engine,
-            "account",
-            "acc-1",
-            &inferred,
+            &db, &engine, "account", "acc-1", &inferred,
         )
         .expect("upsert");
         assert_eq!(inserted, 0);
@@ -1249,7 +1236,9 @@ mod live_acceptance_tests {
             last_enriched_at: None,
             enrichment_sources: Some(google_enrichment_sources.clone()),
         };
-        snapshot_db.upsert_person(&person).expect("seed snapshot person");
+        snapshot_db
+            .upsert_person(&person)
+            .expect("seed snapshot person");
         snapshot_db
             .conn_ref()
             .execute(
@@ -1475,9 +1464,11 @@ mod live_acceptance_tests {
             .expect("count user stakeholders after glean purge");
         let user_signals_mid: i64 = snapshot_db
             .conn_ref()
-            .query_row("SELECT COUNT(*) FROM signal_events WHERE source = 'user'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE source = 'user'",
+                [],
+                |row| row.get(0),
+            )
             .expect("count user signals after glean purge");
         let user_relationships_mid: i64 = snapshot_db
             .conn_ref()
@@ -1538,9 +1529,11 @@ mod live_acceptance_tests {
             .expect("count user stakeholders after google purge");
         let user_signals_after: i64 = snapshot_db
             .conn_ref()
-            .query_row("SELECT COUNT(*) FROM signal_events WHERE source = 'user'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE source = 'user'",
+                [],
+                |row| row.get(0),
+            )
             .expect("count user signals after google purge");
         let user_relationships_after: i64 = snapshot_db
             .conn_ref()
@@ -1706,7 +1699,8 @@ mod live_acceptance_tests {
                     let mut rows = Vec::new();
                     let mut ids = HashSet::new();
                     for row in mapped {
-                        let row = row.map_err(|e| format!("relationship row decode failed: {e}"))?;
+                        let row =
+                            row.map_err(|e| format!("relationship row decode failed: {e}"))?;
                         ids.insert(row.0.clone());
                         rows.push(row);
                     }
@@ -1751,7 +1745,9 @@ mod live_acceptance_tests {
                             params![account_id],
                             |row| row.get(0),
                         )
-                        .map_err(|e| format!("count relationship signals after first failed: {e}"))?;
+                        .map_err(|e| {
+                            format!("count relationship signals after first failed: {e}")
+                        })?;
 
                     Ok((rows, ids, manager_bad, peer_bad, signals))
                 }
@@ -1827,7 +1823,9 @@ mod live_acceptance_tests {
                             params![account_id],
                             |row| row.get(0),
                         )
-                        .map_err(|e| format!("count distinct ids after second enrichment failed: {e}"))?;
+                        .map_err(|e| {
+                            format!("count distinct ids after second enrichment failed: {e}")
+                        })?;
                     let reinforced: i64 = db
                         .conn_ref()
                         .query_row(
@@ -1840,7 +1838,9 @@ mod live_acceptance_tests {
                             params![account_id],
                             |row| row.get(0),
                         )
-                        .map_err(|e| format!("count reinforced edges after second enrichment failed: {e}"))?;
+                        .map_err(|e| {
+                            format!("count reinforced edges after second enrichment failed: {e}")
+                        })?;
                     Ok((rows, ids, reinforced))
                 }
             })

@@ -48,11 +48,9 @@ fn active_db_path() -> Result<PathBuf, String> {
 /// Read schema version (PRAGMA user_version) from a SQLite file.
 /// Returns None if the file cannot be opened or read.
 fn read_schema_version(path: &Path) -> Option<i64> {
-    let conn = rusqlite::Connection::open_with_flags(
-        path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .ok()?;
+    let conn =
+        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .ok()?;
     // Apply encryption key if configured
     if let Ok(hex_key) = crate::db::encryption::get_or_create_db_key(path) {
         let _ = conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key));
@@ -321,11 +319,9 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
 pub fn validate_backup(path: &Path) -> Result<(), String> {
     // Attempt 1: with encryption key
     let result = (|| -> Option<String> {
-        let conn = rusqlite::Connection::open_with_flags(
-            path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .ok()?;
+        let conn =
+            rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .ok()?;
         if let Ok(hex_key) = crate::db::encryption::get_or_create_db_key(path) {
             conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key))
                 .ok()?;
@@ -370,8 +366,7 @@ pub fn start_fresh_database() -> Result<(), String> {
 /// Copy the active database to a user-chosen destination.
 pub fn export_database_copy(destination: &str) -> Result<(), String> {
     let db_path = active_db_path()?;
-    fs::copy(&db_path, destination)
-        .map_err(|e| format!("Failed to export database: {e}"))?;
+    fs::copy(&db_path, destination).map_err(|e| format!("Failed to export database: {e}"))?;
     Ok(())
 }
 
