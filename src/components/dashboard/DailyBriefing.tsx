@@ -30,6 +30,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -345,22 +346,49 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
               ))}
 
               <div className={s.scheduleRows}>
-                {scheduleMeetings.map((meeting) => (
-                  <BriefingMeetingCard
-                    key={meeting.id}
-                    meeting={meeting}
-                    now={now}
-                    currentMeeting={currentMeeting}
-                    meetingActions={getActionsForMeeting(meeting.id)}
-                    onComplete={handleComplete}
-                    completedIds={completedIds}
-                    onEntitiesChanged={onRefresh}
-                    capturedActionCount={getCapturedActionCount(meeting.id)}
-                    proposedActionCount={getProposedActionCount(meeting.id)}
-                    isUpNext={upNext?.id === meeting.id}
-                    userDomain={data.userDomains?.[0]}
-                  />
-                ))}
+                {scheduleMeetings.map((meeting) => {
+                  // I502: Find health data for first linked account
+                  const healthMap = data.entityHealthMap;
+                  const linkedAccountHealth = healthMap && meeting.linkedEntities
+                    ? meeting.linkedEntities
+                        .filter((e) => e.entityType === "account" && healthMap[e.id])
+                        .map((e) => ({ entity: e, health: healthMap[e.id] }))[0]
+                    : undefined;
+
+                  return (
+                    <div key={meeting.id}>
+                      <BriefingMeetingCard
+                        meeting={meeting}
+                        now={now}
+                        currentMeeting={currentMeeting}
+                        meetingActions={getActionsForMeeting(meeting.id)}
+                        onComplete={handleComplete}
+                        completedIds={completedIds}
+                        onEntitiesChanged={onRefresh}
+                        capturedActionCount={getCapturedActionCount(meeting.id)}
+                        proposedActionCount={getProposedActionCount(meeting.id)}
+                        isUpNext={upNext?.id === meeting.id}
+                        userDomain={data.userDomains?.[0]}
+                      />
+                      {linkedAccountHealth && (
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingLeft: 52,
+                          paddingBottom: 4,
+                        }}>
+                          <HealthBadge
+                            score={linkedAccountHealth.health.score}
+                            band={linkedAccountHealth.health.band}
+                            trend={linkedAccountHealth.health.trend}
+                            size="compact"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
