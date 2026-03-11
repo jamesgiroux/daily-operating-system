@@ -813,9 +813,7 @@ pub async fn search_global(
 }
 
 #[tauri::command]
-pub async fn rebuild_search_index(
-    state: State<'_, Arc<AppState>>,
-) -> Result<usize, String> {
+pub async fn rebuild_search_index(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     use crate::db::search::SearchDb;
     state
         .db_write(move |db| {
@@ -873,9 +871,7 @@ pub async fn clear_intelligence(
 }
 
 #[tauri::command]
-pub async fn delete_all_data(
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     // Get DB path before closing
     let db_path = {
         let guard = state.db.lock().map_err(|_| "DB lock failed")?;
@@ -899,8 +895,7 @@ pub async fn delete_all_data(
     // Delete database file
     if let Some(path) = db_path {
         if std::path::Path::new(&path).exists() {
-            std::fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete database: {e}"))?;
+            std::fs::remove_file(&path).map_err(|e| format!("Failed to delete database: {e}"))?;
         }
         // Also delete WAL and SHM files
         let wal = format!("{path}-wal");
