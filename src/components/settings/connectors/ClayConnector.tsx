@@ -168,11 +168,11 @@ export default function ClayConnection() {
     setEnriching(true);
     try {
       const result = await invoke<{ queued: number; totalUnenriched: number }>("start_clay_bulk_enrich");
-      toast(`Queued ${result.queued} people for enrichment`);
+      toast(`Queued ${result.queued} contacts for updates`);
       const refreshed = await invoke<ClayStatusData>("get_clay_status");
       setStatus(refreshed);
     } catch (err) {
-      toast.error("Bulk enrichment failed");
+      toast.error("Bulk update failed");
     } finally {
       setEnriching(false);
     }
@@ -197,15 +197,15 @@ export default function ClayConnection() {
 
   const statusLabel = !status
     ? "Loading..."
-    : `${status.enrichedCount} enriched \u00b7 ${status.pendingCount} pending`;
+    : `${status.enrichedCount} updated \u00b7 ${status.pendingCount} pending`;
 
   const needsConnectionId = smithery?.hasApiKey && smithery?.namespace && !smithery?.connectionId;
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Clay Contact Enrichment</p>
+      <p style={styles.subsectionLabel}>Clay Contact Updates</p>
       <p style={{ ...styles.description, marginBottom: 16 }}>
-        Enrich contacts with social profiles, bios, and company data via Clay + Smithery
+        Update contacts with social profiles, bios, and company data via Clay + Smithery
       </p>
 
       <div style={styles.settingRow}>
@@ -215,8 +215,8 @@ export default function ClayConnection() {
           </span>
           <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
             {status?.enabled
-              ? "Contacts will be enriched with Clay data"
-              : "Clay enrichment is turned off"}
+              ? "Contacts will be updated with Clay data"
+              : "Clay updates are turned off"}
           </p>
         </div>
         <button
@@ -396,7 +396,7 @@ export default function ClayConnection() {
                     onClick={handleBulkEnrich}
                     disabled={enriching}
                   >
-                    {enriching ? "Enriching..." : "Enrich All"}
+                    {enriching ? "Updating..." : "Update All"}
                   </button>
                 </div>
               </div>
@@ -404,10 +404,10 @@ export default function ClayConnection() {
               <div style={styles.settingRow}>
                 <div>
                   <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
-                    Auto-enrich new contacts
+                    Auto-update new contacts
                   </span>
                   <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                    Automatically enrich when new people are created
+                    Automatically update when new people are created
                   </p>
                 </div>
                 <button
@@ -420,7 +420,7 @@ export default function ClayConnection() {
 
               {status.lastEnrichmentAt && (
                 <div style={{ padding: "8px 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                  Last enrichment: {new Date(status.lastEnrichmentAt).toLocaleString()}
+                  Last updated: {new Date(status.lastEnrichmentAt).toLocaleString()}
                 </div>
               )}
             </>
