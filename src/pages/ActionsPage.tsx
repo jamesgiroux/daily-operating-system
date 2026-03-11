@@ -15,6 +15,9 @@ import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
 import { DatePicker } from "@/components/ui/date-picker";
 import s from "./ActionsPage.module.css";
 
@@ -151,12 +154,6 @@ const statusTabs: StatusTab[] = ["proposed", "pending", "completed"];
 const statusTabLabels: Record<StatusTab, string> = { proposed: "Suggested", pending: "Pending", completed: "Completed" };
 const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
 
-/** Map time-band labels to their CSS module class */
-const timeBandLabelClass: Record<string, string> = {
-  Overdue: s.groupLabelOverdue,
-  "This Week": s.groupLabelThisWeek,
-  Later: s.groupLabelLater,
-};
 
 export default function ActionsPage() {
   const { personality } = usePersonality();
@@ -239,25 +236,12 @@ export default function ActionsPage() {
 
   // Loading state
   if (loading) {
-    return (
-      <div className={s.loadingContainer}>
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className={s.loadingSkeleton} />
-        ))}
-      </div>
-    );
+    return <EditorialLoading count={4} />;
   }
 
   // Error state
   if (error) {
-    return (
-      <div className={s.errorContainer}>
-        <p className={s.errorMessage}>{error}</p>
-        <button onClick={refresh} className={s.retryButton}>
-          Retry
-        </button>
-      </div>
-    );
+    return <EditorialError message={error} onRetry={refresh} />;
   }
 
   return (
@@ -412,21 +396,10 @@ function PendingGroupedView({
       {groups.map((group, idx) => (
         <div key={group.label}>
           {hasTimeBands && hasMeetingGroups && idx === firstTimeBandIdx && (
-            <div className={s.everythingElseHeader}>
-              Everything Else
-            </div>
+            <ChapterHeading title="Everything Else" />
           )}
           <div className={s.groupBlock}>
-            <div
-              className={`${s.groupLabel} ${
-                group.kind === "meeting"
-                  ? s.groupLabelMeeting
-                  : timeBandLabelClass[group.label] ?? s.groupLabelLater
-              }`}
-            >
-              {group.label}
-              <span className={s.groupCount}>{group.actions.length}</span>
-            </div>
+            <ChapterHeading title={group.label} epigraph={`${group.actions.length} action${group.actions.length !== 1 ? "s" : ""}`} />
             <div className={s.actionColumn}>
               {group.actions.map((action, i) => (
                 <SharedActionRow
