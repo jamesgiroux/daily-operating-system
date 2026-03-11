@@ -32,9 +32,9 @@ const entityColor: Record<string, string> = {
 };
 
 const entityBg: Record<string, string> = {
-  account: "rgba(201, 162, 39, 0.08)",
-  project: "rgba(107, 124, 82, 0.08)",
-  person: "rgba(95, 130, 173, 0.08)",
+  account: "var(--color-spice-turmeric-8)",
+  project: "var(--color-garden-olive-8)",
+  person: "var(--color-garden-larkspur-8)",
 };
 
 export function EmailEntityChip({
@@ -102,7 +102,7 @@ export function EmailEntityChip({
   }
 
   const color = entityColor[entityType ?? "account"] ?? "var(--color-text-tertiary)";
-  const bg = entityBg[entityType ?? "account"] ?? "rgba(30, 37, 48, 0.04)";
+  const bg = entityBg[entityType ?? "account"] ?? "var(--color-desk-charcoal-4)";
   const Icon = entityType === "project"
     ? FolderKanban
     : entityType === "person"

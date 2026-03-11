@@ -40,7 +40,7 @@ export function FolderTree({ entityMode, rootPath }: FolderTreeProps) {
   if (entityMode === "account" || entityMode === "both") {
     folders.push({
       name: "Accounts/",
-      annotation: "One folder per account with context that enriches meeting prep",
+      annotation: "One folder per account with context that shapes meeting briefings",
       icon: Folder,
       iconColor: "var(--color-spice-turmeric)",
     });

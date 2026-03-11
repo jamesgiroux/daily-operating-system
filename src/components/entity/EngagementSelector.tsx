@@ -21,13 +21,13 @@ interface EngagementOption {
 }
 
 const ENGAGEMENT_OPTIONS: EngagementOption[] = [
-  { stored: "champion", label: "Champion", background: "rgba(201, 162, 39, 0.12)", color: "var(--color-spice-turmeric)" },
-  { stored: "executive_sponsor", label: "Exec Sponsor", background: "rgba(74, 103, 65, 0.14)", color: "var(--color-garden-rosemary)" },
-  { stored: "decision_maker", label: "Decision Maker", background: "rgba(74, 103, 65, 0.14)", color: "var(--color-garden-rosemary)" },
-  { stored: "primary_contact", label: "Primary Contact", background: "rgba(143, 163, 196, 0.14)", color: "var(--color-garden-larkspur)" },
-  { stored: "technical_contact", label: "Technical Contact", background: "rgba(143, 163, 196, 0.14)", color: "var(--color-garden-larkspur)" },
-  { stored: "power_user", label: "Power User", background: "rgba(143, 163, 196, 0.14)", color: "var(--color-garden-larkspur)" },
-  { stored: "end_user", label: "End User", background: "rgba(143, 163, 196, 0.08)", color: "var(--color-text-tertiary)" },
+  { stored: "champion", label: "Champion", background: "var(--color-spice-turmeric-12)", color: "var(--color-spice-turmeric)" },
+  { stored: "executive_sponsor", label: "Exec Sponsor", background: "var(--color-garden-rosemary-14)", color: "var(--color-garden-rosemary)" },
+  { stored: "decision_maker", label: "Decision Maker", background: "var(--color-garden-rosemary-14)", color: "var(--color-garden-rosemary)" },
+  { stored: "primary_contact", label: "Primary Contact", background: "var(--color-garden-larkspur-14)", color: "var(--color-garden-larkspur)" },
+  { stored: "technical_contact", label: "Technical Contact", background: "var(--color-garden-larkspur-14)", color: "var(--color-garden-larkspur)" },
+  { stored: "power_user", label: "Power User", background: "var(--color-garden-larkspur-14)", color: "var(--color-garden-larkspur)" },
+  { stored: "end_user", label: "End User", background: "var(--color-garden-larkspur-8)", color: "var(--color-text-tertiary)" },
 ];
 
 /** Map a stored engagement value to its display configuration. */
@@ -36,7 +36,7 @@ export function getEngagementDisplay(stored: string): EngagementOption {
   return ENGAGEMENT_OPTIONS.find((o) => o.stored === lower) ?? {
     stored: lower,
     label: stored,
-    background: "rgba(143, 163, 196, 0.14)",
+    background: "var(--color-garden-larkspur-14)",
     color: "var(--color-text-tertiary)",
   };
 }
@@ -93,7 +93,7 @@ export function EngagementSelector({ value, onChange }: EngagementSelectorProps)
             background: "var(--color-paper-cream)",
             border: "1px solid var(--color-rule-light)",
             borderRadius: 6,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            boxShadow: "var(--shadow-lg)",
             padding: "4px 0",
             minWidth: 140,
           }}
@@ -114,7 +114,7 @@ export function EngagementSelector({ value, onChange }: EngagementSelectorProps)
                 width: "100%",
                 padding: "6px 12px",
                 border: "none",
-                background: opt.stored === value.toLowerCase() ? "rgba(0,0,0,0.04)" : "none",
+                background: opt.stored === value.toLowerCase() ? "var(--color-black-4)" : "none",
                 cursor: "pointer",
                 textAlign: "left",
               }}
