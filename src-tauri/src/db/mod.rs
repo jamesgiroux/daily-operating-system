@@ -522,6 +522,7 @@ pub mod meetings;
 pub mod people;
 pub mod person_relationships;
 pub mod projects;
+pub mod intelligence_feedback;
 pub mod signals;
 
 // =============================================================================

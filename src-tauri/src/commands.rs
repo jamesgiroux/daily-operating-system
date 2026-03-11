@@ -3284,19 +3284,29 @@ pub async fn get_frequent_correspondents(
 // Dev Tools
 // =============================================================================
 
-/// Apply a dev scenario (reset, mock_full, mock_no_auth, mock_empty).
+/// Apply a dev scenario (reset, full, no_connectors, pipeline).
 ///
 /// Returns an error in release builds. In debug builds, delegates to
 /// `devtools::apply_scenario` which orchestrates the scenario switch.
+/// Async because it must reinitialize the DB connection pool after
+/// entering dev mode (the sync DB swaps immediately, but the async
+/// `DbService` readers/writers need to be reopened at the dev path).
 #[tauri::command]
-pub fn dev_apply_scenario(
+pub async fn dev_apply_scenario(
     scenario: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
-    crate::devtools::apply_scenario(&scenario, &state)
+    let result = crate::devtools::apply_scenario(&scenario, &state)?;
+
+    // Reinitialize the async DB connection pool at the dev path
+    if let Err(e) = state.reinit_db_service().await {
+        log::warn!("Failed to reinit db_service after dev_apply_scenario: {}", e);
+    }
+
+    Ok(result)
 }
 
 /// Get current dev state for the dev tools panel.
@@ -3335,29 +3345,6 @@ pub fn dev_run_today_full(state: State<'_, Arc<AppState>>) -> Result<String, Str
     crate::devtools::run_today_full(&state)
 }
 
-/// Weekly prep — mechanical delivery only (no AI).
-///
-/// Requires `simulate_briefing` scenario first. Delivers week-overview.json
-/// from the seeded week-directive.json.
-#[tauri::command]
-pub fn dev_run_week_mechanical(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    if !cfg!(debug_assertions) {
-        return Err("Dev tools not available in release builds".into());
-    }
-    crate::devtools::run_week_mechanical(&state)
-}
-
-/// Weekly prep — full pipeline with AI enrichment.
-///
-/// Requires `simulate_briefing` scenario + Claude Code CLI installed.
-/// Runs Claude /week then delivers week-overview.json.
-#[tauri::command]
-pub fn dev_run_week_full(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    if !cfg!(debug_assertions) {
-        return Err("Dev tools not available in release builds".into());
-    }
-    crate::devtools::run_week_full(&state)
-}
 
 /// Restore from dev mode to live mode (I298).
 ///
@@ -3421,14 +3408,21 @@ pub fn dev_set_auth_override(claude_mode: u8, google_mode: u8) -> Result<String,
 ///
 /// Scenarios: fresh, auth_ready, no_claude, claude_unauthed, no_google, google_expired, nothing_works.
 #[tauri::command]
-pub fn dev_onboarding_scenario(
+pub async fn dev_onboarding_scenario(
     scenario: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
-    crate::devtools::onboarding_scenario(&scenario, &state)
+    let result = crate::devtools::onboarding_scenario(&scenario, &state)?;
+
+    // Reinitialize the async DB connection pool at the dev path
+    if let Err(e) = state.reinit_db_service().await {
+        log::warn!("Failed to reinit db_service after dev_onboarding_scenario: {}", e);
+    }
+
+    Ok(result)
 }
 
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.

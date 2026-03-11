@@ -1218,6 +1218,11 @@ mod live_acceptance_tests {
         let google_person_id = format!("{marker}-p-google");
         let glean_person_id = format!("{marker}-p-glean");
         let user_person_id = format!("{marker}-p-user");
+        let google_enrichment_sources = serde_json::json!({
+            "linkedin_url": {"source": "google", "at": "2026-03-07T00:00:00Z"},
+            "bio": {"source": "user", "at": "2026-03-07T00:00:00Z"}
+        })
+        .to_string();
         let person = DbPerson {
             id: google_person_id.clone(),
             email: format!("{marker}-google@example.com"),
@@ -1242,24 +1247,19 @@ mod live_acceptance_tests {
             company_size: None,
             company_hq: None,
             last_enriched_at: None,
-            enrichment_sources: Some(
-                serde_json::json!({
-                    "linkedin_url": {"source": "google", "at": "2026-03-07T00:00:00Z"},
-                    "bio": {"source": "user", "at": "2026-03-07T00:00:00Z"}
-                })
-                .to_string(),
-            ),
+            enrichment_sources: Some(google_enrichment_sources.clone()),
         };
         snapshot_db.upsert_person(&person).expect("seed snapshot person");
         snapshot_db
             .conn_ref()
             .execute(
                 "UPDATE people
-                 SET linkedin_url = ?1, bio = ?2
-                 WHERE id = ?3",
+                 SET linkedin_url = ?1, bio = ?2, enrichment_sources = ?3
+                 WHERE id = ?4",
                 params![
                     "https://linkedin.com/in/wave1",
                     "Wave1 profile",
+                    google_enrichment_sources,
                     google_person_id.clone()
                 ],
             )
