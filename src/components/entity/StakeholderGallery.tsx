@@ -7,16 +7,22 @@
  *
  * I261: Live editing (name, role, assessment, engagement), add/remove
  * stakeholders, internal people filter, create contact from stakeholder.
+ *
+ * I493: Enriched cards show title/organization from linked person data,
+ * engagement badges, last interaction date, and coverage analysis strip.
  */
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Plus, UserPlus, Search, LinkIcon, Check } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
+import { formatRelativeDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
 import { Avatar } from "@/components/ui/Avatar";
 import { EngagementSelector } from "./EngagementSelector";
+import { getEngagementDisplay } from "./EngagementSelector";
+import css from "./StakeholderGallery.module.css";
 
 interface StakeholderGalleryProps {
   intelligence: EntityIntelligence | null;
@@ -64,28 +70,30 @@ const ASSESSMENT_CHAR_LIMIT = 150;
 function TruncatedAssessment({ text }: { text: string }) {
   const [showFull, setShowFull] = useState(false);
   const truncated = text.length > ASSESSMENT_CHAR_LIMIT && !showFull;
-  const displayText = truncated ? text.slice(0, ASSESSMENT_CHAR_LIMIT) + "…" : text;
+  const displayText = truncated ? text.slice(0, ASSESSMENT_CHAR_LIMIT) + "\u2026" : text;
   return (
-    <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}>
+    <p className={css.assessment}>
       {displayText}
       {truncated && (
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFull(true); }}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "0 0 0 4px",
-          }}
+          className={css.readMore}
         >
           Read more
         </button>
       )}
     </p>
   );
+}
+
+/** Build a title/organization line from enriched person data. */
+function buildPersonDetail(matched: Person | undefined): string | null {
+  if (!matched) return null;
+  const parts: string[] = [];
+  // Use role as title (Person.role is the job title field)
+  if (matched.role) parts.push(matched.role);
+  if (matched.organization) parts.push(matched.organization);
+  return parts.length > 0 ? parts.join(" \u00b7 ") : null;
 }
 
 export function StakeholderGallery({
@@ -136,6 +144,14 @@ export function StakeholderGallery({
   const STAKEHOLDER_LIMIT = 6;
   const visibleStakeholders = expandedGrid ? stakeholders : stakeholders.slice(0, STAKEHOLDER_LIMIT);
   const hasMoreStakeholders = stakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
+
+  // ── Coverage analysis ──
+  const totalKnown = stakeholders.length + linkedPeople.filter(
+    (p) => !stakeholders.some((s) => s.name.toLowerCase() === p.name.toLowerCase()),
+  ).length;
+  const engagedCount = stakeholders.filter(
+    (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
+  ).length;
 
   // ── Field update helper ──
   async function updateField(fieldPath: string, value: string) {
@@ -274,12 +290,12 @@ export function StakeholderGallery({
   }
 
   return (
-    <section id={sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+    <section id={sectionId} className={css.section}>
       <ChapterHeading title={chapterTitle} epigraph={epigraph} />
 
       {hasStakeholders ? (
         <>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px 48px" }}>
+        <div className={css.grid}>
           {visibleStakeholders.map((s, i) => {
             // I420: personId-first matching, then name fallback
             const matched = s.personId
@@ -290,11 +306,12 @@ export function StakeholderGallery({
               : null;
             const idx = actualIndex(i);
             const isHovered = hoveredCard === i;
+            const personDetail = buildPersonDetail(matched);
 
             const card = (
               <div
                 key={i}
-                style={{ position: "relative" }}
+                className={css.card}
                 onMouseEnter={() => setHoveredCard(i)}
                 onMouseLeave={() => setHoveredCard(null)}
               >
@@ -306,35 +323,16 @@ export function StakeholderGallery({
                       e.stopPropagation();
                       handleRemove(i);
                     }}
-                    style={{
-                      position: "absolute",
-                      top: -4,
-                      right: -4,
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      border: "1px solid var(--color-rule-light)",
-                      background: "var(--color-paper-cream)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 2,
-                    }}
+                    className={css.removeButton}
                     title="Remove stakeholder"
                   >
-                    <X size={12} strokeWidth={1.5} style={{ color: "var(--color-text-tertiary)" }} />
+                    <X size={12} strokeWidth={1.5} className={css.removeIcon} />
                   </button>
                 )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                <div className={css.cardHeader}>
                   {/* Avatar with larkspur ring for linked person entities */}
-                  <div style={{
-                    borderRadius: "50%",
-                    padding: matched ? 2 : 0,
-                    border: matched ? "2px solid var(--color-garden-larkspur)" : "2px solid transparent",
-                    flexShrink: 0,
-                  }}>
+                  <div className={matched ? css.avatarRingLinked : css.avatarRing}>
                     <Avatar name={s.name} personId={matched?.id} size={24} />
                   </div>
                   {canEdit ? (
@@ -345,12 +343,12 @@ export function StakeholderGallery({
                       style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}
                     />
                   ) : (
-                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}>
+                    <span className={css.name}>
                       {s.name}
                     </span>
                   )}
                   {matched && (
-                    <LinkIcon size={12} strokeWidth={1.5} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} aria-label={`Linked to ${matched.name}`} />
+                    <LinkIcon size={12} strokeWidth={1.5} className={css.linkIcon} aria-label={`Linked to ${matched.name}`} />
                   )}
                   {s.engagement && canEdit ? (
                     <EngagementSelector
@@ -359,21 +357,17 @@ export function StakeholderGallery({
                     />
                   ) : s.engagement ? (
                     <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 9,
-                        fontWeight: 500,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        padding: "2px 7px",
-                        borderRadius: 3,
-                        ...getStaticBadgeStyle(s.engagement),
-                      }}
+                      className={css.engagementBadge}
+                      style={getStaticBadgeStyle(s.engagement)}
                     >
                       {getStaticBadgeLabel(s.engagement)}
                     </span>
                   ) : null}
                 </div>
+                {/* I493: Title and organization from linked person data */}
+                {personDetail && (
+                  <p className={css.titleLine}>{personDetail}</p>
+                )}
                 {s.role != null && (
                   canEdit ? (
                     <EditableText
@@ -384,7 +378,7 @@ export function StakeholderGallery({
                       style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "0 0 8px 0" }}
                     />
                   ) : (
-                    <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "0 0 8px 0" }}>
+                    <p className={css.role}>
                       {s.role}
                     </p>
                   )
@@ -402,6 +396,12 @@ export function StakeholderGallery({
                     <TruncatedAssessment text={s.assessment} />
                   )
                 )}
+                {/* I493: Last interaction date from linked person data */}
+                {matched?.lastSeen && (
+                  <div className={css.lastSeen}>
+                    Last seen {formatRelativeDate(matched.lastSeen)}
+                  </div>
+                )}
                 {/* I420: Suggestion confirmation prompt */}
                 {canEdit && suggested && (
                   <button
@@ -410,19 +410,7 @@ export function StakeholderGallery({
                       e.stopPropagation();
                       confirmSuggestion(idx, suggested.id, suggested.name);
                     }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      marginTop: 8,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-garden-larkspur)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
+                    className={css.actionButtonSuggestion}
                     title={`Link to ${suggested.name}`}
                   >
                     <Check size={12} strokeWidth={1.5} />
@@ -437,19 +425,7 @@ export function StakeholderGallery({
                       e.stopPropagation();
                       handleCreateContact(s);
                     }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      marginTop: 8,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
+                    className={css.actionButtonCreate}
                   >
                     <UserPlus size={12} strokeWidth={1.5} />
                     Create contact
@@ -460,7 +436,7 @@ export function StakeholderGallery({
 
             if (matched) {
               return (
-                <Link key={i} to="/people/$personId" params={{ personId: matched.id }} style={{ textDecoration: "none", color: "inherit" }}>
+                <Link key={i} to="/people/$personId" params={{ personId: matched.id }} className={css.cardLink}>
                   {card}
                 </Link>
               );
@@ -471,33 +447,28 @@ export function StakeholderGallery({
         {hasMoreStakeholders && (
           <button
             onClick={() => setExpandedGrid(true)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: "12px 0 0",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
+            className={css.showMore}
           >
             Show {stakeholders.length - STAKEHOLDER_LIMIT} more
           </button>
         )}
         </>
       ) : linkedPeople.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px 48px" }}>
+        <div className={css.grid}>
           {linkedPeople.map((p) => (
-            <Link key={p.id} to="/people/$personId" params={{ personId: p.id }} style={{ textDecoration: "none", color: "inherit" }}>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}>
+            <Link key={p.id} to="/people/$personId" params={{ personId: p.id }} className={css.cardLink}>
+              <span className={css.name}>
                 {p.name}
               </span>
               {p.role && (
-                <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "4px 0 0 0" }}>
-                  {p.role}
+                <p className={css.titleLine}>
+                  {[p.role, p.organization].filter(Boolean).join(" \u00b7 ")}
                 </p>
+              )}
+              {p.lastSeen && (
+                <div className={css.lastSeen}>
+                  Last seen {formatRelativeDate(p.lastSeen)}
+                </div>
               )}
             </Link>
           ))}
@@ -506,12 +477,12 @@ export function StakeholderGallery({
 
       {/* Add stakeholder */}
       {canEdit && (
-        <div style={{ marginTop: hasStakeholders ? 32 : 16 }}>
+        <div className={hasStakeholders ? css.addSection : css.addSectionCompact}>
           {addingStakeholder ? (
             <div ref={addContainerRef}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative", width: 200 }}>
-                  <Search size={12} style={{ position: "absolute", left: 8, top: 9, color: "var(--color-text-tertiary)" }} />
+              <div className={css.addForm}>
+                <div className={css.searchInputWrapper}>
+                  <Search size={12} className={css.searchIcon} />
                   <input
                     value={newName}
                     onChange={(e) => handleNameChange(e.target.value)}
@@ -521,16 +492,7 @@ export function StakeholderGallery({
                       if (e.key === "Enter") handleAdd();
                       if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); setShowDropdown(false); }
                     }}
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 14,
-                      padding: "4px 8px 4px 26px",
-                      border: "1px solid var(--color-rule-light)",
-                      borderRadius: 4,
-                      background: "transparent",
-                      color: "var(--color-text-primary)",
-                      width: "100%",
-                    }}
+                    className={css.searchInput}
                   />
                 </div>
                 <input
@@ -541,80 +503,37 @@ export function StakeholderGallery({
                     if (e.key === "Enter") handleAdd();
                     if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); }
                   }}
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    padding: "4px 8px",
-                    border: "1px solid var(--color-rule-light)",
-                    borderRadius: 4,
-                    background: "transparent",
-                    color: "var(--color-text-primary)",
-                    width: 160,
-                  }}
+                  className={css.roleInput}
                 />
                 <button
                   onClick={handleAdd}
                   disabled={!newName.trim()}
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: newName.trim() ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
-                    background: "none",
-                    border: "none",
-                    cursor: newName.trim() ? "pointer" : "default",
-                    padding: "4px 0",
-                  }}
+                  className={newName.trim() ? css.addButtonActive : css.addButtonDisabled}
                 >
                   Add
                 </button>
               </div>
 
-              {/* Inline search results — no absolute positioning, no z-index issues */}
+              {/* Inline search results */}
               {showDropdown && searchResults.length > 0 && (
-                <div style={{
-                  marginTop: 8,
-                  border: "1px solid var(--color-rule-light)",
-                  borderRadius: 4,
-                  background: "var(--color-paper-warm-white)",
-                }}>
-                  <p style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "var(--color-text-tertiary)",
-                    padding: "8px 12px 4px",
-                    margin: 0,
-                  }}>
+                <div className={css.searchResults}>
+                  <p className={css.searchResultsLabel}>
                     Existing People
                   </p>
                   {searchResults.map((person) => (
                     <button
                       key={person.id}
                       onClick={() => handleSelectPerson(person)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        width: "100%",
-                        padding: "8px 12px",
-                        background: "none",
-                        border: "none",
-                        borderTop: "1px solid var(--color-rule-light)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
+                      className={css.searchResultItem}
                     >
-                      <UserPlus size={14} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} />
+                      <UserPlus size={14} className={css.searchResultIcon} />
                       <div>
-                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                        <span className={css.searchResultName}>
                           {person.name}
                         </span>
                         {(person.role || person.organization) && (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginLeft: 8 }}>
-                            {[person.role, person.organization].filter(Boolean).join(" · ")}
+                          <span className={css.searchResultMeta}>
+                            {[person.role, person.organization].filter(Boolean).join(" \u00b7 ")}
                           </span>
                         )}
                       </div>
@@ -626,20 +545,7 @@ export function StakeholderGallery({
           ) : (
             <button
               onClick={() => setAddingStakeholder(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
+              className={css.addTrigger}
             >
               <Plus size={12} strokeWidth={1.5} />
               Add Stakeholder
@@ -648,29 +554,26 @@ export function StakeholderGallery({
         </div>
       )}
 
+      {/* I493: Coverage analysis strip */}
+      {totalKnown > 0 && (
+        <div className={css.coverageStrip}>
+          <span className={css.coverageNumbers}>{engagedCount} of {totalKnown}</span>
+          <span className={css.coverageLabel}>known stakeholders with defined roles</span>
+        </div>
+      )}
+
       {/* Your Team strip */}
       {teamMembers.length > 0 && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-heavy)",
-            borderBottom: "1px solid var(--color-rule-heavy)",
-            padding: "14px 0",
-            marginTop: 40,
-            display: "flex",
-            alignItems: "baseline",
-            gap: 24,
-            flexWrap: "wrap",
-          }}
-        >
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-text-tertiary)" }}>
+        <div className={css.teamStrip}>
+          <span className={css.teamLabel}>
             Your Team
           </span>
           {teamMembers.map((member) => (
-            <span key={member.personId} style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-text-tertiary)" }}>
+            <span key={member.personId} className={css.teamMember}>
+              <span className={css.teamMemberRole}>
                 {member.role}
               </span>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)" }}>
+              <span className={css.teamMemberName}>
                 {member.personName}
               </span>
             </span>
@@ -682,8 +585,6 @@ export function StakeholderGallery({
 }
 
 // Static badge helpers for non-editable mode
-import { getEngagementDisplay } from "./EngagementSelector";
-
 function getStaticBadgeStyle(engagement: string): { background: string; color: string } {
   const d = getEngagementDisplay(engagement);
   return { background: d.background, color: d.color };
