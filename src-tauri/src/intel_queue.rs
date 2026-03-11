@@ -380,26 +380,27 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         let mut error_categories: HashMap<String, &str> = HashMap::new();
 
         let enrichment_start = Instant::now();
-        let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> = if inputs.len() == 1 {
-            // Single entity — use existing direct path (no batching overhead)
-            let (request, input) = inputs.pop().unwrap();
-            match run_enrichment(&input, &ai_config) {
-                Ok(parsed) => vec![(request, input, parsed)],
-                Err(e) => {
-                    let category = categorize_enrichment_error(&e);
-                    error_categories.insert(request.entity_id.clone(), category);
-                    log::warn!(
-                        "IntelProcessor: enrichment failed for {}: {}",
-                        request.entity_id,
-                        e
-                    );
-                    Vec::new()
+        let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> =
+            if inputs.len() == 1 {
+                // Single entity — use existing direct path (no batching overhead)
+                let (request, input) = inputs.pop().unwrap();
+                match run_enrichment(&input, &ai_config) {
+                    Ok(parsed) => vec![(request, input, parsed)],
+                    Err(e) => {
+                        let category = categorize_enrichment_error(&e);
+                        error_categories.insert(request.entity_id.clone(), category);
+                        log::warn!(
+                            "IntelProcessor: enrichment failed for {}: {}",
+                            request.entity_id,
+                            e
+                        );
+                        Vec::new()
+                    }
                 }
-            }
-        } else {
-            // Multi-entity batch — combined prompt with delimiters (I289)
-            run_batch_enrichment(inputs, &ai_config)
-        };
+            } else {
+                // Multi-entity batch — combined prompt with delimiters (I289)
+                run_batch_enrichment(inputs, &ai_config)
+            };
         let enrichment_duration_ms = enrichment_start.elapsed().as_millis() as u64;
 
         // I470: Re-enqueue entities that failed validation (up to MAX_VALIDATION_RETRIES)
@@ -433,7 +434,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                             let _ = crate::connectivity::record_sync_failure(
                                 db.conn_ref(),
                                 "claude_code",
-                                &format!("Enrichment failed after {} retries for {}", original.retry_count, original.entity_id),
+                                &format!(
+                                    "Enrichment failed after {} retries for {}",
+                                    original.retry_count, original.entity_id
+                                ),
                             );
                         }
                     }
@@ -537,13 +541,15 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         continue;
                     }
                 };
-                if let Err(e) = crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
-                    &db,
-                    state.signals.engine.as_ref(),
-                    &request.entity_type,
-                    &request.entity_id,
-                    &parsed.inferred_relationships,
-                ) {
+                if let Err(e) =
+                    crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
+                        &db,
+                        state.signals.engine.as_ref(),
+                        &request.entity_type,
+                        &request.entity_id,
+                        &parsed.inferred_relationships,
+                    )
+                {
                     log::warn!(
                         "IntelProcessor: failed to persist inferred relationships for {}: {}",
                         request.entity_id,
@@ -800,7 +806,11 @@ pub fn gather_enrichment_input(
                 }
             }
             Err(e) => {
-                log::warn!("I506: Co-attendance query failed for {}: {}", request.entity_id, e);
+                log::warn!(
+                    "I506: Co-attendance query failed for {}: {}",
+                    request.entity_id,
+                    e
+                );
             }
         }
     }

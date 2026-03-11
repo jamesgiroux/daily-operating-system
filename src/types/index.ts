@@ -2180,11 +2180,16 @@ export interface QuarterlyPriority {
 
 export interface GlobalSearchResult {
   entityId: string;
-  entityType: "account" | "project" | "person" | "meeting" | "action";
+  entityType: "account" | "project" | "person" | "meeting" | "action" | "email";
   name: string;
   secondaryText: string;
   route: string;
   rank: number;
+}
+
+export interface CopyToInboxReport {
+  copiedCount: number;
+  copiedFilenames: string[];
 }
 
 // =============================================================================

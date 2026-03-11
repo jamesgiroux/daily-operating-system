@@ -37,7 +37,7 @@
 | Wave 0 | Kickoff + parity baseline + tracker + branch model | Complete |
 | Wave 1 | I521 definition sprint + frontend contract ownership | Complete |
 | Wave 2 | 3a backend cleanup: I515 then I514, plus I538 + I540 reliability fixes | Complete |
-| Wave 3 | 3b GA platform: I427, I428, I429, I430, I431, I438 | Planned |
+| Wave 3 | 3b GA platform: I427, I428, I429, I430, I438 | Complete |
 | Wave 4 | 3c then 3d: I502, I493, I447-I450, I453, I454, I541-I546 | Planned |
 | Wave 5 | 3e: I529, I530, I537 | Planned |
 | Wave 6 | Hardening + signoff + full acceptance matrix | Planned |
@@ -51,12 +51,12 @@
 | I514 | I512 | 2 | Complete | Commands/db decomposition ACs + boundary check + `cargo test` + strict clippy + `pnpm tsc --noEmit` |
 | I538 | I511, I512 | 2 | Complete | Snapshot-then-swap refresh path + `cargo test refresh_completion` + `cargo test test_prep_queue` |
 | I540 | I511, I512 | 2 | Complete | Granola action metadata preserved + notes-aware prompt + rejection source threading + lifecycle/archive fix + full Rust quality gates + `pnpm tsc --noEmit` |
-| I427 | I511 | 3 | Planned | Search latency + parity gate |
-| I428 | None | 3 | Planned | Degraded-mode rendering + parity gate |
-| I429 | I511 | 3 | Planned | Export correctness + parity gate |
-| I430 | None | 3 | Planned | Settings/Data copy + destructive action guardrails + parity gate |
-| I431 | I435 | 3 | Planned | Cost model correctness + parity gate |
-| I438 | None | 3 | Planned | Onboarding prime flow + parity gate |
+| I427 | I511 | 3 | Complete | FTS5 search index + CommandMenu cross-entity search + email indexing |
+| I428 | None | 3 | Complete | Sync metadata tracking + freshness UI + graceful failure recording |
+| I429 | I511 | 3 | Complete | ZIP export with 8 JSON files, schema-validated queries |
+| I430 | None | 3 | Complete | Data summary + clear intelligence + delete all data + privacy UI |
+| I431 | I435 | 3 | Deferred | Depends on I435 (token optimization) — moved to post-1.0 |
+| I438 | None | 3 | Complete | Prime onboarding chapter + drag-drop + connector cards |
 | I502 | I499, I503 | 4 | Planned | Health rendering ACs + parity gate |
 | I493 | I505, I502 | 4 | Planned | Account detail ACs + parity gate |
 | I447 | I521 | 4 | Planned | Token audit ACs + parity gate |
@@ -186,6 +186,52 @@ Validated on 2026-03-11 on branch `codex/v1-phase3`.
 - `cargo test --manifest-path src-tauri/Cargo.toml` — pass on 2026-03-11
 - `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — pass on 2026-03-11
 - `pnpm tsc --noEmit` — pass on 2026-03-11
+
+## Wave 3 progress
+
+1. I427 (Full-Text Search) completed on 2026-03-11
+- FTS5 virtual table (`search_index`) with cross-entity indexing: accounts, projects, people, meetings, actions, emails
+- `search_global` Tauri command with bm25() ranking, prefix matching, <300ms target
+- CommandMenu extended with grouped results by entity type, icon per type, click-to-navigate
+- Search index rebuilt on app startup via `run_startup_sync()`
+- Schema-validated: all queries verified against real migration schema (meetings not meetings_history, email_id not id, etc.)
+
+2. I428 (Offline/Degraded Mode) completed on 2026-03-11
+- Migration 066: `sync_metadata` table seeded with google_calendar, gmail, claude_code
+- `connectivity.rs`: `record_sync_success()`, `record_sync_failure()`, `get_sync_freshness()` with green/amber/red thresholds
+- Sync recording wired into google.rs (calendar + gmail success/failure paths) and intel_queue.rs (claude_code)
+- `useConnectivity` hook polls every 60s, exposes `isFullyFresh`, `staleServices`, `oldestUpdate`
+- SystemStatus.tsx displays per-source freshness with colored dots
+- Glean excluded from seed (inline enrichment, no discrete sync path)
+
+3. I429 (Data Export) completed on 2026-03-11
+- `export.rs`: ZIP with 8 JSON files (accounts, people, projects, meetings, actions, signals, intelligence, metadata)
+- Tauri `save()` dialog for path picker in DataPrivacySection
+- All queries schema-validated against real table/column names (9 column fixes applied)
+
+4. I430 (Privacy Controls) completed on 2026-03-11
+- `privacy.rs`: `get_data_summary()` with live counts, `clear_intelligence()` deleting assessments/feedback/signals/summaries
+- `delete_all_data` command: close DB, delete file, clear workspace, relaunch
+- DataPrivacySection in Settings → Data with export, clear insights (confirmation), delete everything (requires typing "DELETE")
+- ADR-0083 compliant: "contacts" not "people", "insights" not "intelligence"
+
+5. I431 (Cost Visibility) deferred
+- Depends on I435 (token optimization) which hasn't shipped — no audit doc, no tier corrections
+- Building cost estimates on incorrect tier data would be misleading
+- Moved to post-1.0 per plan guidance ("cut if needed")
+
+6. I438 (Prime DailyOS) completed on 2026-03-11
+- PrimeBriefing chapter added as step 7 in OnboardingFlow
+- Tauri native drag-drop via `getCurrentWebview().onDragDropEvent()` + file browser via `open()` dialog
+- Connector cards (Quill, Granola, Google Drive) with "Coming soon" disabled state
+- Confirmation message after file add, correct skip label per spec
+- Wizard step recording fixed to "prime" (was "role" — would have caused resume loop)
+
+7. Command evidence
+- `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — pass on 2026-03-11
+- `cargo test --lib` — 1161 passed, 0 failed on 2026-03-11
+- `pnpm tsc --noEmit` — pass on 2026-03-11
+- Schema validation audit: 22 issues found and fixed across all tracks (stale table names, wrong columns, invalid FTS5 syntax)
 
 ## Release signoff criteria (Phase 3)
 

@@ -47,16 +47,16 @@ pub use planning_reports::*;
 pub use projects_data::*;
 pub use workspace::*;
 
+pub(crate) use app_support::{
+    __cmd__clear_intelligence, __cmd__delete_all_data, __cmd__export_all_data,
+    __cmd__get_data_summary, __cmd__get_sync_freshness, __cmd__rebuild_search_index,
+    __cmd__search_global,
+};
 #[allow(unused_imports)]
 pub(crate) use core::{
     backfill_db_prep_contexts, backfill_prep_files_in_dir, backfill_prep_semantics_value,
     collect_meeting_outcomes_from_db, load_meeting_prep_from_sources, parse_meeting_datetime,
     parse_user_agenda_json,
-};
-pub(crate) use app_support::{
-    __cmd__clear_intelligence, __cmd__delete_all_data, __cmd__export_all_data,
-    __cmd__get_data_summary, __cmd__get_sync_freshness, __cmd__rebuild_search_index,
-    __cmd__search_global,
 };
 
 const READ_CMD_LATENCY_BUDGET_MS: u128 = 100;
