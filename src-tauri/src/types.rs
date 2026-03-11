@@ -2308,6 +2308,16 @@ pub struct TimelineMeeting {
     pub has_prep: bool,
 }
 
+/// Feature flags for gating incomplete features behind compile/runtime switches.
+/// Currently used to hide role presets (not GA-ready) from the UI.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureFlags {
+    /// When false, role preset selection is hidden from onboarding and settings.
+    /// Defaults to false (bool's Default).
+    pub role_presets_enabled: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

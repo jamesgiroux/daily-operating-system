@@ -746,6 +746,11 @@ pub fn run() {
             commands::get_data_summary,
             commands::clear_intelligence,
             commands::delete_all_data,
+            // I537: Feature Flags
+            commands::get_feature_flags,
+            // I529: Intelligence Quality Feedback
+            commands::submit_intelligence_feedback,
+            commands::get_entity_feedback,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

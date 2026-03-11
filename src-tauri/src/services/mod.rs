@@ -8,6 +8,7 @@ pub mod dashboard;
 pub mod emails;
 pub mod entities;
 pub mod entity_context;
+pub mod feedback;
 pub mod hygiene;
 pub mod integrations;
 pub mod intelligence;

@@ -53,6 +53,8 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 
 /* ── Vitals assembly ── */
 
@@ -196,6 +198,9 @@ export default function ProjectDetailEditorial() {
 
   // I352: Shared intelligence field update hook
   const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("project", projectId);
+
+  // I529: Intelligence quality feedback
+  const feedback = useIntelligenceFeedback(projectId, "project");
 
   // Context entries — must be before early returns (React hooks rule)
   const entityCtx = useEntityContextEntries("project", projectId ?? null);
@@ -610,6 +615,12 @@ export default function ProjectDetailEditorial() {
           onUpdateField={handleUpdateIntelField}
           sectionId="the-landscape"
           chapterTitle="The Landscape"
+          feedbackSlot={
+            <IntelligenceFeedback
+              value={feedback.getFeedback("watch_list")}
+              onFeedback={(type) => feedback.submitFeedback("watch_list", type)}
+            />
+          }
           bottomSection={
             detail.milestones.length > 0 ? (
               <WatchListMilestones milestones={detail.milestones} />

@@ -1670,18 +1670,8 @@ fn queue_person_intelligence(
             let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
         }
 
-        // Check intelligence.json freshness
-        let entity_name = pe
-            .get("entity_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&entity_id);
-        let person_dir = crate::people::person_dir(workspace, entity_name);
-
-        let intel_opt = db
-            .get_entity_intelligence(&entity_id)
-            .ok()
-            .flatten()
-            .or_else(|| crate::intelligence::read_intelligence_json(&person_dir).ok());
+        // Check intelligence freshness (I513: DB is the sole source — no file fallback)
+        let intel_opt = db.get_entity_intelligence(&entity_id).ok().flatten();
         if let Some(intel) = intel_opt {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&intel.enriched_at) {
                 let age_secs = (Utc::now() - ts.with_timezone(&Utc)).num_seconds();
@@ -2356,6 +2346,13 @@ fn track_thread_positions(
     }
 
     (total, awaiting)
+}
+
+/// Compute human-readable wait duration from a date string.
+///
+/// Public alias for use by services that build replies_needed from DB (I513).
+pub fn compute_wait_duration_public(date_str: &str, now: &chrono::DateTime<Utc>) -> String {
+    compute_wait_duration(date_str, now)
 }
 
 /// Compute human-readable wait duration from a date string.
@@ -4249,18 +4246,16 @@ mod tests {
         let queue = crate::intel_queue::IntelligenceQueue::new();
         let workspace = TempDir::new().unwrap();
 
-        // Create a fresh intelligence.json
-        let person_dir = crate::people::person_dir(workspace.path(), "Fresh Person");
-        std::fs::create_dir_all(&person_dir).unwrap();
-        let intel_json = json!({
-            "version": 1,
-            "entityId": "person_fresh_example_com",
-            "entityType": "person",
-            "enrichedAt": Utc::now().to_rfc3339(),
-            "executiveAssessment": "Fresh assessment.",
-        });
-        let intel_str = serde_json::to_string_pretty(&intel_json).unwrap();
-        crate::util::atomic_write_str(&person_dir.join("intelligence.json"), &intel_str).unwrap();
+        // I513: Insert fresh intelligence into DB (no file fallback).
+        let intel = crate::intelligence::IntelligenceJson {
+            version: 1,
+            entity_id: "person_fresh_example_com".to_string(),
+            entity_type: "person".to_string(),
+            enriched_at: Utc::now().to_rfc3339(),
+            executive_assessment: Some("Fresh assessment.".to_string()),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&intel).unwrap();
 
         let contexts = vec![person_meeting_context(
             "person_fresh_example_com",
