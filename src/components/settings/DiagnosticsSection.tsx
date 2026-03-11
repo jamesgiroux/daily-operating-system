@@ -10,7 +10,7 @@ import {
   FolderKanban,
   Layers,
 } from "lucide-react";
-import type { EntityMode } from "@/types";
+import type { EntityMode, FeatureFlags } from "@/types";
 import { styles } from "@/components/settings/styles";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -675,11 +675,15 @@ function ArchivedAccountsSection() {
 export default function DiagnosticsSection() {
   const [config, setConfig] = useState<Config | null>(null);
   const [running, setRunning] = useState<string | null>(null);
+  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
 
   useEffect(() => {
     invoke<Config>("get_config")
       .then(setConfig)
       .catch((err) => console.error("get_config (diagnostics) failed:", err));
+    invoke<FeatureFlags>("get_feature_flags")
+      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
+      .catch(() => setRolePresetsEnabled(false));
   }, []);
 
   async function handleRunWorkflow(workflow: string) {
@@ -697,11 +701,15 @@ export default function DiagnosticsSection() {
   return (
     <div>
       <DeveloperToggle config={config} setConfig={setConfig} />
-      <hr style={styles.thinRule} />
-      <EntityModeSelector
-        currentMode={config?.entityMode ?? "account"}
-        onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
-      />
+      {rolePresetsEnabled && (
+        <>
+          <hr style={styles.thinRule} />
+          <EntityModeSelector
+            currentMode={config?.entityMode ?? "account"}
+            onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
+          />
+        </>
+      )}
       <hr style={styles.thinRule} />
       <SchedulesSection config={config} running={running} onRun={handleRunWorkflow} />
       <hr style={styles.thinRule} />

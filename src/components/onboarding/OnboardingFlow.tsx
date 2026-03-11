@@ -11,7 +11,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
-import type { EntityMode } from "@/types";
+import type { EntityMode, FeatureFlags } from "@/types";
 
 import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
 import { FolioBar } from "@/components/layout/FolioBar";
@@ -86,6 +86,14 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [chapter, setChapter] = useState<Chapter>(CHAPTERS[0]);
   const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
   const [resumeChecked, setResumeChecked] = useState(false);
+  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
+
+  // Fetch feature flags on mount
+  useEffect(() => {
+    invoke<FeatureFlags>("get_feature_flags")
+      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
+      .catch(() => setRolePresetsEnabled(false));
+  }, []);
 
   // Resume from last completed step on mount
   useEffect(() => {
@@ -192,12 +200,15 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     onComplete();
   }
 
-  // Build chapter items for FloatingNavIsland (4 step dots, not labels)
-  const navChapters: ChapterItem[] = CHAPTERS.filter((c) => c !== "welcome").map((c) => ({
-    id: c,
-    label: CHAPTER_LABELS[c],
-    icon: CHAPTER_ICONS[c],
-  }));
+  // Build chapter items for FloatingNavIsland (step dots, not labels)
+  // Hide "role" chapter when role presets are gated off (I537)
+  const navChapters: ChapterItem[] = CHAPTERS
+    .filter((c) => c !== "welcome" && (c !== "role" || rolePresetsEnabled))
+    .map((c) => ({
+      id: c,
+      label: CHAPTER_LABELS[c],
+      icon: CHAPTER_ICONS[c],
+    }));
 
   return (
     <div className={styles.wrapper}>
@@ -273,12 +284,31 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "first-account" && (
           <FirstAccountStep
-            onNext={() => goToChapter("role")}
-            onSkip={() => goToChapter("role")}
+            onNext={async () => {
+              if (rolePresetsEnabled) {
+                goToChapter("role");
+              } else {
+                // Auto-set CS preset and "both" entity mode as defaults
+                await invoke("set_role", { role: "customer-success" }).catch(() => {});
+                await invoke("set_entity_mode", { mode: "both" }).catch(() => {});
+                await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+                goToChapter("prime");
+              }
+            }}
+            onSkip={async () => {
+              if (rolePresetsEnabled) {
+                goToChapter("role");
+              } else {
+                await invoke("set_role", { role: "customer-success" }).catch(() => {});
+                await invoke("set_entity_mode", { mode: "both" }).catch(() => {});
+                await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+                goToChapter("prime");
+              }
+            }}
           />
         )}
 
-        {chapter === "role" && (
+        {chapter === "role" && rolePresetsEnabled && (
           <EntityModeChapter
             onNext={async (_mode) => {
               await invoke("set_wizard_step", { step: "role" }).catch(() => {});
