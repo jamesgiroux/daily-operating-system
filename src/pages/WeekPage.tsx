@@ -567,6 +567,12 @@ function TimelineDayGroup({
         {meetings.map((m) => {
           const daysUntil = !isPast ? computeDaysUntil(m.startTime) : null;
           const needsPrep = !m.hasPrep;
+          // I502: First linked account with health data
+          const accountHealth = m.entityHealthMap
+            ? m.entities
+                .filter((e) => e.entityType === "account" && m.entityHealthMap?.[e.id])
+                .map((e) => m.entityHealthMap![e.id])[0]
+            : undefined;
 
           return (
             <MeetingCard
@@ -591,6 +597,14 @@ function TimelineDayGroup({
               subtitleExtra={
                 !isPast ? (
                   <>
+                    {accountHealth && (
+                      <HealthBadge
+                        score={accountHealth.score}
+                        band={accountHealth.band}
+                        trend={accountHealth.trend}
+                        size="compact"
+                      />
+                    )}
                     {needsPrep && (
                       <span className={w.noPrepBadge}>
                         No prep

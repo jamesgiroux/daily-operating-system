@@ -25,6 +25,7 @@ import { getPrimaryEntityName } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { ActionRow } from "@/components/shared/ActionRow";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -111,6 +112,7 @@ export default function MeetingDetailPage() {
   const [canEditUserLayer, setCanEditUserLayer] = useState(false);
   const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
   const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
+  const [entityHealthMap, setEntityHealthMap] = useState<MeetingIntelligence["entityHealthMap"]>({});
   const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +162,7 @@ export default function MeetingDetailPage() {
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
       setLinkedEntities(intel.linkedEntities ?? []);
+      setEntityHealthMap(intel.entityHealthMap ?? {});
       setIntelligenceQuality(intel.intelligenceQuality);
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
@@ -830,6 +833,25 @@ Thanks!`;
                 />
               </div>
             )}
+
+              {/* Account health strip — I502 */}
+              {linkedEntities.some((e) => e.entityType === "account" && entityHealthMap?.[e.id]) && (
+                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+                  {linkedEntities
+                    .filter((e) => e.entityType === "account" && entityHealthMap?.[e.id])
+                    .map((e) => {
+                      const h = entityHealthMap![e.id];
+                      return (
+                        <span key={e.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                            {e.name}
+                          </span>
+                          <HealthBadge score={h.score} band={h.band} trend={h.trend} size="compact" />
+                        </span>
+                      );
+                    })}
+                </div>
+              )}
 
               {/* New signals banner */}
               {intelligenceQuality?.hasNewSignals && (
