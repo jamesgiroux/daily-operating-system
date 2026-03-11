@@ -294,7 +294,6 @@ pub fn load_emails_json_with_sync(today_dir: &Path) -> Result<LoadedEmailsData, 
     })
 }
 
-
 // =============================================================================
 // Directive Loading (ADR-0042: per-operation pipelines)
 // =============================================================================

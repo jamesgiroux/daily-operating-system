@@ -5,7 +5,7 @@ import type { DbAction } from "@/types";
 interface UseProposedActionsReturn {
   proposedActions: DbAction[];
   acceptAction: (id: string) => Promise<void>;
-  rejectAction: (id: string) => Promise<void>;
+  rejectAction: (id: string, source?: "actions_page" | "daily_briefing" | "meeting_detail") => Promise<void>;
   isLoading: boolean;
   refresh: () => Promise<void>;
 }
@@ -43,9 +43,12 @@ export function useProposedActions(): UseProposedActionsReturn {
   );
 
   const rejectAction = useCallback(
-    async (id: string) => {
+    async (
+      id: string,
+      source: "actions_page" | "daily_briefing" | "meeting_detail" = "actions_page"
+    ) => {
       try {
-        await invoke("reject_proposed_action", { id });
+        await invoke("reject_proposed_action", { id, source });
         setProposedActions((prev) => prev.filter((a) => a.id !== id));
       } catch (err) {
         console.error("Failed to reject action:", err);

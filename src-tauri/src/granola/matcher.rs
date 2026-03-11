@@ -167,7 +167,7 @@ fn time_proximity_score(a: &DateTime<Utc>, b: &DateTime<Utc>) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::granola::cache::{EventTime, GoogleCalendarEvent};
+    use crate::granola::cache::{EventTime, GoogleCalendarEvent, GranolaContentType};
 
     fn make_doc(
         id: &str,
@@ -181,6 +181,7 @@ mod tests {
             created_at: None,
             updated_at: None,
             content: "Test content".to_string(),
+            content_type: GranolaContentType::Transcript,
             google_calendar_event: Some(GoogleCalendarEvent {
                 id: cal_id.map(String::from),
                 summary: Some(title.to_string()),
