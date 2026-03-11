@@ -291,29 +291,43 @@ pub async fn update_intelligence_field(
             let intel =
                 crate::intelligence::apply_intelligence_field_update(&dir, &field_path, &value)?;
 
+            // I530: Distinguish curation (delete/clear) from correction (edit).
+            // Empty value = user removed the item → curation, no source penalty.
+            // Non-empty value = user corrected the item → correction, source penalized.
+            let is_curation = value.trim().is_empty()
+                || value == "[]"
+                || value == "null";
+
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
+                let (signal_type, source, confidence) = if is_curation {
+                    ("intelligence_curated", "user_curation", 0.5)
+                } else {
+                    ("user_correction", "user_edit", 1.0)
+                };
                 crate::services::signals::emit(
                     tx,
                     &entity_type,
                     &entity_id,
-                    "user_correction",
-                    "user_edit",
+                    signal_type,
+                    source,
                     Some(&format!("{{\"field\":\"{}\"}}", field_path)),
-                    1.0,
+                    confidence,
                 )
                 .map_err(|e| format!("signal emit failed: {e}"))?;
                 Ok(())
             })?;
 
-            // Self-healing: record user correction to lower quality score (I409)
-            crate::self_healing::feedback::record_enrichment_correction(
-                db,
-                &entity_id,
-                &entity_type,
-                "intel_queue",
-            );
+            // Self-healing: only record correction (not curation) to lower quality score
+            if !is_curation {
+                crate::self_healing::feedback::record_enrichment_correction(
+                    db,
+                    &entity_id,
+                    &entity_type,
+                    "intel_queue",
+                );
+            }
 
             Ok(())
         })
