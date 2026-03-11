@@ -32,6 +32,7 @@ import { YouCardStep, type YouCardFormData } from "./chapters/YouCardStep";
 import { FirstAccountStep } from "./chapters/FirstAccountStep";
 import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
 import { PrimeBriefing } from "./chapters/PrimeBriefing";
+import styles from "./onboarding.module.css";
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -199,13 +200,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   }));
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--color-paper-cream)",
-        position: "relative",
-      }}
-    >
+    <div className={styles.wrapper}>
       <AtmosphereLayer color="turmeric" />
       <FolioBar publicationLabel="Setup" />
 
@@ -225,18 +220,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       )}
 
       {/* Content column */}
-      <div
-        style={{
-          maxWidth: 1080,
-          margin: "0 auto",
-          paddingTop: 80,
-          paddingBottom: 120,
-          paddingLeft: "var(--page-padding-horizontal)",
-          paddingRight: "var(--page-padding-horizontal)",
-          position: "relative",
-          zIndex: "var(--z-page-content)",
-        }}
-      >
+      <div className={styles.contentColumn}>
         {/* Step content */}
         {chapter === "welcome" && (
           <Welcome

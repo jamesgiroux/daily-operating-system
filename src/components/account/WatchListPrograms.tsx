@@ -15,12 +15,12 @@ interface WatchListProgramsProps {
 function statusBadgeStyle(status: string): React.CSSProperties {
   const lower = status.toLowerCase();
   if (lower === "active") {
-    return { background: "rgba(126,170,123,0.14)", color: "var(--color-garden-rosemary)" };
+    return { background: "var(--color-garden-sage-14)", color: "var(--color-garden-rosemary)" };
   }
   if (lower === "planned" || lower === "planning") {
-    return { background: "rgba(143,163,196,0.14)", color: "var(--color-garden-larkspur)" };
+    return { background: "var(--color-garden-larkspur-14)", color: "var(--color-garden-larkspur)" };
   }
-  return { background: "rgba(30,37,48,0.06)", color: "var(--color-text-tertiary)" };
+  return { background: "var(--color-rule-light)", color: "var(--color-text-tertiary)" };
 }
 
 export function WatchListPrograms({
@@ -62,7 +62,7 @@ export function WatchListPrograms({
                   borderBottom:
                     originalIndex === programs.indexOf(activePrograms[activePrograms.length - 1])
                       ? "none"
-                      : "1px solid rgba(30,37,48,0.06)",
+                      : "1px solid var(--color-rule-light)",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>

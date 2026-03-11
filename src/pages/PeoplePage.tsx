@@ -397,7 +397,7 @@ export default function PeoplePage() {
             alignItems: "center",
             justifyContent: "space-between",
             borderLeft: "3px solid var(--color-spice-turmeric)",
-            background: "rgba(201, 162, 39, 0.06)",
+            background: "var(--color-spice-turmeric-6)",
             borderRadius: 8,
             padding: "10px 16px",
             marginBottom: 16,
@@ -424,7 +424,7 @@ export default function PeoplePage() {
               alignItems: "center",
               justifyContent: "space-between",
               borderLeft: "3px solid var(--color-spice-turmeric)",
-              background: "rgba(201, 162, 39, 0.06)",
+              background: "var(--color-spice-turmeric-6)",
               borderRadius: 8,
               padding: "10px 16px",
             }}

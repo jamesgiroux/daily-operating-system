@@ -7,6 +7,7 @@ import { FolderOpen, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FolderTree } from "@/components/onboarding/FolderTree";
+import styles from "../onboarding.module.css";
 
 interface WorkspaceProps {
   entityMode: string;
@@ -50,16 +51,16 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="Your files, on your machine"
-        epigraph="Everything DailyOS creates lives in a folder you control. Briefings, meeting prep, actions — plain files you can open, search, or move anywhere."
+        epigraph="Everything DailyOS creates lives in a folder you control. Briefings, meeting notes, actions — plain files you can open, search, or move anywhere."
       />
 
       {selectedPath ? (
         <FolderTree entityMode={entityMode} rootPath={selectedPath} />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
           <Button
             className="w-full justify-between"
             onClick={() => defaultWorkspacePath && handleWorkspacePath(defaultWorkspacePath)}
@@ -69,31 +70,18 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
               <FolderOpen className="size-4" />
               <span>Use default location</span>
             </div>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                opacity: 0.7,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
+            <span className={styles.monoTinyPath}>
               {defaultWorkspaceDisplay}
             </span>
           </Button>
 
           {/* "or" divider — short centered rule */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: "4px 0" }}>
-            <div style={{ width: 40, borderTop: "1px solid var(--color-rule-light)" }} />
-            <span
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 12,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
+          <div className={styles.orDivider}>
+            <div className={styles.orDividerRule} />
+            <span className={styles.orDividerText}>
               or
             </span>
-            <div style={{ width: 40, borderTop: "1px solid var(--color-rule-light)" }} />
+            <div className={styles.orDividerRule} />
           </div>
 
           <Button
@@ -114,22 +102,9 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
 
       {selectedPath && (
         <>
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              textAlign: "center",
-            }}
-          >
+          <p className={styles.workspaceHint}>
             Drop transcripts, notes, or documents into{" "}
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
+            <span className={styles.inboxFolder}>
               _inbox/
             </span>{" "}
             anytime. DailyOS processes them automatically.

@@ -10,7 +10,7 @@
   border-radius: 8px;
   padding: 20px;
   z-index: var(--z-modal, 50);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-dropdown);
 }
 
 .label {
