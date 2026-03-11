@@ -257,7 +257,7 @@
 .dropzoneActive {
   border-color: var(--color-garden-eucalyptus);
   /* Eucalyptus tint — from --color-garden-eucalyptus #6ba8a4 */
-  background: rgba(107, 168, 164, 0.06);
+  background: var(--color-garden-eucalyptus-6);
 }
 
 .dropzoneIcon {

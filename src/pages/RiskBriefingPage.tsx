@@ -373,8 +373,8 @@ export default function RiskBriefingPage() {
 // =============================================================================
 
 const ANALYSIS_PHASES = [
-  { key: "gathering", label: "Gathering intelligence", detail: "Reading account data, meeting history, and stakeholder signals" },
-  { key: "reading", label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship signals" },
+  { key: "gathering", label: "Gathering context", detail: "Reading account data, meeting history, and stakeholder updates" },
+  { key: "reading", label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship patterns" },
   { key: "building", label: "Building the story", detail: "Synthesizing situation, complication, and decline arc" },
   { key: "mapping", label: "Mapping stakes", detail: "Assessing financial exposure and decision-maker landscape" },
   { key: "planning", label: "Developing the plan", detail: "Building recovery strategy and action steps" },
