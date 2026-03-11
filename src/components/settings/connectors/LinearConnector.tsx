@@ -399,7 +399,7 @@ export default function LinearConnection() {
             <div style={{ marginTop: 16 }}>
               <hr style={styles.thinRule} />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <p style={{ ...styles.monoLabel, margin: 0 }}>Entity Links</p>
+                <p style={{ ...styles.monoLabel, margin: 0 }}>Account & Project Links</p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button
                     style={{ ...styles.btn, ...styles.btnGhost, opacity: autoLinking ? 0.5 : 1 }}
@@ -417,7 +417,7 @@ export default function LinearConnection() {
                 </div>
               </div>
               <p style={{ ...styles.description, fontSize: 12, marginBottom: 8 }}>
-                Link Linear projects to DailyOS entities for signal routing and meeting context
+                Link Linear projects to DailyOS accounts and projects for updates and meeting context
               </p>
 
               {/* Manual link form */}
@@ -486,7 +486,7 @@ export default function LinearConnection() {
                         setSelectedEntityId(id);
                         setSelectedEntityType(entityType ?? null);
                       }}
-                      placeholder="Select entity..."
+                      placeholder="Select account or project..."
                     />
                   </div>
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
