@@ -12,6 +12,7 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import styles from "../onboarding.module.css";
+import type { CopyToInboxReport } from "@/types";
 
 export interface InboxProcessingState {
   filesDropped: number;
@@ -78,12 +79,9 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
   const handleFileDrop = useCallback(async (paths: string[]) => {
     try {
-      const count = await invoke<number>("copy_to_inbox", { paths });
-      if (count > 0) {
-        const filenames = paths
-          .map((p) => p.split("/").pop() ?? p)
-          .slice(0, count);
-        processFiles(filenames);
+      const report = await invoke<CopyToInboxReport>("copy_to_inbox", { paths });
+      if (report.copiedCount > 0) {
+        processFiles(report.copiedFilenames);
       }
     } catch {
       // silently handle

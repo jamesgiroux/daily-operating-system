@@ -291,7 +291,10 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // I428: Record successful calendar sync
                 if let Ok(guard) = state.db.lock() {
                     if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_success(conn.conn_ref(), "google_calendar");
+                        let _ = crate::connectivity::record_sync_success(
+                            conn.conn_ref(),
+                            "google_calendar",
+                        );
                     }
                 }
 
@@ -313,7 +316,11 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // I428: Record calendar sync failure
                 if let Ok(guard) = state.db.lock() {
                     if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "google_calendar", "Auth token expired");
+                        let _ = crate::connectivity::record_sync_failure(
+                            conn.conn_ref(),
+                            "google_calendar",
+                            "Auth token expired",
+                        );
                     }
                 }
                 if let Ok(mut guard) = state.calendar.google_auth.lock() {
@@ -331,7 +338,11 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // I428: Record calendar sync failure
                 if let Ok(guard) = state.db.lock() {
                     if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "google_calendar", e);
+                        let _ = crate::connectivity::record_sync_failure(
+                            conn.conn_ref(),
+                            "google_calendar",
+                            e,
+                        );
                     }
                 }
                 log::warn!("Calendar poll error: {}", e);
@@ -1146,7 +1157,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         // I428: Record successful gmail sync
                         if let Ok(guard) = state.db.lock() {
                             if let Some(conn) = guard.as_ref() {
-                                let _ = crate::connectivity::record_sync_success(conn.conn_ref(), "gmail");
+                                let _ = crate::connectivity::record_sync_success(
+                                    conn.conn_ref(),
+                                    "gmail",
+                                );
                             }
                         }
 
@@ -1291,7 +1305,11 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         // I428: Record gmail sync failure (delivery)
                         if let Ok(guard) = state.db.lock() {
                             if let Some(conn) = guard.as_ref() {
-                                let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "gmail", &e.to_string());
+                                let _ = crate::connectivity::record_sync_failure(
+                                    conn.conn_ref(),
+                                    "gmail",
+                                    &e.to_string(),
+                                );
                             }
                         }
                         log::warn!("Email poll: delivery failed: {}", e);
@@ -1302,7 +1320,11 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // I428: Record gmail sync failure (fetch)
                 if let Ok(guard) = state.db.lock() {
                     if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "gmail", &e.to_string());
+                        let _ = crate::connectivity::record_sync_failure(
+                            conn.conn_ref(),
+                            "gmail",
+                            &e.to_string(),
+                        );
                     }
                 }
                 log::warn!("Email poll: fetch failed: {}", e);
