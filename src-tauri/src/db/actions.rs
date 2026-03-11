@@ -447,6 +447,45 @@ impl ActionDb {
         Ok(actions)
     }
 
+    /// Get counts of pending actions by priority (I513: for DB-built WeekOverview).
+    ///
+    /// Returns (total_pending, p1_count, p2_count, overdue_count).
+    pub fn get_pending_action_counts(&self) -> Result<(i64, i64, i64, i64), DbError> {
+        let total: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let p1: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let p2: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P2'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let overdue: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND due_date < date('now')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok((total, p1, p2, overdue))
+    }
+
     /// Get all action titles from the database (for dedup in Rust delivery).
     pub fn get_all_action_titles(&self) -> Result<Vec<String>, DbError> {
         let mut stmt = self
