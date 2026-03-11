@@ -201,7 +201,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <ChapterHeading
-          title="Drop things in, intelligence comes out."
+          title="Drop things in, context comes out."
         />
 
         <p
