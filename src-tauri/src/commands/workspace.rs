@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyToInboxReport {
+    pub copied_count: usize,
+    pub copied_filenames: Vec<String>,
+}
+
 #[tauri::command]
 pub async fn get_all_actions(state: State<'_, Arc<AppState>>) -> Result<ActionsResult, String> {
     Ok(crate::services::actions::get_all_actions(&state).await)
@@ -279,9 +286,13 @@ pub fn get_inbox_file_content(
 /// Copy files into the _inbox/ directory (used by drop zone).
 ///
 /// Accepts absolute file paths from the drag-drop event.
-/// Returns the number of files successfully copied.
+/// Returns the number of files successfully copied plus the exact filenames
+/// written into `_inbox/` after duplicate resolution.
 #[tauri::command]
-pub fn copy_to_inbox(paths: Vec<String>, state: State<'_, Arc<AppState>>) -> Result<usize, String> {
+pub fn copy_to_inbox(
+    paths: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<CopyToInboxReport, String> {
     let config = state
         .config
         .read()
@@ -306,7 +317,7 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<'_, Arc<AppState>>) -> Res
         home.join("Downloads"),
     ];
 
-    let mut copied = 0;
+    let mut copied_filenames = Vec::new();
 
     for path_str in &paths {
         let source = Path::new(path_str);
@@ -370,7 +381,12 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<'_, Arc<AppState>>) -> Res
         match std::fs::copy(source, &dest) {
             Ok(_) => {
                 log::info!("Copied '{}' to inbox", filename.to_string_lossy());
-                copied += 1;
+                copied_filenames.push(
+                    dest.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(path_str)
+                        .to_string(),
+                );
             }
             Err(e) => {
                 log::warn!("Failed to copy '{}' to inbox: {}", path_str, e);
@@ -378,7 +394,10 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<'_, Arc<AppState>>) -> Res
         }
     }
 
-    Ok(copied)
+    Ok(CopyToInboxReport {
+        copied_count: copied_filenames.len(),
+        copied_filenames,
+    })
 }
 
 // =============================================================================

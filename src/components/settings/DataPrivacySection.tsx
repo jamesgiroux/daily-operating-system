@@ -44,7 +44,9 @@ export default function DataPrivacySection() {
         report.counts.people +
         report.counts.projects +
         report.counts.meetings +
-        report.counts.actions;
+        report.counts.actions +
+        report.counts.signals +
+        report.counts.intelligence;
       toast.success(`Exported ${total} records to ${report.path}`);
     } catch (e) {
       toast.error(`Export failed: ${e}`);
