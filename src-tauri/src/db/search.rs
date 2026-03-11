@@ -97,7 +97,7 @@ impl SearchDb for rusqlite::Connection {
         // Index actions (non-completed, non-archived)
         count += self.execute(
             "INSERT INTO search_index (entity_id, entity_type, name, secondary_text, route)
-             SELECT id, 'action', title, COALESCE(source_type, ''), '/actions'
+             SELECT id, 'action', title, COALESCE(source_type, ''), '/actions/' || id
              FROM actions WHERE status NOT IN ('completed', 'archived')",
             [],
         )?;
