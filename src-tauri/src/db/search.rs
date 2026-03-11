@@ -89,7 +89,7 @@ impl SearchDb for rusqlite::Connection {
         count += self.execute(
             "INSERT INTO search_index (entity_id, entity_type, name, secondary_text, route)
              SELECT id, 'meeting', title, COALESCE(meeting_type, ''), '/meeting/' || id
-             FROM meetings_history
+             FROM meetings
              WHERE start_time > datetime('now', '-90 days')",
             [],
         )?;
@@ -98,7 +98,16 @@ impl SearchDb for rusqlite::Connection {
         count += self.execute(
             "INSERT INTO search_index (entity_id, entity_type, name, secondary_text, route)
              SELECT id, 'action', title, COALESCE(source_type, ''), '/actions'
-             FROM actions WHERE status != 'completed'",
+             FROM actions WHERE status NOT IN ('completed', 'archived')",
+            [],
+        )?;
+
+        // Index emails (last 90 days)
+        count += self.execute(
+            "INSERT INTO search_index (entity_id, entity_type, name, secondary_text, route)
+             SELECT email_id, 'email', subject, COALESCE(sender_name, sender_email, ''), '/emails'
+             FROM emails
+             WHERE received_at > datetime('now', '-90 days')",
             [],
         )?;
 
@@ -114,11 +123,13 @@ fn sanitize_fts5_query(query: &str) -> String {
         return String::new();
     }
 
-    // Split into words, quote each to escape special FTS5 chars, add prefix *
+    // Split into words, clean each, add prefix * for partial matching.
+    // FTS5 prefix queries: `word*` matches any token starting with `word`.
+    // Quoting ("word"*) is INVALID — prefix * only works on bare tokens.
     let words: Vec<String> = trimmed
         .split_whitespace()
         .map(|word| {
-            // Remove FTS5 special chars
+            // Remove FTS5 special chars (AND OR NOT " * ^ : etc.)
             let clean: String = word
                 .chars()
                 .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
@@ -126,7 +137,7 @@ fn sanitize_fts5_query(query: &str) -> String {
             if clean.is_empty() {
                 String::new()
             } else {
-                format!("\"{}\"*", clean)
+                format!("{}*", clean)
             }
         })
         .filter(|w| !w.is_empty())

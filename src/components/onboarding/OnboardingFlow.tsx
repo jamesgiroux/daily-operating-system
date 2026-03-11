@@ -173,7 +173,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     try {
       // Ensure workspace exists — required for the post-reload config check
       await autoCreateWorkspace();
-      await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+      await invoke("set_wizard_step", { step: "prime" }).catch(() => {});
       await invoke("set_wizard_completed");
       // Trigger immediate calendar poll if Google is connected
       try {
