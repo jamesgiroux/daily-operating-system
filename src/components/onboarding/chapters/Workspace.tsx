@@ -53,7 +53,7 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <ChapterHeading
         title="Your files, on your machine"
-        epigraph="Everything DailyOS creates lives in a folder you control. Briefings, meeting prep, actions — plain files you can open, search, or move anywhere."
+        epigraph="Everything DailyOS creates lives in a folder you control. Briefings, meeting notes, actions — plain files you can open, search, or move anywhere."
       />
 
       {selectedPath ? (
