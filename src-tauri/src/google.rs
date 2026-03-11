@@ -288,6 +288,13 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     }
                 }
 
+                // I428: Record successful calendar sync
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_success(conn.conn_ref(), "google_calendar");
+                    }
+                }
+
                 let _ = app_handle.emit("calendar-updated", ());
 
                 // Check for recently-ended meetings needing Quill transcript sync
@@ -303,6 +310,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
+                // I428: Record calendar sync failure
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "google_calendar", "Auth token expired");
+                    }
+                }
                 if let Ok(mut guard) = state.calendar.google_auth.lock() {
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
@@ -314,7 +327,13 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 );
                 let _ = crate::notification::notify_auth_expired(&app_handle);
             }
-            Err(PollError::ApiError(e)) => {
+            Err(PollError::ApiError(ref e)) => {
+                // I428: Record calendar sync failure
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "google_calendar", e);
+                    }
+                }
                 log::warn!("Calendar poll error: {}", e);
             }
         }
@@ -1124,6 +1143,13 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 serde_json::json!({"emails_fetched": after_ids.len()}),
                             );
                         }
+                        // I428: Record successful gmail sync
+                        if let Ok(guard) = state.db.lock() {
+                            if let Some(conn) = guard.as_ref() {
+                                let _ = crate::connectivity::record_sync_success(conn.conn_ref(), "gmail");
+                            }
+                        }
+
                         // Emit mechanical update immediately
                         let _ = app_handle.emit("emails-updated", ());
 
@@ -1261,12 +1287,24 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             log::info!("Email poll: no new emails");
                         }
                     }
-                    Err(e) => {
+                    Err(ref e) => {
+                        // I428: Record gmail sync failure (delivery)
+                        if let Ok(guard) = state.db.lock() {
+                            if let Some(conn) = guard.as_ref() {
+                                let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "gmail", &e.to_string());
+                            }
+                        }
                         log::warn!("Email poll: delivery failed: {}", e);
                     }
                 }
             }
-            Err(e) => {
+            Err(ref e) => {
+                // I428: Record gmail sync failure (fetch)
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_failure(conn.conn_ref(), "gmail", &e.to_string());
+                    }
+                }
                 log::warn!("Email poll: fetch failed: {}", e);
             }
         }

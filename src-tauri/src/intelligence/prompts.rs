@@ -1210,7 +1210,10 @@ fn semantic_gap_queries(prior: Option<&IntelligenceJson>) -> Vec<GapQueryItem> {
             );
         }
         if p.meeting_cadence.is_none() {
-            push_query(Some("meeting_cadence"), "meeting frequency engagement cadence");
+            push_query(
+                Some("meeting_cadence"),
+                "meeting frequency engagement cadence",
+            );
         }
         if p.blockers.is_empty() {
             push_query(Some("blockers"), "blockers obstacles delays impediments");
@@ -1228,7 +1231,10 @@ fn semantic_gap_queries(prior: Option<&IntelligenceJson>) -> Vec<GapQueryItem> {
             );
         }
         if p.support_health.is_none() {
-            push_query(Some("support_health"), "support tickets SLA issues incidents");
+            push_query(
+                Some("support_health"),
+                "support tickets SLA issues incidents",
+            );
         }
         if p.nps_csat.is_none() {
             push_query(
@@ -2514,9 +2520,9 @@ fn try_parse_json_response(
             cluster_summary: n.cluster_summary,
         }),
         user_edits: Vec::new(),
-        health: ai_resp
-            .health
-            .or_else(|| legacy_health_to_account_health(ai_resp.health_score, ai_resp.health_trend)),
+        health: ai_resp.health.or_else(|| {
+            legacy_health_to_account_health(ai_resp.health_score, ai_resp.health_trend)
+        }),
         org_health: None,
         success_metrics: ai_resp.success_metrics.map(|metrics| {
             metrics

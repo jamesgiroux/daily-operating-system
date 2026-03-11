@@ -427,6 +427,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         retry_count: original.retry_count + 1,
                     });
                 } else if !succeeded.contains(original.entity_id.as_str()) {
+                    // I428: Record claude_code sync failure
+                    if let Ok(db_guard) = state.db.lock() {
+                        if let Some(db) = db_guard.as_ref() {
+                            let _ = crate::connectivity::record_sync_failure(
+                                db.conn_ref(),
+                                "claude_code",
+                                &format!("Enrichment failed after {} retries for {}", original.retry_count, original.entity_id),
+                            );
+                        }
+                    }
                     log::warn!(
                         "IntelProcessor: {} failed after {} retries, dropping from queue",
                         original.entity_id,
@@ -572,6 +582,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                             Some(state.signals.engine.as_ref()),
                         );
                     }
+                }
+            }
+
+            // I428: Record successful claude_code sync
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
                 }
             }
 
@@ -1471,11 +1488,10 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     for mid in &meeting_ids {
         state
             .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: mid.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::Background,
-                requested_at: std::time::Instant::now(),
-            });
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                mid.clone(),
+                crate::meeting_prep_queue::PrepPriority::Background,
+            ));
     }
     if !meeting_ids.is_empty() {
         state.integrations.prep_queue_wake.notify_one();

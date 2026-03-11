@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS — Meeting Selected: Acme Corp QBR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&family=JetBrains+Mono:wght@300;400;500&family=Montserrat:wght@700;800&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream: #f5f2ef;
+  --linen: #e8e2d9;
+  --warm-white: #faf8f6;
+  --charcoal: #1e2530;
+  --ink: #2a2b3d;
+  --turmeric: #c9a227;
+  --saffron: #deb841;
+  --terracotta: #c4654a;
+  --sage: #7eaa7b;
+  --olive: #6b7c52;
+  --larkspur: #8fa3c4;
+  --text-primary: #1e2530;
+  --text-secondary: #5a6370;
+  --text-tertiary: #8a919a;
+  --rule-heavy: rgba(30, 37, 48, 0.12);
+  --rule-light: rgba(30, 37, 48, 0.06);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-brand: 'Montserrat', sans-serif;
+}
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--cream);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Folio Bar ── */
+.folio-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: rgba(245, 242, 239, 0.72);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--rule-light);
+}
+
+.folio-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folio-asterisk {
+  font-family: var(--font-brand);
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--turmeric);
+  line-height: 1;
+}
+
+.folio-wordmark {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.folio-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+.folio-refresh {
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.folio-refresh:hover {
+  color: var(--text-secondary);
+}
+
+/* ── Main Layout ── */
+.spread {
+  display: flex;
+  margin-top: 40px;
+  height: calc(100vh - 40px);
+}
+
+/* ── Left Panel: Schedule Timeline ── */
+.panel-left {
+  width: 320px;
+  min-width: 320px;
+  border-right: 1px solid var(--rule-heavy);
+  padding: 32px 28px 40px;
+  background: var(--warm-white);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.temporal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule-heavy);
+}
+
+.temporal-nav a {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.temporal-nav a:hover {
+  color: var(--text-secondary);
+}
+
+.temporal-nav .current {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.panel-left-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-tertiary);
+  margin-bottom: 20px;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule-light);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.timeline-item:hover:not(.selected) {
+  background: rgba(30, 37, 48, 0.02);
+  margin: 0 -28px;
+  padding: 14px 28px;
+}
+
+.timeline-item.past {
+  opacity: 0.4;
+}
+
+.timeline-item.selected {
+  background: rgba(201, 162, 39, 0.08);
+  margin: 0 -28px;
+  padding: 14px 28px;
+  border-bottom: 1px solid rgba(201, 162, 39, 0.12);
+}
+
+.timeline-accent {
+  width: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+.timeline-accent.customer { background: var(--turmeric); }
+.timeline-accent.personal { background: var(--sage); }
+.timeline-accent.one-on-one { background: var(--larkspur); }
+.timeline-accent.internal { background: var(--linen); }
+
+.timeline-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-bottom: 3px;
+}
+
+.timeline-title {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-primary);
+  line-height: 1.35;
+  margin-bottom: 3px;
+}
+
+.timeline-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+}
+
+.now-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0;
+}
+
+.now-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--terracotta);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.now-line {
+  flex: 1;
+  height: 1px;
+  background: var(--terracotta);
+  opacity: 0.4;
+}
+
+.now-text {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--terracotta);
+  flex-shrink: 0;
+}
+
+.panel-left-footer {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule-light);
+}
+
+.clear-until {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--sage);
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+}
+
+.open-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+/* ── Right Panel: Meeting Briefing ── */
+.panel-right {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow-y: auto;
+  background: var(--cream);
+}
+
+/* Watermark */
+.panel-right::before {
+  content: '*';
+  position: fixed;
+  top: 20px;
+  right: 40px;
+  font-family: var(--font-brand);
+  font-weight: 800;
+  font-size: 300px;
+  color: rgba(201, 162, 39, 0.06);
+  line-height: 1;
+  transform: rotate(12deg);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.briefing-content {
+  position: relative;
+  z-index: 1;
+  padding: 40px 56px 80px;
+  max-width: 780px;
+}
+
+/* ── Back Link ── */
+.back-link {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--turmeric);
+  text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 28px;
+  transition: opacity 0.2s;
+}
+
+.back-link:hover {
+  opacity: 0.75;
+}
+
+/* ── Meeting Header ── */
+.meeting-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--turmeric);
+  margin-bottom: 12px;
+}
+
+.meeting-title {
+  font-family: var(--font-serif);
+  font-size: 48px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.meeting-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.meeting-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meeting-meta .meet-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.meeting-meta .meet-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.join-button {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--turmeric);
+  background: rgba(201, 162, 39, 0.10);
+  border: 1px solid rgba(201, 162, 39, 0.20);
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+}
+
+.join-button:hover {
+  background: rgba(201, 162, 39, 0.18);
+  border-color: rgba(201, 162, 39, 0.35);
+}
+
+/* ── Account Health Strip ── */
+.health-strip {
+  background: var(--warm-white);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+}
+
+.health-account {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.health-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-dot.healthy { background: var(--sage); }
+.health-dot.warning { background: var(--saffron); }
+.health-dot.critical { background: var(--terracotta); }
+
+.health-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--sage);
+  font-weight: 500;
+}
+
+.health-trend {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--sage);
+}
+
+.health-renewal {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+/* ── Section Spacing ── */
+.section-gap {
+  height: 32px;
+}
+
+.section-gap-sm {
+  height: 24px;
+}
+
+.section-gap-lg {
+  height: 40px;
+}
+
+.section-rule {
+  border: none;
+  border-top: 1px solid var(--rule-heavy);
+}
+
+/* ── Briefing Narrative ── */
+.narrative {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 300;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  max-width: 640px;
+}
+
+.narrative strong {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.narrative p + p {
+  margin-top: 16px;
+}
+
+/* ── Section Kicker ── */
+.section-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  margin-bottom: 16px;
+}
+
+.section-kicker.terracotta {
+  color: var(--terracotta);
+}
+
+/* ── The Room ── */
+.room-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+
+.room-group-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule-light);
+}
+
+.attendee {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.attendee + .attendee {
+  border-top: 1px solid var(--rule-light);
+}
+
+.attendee-temp {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.attendee-temp.engaged { background: var(--sage); }
+.attendee-temp.warm { background: var(--saffron); }
+.attendee-temp.neutral { background: var(--linen); border: 1px solid var(--rule-heavy); }
+
+.attendee-info {
+  flex: 1;
+}
+
+.attendee-name {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.attendee-role {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.attendee-tag {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+/* ── Prep Grid ── */
+.prep-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 28px;
+}
+
+.prep-column-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+
+.prep-column-kicker.turmeric { color: var(--turmeric); }
+.prep-column-kicker.terracotta { color: var(--terracotta); }
+.prep-column-kicker.sage { color: var(--sage); }
+
+.prep-list {
+  list-style: none;
+}
+
+.prep-list li {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--text-primary);
+  padding: 4px 0;
+  padding-left: 14px;
+  position: relative;
+}
+
+.prep-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+/* ── Actions Checklist ── */
+.checklist {
+  list-style: none;
+}
+
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.checklist li + li {
+  border-top: 1px solid var(--rule-light);
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-tertiary);
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: border-color 0.15s;
+  cursor: pointer;
+}
+
+.checkbox:hover {
+  border-color: var(--turmeric);
+}
+
+.check-detail {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 300;
+}
+
+/* ── Recent Context ── */
+.context-item {
+  padding: 8px 0;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.context-item + .context-item {
+  border-top: 1px solid var(--rule-light);
+}
+
+.context-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  min-width: 52px;
+  padding-top: 1px;
+}
+
+.context-text {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Finis ── */
+.finis {
+  text-align: center;
+  padding-top: 12px;
+}
+
+.finis-text {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.finis-marks {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  letter-spacing: 0.4em;
+  color: var(--text-tertiary);
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .spread {
+    flex-direction: column;
+    height: auto;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  .panel-left {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--rule-heavy);
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .panel-right::before {
+    position: absolute;
+  }
+
+  .briefing-content {
+    padding: 32px 24px 60px;
+  }
+
+  .meeting-title {
+    font-size: 36px;
+  }
+
+  .room-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .prep-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .health-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .health-renewal {
+    margin-left: 0;
+  }
+}
+
+/* ── Scrollbar ── */
+.panel-right::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-right::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-right::-webkit-scrollbar-thumb {
+  background: rgba(30, 37, 48, 0.1);
+  border-radius: 3px;
+}
+
+.panel-right::-webkit-scrollbar-thumb:hover {
+  background: rgba(30, 37, 48, 0.2);
+}
+</style>
+</head>
+<body>
+
+<!-- ── Folio Bar ── -->
+<header class="folio-bar">
+  <div class="folio-left">
+    <span class="folio-asterisk">*</span>
+    <span class="folio-wordmark">DailyOS</span>
+  </div>
+  <span class="folio-date">Monday, March 3, 2026</span>
+  <svg class="folio-refresh" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+    <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/>
+    <path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/>
+    <path d="M11.5 3.5 12 4.5l1-.5"/>
+    <path d="M4.5 12.5 4 11.5l-1 .5"/>
+  </svg>
+</header>
+
+<!-- ── Two-Panel Spread ── -->
+<div class="spread">
+
+  <!-- ── Left Panel: Timeline ── -->
+  <aside class="panel-left">
+    <nav class="temporal-nav">
+      <a href="#">&lsaquo; Yesterday</a>
+      <span class="current">Today</span>
+      <a href="#">Tomorrow &rsaquo;</a>
+    </nav>
+
+    <div class="panel-left-header">Schedule</div>
+
+    <div class="timeline">
+
+      <!-- Past: Engineering Standup -->
+      <div class="timeline-item past">
+        <div class="timeline-accent internal"></div>
+        <div class="timeline-content">
+          <div class="timeline-time">9:00 AM &middot; 30m</div>
+          <div class="timeline-title">Engineering Standup</div>
+          <div class="timeline-label">Internal</div>
+        </div>
+      </div>
+
+      <!-- SELECTED: Acme Corp QBR -->
+      <div class="timeline-item selected">
+        <div class="timeline-accent customer"></div>
+        <div class="timeline-content">
+          <div class="timeline-time">10:30 AM &middot; 60m</div>
+          <div class="timeline-title">Acme Corp QBR</div>
+          <div class="timeline-label">Customer</div>
+        </div>
+      </div>
+
+      <!-- 1:1 with Sarah Chen -->
+      <div class="timeline-item">
+        <div class="timeline-accent one-on-one"></div>
+        <div class="timeline-content">
+          <div class="timeline-time">11:15 AM &middot; 30m</div>
+          <div class="timeline-title">1:1 with Sarah Chen</div>
+          <div class="timeline-label">1:1</div>
+        </div>
+      </div>
+
+      <!-- NOW indicator -->
+      <div class="now-indicator">
+        <div class="now-dot"></div>
+        <div class="now-line"></div>
+        <span class="now-text">Now &middot; 12:47 PM</span>
+      </div>
+
+      <!-- CloudCorp Status -->
+      <div class="timeline-item">
+        <div class="timeline-accent customer"></div>
+        <div class="timeline-content">
+          <div class="timeline-time">2:00 PM &middot; 45m</div>
+          <div class="timeline-title">CloudCorp Status</div>
+          <div class="timeline-label">Customer</div>
+        </div>
+      </div>
+
+      <!-- Sprint Retro -->
+      <div class="timeline-item">
+        <div class="timeline-accent internal"></div>
+        <div class="timeline-content">
+          <div class="timeline-time">3:30 PM &middot; 60m</div>
+          <div class="timeline-title">Sprint Retro</div>
+          <div class="timeline-label">Internal</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="panel-left-footer">
+      <div class="clear-until">Clear until 2:00 PM</div>
+      <div class="open-time">4h 12m open today</div>
+    </div>
+  </aside>
+
+  <!-- ── Right Panel: Meeting Briefing ── -->
+  <main class="panel-right">
+    <div class="briefing-content">
+
+      <!-- Back Link -->
+      <a class="back-link">&larr; Back to briefing</a>
+
+      <!-- Meeting Header -->
+      <div class="meeting-kicker">Customer &middot; Quarterly Business Review</div>
+      <h1 class="meeting-title">Acme Corp QBR</h1>
+
+      <div class="meeting-meta-row">
+        <span class="meeting-meta">
+          10:30 AM &ndash; 11:30 AM &middot; 60 min &middot;
+          <span class="meet-icon">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="3" width="8" height="8" rx="1.5"/>
+              <path d="M9 6.5l4-2v5l-4-2"/>
+            </svg>
+            Google Meet
+          </span>
+        </span>
+        <a class="join-button" href="#">Join Meeting &rarr;</a>
+      </div>
+
+      <!-- Account Health Strip -->
+      <div class="health-strip">
+        <span class="health-account">Acme Corp</span>
+        <span class="health-indicator">
+          <span class="health-dot healthy"></span>
+          <span class="health-label">Healthy</span>
+        </span>
+        <span class="health-trend">&uarr; Improving</span>
+        <span class="health-renewal">Renewal: Aug 2026 &middot; $240K ARR</span>
+      </div>
+
+      <!-- Briefing Narrative -->
+      <div class="section-gap"></div>
+      <div class="narrative">
+        <p>This is Acme's first QBR since the platform migration completed in January. <strong>Sarah Chen</strong> has been your champion throughout, but she flagged concerns about adoption metrics in last week's 1:1. The migration was technically successful, but user engagement is tracking 30% below the targets you set in Q3.</p>
+        <p><strong>Key tension</strong>: Acme's leadership wants ROI evidence for the board. You have strong implementation metrics but weak adoption numbers. Lead with what's working, acknowledge the gap, and propose the enablement program.</p>
+      </div>
+
+      <!-- The Room -->
+      <div class="section-gap"></div>
+      <hr class="section-rule">
+      <div class="section-gap"></div>
+
+      <div class="section-kicker">The Room</div>
+      <div class="room-grid">
+        <div class="room-group">
+          <div class="room-group-label">Their Side</div>
+          <div class="attendee">
+            <div class="attendee-temp engaged"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">Sarah Chen</div>
+              <div class="attendee-role">VP Customer Success</div>
+              <div class="attendee-tag">Champion</div>
+            </div>
+          </div>
+          <div class="attendee">
+            <div class="attendee-temp warm"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">Marcus Webb</div>
+              <div class="attendee-role">CTO</div>
+              <div class="attendee-tag">Decision Maker</div>
+            </div>
+          </div>
+          <div class="attendee">
+            <div class="attendee-temp neutral"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">Lisa Park</div>
+              <div class="attendee-role">Head of Product</div>
+              <div class="attendee-tag">Evaluator</div>
+            </div>
+          </div>
+        </div>
+        <div class="room-group">
+          <div class="room-group-label">Your Side</div>
+          <div class="attendee">
+            <div class="attendee-temp engaged"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">You</div>
+            </div>
+          </div>
+          <div class="attendee">
+            <div class="attendee-temp engaged"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">David Kim</div>
+              <div class="attendee-role">Solutions Architect</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prep Grid -->
+      <div class="section-gap"></div>
+      <hr class="section-rule">
+      <div class="section-gap"></div>
+
+      <div class="prep-grid">
+        <div class="prep-column">
+          <div class="prep-column-kicker turmeric">Discuss</div>
+          <ul class="prep-list">
+            <li>Adoption metrics vs. Q3 targets</li>
+            <li>Enablement program proposal</li>
+            <li>Roadmap alignment for Q2</li>
+          </ul>
+        </div>
+        <div class="prep-column">
+          <div class="prep-column-kicker terracotta">Watch For</div>
+          <ul class="prep-list">
+            <li>Marcus's reaction to adoption numbers</li>
+            <li>Budget signals for the enablement program</li>
+            <li>Any mention of competitor evaluation</li>
+          </ul>
+        </div>
+        <div class="prep-column">
+          <div class="prep-column-kicker sage">Wins to Reference</div>
+          <ul class="prep-list">
+            <li>Migration completed 2 weeks ahead of schedule</li>
+            <li>Zero data loss during transition</li>
+            <li>Support ticket volume down 40% post-migration</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Actions Before This Meeting -->
+      <div class="section-gap"></div>
+      <hr class="section-rule">
+      <div class="section-gap"></div>
+
+      <div class="section-kicker terracotta">Before This Meeting</div>
+      <ul class="checklist">
+        <li>
+          <div class="checkbox"></div>
+          <div>Review adoption dashboard <span class="check-detail">(pull latest numbers)</span></div>
+        </li>
+        <li>
+          <div class="checkbox"></div>
+          <div>Send agenda to Sarah <span class="check-detail">(draft ready)</span></div>
+        </li>
+        <li>
+          <div class="checkbox"></div>
+          <div>Prepare enablement program one-pager</div>
+        </li>
+      </ul>
+
+      <!-- Recent Context -->
+      <div class="section-gap-sm"></div>
+      <div class="section-gap-sm"></div>
+
+      <div class="section-kicker">Recent Context</div>
+      <div class="context-list">
+        <div class="context-item">
+          <span class="context-date">Feb 18</span>
+          <span class="context-text">1:1 with Sarah: raised adoption concerns, asked for QBR agenda input</span>
+        </div>
+        <div class="context-item">
+          <span class="context-date">Feb 12</span>
+          <span class="context-text">Email from Marcus: "Looking forward to reviewing progress"</span>
+        </div>
+        <div class="context-item">
+          <span class="context-date">Jan 30</span>
+          <span class="context-text">Migration completed. Sarah confirmed all systems operational.</span>
+        </div>
+      </div>
+
+      <!-- Finis -->
+      <div class="section-gap-lg"></div>
+      <hr class="section-rule">
+      <div class="finis">
+        <div class="finis-text">Briefing ready</div>
+        <div class="finis-marks">* * *</div>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+</body>
+</html>

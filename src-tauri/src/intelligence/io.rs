@@ -1497,7 +1497,9 @@ impl ActionDb {
             let health = health_json
                 .as_deref()
                 .and_then(|j| serde_json::from_str::<AccountHealth>(j).ok())
-                .or_else(|| synthesize_health_from_legacy(health_score, health_trend_json.as_deref()));
+                .or_else(|| {
+                    synthesize_health_from_legacy(health_score, health_trend_json.as_deref())
+                });
 
             let mut intel = IntelligenceJson {
                 version: 1,
@@ -2622,7 +2624,8 @@ mod tests {
         intel.source_attribution = Some(source_attr);
 
         // Write to DB
-        db.upsert_entity_intelligence(&intel).expect("upsert with dimensions");
+        db.upsert_entity_intelligence(&intel)
+            .expect("upsert with dimensions");
 
         // Read back
         let fetched = db
@@ -2666,7 +2669,10 @@ mod tests {
             Some("high".to_string())
         );
         assert!(fetched.support_health.is_some());
-        assert_eq!(fetched.support_health.as_ref().unwrap().open_tickets, Some(3));
+        assert_eq!(
+            fetched.support_health.as_ref().unwrap().open_tickets,
+            Some(3)
+        );
         assert!(fetched.product_adoption.is_some());
         assert_eq!(
             fetched.product_adoption.as_ref().unwrap().adoption_rate,

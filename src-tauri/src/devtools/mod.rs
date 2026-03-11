@@ -11,13 +11,12 @@ use serde::Serialize;
 
 use crate::db::ActionDb;
 use crate::intelligence::io::{
-    AccountHealth, AdoptionSignals, Blocker, CadenceAssessment, CompanyContext,
-    CompetitiveInsight, ContractContext, CoverageAssessment, CurrentState, DimensionScore,
-    ExpansionSignal, HealthSource, HealthTrend, IntelRisk, IntelWin, IntelligenceJson,
-    InternalTeamMember, NetworkIntelligence, NetworkKeyRelationship,
-    OpenCommitment, OrgChange, RelationshipDepth, RelationshipDimensions, RenewalOutlook,
-    ResponsivenessAssessment, SatisfactionData, StakeholderInsight, StrategicPriority,
-    SuccessMetric, SupportHealth, ValueItem,
+    AccountHealth, AdoptionSignals, Blocker, CadenceAssessment, CompanyContext, CompetitiveInsight,
+    ContractContext, CoverageAssessment, CurrentState, DimensionScore, ExpansionSignal,
+    HealthSource, HealthTrend, IntelRisk, IntelWin, IntelligenceJson, InternalTeamMember,
+    NetworkIntelligence, NetworkKeyRelationship, OpenCommitment, OrgChange, RelationshipDepth,
+    RelationshipDimensions, RenewalOutlook, ResponsivenessAssessment, SatisfactionData,
+    StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth, ValueItem,
 };
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
@@ -500,11 +499,13 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     };
 
     // --- Content tables first (FK dependencies) ---
-    let n = conn.execute(
-        "DELETE FROM content_embeddings WHERE content_file_id IN \
+    let n = conn
+        .execute(
+            "DELETE FROM content_embeddings WHERE content_file_id IN \
          (SELECT id FROM content_index WHERE entity_id LIKE 'mock-%')",
-        [],
-    ).unwrap_or(0);
+            [],
+        )
+        .unwrap_or(0);
     summary.push(format!("content_embeddings: {}", n));
 
     let n = delete_mock("content_index", "entity_id");
@@ -1086,7 +1087,6 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     ))
 }
 
-
 /// Helper: get workspace path from config.
 fn get_workspace(state: &AppState) -> Result<std::path::PathBuf, String> {
     state
@@ -1583,11 +1583,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "stakeholder",
         ),
         ("mock-platform-migration", "mock-lisa-park", "owner"),
-        (
-            "mock-platform-migration",
-            "mock-mike-chen",
-            "stakeholder",
-        ),
+        ("mock-platform-migration", "mock-mike-chen", "stakeholder"),
     ];
 
     for (entity_id, person_id, rel) in &project_people {
@@ -1697,8 +1693,16 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let project_meetings: Vec<(&str, &str, &str)> = vec![
         ("mock-mh-acme-2d", "mock-acme-phase-2", "project"),
         ("mock-mh-acme-7d", "mock-acme-phase-2", "project"),
-        ("mock-mh-globex-3d", "mock-globex-team-b-recovery", "project"),
-        ("mock-mh-globex-14d", "mock-globex-team-b-recovery", "project"),
+        (
+            "mock-mh-globex-3d",
+            "mock-globex-team-b-recovery",
+            "project",
+        ),
+        (
+            "mock-mh-globex-14d",
+            "mock-globex-team-b-recovery",
+            "project",
+        ),
         ("mock-mh-standup-5d", "mock-platform-migration", "project"),
     ];
     for (meeting_id, entity_id, entity_type) in &project_meetings {
@@ -3405,13 +3409,15 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     conn.execute(
         "UPDATE accounts SET contract_end = ?1 WHERE id = 'mock-globex-industries'",
         rusqlite::params![date_only(45)],
-    ).map_err(|e| format!("Set Globex contract_end: {}", e))?;
+    )
+    .map_err(|e| format!("Set Globex contract_end: {}", e))?;
 
     // --- Portfolio alerts: stale account ---
     conn.execute(
         "UPDATE accounts SET updated_at = ?1 WHERE id = 'mock-initech'",
         rusqlite::params![days_ago_rfc(35)],
-    ).map_err(|e| format!("Set Initech stale: {}", e))?;
+    )
+    .map_err(|e| format!("Set Initech stale: {}", e))?;
 
     // =========================================================================
     // Rich Intelligence via IntelligenceJson structs (6 dimensions)
@@ -3960,23 +3966,43 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         source_file_count: 2,
         executive_assessment: Some(
             "Jamie Morrison is our most enthusiastic champion at Globex. Natural successor to Pat \
-             Reynolds as executive sponsor. Drives adoption in Team A and proactively advocates.".into()
+             Reynolds as executive sponsor. Drives adoption in Team A and proactively advocates."
+                .into(),
         ),
-        risks: vec![
-            IntelRisk { text: "May lose influence if Team B decline isn't addressed — it's in his org".into(), source: Some("inferred".into()), urgency: "watch".into() },
-        ],
+        risks: vec![IntelRisk {
+            text: "May lose influence if Team B decline isn't addressed — it's in his org".into(),
+            source: Some("inferred".into()),
+            urgency: "watch".into(),
+        }],
         recent_wins: vec![
-            IntelWin { text: "Drove 40% usage growth in Team A".into(), source: Some("usage analytics".into()), impact: Some("Strongest adoption success story at Globex".into()) },
-            IntelWin { text: "Offered to present at QBR — proactive champion behavior".into(), source: Some("email".into()), impact: Some("Internal advocacy momentum".into()) },
+            IntelWin {
+                text: "Drove 40% usage growth in Team A".into(),
+                source: Some("usage analytics".into()),
+                impact: Some("Strongest adoption success story at Globex".into()),
+            },
+            IntelWin {
+                text: "Offered to present at QBR — proactive champion behavior".into(),
+                source: Some("email".into()),
+                impact: Some("Internal advocacy momentum".into()),
+            },
         ],
         current_state: Some(CurrentState {
-            working: vec!["Active champion behavior".into(), "Team A adoption strong".into()],
+            working: vec![
+                "Active champion behavior".into(),
+                "Team A adoption strong".into(),
+            ],
             not_working: vec!["Team B decline partly in his org".into()],
             unknowns: vec!["Whether he'd accept executive sponsor role formally".into()],
         }),
-        stakeholder_insights: vec![
-            StakeholderInsight { name: "Jamie Morrison".into(), role: Some("Eng Director".into()), assessment: Some("Best exec sponsor successor candidate.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-jamie-morrison".into()), suggested_person_id: None },
-        ],
+        stakeholder_insights: vec![StakeholderInsight {
+            name: "Jamie Morrison".into(),
+            role: Some("Eng Director".into()),
+            assessment: Some("Best exec sponsor successor candidate.".into()),
+            engagement: Some("active".into()),
+            source: None,
+            person_id: Some("mock-jamie-morrison".into()),
+            suggested_person_id: None,
+        }],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
             executive_access: Some("indirect".into()),
@@ -3986,8 +4012,20 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         network: Some(NetworkIntelligence {
             health: "moderate".into(),
             key_relationships: vec![
-                NetworkKeyRelationship { person_id: "mock-pat-reynolds".into(), name: "Pat Reynolds".into(), relationship_type: "reports_to".into(), confidence: 0.90, signal_summary: Some("Direct report, strong relationship".into()) },
-                NetworkKeyRelationship { person_id: "mock-casey-lee".into(), name: "Casey Lee".into(), relationship_type: "works_with".into(), confidence: 0.80, signal_summary: Some("Cross-functional collaboration".into()) },
+                NetworkKeyRelationship {
+                    person_id: "mock-pat-reynolds".into(),
+                    name: "Pat Reynolds".into(),
+                    relationship_type: "reports_to".into(),
+                    confidence: 0.90,
+                    signal_summary: Some("Direct report, strong relationship".into()),
+                },
+                NetworkKeyRelationship {
+                    person_id: "mock-casey-lee".into(),
+                    name: "Casey Lee".into(),
+                    relationship_type: "works_with".into(),
+                    confidence: 0.80,
+                    signal_summary: Some("Cross-functional collaboration".into()),
+                },
             ],
             risks: vec!["Pat Reynolds departure may leave him isolated at VP level".into()],
             opportunities: vec!["Could be elevated to executive sponsor role".into()],
@@ -4009,22 +4047,37 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         executive_assessment: Some(
             "Dana Patel is a data-driven CTO who values quantitative outcomes. Phase 1 delivered \
              strong ROI data that supports her Phase 2 business case. She's actively championing \
-             the expansion internally but the finance team is the bottleneck.".into()
+             the expansion internally but the finance team is the bottleneck."
+                .into(),
         ),
-        risks: vec![
-            IntelRisk { text: "Finance approval delay could cool her enthusiasm if it drags past 2 weeks".into(), source: Some("inferred".into()), urgency: "watch".into() },
-        ],
-        recent_wins: vec![
-            IntelWin { text: "Phase 1 success validates her technology bet".into(), source: Some("project outcomes".into()), impact: Some("Strengthens her credibility with finance and board".into()) },
-        ],
+        risks: vec![IntelRisk {
+            text: "Finance approval delay could cool her enthusiasm if it drags past 2 weeks"
+                .into(),
+            source: Some("inferred".into()),
+            urgency: "watch".into(),
+        }],
+        recent_wins: vec![IntelWin {
+            text: "Phase 1 success validates her technology bet".into(),
+            source: Some("project outcomes".into()),
+            impact: Some("Strengthens her credibility with finance and board".into()),
+        }],
         current_state: Some(CurrentState {
-            working: vec!["Actively championing Phase 2 internally".into(), "Escalated budget request to CFO".into()],
+            working: vec![
+                "Actively championing Phase 2 internally".into(),
+                "Escalated budget request to CFO".into(),
+            ],
             not_working: vec!["Finance team hasn't responded to budget request".into()],
             unknowns: vec!["CFO's appetite for the expansion".into()],
         }),
-        stakeholder_insights: vec![
-            StakeholderInsight { name: "Dana Patel".into(), role: Some("CTO".into()), assessment: Some("Data-driven, direct, values speed.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-dana-patel".into()), suggested_person_id: None },
-        ],
+        stakeholder_insights: vec![StakeholderInsight {
+            name: "Dana Patel".into(),
+            role: Some("CTO".into()),
+            assessment: Some("Data-driven, direct, values speed.".into()),
+            engagement: Some("active".into()),
+            source: None,
+            person_id: Some("mock-dana-patel".into()),
+            suggested_person_id: None,
+        }],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("developing".into()),
             executive_access: Some("direct".into()),
@@ -4033,9 +4086,13 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         }),
         network: Some(NetworkIntelligence {
             health: "moderate".into(),
-            key_relationships: vec![
-                NetworkKeyRelationship { person_id: "mock-priya-sharma".into(), name: "Priya Sharma".into(), relationship_type: "works_with".into(), confidence: 0.85, signal_summary: Some("CTO/VP Product partnership".into()) },
-            ],
+            key_relationships: vec![NetworkKeyRelationship {
+                person_id: "mock-priya-sharma".into(),
+                name: "Priya Sharma".into(),
+                relationship_type: "works_with".into(),
+                confidence: 0.85,
+                signal_summary: Some("CTO/VP Product partnership".into()),
+            }],
             risks: vec![],
             opportunities: vec!["Could provide introduction to CFO for budget conversation".into()],
             influence_radius: 2,
@@ -4054,39 +4111,235 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     let signal_rows: Vec<(&str, &str, &str, &str, &str, f64, Option<f64>, String)> = vec![
         // (entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at)
         // Meeting completed signals
-        ("account", "mock-acme-corp", "meeting_completed", "calendar", "Weekly sync completed", 0.9, Some(14.0), days_ago_rfc(2)),
-        ("account", "mock-acme-corp", "meeting_completed", "calendar", "Phase 2 scoping session", 0.9, Some(14.0), days_ago_rfc(7)),
-        ("account", "mock-globex-industries", "meeting_completed", "calendar", "Check-in with Jamie", 0.8, Some(14.0), days_ago_rfc(3)),
-        ("account", "mock-initech", "meeting_completed", "calendar", "Phase 1 wrap meeting", 0.8, Some(14.0), days_ago_rfc(10)),
+        (
+            "account",
+            "mock-acme-corp",
+            "meeting_completed",
+            "calendar",
+            "Weekly sync completed",
+            0.9,
+            Some(14.0),
+            days_ago_rfc(2),
+        ),
+        (
+            "account",
+            "mock-acme-corp",
+            "meeting_completed",
+            "calendar",
+            "Phase 2 scoping session",
+            0.9,
+            Some(14.0),
+            days_ago_rfc(7),
+        ),
+        (
+            "account",
+            "mock-globex-industries",
+            "meeting_completed",
+            "calendar",
+            "Check-in with Jamie",
+            0.8,
+            Some(14.0),
+            days_ago_rfc(3),
+        ),
+        (
+            "account",
+            "mock-initech",
+            "meeting_completed",
+            "calendar",
+            "Phase 1 wrap meeting",
+            0.8,
+            Some(14.0),
+            days_ago_rfc(10),
+        ),
         // Email received signals
-        ("account", "mock-acme-corp", "email_received", "gmail", "Phase 2 SOW discussion", 0.7, Some(7.0), days_ago_rfc(1)),
-        ("account", "mock-globex-industries", "email_received", "gmail", "Team B concerns from Casey", 0.6, Some(7.0), days_ago_rfc(2)),
-        ("account", "mock-initech", "email_received", "gmail", "Budget update from Dana", 0.7, Some(7.0), days_ago_rfc(5)),
+        (
+            "account",
+            "mock-acme-corp",
+            "email_received",
+            "gmail",
+            "Phase 2 SOW discussion",
+            0.7,
+            Some(7.0),
+            days_ago_rfc(1),
+        ),
+        (
+            "account",
+            "mock-globex-industries",
+            "email_received",
+            "gmail",
+            "Team B concerns from Casey",
+            0.6,
+            Some(7.0),
+            days_ago_rfc(2),
+        ),
+        (
+            "account",
+            "mock-initech",
+            "email_received",
+            "gmail",
+            "Budget update from Dana",
+            0.7,
+            Some(7.0),
+            days_ago_rfc(5),
+        ),
         // Entity updated signals (enrichment cycles)
-        ("account", "mock-acme-corp", "entity_updated", "ai_enrichment", "Intelligence refreshed", 0.8, Some(30.0), days_ago_rfc(1)),
-        ("account", "mock-globex-industries", "entity_updated", "ai_enrichment", "Intelligence refreshed", 0.8, Some(30.0), days_ago_rfc(1)),
-        ("account", "mock-initech", "entity_updated", "ai_enrichment", "Intelligence refreshed", 0.7, Some(30.0), days_ago_rfc(3)),
+        (
+            "account",
+            "mock-acme-corp",
+            "entity_updated",
+            "ai_enrichment",
+            "Intelligence refreshed",
+            0.8,
+            Some(30.0),
+            days_ago_rfc(1),
+        ),
+        (
+            "account",
+            "mock-globex-industries",
+            "entity_updated",
+            "ai_enrichment",
+            "Intelligence refreshed",
+            0.8,
+            Some(30.0),
+            days_ago_rfc(1),
+        ),
+        (
+            "account",
+            "mock-initech",
+            "entity_updated",
+            "ai_enrichment",
+            "Intelligence refreshed",
+            0.7,
+            Some(30.0),
+            days_ago_rfc(3),
+        ),
         // Intelligence curated (user deleted items)
-        ("account", "mock-acme-corp", "intelligence_curated", "user_correction", "Removed outdated risk about budget", 0.3, Some(90.0), days_ago_rfc(5)),
-        ("account", "mock-globex-industries", "intelligence_curated", "user_correction", "Dismissed stale win about Q3 pilot", 0.3, Some(90.0), days_ago_rfc(8)),
+        (
+            "account",
+            "mock-acme-corp",
+            "intelligence_curated",
+            "user_correction",
+            "Removed outdated risk about budget",
+            0.3,
+            Some(90.0),
+            days_ago_rfc(5),
+        ),
+        (
+            "account",
+            "mock-globex-industries",
+            "intelligence_curated",
+            "user_correction",
+            "Dismissed stale win about Q3 pilot",
+            0.3,
+            Some(90.0),
+            days_ago_rfc(8),
+        ),
         // User correction signals
-        ("account", "mock-acme-corp", "user_correction", "user_correction", "Updated NPS score from 38 to 42", 0.3, Some(180.0), days_ago_rfc(3)),
-        ("person", "mock-sarah-chen", "user_correction", "user_correction", "Corrected role to VP Engineering", 0.3, Some(180.0), days_ago_rfc(12)),
+        (
+            "account",
+            "mock-acme-corp",
+            "user_correction",
+            "user_correction",
+            "Updated NPS score from 38 to 42",
+            0.3,
+            Some(180.0),
+            days_ago_rfc(3),
+        ),
+        (
+            "person",
+            "mock-sarah-chen",
+            "user_correction",
+            "user_correction",
+            "Corrected role to VP Engineering",
+            0.3,
+            Some(180.0),
+            days_ago_rfc(12),
+        ),
         // Person profile updated
-        ("person", "mock-sarah-chen", "person_profile_updated", "ai_enrichment", "Profile enriched via Clay", 0.8, Some(60.0), days_ago_rfc(7)),
-        ("person", "mock-jamie-morrison", "person_profile_updated", "ai_enrichment", "Profile enriched via Gravatar", 0.6, Some(60.0), days_ago_rfc(14)),
+        (
+            "person",
+            "mock-sarah-chen",
+            "person_profile_updated",
+            "ai_enrichment",
+            "Profile enriched via Clay",
+            0.8,
+            Some(60.0),
+            days_ago_rfc(7),
+        ),
+        (
+            "person",
+            "mock-jamie-morrison",
+            "person_profile_updated",
+            "ai_enrichment",
+            "Profile enriched via Gravatar",
+            0.6,
+            Some(60.0),
+            days_ago_rfc(14),
+        ),
         // Enrichment stale
-        ("account", "mock-initech", "enrichment_stale", "system", "Last enrichment 30+ days ago", 0.5, Some(7.0), days_ago_rfc(2)),
-        ("person", "mock-dana-patel", "enrichment_stale", "system", "Profile needs refresh", 0.4, Some(7.0), days_ago_rfc(1)),
+        (
+            "account",
+            "mock-initech",
+            "enrichment_stale",
+            "system",
+            "Last enrichment 30+ days ago",
+            0.5,
+            Some(7.0),
+            days_ago_rfc(2),
+        ),
+        (
+            "person",
+            "mock-dana-patel",
+            "enrichment_stale",
+            "system",
+            "Profile needs refresh",
+            0.4,
+            Some(7.0),
+            days_ago_rfc(1),
+        ),
         // Glean signals
-        ("person", "mock-pat-reynolds", "glean_contact_discovered", "glean", "Discovered via Glean directory", 0.7, Some(90.0), days_ago_rfc(20)),
-        ("person", "mock-casey-lee", "profile_enriched", "glean", "Enriched from Glean profile", 0.7, Some(90.0), days_ago_rfc(15)),
+        (
+            "person",
+            "mock-pat-reynolds",
+            "glean_contact_discovered",
+            "glean",
+            "Discovered via Glean directory",
+            0.7,
+            Some(90.0),
+            days_ago_rfc(20),
+        ),
+        (
+            "person",
+            "mock-casey-lee",
+            "profile_enriched",
+            "glean",
+            "Enriched from Glean profile",
+            0.7,
+            Some(90.0),
+            days_ago_rfc(15),
+        ),
         // Co-attendance signal
-        ("account", "mock-acme-corp", "co_attendance", "calendar", "Sarah Chen + Pat Kim at strategy meeting", 0.8, Some(30.0), days_ago_rfc(4)),
+        (
+            "account",
+            "mock-acme-corp",
+            "co_attendance",
+            "calendar",
+            "Sarah Chen + Pat Kim at strategy meeting",
+            0.8,
+            Some(30.0),
+            days_ago_rfc(4),
+        ),
     ];
 
-    for (entity_type, entity_id, signal_type, source, value, confidence, decay, created_at) in &signal_rows {
-        let sig_id = format!("mock-sig-{}-{}-{}", entity_id.replace("mock-", ""), signal_type.replace('_', "-"), &created_at[..10]);
+    for (entity_type, entity_id, signal_type, source, value, confidence, decay, created_at) in
+        &signal_rows
+    {
+        let sig_id = format!(
+            "mock-sig-{}-{}-{}",
+            entity_id.replace("mock-", ""),
+            signal_type.replace('_', "-"),
+            &created_at[..10]
+        );
         conn.execute(
             "INSERT OR REPLACE INTO signal_events (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -4099,28 +4352,56 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     // =========================================================================
 
     db.insert_intelligence_feedback(
-        "mock-fb-acme-risks-pos", "mock-acme-corp", "account",
-        "risks", "positive", None, Some("User confirmed risk assessment accuracy"),
+        "mock-fb-acme-risks-pos",
+        "mock-acme-corp",
+        "account",
+        "risks",
+        "positive",
+        None,
+        Some("User confirmed risk assessment accuracy"),
     )?;
     db.insert_intelligence_feedback(
-        "mock-fb-globex-stakeholder-pos", "mock-globex-industries", "account",
-        "stakeholder_insights", "positive", None, Some("User confirmed Jamie Morrison assessment"),
+        "mock-fb-globex-stakeholder-pos",
+        "mock-globex-industries",
+        "account",
+        "stakeholder_insights",
+        "positive",
+        None,
+        Some("User confirmed Jamie Morrison assessment"),
     )?;
     db.insert_intelligence_feedback(
-        "mock-fb-initech-exec-neg", "mock-initech", "account",
-        "executive_assessment", "negative", None, Some("User found assessment too optimistic"),
+        "mock-fb-initech-exec-neg",
+        "mock-initech",
+        "account",
+        "executive_assessment",
+        "negative",
+        None,
+        Some("User found assessment too optimistic"),
     )?;
     db.insert_intelligence_feedback(
-        "mock-fb-globex-renewal-neg", "mock-globex-industries", "account",
-        "renewal_outlook", "negative", None, Some("User disagrees with renewal confidence"),
+        "mock-fb-globex-renewal-neg",
+        "mock-globex-industries",
+        "account",
+        "renewal_outlook",
+        "negative",
+        None,
+        Some("User disagrees with renewal confidence"),
     )?;
     db.insert_intelligence_feedback(
-        "mock-fb-acme-health-replaced", "mock-acme-corp", "account",
-        "health.score", "replaced", Some("85"), Some("User corrected health score from 85 to 78"),
+        "mock-fb-acme-health-replaced",
+        "mock-acme-corp",
+        "account",
+        "health.score",
+        "replaced",
+        Some("85"),
+        Some("User corrected health score from 85 to 78"),
     )?;
     db.insert_intelligence_feedback(
-        "mock-fb-globex-exec-replaced", "mock-globex-industries", "account",
-        "executive_assessment", "replaced",
+        "mock-fb-globex-exec-replaced",
+        "mock-globex-industries",
+        "account",
+        "executive_assessment",
+        "replaced",
         Some("Globex is in good shape overall"),
         Some("User rewrote assessment to reflect risk"),
     )?;
