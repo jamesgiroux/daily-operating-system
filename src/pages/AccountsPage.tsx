@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatArr } from "@/lib/utils";
 import type { AccountListItem } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 
 /** Lightweight shape returned by get_archived_accounts (DbAccount from Rust). */
 interface ArchivedAccount {
@@ -675,6 +676,11 @@ function AccountRow({
     </>
   );
 
+  const ih = account.intelligenceHealth;
+  const healthAvatar = ih ? (
+    <HealthBadge score={ih.score} band={ih.band} trend={ih.trend} size="compact" />
+  ) : undefined;
+
   return (
     <EntityRow
       to="/accounts/$accountId"
@@ -685,6 +691,7 @@ function AccountRow({
       paddingLeft={depth > 0 ? depth * 28 : 0}
       nameSuffix={nameSuffix}
       subtitle={undefined}
+      avatar={healthAvatar}
     >
       {account.arr != null && (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
