@@ -16,6 +16,7 @@ import SystemStatus from "@/components/settings/SystemStatus";
 import ActivityLogSection from "@/components/settings/ActivityLogSection";
 import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
 import DatabaseRecoveryCard from "@/components/settings/DatabaseRecoveryCard";
+import DataPrivacySection from "@/components/settings/DataPrivacySection";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ClaudeCodeSection
@@ -366,6 +367,9 @@ export default function SettingsPage() {
         />
         <DatabaseRecoveryCard />
         <ActivityLogSection />
+        <div style={{ marginTop: 32 }}>
+          <DataPrivacySection />
+        </div>
       </section>
 
       {/* ═══ SYSTEM ═══ */}

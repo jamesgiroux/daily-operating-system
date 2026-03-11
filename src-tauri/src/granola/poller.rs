@@ -145,7 +145,21 @@ fn poll_once(
         };
 
         // Process through the shared transcript pipeline
-        let result = process_granola_document(state, &sync_id, &matched.meeting_id, &doc.content);
+        let content_kind = match doc.content_type {
+            cache::GranolaContentType::Transcript => {
+                crate::processor::transcript::TranscriptContentKind::Transcript
+            }
+            cache::GranolaContentType::Notes => {
+                crate::processor::transcript::TranscriptContentKind::Notes
+            }
+        };
+        let result = process_granola_document(
+            state,
+            &sync_id,
+            &matched.meeting_id,
+            &doc.content,
+            content_kind,
+        );
 
         match &result {
             Ok(dest) => {
@@ -190,6 +204,7 @@ fn process_granola_document(
     sync_id: &str,
     meeting_id: &str,
     content: &str,
+    content_kind: crate::processor::transcript::TranscriptContentKind,
 ) -> Result<String, String> {
     // Phase 1: Read data with lock, then drop
     let (calendar_event, workspace, profile, ai_config) = {
@@ -224,13 +239,14 @@ fn process_granola_document(
     }; // DB lock dropped
 
     // Phase 2: Run AI pipeline WITHOUT holding the DB mutex
-    let result = crate::quill::sync::process_fetched_transcript_without_db(
+    let result = crate::quill::sync::process_fetched_transcript_without_db_with_kind(
         sync_id,
         &calendar_event,
         content,
         &workspace,
         &profile,
         ai_config.as_ref(),
+        content_kind,
     );
 
     // Phase 3: Re-acquire lock to write results
@@ -282,24 +298,43 @@ fn process_granola_document(
             // Write extracted actions as proposed actions
             let now = chrono::Utc::now().to_rfc3339();
             for (i, action) in tr.actions.iter().enumerate() {
+                let action_account_id = action
+                    .account
+                    .as_deref()
+                    .or(action.owner.as_deref())
+                    .and_then(|candidate| {
+                        db.get_account(candidate)
+                            .ok()
+                            .flatten()
+                            .map(|account| account.id)
+                            .or_else(|| {
+                                db.get_account_by_name(candidate)
+                                    .ok()
+                                    .flatten()
+                                    .map(|account| account.id)
+                            })
+                    })
+                    .or_else(|| {
+                        meeting_account_id.clone().or_else(|| {
+                            account.and_then(|a| {
+                                db.get_account_by_name(a).ok().flatten().map(|acc| acc.id)
+                            })
+                        })
+                    });
                 let db_action = crate::db::DbAction {
                     id: format!("granola-{}-{}", meeting_id, i),
                     title: action.title.clone(),
-                    priority: "P2".to_string(),
+                    priority: action.priority.clone().unwrap_or_else(|| "P2".to_string()),
                     status: "proposed".to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
-                    account_id: meeting_account_id.clone().or_else(|| {
-                        account.and_then(|a| {
-                            db.get_account_by_name(a).ok().flatten().map(|acc| acc.id)
-                        })
-                    }),
+                    account_id: action_account_id,
                     project_id: None,
                     source_type: Some("transcript".to_string()),
                     source_id: Some(calendar_event.id.clone()),
                     source_label: Some(calendar_event.title.clone()),
-                    context: None,
+                    context: action.context.clone(),
                     waiting_on: None,
                     updated_at: now.clone(),
                     person_id: None,
