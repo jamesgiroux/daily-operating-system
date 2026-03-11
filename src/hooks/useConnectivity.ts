@@ -40,8 +40,13 @@ export function useConnectivity() {
   );
 
   const oldestUpdate = useMemo(() => {
-    const stale = staleServices[0];
-    return stale?.ageDescription ?? null;
+    if (staleServices.length === 0) return null;
+    const sorted = [...staleServices].sort((a, b) => {
+      if (!a.lastSuccessAt) return -1;
+      if (!b.lastSuccessAt) return 1;
+      return a.lastSuccessAt < b.lastSuccessAt ? -1 : 1;
+    });
+    return sorted[0]?.ageDescription ?? null;
   }, [staleServices]);
 
   return { freshness, isFullyFresh, staleServices, oldestUpdate, refresh: load };
