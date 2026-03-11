@@ -4,7 +4,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
 import { Check, X, Loader2 } from "lucide-react";
-import { styles } from "./styles";
 import s from "./YouCard.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -105,8 +104,8 @@ function DomainsSection({
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Your Domains</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <p className={s.subsectionLabel}>Your Domains</p>
+      <p className={s.description}>
         Your organization's email domains -- used to distinguish internal vs
         external meetings
       </p>
@@ -139,8 +138,7 @@ function DomainsSection({
         {saving && (
           <Loader2
             size={14}
-            className="animate-spin"
-            style={{ color: "var(--color-text-tertiary)" }}
+            className={`animate-spin ${s.iconSpinner}`}
           />
         )}
       </div>
@@ -185,8 +183,8 @@ function RoleSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Role Presets</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <p className={s.subsectionLabel}>Role Presets</p>
+      <p className={s.description}>
         Select your role to tailor vitals, vocabulary, and AI emphasis across
         DailyOS.
       </p>
@@ -206,10 +204,7 @@ function RoleSection() {
                 {isActive && (
                   <Check
                     size={14}
-                    style={{
-                      color: "var(--color-spice-turmeric)",
-                      flexShrink: 0,
-                    }}
+                    className={s.iconCheck}
                   />
                 )}
               </div>
@@ -219,13 +214,7 @@ function RoleSection() {
         })}
       </div>
       {activeId && (
-        <p
-          style={{
-            ...styles.monoLabel,
-            marginTop: 12,
-            color: "var(--color-spice-turmeric)",
-          }}
-        >
+        <p className={s.activePresetLabel}>
           Active: {presets.find(([id]) => id === activeId)?.[1] ?? activeId}
         </p>
       )}
@@ -269,20 +258,16 @@ function WorkspaceSection({
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Workspace</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <p className={s.subsectionLabel}>Workspace</p>
+      <p className={s.description}>
         The directory where DailyOS stores briefings, actions, and files
       </p>
-      <div style={styles.settingRow}>
+      <div className={s.settingRow}>
         <span className={s.workspacePath}>
           {path || "Not configured"}
         </span>
         <button
-          style={{
-            ...styles.btn,
-            ...styles.btnGhost,
-            opacity: saving ? 0.5 : 1,
-          }}
+          className={saving ? s.btnGhostDisabled : s.btnGhost}
           onClick={handleChooseWorkspace}
           disabled={saving}
         >
@@ -318,8 +303,8 @@ function PersonalitySection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Personality</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <p className={s.subsectionLabel}>Personality</p>
+      <p className={s.description}>
         Sets the tone for empty states, loading messages, and notifications
       </p>
       <div className={s.personalityList}>
@@ -338,11 +323,11 @@ function PersonalitySection() {
                 {isSelected && (
                   <Check
                     size={14}
-                    style={{ color: "var(--color-garden-sage)" }}
+                    className={s.iconCheckSage}
                   />
                 )}
               </div>
-              <span style={{ ...styles.description, fontSize: 12 }}>
+              <span className={s.descriptionSmall}>
                 {option.description}
               </span>
               <span className={s.personalityExample}>
@@ -399,18 +384,18 @@ function DayStartSection({
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Your Day</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <p className={s.subsectionLabel}>Your Day</p>
+      <p className={s.description}>
         When does your workday start? DailyOS prepares your briefing before this time.
       </p>
-      <div style={styles.settingRow}>
+      <div className={s.settingRow}>
         <div>
           <span className={s.dayStartLabel}>
             Morning briefing at{" "}
             <span className={s.dayStartBold}>{displayTime}</span>
           </span>
           {schedule?.timezone && (
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <p className={s.descriptionSmallSpaced}>
               {schedule.timezone}
             </p>
           )}
@@ -491,7 +476,7 @@ export default function YouCard() {
   if (loading) {
     return (
       <div>
-        <p style={styles.subsectionLabel}>Workspace</p>
+        <p className={s.subsectionLabel}>Workspace</p>
         <div className={s.skeleton} />
       </div>
     );
@@ -509,7 +494,7 @@ export default function YouCard() {
       <div className={s.subsectionGroup}>
         <h3 className={s.subsectionTitle}>Workspace</h3>
         <WorkspaceSection workspacePath={config?.workspacePath ?? ""} />
-        <hr style={styles.thinRule} />
+        <hr className={s.thinRule} />
         <DayStartSection schedule={config?.schedules?.today ?? null} />
       </div>
 
@@ -517,7 +502,7 @@ export default function YouCard() {
       <div className={s.subsectionGroup}>
         <h3 className={s.subsectionTitle}>Preferences</h3>
         <RoleSection />
-        <hr style={styles.thinRule} />
+        <hr className={s.thinRule} />
         <PersonalitySection />
       </div>
     </div>

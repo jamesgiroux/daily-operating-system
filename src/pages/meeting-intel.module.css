@@ -1253,3 +1253,27 @@ details[open] .detailsChevron {
 .updatingBanner svg {
   animation: spin 1s linear infinite;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACCOUNT HEALTH STRIP — I502 / I542
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.healthStripContainer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.healthStripItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.healthStripLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}

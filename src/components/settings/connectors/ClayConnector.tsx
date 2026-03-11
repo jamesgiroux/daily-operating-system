@@ -168,7 +168,7 @@ export default function ClayConnection() {
     setEnriching(true);
     try {
       const result = await invoke<{ queued: number; totalUnenriched: number }>("start_clay_bulk_enrich");
-      toast(`Queued ${result.queued} people for enrichment`);
+      toast(`Queued ${result.queued} contacts for updates`);
       const refreshed = await invoke<ClayStatusData>("get_clay_status");
       setStatus(refreshed);
     } catch (err) {
@@ -420,7 +420,7 @@ export default function ClayConnection() {
 
               {status.lastEnrichmentAt && (
                 <div style={{ padding: "8px 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                  Last enrichment: {new Date(status.lastEnrichmentAt).toLocaleString()}
+                  Last updated: {new Date(status.lastEnrichmentAt).toLocaleString()}
                 </div>
               )}
             </>

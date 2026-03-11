@@ -836,14 +836,14 @@ Thanks!`;
 
               {/* Account health strip — I502 */}
               {linkedEntities.some((e) => e.entityType === "account" && entityHealthMap?.[e.id]) && (
-                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+                <div className={styles.healthStripContainer}>
                   {linkedEntities
                     .filter((e) => e.entityType === "account" && entityHealthMap?.[e.id])
                     .map((e) => {
                       const h = entityHealthMap![e.id];
                       return (
-                        <span key={e.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                        <span key={e.id} className={styles.healthStripItem}>
+                          <span className={styles.healthStripLabel}>
                             {e.name}
                           </span>
                           <HealthBadge score={h.score} band={h.band} trend={h.trend} size="compact" />
