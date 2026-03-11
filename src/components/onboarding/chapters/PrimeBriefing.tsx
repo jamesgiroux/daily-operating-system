@@ -60,19 +60,19 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
 
   const handleFilePaths = useCallback(async (paths: string[]) => {
     setProcessing(true);
-    const added: string[] = [];
 
     try {
-      await invoke("copy_to_inbox", { paths });
-      for (const p of paths) {
-        const name = p.split("/").pop() ?? p;
-        added.push(name);
+      const copiedCount = await invoke<number>("copy_to_inbox", { paths });
+      if (copiedCount > 0) {
+        const names = paths.map(p => p.split("/").pop() ?? p);
+        setFilesAdded(prev => [...prev, ...names.slice(0, copiedCount)]);
+      } else {
+        console.warn("No files were copied — they may be outside permitted directories");
       }
     } catch (err) {
       console.error("Failed to copy files to inbox:", err);
     }
 
-    setFilesAdded(prev => [...prev, ...added]);
     setProcessing(false);
   }, []);
 
@@ -144,7 +144,7 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
 
       {/* Files added feedback */}
       {filesAdded.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filesAdded.map((name, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Check size={14} style={{ color: "var(--color-garden-sage)" }} />
@@ -153,6 +153,14 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
               </span>
             </div>
           ))}
+          <p style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 13,
+            color: "var(--color-garden-sage)",
+            margin: "8px 0 0",
+          }}>
+            DailyOS is primed. Context will build from what you just gave it, and from your connectors as they run.
+          </p>
         </div>
       )}
 
@@ -181,9 +189,10 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
                 flex: "1 1 140px",
                 padding: 16,
                 borderTop: "1px solid var(--color-rule-light)",
+                opacity: 0.5,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, color: "var(--color-text-primary)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, color: "var(--color-text-tertiary)" }}>
                 {source.icon}
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500 }}>
                   {source.name}
@@ -191,6 +200,9 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
               </div>
               <p style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>
                 {source.desc}
+              </p>
+              <p style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", margin: "4px 0 0", letterSpacing: "0.04em" }}>
+                Coming soon
               </p>
             </div>
           ))}
@@ -219,7 +231,7 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
             padding: 0,
           }}
         >
-          Skip — I'll add context later
+          Skip — I'll feed it manually later
         </button>
         <Button onClick={onComplete}>
           Go to Dashboard
