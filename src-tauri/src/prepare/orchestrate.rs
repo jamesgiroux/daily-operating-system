@@ -1696,13 +1696,11 @@ fn queue_person_intelligence(
             }
         }
 
-        queue.enqueue(crate::intel_queue::IntelRequest {
+        queue.enqueue(crate::intel_queue::IntelRequest::new(
             entity_id,
-            entity_type: "person".to_string(),
-            priority: crate::intel_queue::IntelPriority::CalendarChange,
-            requested_at: std::time::Instant::now(),
-            retry_count: 0,
-        });
+            "person".to_string(),
+            crate::intel_queue::IntelPriority::CalendarChange,
+        ));
         enqueued += 1;
     }
 

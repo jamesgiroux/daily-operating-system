@@ -7,6 +7,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { styles } from "@/components/settings/styles";
+import { useConnectivity } from "@/hooks/useConnectivity";
 import type {
   PostMeetingCaptureConfig,
 
@@ -967,6 +968,99 @@ function DataManagementSection() {
 }
 
 // ---------------------------------------------------------------------------
+// SyncStatusSection — I428: per-source sync freshness
+// ---------------------------------------------------------------------------
+
+const SOURCE_LABELS: Record<string, string> = {
+  google_calendar: "Google Calendar",
+  gmail: "Gmail",
+  claude_code: "Claude Code",
+  glean: "Glean",
+};
+
+const statusDotColor: Record<string, string> = {
+  green: "var(--color-garden-sage)",
+  amber: "var(--color-spice-turmeric)",
+  red: "var(--color-spice-terracotta)",
+  unknown: "var(--color-text-tertiary)",
+};
+
+function SyncStatusSection() {
+  const { freshness } = useConnectivity();
+
+  if (freshness.length === 0) {
+    return null;
+  }
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Sync Status</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {freshness.map((f) => (
+          <div
+            key={f.source}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "4px 0",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  backgroundColor: statusDotColor[f.status] ?? statusDotColor.unknown,
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 13,
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                {SOURCE_LABELS[f.source] ?? f.source}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                {f.ageDescription}
+              </span>
+              {f.lastError && f.status === "red" && (
+                <span
+                  title={f.lastError}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    color: "var(--color-spice-terracotta)",
+                    maxWidth: 160,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {f.lastError}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SecuritySection — app lock timeout config (I465)
 // ---------------------------------------------------------------------------
 
@@ -1045,6 +1139,10 @@ export default function SystemStatus() {
       {/* Always visible: version, last briefing, health one-liner */}
       <UpdateSection />
       <HealthOneLiner />
+
+      <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
+
+      <SyncStatusSection />
 
       <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
 

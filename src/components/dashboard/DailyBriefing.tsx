@@ -408,7 +408,10 @@ function AttentionSection({
 }: {
   proposedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
   acceptAction: (id: string) => void;
-  rejectAction: (id: string) => void;
+  rejectAction: (
+    id: string,
+    source?: "actions_page" | "daily_briefing" | "meeting_detail"
+  ) => void;
   focus: DashboardData["focus"];
   pendingActions: Action[];
   completedIds: Set<string>;
@@ -477,7 +480,7 @@ function AttentionSection({
                     key={action.id}
                     action={action}
                     onAccept={() => acceptAction(action.id)}
-                    onReject={() => rejectAction(action.id)}
+                    onReject={() => rejectAction(action.id, "daily_briefing")}
                     showBorder={i < Math.min(proposedActions.length, 3) - 1}
                     compact
                   />

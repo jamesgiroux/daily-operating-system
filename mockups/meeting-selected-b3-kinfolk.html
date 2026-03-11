@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS — Meeting Selected: Kinfolk Aesthetic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300;1,9..40,400&family=JetBrains+Mono:wght@300;400;500&family=Montserrat:wght@700;800&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream: #f5f2ef;
+  --linen: #e8e2d9;
+  --warm-white: #faf8f6;
+  --charcoal: #1e2530;
+  --turmeric: #c9a227;
+  --saffron: #deb841;
+  --terracotta: #c4654a;
+  --sage: #7eaa7b;
+  --olive: #6b7c52;
+  --larkspur: #8fa3c4;
+  --text-primary: #1e2530;
+  --text-secondary: #5a6370;
+  --text-tertiary: #8a919a;
+  --rule-heavy: rgba(30, 37, 48, 0.12);
+  --rule-light: rgba(30, 37, 48, 0.06);
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'DM Sans', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-brand: 'Montserrat', sans-serif;
+}
+
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--cream);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Folio Bar ── */
+.folio-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: rgba(245, 242, 239, 0.72);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--rule-light);
+}
+
+.folio-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folio-asterisk {
+  font-family: var(--font-brand);
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--turmeric);
+  line-height: 1;
+}
+
+.folio-wordmark {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.folio-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+.folio-refresh {
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.folio-refresh:hover {
+  color: var(--text-secondary);
+}
+
+/* ── Main Layout ── */
+.spread {
+  display: flex;
+  margin-top: 40px;
+  height: calc(100vh - 40px);
+}
+
+/* ── Left Panel ── */
+.panel-left {
+  width: 320px;
+  min-width: 320px;
+  background: var(--warm-white);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Left panel scrollbar */
+.panel-left::-webkit-scrollbar {
+  width: 4px;
+}
+
+.panel-left::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-left::-webkit-scrollbar-thumb {
+  background: rgba(30, 37, 48, 0.08);
+  border-radius: 2px;
+}
+
+/* Temporal Navigator */
+.temporal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 16px 20px;
+}
+
+.temporal-nav .nav-arrow {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  user-select: none;
+  padding: 4px;
+  border: none;
+  background: none;
+  line-height: 1;
+}
+
+.temporal-nav .nav-arrow:hover {
+  color: var(--text-primary);
+}
+
+.temporal-nav .nav-labels {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.temporal-nav .nav-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  position: relative;
+}
+
+.temporal-nav .nav-label:hover {
+  color: var(--text-secondary);
+}
+
+.temporal-nav .nav-label.active {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: default;
+}
+
+.temporal-nav .nav-label.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--turmeric);
+}
+
+.temporal-divider {
+  height: 1px;
+  background: var(--rule-light);
+  margin: 0 20px;
+}
+
+/* Schedule Timeline */
+.schedule {
+  padding: 16px 20px;
+  flex: 1;
+}
+
+.meeting-row {
+  display: grid;
+  grid-template-columns: 3px 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+  position: relative;
+  cursor: pointer;
+}
+
+.meeting-row:hover:not(.selected) {
+  background: rgba(30, 37, 48, 0.02);
+  margin: 0 -8px;
+  padding: 12px 8px;
+}
+
+.meeting-row.past {
+  opacity: 0.4;
+}
+
+.meeting-row.selected {
+  background: rgba(201, 162, 39, 0.06);
+  margin: 0 -8px;
+  padding: 12px 8px;
+  border-radius: 6px;
+}
+
+.meeting-accent {
+  width: 3px;
+  border-radius: 2px;
+  align-self: stretch;
+  min-height: 100%;
+}
+
+.meeting-accent.customer { background: var(--turmeric); }
+.meeting-accent.oneone { background: var(--larkspur); }
+.meeting-accent.internal { background: var(--linen); }
+
+.meeting-row.selected .meeting-accent.customer {
+  box-shadow: 0 0 6px rgba(201, 162, 39, 0.3);
+}
+
+.meeting-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.meeting-time-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.meeting-time {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.meeting-duration {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.meeting-title-left {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.meeting-type {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.meeting-type.customer { color: var(--turmeric); }
+.meeting-type.oneone { color: var(--larkspur); }
+.meeting-type.internal { color: var(--text-tertiary); }
+
+/* NOW Indicator */
+.now-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  position: relative;
+}
+
+.now-indicator::before {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--turmeric);
+  flex-shrink: 0;
+}
+
+.now-indicator .now-line {
+  flex: 1;
+  height: 1px;
+  background: var(--turmeric);
+  opacity: 0.4;
+}
+
+.now-indicator .now-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--turmeric);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Timeline Footer */
+.timeline-footer {
+  padding: 24px 20px 20px;
+  border-top: 1px solid var(--rule-light);
+  margin-top: 8px;
+}
+
+.timeline-footer .clear-msg {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.timeline-footer .open-msg {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+/* ── Right Panel ── */
+.panel-right {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow-y: auto;
+  background: var(--cream);
+}
+
+/* Paper grain texture */
+.panel-right::before {
+  content: '';
+  position: fixed;
+  top: 40px;
+  left: 320px;
+  right: 0;
+  bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Organic flowing shape — right side accent */
+.organic-shape {
+  position: fixed;
+  top: 120px;
+  right: -60px;
+  width: 400px;
+  height: 500px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.03;
+}
+
+/* Small asterisk mark — bottom right */
+.asterisk-mark {
+  position: fixed;
+  bottom: 40px;
+  right: 40px;
+  font-family: var(--font-brand);
+  font-weight: 800;
+  font-size: 140px;
+  color: var(--turmeric);
+  opacity: 0.05;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+/* Right panel scrollbar */
+.panel-right::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-right::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-right::-webkit-scrollbar-thumb {
+  background: rgba(30, 37, 48, 0.08);
+  border-radius: 3px;
+}
+
+.panel-right::-webkit-scrollbar-thumb:hover {
+  background: rgba(30, 37, 48, 0.15);
+}
+
+/* ── Briefing Content ── */
+.briefing-content {
+  position: relative;
+  z-index: 1;
+  padding: 40px 56px 80px;
+  max-width: 780px;
+}
+
+/* ── Back Link ── */
+.back-link {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--turmeric);
+  text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 28px;
+  transition: opacity 0.2s;
+}
+
+.back-link:hover {
+  opacity: 0.7;
+}
+
+/* ── Meeting Header ── */
+.meeting-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.kicker-line {
+  width: 24px;
+  height: 1.5px;
+  background: var(--turmeric);
+  flex-shrink: 0;
+}
+
+.kicker-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--turmeric);
+}
+
+.meeting-title {
+  font-family: var(--font-serif);
+  font-size: 44px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+}
+
+.meeting-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.meeting-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meeting-meta .meet-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.meeting-meta .meet-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.join-button {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--turmeric);
+  background: rgba(201, 162, 39, 0.06);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.join-button:hover {
+  background: rgba(201, 162, 39, 0.12);
+}
+
+/* ── Account Health Strip ── */
+.health-strip {
+  background: rgba(201, 162, 39, 0.03);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+}
+
+.health-account {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.health-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.health-dot.healthy { background: var(--sage); }
+
+.health-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--sage);
+  font-weight: 500;
+}
+
+.health-trend {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--sage);
+}
+
+.health-renewal {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+/* ── Section Spacing ── */
+.section-gap {
+  height: 40px;
+}
+
+.section-gap-sm {
+  height: 28px;
+}
+
+/* ── Briefing Narrative ── */
+.narrative {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  max-width: 620px;
+}
+
+.narrative strong {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.narrative p + p {
+  margin-top: 16px;
+}
+
+/* ── Section Kicker (organic style) ── */
+.section-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.kicker-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.kicker-dot.larkspur { background: var(--larkspur); }
+.kicker-dot.terracotta { background: var(--terracotta); }
+.kicker-dot.default { background: var(--text-tertiary); }
+
+.kicker-flow-line {
+  width: 20px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.kicker-flow-line.larkspur { background: var(--larkspur); }
+.kicker-flow-line.terracotta { background: var(--terracotta); }
+
+.section-kicker-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.section-kicker-text.default { color: var(--text-tertiary); }
+.section-kicker-text.terracotta { color: var(--terracotta); }
+
+/* ── The Room ── */
+.room-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+
+.room-group-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-tertiary);
+  margin-bottom: 16px;
+}
+
+.attendee {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.attendee + .attendee {
+  /* spacing only, no borders */
+  margin-top: 6px;
+}
+
+.attendee-temp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.attendee-temp.engaged {
+  background: var(--sage);
+  box-shadow: 0 0 4px rgba(126, 170, 123, 0.3);
+}
+
+.attendee-temp.warm {
+  background: var(--saffron);
+  box-shadow: 0 0 4px rgba(222, 184, 65, 0.3);
+}
+
+.attendee-temp.neutral {
+  background: var(--linen);
+  border: 1px solid var(--rule-heavy);
+  box-shadow: 0 0 4px rgba(138, 145, 154, 0.15);
+}
+
+.attendee-info {
+  flex: 1;
+}
+
+.attendee-name {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.attendee-role {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.attendee-tag {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}
+
+/* ── Prep Grid ── */
+.prep-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 28px;
+}
+
+.prep-column-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 14px;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.prep-column-kicker.turmeric {
+  color: var(--turmeric);
+  background: rgba(201, 162, 39, 0.08);
+}
+
+.prep-column-kicker.terracotta {
+  color: var(--terracotta);
+  background: rgba(196, 101, 74, 0.08);
+}
+
+.prep-column-kicker.sage {
+  color: var(--sage);
+  background: rgba(126, 170, 123, 0.08);
+}
+
+.prep-list {
+  list-style: none;
+}
+
+.prep-list li {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--text-primary);
+  padding: 4px 0;
+  padding-left: 14px;
+  position: relative;
+}
+
+.prep-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}
+
+.prep-list.turmeric li::before { background: var(--turmeric); }
+.prep-list.terracotta li::before { background: var(--terracotta); }
+.prep-list.sage li::before { background: var(--sage); }
+
+/* ── Actions Checklist ── */
+.checklist {
+  list-style: none;
+}
+
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-tertiary);
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: border-color 0.15s;
+  cursor: pointer;
+}
+
+.checkbox:hover {
+  border-color: var(--turmeric);
+}
+
+.check-detail {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 300;
+}
+
+/* ── Recent Context ── */
+.context-item {
+  padding: 8px 0;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.context-item + .context-item {
+  border-top: 1px solid var(--rule-light);
+}
+
+.context-date {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  min-width: 52px;
+  padding-top: 2px;
+}
+
+.context-text {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Finis ── */
+.finis {
+  text-align: center;
+  padding-top: 16px;
+}
+
+.finis-rule {
+  width: 120px;
+  height: 1px;
+  background: var(--rule-heavy);
+  margin: 0 auto 20px;
+}
+
+.finis-text {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.finis-marks {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  letter-spacing: 0.4em;
+  color: var(--text-tertiary);
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .spread {
+    flex-direction: column;
+    height: auto;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  .panel-left {
+    width: 100%;
+    min-width: 0;
+    border-bottom: 1px solid var(--rule-heavy);
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .panel-right::before {
+    left: 0;
+  }
+
+  .organic-shape {
+    display: none;
+  }
+
+  .asterisk-mark {
+    font-size: 100px;
+    bottom: 20px;
+    right: 20px;
+  }
+
+  .briefing-content {
+    padding: 32px 24px 60px;
+  }
+
+  .meeting-title {
+    font-size: 32px;
+  }
+
+  .room-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .prep-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .health-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .health-renewal {
+    margin-left: 0;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Folio Bar ── -->
+<header class="folio-bar">
+  <div class="folio-left">
+    <span class="folio-asterisk">*</span>
+    <span class="folio-wordmark">DailyOS</span>
+  </div>
+  <span class="folio-date">Monday, March 3, 2026</span>
+  <svg class="folio-refresh" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+    <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4"/>
+    <path d="M13.5 8a5.5 5.5 0 0 1-9.3 4"/>
+    <path d="M11.5 3.5 12 4.5l1-.5"/>
+    <path d="M4.5 12.5 4 11.5l-1 .5"/>
+  </svg>
+</header>
+
+<!-- ── Two-Panel Spread ── -->
+<div class="spread">
+
+  <!-- ── Left Panel: Timeline ── -->
+  <aside class="panel-left">
+    <nav class="temporal-nav">
+      <button class="nav-arrow" title="Previous day">&lsaquo;</button>
+      <div class="nav-labels">
+        <button class="nav-label">Yesterday</button>
+        <button class="nav-label active">Today</button>
+        <button class="nav-label">Tomorrow</button>
+      </div>
+      <button class="nav-arrow" title="Next day">&rsaquo;</button>
+    </nav>
+    <div class="temporal-divider"></div>
+
+    <!-- Schedule Timeline -->
+    <div class="schedule">
+
+      <!-- 9:00 AM - Past -->
+      <div class="meeting-row past">
+        <div class="meeting-accent internal"></div>
+        <div class="meeting-content">
+          <div class="meeting-time-row">
+            <span class="meeting-time">9:00 AM</span>
+            <span class="meeting-duration">30m</span>
+          </div>
+          <span class="meeting-title-left">Engineering Standup</span>
+          <span class="meeting-type internal">Internal</span>
+        </div>
+      </div>
+
+      <!-- 10:30 AM - SELECTED -->
+      <div class="meeting-row selected">
+        <div class="meeting-accent customer"></div>
+        <div class="meeting-content">
+          <div class="meeting-time-row">
+            <span class="meeting-time">10:30 AM</span>
+            <span class="meeting-duration">60m</span>
+          </div>
+          <span class="meeting-title-left">Acme Corp QBR</span>
+          <span class="meeting-type customer">Customer</span>
+        </div>
+      </div>
+
+      <!-- 11:15 AM -->
+      <div class="meeting-row">
+        <div class="meeting-accent oneone"></div>
+        <div class="meeting-content">
+          <div class="meeting-time-row">
+            <span class="meeting-time">11:15 AM</span>
+            <span class="meeting-duration">30m</span>
+          </div>
+          <span class="meeting-title-left">1:1 with Sarah Chen</span>
+          <span class="meeting-type oneone">1:1</span>
+        </div>
+      </div>
+
+      <!-- NOW Indicator -->
+      <div class="now-indicator">
+        <span class="now-line"></span>
+        <span class="now-label">NOW &middot; 12:47 PM</span>
+      </div>
+
+      <!-- 2:00 PM -->
+      <div class="meeting-row">
+        <div class="meeting-accent customer"></div>
+        <div class="meeting-content">
+          <div class="meeting-time-row">
+            <span class="meeting-time">2:00 PM</span>
+            <span class="meeting-duration">45m</span>
+          </div>
+          <span class="meeting-title-left">CloudCorp Status</span>
+          <span class="meeting-type customer">Customer</span>
+        </div>
+      </div>
+
+      <!-- 3:30 PM -->
+      <div class="meeting-row">
+        <div class="meeting-accent internal"></div>
+        <div class="meeting-content">
+          <div class="meeting-time-row">
+            <span class="meeting-time">3:30 PM</span>
+            <span class="meeting-duration">60m</span>
+          </div>
+          <span class="meeting-title-left">Sprint Retro</span>
+          <span class="meeting-type internal">Internal</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Timeline Footer -->
+    <div class="timeline-footer">
+      <div class="clear-msg">Clear until 2:00 PM</div>
+      <div class="open-msg">4h 12m open today</div>
+    </div>
+
+  </aside>
+
+  <!-- ── Right Panel: Meeting Briefing ── -->
+  <main class="panel-right">
+
+    <!-- Organic flowing shape -->
+    <svg class="organic-shape" viewBox="0 0 400 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M250 20C320 40 380 120 370 200C360 280 300 310 280 370C260 430 310 480 250 490C190 500 140 450 100 380C60 310 20 240 40 170C60 100 120 60 170 30C220 0 200 5 250 20Z" fill="#c9a227"/>
+    </svg>
+
+    <!-- Small asterisk brand mark -->
+    <div class="asterisk-mark">*</div>
+
+    <div class="briefing-content">
+
+      <!-- Back Link -->
+      <a class="back-link" href="#">&larr; Back to briefing</a>
+
+      <!-- Meeting Header -->
+      <div class="meeting-kicker">
+        <span class="kicker-line"></span>
+        <span class="kicker-text">Customer &middot; Quarterly Business Review</span>
+      </div>
+
+      <h1 class="meeting-title">Acme Corp QBR</h1>
+
+      <div class="meeting-meta-row">
+        <span class="meeting-meta">
+          10:30 AM &ndash; 11:30 AM &middot; 60 min &middot;
+          <span class="meet-icon">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="3" width="8" height="8" rx="1.5"/>
+              <path d="M9 6.5l4-2v5l-4-2"/>
+            </svg>
+            Google Meet
+          </span>
+        </span>
+        <a class="join-button" href="#">Join Meeting &rarr;</a>
+      </div>
+
+      <!-- Account Health Strip -->
+      <div class="health-strip">
+        <span class="health-account">Acme Corp</span>
+        <span class="health-indicator">
+          <span class="health-dot healthy"></span>
+          <span class="health-label">Healthy</span>
+        </span>
+        <span class="health-trend">&uarr; Improving</span>
+        <span class="health-renewal">Renewal: Aug 2026 &middot; $240K ARR</span>
+      </div>
+
+      <!-- Briefing Narrative -->
+      <div class="section-gap"></div>
+      <div class="narrative">
+        <p>This is Acme's first QBR since the platform migration completed in January. <strong>Sarah Chen</strong> has been your champion throughout, but she flagged concerns about adoption metrics in last week's 1:1. The migration was technically successful, but user engagement is tracking 30% below the targets you set in Q3.</p>
+        <p><strong>Key tension</strong>: Acme's leadership wants ROI evidence for the board. You have strong implementation metrics but weak adoption numbers. Lead with what's working, acknowledge the gap, and propose the enablement program.</p>
+      </div>
+
+      <!-- The Room -->
+      <div class="section-gap"></div>
+
+      <div class="section-kicker">
+        <span class="kicker-flow-line larkspur"></span>
+        <span class="section-kicker-text default">The Room</span>
+      </div>
+
+      <div class="room-grid">
+        <div class="room-group">
+          <div class="room-group-label">Their Side</div>
+          <div class="attendee">
+            <div class="attendee-temp engaged"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">Sarah Chen</div>
+              <div class="attendee-role">VP Customer Success</div>
+              <div class="attendee-tag">Champion</div>
+            </div>
+          </div>
+          <div class="attendee">
+            <div class="attendee-temp warm"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">Marcus Webb</div>
+              <div class="attendee-role">CTO</div>
+              <div class="attendee-tag">Decision Maker</div>
+            </div>
+          </div>
+          <div class="attendee">
+            <div class="attendee-temp neutral"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">Lisa Park</div>
+              <div class="attendee-role">Head of Product</div>
+              <div class="attendee-tag">Evaluator</div>
+            </div>
+          </div>
+        </div>
+        <div class="room-group">
+          <div class="room-group-label">Your Side</div>
+          <div class="attendee">
+            <div class="attendee-temp engaged"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">You</div>
+            </div>
+          </div>
+          <div class="attendee">
+            <div class="attendee-temp engaged"></div>
+            <div class="attendee-info">
+              <div class="attendee-name">David Kim</div>
+              <div class="attendee-role">Solutions Architect</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prep Grid -->
+      <div class="section-gap"></div>
+
+      <div class="prep-grid">
+        <div class="prep-column">
+          <div class="prep-column-kicker turmeric">Discuss</div>
+          <ul class="prep-list turmeric">
+            <li>Adoption metrics vs. Q3 targets</li>
+            <li>Enablement program proposal</li>
+            <li>Roadmap alignment for Q2</li>
+          </ul>
+        </div>
+        <div class="prep-column">
+          <div class="prep-column-kicker terracotta">Watch For</div>
+          <ul class="prep-list terracotta">
+            <li>Marcus's reaction to adoption numbers</li>
+            <li>Budget signals for the enablement program</li>
+            <li>Any mention of competitor evaluation</li>
+          </ul>
+        </div>
+        <div class="prep-column">
+          <div class="prep-column-kicker sage">Wins to Reference</div>
+          <ul class="prep-list sage">
+            <li>Migration completed 2 weeks ahead of schedule</li>
+            <li>Zero data loss during transition</li>
+            <li>Support ticket volume down 40% post-migration</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Actions Before This Meeting -->
+      <div class="section-gap"></div>
+
+      <div class="section-kicker">
+        <span class="kicker-flow-line terracotta"></span>
+        <span class="section-kicker-text terracotta">Before This Meeting</span>
+      </div>
+
+      <ul class="checklist">
+        <li>
+          <div class="checkbox"></div>
+          <div>Review adoption dashboard <span class="check-detail">(pull latest numbers)</span></div>
+        </li>
+        <li>
+          <div class="checkbox"></div>
+          <div>Send agenda to Sarah <span class="check-detail">(draft ready)</span></div>
+        </li>
+        <li>
+          <div class="checkbox"></div>
+          <div>Prepare enablement program one-pager</div>
+        </li>
+      </ul>
+
+      <!-- Recent Context -->
+      <div class="section-gap"></div>
+
+      <div class="section-kicker">
+        <span class="kicker-dot default"></span>
+        <span class="section-kicker-text default">Recent Context</span>
+      </div>
+
+      <div class="context-list">
+        <div class="context-item">
+          <span class="context-date">Feb 18</span>
+          <span class="context-text">1:1 with Sarah: raised adoption concerns, asked for QBR agenda input</span>
+        </div>
+        <div class="context-item">
+          <span class="context-date">Feb 12</span>
+          <span class="context-text">Email from Marcus: "Looking forward to reviewing progress"</span>
+        </div>
+        <div class="context-item">
+          <span class="context-date">Jan 30</span>
+          <span class="context-text">Migration completed. Sarah confirmed all systems operational.</span>
+        </div>
+      </div>
+
+      <!-- Finis -->
+      <div class="section-gap"></div>
+      <div class="finis">
+        <div class="finis-rule"></div>
+        <div class="finis-text">Briefing ready</div>
+        <div class="finis-marks">* * *</div>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+</body>
+</html>

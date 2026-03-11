@@ -151,6 +151,26 @@ pub fn process_fetched_transcript_without_db(
     profile: &str,
     ai_config: Option<&crate::types::AiModelConfig>,
 ) -> Result<crate::types::TranscriptResult, String> {
+    process_fetched_transcript_without_db_with_kind(
+        sync_id,
+        meeting,
+        transcript_text,
+        workspace,
+        profile,
+        ai_config,
+        crate::processor::transcript::TranscriptContentKind::Transcript,
+    )
+}
+
+pub fn process_fetched_transcript_without_db_with_kind(
+    sync_id: &str,
+    meeting: &CalendarEvent,
+    transcript_text: &str,
+    workspace: &Path,
+    profile: &str,
+    ai_config: Option<&crate::types::AiModelConfig>,
+    content_kind: crate::processor::transcript::TranscriptContentKind,
+) -> Result<crate::types::TranscriptResult, String> {
     let temp_dir = workspace.join("_temp");
     let _ = std::fs::create_dir_all(&temp_dir);
     let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
@@ -161,13 +181,14 @@ pub fn process_fetched_transcript_without_db(
     let temp_path_str = temp_path.display().to_string();
 
     // Run the AI pipeline — this is the expensive part that must NOT hold the DB lock
-    let result = crate::processor::transcript::process_transcript(
+    let result = crate::processor::transcript::process_transcript_with_kind(
         workspace,
         &temp_path_str,
         meeting,
         None, // No DB reference — caller writes captures after re-acquiring lock
         profile,
         ai_config,
+        content_kind,
     );
 
     let _ = std::fs::remove_file(&temp_path);
