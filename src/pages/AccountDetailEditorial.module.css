@@ -170,3 +170,54 @@
   border-radius: 50%;
   background: var(--color-spice-saffron);
 }
+
+/* ── Reports Chapter ── */
+
+.reportsChapter {
+  display: flex;
+  flex-direction: column;
+}
+
+.reportRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.reportRow:last-child {
+  border-bottom: none;
+}
+
+.reportRow:hover .reportAction {
+  color: var(--color-spice-turmeric);
+}
+
+.reportIcon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.reportName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.reportAction {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease;
+}
