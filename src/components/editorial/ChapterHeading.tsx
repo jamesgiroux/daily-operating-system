@@ -14,7 +14,7 @@ export function ChapterHeading({ title, epigraph }: ChapterHeadingProps) {
       <hr
         style={{
           border: "none",
-          borderTop: "1px solid rgba(30, 37, 48, 0.12)",
+          borderTop: "1px solid var(--color-rule-heavy)",
           marginBottom: 16,
         }}
       />
