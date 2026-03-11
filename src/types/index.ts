@@ -310,6 +310,8 @@ export interface DashboardData {
   emailNarrative?: string;
   /** Threads awaiting user reply (I318/I355) */
   repliesNeeded?: ReplyNeeded[];
+  /** I502: Health data keyed by entity ID for accounts linked to today's meetings. */
+  entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
 // =============================================================================
@@ -824,6 +826,8 @@ export interface MeetingIntelligence {
     staleness: "current" | "aging" | "stale";
     hasNewSignals: boolean;
   };
+  /** I502: Health data keyed by entity ID for linked accounts that have intelligence health. */
+  entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
 export interface ApplyPrepPrefillResult {
@@ -1096,6 +1100,8 @@ export interface AccountListItem {
   isParent: boolean;
   accountType: AccountType;
   archived: boolean;
+  /** I502: Intelligence health data when available (populated from entity_intelligence). */
+  intelligenceHealth?: IntelligenceAccountHealth | null;
 }
 
 export interface CompanyOverview {
@@ -2096,6 +2102,8 @@ export interface TimelineMeeting {
   followUpCount?: number;
   /** Whether a meeting briefing exists (prep_frozen_json or disk file) */
   hasPrep?: boolean;
+  /** I502: Health data keyed by entity ID for linked accounts with intelligence health. */
+  entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
 // =============================================================================
