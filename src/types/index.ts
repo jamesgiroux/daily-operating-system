@@ -31,6 +31,11 @@ export type MeetingType =
   | "external"
   | "personal";
 
+/** Feature flags for gating incomplete features (I537). */
+export interface FeatureFlags {
+  role_presets_enabled: boolean;
+}
+
 export interface DatabaseRecoveryStatus {
   required: boolean;
   reason: string;
