@@ -31,6 +31,12 @@ const TRANSCRIPT_MAX_CHARS: usize = 60_000;
 /// Head portion kept for tail-biased truncation (attendee context, meeting opening).
 const TRANSCRIPT_HEAD_KEEP: usize = 3_000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptContentKind {
+    Transcript,
+    Notes,
+}
+
 /// Process a transcript file with meeting context.
 ///
 /// 1. Read the source file
@@ -45,6 +51,26 @@ pub fn process_transcript(
     db: Option<&ActionDb>,
     profile: &str,
     ai_config: Option<&AiModelConfig>,
+) -> TranscriptResult {
+    process_transcript_with_kind(
+        workspace,
+        file_path,
+        meeting,
+        db,
+        profile,
+        ai_config,
+        TranscriptContentKind::Transcript,
+    )
+}
+
+pub fn process_transcript_with_kind(
+    workspace: &Path,
+    file_path: &str,
+    meeting: &CalendarEvent,
+    db: Option<&ActionDb>,
+    profile: &str,
+    ai_config: Option<&AiModelConfig>,
+    content_kind: TranscriptContentKind,
 ) -> TranscriptResult {
     let source = Path::new(file_path);
 
@@ -118,7 +144,7 @@ pub fn process_transcript(
     );
 
     // 3. Build prompt and invoke Claude
-    let prompt = build_transcript_prompt(meeting, &content);
+    let prompt = build_transcript_prompt_with_kind(meeting, &content, content_kind);
     let default_config = AiModelConfig::default();
     let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config.unwrap_or(&default_config))
         .with_timeout(TRANSCRIPT_AI_TIMEOUT_SECS);
@@ -186,8 +212,11 @@ pub fn process_transcript(
                 let meta = super::metadata::parse_action_metadata(raw);
                 extracted_actions.push(CapturedAction {
                     title: meta.clean_title,
-                    owner: meta.account,
+                    owner: meta.account.clone(),
                     due_date: meta.due_date,
+                    priority: meta.priority,
+                    context: meta.context,
+                    account: meta.account,
                 });
             }
         }
@@ -479,6 +508,14 @@ fn truncate_transcript(content: &str) -> String {
 
 /// Build the meeting-contextualized prompt for transcript analysis.
 pub fn build_transcript_prompt(meeting: &CalendarEvent, content: &str) -> String {
+    build_transcript_prompt_with_kind(meeting, content, TranscriptContentKind::Transcript)
+}
+
+pub fn build_transcript_prompt_with_kind(
+    meeting: &CalendarEvent,
+    content: &str,
+    content_kind: TranscriptContentKind,
+) -> String {
     let truncated = truncate_transcript(content);
 
     let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
@@ -492,9 +529,17 @@ pub fn build_transcript_prompt(meeting: &CalendarEvent, content: &str) -> String
         _ => String::new(),
     };
     let date = meeting.end.format("%Y-%m-%d").to_string();
+    let source_intro = match content_kind {
+        TranscriptContentKind::Transcript => {
+            format!("You are analyzing a transcript from a {meeting_type} meeting.")
+        }
+        TranscriptContentKind::Notes => format!(
+            "You are analyzing meeting notes from a {meeting_type} meeting. These notes may already be condensed, so extract actions, decisions, wins, and risks from what is actually present. Do not repeat the notes verbatim or invent detail that is not supported."
+        ),
+    };
 
     format!(
-        r#"{preamble}You are analyzing a transcript from a {meeting_type} meeting.
+        r#"{preamble}{source_intro}
 
 Meeting: "{title}"
 {account_line}Date: {date}
@@ -601,9 +646,9 @@ Transcript:
 {content}
 "#,
         preamble = INJECTION_PREAMBLE,
+        source_intro = source_intro,
         title = encode_high_risk_field(title),
         account_line = account_line,
-        meeting_type = meeting_type,
         date = date,
         content = wrap_user_data(&truncated),
     )
@@ -729,8 +774,7 @@ pub fn parse_sentiment_block(response: &str) -> Option<TranscriptSentiment> {
                 "competitor_mentions" => {
                     let v = value.trim();
                     if !v.is_empty() && v.to_lowercase() != "none" {
-                        competitor_mentions =
-                            v.split(',').map(|s| s.trim().to_string()).collect();
+                        competitor_mentions = v.split(',').map(|s| s.trim().to_string()).collect();
                     }
                 }
                 "champion_present" => match value.to_lowercase().trim() {
@@ -764,7 +808,11 @@ pub fn parse_sentiment_block(response: &str) -> Option<TranscriptSentiment> {
 /// Returns `None` if the block is missing entirely. Gracefully handles
 /// missing or malformed sub-blocks by leaving those fields empty/None.
 pub fn parse_interaction_dynamics(response: &str) -> Option<InteractionDynamics> {
-    let block = extract_block(response, "INTERACTION_DYNAMICS:", "END_INTERACTION_DYNAMICS")?;
+    let block = extract_block(
+        response,
+        "INTERACTION_DYNAMICS:",
+        "END_INTERACTION_DYNAMICS",
+    )?;
 
     // Parse TALK_BALANCE
     let talk_balance = block
@@ -813,8 +861,8 @@ pub fn parse_interaction_dynamics(response: &str) -> Option<InteractionDynamics>
         .unwrap_or_default();
 
     // Parse ENGAGEMENT_SIGNALS sub-block
-    let engagement_signals =
-        extract_block(&block, "ENGAGEMENT_SIGNALS:", "END_ENGAGEMENT_SIGNALS").map(|sub| {
+    let engagement_signals = extract_block(&block, "ENGAGEMENT_SIGNALS:", "END_ENGAGEMENT_SIGNALS")
+        .map(|sub| {
             let mut question_density = None;
             let mut decision_maker_active = None;
             let mut forward_looking = None;
@@ -995,6 +1043,20 @@ mod tests {
     }
 
     #[test]
+    fn test_build_transcript_prompt_for_notes() {
+        let meeting = test_meeting();
+        let prompt = build_transcript_prompt_with_kind(
+            &meeting,
+            "Condensed meeting notes",
+            TranscriptContentKind::Notes,
+        );
+
+        assert!(prompt.contains("meeting notes"));
+        assert!(prompt.contains("Do not repeat the notes verbatim"));
+        assert!(prompt.contains("Condensed meeting notes"));
+    }
+
+    #[test]
     fn test_build_transcript_prompt_null_fields() {
         let mut meeting = test_meeting();
         meeting.account = None;
@@ -1172,10 +1234,7 @@ SENTIMENT:
 END_SENTIMENT";
 
         let result = parse_sentiment_block(input).expect("should parse");
-        assert_eq!(
-            result.competitor_mentions,
-            vec!["Salesforce", "HubSpot"]
-        );
+        assert_eq!(result.competitor_mentions, vec!["Salesforce", "HubSpot"]);
     }
 
     #[test]
@@ -1227,7 +1286,10 @@ END_INTERACTION_DYNAMICS";
         );
         assert_eq!(result.speaker_sentiment[1].name, "Bob");
 
-        let eng = result.engagement_signals.as_ref().expect("should have engagement");
+        let eng = result
+            .engagement_signals
+            .as_ref()
+            .expect("should have engagement");
         assert_eq!(eng.question_density.as_deref(), Some("high"));
         assert_eq!(eng.decision_maker_active.as_deref(), Some("yes"));
         assert_eq!(eng.forward_looking.as_deref(), Some("moderate"));

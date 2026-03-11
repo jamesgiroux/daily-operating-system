@@ -262,11 +262,10 @@ pub async fn generate_meeting_intelligence(
     // 4. Enqueue meeting prep regeneration.
     state
         .meeting_prep_queue
-        .enqueue(crate::meeting_prep_queue::PrepRequest {
-            meeting_id: meeting_id.to_string(),
-            priority: crate::meeting_prep_queue::PrepPriority::Manual,
-            requested_at: std::time::Instant::now(),
-        });
+        .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+            meeting_id.to_string(),
+            crate::meeting_prep_queue::PrepPriority::Manual,
+        ));
     state.integrations.prep_queue_wake.notify_one();
 
     log::info!(

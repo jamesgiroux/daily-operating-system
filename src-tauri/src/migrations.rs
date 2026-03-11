@@ -271,6 +271,18 @@ const MIGRATIONS: &[Migration] = &[
         version: 63,
         sql: include_str!("migrations/063_email_signals_source.sql"),
     },
+    Migration {
+        version: 64,
+        sql: include_str!("migrations/064_pipeline_failures.sql"),
+    },
+    Migration {
+        version: 65,
+        sql: include_str!("migrations/065_search_fts5.sql"),
+    },
+    Migration {
+        version: 66,
+        sql: include_str!("migrations/066_sync_metadata.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -674,13 +686,14 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 63,
-            "should apply all migrations including email signal source attribution"
+            applied,
+            MIGRATIONS.len(),
+            "should apply all known migrations on a fresh database"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 63);
+        assert_eq!(version, MIGRATIONS.last().unwrap().version);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -1286,13 +1299,13 @@ mod tests {
         // Run migrations — should bootstrap v1 and apply v2 through v63.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 62,
-            "bootstrap should mark v1, then apply 62 pending migrations (v2-v63)"
+            applied, 65,
+            "bootstrap should mark v1, then apply 65 pending migrations (v2-v66)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 63);
+        assert_eq!(version, 66);
 
         // Verify existing data is untouched
         let title: String = conn

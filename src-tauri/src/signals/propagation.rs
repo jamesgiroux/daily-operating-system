@@ -114,13 +114,11 @@ impl PropagationEngine {
         // I385: Propagated signals trigger intel enrichment for cross-entity targets
         if let Some(ref intel_q) = self.intel_queue {
             for (eid, etype) in &cross_entity_targets {
-                intel_q.enqueue(crate::intel_queue::IntelRequest {
-                    entity_id: eid.clone(),
-                    entity_type: etype.clone(),
-                    priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
-                    requested_at: std::time::Instant::now(),
-                    retry_count: 0,
-                });
+                intel_q.enqueue(crate::intel_queue::IntelRequest::new(
+                    eid.clone(),
+                    etype.clone(),
+                    crate::intel_queue::IntelPriority::ProactiveHygiene,
+                ));
             }
         }
 

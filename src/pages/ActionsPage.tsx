@@ -185,7 +185,7 @@ export default function ActionsPage() {
   }, [acceptAction, refresh]);
 
   const handleReject = useCallback(async (id: string) => {
-    await rejectAction(id);
+    await rejectAction(id, "actions_page");
   }, [rejectAction]);
 
   // Smart default: proposed tab when suggestions exist, else pending

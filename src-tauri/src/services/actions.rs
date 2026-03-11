@@ -113,9 +113,11 @@ pub fn reject_proposed_action(
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
+    source: &str,
 ) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
-    db.reject_proposed_action(id).map_err(|e| e.to_string())?;
+    db.reject_proposed_action_with_source(id, source)
+        .map_err(|e| e.to_string())?;
 
     // Emit rejection signal for correction learning (I307)
     if let Some(ref action) = action {
