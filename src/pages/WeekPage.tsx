@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useTransition } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { EmptyState } from "@/components/editorial/EmptyState";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { invoke } from "@tauri-apps/api/core";
-import { Skeleton } from "@/components/ui/skeleton";
 
 import type { DayShape, TimelineMeeting } from "@/types";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,6 @@ import { MeetingCard } from "@/components/shared/MeetingCard";
 import { formatDisplayTime, formatDurationFromIso } from "@/lib/meeting-time";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
-import { AlertTriangle } from "lucide-react";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 
 // =============================================================================
@@ -248,42 +248,7 @@ export default function WeekPage() {
   // ─── Loading skeleton ─────────────────────────────────────────────────────
 
   if (loading) {
-    return (
-      <div className={w.pageContainer}>
-        <div className={w.skeletonHeader}>
-          <Skeleton className={cn("h-3 w-20 mb-2", w.skeletonBg)} />
-          <Skeleton className={cn("h-7 w-44 mb-6", w.skeletonBg)} />
-          <Skeleton className={cn("h-3 w-52", w.skeletonBg)} />
-        </div>
-        <div className={w.skeletonShape}>
-          <Skeleton className={cn("h-2.5 w-20 mb-4", w.skeletonBg)} />
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className={w.skeletonShapeRow}>
-              <Skeleton className={cn("h-3 w-9", w.skeletonBg)} />
-              <Skeleton className={cn("h-2 flex-1 rounded-full", w.skeletonBg)} />
-              <Skeleton className={cn("h-3 w-20", w.skeletonBg)} />
-            </div>
-          ))}
-        </div>
-        <div className={w.skeletonTimeline}>
-          <div className={w.skeletonTimelineRule} />
-          <Skeleton className={cn("h-7 w-36 mb-8", w.skeletonBg)} />
-          {[1, 2, 3].map((d) => (
-            <div key={d} className={w.skeletonDayGroup}>
-              <Skeleton className={cn("h-4 w-40 mb-3", w.skeletonBg)} />
-              <div className={w.skeletonDayRow}>
-                <Skeleton className={cn("h-2 w-2 rounded-full", w.skeletonBg)} />
-                <Skeleton className={cn("h-4 w-48", w.skeletonBg)} />
-                <Skeleton className={cn("h-3 w-16", w.skeletonBg)} />
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className={w.skeletonFinis}>
-          <Skeleton className={cn("mx-auto h-4 w-16", w.skeletonBg)} />
-        </div>
-      </div>
-    );
+    return <EditorialLoading count={5} />;
   }
 
   // ─── Empty state ──────────────────────────────────────────────────────────
@@ -298,7 +263,7 @@ export default function WeekPage() {
           benefit={weekCopy.benefit}
           action={{ label: "Connect calendar", onClick: () => navigate({ to: "/settings", search: { tab: "connectors" } }) }}
         />
-        {error && <ErrorCard error={error} />}
+        {error && <EditorialError message={error} />}
       </>
     );
   }
@@ -486,7 +451,7 @@ export default function WeekPage() {
         {/* ── Error ──────────────────────────────────────────────────── */}
         {error && (
           <div className={w.errorSpacing}>
-            <ErrorCard error={error} />
+            <EditorialError message={error} />
           </div>
         )}
 
@@ -510,29 +475,6 @@ interface DateGroup {
   dateKey: string;
   label: string;
   meetings: TimelineMeeting[];
-}
-
-function ErrorCard({ error }: { error: string }) {
-  return (
-    <div className="mt-6 max-w-md rounded-lg border border-destructive p-4 text-left">
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-        <div className="min-w-0 space-y-1">
-          {error.split("\n").map((line, i) => (
-            <p
-              key={i}
-              className={cn(
-                "text-sm",
-                i === 0 ? "text-destructive" : "text-muted-foreground"
-              )}
-            >
-              {line}
-            </p>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function computeDaysUntil(startTime: string): number | null {

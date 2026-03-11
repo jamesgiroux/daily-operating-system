@@ -340,7 +340,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     params={{ meetingId: m.id }}
                     style={{ textDecoration: "none", color: "inherit" }}
                   >
-                    &#9888; {m.title} at {m.time} — no prep yet
+                    &#9888; {m.title} at {m.time} — no briefing yet
                   </Link>
                 </div>
               ))}

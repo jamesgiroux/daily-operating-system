@@ -224,3 +224,98 @@
   color: var(--color-text-tertiary);
   margin-top: 2px;
 }
+
+/* ── Shared editorial patterns (migrated from styles.ts inline spreads — I541) ── */
+
+.subsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 12px;
+}
+
+.description {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.descriptionSmall {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.descriptionSmallSpaced {
+  composes: descriptionSmall;
+  margin-top: 2px;
+}
+
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.thinRule {
+  height: 1px;
+  background: var(--color-rule-light);
+  border: none;
+  margin: 16px 0;
+}
+
+.monoLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.activePresetLabel {
+  composes: monoLabel;
+  margin-top: 12px;
+  color: var(--color-spice-turmeric);
+}
+
+.btnGhost {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-heavy);
+}
+
+.btnGhostDisabled {
+  composes: btnGhost;
+  opacity: 0.5;
+}
+
+.iconCheck {
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.iconCheckSage {
+  color: var(--color-garden-sage);
+}
+
+.iconSpinner {
+  color: var(--color-text-tertiary);
+}
