@@ -584,10 +584,7 @@ pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> R
 
     // I513: Also store in app_state_kv for DB-based reads
     if let Ok(db) = crate::db::ActionDb::open() {
-        let _ = db.conn_ref().execute(
-            "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at) VALUES ('morning_flags', ?1, datetime('now'))",
-            rusqlite::params![json],
-        );
+        let _ = crate::services::mutations::upsert_app_state_kv_json(&db, "morning_flags", &json);
     }
 
     Ok(())

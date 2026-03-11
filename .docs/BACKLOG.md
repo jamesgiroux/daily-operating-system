@@ -659,14 +659,20 @@ Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches,
 | I448 | ActionsPage editorial rebuild — CSS module, margin grid, ChapterHeadings | P1 | Frontend / Actions |
 | I449 | WeekPage + EmailsPage CSS module polish | P1 | Frontend |
 | I450 | Portfolio chapter extraction — shared CSS module, conclusion-before-evidence order | P1 | Frontend / Entity |
-| I451 | MeetingDetailPage polish — Recent Correspondence editorial treatment, avatar tokens | P2 | Frontend / Meeting |
-| I452 | Settings page editorial audit — inline styles, vocabulary compliance, FinisMarker | P2 | Frontend / Settings |
+| ~~I451~~ | ~~MeetingDetailPage polish~~ — superseded by I542 (full style migration + vocabulary) | — | — |
+| ~~I452~~ | ~~Settings page editorial audit~~ — superseded by I541 (full UX rebuild: IA reorg, style migration, pagination, vocabulary) | — | — |
 | I453 | Onboarding pages editorial standards — v0.16.0 pages built to editorial spec | P1 | Frontend / Onboarding |
 | I454 | Vocabulary pass — replace all remaining user-visible system terms per ADR-0083 | P1 | Frontend / Copy |
 | I529 | Intelligence quality feedback UI — thumbs up/down on hover for intelligence items. Spec: `.docs/issues/i529.md` | P1 | Frontend + Backend / Signals |
 | I530 | Signal taxonomy: curation vs correction — delete ≠ wrong. Spec: `.docs/issues/i530.md` | P1 | Backend / Signals |
 | I537 | Gate role presets behind feature flag — hide preset selection UI, hard-default to CS. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
 | I540 | Actions pipeline integrity + lifecycle — 6 broken paths: Granola metadata loss, briefing blind to DB actions, archive never called, rejection source "unknown", thin free-tier summaries, deceptive tooltip. 30-day pending archive, Granola enrichment, briefing integration. Spec: `.docs/issues/i540.md` | P0 | Backend / Pipeline + Frontend / Actions |
+| I541 | Settings page UX rebuild — IA reorg (YouCard split into Identity/Workspace/Preferences), full inline style migration to CSS modules, audit log pagination, vocabulary fixes, StatusDot consolidation. Supersedes I452. Spec: `.docs/issues/i541.md` | P1 | Frontend / Settings / UX |
+| I542 | MeetingDetailPage style migration + vocabulary — migrate 51 inline styles to CSS module, replace hardcoded colors with tokens, fix 3 ADR-0083 violations. Supersedes I451. Spec: `.docs/issues/i542.md` | P1 | Frontend / Meeting Detail / UX |
+| I543 | GA design documentation — document 11 undocumented pages, add 114 missing components to inventory, create STATE-PATTERNS.md, developer checklists. Spec: `.docs/issues/i543.md` | P1 | Documentation / Design System |
+| I544 | Component DRY/SRP reconciliation — app-wide duplicate detection (StatusDot 3x, per-page empty/loading states), shared component extraction, dead code removal, SRP violations. Spec: `.docs/issues/i544.md` | P1 | Frontend / Code Quality |
+| I545 | Entity detail pages style migration — 105 inline styles across AccountDetailEditorial (51), ProjectDetailEditorial (39), PersonDetailEditorial (15) + 7 hardcoded rgba values. Shared CSS module extraction. Spec: `.docs/issues/i545.md` | P1 | Frontend / Entity Detail / UX |
+| I546 | Design documentation: interaction, data presentation, navigation — INTERACTION-PATTERNS.md, DATA-PRESENTATION-GUIDELINES.md, NAVIGATION-ARCHITECTURE.md. Spec: `.docs/issues/i546.md` | P2 | Documentation / Design System |
 
 **CS Report Suite (after Phase 2):**
 

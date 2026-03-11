@@ -7,6 +7,7 @@ import {
   type ParityDataset,
   type UiErrorPayload,
 } from "./phase3ContractRegistry";
+import { PHASE3_SURFACE_OWNERSHIP } from "./phase3OwnershipMap";
 
 interface ParityFixture {
   surfaceId: string;
@@ -18,11 +19,24 @@ const DATASET_DIR: Record<ParityDataset, string> = {
   mock: path.resolve(process.cwd(), ".docs/fixtures/parity/mock"),
   production: path.resolve(process.cwd(), ".docs/fixtures/parity/production"),
 };
+const CONTRACT_REGISTRY_ARTIFACT = path.resolve(
+  process.cwd(),
+  ".docs/contracts/phase3-ui-contract-registry.json"
+);
+const OWNERSHIP_MAP_ARTIFACT = path.resolve(
+  process.cwd(),
+  ".docs/contracts/phase3-ui-ownership-map.json"
+);
+const ROUTER_FILE = path.resolve(process.cwd(), "src/router.tsx");
 
 function loadFixture(dataset: ParityDataset, surfaceId: string): ParityFixture {
   const file = path.join(DATASET_DIR[dataset], `${surfaceId}.json`);
   const raw = fs.readFileSync(file, "utf8");
   return JSON.parse(raw) as ParityFixture;
+}
+
+function loadJsonFile<T>(file: string): T {
+  return JSON.parse(fs.readFileSync(file, "utf8")) as T;
 }
 
 function getPathValue(target: unknown, dotPath: string): unknown {
@@ -73,6 +87,11 @@ function normalizePath(pathValue: string): string {
 }
 
 describe("Phase 3 parity gate", () => {
+  it("keeps the committed contract registry artifact in sync with the TypeScript registry", () => {
+    const artifact = loadJsonFile<{ surfaces: typeof PHASE3_SURFACE_CONTRACTS }>(CONTRACT_REGISTRY_ARTIFACT);
+    expect(artifact.surfaces).toEqual(PHASE3_SURFACE_CONTRACTS);
+  });
+
   it("has fixture files for every major surface in mock and production datasets", () => {
     for (const surface of PHASE3_SURFACE_CONTRACTS) {
       const mockFile = path.join(DATASET_DIR.mock, `${surface.id}.json`);
@@ -84,6 +103,10 @@ describe("Phase 3 parity gate", () => {
 
   it("satisfies required contract paths for all declared commands", () => {
     for (const surface of PHASE3_SURFACE_CONTRACTS) {
+      for (const consumer of surface.consumers) {
+        const file = path.resolve(process.cwd(), "src", consumer);
+        expect(fs.existsSync(file), `missing consumer file ${consumer} for ${surface.id}`).toBe(true);
+      }
       for (const dataset of ["mock", "production"] as const) {
         const fixture = loadFixture(dataset, surface.id);
         expect(fixture.surfaceId).toBe(surface.id);
@@ -100,6 +123,33 @@ describe("Phase 3 parity gate", () => {
             ).not.toBeUndefined();
           }
         }
+      }
+    }
+  });
+
+  it("keeps the ownership map artifact in sync and covers every parity surface route", () => {
+    const artifact = loadJsonFile<{ surfaces: typeof PHASE3_SURFACE_OWNERSHIP }>(OWNERSHIP_MAP_ARTIFACT);
+    const routerSource = fs.readFileSync(ROUTER_FILE, "utf8");
+
+    expect(artifact.surfaces).toEqual(PHASE3_SURFACE_OWNERSHIP);
+    expect(PHASE3_SURFACE_OWNERSHIP.map((surface) => surface.id)).toEqual(
+      PHASE3_SURFACE_CONTRACTS.map((surface) => surface.id)
+    );
+
+    for (const surface of PHASE3_SURFACE_OWNERSHIP) {
+      expect(surface.routes.length, `${surface.id}: missing routed ownership`).toBeGreaterThan(0);
+      expect(surface.owners.length, `${surface.id}: missing owner files`).toBeGreaterThan(0);
+
+      for (const owner of surface.owners) {
+        const file = path.resolve(process.cwd(), "src", owner);
+        expect(fs.existsSync(file), `missing owner file ${owner} for ${surface.id}`).toBe(true);
+      }
+
+      for (const route of surface.routes) {
+        expect(
+          routerSource.includes(`path: "${route}"`),
+          `${surface.id}: route ${route} missing from router`
+        ).toBe(true);
       }
     }
   });

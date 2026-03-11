@@ -200,6 +200,59 @@ pub fn update_meeting_user_layer(
     })
 }
 
+pub fn record_pipeline_failure(
+    db: &ActionDb,
+    pipeline: &str,
+    entity_id: Option<&str>,
+    entity_type: Option<&str>,
+    error_type: &str,
+    error_message: Option<&str>,
+    attempt: i32,
+) -> Result<(), String> {
+    db.insert_pipeline_failure(
+        pipeline,
+        entity_id,
+        entity_type,
+        error_type,
+        error_message,
+        attempt,
+    )
+    .map(|_| ())
+}
+
+pub fn resolve_pipeline_failures(
+    db: &ActionDb,
+    pipeline: &str,
+    entity_id: Option<&str>,
+    entity_type: Option<&str>,
+) -> Result<(), String> {
+    db.resolve_pipeline_failures(pipeline, entity_id, entity_type)
+        .map(|_| ())
+}
+
+pub fn upsert_app_state_kv_json(db: &ActionDb, key: &str, value_json: &str) -> Result<(), String> {
+    db.conn_ref()
+        .execute(
+            "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at)
+             VALUES (?1, ?2, datetime('now'))",
+            params![key, value_json],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+pub fn upsert_signal_weight(
+    db: &ActionDb,
+    source: &str,
+    entity_type: &str,
+    signal_type: &str,
+    weight: f64,
+    confidence: f64,
+) -> Result<(), String> {
+    db.upsert_signal_weight(source, entity_type, signal_type, weight, confidence)
+        .map_err(|e| e.to_string())
+}
+
 pub fn queue_clay_sync_for_people(db: &ActionDb, person_ids: &[String]) -> Result<usize, String> {
     if person_ids.is_empty() {
         return Ok(0);

@@ -92,7 +92,9 @@ pub fn detect_relationship_drift(db: &ActionDb, ctx: &DetectorContext) -> Vec<Ra
     let window_90_start = (ctx.today - Duration::days(90))
         .format("%Y-%m-%d")
         .to_string();
-    let window_end = (ctx.today + Duration::days(1)).format("%Y-%m-%d").to_string();
+    let window_end = (ctx.today + Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
 
     let sql = "SELECT p.id, p.name,
         (SELECT COUNT(*) FROM meetings mh
@@ -112,14 +114,17 @@ pub fn detect_relationship_drift(db: &ActionDb, ctx: &DetectorContext) -> Vec<Ra
         Err(_) => return Vec::new(),
     };
 
-    let rows = match stmt.query_map(params![window_30_start, window_90_start, window_end], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, i32>(2)?,
-            row.get::<_, i32>(3)?,
-        ))
-    }) {
+    let rows = match stmt.query_map(
+        params![window_30_start, window_90_start, window_end],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i32>(2)?,
+                row.get::<_, i32>(3)?,
+            ))
+        },
+    ) {
         Ok(r) => r,
         Err(_) => return Vec::new(),
     };
