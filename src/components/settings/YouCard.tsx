@@ -5,6 +5,7 @@ import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
 import { Check, X, Loader2 } from "lucide-react";
 import { styles } from "./styles";
+import s from "./YouCard.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -109,46 +110,15 @@ function DomainsSection({
         Your organization's email domains -- used to distinguish internal vs
         external meetings
       </p>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: 6,
-          borderBottom: "1px solid var(--color-rule-light)",
-          padding: "8px 0",
-          minHeight: 36,
-        }}
-      >
+      <div className={s.domainsInput}>
         {domains.map((d) => (
-          <span
-            key={d}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--color-text-primary)",
-              background: "var(--color-rule-light)",
-              padding: "2px 8px",
-              borderRadius: 3,
-            }}
-          >
+          <span key={d} className={s.domainChip}>
             {d}
             <button
               type="button"
               onClick={() => removeDomain(d)}
               disabled={saving}
-              style={{
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                color: "var(--color-text-tertiary)",
-                display: "flex",
-                alignItems: "center",
-              }}
+              className={s.domainChipRemove}
             >
               <X size={12} />
             </button>
@@ -163,16 +133,7 @@ function DomainsSection({
             if (inputValue.trim()) addDomain(inputValue);
           }}
           placeholder={domains.length === 0 ? "example.com" : ""}
-          style={{
-            minWidth: 120,
-            flex: 1,
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            color: "var(--color-text-primary)",
-            background: "transparent",
-            border: "none",
-            outline: "none",
-          }}
+          className={s.domainTextInput}
           disabled={!config}
         />
         {saving && (
@@ -229,13 +190,7 @@ function RoleSection() {
         Select your role to tailor vitals, vocabulary, and AI emphasis across
         DailyOS.
       </p>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 12,
-        }}
-      >
+      <div className={s.roleGrid}>
         {presets.map(([id, name, description]) => {
           const isActive = id === activeId;
           return (
@@ -243,37 +198,11 @@ function RoleSection() {
               key={id}
               type="button"
               onClick={() => handleSelect(id)}
-              disabled={saving}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-                padding: 16,
-                textAlign: "left" as const,
-                background: "none",
-                border: isActive
-                  ? "2px solid var(--color-spice-turmeric)"
-                  : "1px solid var(--color-rule-light)",
-                borderRadius: 6,
-                cursor: saving && !isActive ? "default" : "pointer",
-                opacity: saving && !isActive ? 0.5 : 1,
-                transition: "all 0.15s ease",
-                position: "relative" as const,
-              }}
+              disabled={saving && !isActive}
+              className={`${s.roleCard} ${isActive ? s.roleCardActive : ""}`}
             >
-              <div
-                style={{ display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
-                  {name}
-                </span>
+              <div className={s.roleCardHeader}>
+                <span className={s.roleCardName}>{name}</span>
                 {isActive && (
                   <Check
                     size={14}
@@ -284,16 +213,7 @@ function RoleSection() {
                   />
                 )}
               </div>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 12,
-                  color: "var(--color-text-tertiary)",
-                  lineHeight: 1.4,
-                }}
-              >
-                {description}
-              </span>
+              <span className={s.roleCardDescription}>{description}</span>
             </button>
           );
         })}
@@ -354,13 +274,7 @@ function WorkspaceSection({
         The directory where DailyOS stores briefings, actions, and files
       </p>
       <div style={styles.settingRow}>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            color: "var(--color-text-primary)",
-          }}
-        >
+        <span className={s.workspacePath}>
           {path || "Not configured"}
         </span>
         <button
@@ -373,13 +287,7 @@ function WorkspaceSection({
           disabled={saving}
         >
           {saving ? (
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
+            <span className={s.savingInline}>
               <Loader2 size={12} className="animate-spin" /> ...
             </span>
           ) : (
@@ -414,40 +322,17 @@ function PersonalitySection() {
       <p style={{ ...styles.description, marginBottom: 16 }}>
         Sets the tone for empty states, loading messages, and notifications
       </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className={s.personalityList}>
         {PERSONALITY_OPTIONS.map((option) => {
           const isSelected = personality === option.value;
           return (
             <button
               key={option.value}
               onClick={() => handleChange(option.value)}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                gap: 4,
-                padding: "12px 16px",
-                textAlign: "left" as const,
-                background: "none",
-                border: isSelected
-                  ? "1px solid var(--color-desk-charcoal)"
-                  : "1px solid var(--color-rule-light)",
-                borderRadius: 4,
-                cursor: "pointer",
-                transition: "border-color 0.15s ease",
-              }}
+              className={`${s.personalityCard} ${isSelected ? s.personalityCardActive : ""}`}
             >
-              <div
-                style={{ display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 500,
-                    color: "var(--color-text-primary)",
-                  }}
-                >
+              <div className={s.personalityCardHeader}>
+                <span className={s.personalityCardLabel}>
                   {option.label}
                 </span>
                 {isSelected && (
@@ -460,15 +345,7 @@ function PersonalitySection() {
               <span style={{ ...styles.description, fontSize: 12 }}>
                 {option.description}
               </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 12,
-                  fontStyle: "italic",
-                  color: "var(--color-text-tertiary)",
-                  marginTop: 2,
-                }}
-              >
+              <span className={s.personalityExample}>
                 "{option.example}"
               </span>
             </button>
@@ -528,15 +405,9 @@ function DayStartSection({
       </p>
       <div style={styles.settingRow}>
         <div>
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-primary)",
-            }}
-          >
+          <span className={s.dayStartLabel}>
             Morning briefing at{" "}
-            <span style={{ fontWeight: 500 }}>{displayTime}</span>
+            <span className={s.dayStartBold}>{displayTime}</span>
           </span>
           {schedule?.timezone && (
             <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
@@ -544,7 +415,7 @@ function DayStartSection({
             </p>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <div className={s.timeInputRow}>
           <input
             type="time"
             value={`${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`}
@@ -555,16 +426,7 @@ function DayStartSection({
               }
             }}
             disabled={saving}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              color: "var(--color-text-primary)",
-              background: "none",
-              border: "1px solid var(--color-rule-heavy)",
-              borderRadius: 4,
-              padding: "4px 8px",
-              opacity: saving ? 0.5 : 1,
-            }}
+            className={s.timeInput}
           />
         </div>
       </div>
@@ -590,7 +452,7 @@ function formatHumanTime(hour: number, minute: number): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// YouCard — consolidated identity settings
+// YouCard — consolidated identity settings with 3 subsection groups
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function YouCard() {
@@ -630,29 +492,34 @@ export default function YouCard() {
     return (
       <div>
         <p style={styles.subsectionLabel}>Workspace</p>
-        <div
-          style={{
-            height: 40,
-            background: "var(--color-rule-light)",
-            borderRadius: 4,
-            animation: "pulse 1.5s ease-in-out infinite",
-          }}
-        />
+        <div className={s.skeleton} />
       </div>
     );
   }
 
   return (
     <div>
-      <DomainsSection config={config} />
-      <hr style={styles.thinRule} />
-      <RoleSection />
-      <hr style={styles.thinRule} />
-      <WorkspaceSection workspacePath={config?.workspacePath ?? ""} />
-      <hr style={styles.thinRule} />
-      <DayStartSection schedule={config?.schedules?.today ?? null} />
-      <hr style={styles.thinRule} />
-      <PersonalitySection />
+      {/* ── Identity ── */}
+      <div className={s.subsectionGroup}>
+        <h3 className={s.subsectionTitle}>Identity</h3>
+        <DomainsSection config={config} />
+      </div>
+
+      {/* ── Workspace ── */}
+      <div className={s.subsectionGroup}>
+        <h3 className={s.subsectionTitle}>Workspace</h3>
+        <WorkspaceSection workspacePath={config?.workspacePath ?? ""} />
+        <hr style={styles.thinRule} />
+        <DayStartSection schedule={config?.schedules?.today ?? null} />
+      </div>
+
+      {/* ── Preferences ── */}
+      <div className={s.subsectionGroup}>
+        <h3 className={s.subsectionTitle}>Preferences</h3>
+        <RoleSection />
+        <hr style={styles.thinRule} />
+        <PersonalitySection />
+      </div>
     </div>
   );
 }
