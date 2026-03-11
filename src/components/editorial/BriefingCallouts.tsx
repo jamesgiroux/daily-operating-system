@@ -84,7 +84,7 @@ export function BriefingCallouts({ callouts }: BriefingCalloutsProps) {
 function CalloutItem({ callout }: { callout: BriefingCallout }) {
   const borderColor =
     severityColors[callout.severity] ?? "var(--color-text-tertiary)";
-  const label = severityLabels[callout.severity] ?? "Signal";
+  const label = severityLabels[callout.severity] ?? "Update";
 
   return (
     <div

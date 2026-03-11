@@ -201,7 +201,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         onClick={onRunBriefing}
         loading={!!isRunning}
         loadingLabel={phaseLabel ?? "Running\u2026"}
-        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and intelligence"}
+        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and context"}
       />
     );
   }, [onRunBriefing, isRunning, workflowStatus]);

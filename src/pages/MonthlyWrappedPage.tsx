@@ -123,7 +123,7 @@ const ANALYSIS_PHASES = [
   {
     key: "counting",
     label: "Counting up your month",
-    detail: "Tallying conversations, signals, and relationship touches",
+    detail: "Tallying conversations, updates, and relationship touches",
   },
   {
     key: "moments",
