@@ -35,6 +35,8 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import {
   AlignLeft,
   AlertTriangle,
@@ -118,6 +120,9 @@ export default function MeetingDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
   const transientRetryCount = useRef(0);
+
+  // I529: Intelligence quality feedback
+  const feedback = useIntelligenceFeedback(meetingId ?? undefined, "meeting");
 
   // Entity mutation in progress — shows "Updating briefing..." (I477)
   const [briefingUpdating, setBriefingUpdating] = useState(false);
@@ -926,7 +931,15 @@ Thanks!`;
             {/* Chapter: The Risks */}
             {hasRisks && (
               <section id="risks" className={clsx("editorial-reveal", styles.chapterSection)}>
-                <ChapterHeading title="The Risks" />
+                <ChapterHeading
+                  title="The Risks"
+                  feedbackSlot={
+                    <IntelligenceFeedback
+                      value={feedback.getFeedback("risks")}
+                      onFeedback={(type) => feedback.submitFeedback("risks", type)}
+                    />
+                  }
+                />
                 <div className={styles.risksContainer}>
                   {topRisks.map((risk, i) => {
                     const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
@@ -991,7 +1004,15 @@ Thanks!`;
             {/* Chapter: Your Plan */}
             {hasPlan && (
               <section id="your-plan" className={clsx("editorial-reveal", styles.chapterSection)}>
-                <ChapterHeading title="Your Plan" />
+                <ChapterHeading
+                  title="Your Plan"
+                  feedbackSlot={
+                    <IntelligenceFeedback
+                      value={feedback.getFeedback("plan")}
+                      onFeedback={(type) => feedback.submitFeedback("plan", type)}
+                    />
+                  }
+                />
 
                 {meetingId && prefillNotice && (
                   <div className={styles.prefillNotice}>
