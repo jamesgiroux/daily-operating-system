@@ -11,7 +11,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::types::{Action, Email, EmailSyncStatus, LinkedEntity, WeekOverview};
+use crate::types::{Email, EmailSyncStatus, LinkedEntity};
 
 /// Whether the data in _today/data/ is from today or stale
 #[derive(Debug, Clone, serde::Serialize)]
@@ -98,79 +98,8 @@ pub struct JsonStakeholder {
     pub focus: Option<String>,
 }
 
-/// JSON actions format
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JsonActions {
-    pub date: String,
-    pub summary: Option<JsonActionsSummary>,
-    pub actions: Vec<JsonAction>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JsonActionsSummary {
-    pub overdue: Option<u32>,
-    pub due_today: Option<u32>,
-    pub due_this_week: Option<u32>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JsonAction {
-    pub id: String,
-    pub title: String,
-    pub account: Option<String>,
-    pub priority: String,
-    pub status: String,
-    pub due_date: Option<String>,
-    #[serde(default)]
-    pub is_overdue: bool,
-    pub days_overdue: Option<u32>,
-    pub context: Option<String>,
-    pub source: Option<String>,
-}
-
-/// Load actions from JSON
-pub fn load_actions_json(today_dir: &Path) -> Result<Vec<Action>, String> {
-    let actions_path = today_dir.join("data").join("actions.json");
-    let content =
-        fs::read_to_string(&actions_path).map_err(|e| format!("Failed to read actions: {}", e))?;
-    let data: JsonActions =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse actions: {}", e))?;
-
-    let actions = data
-        .actions
-        .into_iter()
-        .map(|a| {
-            let priority = match a.priority.as_str() {
-                "P1" => crate::types::Priority::P1,
-                "P2" => crate::types::Priority::P2,
-                _ => crate::types::Priority::P3,
-            };
-
-            let status = match a.status.as_str() {
-                "completed" => crate::types::ActionStatus::Completed,
-                _ => crate::types::ActionStatus::Pending,
-            };
-
-            Action {
-                id: a.id,
-                title: a.title,
-                account: a.account,
-                due_date: a.due_date,
-                priority,
-                status,
-                is_overdue: if a.is_overdue { Some(true) } else { None },
-                context: a.context,
-                source: a.source,
-                days_overdue: a.days_overdue.map(|d| d as i32),
-            }
-        })
-        .collect();
-
-    Ok(actions)
-}
+// I513: load_actions_json and supporting types removed — DB is the source of truth.
+// sync_actions_to_db (JSON→DB) was the only caller and has been eliminated.
 
 /// JSON emails format — matches what `deliver_emails()` writes:
 /// `{ "highPriority": [...], "mediumPriority": [...], "lowPriority": [...], "stats": { ... } }`
@@ -610,13 +539,7 @@ pub fn load_directive(today_dir: &Path) -> Result<Directive, String> {
 // Week JSON Loading (Phase 3C)
 // =============================================================================
 
-/// Load week overview from JSON
-pub fn load_week_json(today_dir: &Path) -> Result<WeekOverview, String> {
-    let week_path = today_dir.join("data").join("week-overview.json");
-    let content = fs::read_to_string(&week_path)
-        .map_err(|e| format!("Failed to read week overview: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Failed to parse week overview: {}", e))
-}
+// I513: load_week_json removed — WeekOverview is now built from DB in services/dashboard.rs.
 
 #[cfg(test)]
 mod tests {
