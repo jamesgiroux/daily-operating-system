@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { AccountHealthCover } from "@/components/account-health/AccountHealthCover";
@@ -60,17 +62,17 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering account data",
-    detail: "Reading meeting history, signals, and stakeholder records",
+    detail: "Reading meeting history, stakeholder records, and recent activity",
   },
   {
     key: "assessing",
-    label: "Assessing health signals",
+    label: "Assessing relationship health",
     detail: "Analyzing engagement patterns and risk indicators",
   },
   {
     key: "building",
     label: "Synthesizing insights",
-    detail: "Identifying what's working, what's struggling, expansion signals",
+    detail: "Identifying what's working, what's struggling, and expansion opportunities",
   },
   {
     key: "finalizing",
@@ -136,6 +138,8 @@ export default function AccountHealthPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(accountId, "account");
 
   useRevealObserver(!loading && !!content);
 
@@ -308,7 +312,7 @@ export default function AccountHealthPage() {
         </h2>
         <p className={slides.emptyDescription}>
           Generate a 5-slide account health review. This will analyze meeting history, stakeholder
-          data, signals, and relationship context to build a complete account picture.
+          data, recent activity, and relationship context to build a complete account picture.
         </p>
         {error && (
           <p className={slides.emptyError}>
@@ -348,26 +352,46 @@ export default function AccountHealthPage() {
           content={content!}
           onUpdate={updateContent}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("overall_assessment")}
+          onFeedback={(type) => feedback.submitFeedback("overall_assessment", type)}
+        />
       </section>
 
       {/* Slide 2: The Partnership */}
       <div className="editorial-reveal">
         <PartnershipSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("partnership")}
+          onFeedback={(type) => feedback.submitFeedback("partnership", type)}
+        />
       </div>
 
       {/* Slide 3: Where We Stand */}
       <div className="editorial-reveal">
         <WhereWeStandSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("where_we_stand")}
+          onFeedback={(type) => feedback.submitFeedback("where_we_stand", type)}
+        />
       </div>
 
       {/* Slide 4: Value Delivered */}
       <div className="editorial-reveal">
         <ValueDeliveredSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("value_delivered")}
+          onFeedback={(type) => feedback.submitFeedback("value_delivered", type)}
+        />
       </div>
 
       {/* Slide 5: What's Ahead */}
       <div className="editorial-reveal">
         <WhatAheadSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("whats_ahead")}
+          onFeedback={(type) => feedback.submitFeedback("whats_ahead", type)}
+        />
       </div>
 
       {/* Finis marker */}

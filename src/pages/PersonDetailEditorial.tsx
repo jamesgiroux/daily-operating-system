@@ -255,7 +255,17 @@ export default function PersonDetailEditorial() {
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
       <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className={`editorial-reveal ${shared.chapterSection}`}>
-        <PersonInsightChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
+        <PersonInsightChapter
+          detail={detail}
+          intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
+          feedbackSlot={
+            <IntelligenceFeedback
+              value={feedback.getFeedback("person_insight")}
+              onFeedback={(type) => feedback.submitFeedback("person_insight", type)}
+            />
+          }
+        />
       </div>
 
       {/* Chapter 3: Their Orbit */}

@@ -220,7 +220,7 @@ function HealthOneLiner() {
       )}
       {healthSummary && (
         <p style={{ ...styles.monoLabel, margin: 0 }}>
-          Intelligence health: {healthSummary}
+          Analysis health: {healthSummary}
         </p>
       )}
     </div>

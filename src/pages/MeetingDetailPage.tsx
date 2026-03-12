@@ -1032,7 +1032,17 @@ Thanks!`;
             {/* Recent Correspondence — email signals for meeting attendees */}
             {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
               <section className={clsx("editorial-reveal", styles.chapterSection)}>
-                <ChapterHeading title="Recent Correspondence" />
+                <ChapterHeading
+                  title="Recent Correspondence"
+                  feedbackSlot={
+                    <IntelligenceFeedback
+                      value={feedback.getFeedback("recent_correspondence")}
+                      onFeedback={(type) =>
+                        feedback.submitFeedback("recent_correspondence", type)
+                      }
+                    />
+                  }
+                />
                 <div className={styles.risksContainer}>
                   {data.recentEmailSignals.map((signal, i) => (
                     <Link key={i} to="/emails" className={styles.emailSignalLink}>
