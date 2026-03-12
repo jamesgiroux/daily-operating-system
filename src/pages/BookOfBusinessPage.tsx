@@ -537,7 +537,7 @@ export default function BookOfBusinessPage() {
         <CoverSlide
           content={c}
           isStale={report?.isStale}
-          onRegenerate={handleGenerate}
+          onRegenerate={handleRegenerate}
           generating={generating}
           onUpdate={updateContent}
         />
