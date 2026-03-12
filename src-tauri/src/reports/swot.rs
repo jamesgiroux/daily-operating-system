@@ -141,6 +141,7 @@ pub fn gather_swot_input(
         prompt,
         ai_models,
         intel_hash,
+        extra_data: None,
     })
 }
 

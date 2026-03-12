@@ -68,3 +68,22 @@ const PRESET_REPORTS: Record<string, AccountReportItem[]> = {
 export function getAccountReports(presetId: string | null | undefined): AccountReportItem[] {
   return PRESET_REPORTS[presetId ?? 'customer-success'] ?? PRESET_REPORTS['customer-success'];
 }
+
+/** Preset-aware label for the cross-account portfolio report. */
+export function getPortfolioReportLabel(presetId: string | null | undefined): string {
+  switch (presetId) {
+    case 'customer-success':
+    case 'sales':
+      return 'Book of Business';
+    case 'agency':
+      return 'Client Portfolio Review';
+    case 'consulting':
+      return 'Engagement Portfolio';
+    case 'partnerships':
+      return 'Partner Portfolio';
+    case 'leadership':
+      return 'Portfolio Review';
+    default:
+      return 'Book of Business';
+  }
+}
