@@ -482,25 +482,6 @@ pub fn get_risk_briefing(
     crate::risk_briefing::read_risk_briefing(&account_dir)
 }
 
-/// Save an edited risk briefing back to disk (user corrections).
-pub fn save_risk_briefing(
-    db: &ActionDb,
-    state: &AppState,
-    account_id: &str,
-    briefing: &crate::types::RiskBriefing,
-) -> Result<(), String> {
-    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
-    let config = config_guard.as_ref().ok_or("Config not initialized")?;
-
-    let account = db
-        .get_account(account_id)
-        .map_err(|e| format!("DB error: {}", e))?
-        .ok_or_else(|| format!("Account not found: {}", account_id))?;
-
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
-    crate::risk_briefing::write_risk_briefing(&account_dir, briefing)
-}
 
 #[cfg(test)]
 mod inferred_relationship_tests {
