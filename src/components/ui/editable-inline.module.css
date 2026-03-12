@@ -1,0 +1,21 @@
+/* EditableInline — click-to-edit short inline text */
+
+.display {
+  cursor: pointer;
+}
+
+.placeholder {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.input {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: 0;
+}
