@@ -432,12 +432,32 @@ export default function ProjectDetailEditorial() {
 
       {/* Chapter 2: Trajectory */}
       <div id="trajectory" className={`editorial-reveal ${shared.chapterSection}`}>
-        <TrajectoryChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
+        <TrajectoryChapter
+          detail={detail}
+          intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
+          feedbackSlot={
+            <IntelligenceFeedback
+              value={feedback.getFeedback("trajectory")}
+              onFeedback={(type) => feedback.submitFeedback("trajectory", type)}
+            />
+          }
+        />
       </div>
 
       {/* Chapter 3: The Horizon */}
       <div id="the-horizon" className={`editorial-reveal ${shared.chapterSection}`}>
-        <HorizonChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
+        <HorizonChapter
+          detail={detail}
+          intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
+          feedbackSlot={
+            <IntelligenceFeedback
+              value={feedback.getFeedback("horizon")}
+              onFeedback={(type) => feedback.submitFeedback("horizon", type)}
+            />
+          }
+        />
       </div>
 
       {/* Chapter 4: The Landscape */}
