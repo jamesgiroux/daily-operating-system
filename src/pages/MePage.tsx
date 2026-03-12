@@ -4,11 +4,12 @@
  * My Playbooks, Context Entries, Attachments.
  * ADR-0089/0090. Eucalyptus accent.
  */
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { User, Briefcase, Target, BookOpen, FileText, Paperclip, Upload } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useNavigate } from "@tanstack/react-router";
+import { getPortfolioReportLabel } from "@/lib/report-config";
 
 import { useMe } from "@/hooks/useMe";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -190,7 +191,14 @@ function PrioritySection({
 export default function MePage() {
   const me = useMe();
   const navigate = useNavigate();
+  const [activePreset, setActivePreset] = useState<string>("customer-success");
   useRevealObserver(!me.loading && !!me.userEntity);
+
+  useEffect(() => {
+    invoke<{ role?: string }>("get_config")
+      .then((c) => setActivePreset(c.role ?? "customer-success"))
+      .catch(() => {});
+  }, []);
 
   const shellConfig = useMemo(
     () => ({
@@ -200,6 +208,24 @@ export default function MePage() {
       chapters: CHAPTERS,
       folioActions: (
         <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => navigate({ to: "/me/reports/book_of_business" })}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: "var(--color-spice-turmeric)",
+              background: "none",
+              border: "1px solid var(--color-spice-turmeric)",
+              borderRadius: 4,
+              padding: "2px 10px",
+              cursor: "pointer",
+            }}
+          >
+            {getPortfolioReportLabel(activePreset)}
+          </button>
           <button
             onClick={() => navigate({ to: "/me/reports/$reportType", params: { reportType: "weekly_impact" } })}
             style={{
@@ -239,7 +265,7 @@ export default function MePage() {
         </div>
       ),
     }),
-    [navigate],
+    [navigate, activePreset],
   );
   useRegisterMagazineShell(shellConfig);
 

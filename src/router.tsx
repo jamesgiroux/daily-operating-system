@@ -43,6 +43,7 @@ import EbrQbrPage from "@/pages/EbrQbrPage";
 import SwotPage from "@/pages/SwotPage";
 import WeeklyImpactPage from "@/pages/WeeklyImpactPage";
 import MonthlyWrappedPage from "@/pages/monthly-wrapped/MonthlyWrappedPage";
+import BookOfBusinessPage from "@/pages/BookOfBusinessPage";
 import SettingsPage from "@/pages/SettingsPage";
 import MePage from "@/pages/MePage";
 import WeekPage from "@/pages/WeekPage";
@@ -88,7 +89,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
 // Root layout that wraps all pages
 function RootLayout() {
@@ -382,6 +383,12 @@ const monthlyWrappedRoute = createRoute({
   component: MonthlyWrappedPage,
 });
 
+const bookOfBusinessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/me/reports/book_of_business",
+  component: BookOfBusinessPage,
+});
+
 const meReportRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/me/reports/$reportType",
@@ -498,6 +505,7 @@ const routeTree = rootRoute.addChildren([
   accountReportRoute,
   weeklyImpactRoute,
   monthlyWrappedRoute,
+  bookOfBusinessRoute,
   meReportRoute,
   actionDetailRoute,
   actionsRoute,
