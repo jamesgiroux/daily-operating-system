@@ -1,5 +1,10 @@
 /* I529: Intelligence quality feedback — hover-reveal thumbs up/down */
 
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
 .container {
   display: inline-flex;
   align-items: center;
@@ -10,9 +15,9 @@
   margin-left: var(--space-sm);
 }
 
-/* Show on parent hover or when a vote is active */
+/* Show when wrapper is hovered, when a vote is active, or on focus */
 .visible,
-*:hover > .container,
+.wrapper:hover .container,
 .container:focus-within {
   opacity: 1;
 }

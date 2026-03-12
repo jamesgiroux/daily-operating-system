@@ -5,6 +5,7 @@
  * External/Unknown → "The Dynamic" (relationship health framing)
  * Internal → "The Rhythm" (collaboration patterns framing)
  */
+import type { ReactNode } from "react";
 import type { PersonDetail, EntityIntelligence } from "@/types";
 import { formatShortDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -16,6 +17,7 @@ interface PersonInsightChapterProps {
   intelligence: EntityIntelligence | null;
   /** When provided, state items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
+  feedbackSlot?: ReactNode;
 }
 
 const ADAPTATION = {
@@ -92,7 +94,12 @@ function CadenceStrip({ detail }: { detail: PersonDetail }) {
 
 /* ── Main component ── */
 
-export function PersonInsightChapter({ detail, intelligence, onUpdateField }: PersonInsightChapterProps) {
+export function PersonInsightChapter({
+  detail,
+  intelligence,
+  onUpdateField,
+  feedbackSlot,
+}: PersonInsightChapterProps) {
   const adapt = getAdaptation(detail.relationship);
 
   const working = intelligence?.currentState?.working ?? [];
@@ -105,7 +112,7 @@ export function PersonInsightChapter({ detail, intelligence, onUpdateField }: Pe
 
   return (
     <section id={adapt.sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading title={adapt.title} />
+      <ChapterHeading title={adapt.title} feedbackSlot={feedbackSlot} />
 
       {hasContent ? (
         <>

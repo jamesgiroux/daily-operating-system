@@ -3,6 +3,7 @@
  * Replaces the shared StateOfPlay for projects. Shows trajectory confidence,
  * momentum/headwinds via StateBlock, velocity indicators, and remaining assessment prose.
  */
+import type { ReactNode } from "react";
 import type { ProjectDetail, EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { PullQuote } from "@/components/editorial/PullQuote";
@@ -13,6 +14,7 @@ interface TrajectoryChapterProps {
   intelligence: EntityIntelligence | null;
   /** When provided, state items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
+  feedbackSlot?: ReactNode;
 }
 
 /* ── Velocity Strip ── */
@@ -79,7 +81,12 @@ function VelocityStrip({ detail }: { detail: ProjectDetail }) {
 
 /* ── Main component ── */
 
-export function TrajectoryChapter({ detail, intelligence, onUpdateField }: TrajectoryChapterProps) {
+export function TrajectoryChapter({
+  detail,
+  intelligence,
+  onUpdateField,
+  feedbackSlot,
+}: TrajectoryChapterProps) {
   const working = intelligence?.currentState?.working ?? [];
   const notWorking = intelligence?.currentState?.notWorking ?? [];
 
@@ -92,7 +99,7 @@ export function TrajectoryChapter({ detail, intelligence, onUpdateField }: Traje
 
   return (
     <section id="trajectory" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading title="Trajectory" />
+      <ChapterHeading title="Trajectory" feedbackSlot={feedbackSlot} />
 
       {hasContent ? (
         <>

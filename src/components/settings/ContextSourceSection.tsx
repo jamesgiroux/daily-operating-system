@@ -112,7 +112,7 @@ export default function ContextSourceSection() {
     <div style={{ marginBottom: 32 }}>
       <h3 style={styles.subsectionLabel}>Context Source</h3>
       <p style={{ ...styles.description, marginBottom: 16 }}>
-        Where DailyOS gathers context for briefings and intelligence. Local mode
+        Where DailyOS gathers context for briefings and analysis. Local mode
         uses your workspace files and connectors. Glean mode uses your
         organization's knowledge graph.
       </p>

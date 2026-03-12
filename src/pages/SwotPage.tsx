@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { SwotCover } from "@/components/swot/SwotCover";
@@ -54,7 +56,7 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering account data",
-    detail: "Reading meeting history, signals, and stakeholder data",
+    detail: "Reading meeting history, stakeholder data, and recent activity",
   },
   {
     key: "analyzing",
@@ -134,6 +136,8 @@ export default function SwotPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(accountId, "account");
 
   useRevealObserver(!loading && !!content);
 
@@ -306,7 +310,7 @@ export default function SwotPage() {
         </h2>
         <p className={slides.emptyDescription}>
           Generate a 5-slide SWOT analysis. This will analyze meeting history, stakeholder data,
-          signals, and relationship context to map strengths, weaknesses, opportunities, and threats.
+          recent activity, and relationship context to map strengths, weaknesses, opportunities, and threats.
         </p>
         {error && (
           <p className={slides.emptyError}>
@@ -347,6 +351,10 @@ export default function SwotPage() {
           onUpdate={updateContent}
           generatedAt={report?.generatedAt}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("summary")}
+          onFeedback={(type) => feedback.submitFeedback("summary", type)}
+        />
       </section>
 
       {/* Slide 2: Strengths */}
@@ -358,6 +366,10 @@ export default function SwotPage() {
           items={content!.strengths}
           onUpdate={(items) => updateContent({ ...content!, strengths: items })}
           emptyLabel="No strengths identified."
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("strengths")}
+          onFeedback={(type) => feedback.submitFeedback("strengths", type)}
         />
       </div>
 
@@ -371,6 +383,10 @@ export default function SwotPage() {
           onUpdate={(items) => updateContent({ ...content!, weaknesses: items })}
           emptyLabel="No weaknesses identified."
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("weaknesses")}
+          onFeedback={(type) => feedback.submitFeedback("weaknesses", type)}
+        />
       </div>
 
       {/* Slide 4: Opportunities */}
@@ -383,6 +399,10 @@ export default function SwotPage() {
           onUpdate={(items) => updateContent({ ...content!, opportunities: items })}
           emptyLabel="No opportunities identified."
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("opportunities")}
+          onFeedback={(type) => feedback.submitFeedback("opportunities", type)}
+        />
       </div>
 
       {/* Slide 5: Threats */}
@@ -394,6 +414,10 @@ export default function SwotPage() {
           items={content!.threats}
           onUpdate={(items) => updateContent({ ...content!, threats: items })}
           emptyLabel="No threats identified."
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("threats")}
+          onFeedback={(type) => feedback.submitFeedback("threats", type)}
         />
       </div>
 
