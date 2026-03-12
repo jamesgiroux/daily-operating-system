@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import {
   Building2,
   BookOpen,
@@ -148,7 +149,10 @@ export default function EbrQbrPage() {
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save EBR/QBR report:", e));
+          .catch((e) => {
+            console.error("Failed to save EBR/QBR report:", e);
+            toast.error("Failed to save");
+          });
       }, 500);
     },
     [accountId],
