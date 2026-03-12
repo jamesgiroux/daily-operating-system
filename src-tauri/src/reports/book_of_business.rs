@@ -619,10 +619,16 @@ fn build_book_of_business_prompt(
         if !ids.is_empty() {
             prompt.push_str("## Spotlight Accounts (User-Selected)\n\n");
             prompt.push_str(
-                "The user has selected the following accounts for deep-dive spotlight slides. \
-                 You MUST include a deepDive entry for each of these accounts. \
-                 You may add additional deep dives if other accounts clearly warrant attention, \
-                 but every selected account below must appear:\n\n",
+                "The user has selected these accounts as the focus of this review. \
+                 They are the accounts the user plans to discuss with leadership. \
+                 ALL sections of the report should prioritize these accounts:\n\
+                 - topRisks: lead with risks from these accounts (add others only if critical)\n\
+                 - topOpportunities: lead with opportunities from these accounts\n\
+                 - deepDives: you MUST include a deepDive for each selected account\n\
+                 - valueDelivered: prioritize outcomes from these accounts\n\
+                 - keyThemes: themes should be grounded in patterns across these accounts\n\
+                 - leadershipAsks: asks should relate to these accounts where applicable\n\n\
+                 You may include other accounts where warranted, but the selected accounts are the narrative center.\n\n",
             );
             for id in ids {
                 if let Some(snap) = snapshot.iter().find(|s| s.account_id == *id) {
