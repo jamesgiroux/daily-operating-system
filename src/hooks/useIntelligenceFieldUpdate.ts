@@ -1,5 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 
 /**
  * Shared hook for updating intelligence fields via Tauri invoke (I352).
@@ -7,17 +8,29 @@ import { invoke } from "@tauri-apps/api/core";
  * Extracted from duplicate patterns in AccountDetailEditorial, ProjectDetailEditorial,
  * and PersonDetailEditorial. No reload needed — EditableText already shows the
  * edited value locally.
+ *
+ * Returns `saveStatus` for wiring into the folio bar status text.
  */
 export function useIntelligenceFieldUpdate(
   entityType: string,
   entityId: string | undefined,
 ) {
   const [updatingField, setUpdatingField] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateField = useCallback(
     async (fieldPath: string, value: string) => {
       if (!entityId) return;
       setUpdatingField(fieldPath);
+      setSaveStatus("saving");
+
+      // Clear any pending "saved" timeout
+      if (savedTimerRef.current) {
+        clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = null;
+      }
+
       try {
         await invoke("update_intelligence_field", {
           entityId,
@@ -25,8 +38,15 @@ export function useIntelligenceFieldUpdate(
           fieldPath,
           value,
         });
+        setSaveStatus("saved");
+        savedTimerRef.current = setTimeout(() => {
+          setSaveStatus("idle");
+          savedTimerRef.current = null;
+        }, 2000);
       } catch (e) {
         console.error(`Failed to update ${fieldPath}:`, e);
+        toast.error("Failed to save");
+        setSaveStatus("idle");
       } finally {
         setUpdatingField(null);
       }
@@ -34,5 +54,5 @@ export function useIntelligenceFieldUpdate(
     [entityType, entityId],
   );
 
-  return { updateField, updatingField };
+  return { updateField, updatingField, saveStatus };
 }

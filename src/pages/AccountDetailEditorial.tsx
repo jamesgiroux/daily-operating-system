@@ -171,6 +171,9 @@ export default function AccountDetailEditorial() {
     return () => document.removeEventListener("click", handleClick);
   }, [reportsOpen]);
 
+  // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
+  const { updateField: handleUpdateIntelField, saveStatus } = useIntelligenceFieldUpdate("account", accountId);
+
   // Register magazine shell configuration — MagazinePageLayout consumes this
   const shellConfig = useMemo(
     () => ({
@@ -179,6 +182,7 @@ export default function AccountDetailEditorial() {
       activePage: "accounts" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
       chapters: buildChapters(acct.detail?.isParent ?? false),
+      folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: (
         <div className={shared.folioActions}>
           {acct.detail && (
@@ -224,7 +228,7 @@ export default function AccountDetailEditorial() {
         </div>
       ),
     }),
-    [navigate, accountId, acct.detail, acct.setCreateChildOpen, reportsOpen, setReportsOpen, preset?.id],
+    [navigate, accountId, acct.detail, acct.setCreateChildOpen, reportsOpen, setReportsOpen, preset?.id, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -259,9 +263,6 @@ export default function AccountDetailEditorial() {
         setAncestors([]);
       });
   }, [accountId]);
-
-  // I352: Shared intelligence field update hook
-  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
 
   // I529: Intelligence quality feedback
   const feedback = useIntelligenceFeedback(accountId, "account");
