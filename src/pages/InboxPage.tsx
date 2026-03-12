@@ -970,7 +970,7 @@ export default function InboxPage() {
       </section>
 
       {/* ═══ END MARK ═══ */}
-      {visibleFiles.length > 0 && <FinisMarker />}
+      <FinisMarker />
 
       <GoogleDriveImportModal
         open={driveModalOpen}

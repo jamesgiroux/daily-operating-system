@@ -73,18 +73,12 @@ export function useIntelligenceFeedback(
       if (!entityId) return;
       const current = feedbackState[field];
 
-      // Toggle off if same type clicked again
-      const newType = current === type ? null : type;
+      // Repeated clicks should be idempotent so the persisted vote and UI stay aligned.
+      if (current === type) return;
+      const newType = type;
 
       // Optimistic update
       setFeedbackState((prev) => ({ ...prev, [field]: newType }));
-
-      if (newType === null) {
-        // Un-vote: no backend call needed — the last feedback stays in DB
-        // but the UI shows no active vote. A future enhancement could add
-        // a "neutral" feedback_type.
-        return;
-      }
 
       try {
         await invoke("submit_intelligence_feedback", {

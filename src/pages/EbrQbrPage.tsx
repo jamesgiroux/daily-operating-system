@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { EbrCover } from "@/components/ebr-qbr/EbrCover";
@@ -83,7 +85,7 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering quarter data",
-    detail: "Reading meeting history, signals, and account intelligence",
+    detail: "Reading meeting history, recent activity, and account context",
   },
   {
     key: "synthesizing",
@@ -165,6 +167,8 @@ export default function EbrQbrPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(accountId, "account");
 
   useRevealObserver(!loading && !!content);
 
@@ -334,7 +338,7 @@ export default function EbrQbrPage() {
         </h2>
         <p className={slides.emptyDescription}>
           Generate a 7-slide executive business review. This will synthesize all available
-          intelligence, meeting history, and success metrics for this account.
+          context, meeting history, and success metrics for this account.
         </p>
         {error && (
           <p className={slides.emptyError}>
@@ -375,36 +379,64 @@ export default function EbrQbrPage() {
           onUpdate={updateContent}
           generatedAt={report?.generatedAt}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("executive_summary")}
+          onFeedback={(type) => feedback.submitFeedback("executive_summary", type)}
+        />
       </section>
 
       {/* Slide 2: The Story */}
       <div className="editorial-reveal">
         <TheStorySlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("the_story")}
+          onFeedback={(type) => feedback.submitFeedback("the_story", type)}
+        />
       </div>
 
       {/* Slide 3: Value Delivered */}
       <div className="editorial-reveal">
         <ValueDeliveredEbrSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("value_delivered")}
+          onFeedback={(type) => feedback.submitFeedback("value_delivered", type)}
+        />
       </div>
 
       {/* Slide 4: By the Numbers */}
       <div className="editorial-reveal">
         <MetricsSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("metrics")}
+          onFeedback={(type) => feedback.submitFeedback("metrics", type)}
+        />
       </div>
 
       {/* Slide 5: What We Navigated */}
       <div className="editorial-reveal">
         <NavigatedSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("challenges")}
+          onFeedback={(type) => feedback.submitFeedback("challenges", type)}
+        />
       </div>
 
       {/* Slide 6: What's Ahead */}
       <div className="editorial-reveal">
         <RoadmapSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("roadmap")}
+          onFeedback={(type) => feedback.submitFeedback("roadmap", type)}
+        />
       </div>
 
       {/* Slide 7: Next Steps */}
       <div className="editorial-reveal">
         <NextStepsSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("next_steps")}
+          onFeedback={(type) => feedback.submitFeedback("next_steps", type)}
+        />
       </div>
 
       {/* Finis marker */}
