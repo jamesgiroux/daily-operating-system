@@ -871,9 +871,16 @@ pub async fn generate_report(
     entity_id: String,
     entity_type: String,
     report_type: String,
+    spotlight_account_ids: Option<Vec<String>>,
 ) -> Result<crate::reports::ReportRow, String> {
-    crate::services::reports::generate_report(state.inner(), &entity_id, &entity_type, &report_type)
-        .await
+    crate::services::reports::generate_report(
+        state.inner(),
+        &entity_id,
+        &entity_type,
+        &report_type,
+        spotlight_account_ids.as_deref(),
+    )
+    .await
 }
 
 /// Read a cached report (fast, no AI).

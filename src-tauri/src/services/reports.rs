@@ -14,11 +14,13 @@ pub async fn generate_report(
     entity_id: &str,
     entity_type: &str,
     report_type_str: &str,
+    spotlight_account_ids: Option<&[String]>,
 ) -> Result<ReportRow, String> {
     let state = state.clone();
     let entity_id = entity_id.to_string();
     let entity_type = entity_type.to_string();
     let report_type_str = report_type_str.to_string();
+    let spotlight_account_ids = spotlight_account_ids.map(|s| s.to_vec());
 
     let task = tauri::async_runtime::spawn_blocking(move || -> Result<ReportRow, String> {
         // Phase 1: Gather input under brief DB lock
@@ -82,6 +84,16 @@ pub async fn generate_report(
                         ctx_provider,
                     )?
                 }
+                "book_of_business" => {
+                    let active_preset = config.role.clone();
+                    crate::reports::book_of_business::gather_book_of_business_input(
+                        workspace,
+                        db,
+                        ai_models,
+                        &active_preset,
+                        spotlight_account_ids.as_deref(),
+                    )?
+                }
                 _ => return Err(format!("Unknown report type: {}", report_type_str)),
             }
         };
@@ -129,6 +141,18 @@ pub async fn generate_report(
                 let ebr = crate::reports::ebr_qbr::parse_ebr_qbr_response(&stdout)?;
                 serde_json::to_string(&ebr)
                     .map_err(|e| format!("Failed to serialize EBR/QBR: {}", e))?
+            }
+            "book_of_business" => {
+                let metrics: crate::reports::book_of_business::BookMetrics =
+                    serde_json::from_str(
+                        input.extra_data.as_deref().ok_or("Missing book metrics")?,
+                    )
+                    .map_err(|e| format!("Failed to parse BookMetrics: {}", e))?;
+                let bob = crate::reports::book_of_business::parse_book_of_business_response(
+                    &stdout, metrics,
+                )?;
+                serde_json::to_string(&bob)
+                    .map_err(|e| format!("Failed to serialize Book of Business: {}", e))?
             }
             _ => return Err(format!("Unknown report type: {}", report_type_str)),
         };
@@ -214,7 +238,7 @@ pub async fn generate_monthly_wrapped_if_needed(
         "Scheduler: auto-generating monthly wrapped for {}",
         intel_hash_key
     );
-    generate_report(state, "user", "user", "monthly_wrapped").await?;
+    generate_report(state, "user", "user", "monthly_wrapped", None).await?;
     Ok(())
 }
 
@@ -270,6 +294,6 @@ pub async fn generate_weekly_impact_if_needed(
         "Scheduler: auto-generating weekly impact for {}",
         intel_hash_key
     );
-    generate_report(state, "user", "user", "weekly_impact").await?;
+    generate_report(state, "user", "user", "weekly_impact", None).await?;
     Ok(())
 }

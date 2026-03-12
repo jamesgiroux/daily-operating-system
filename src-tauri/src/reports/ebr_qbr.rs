@@ -241,6 +241,7 @@ pub fn gather_ebr_qbr_input(
         prompt,
         ai_models,
         intel_hash,
+        extra_data: None,
     })
 }
 
