@@ -369,7 +369,7 @@ export default function ActionsPage() {
       </section>
 
       {/* ═══ END MARK ═══ */}
-      {actions.length > 0 && <FinisMarker />}
+      <FinisMarker />
     </div>
   );
 }

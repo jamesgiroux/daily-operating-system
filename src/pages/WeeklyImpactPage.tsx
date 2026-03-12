@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { CoverSlide } from "@/components/weekly-impact/CoverSlide";
@@ -63,7 +65,7 @@ const SLIDES = [
 // =============================================================================
 
 const ANALYSIS_PHASES = [
-  { key: "gathering", label: "Gathering this week's data", detail: "Reading meetings, actions, and signals from the past 7 days" },
+  { key: "gathering", label: "Gathering this week's data", detail: "Reading meetings, actions, and activity from the past 7 days" },
   { key: "priorities", label: "Checking priority movement", detail: "Finding what actually moved forward this week" },
   { key: "patterns", label: "Spotting patterns", detail: "Looking for wins and things worth watching" },
   { key: "finalizing", label: "Finalizing", detail: "Building your weekly view" },
@@ -136,6 +138,8 @@ export default function WeeklyImpactPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(userId ?? undefined, "user");
 
   useRevealObserver(!loading && !!content);
 
@@ -330,26 +334,46 @@ export default function WeeklyImpactPage() {
       {/* Slide 1: Cover */}
       <section id="cover" className={slides.slideSection}>
         <CoverSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("headline")}
+          onFeedback={(type) => feedback.submitFeedback("headline", type)}
+        />
       </section>
 
       {/* Slide 2: Priorities Moved */}
       <div className="editorial-reveal">
         <PrioritiesMovedSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("priorities_moved")}
+          onFeedback={(type) => feedback.submitFeedback("priorities_moved", type)}
+        />
       </div>
 
       {/* Slide 3: The Work */}
       <div className="editorial-reveal">
         <TheWorkSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("the_work")}
+          onFeedback={(type) => feedback.submitFeedback("the_work", type)}
+        />
       </div>
 
       {/* Slide 4: Watch */}
       <div className="editorial-reveal">
         <WatchSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("watch")}
+          onFeedback={(type) => feedback.submitFeedback("watch", type)}
+        />
       </div>
 
       {/* Slide 5: Into Next Week */}
       <div className="editorial-reveal">
         <IntoNextWeekSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("into_next_week")}
+          onFeedback={(type) => feedback.submitFeedback("into_next_week", type)}
+        />
       </div>
 
       {/* Finis marker */}
