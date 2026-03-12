@@ -1,6 +1,6 @@
 # Phase 3 Execution Tracker (v1.0.0)
 
-**Last updated:** 2026-03-11  
+**Last updated:** 2026-03-11 (Wave 4+5 complete, Wave 6 planned)
 **Execution mode:** Umbrella + short-lived wave branches  
 **Policy:** No Phase 3 issue closes without production-data parity gate evidence.
 
@@ -38,9 +38,9 @@
 | Wave 1 | I521 definition sprint + frontend contract ownership | Complete |
 | Wave 2 | 3a backend cleanup: I515 then I514, plus I538 + I540 reliability fixes | Complete |
 | Wave 3 | 3b GA platform: I427, I428, I429, I430, I438 | Complete |
-| Wave 4 | 3c then 3d: I502, I493, I447-I450, I453, I454, I541-I546 | Planned |
-| Wave 5 | 3e: I529, I530, I537 | Planned |
-| Wave 6 | Hardening + signoff + full acceptance matrix | Planned |
+| Wave 4 | 3c then 3d: I502, I493, I447-I450, I453, I454, I541-I545 | Complete |
+| Wave 5 | 3e: I507, I513, I529, I530, I537 | Complete |
+| Wave 6 | I543, I546, FinisMarker sweep, hardening + signoff + full acceptance matrix | Planned |
 
 ## Tracker matrix
 
@@ -57,25 +57,27 @@
 | I430 | None | 3 | Complete | Data summary + clear intelligence + delete all data + privacy UI |
 | I431 | I435 | 3 | Deferred | Depends on I435 (token optimization) — moved to post-1.0 |
 | I438 | None | 3 | Complete | Prime onboarding chapter + drag-drop + connector cards |
-| I502 | I499, I503 | 4 | Planned | Health rendering ACs + parity gate |
-| I493 | I505, I502 | 4 | Planned | Account detail ACs + parity gate |
-| I447 | I521 | 4 | Planned | Token audit ACs + parity gate |
-| I454 | I521 | 4 | Planned | Vocabulary ACs + parity gate |
-| I448 | I447, I521 | 4 | Planned | Actions editorial ACs + parity gate |
-| I449 | I447, I521 | 4 | Planned | Week/emails editorial ACs + parity gate |
-| I450 | I447, I521 | 4 | Planned | Portfolio chapter ACs + parity gate |
+| I502 | I499, I503 | 4 | Complete | Health rendering ACs + parity gate |
+| I493 | I505, I502 | 4 | Complete | Account detail ACs + parity gate |
+| I447 | I521 | 4 | Complete | Token audit ACs + parity gate |
+| I454 | I521 | 4 | Complete | Vocabulary ACs + parity gate |
+| I448 | I447, I521 | 4 | Complete | Actions editorial ACs + parity gate |
+| I449 | I447, I521 | 4 | Complete | Week/emails editorial ACs + parity gate |
+| I450 | I447, I521 | 4 | Complete | Portfolio chapter ACs + parity gate |
 | ~~I451~~ | ~~I447, I521~~ | ~~4~~ | ~~Superseded by I542~~ | ~~Meeting editorial ACs + parity gate~~ |
 | ~~I452~~ | ~~I447, I521~~ | ~~4~~ | ~~Superseded by I541~~ | ~~Settings editorial ACs + parity gate~~ |
-| I453 | I447, I521 | 4 | Planned | Onboarding editorial ACs + parity gate |
-| I541 | I447, I521 | 4 | Planned | Zero inline styles in settings, YouCard split into 3 sections, audit log pagination ≤50 initial, StatusDot shared, zero vocab violations + parity gate |
-| I542 | I447, I521 | 4 | Planned | Zero inline styles in MeetingDetailPage, zero hardcoded hex/rgba in CSS module, zero vocab violations, no folio transcript button for past meetings + parity gate |
-| I543 | None | 4 | Planned | All pages in PAGE-ARCHITECTURE.md, all shared components in COMPONENT-INVENTORY.md, STATE-PATTERNS.md exists, developer checklists documented, audit dates current + no dead links |
-| I544 | I521 | 4 | Planned | Zero duplicate StatusDot/empty/loading/error implementations, every page uses EditorialEmpty/Loading/Error, no file >400 lines without justification, dead code removed + tsc clean |
-| I545 | I447, I521 | 4 | Planned | Zero inline styles in Account/Project/Person detail pages (105 total), zero hardcoded rgba in entity detail CSS modules, shared entity-detail.module.css extracted + parity gate |
-| I546 | I543 | 4 | Planned | INTERACTION-PATTERNS.md + DATA-PRESENTATION-GUIDELINES.md + NAVIGATION-ARCHITECTURE.md exist in .docs/design/, reference real components, no dead links |
-| I529 | I507, I513 | 5 | Planned | Feedback UI ACs + parity gate |
-| I530 | I529 | 5 | Planned | Taxonomy ACs + signal weight assertions |
-| I537 | None | 5 | Planned | Feature-flag gate ACs + parity gate |
+| I453 | I447, I521 | 4 | Complete | Onboarding editorial ACs + parity gate |
+| I541 | I447, I521 | 4 | Complete | Zero inline styles in settings, YouCard split into 3 sections, audit log pagination ≤50 initial, StatusDot shared, zero vocab violations + parity gate |
+| I542 | I447, I521 | 4 | Complete | Zero inline styles in MeetingDetailPage, zero hardcoded hex/rgba in CSS module, zero vocab violations, no folio transcript button for past meetings + parity gate |
+| I543 | None | 6 | Planned | All pages in PAGE-ARCHITECTURE.md, all shared components in COMPONENT-INVENTORY.md, STATE-PATTERNS.md exists, developer checklists documented, audit dates current + no dead links |
+| I544 | I521 | 4 | Complete | Zero duplicate StatusDot/empty/loading/error implementations, every page uses EditorialEmpty/Loading/Error, no file >400 lines without justification, dead code removed + tsc clean |
+| I545 | I447, I521 | 4 | Complete | Zero inline styles in Account/Project/Person detail pages (105 total), zero hardcoded rgba in entity detail CSS modules, shared entity-detail.module.css extracted + parity gate |
+| I546 | I543 | 6 | Planned | INTERACTION-PATTERNS.md + DATA-PRESENTATION-GUIDELINES.md + NAVIGATION-ARCHITECTURE.md exist in .docs/design/, reference real components, no dead links |
+| I507 | I487, I504, I505 | 5 | Complete | Person profile corrections + email disposition feedback — verified existing implementation meets ACs |
+| I513 | I512 | 5 | Complete | 9 read-path eliminations (intelligence.json, pipeline JSON). DB as sole app read source. MCP sidecar keeps file read. |
+| I529 | I507, I513 | 5 | Complete | Feedback UI ACs + UNIQUE constraint + 3-tier source attribution + parity gate |
+| I530 | I529 | 5 | Complete | Taxonomy ACs + curation vs correction distinction + signal weight assertions |
+| I537 | None | 5 | Complete | Feature-flag gate ACs + parity gate |
 
 ## Production-data parity gate contract
 
@@ -232,6 +234,158 @@ Validated on 2026-03-11 on branch `codex/v1-phase3`.
 - `cargo test --lib` — 1161 passed, 0 failed on 2026-03-11
 - `pnpm tsc --noEmit` — pass on 2026-03-11
 - Schema validation audit: 22 issues found and fixed across all tracks (stale table names, wrong columns, invalid FTS5 syntax)
+
+## Wave 4 progress
+
+Completed on 2026-03-11. Branch: `codex/v1-phase3` (worktree). 14 issues across 3c (health surfaces) + 3d (editorial polish).
+
+### 3c: Frontend surfaces + intelligence rendering
+
+1. I447 (Design Token Audit) — replaced 139 hardcoded rgba() values with design tokens across all CSS modules
+2. I454 (Vocabulary Pass) — ADR-0083 compliance across all user-facing strings
+3. I448 (ActionsPage Editorial) — full CSS module migration, ChapterHeadings, FinisMarker, EditorialLoading/Error
+4. I449 (WeekPage + EmailsPage Polish) — CSS module migration, stat line tokens, editorial components
+5. I450+I545 (Entity Detail + Portfolio) — 105 inline styles eliminated across Account/Project/Person detail pages, shared `entity-detail.module.css` extracted
+6. I453 (Onboarding Editorial) — CSS module migration for all onboarding pages
+7. I502 (Health Surfaces) — health band, dimensions, trend rendering across 6 surfaces (account detail, project detail, person detail, dashboard, meeting detail, reports)
+8. I493 (Account Detail Intelligence) — Glean-sourced titles, coverage gaps, reports chapter
+9. I541 (Settings UX Rebuild) — YouCard split into Identity/Workspace/Preferences, full CSS module migration, audit log pagination (≤50 initial), StatusDot consolidation
+10. I542 (MeetingDetailPage Styles) — 51 inline styles migrated to CSS module, hardcoded colors replaced with tokens, folio transcript button fix
+11. I544 (Component DRY/SRP) — 15 dead component files removed, duplicate StatusDot/empty/loading/error consolidation
+
+### Wave 4 audit remediation
+- Vocabulary violations caught and fixed post-initial pass
+- Editorial component gaps (missing FinisMarker, ChapterHeading inconsistencies) resolved
+
+### Command evidence
+- `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — pass on 2026-03-11
+- `cargo test --manifest-path src-tauri/Cargo.toml` — pass on 2026-03-11
+- `pnpm tsc --noEmit` — pass on 2026-03-11
+
+## Wave 5 progress
+
+Completed on 2026-03-11. Branch: `codex/v1-phase3-wave5` (worktree) → merged to `codex/v1-phase3` → merged to `dev`.
+
+### Issues completed
+
+1. I507 (Source-Attributed Correction Feedback) — VERIFICATION ONLY. Both ACs already met:
+   - Person profile corrections: `services/people.rs` reads `enrichment_sources`, calls `upsert_signal_weight()`
+   - Email disposition: `commands/integrations.rs` calls `get_email_signal_source_for_feedback()` then `upsert_signal_weight()`
+
+2. I513 (DB as Sole Source — remaining read paths) — 9 read-path eliminations:
+   - `prepare/meeting_context.rs` — removed intelligence.json fallback → DB query
+   - `prepare/orchestrate.rs` — removed intelligence.json fallback → DB query
+   - `services/dashboard.rs` — replaced `load_directive`/`load_week_json` with DB queries
+   - `services/emails.rs` — replaced `load_directive` with DB query
+   - `executor.rs` — removed `sync_actions_to_db` call
+   - `devtools/mod.rs` — removed `sync_actions_to_db` calls
+   - `workflow/today.rs` — removed `sync_actions_to_db` function
+   - `json_loader.rs` — removed `load_actions_json`, `load_week_json` + types
+   - MCP sidecar continues reading intelligence.json (file write preserved — sidecar has no DB access)
+
+3. I529 (Intelligence Quality Feedback UI):
+   - Backend: `services/feedback.rs` with 3-tier source attribution (`enrichment_sources` → enrichment signal → None)
+   - Migration 067: UNIQUE(entity_id, entity_type, field) constraint on `intelligence_feedback`
+   - Frontend: `IntelligenceFeedback.tsx` hover-reveal thumbs, `useIntelligenceFeedback.ts` hook
+   - Integrated on: AccountDetailEditorial (state_of_play, watch_list), ProjectDetailEditorial (state_of_play, watch_list), PersonDetailEditorial (watch_list), MeetingDetailPage (risks, plan)
+
+4. I530 (Signal Taxonomy: Curation vs Correction):
+   - `services/intelligence.rs` — `update_intelligence_field` now distinguishes empty value (curation) from edit (correction)
+   - Curation: emits `intelligence_curated` signal, no `upsert_signal_weight`, no source penalty
+   - Correction: emits `user_correction` signal, calls `record_enrichment_correction()`, source penalized
+   - `signals/bus.rs` — taxonomy documented, `user_feedback` and `user_curation` source configs added
+
+5. I537 (Gate Role Presets Behind Feature Flag):
+   - Backend: `FeatureFlags` struct with `role_presets_enabled: false`, `get_feature_flags()` command
+   - Frontend: OnboardingFlow skips EntityMode chapter when flag off, auto-sets CS + "both"
+   - Settings: YouCard hides RoleSection, DiagnosticsSection hides EntityModeSelector when flag off
+
+### AC validation issues caught and fixed
+- **AC16**: INSERT OR REPLACE with UUID PK never triggered conflict → fixed with ON CONFLICT(entity_id, entity_type, field) DO UPDATE
+- **AC17**: Source attribution always None for non-person entities → fixed with 3-tier `resolve_intelligence_source()` (enrichment_sources → signal_events query → None)
+- **AC18**: `intelligence_curated` signal never emitted on real delete paths → fixed by checking if edited value is empty/null/[] in `update_intelligence_field`
+
+### Command evidence
+- `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — pass on 2026-03-11
+- `cargo test --manifest-path src-tauri/Cargo.toml` — pass on 2026-03-11
+- `pnpm tsc --noEmit` — pass on 2026-03-11
+
+### Merge evidence
+- Merged `codex/v1-phase3-wave5` → `codex/v1-phase3` (clean)
+- Merged `codex/v1-phase3` → `dev` (4 conflicts resolved: AccountDetailEditorial.tsx, PersonDetailEditorial.tsx, ProjectDetailEditorial.tsx, YouCard.tsx — all Wave 4 CSS module imports vs Wave 5 feedback imports, keep both)
+
+---
+
+## Wave 6 plan: Hardening + Signoff
+
+### Scope
+
+Wave 6 is the final wave before GA. Two remaining documentation issues (I543, I546), a FinisMarker sweep, and the full acceptance matrix signoff.
+
+### Step 1: I543 — GA Design Documentation (parallel with Step 2)
+
+Update existing design docs to reflect post-Wave 4 reality:
+- **PAGE-ARCHITECTURE.md** — add all undocumented pages (currently missing ~11 pages added since original doc)
+- **COMPONENT-INVENTORY.md** — add all Wave 4 components (IntelligenceFeedback, HealthBand, EditableVitalsStrip, etc.)
+- **STATE-PATTERNS.md** (NEW) — per-page state matrices documenting hooks, loading/error/empty patterns
+- Developer checklists: "new page" and "new component" checklists referencing existing patterns
+- Audit dates current, no dead links
+
+### Step 2: I546 — Design Documentation: Interaction, Data, Navigation (parallel with Step 1)
+
+Three new reference documents in `.docs/design/`:
+- **INTERACTION-PATTERNS.md** — hover-reveal, inline edit, optimistic update, confirmation dialogs, toast patterns
+- **DATA-PRESENTATION-GUIDELINES.md** — vitals strips, timeline rendering, health bands, empty state messaging
+- **NAVIGATION-ARCHITECTURE.md** — route structure, magazine shell, chapter scrolling, back link patterns
+
+### Step 3: FinisMarker Sweep
+
+Add FinisMarker to 7 remaining pages:
+- `AccountsPage.tsx`
+- `ActionDetailPage.tsx`
+- `MeetingHistoryDetailPage.tsx`
+- `MonthlyWrappedPage.tsx`
+- `PeoplePage.tsx`
+- `ProjectsPage.tsx`
+- `ReportPage.tsx`
+
+### Step 4: Full Acceptance Matrix Signoff
+
+Run every Phase 3 AC from `v1.0.0.md` (ACs 1–43) against the running app with real data:
+
+**Quality gates:**
+- `cargo test --manifest-path src-tauri/Cargo.toml` — all pass
+- `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — clean
+- `pnpm tsc --noEmit` — clean
+- `pnpm test` — all pass
+- `pnpm run test:parity` — passes with both mock + production fixtures
+
+**Manual verification checklist:**
+- [ ] AC6: Health band + trend arrow + confidence renders on account detail
+- [ ] AC8: Cmd+K search < 300ms, click navigates
+- [ ] AC9: Briefing loads with cached data when offline
+- [ ] AC10: Data export ZIP produced with all entity types
+- [ ] AC11: Clear intelligence + delete all data work
+- [ ] AC12: Zero new rgba() violations (27 existing are intentional atmospheric colors)
+- [ ] AC13: Every page ends with FinisMarker
+- [ ] AC14: Zero ADR-0083 vocabulary violations
+- [ ] AC15-22: Intelligence feedback loop (hover, vote, persist, source attribution, curation vs correction)
+- [ ] AC32: Zero `style={{}}` in all pages
+- [ ] AC33: YouCard split into Identity/Workspace/Preferences
+- [ ] AC34: Audit log pagination ≤50 initial
+- [ ] AC35-37: Design docs complete (I543)
+- [ ] AC38-39: Zero inline styles + hardcoded rgba in entity detail pages
+- [ ] AC40-41: Zero duplicate components, every page uses editorial state components
+- [ ] AC42: Design docs exist (I546)
+
+### Step 5: Merge to main
+
+After full acceptance matrix passes:
+- `codex/v1-phase3` → `main` (final merge)
+- Tag `v1.0.0`
+- Update `release-notes.md` and `CHANGELOG.md`
+
+---
 
 ## Release signoff criteria (Phase 3)
 

@@ -1,0 +1,22 @@
+/* ReportPage — loading, error, pre/fallback states */
+
+.loadingState {
+  padding: 2rem;
+  color: var(--color-desk-charcoal);
+  opacity: 0.7;
+}
+
+.errorState {
+  padding: 2rem;
+  color: var(--color-spice-terracotta);
+}
+
+.preBlock {
+  padding: 2rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.parseError {
+  padding: 2rem;
+}

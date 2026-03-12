@@ -81,7 +81,7 @@ export const PHASE3_SURFACE_OWNERSHIP: SurfaceOwnership[] = [
       "pages/AccountHealthPage.tsx",
       "pages/EbrQbrPage.tsx",
       "pages/WeeklyImpactPage.tsx",
-      "pages/MonthlyWrappedPage.tsx",
+      "pages/monthly-wrapped/MonthlyWrappedPage.tsx",
     ],
     notes: "Report routes are split by report type, but all Phase 3 report command contracts flow through these routed pages.",
   },

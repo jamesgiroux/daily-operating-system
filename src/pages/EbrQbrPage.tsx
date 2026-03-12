@@ -38,6 +38,7 @@ import type {
   ReportRow,
 } from "@/types/reports";
 import type { AccountDetail } from "@/types";
+import slides from "./report-slides.module.css";
 
 // Normalize DB data to the current schema — guards against old cached reports
 // whose JSON predates field additions (I397 schema evolution).
@@ -81,7 +82,7 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering quarter data",
-    detail: "Reading meeting history, updates, and account context",
+    detail: "Reading meeting history, signals, and account intelligence",
   },
   {
     key: "synthesizing",
@@ -240,25 +241,13 @@ export default function EbrQbrPage() {
             : navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
       },
       chapters: content ? SLIDES : undefined,
-      folioStatusText: saveStatus === "saved" ? "✓ Saved" : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: content ? (
         <button
           onClick={handleGenerate}
           disabled={generating}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: generating ? "var(--color-text-tertiary)" : "var(--color-garden-larkspur)",
-            background: "none",
-            border: `1px solid ${generating ? "var(--color-rule-light)" : "var(--color-garden-larkspur)"}`,
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: generating ? "not-allowed" : "pointer",
-            opacity: generating ? 0.5 : 1,
-          }}
+          className={`${slides.folioAction} ${generating ? slides.folioActionDisabled : ""}`}
+          style={{ "--report-accent": "var(--color-garden-larkspur)" } as React.CSSProperties}
         >
           {generating ? "Generating..." : "Regenerate"}
         </button>
@@ -318,13 +307,10 @@ export default function EbrQbrPage() {
   // Loading state
   if (loading) {
     return (
-      <div style={{ padding: "120px 120px 80px" }}>
-        <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-2 h-12 w-96" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton
-          className="mb-8 h-5 w-full max-w-2xl"
-          style={{ background: "var(--color-rule-light)" }}
-        />
+      <div className={slides.loadingSkeleton}>
+        <Skeleton className={`mb-4 h-4 w-24 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-2 h-12 w-96 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-8 h-5 w-full max-w-2xl ${slides.skeletonBg}`} />
       </div>
     );
   }
@@ -333,62 +319,21 @@ export default function EbrQbrPage() {
   if (!content && !generating) {
     return (
       <div
-        style={{
-          padding: "120px 120px 80px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "60vh",
-          textAlign: "center",
-        }}
+        className={slides.emptyState}
+        style={{ "--report-accent": "var(--color-garden-larkspur)" } as React.CSSProperties}
       >
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--color-garden-larkspur)",
-            marginBottom: 24,
-          }}
-        >
+        <div className={slides.emptyOverline}>
           EBR / QBR
         </div>
-        <h2
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 32,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            margin: "0 0 16px",
-          }}
-        >
+        <h2 className={slides.emptyTitle}>
           No review generated yet
         </h2>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            color: "var(--color-text-secondary)",
-            maxWidth: 440,
-            lineHeight: 1.6,
-            marginBottom: 32,
-          }}
-        >
+        <p className={slides.emptyDescription}>
           Generate a 7-slide executive business review. This will synthesize all available
           intelligence, meeting history, and success metrics for this account.
         </p>
         {error && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-spice-terracotta)",
-              marginBottom: 16,
-            }}
-          >
+          <p className={slides.emptyError}>
             {error}
           </p>
         )}
@@ -417,9 +362,9 @@ export default function EbrQbrPage() {
 
   // Render the 7-slide review with scroll-snap
   return (
-    <div style={{ scrollSnapType: "y proximity" }}>
+    <div className={slides.slideContainer}>
       {/* Slide 1: Cover */}
-      <section id="cover" style={{ scrollMarginTop: 60 }}>
+      <section id="cover" className={slides.slideSection}>
         <EbrCover
           accountName={accountName}
           content={content!}
