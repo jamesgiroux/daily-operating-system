@@ -328,7 +328,6 @@ export default function EmailsPage() {
   const hasExtracted = allCommitments.length > 0 || allQuestions.length > 0;
   const hasSignals = entityThreads.length > 0;
   const hasYourMove = yourMoveEmails.length > 0;
-  const hasContent = hasYourMove || hasExtracted || hasSignals;
 
   return (
     <div className={e.pageContainer}>
@@ -583,7 +582,7 @@ export default function EmailsPage() {
       )}
 
       {/* FINIS */}
-      {hasContent && <FinisMarker />}
+      <FinisMarker />
     </div>
   );
 }

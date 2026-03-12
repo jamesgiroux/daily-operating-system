@@ -3,6 +3,7 @@
  * Next milestone, target date reality, decisions pending.
  * No account equivalent — project-specific.
  */
+import type { ReactNode } from "react";
 import type { ProjectDetail, EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { StateBlock } from "@/components/editorial/StateBlock";
@@ -13,6 +14,7 @@ interface HorizonChapterProps {
   intelligence: EntityIntelligence | null;
   /** When provided, items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
+  feedbackSlot?: ReactNode;
 }
 
 /** Find a risk mentioning timeline/deadline/schedule/target/delay. */
@@ -33,7 +35,12 @@ function daysUntil(dateStr: string): number | null {
   return Math.round((startOfTarget.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export function HorizonChapter({ detail, intelligence, onUpdateField }: HorizonChapterProps) {
+export function HorizonChapter({
+  detail,
+  intelligence,
+  onUpdateField,
+  feedbackSlot,
+}: HorizonChapterProps) {
   const nextMilestone = detail.milestones.find(
     (m) => m.status.toLowerCase() !== "completed" && m.status.toLowerCase() !== "done",
   );
@@ -48,7 +55,7 @@ export function HorizonChapter({ detail, intelligence, onUpdateField }: HorizonC
 
   return (
     <section id="the-horizon" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading title="The Horizon" />
+      <ChapterHeading title="The Horizon" feedbackSlot={feedbackSlot} />
 
       {hasContent ? (
         <>
