@@ -214,7 +214,7 @@ pub fn gather_book_of_business_input(
     active_preset: &str,
     spotlight_account_ids: Option<&[String]>,
 ) -> Result<ReportGeneratorInput, String> {
-    // 1. All active accounts with health/ARR/renewal
+    // 1. All active customer accounts with health/ARR/renewal
     let mut stmt = db
         .conn_ref()
         .prepare(
@@ -225,6 +225,7 @@ pub fn gather_book_of_business_input(
              LEFT JOIN entity_assessment ea ON ea.entity_id = a.id
              LEFT JOIN entity_quality eq ON eq.entity_id = a.id
              WHERE a.archived = 0
+               AND COALESCE(a.account_type, 'customer') = 'customer'
              ORDER BY COALESCE(a.arr, 0) DESC",
         )
         .map_err(|e| format!("Failed to prepare accounts query: {}", e))?;
@@ -324,13 +325,15 @@ pub fn gather_book_of_business_input(
         });
     }
 
-    // 4. Top 20 open actions across all accounts
+    // 4. Top 20 open actions across customer accounts
     let open_actions: String = db
         .conn_ref()
         .prepare(
             "SELECT act.title, a.name FROM actions act
-             LEFT JOIN accounts a ON a.id = act.entity_id
+             JOIN accounts a ON a.id = act.entity_id
              WHERE act.status = 'open' AND act.entity_type = 'account'
+               AND a.archived = 0
+               AND COALESCE(a.account_type, 'customer') = 'customer'
              ORDER BY act.due_date ASC NULLS LAST
              LIMIT 20",
         )
@@ -344,7 +347,7 @@ pub fn gather_book_of_business_input(
         })
         .unwrap_or_default();
 
-    // 5. Email signal counts per account (recent 90d)
+    // 5. Email signal counts per customer account (recent 90d)
     let email_signals: String = db
         .conn_ref()
         .prepare(
@@ -354,6 +357,8 @@ pub fn gather_book_of_business_input(
              WHERE se.entity_type = 'account'
                AND se.signal_type LIKE '%email%'
                AND se.created_at >= ?1
+               AND a.archived = 0
+               AND COALESCE(a.account_type, 'customer') = 'customer'
              GROUP BY se.entity_id
              ORDER BY cnt DESC
              LIMIT 20",
@@ -721,6 +726,9 @@ fn build_book_of_business_prompt(
          - Do NOT include accountSnapshot, totalAccounts, totalArr, or any pre-computed metrics in your response. Those are provided separately.\n\
          - Do NOT mention AI, enrichment, signals, or internal app mechanics. Use human language.\n\
          - Do NOT fabricate data. If the data is sparse, say so. Empty arrays are acceptable.\n\
+         - Do NOT fabricate specific dates, deadlines, or commitments unless they appear verbatim in the data. If no date is in the data, do not invent one.\n\
+         - Do NOT over-dramatize risk. Missing a named contact does not mean the relationship is failing — some accounts are managed passively for monitoring and renewals. Assess risk proportionally to ARR and strategic importance.\n\
+         - A large parent account with many BUs can be healthy even if only one or two BUs are actively engaged — that is normal portfolio management, not a structural failure.\n\
          - Write for the ear, not the page. Short sentences. Active voice. No jargon.\n",
     );
 
