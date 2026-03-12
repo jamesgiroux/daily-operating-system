@@ -1772,6 +1772,235 @@ pub fn update_meeting_user_notes(
     Ok(())
 }
 
+/// Update a single field in a meeting's frozen prep JSON with signal emission.
+///
+/// Supports field paths like:
+/// - `"meetingContext"` (simple key)
+/// - `"risks[0]"` (array index)
+/// - `"attendeeContext[2].assessment"` (nested array + key)
+pub fn update_meeting_prep_field(
+    db: &ActionDb,
+    _state: &AppState,
+    meeting_id: &str,
+    field_path: &str,
+    value: &str,
+    target_person_id: Option<&str>,
+) -> Result<(), String> {
+    let meeting = db
+        .get_meeting_intelligence_row(meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+
+    let frozen = meeting
+        .prep_frozen_json
+        .as_deref()
+        .ok_or_else(|| "No frozen prep JSON to update".to_string())?;
+
+    let mut json: serde_json::Value =
+        serde_json::from_str(frozen).map_err(|e| format!("Invalid prep JSON: {}", e))?;
+
+    // Parse field_path and apply update
+    apply_field_path_update(&mut json, field_path, value)?;
+
+    let updated = serde_json::to_string(&json).map_err(|e| format!("Serialize error: {}", e))?;
+
+    // Distinguish curation (delete/clear) from correction (edit).
+    let is_curation = value.trim().is_empty() || value == "[]" || value == "null";
+
+    // Get linked entities for signal emission
+    let entities = db
+        .get_meeting_entities(meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    db.with_transaction(|tx| {
+        tx.update_prep_frozen_json(meeting_id, &updated)
+            .map_err(|e| e.to_string())?;
+
+        let (signal_type, source, confidence) = if is_curation {
+            ("intelligence_curated", "user_curation", 0.5)
+        } else {
+            ("user_correction", "user_correction", 1.0)
+        };
+
+        // Emit signal for each linked entity
+        for entity in &entities {
+            let entity_type_str = match entity.entity_type {
+                crate::entity::EntityType::Account => "account",
+                crate::entity::EntityType::Project => "project",
+                crate::entity::EntityType::Person => "person",
+                _ => continue,
+            };
+            crate::services::signals::emit(
+                tx,
+                entity_type_str,
+                &entity.id,
+                signal_type,
+                source,
+                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                confidence,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+        }
+
+        // Attendee assessment edits: also target the specific person entity
+        if let Some(person_id) = target_person_id {
+            crate::services::signals::emit(
+                tx,
+                "person",
+                person_id,
+                signal_type,
+                source,
+                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                confidence,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+        }
+
+        // Also emit a signal for the meeting itself
+        crate::services::signals::emit(
+            tx,
+            "meeting",
+            meeting_id,
+            signal_type,
+            source,
+            Some(&format!("{{\"field\":\"{}\"}}", field_path)),
+            confidence,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+/// Parse a field path and apply an update to a JSON value.
+///
+/// Supported path formats:
+/// - `"meetingContext"` → `json["meetingContext"]`
+/// - `"risks[0]"` → `json["risks"][0]`
+/// - `"attendeeContext[2].assessment"` → `json["attendeeContext"][2]["assessment"]`
+fn apply_field_path_update(
+    json: &mut serde_json::Value,
+    field_path: &str,
+    value: &str,
+) -> Result<(), String> {
+    let segments = parse_field_path(field_path)?;
+
+    if segments.is_empty() {
+        return Err("Empty field path".to_string());
+    }
+
+    // Navigate to the parent, then set the final segment
+    let mut current = json as &mut serde_json::Value;
+    for segment in &segments[..segments.len() - 1] {
+        current = navigate_segment(current, segment)?;
+    }
+
+    let new_value = if value.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::String(value.to_string())
+    };
+
+    match &segments[segments.len() - 1] {
+        PathSegment::Key(key) => {
+            current[key.as_str()] = new_value;
+        }
+        PathSegment::Index(idx) => {
+            let arr = current
+                .as_array_mut()
+                .ok_or_else(|| format!("Expected array for index [{}]", idx))?;
+            if *idx >= arr.len() {
+                return Err(format!(
+                    "Index {} out of bounds (array length {})",
+                    idx,
+                    arr.len()
+                ));
+            }
+            arr[*idx] = new_value;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+enum PathSegment {
+    Key(String),
+    Index(usize),
+}
+
+/// Parse a field path into segments.
+///
+/// Examples:
+/// - `"meetingContext"` → `[Key("meetingContext")]`
+/// - `"risks[0]"` → `[Key("risks"), Index(0)]`
+/// - `"attendeeContext[2].assessment"` → `[Key("attendeeContext"), Index(2), Key("assessment")]`
+fn parse_field_path(path: &str) -> Result<Vec<PathSegment>, String> {
+    let mut segments = Vec::new();
+    let mut remaining = path;
+
+    while !remaining.is_empty() {
+        // Strip leading dot separator
+        if remaining.starts_with('.') {
+            remaining = &remaining[1..];
+        }
+
+        if remaining.starts_with('[') {
+            // Parse index: [N]
+            let end = remaining
+                .find(']')
+                .ok_or_else(|| format!("Unclosed bracket in path: {}", path))?;
+            let idx_str = &remaining[1..end];
+            let idx: usize = idx_str
+                .parse()
+                .map_err(|_| format!("Invalid array index: {}", idx_str))?;
+            segments.push(PathSegment::Index(idx));
+            remaining = &remaining[end + 1..];
+        } else {
+            // Parse key: up to next '[' or '.' or end
+            let end = remaining
+                .find(['[', '.'])
+                .unwrap_or(remaining.len());
+            if end == 0 {
+                return Err(format!("Empty key segment in path: {}", path));
+            }
+            segments.push(PathSegment::Key(remaining[..end].to_string()));
+            remaining = &remaining[end..];
+        }
+    }
+
+    Ok(segments)
+}
+
+fn navigate_segment<'a>(
+    current: &'a mut serde_json::Value,
+    segment: &PathSegment,
+) -> Result<&'a mut serde_json::Value, String> {
+    match segment {
+        PathSegment::Key(key) => {
+            if current.get(key.as_str()).is_none() {
+                return Err(format!("Key '{}' not found in JSON", key));
+            }
+            Ok(&mut current[key.as_str()])
+        }
+        PathSegment::Index(idx) => {
+            let arr = current
+                .as_array_mut()
+                .ok_or_else(|| format!("Expected array for index [{}]", idx))?;
+            if *idx >= arr.len() {
+                return Err(format!(
+                    "Index {} out of bounds (array length {})",
+                    idx,
+                    arr.len()
+                ));
+            }
+            Ok(&mut arr[*idx])
+        }
+    }
+}
+
 // ── I453: Meeting handlers extracted from commands.rs ──────────
 
 #[derive(Debug, Clone, serde::Serialize)]

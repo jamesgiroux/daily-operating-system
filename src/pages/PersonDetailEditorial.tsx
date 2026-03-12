@@ -131,6 +131,9 @@ export default function PersonDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!person.loading && !!person.detail);
 
+  // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
+  const { updateField: handleUpdateIntelField, saveStatus } = useIntelligenceFieldUpdate("person", personId);
+
   const relationship = person.detail?.relationship ?? "unknown";
   const shellConfig = useMemo(
     () => ({
@@ -139,8 +142,9 @@ export default function PersonDetailEditorial() {
       activePage: "people" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/people" }) },
       chapters: buildChapters(relationship),
+      folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
     }),
-    [navigate, relationship],
+    [navigate, relationship, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -167,9 +171,6 @@ export default function PersonDetailEditorial() {
         setMetadataValues({});
       });
   }, [personId]);
-
-  // I352: Shared intelligence field update hook
-  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("person", personId);
 
   // I529: Intelligence quality feedback
   const feedback = useIntelligenceFeedback(personId, "person");

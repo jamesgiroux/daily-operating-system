@@ -36,6 +36,7 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { EditableText } from "@/components/ui/EditableText";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import {
   AlignLeft,
@@ -75,6 +76,8 @@ interface UnifiedAttendee {
   temperature?: string;
   engagement?: string;
   assessment?: string;
+  /** Field path in prep_frozen_json for inline editing (I548) */
+  assessmentFieldPath?: string;
   meetingCount?: number;
   lastSeen?: string;
   notes?: string;
@@ -564,6 +567,24 @@ Thanks!`;
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
+  // Save a single field in prep_frozen_json (I548 — inline editing for briefing sections)
+  const savePrepField = useCallback(async (fieldPath: string, value: string, targetPersonId?: string) => {
+    if (!meetingId || !isEditable) return;
+    setSaveStatus("saving");
+    try {
+      await invoke("update_meeting_prep_field", {
+        meetingId, fieldPath, value,
+        targetPersonId: targetPersonId ?? null,
+      });
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (err) {
+      console.error("Save failed:", err);
+      toast.error("Failed to save change");
+      setSaveStatus("idle");
+    }
+  }, [meetingId, isEditable]);
+
   // Collaboration action visibility
   const isFutureMeeting = !isPastMeeting;
   const isReadyOrFresh = intelligenceQuality?.level === "ready" || intelligenceQuality?.level === "fresh";
@@ -660,14 +681,20 @@ Thanks!`;
   );
   const hasLinkedEntities = linkedEntities.length > 0;
 
-  // Derived data
-  const topRisks = [
-    ...((data.entityRisks ?? []).map((risk) => risk.text)),
-    ...(data.risks ?? []),
+  // Derived data — track source for inline editing (I548)
+  const topRiskEntries = [
+    ...((data.entityRisks ?? []).map((risk, i) => ({
+      text: sanitizeInlineText(risk.text),
+      fieldPath: `entityRisks[${i}].text`,
+    }))),
+    ...((data.risks ?? []).map((risk, i) => ({
+      text: sanitizeInlineText(risk),
+      fieldPath: `risks[${i}]`,
+    }))),
   ]
-    .map((risk) => sanitizeInlineText(risk))
-    .filter((risk) => risk.length > 0)
+    .filter((r) => r.text.length > 0)
     .slice(0, 3);
+  const topRisks = topRiskEntries.map((r) => r.text);
   const lifecycle = getLifecycleForDisplay(data);
   const agendaItems = (data.proposedAgenda ?? [])
     .map((item) => ({
@@ -899,7 +926,20 @@ Thanks!`;
               {/* The Key Insight — pull quote style */}
               {keyInsight && (
                 <blockquote className={styles.keyInsight}>
-                  <p className={styles.keyInsightText}>{keyInsight}</p>
+                  {isEditable ? (
+                    <EditableText
+                      value={keyInsight}
+                      onChange={(v) => savePrepField(
+                        data.intelligenceSummary ? "intelligenceSummary" : "meetingContext",
+                        v,
+                      )}
+                      as="p"
+                      multiline
+                      className={styles.keyInsightText}
+                    />
+                  ) : (
+                    <p className={styles.keyInsightText}>{keyInsight}</p>
+                  )}
                 </blockquote>
               )}
               {!keyInsight && (
@@ -943,19 +983,30 @@ Thanks!`;
                 <div className={styles.risksContainer}>
                   {topRisks.map((risk, i) => {
                     const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
+                    const riskContent = isEditable ? (
+                      <EditableText
+                        value={risk}
+                        onChange={(v) => savePrepField(topRiskEntries[i].fieldPath, v)}
+                        as="p"
+                        multiline
+                        className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}
+                      />
+                    ) : (
+                      <p className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}>{risk}</p>
+                    );
                     return i === 0 ? (
                       <blockquote
                         key={i}
                         className={clsx(styles.featuredRisk, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p className={styles.featuredRiskText}>{risk}</p>
+                        {riskContent}
                       </blockquote>
                     ) : (
                       <div
                         key={i}
                         className={clsx(styles.subordinateRisk, isHighUrgency && styles.subordinateRiskHighUrgency, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p className={styles.subordinateRiskText}>{risk}</p>
+                        {riskContent}
                       </div>
                     );
                   })}
@@ -973,6 +1024,7 @@ Thanks!`;
                   initialHiddenNames={hiddenAttendees}
                   meetingId={meetingId ?? undefined}
                   onSaveStatus={setSaveStatus}
+                  onSavePrepField={savePrepField}
                 />
               </section>
             )}
@@ -1106,12 +1158,14 @@ function UnifiedAttendeeList({
   initialHiddenNames,
   meetingId,
   onSaveStatus,
+  onSavePrepField,
 }: {
   attendees: UnifiedAttendee[];
   isEditable?: boolean;
   initialHiddenNames?: string[];
   meetingId?: string;
   onSaveStatus?: (status: "idle" | "saving" | "saved") => void;
+  onSavePrepField?: (fieldPath: string, value: string, targetPersonId?: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(
@@ -1214,9 +1268,19 @@ function UnifiedAttendeeList({
 
               {/* Assessment — the killer insight, serif italic, prominent */}
               {person.assessment && (
-                <p className={styles.attendeeAssessment}>
-                  {truncateText(sanitizeInlineText(person.assessment), 200)}
-                </p>
+                isEditable && onSavePrepField && person.assessmentFieldPath ? (
+                  <EditableText
+                    value={sanitizeInlineText(person.assessment)}
+                    onChange={(v) => onSavePrepField(person.assessmentFieldPath!, v, person.personId)}
+                    as="p"
+                    multiline
+                    className={styles.attendeeAssessment}
+                  />
+                ) : (
+                  <p className={styles.attendeeAssessment}>
+                    {truncateText(sanitizeInlineText(person.assessment), 200)}
+                  </p>
+                )
               )}
 
               {/* Metadata line */}
@@ -1768,7 +1832,8 @@ function buildUnifiedAttendees(
   const byKey = new Map<string, UnifiedAttendee>();
 
   // Start with attendeeContext (richest data)
-  for (const ctx of attendeeContext ?? []) {
+  for (let ci = 0; ci < (attendeeContext ?? []).length; ci++) {
+    const ctx = attendeeContext![ci];
     const key = normalizePersonKey(ctx.name);
     byKey.set(key, {
       name: ctx.name,
@@ -1779,6 +1844,7 @@ function buildUnifiedAttendees(
       meetingCount: ctx.meetingCount,
       lastSeen: ctx.lastSeen,
       notes: ctx.notes,
+      assessmentFieldPath: `attendeeContext[${ci}].assessment`,
     });
   }
 
@@ -1797,11 +1863,15 @@ function buildUnifiedAttendees(
   }
 
   // Merge stakeholder insights (assessment, engagement)
-  for (const insight of insights ?? []) {
+  for (let si = 0; si < (insights ?? []).length; si++) {
+    const insight = insights![si];
     const key = normalizePersonKey(insight.name);
     const existing = byKey.get(key);
     if (existing) {
-      if (insight.assessment) existing.assessment = insight.assessment;
+      if (insight.assessment) {
+        existing.assessment = insight.assessment;
+        existing.assessmentFieldPath = `stakeholderInsights[${si}].assessment`;
+      }
       if (insight.engagement) existing.engagement = insight.engagement;
       if (!existing.role && insight.role) existing.role = insight.role;
     }

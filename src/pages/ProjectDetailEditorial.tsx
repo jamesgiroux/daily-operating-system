@@ -150,6 +150,9 @@ export default function ProjectDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!proj.loading && !!proj.detail);
 
+  // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
+  const { updateField: handleUpdateIntelField, saveStatus } = useIntelligenceFieldUpdate("project", projectId);
+
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Project",
@@ -157,6 +160,7 @@ export default function ProjectDetailEditorial() {
       activePage: "projects" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/projects" }) },
       chapters: buildChapters(proj.detail?.isParent ?? false),
+      folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: proj.detail?.isParent ? (
         <button
           onClick={() => proj.setCreateChildOpen(true)}
@@ -166,7 +170,7 @@ export default function ProjectDetailEditorial() {
         </button>
       ) : undefined,
     }),
-    [navigate, proj.detail, proj.setCreateChildOpen],
+    [navigate, proj.detail, proj.setCreateChildOpen, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -197,9 +201,6 @@ export default function ProjectDetailEditorial() {
         setAncestors([]);
       });
   }, [projectId]);
-
-  // I352: Shared intelligence field update hook
-  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("project", projectId);
 
   // I529: Intelligence quality feedback
   const feedback = useIntelligenceFeedback(projectId, "project");

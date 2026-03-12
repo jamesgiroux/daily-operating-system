@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { Calendar, Target, CheckSquare, Eye, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -119,7 +120,10 @@ export default function WeeklyImpactPage() {
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save weekly impact report:", e));
+          .catch((e) => {
+            console.error("Failed to save weekly impact report:", e);
+            toast.error("Failed to save");
+          });
       }, 500);
     },
     [userId],
