@@ -168,6 +168,16 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Update the frozen prep JSON for a meeting.
+    pub fn update_prep_frozen_json(&self, meeting_id: &str, json: &str) -> Result<(), DbError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE meeting_prep SET prep_frozen_json = ?1, prep_frozen_at = ?2 WHERE meeting_id = ?3",
+            params![json, now, meeting_id],
+        )?;
+        Ok(())
+    }
+
     /// Persist user-authored agenda/notes in the meeting row.
     pub fn update_meeting_user_layer(
         &self,

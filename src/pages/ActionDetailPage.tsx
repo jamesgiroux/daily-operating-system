@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { EditableInline } from "@/components/ui/editable-inline";
 import { EditableTextarea } from "@/components/ui/editable-textarea";
 import { EditableDate } from "@/components/ui/editable-date";
+import { EditableText } from "@/components/ui/EditableText";
 import { formatFullDate } from "@/lib/utils";
 import { classifyAction } from "@/lib/entity-utils";
 import { Check, Circle } from "lucide-react";
@@ -107,7 +109,9 @@ export default function ActionDetailPage() {
       await load();
       setSaveStatus("saved");
       saveTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
-    } catch {
+    } catch (e) {
+      console.error("Failed to save action:", e);
+      toast.error("Failed to save");
       setSaveStatus("idle");
     }
   }
@@ -190,7 +194,9 @@ export default function ActionDetailPage() {
           <div className={s.titleWrapper}>
             <EditableText
               value={detail.title}
-              onSave={(title) => saveField({ title })}
+              onChange={(title) => saveField({ title })}
+              as="span"
+              multiline={false}
               className={`${s.titleEditable} ${isCompleted ? s.titleCompleted : ""}`}
             />
           </div>
@@ -388,71 +394,3 @@ export default function ActionDetailPage() {
   );
 }
 
-// =============================================================================
-// Inline Editable Title (local — different API from shared EditableText)
-// =============================================================================
-
-/** Click-to-edit single-line text with className-based styling. */
-function EditableText({
-  value,
-  onSave,
-  className,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  className?: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-
-  function commit() {
-    setEditing(false);
-    if (draft.trim() && draft.trim() !== value) {
-      onSave(draft.trim());
-    } else {
-      setDraft(value);
-    }
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") {
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-        className={`${className ?? ""} ${s.titleInput}`}
-      />
-    );
-  }
-
-  return (
-    <span
-      onClick={() => setEditing(true)}
-      className={`${className ?? ""} ${s.titleDisplay}`}
-    >
-      {value || (
-        <span className={s.autoNote}>
-          Click to edit
-        </span>
-      )}
-    </span>
-  );
-}

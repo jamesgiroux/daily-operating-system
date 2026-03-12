@@ -359,6 +359,30 @@ pub async fn update_meeting_user_notes(
         .await
 }
 
+/// Update a single field in a meeting's frozen prep JSON (user correction).
+#[tauri::command]
+pub async fn update_meeting_prep_field(
+    meeting_id: String,
+    field_path: String,
+    value: String,
+    target_person_id: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    state
+        .db_write(move |db| {
+            crate::services::meetings::update_meeting_prep_field(
+                db,
+                &app_state,
+                &meeting_id,
+                &field_path,
+                &value,
+                target_person_id.as_deref(),
+            )
+        })
+        .await
+}
+
 /// Resolve the on-disk path for a meeting's prep JSON file.
 fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::PathBuf, String> {
     let config = state
@@ -832,26 +856,6 @@ pub async fn get_risk_briefing(
     state
         .db_read(move |db| {
             crate::services::intelligence::get_risk_briefing(db, &app_state, &account_id)
-        })
-        .await
-}
-
-/// Save an edited risk briefing back to disk (user corrections).
-#[tauri::command]
-pub async fn save_risk_briefing(
-    state: State<'_, Arc<AppState>>,
-    account_id: String,
-    briefing: crate::types::RiskBriefing,
-) -> Result<(), String> {
-    let app_state = state.inner().clone();
-    state
-        .db_write(move |db| {
-            crate::services::intelligence::save_risk_briefing(
-                db,
-                &app_state,
-                &account_id,
-                &briefing,
-            )
         })
         .await
 }

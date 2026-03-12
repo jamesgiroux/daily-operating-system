@@ -11,11 +11,8 @@
  * - Shift+Tab: commit and focus previous editable element
  * - Escape: cancel edit
  * - Enter (single-line only): commit
- *
- * Emits a Tauri "editable-text:commit" event on save for persistence layer.
  */
 import { useState, useEffect, useRef, useCallback } from "react";
-import { emit } from "@tauri-apps/api/event";
 import styles from "./EditableText.module.css";
 
 interface EditableTextProps {
@@ -35,7 +32,9 @@ interface EditableTextProps {
   multiline?: boolean;
   /** Placeholder when value is empty */
   placeholder?: string;
-  /** Optional field identifier for Tauri event emission */
+  /** Additional CSS class name for the display wrapper */
+  className?: string;
+  /** @deprecated No longer emits Tauri events. Accepted for backwards compatibility. */
   fieldId?: string;
 }
 
@@ -58,7 +57,7 @@ export function EditableText({
   style,
   multiline = true,
   placeholder,
-  fieldId,
+  className,
 }: EditableTextProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -83,14 +82,8 @@ export function EditableText({
     const trimmed = draft.trim();
     if (trimmed !== value) {
       onChange(trimmed);
-      // Fire Tauri event for persistence layer
-      emit("editable-text:commit", {
-        fieldId: fieldId ?? undefined,
-        value: trimmed,
-        previousValue: value,
-      }).catch((err) => console.error("editable-text:commit emit failed:", err));
     }
-  }, [draft, value, onChange, fieldId]);
+  }, [draft, value, onChange]);
 
   const cancel = useCallback(() => {
     setDraft(value);
@@ -184,7 +177,7 @@ export function EditableText({
     <Tag
       ref={wrapperRef as unknown as React.Ref<HTMLDivElement>}
       onClick={() => setEditing(true)}
-      className={styles.editable}
+      className={`${styles.editable}${className ? ` ${className}` : ""}`}
       style={style}
       title="Click to edit"
       {...{ [EDITABLE_ATTR]: "" }}

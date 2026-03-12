@@ -9,6 +9,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -106,7 +107,10 @@ export default function MonthlyWrappedPage() {
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save monthly wrapped:", e));
+          .catch((e) => {
+            console.error("Failed to save monthly wrapped:", e);
+            toast.error("Failed to save");
+          });
       }, 500);
     },
     [userId],

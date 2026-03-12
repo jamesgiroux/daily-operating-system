@@ -14,6 +14,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { X, Plus, UserPlus, Search, LinkIcon, Check } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
@@ -166,6 +167,7 @@ export function StakeholderGallery({
       onIntelligenceUpdated?.();
     } catch (e) {
       console.error("Failed to update intelligence field:", e);
+      toast.error("Failed to save");
     }
   }
 
@@ -181,6 +183,7 @@ export function StakeholderGallery({
       onIntelligenceUpdated?.();
     } catch (e) {
       console.error("Failed to update stakeholders:", e);
+      toast.error("Failed to save");
     }
   }
 
@@ -273,6 +276,7 @@ export function StakeholderGallery({
       }
     } catch (e) {
       console.error("Failed to create person from stakeholder:", e);
+      toast.error("Failed to save");
     }
   }
 

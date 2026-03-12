@@ -622,10 +622,10 @@ pub fn run() {
             commands::generate_meeting_agenda_message_draft,
             commands::update_meeting_user_agenda,
             commands::update_meeting_user_notes,
+            commands::update_meeting_prep_field,
             // Risk Briefing
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
-            commands::save_risk_briefing,
             // Reports (v0.15.0)
             commands::generate_report,
             commands::get_report,
