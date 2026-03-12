@@ -673,6 +673,7 @@ Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches,
 | I544 | Component DRY/SRP reconciliation — app-wide duplicate detection (StatusDot 3x, per-page empty/loading states), shared component extraction, dead code removal, SRP violations. Spec: `.docs/issues/i544.md` | P1 | Frontend / Code Quality |
 | I545 | Entity detail pages style migration — 105 inline styles across AccountDetailEditorial (51), ProjectDetailEditorial (39), PersonDetailEditorial (15) + 7 hardcoded rgba values. Shared CSS module extraction. Spec: `.docs/issues/i545.md` | P1 | Frontend / Entity Detail / UX |
 | I546 | Design documentation: interaction, data presentation, navigation — INTERACTION-PATTERNS.md, DATA-PRESENTATION-GUIDELINES.md, NAVIGATION-ARCHITECTURE.md. Spec: `.docs/issues/i546.md` | P2 | Documentation / Design System |
+| I547 | Book of Business Review report — user-scoped portfolio report aggregating all accounts into leadership-ready document. Spec: `.docs/issues/i547.md` | P1 | Full Stack / Reports |
 
 **CS Report Suite (after Phase 2):**
 

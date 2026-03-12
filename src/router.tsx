@@ -42,7 +42,7 @@ import AccountHealthPage from "@/pages/AccountHealthPage";
 import EbrQbrPage from "@/pages/EbrQbrPage";
 import SwotPage from "@/pages/SwotPage";
 import WeeklyImpactPage from "@/pages/WeeklyImpactPage";
-import MonthlyWrappedPage from "@/pages/MonthlyWrappedPage";
+import MonthlyWrappedPage from "@/pages/monthly-wrapped/MonthlyWrappedPage";
 import SettingsPage from "@/pages/SettingsPage";
 import MePage from "@/pages/MePage";
 import WeekPage from "@/pages/WeekPage";
