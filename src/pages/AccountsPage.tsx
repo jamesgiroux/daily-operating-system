@@ -132,6 +132,8 @@ export default function AccountsPage() {
     }
   }, [archiveTab, loadAccounts, loadArchivedAccounts]);
 
+  // Load role preset for portfolio report label
+
   async function handleCreate() {
     if (!newName.trim()) return;
     try {

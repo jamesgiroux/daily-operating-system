@@ -7,6 +7,7 @@
 //! run PTY without lock), same as risk_briefing.rs.
 
 pub mod account_health;
+pub mod book_of_business;
 pub mod ebr_qbr;
 pub mod generator;
 pub mod invalidation;
@@ -36,6 +37,7 @@ pub enum ReportType {
     WeeklyImpact,
     MonthlyWrapped,
     RiskBriefing,
+    BookOfBusiness,
 }
 
 impl ReportType {
@@ -47,6 +49,7 @@ impl ReportType {
             ReportType::WeeklyImpact => "weekly_impact",
             ReportType::MonthlyWrapped => "monthly_wrapped",
             ReportType::RiskBriefing => "risk_briefing",
+            ReportType::BookOfBusiness => "book_of_business",
         }
     }
 
@@ -58,6 +61,7 @@ impl ReportType {
             "weekly_impact" => Some(ReportType::WeeklyImpact),
             "monthly_wrapped" => Some(ReportType::MonthlyWrapped),
             "risk_briefing" => Some(ReportType::RiskBriefing),
+            "book_of_business" => Some(ReportType::BookOfBusiness),
             _ => None,
         }
     }
@@ -99,6 +103,27 @@ pub fn compute_intel_hash(entity_id: &str, entity_type: &str, db: &ActionDb) -> 
     let input = format!("{}:{}:{}", entity_id, entity_type, intel_str);
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
+    format!("{:x}", hasher.finalize())[..16].to_string()
+}
+
+/// Compute an aggregate hash across all active accounts' intelligence state.
+/// Used for the Book of Business report to detect when any account intelligence changed.
+pub fn compute_aggregate_intel_hash(db: &ActionDb) -> String {
+    let concat: String = db
+        .conn_ref()
+        .query_row(
+            "SELECT GROUP_CONCAT(COALESCE(ea.enriched_at, ''), '|')
+             FROM accounts a
+             LEFT JOIN entity_assessment ea ON ea.entity_id = a.id
+             WHERE a.archived = 0
+             ORDER BY a.id",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or_default();
+
+    let mut hasher = Sha256::new();
+    hasher.update(concat.as_bytes());
     format!("{:x}", hasher.finalize())[..16].to_string()
 }
 
