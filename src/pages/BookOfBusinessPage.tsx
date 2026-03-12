@@ -107,11 +107,26 @@ export default function BookOfBusinessPage() {
       .catch((err) => console.error("get_user_entity failed:", err));
   }, []);
 
-  // Fetch accounts for spotlight picker
+  // Fetch accounts for spotlight picker (parents + all children)
   useEffect(() => {
-    invoke<AccountListItem[]>("get_accounts_list")
-      .then((list) => setAccounts(list.filter((a) => !a.archived)))
-      .catch((err) => console.error("get_accounts_list failed:", err));
+    (async () => {
+      try {
+        const topLevel = await invoke<AccountListItem[]>("get_accounts_list");
+        const active = topLevel.filter((a) => !a.archived);
+        const parents = active.filter((a) => a.isParent && a.childCount > 0);
+        const childLists = await Promise.all(
+          parents.map((p) =>
+            invoke<AccountListItem[]>("get_child_accounts_list", { parentId: p.id })
+              .then((children) => children.filter((c) => !c.archived))
+              .catch(() => [] as AccountListItem[]),
+          ),
+        );
+        const allChildren = childLists.flat();
+        setAccounts([...active, ...allChildren]);
+      } catch (err) {
+        console.error("Failed to fetch accounts for picker:", err);
+      }
+    })();
   }, []);
 
   // Debounced save
