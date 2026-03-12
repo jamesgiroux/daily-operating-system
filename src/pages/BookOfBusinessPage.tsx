@@ -112,8 +112,8 @@ export default function BookOfBusinessPage() {
     (async () => {
       try {
         const topLevel = await invoke<AccountListItem[]>("get_accounts_list");
-        const active = topLevel.filter((a) => !a.archived);
-        const parents = active.filter((a) => a.isParent && a.childCount > 0);
+        const customers = topLevel.filter((a) => !a.archived && a.accountType === "customer");
+        const parents = customers.filter((a) => a.isParent && a.childCount > 0);
         const childLists = await Promise.all(
           parents.map((p) =>
             invoke<AccountListItem[]>("get_child_accounts_list", { parentId: p.id })
@@ -122,7 +122,7 @@ export default function BookOfBusinessPage() {
           ),
         );
         const allChildren = childLists.flat();
-        setAccounts([...active, ...allChildren]);
+        setAccounts([...customers, ...allChildren]);
       } catch (err) {
         console.error("Failed to fetch accounts for picker:", err);
       }
