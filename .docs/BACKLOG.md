@@ -674,6 +674,7 @@ Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches,
 | I545 | Entity detail pages style migration — 105 inline styles across AccountDetailEditorial (51), ProjectDetailEditorial (39), PersonDetailEditorial (15) + 7 hardcoded rgba values. Shared CSS module extraction. Spec: `.docs/issues/i545.md` | P1 | Frontend / Entity Detail / UX |
 | I546 | Design documentation: interaction, data presentation, navigation — INTERACTION-PATTERNS.md, DATA-PRESENTATION-GUIDELINES.md, NAVIGATION-ARCHITECTURE.md. Spec: `.docs/issues/i546.md` | P2 | Documentation / Design System |
 | I547 | Book of Business Review report — user-scoped portfolio report aggregating all accounts into leadership-ready document. Spec: `.docs/issues/i547.md` | P1 | Full Stack / Reports |
+| I549 | Composable report slide templates + report mockups — 9 reusable slide templates + 6 full report page mockups in dailyos.pen. Design-only. Spec: `.docs/issues/i549.md` | P1 | Design / Reports / Mockups |
 
 **CS Report Suite (after Phase 2):**
 
