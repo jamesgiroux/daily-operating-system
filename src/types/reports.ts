@@ -6,7 +6,8 @@ export type ReportType =
   | 'ebr_qbr'
   | 'weekly_impact'
   | 'monthly_wrapped'
-  | 'risk_briefing';
+  | 'risk_briefing'
+  | 'book_of_business';
 
 export interface ReportRow {
   id: string;
@@ -146,6 +147,84 @@ export interface EbrQbrContent {
   nextSteps: EbrQbrAction[];
 }
 
+// Book of Business content schema (mirrors Rust BookOfBusinessContent)
+export interface BookRiskItem {
+  accountName: string;
+  risk: string;
+  arr: number | null;
+}
+
+export interface BookOpportunityItem {
+  accountName: string;
+  opportunity: string;
+  estimatedValue: string | null;
+}
+
+export interface AccountSnapshotRow {
+  accountId: string;
+  accountName: string;
+  arr: number | null;
+  healthBand: string | null;
+  healthTrend: string | null;
+  healthScore: number | null;
+  lifecycle: string | null;
+  renewalDate: string | null;
+  meetingCount90d: number;
+  keyContact: string | null;
+  isParent?: boolean;
+  buCount?: number;
+  parentId?: string;
+}
+
+export interface AccountDeepDive {
+  accountName: string;
+  accountId: string;
+  arr: number | null;
+  renewalDate: string | null;
+  statusNarrative: string;
+  activeWorkstreams: string[];
+  renewalOrGrowthImpact: string;
+  risksAndGaps: string[];
+}
+
+export interface ValueDeliveredRow {
+  accountName: string;
+  headlineOutcome: string;
+  whyItMatters: string;
+  source: string | null;
+}
+
+export interface BookTheme {
+  title: string;
+  narrative: string;
+  citedAccounts: string[];
+}
+
+export interface LeadershipAsk {
+  ask: string;
+  context: string;
+  impactedAccounts: string[];
+  status: string | null;
+}
+
+export interface BookOfBusinessContent {
+  periodLabel: string;
+  executiveSummary: string;
+  totalAccounts: number;
+  totalArr: number | null;
+  atRiskArr: number | null;
+  upcomingRenewals: number;
+  upcomingRenewalsArr: number | null;
+  hasLeadershipAsks: boolean;
+  topRisks: BookRiskItem[];
+  topOpportunities: BookOpportunityItem[];
+  accountSnapshot: AccountSnapshotRow[];
+  deepDives: AccountDeepDive[];
+  valueDelivered: ValueDeliveredRow[];
+  keyThemes: BookTheme[];
+  leadershipAsks: LeadershipAsk[];
+}
+
 // Human-readable labels per report type
 export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   swot: 'SWOT Analysis',
@@ -154,4 +233,5 @@ export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   weekly_impact: 'Weekly Impact',
   monthly_wrapped: 'Monthly Wrapped',
   risk_briefing: 'Risk Briefing',
+  book_of_business: 'Book of Business',
 };
