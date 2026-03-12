@@ -12,17 +12,14 @@ interface IntelligenceFeedbackProps {
  * Inline thumbs-up / thumbs-down feedback for AI-generated intelligence (I529).
  *
  * Renders two small icon buttons. Hidden by default (opacity: 0),
- * revealed on parent :hover or when a vote is active.
+ * revealed on hover or when a vote is active.
  *
  * Usage:
  * ```tsx
- * <div>
- *   <p>Some AI-generated insight...</p>
- *   <IntelligenceFeedback
- *     value={getFeedback("risks[0]")}
- *     onFeedback={(type) => submitFeedback("risks[0]", type)}
- *   />
- * </div>
+ * <IntelligenceFeedback
+ *   value={getFeedback("risks[0]")}
+ *   onFeedback={(type) => submitFeedback("risks[0]", type)}
+ * />
  * ```
  */
 export function IntelligenceFeedback({
@@ -32,35 +29,37 @@ export function IntelligenceFeedback({
   const hasVote = value !== null;
 
   return (
-    <span
-      className={`${styles.container}${hasVote ? ` ${styles.visible}` : ""}`}
-    >
-      <button
-        type="button"
-        className={`${styles.button}${value === "positive" ? ` ${styles.positive}` : ""}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onFeedback("positive");
-        }}
-        aria-label="This was helpful"
-        aria-pressed={value === "positive"}
-        title="Helpful"
+    <span className={styles.wrapper}>
+      <span
+        className={`${styles.container}${hasVote ? ` ${styles.visible}` : ""}`}
       >
-        <ThumbsUp size={13} />
-      </button>
-      <button
-        type="button"
-        className={`${styles.button}${value === "negative" ? ` ${styles.negative}` : ""}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onFeedback("negative");
-        }}
-        aria-label="This was not helpful"
-        aria-pressed={value === "negative"}
-        title="Not helpful"
-      >
-        <ThumbsDown size={13} />
-      </button>
+        <button
+          type="button"
+          className={`${styles.button}${value === "positive" ? ` ${styles.positive}` : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFeedback("positive");
+          }}
+          aria-label="This was helpful"
+          aria-pressed={value === "positive"}
+          title="Helpful"
+        >
+          <ThumbsUp size={13} />
+        </button>
+        <button
+          type="button"
+          className={`${styles.button}${value === "negative" ? ` ${styles.negative}` : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFeedback("negative");
+          }}
+          aria-label="This was not helpful"
+          aria-pressed={value === "negative"}
+          title="Not helpful"
+        >
+          <ThumbsDown size={13} />
+        </button>
+      </span>
     </span>
   );
 }
