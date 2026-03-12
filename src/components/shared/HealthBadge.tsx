@@ -80,7 +80,7 @@ export function HealthBadge({
         <div className={styles.heroRow}>
           <span className={`${styles.dot} ${styles.dotHero} ${bandDotClass[band] ?? ""}`} />
           {showScore && (
-            <span className={`${styles.score} ${styles.scoreHero}`}>{score}</span>
+            <span className={`${styles.score} ${styles.scoreHero}`}>{Math.round(score)}</span>
           )}
           <span className={`${styles.trend} ${trendDirectionClass[trend.direction] ?? ""}`}>
             <TrendIcon direction={trend.direction} size={20} />
@@ -117,7 +117,7 @@ export function HealthBadge({
     <span className={styles.badge}>
       <span className={`${styles.dot} ${dotSizeClass} ${bandDotClass[band] ?? ""}`} />
       {showScore && (
-        <span className={`${styles.score} ${scoreSizeClass}`}>{score}</span>
+        <span className={`${styles.score} ${scoreSizeClass}`}>{Math.round(score)}</span>
       )}
       {size === "standard" && (
         <span className={`${styles.trend} ${trendDirectionClass[trend.direction] ?? ""}`}>

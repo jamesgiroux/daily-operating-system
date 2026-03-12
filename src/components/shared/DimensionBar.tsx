@@ -77,7 +77,7 @@ function DimensionRow({ config, dimension }: { config: DimensionConfig; dimensio
           </span>
         </span>
         <span className={styles.dimensionScore}>
-          {dimension.score}
+          {Math.round(dimension.score)}
           <span className={styles.dimensionWeight}> / w{dimension.weight}</span>
         </span>
       </div>
