@@ -12,6 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { AccountListItem } from "@/types";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { CoverSlide } from "@/components/book-of-business/CoverSlide";
@@ -156,6 +158,8 @@ export default function BookOfBusinessPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(userId ?? undefined, "user");
 
   useRevealObserver(!loading && !!content);
 
@@ -556,11 +560,19 @@ export default function BookOfBusinessPage() {
           generating={generating}
           onUpdate={updateContent}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("executive_summary")}
+          onFeedback={(type) => feedback.submitFeedback("executive_summary", type)}
+        />
       </section>
 
       {/* Slide 2: What Needs Attention — risks & opportunities */}
       <div className="editorial-reveal">
         <AttentionSlide content={c} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("attention")}
+          onFeedback={(type) => feedback.submitFeedback("attention", type)}
+        />
       </div>
 
       {/* Slides 3-N: Account Spotlights — one per deep dive */}
@@ -573,6 +585,10 @@ export default function BookOfBusinessPage() {
             content={c}
             onUpdate={updateContent}
           />
+          <IntelligenceFeedback
+            value={feedback.getFeedback(`spotlight_${dive.accountId}`)}
+            onFeedback={(type) => feedback.submitFeedback(`spotlight_${dive.accountId}`, type)}
+          />
         </div>
       ))}
 
@@ -580,6 +596,10 @@ export default function BookOfBusinessPage() {
       {(c.valueDelivered.length > 0 || c.keyThemes.length > 0) && (
         <div className="editorial-reveal">
           <ValueThemesSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("value_themes")}
+            onFeedback={(type) => feedback.submitFeedback("value_themes", type)}
+          />
         </div>
       )}
 
@@ -587,6 +607,10 @@ export default function BookOfBusinessPage() {
       {c.leadershipAsks.length > 0 && (
         <div className="editorial-reveal">
           <AskSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("leadership_asks")}
+            onFeedback={(type) => feedback.submitFeedback("leadership_asks", type)}
+          />
         </div>
       )}
 
