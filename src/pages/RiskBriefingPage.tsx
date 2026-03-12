@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import {
   AlignLeft,
   Crosshair,
@@ -64,13 +65,21 @@ export default function RiskBriefingPage() {
       if (!accountId) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        invoke("save_risk_briefing", { accountId, briefing: updated })
+        invoke("save_report", {
+          entityId: accountId,
+          entityType: "account",
+          reportType: "risk_briefing",
+          contentJson: JSON.stringify(updated),
+        })
           .then(() => {
             setSaveStatus("saved");
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save risk briefing:", e));
+          .catch((e) => {
+            console.error("Failed to save risk briefing:", e);
+            toast.error("Failed to save risk briefing");
+          });
       }, 500);
     },
     [accountId],
