@@ -51,6 +51,68 @@ impl ActionDb {
     // Meetings
     // =========================================================================
 
+    /// Count meetings linked to an account within the last `days` days (I555).
+    pub fn count_account_meetings_in_days(
+        &self,
+        account_id: &str,
+        days: i32,
+    ) -> Result<i64, DbError> {
+        let days_param = format!("-{days}");
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*)
+             FROM meetings m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1
+               AND m.start_time >= datetime('now', ?2 || ' days')",
+            params![account_id, days_param],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Count meetings linked to an account within a period ending `offset_days` ago,
+    /// spanning `days` before that offset (I555). Used for previous-period comparison.
+    pub fn count_account_meetings_in_period(
+        &self,
+        account_id: &str,
+        days: i32,
+        offset_days: i32,
+    ) -> Result<i64, DbError> {
+        let end_param = format!("-{offset_days}");
+        let start_offset = offset_days + days;
+        let start_param = format!("-{start_offset}");
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*)
+             FROM meetings m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1
+               AND m.start_time >= datetime('now', ?2 || ' days')
+               AND m.start_time < datetime('now', ?3 || ' days')",
+            params![account_id, start_param, end_param],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Get the champion's person_id for an account from account_stakeholders (I555).
+    pub fn get_champion_person_id(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<String>, DbError> {
+        let result = self.conn.query_row(
+            "SELECT person_id FROM account_stakeholders
+             WHERE account_id = ?1 AND role = 'champion'
+             LIMIT 1",
+            params![account_id],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
     /// Query recent meetings for an account within `lookback_days`, limited to `limit` results.
     pub fn get_meeting_history(
         &self,
@@ -840,5 +902,252 @@ impl ActionDb {
             map.insert(file, at);
         }
         Ok(map)
+    }
+
+    // ─── I555: Interaction dynamics, champion health, role changes ────────
+
+    /// Store interaction dynamics for a meeting.
+    pub fn upsert_interaction_dynamics(
+        &self,
+        meeting_id: &str,
+        dynamics: &super::types::InteractionDynamics,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO meeting_interaction_dynamics
+             (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct,
+              speaker_sentiments_json, question_density, decision_maker_active,
+              forward_looking, monologue_risk, competitor_mentions_json, escalation_language_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                meeting_id,
+                dynamics.talk_balance_customer_pct,
+                dynamics.talk_balance_internal_pct,
+                serde_json::to_string(&dynamics.speaker_sentiments).ok(),
+                dynamics.question_density,
+                dynamics.decision_maker_active,
+                dynamics.forward_looking,
+                dynamics.monologue_risk as i32,
+                serde_json::to_string(&dynamics.competitor_mentions).ok(),
+                serde_json::to_string(&dynamics.escalation_language).ok(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get interaction dynamics for a meeting.
+    pub fn get_interaction_dynamics(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Option<super::types::InteractionDynamics>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT meeting_id, talk_balance_customer_pct, talk_balance_internal_pct,
+                    speaker_sentiments_json, question_density, decision_maker_active,
+                    forward_looking, monologue_risk, competitor_mentions_json, escalation_language_json
+             FROM meeting_interaction_dynamics WHERE meeting_id = ?1",
+        )?;
+        let result = stmt.query_row(rusqlite::params![meeting_id], |row| {
+            Ok(super::types::InteractionDynamics {
+                meeting_id: row.get(0)?,
+                talk_balance_customer_pct: row.get(1)?,
+                talk_balance_internal_pct: row.get(2)?,
+                speaker_sentiments: row.get::<_, Option<String>>(3)?
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
+                question_density: row.get(4)?,
+                decision_maker_active: row.get(5)?,
+                forward_looking: row.get(6)?,
+                monologue_risk: row.get::<_, Option<i32>>(7)?.unwrap_or(0) != 0,
+                competitor_mentions: row.get::<_, Option<String>>(8)?
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
+                escalation_language: row.get::<_, Option<String>>(9)?
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
+            })
+        });
+        match result {
+            Ok(d) => Ok(Some(d)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
+    /// Store champion health assessment for a meeting.
+    pub fn upsert_champion_health(
+        &self,
+        meeting_id: &str,
+        assessment: &super::types::ChampionHealthAssessment,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO meeting_champion_health
+             (meeting_id, champion_name, champion_status, champion_evidence, champion_risk)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                meeting_id,
+                assessment.champion_name,
+                assessment.champion_status,
+                assessment.champion_evidence,
+                assessment.champion_risk,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get champion health for a meeting.
+    pub fn get_champion_health(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Option<super::types::ChampionHealthAssessment>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT meeting_id, champion_name, champion_status, champion_evidence, champion_risk
+             FROM meeting_champion_health WHERE meeting_id = ?1",
+        )?;
+        let result = stmt.query_row(rusqlite::params![meeting_id], |row| {
+            Ok(super::types::ChampionHealthAssessment {
+                meeting_id: row.get(0)?,
+                champion_name: row.get(1)?,
+                champion_status: row.get(2)?,
+                champion_evidence: row.get(3)?,
+                champion_risk: row.get(4)?,
+            })
+        });
+        match result {
+            Ok(c) => Ok(Some(c)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
+    /// Store role changes detected in a meeting.
+    pub fn insert_role_changes(
+        &self,
+        meeting_id: &str,
+        changes: &[super::types::RoleChange],
+    ) -> Result<(), DbError> {
+        // Clear existing for this meeting first (idempotent re-processing)
+        self.conn.execute(
+            "DELETE FROM meeting_role_changes WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        for change in changes {
+            self.conn.execute(
+                "INSERT INTO meeting_role_changes (id, meeting_id, person_name, old_status, new_status, evidence_quote)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    change.id,
+                    meeting_id,
+                    change.person_name,
+                    change.old_status,
+                    change.new_status,
+                    change.evidence_quote,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Get role changes for a meeting.
+    pub fn get_role_changes(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Vec<super::types::RoleChange>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, person_name, old_status, new_status, evidence_quote
+             FROM meeting_role_changes WHERE meeting_id = ?1 ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![meeting_id], |row| {
+            Ok(super::types::RoleChange {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                person_name: row.get(2)?,
+                old_status: row.get(3)?,
+                new_status: row.get(4)?,
+                evidence_quote: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Get enriched captures for a meeting (with metadata columns).
+    pub fn get_enriched_captures(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Vec<super::types::EnrichedCapture>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, meeting_title, account_id, capture_type,
+                    content, sub_type, urgency, impact, evidence_quote, speaker, captured_at
+             FROM captures WHERE meeting_id = ?1
+             ORDER BY CASE urgency WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'green_watch' THEN 2 ELSE 3 END,
+                      captured_at",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![meeting_id], |row| {
+            Ok(super::types::EnrichedCapture {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                meeting_title: row.get(2)?,
+                account_id: row.get(3)?,
+                capture_type: row.get(4)?,
+                content: row.get(5)?,
+                sub_type: row.get(6)?,
+                urgency: row.get(7)?,
+                impact: row.get(8)?,
+                evidence_quote: row.get(9)?,
+                speaker: row.get(10)?,
+                captured_at: row.get(11)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Get enriched captures for an account within a date range (for reports).
+    pub fn get_account_enriched_captures(
+        &self,
+        account_id: &str,
+        days: i32,
+    ) -> Result<Vec<super::types::EnrichedCapture>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, meeting_title, account_id, capture_type,
+                    content, sub_type, urgency, impact, evidence_quote, speaker, captured_at
+             FROM captures
+             WHERE account_id = ?1
+               AND captured_at >= datetime('now', ?2)
+             ORDER BY CASE urgency WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'green_watch' THEN 2 ELSE 3 END,
+                      captured_at DESC",
+        )?;
+        let days_param = format!("-{days} days");
+        let rows = stmt.query_map(rusqlite::params![account_id, days_param], |row| {
+            Ok(super::types::EnrichedCapture {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                meeting_title: row.get(2)?,
+                account_id: row.get(3)?,
+                capture_type: row.get(4)?,
+                content: row.get(5)?,
+                sub_type: row.get(6)?,
+                urgency: row.get(7)?,
+                impact: row.get(8)?,
+                evidence_quote: row.get(9)?,
+                speaker: row.get(10)?,
+                captured_at: row.get(11)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Get post-meeting intelligence bundle (I558).
+    pub fn get_meeting_post_intelligence(
+        &self,
+        meeting_id: &str,
+    ) -> Result<super::types::MeetingPostIntelligence, DbError> {
+        let dynamics = self.get_interaction_dynamics(meeting_id)?;
+        let champion = self.get_champion_health(meeting_id)?;
+        let role_changes = self.get_role_changes(meeting_id)?;
+        let captures = self.get_enriched_captures(meeting_id)?;
+        Ok(super::types::MeetingPostIntelligence {
+            interaction_dynamics: dynamics,
+            champion_health: champion,
+            role_changes,
+            enriched_captures: captures,
+        })
     }
 }

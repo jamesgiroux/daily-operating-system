@@ -567,6 +567,78 @@ export interface EmailBriefingData {
 }
 
 // =============================================================================
+// Post-Meeting Intelligence (I558)
+// =============================================================================
+
+export interface SpeakerSentiment {
+  name: string;
+  sentiment: string;
+  evidence: string;
+}
+
+export interface CompetitorMention {
+  competitor: string;
+  context: string;
+}
+
+export interface EscalationQuote {
+  quote: string;
+  speaker: string;
+}
+
+export interface InteractionDynamics {
+  meetingId: string;
+  talkBalanceCustomerPct?: number;
+  talkBalanceInternalPct?: number;
+  speakerSentiments: SpeakerSentiment[];
+  questionDensity?: string;
+  decisionMakerActive?: string;
+  forwardLooking?: string;
+  monologueRisk: boolean;
+  competitorMentions: CompetitorMention[];
+  escalationLanguage: EscalationQuote[];
+}
+
+export interface ChampionHealthAssessment {
+  meetingId: string;
+  championName?: string;
+  championStatus: string;
+  championEvidence?: string;
+  championRisk?: string;
+}
+
+export interface RoleChange {
+  id: string;
+  meetingId: string;
+  personName: string;
+  oldStatus?: string;
+  newStatus?: string;
+  evidenceQuote?: string;
+}
+
+export interface EnrichedCapture {
+  id: string;
+  meetingId: string;
+  meetingTitle: string;
+  accountId?: string;
+  captureType: string;
+  content: string;
+  subType?: string;
+  urgency?: string;
+  impact?: string;
+  evidenceQuote?: string;
+  speaker?: string;
+  capturedAt: string;
+}
+
+export interface MeetingPostIntelligence {
+  interactionDynamics?: InteractionDynamics;
+  championHealth?: ChampionHealthAssessment;
+  roleChanges: RoleChange[];
+  enrichedCaptures: EnrichedCapture[];
+}
+
+// =============================================================================
 // Full Meeting Prep (from individual prep files)
 // =============================================================================
 
@@ -713,13 +785,6 @@ export interface TranscriptSentiment {
   championEngaged?: boolean;
 }
 
-/** Per-speaker sentiment from a transcript (I509) */
-export interface SpeakerSentiment {
-  name: string;
-  sentiment: string;
-  evidence?: string;
-}
-
 /** Engagement quality signals from a transcript (I509) */
 export interface EngagementSignals {
   questionDensity?: string;
@@ -728,25 +793,10 @@ export interface EngagementSignals {
   monologueRisk?: boolean;
 }
 
-/** A competitor mentioned during a meeting (I509) */
-export interface CompetitorMention {
-  competitor: string;
-  context: string;
-}
-
 /** An escalation signal detected in meeting language (I509) */
 export interface EscalationSignal {
   quote: string;
   speaker?: string;
-}
-
-/** Interaction dynamics extracted from transcript analysis (I509) */
-export interface InteractionDynamics {
-  talkBalance?: string;
-  speakerSentiment: SpeakerSentiment[];
-  engagementSignals?: EngagementSignals;
-  competitorMentions: CompetitorMention[];
-  escalationSignals: EscalationSignal[];
 }
 
 /** Result of transcript processing */

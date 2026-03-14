@@ -419,6 +419,7 @@ pub fn gather_book_of_business_input(
 
     // Build prompt
     let prompt = build_book_of_business_prompt(
+        db,
         &raw_accounts,
         &snapshot,
         &open_actions,
@@ -461,6 +462,7 @@ pub fn gather_book_of_business_input(
 
 #[allow(clippy::too_many_arguments)]
 fn build_book_of_business_prompt(
+    db: &ActionDb,
     raw_accounts: &[RawAccountRow],
     snapshot: &[AccountSnapshotRow],
     open_actions: &str,
@@ -619,6 +621,55 @@ fn build_book_of_business_prompt(
         prompt.push_str("\n\n");
     }
 
+    // Aggregate captures across all active customer accounts (90d), urgency-sorted
+    let portfolio_captures: String = {
+        let ninety_ago = (Utc::now() - Duration::days(90))
+            .format("%Y-%m-%d")
+            .to_string();
+        db.conn_ref()
+            .prepare(
+                "SELECT c.capture_type, c.content, c.sub_type, c.urgency, c.impact,
+                        c.evidence_quote, a.name as account_name, c.captured_at
+                 FROM captures c
+                 JOIN accounts a ON a.id = c.account_id
+                 WHERE c.captured_at >= ?1
+                   AND a.archived = 0
+                   AND COALESCE(a.account_type, 'customer') = 'customer'
+                 ORDER BY
+                   CASE c.urgency WHEN 'red' THEN 1 WHEN 'yellow' THEN 2 WHEN 'green_watch' THEN 3 ELSE 4 END,
+                   c.captured_at DESC
+                 LIMIT 30",
+            )
+            .and_then(|mut s| {
+                let rows = s.query_map(rusqlite::params![ninety_ago], |row| {
+                    let ctype: String = row.get(0)?;
+                    let content: String = row.get(1)?;
+                    let sub_type: Option<String> = row.get(2)?;
+                    let urgency: Option<String> = row.get(3)?;
+                    let _impact: Option<String> = row.get(4)?;
+                    let quote: Option<String> = row.get(5)?;
+                    let acct_name: String = row.get(6)?;
+                    let captured: String = row.get(7)?;
+                    let date = captured.split('T').next().unwrap_or(&captured).to_string();
+                    let urg = urgency.map(|u| format!("[{}] ", u)).unwrap_or_default();
+                    let sub = sub_type.map(|s| format!("[{}] ", s)).unwrap_or_default();
+                    let q = quote.map(|q| format!(" #\"{}\"", q)).unwrap_or_default();
+                    Ok(format!(
+                        "- [{}] {}{}{}: {} ({}){}",
+                        acct_name, urg, sub, ctype, content, date, q
+                    ))
+                })?;
+                Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+            })
+            .unwrap_or_default()
+    };
+
+    if !portfolio_captures.is_empty() {
+        prompt.push_str("## Portfolio Captures (urgency-sorted, 90d)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&portfolio_captures));
+        prompt.push_str("\n\n");
+    }
+
     // Spotlight accounts (user-selected)
     if let Some(ids) = spotlight_account_ids {
         if !ids.is_empty() {
@@ -728,6 +779,7 @@ fn build_book_of_business_prompt(
          - Do NOT fabricate data. If the data is sparse, say so. Empty arrays are acceptable.\n\
          - Do NOT fabricate specific dates, deadlines, or commitments unless they appear verbatim in the data. If no date is in the data, do not invent one.\n\
          - Do NOT over-dramatize risk. Missing a named contact does not mean the relationship is failing — some accounts are managed passively for monitoring and renewals. Assess risk proportionally to ARR and strategic importance.\n\
+         - CAPTURES: When Portfolio Captures are present, use them to ground topRisks (RED urgency captures), topOpportunities, and valueDelivered. Captures with account attribution provide concrete evidence — cite them.\n\
          - A large parent account with many BUs can be healthy even if only one or two BUs are actively engaged — that is normal portfolio management, not a structural failure.\n\
          - Write for the ear, not the page. Short sentences. Active voice. No jargon.\n",
     );
