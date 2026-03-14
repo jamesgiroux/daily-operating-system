@@ -16,7 +16,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { X, Plus, UserPlus, Search, LinkIcon, Check, Pencil } from "lucide-react";
+import { X, Plus, UserPlus, Search, LinkIcon, Check } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -257,7 +257,7 @@ export function StakeholderGallery({
   const canEdit = !!entityId && !!entityType;
   const canEditTeam = !!onRemoveTeamMember;
 
-  const [teamEditMode, setTeamEditMode] = useState(false);
+  // teamEditMode removed — always inline-editable (no pencil toggle)
   const [teamAddingMember, setTeamAddingMember] = useState(false);
   const [teamNewRole, setTeamNewRole] = useState("associated");
   const [teamNewEmail, setTeamNewEmail] = useState("");
@@ -491,7 +491,7 @@ export function StakeholderGallery({
                       value={s.name}
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].name`, v)}
                       multiline={false}
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}
+                      className={css.editableName}
                     />
                   ) : matched ? (
                     <Link to="/people/$personId" params={{ personId: matched.id }} className={css.nameLink}>
@@ -530,7 +530,7 @@ export function StakeholderGallery({
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].role`, v)}
                       as="p"
                       multiline={false}
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "0 0 8px 0" }}
+                      className={css.editableRole}
                     />
                   ) : (
                     <p className={css.role}>
@@ -545,7 +545,7 @@ export function StakeholderGallery({
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].assessment`, v)}
                       as="p"
                       multiline
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}
+                      className={css.editableAssessment}
                     />
                   ) : (
                     <TruncatedAssessment text={s.assessment} />
@@ -761,62 +761,42 @@ export function StakeholderGallery({
         </div>
       )}
 
-      {/* Your Team — compact clickable chips with inline edit mode */}
+      {/* Your Team — compact clickable chips with inline editing */}
       {(teamMembers.length > 0 || canEditTeam) && (
         <div className={css.teamChipsSection}>
           <div className={css.teamHeader}>
             <span className={css.teamLabel}>Your Team</span>
-            {canEditTeam && (
-              <button
-                onClick={() => {
-                  setTeamEditMode((v) => !v);
-                  setTeamAddingMember(false);
-                }}
-                className={teamEditMode ? css.teamEditToggleActive : css.teamEditToggle}
-                title={teamEditMode ? "Done editing" : "Edit team"}
-              >
-                <Pencil size={12} strokeWidth={1.5} />
-              </button>
-            )}
           </div>
           <div className={css.teamChips}>
-            {teamMembers.map((member) =>
-              teamEditMode ? (
-                <div key={member.personId} className={css.teamChipEditable}>
-                  <span className={css.teamChipName}>{member.personName}</span>
-                  {onChangeTeamRole ? (
-                    <TeamRoleSelector
-                      value={member.role}
-                      onChange={(newRole) => onChangeTeamRole(member.personId, newRole)}
-                    />
-                  ) : member.role ? (
-                    <span className={css.teamChipRole}>{getTeamRoleDisplay(member.role)}</span>
-                  ) : null}
-                  {onRemoveTeamMember && (
-                    <button
-                      onClick={() => onRemoveTeamMember(member.personId, member.role)}
-                      className={css.teamChipRemove}
-                      title="Remove from team"
-                    >
-                      <X size={10} strokeWidth={2} />
-                    </button>
-                  )}
-                </div>
-              ) : (
+            {teamMembers.map((member) => (
+              <div key={member.personId} className={css.teamChipEditable}>
                 <Link
-                  key={member.personId}
                   to="/people/$personId"
                   params={{ personId: member.personId }}
-                  className={css.teamChip}
+                  className={css.teamChipNameLink}
                 >
-                  <span className={css.teamChipName}>{member.personName}</span>
-                  {member.role && (
-                    <span className={css.teamChipRole}>{getTeamRoleDisplay(member.role)}</span>
-                  )}
+                  {member.personName}
                 </Link>
-              ),
-            )}
-            {teamEditMode && !teamAddingMember && (
+                {canEditTeam && onChangeTeamRole ? (
+                  <TeamRoleSelector
+                    value={member.role}
+                    onChange={(newRole) => onChangeTeamRole(member.personId, newRole)}
+                  />
+                ) : member.role ? (
+                  <span className={css.teamChipRole}>{getTeamRoleDisplay(member.role)}</span>
+                ) : null}
+                {canEditTeam && onRemoveTeamMember && (
+                  <button
+                    onClick={() => onRemoveTeamMember(member.personId, member.role)}
+                    className={css.teamChipRemove}
+                    title="Remove from team"
+                  >
+                    <X size={10} strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {canEditTeam && !teamAddingMember && (
               <button
                 onClick={() => setTeamAddingMember(true)}
                 className={css.teamAddTrigger}
@@ -828,7 +808,7 @@ export function StakeholderGallery({
           </div>
 
           {/* Inline add member form */}
-          {teamEditMode && teamAddingMember && (
+          {canEditTeam && teamAddingMember && (
             <TeamAddForm
               teamSearchQuery={teamSearchQuery ?? ""}
               onTeamSearchQueryChange={onTeamSearchQueryChange}

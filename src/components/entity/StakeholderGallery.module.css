@@ -428,6 +428,18 @@
   color: var(--color-text-primary);
 }
 
+.teamChipNameLink {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.teamChipNameLink:hover {
+  color: var(--color-spice-turmeric);
+}
+
 .teamChipRole {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -676,4 +688,29 @@
   line-height: 1.55;
   color: var(--color-text-secondary);
   margin-bottom: 2px;
+}
+
+/* ── Editable text overrides for stakeholder cards ── */
+
+.editableName {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.editableRole {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin: 0 0 8px 0;
+}
+
+.editableAssessment {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
 }
