@@ -353,3 +353,40 @@
   font-size: 14px;
   color: var(--color-text-tertiary);
 }
+
+/* ── Margin Label Layout (I550) ── */
+
+.marginLabelSection {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0 40px;
+  padding-top: 140px;
+  scroll-margin-top: 60px;
+}
+
+.marginLabel {
+  position: sticky;
+  top: 72px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+  padding-top: 6px;
+}
+
+.marginContent {
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .marginLabelSection {
+    grid-template-columns: 1fr;
+  }
+  .marginLabel {
+    position: static;
+    margin-bottom: 8px;
+  }
+}

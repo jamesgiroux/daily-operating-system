@@ -19,6 +19,7 @@ pub mod projects;
 pub mod reports;
 pub mod settings;
 pub mod signals;
+pub mod success_plans;
 pub mod user_entity;
 
 /// Command-facing service boundary for mutation workflows.

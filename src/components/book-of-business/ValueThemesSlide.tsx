@@ -1,9 +1,6 @@
-/**
- * ValueThemesSlide — Value delivered + cross-portfolio themes.
- * Combined into one slide for presentation flow.
- */
 import { EditableText } from "@/components/ui/EditableText";
 import type { BookOfBusinessContent } from "@/types/reports";
+import s from "./BookOfBusinessSlides.module.css";
 
 interface ValueThemesSlideProps {
   content: BookOfBusinessContent;
@@ -11,182 +8,155 @@ interface ValueThemesSlideProps {
 }
 
 export function ValueThemesSlide({ content, onUpdate }: ValueThemesSlideProps) {
+  const addValueItem = () => {
+    const account = content.accountSnapshot.find(
+      (item) => !content.valueDelivered.some((value) => value.accountName === item.accountName),
+    ) ?? content.accountSnapshot[0];
+    if (!account) return;
+    onUpdate({
+      ...content,
+      valueDelivered: [
+        ...content.valueDelivered,
+        {
+          accountName: account.accountName,
+          headlineOutcome: "Add the customer outcome delivered.",
+          whyItMatters: "Add why it mattered to the account or business.",
+          source: null,
+        },
+      ],
+    });
+  };
+
+  const addTheme = () =>
+    onUpdate({
+      ...content,
+      keyThemes: [
+        ...content.keyThemes,
+        {
+          title: "Add a cross-book theme",
+          narrative: "Describe the pattern across the portfolio.",
+          citedAccounts: [],
+        },
+      ],
+    });
+
   return (
-    <section
-      id="value-themes"
-      style={{
-        scrollMarginTop: 60,
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: "120px 120px 80px",
-        scrollSnapAlign: "start",
-      }}
-    >
-      {/* Value Delivered */}
-      {content.valueDelivered.length > 0 && (
-        <>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: "var(--color-spice-turmeric)",
-              marginBottom: 24,
-            }}
-          >
-            Value Delivered
-          </div>
+    <section id="value-themes" className={s.slideTight}>
+      <div className={s.sectionBlock}>
+        <div className={s.sectionHeader}>
+          <div className={s.overline}>Value Delivered</div>
+          <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addValueItem}>
+            Add Outcome
+          </button>
+        </div>
 
-          <div style={{ marginBottom: 48, maxWidth: 800 }}>
-            {content.valueDelivered.map((item, vi) => (
-              <div
-                key={vi}
-                style={{
-                  display: "flex",
-                  gap: 16,
-                  alignItems: "baseline",
-                  padding: "14px 0",
-                  borderBottom: "1px solid var(--color-rule-light)",
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    color: "var(--color-text-tertiary)",
-                    minWidth: 100,
-                    flexShrink: 0,
-                  }}
-                >
-                  {item.accountName}
-                </span>
-                <div style={{ flex: 1 }}>
-                  <EditableText
-                    value={item.headlineOutcome}
-                    onChange={(v) => {
-                      const next = [...content.valueDelivered];
-                      next[vi] = { ...next[vi], headlineOutcome: v };
-                      onUpdate({ ...content, valueDelivered: next });
-                    }}
-                    multiline={false}
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 17,
-                      fontWeight: 500,
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                  <EditableText
-                    as="div"
-                    value={item.whyItMatters}
-                    onChange={(v) => {
-                      const next = [...content.valueDelivered];
-                      next[vi] = { ...next[vi], whyItMatters: v };
-                      onUpdate({ ...content, valueDelivered: next });
-                    }}
-                    multiline={false}
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 14,
-                      color: "var(--color-text-secondary)",
-                      marginTop: 4,
-                    }}
-                  />
+        {content.valueDelivered.length === 0 ? (
+          <div className={s.emptyBlock}>
+            <p className={s.emptyMessage}>No outcomes captured yet.</p>
+          </div>
+        ) : (
+          content.valueDelivered.map((item, index) => (
+            <div key={`${item.accountName}-${index}`} className={s.itemRow}>
+              <div className={s.itemBody}>
+                <div className={s.itemMeta}>
+                  <span>{item.accountName}</span>
+                  {item.source && <span>{item.source}</span>}
                 </div>
+                <EditableText
+                  value={item.headlineOutcome}
+                  onChange={(value) => {
+                    const next = [...content.valueDelivered];
+                    next[index] = { ...next[index], headlineOutcome: value };
+                    onUpdate({ ...content, valueDelivered: next });
+                  }}
+                  multiline={false}
+                  className={`${s.itemText} ${s.itemTextStrong}`}
+                />
+                <EditableText
+                  as="div"
+                  value={item.whyItMatters}
+                  onChange={(value) => {
+                    const next = [...content.valueDelivered];
+                    next[index] = { ...next[index], whyItMatters: value };
+                    onUpdate({ ...content, valueDelivered: next });
+                  }}
+                  multiline={false}
+                  className={`${s.itemText} ${s.itemTextMuted}`}
+                />
               </div>
-            ))}
-          </div>
-        </>
-      )}
+              <div className={s.itemActions}>
+                <button
+                  type="button"
+                  className={`${s.button} ${s.buttonDanger}`}
+                  onClick={() => onUpdate({
+                    ...content,
+                    valueDelivered: content.valueDelivered.filter((_, itemIndex) => itemIndex !== index),
+                  })}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
-      {/* Key Themes */}
-      {content.keyThemes.length > 0 && (
-        <>
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: "var(--color-text-secondary)",
-              marginBottom: 24,
-            }}
-          >
-            Portfolio Themes
-          </div>
+      <div className={s.sectionBlock}>
+        <div className={s.sectionHeader}>
+          <div className={s.overline}>Portfolio Themes</div>
+          <button type="button" className={`${s.button} ${s.buttonPrimary}`} onClick={addTheme}>
+            Add Theme
+          </button>
+        </div>
 
-          <div style={{ maxWidth: 800 }}>
-            {content.keyThemes.map((theme, ti) => (
-              <div
-                key={ti}
-                style={{
-                  marginBottom: 28,
-                  paddingBottom: 28,
-                  borderBottom:
-                    ti < content.keyThemes.length - 1
-                      ? "1px solid var(--color-rule-light)"
-                      : "none",
-                }}
-              >
+        {content.keyThemes.length === 0 ? (
+          <div className={s.emptyBlock}>
+            <p className={s.emptyMessage}>No cross-book themes have been written yet.</p>
+          </div>
+        ) : (
+          content.keyThemes.map((theme, index) => (
+            <div key={`${theme.title}-${index}`} className={s.themeBlock}>
+              <div className={s.sectionHeader}>
                 <EditableText
                   as="h2"
                   value={theme.title}
-                  onChange={(v) => {
+                  onChange={(value) => {
                     const next = [...content.keyThemes];
-                    next[ti] = { ...next[ti], title: v };
+                    next[index] = { ...next[index], title: value };
                     onUpdate({ ...content, keyThemes: next });
                   }}
                   multiline={false}
-                  style={{
-                    fontFamily: "var(--font-serif)",
-                    fontSize: 22,
-                    fontWeight: 400,
-                    color: "var(--color-text-primary)",
-                    margin: "0 0 8px",
-                  }}
+                  className={s.themeTitle}
                 />
-                <EditableText
-                  as="p"
-                  value={theme.narrative}
-                  onChange={(v) => {
-                    const next = [...content.keyThemes];
-                    next[ti] = { ...next[ti], narrative: v };
-                    onUpdate({ ...content, keyThemes: next });
-                  }}
-                  multiline
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 16,
-                    lineHeight: 1.5,
-                    color: "var(--color-text-primary)",
-                    margin: 0,
-                  }}
-                />
-                {theme.citedAccounts.length > 0 && (
-                  <div
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      color: "var(--color-text-tertiary)",
-                      marginTop: 8,
-                    }}
-                  >
-                    {theme.citedAccounts.join(" \u00b7 ")}
-                  </div>
-                )}
+                <button
+                  type="button"
+                  className={`${s.button} ${s.buttonDanger}`}
+                  onClick={() => onUpdate({
+                    ...content,
+                    keyThemes: content.keyThemes.filter((_, itemIndex) => itemIndex !== index),
+                  })}
+                >
+                  Remove
+                </button>
               </div>
-            ))}
-          </div>
-        </>
-      )}
+              <EditableText
+                as="p"
+                value={theme.narrative}
+                onChange={(value) => {
+                  const next = [...content.keyThemes];
+                  next[index] = { ...next[index], narrative: value };
+                  onUpdate({ ...content, keyThemes: next });
+                }}
+                multiline
+                className={s.itemText}
+              />
+              {theme.citedAccounts.length > 0 && (
+                <div className={s.themeCitations}>{theme.citedAccounts.join(" · ")}</div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
     </section>
   );
 }

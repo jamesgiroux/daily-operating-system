@@ -2582,3 +2582,367 @@ pub fn disconnect_glean(
     log::info!("Glean disconnected");
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// I559 — Glean Agent Validation Spike (temporary exploration command)
+// ---------------------------------------------------------------------------
+
+/// Explore what tools the Glean MCP server exposes and test structured output.
+///
+/// This is a temporary dev command for the I559 validation spike.
+/// It calls `tools/list` to discover available tools, then optionally
+/// tests a structured query if an account name is provided.
+///
+/// Returns a JSON report of everything discovered.
+#[tauri::command]
+pub async fn dev_explore_glean_tools(
+    account_name: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    use crate::context_provider::{self, ContextMode};
+    use std::time::Instant;
+
+    let mode = state.with_db_read(|db| Ok(context_provider::read_context_mode(db)))
+        .map_err(|e| format!("DB error: {e}"))?;
+
+    let endpoint = match &mode {
+        ContextMode::Glean { endpoint, .. } => endpoint.clone(),
+        ContextMode::Local => {
+            return Err("Glean not configured. Set context mode to Glean in Settings first.".into());
+        }
+    };
+
+    // Use the same token refresh path as GleanMcpClient — load_token() reads raw
+    // from keychain without refreshing, which may return an expired token.
+    let token = crate::glean::get_valid_access_token()
+        .await
+        .map_err(|e| format!("Glean token error: {e}"))?;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let mut report = serde_json::json!({
+        "endpoint": endpoint,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "sections": {}
+    });
+
+    // -----------------------------------------------------------------------
+    // 1. Tool Discovery — tools/list
+    // -----------------------------------------------------------------------
+    log::info!("[I559] Calling tools/list on {}", endpoint);
+    let list_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+
+    let start = Instant::now();
+    let list_result = client
+        .post(&endpoint)
+        .bearer_auth(&token)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .json(&list_body)
+        .send()
+        .await;
+
+    let list_latency_ms = start.elapsed().as_millis();
+
+    match list_result {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!(null));
+            report["sections"]["tools_list"] = serde_json::json!({
+                "status": status,
+                "latency_ms": list_latency_ms,
+                "response": body,
+            });
+            log::info!("[I559] tools/list returned {} in {}ms", status, list_latency_ms);
+        }
+        Err(e) => {
+            report["sections"]["tools_list"] = serde_json::json!({
+                "error": format!("{e}"),
+                "latency_ms": list_latency_ms,
+            });
+            log::warn!("[I559] tools/list failed: {e}");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Structured JSON output test (if account_name provided)
+    // -----------------------------------------------------------------------
+    if let Some(ref acct) = account_name {
+        // Test: can we get structured JSON back from a search-based query?
+        let structured_query = format!(
+            "Analyze the account health for {}. Return your analysis as a JSON object with these exact fields: \
+            {{ \"score\": <number 0-100>, \"band\": \"green\"|\"yellow\"|\"red\", \
+            \"risks\": [{{ \"text\": \"<risk description>\", \"urgency\": \"critical\"|\"watch\"|\"low\" }}], \
+            \"stakeholders\": [{{ \"name\": \"<person name>\", \"role\": \"<job title>\", \"engagement\": \"high\"|\"medium\"|\"low\" }}], \
+            \"competitive_mentions\": [\"<competitor name>\"], \
+            \"summary\": \"<2-3 sentence executive assessment>\" }}",
+            acct
+        );
+
+        // 2a. Test via search tool (what we already have)
+        log::info!("[I559] Testing structured query via 'search' tool for {}", acct);
+        let search_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "search",
+                "arguments": {
+                    "query": format!("{} account health risks stakeholders", acct),
+                    "maxResults": 5
+                }
+            }
+        });
+
+        let start = Instant::now();
+        let search_result = client
+            .post(&endpoint)
+            .bearer_auth(&token)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&search_body)
+            .send()
+            .await;
+        let search_latency_ms = start.elapsed().as_millis();
+
+        match search_result {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!(null));
+                report["sections"]["search_test"] = serde_json::json!({
+                    "status": status,
+                    "latency_ms": search_latency_ms,
+                    "query": format!("{} account health risks stakeholders", acct),
+                    "response": body,
+                });
+            }
+            Err(e) => {
+                report["sections"]["search_test"] = serde_json::json!({
+                    "error": format!("{e}"),
+                    "latency_ms": search_latency_ms,
+                });
+            }
+        }
+
+        // 2b. Test via any discovered tools that look like they accept natural language
+        // We'll try calling tools named "ask", "chat", "query", or any agent-like tool
+        // if tools/list revealed them
+        let interesting_tools: Vec<String> = report["sections"]["tools_list"]["response"]["result"]["tools"]
+            .as_array()
+            .map(|tools| {
+                tools.iter()
+                    .filter_map(|t| t["name"].as_str())
+                    .filter(|name| {
+                        let n = name.to_lowercase();
+                        n != "search" && n != "read_document"
+                            && (n.contains("ask") || n.contains("chat") || n.contains("query")
+                                || n.contains("agent") || n.contains("answer")
+                                || n.contains("analyze") || n.contains("run"))
+                    })
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if !interesting_tools.is_empty() {
+            for tool_name in interesting_tools.iter().take(3) {
+                log::info!("[I559] Testing discovered tool '{}' with structured query", tool_name);
+
+                let tool_body = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": tool_name,
+                        "arguments": {
+                            "query": structured_query,
+                        }
+                    }
+                });
+
+                let start = Instant::now();
+                let tool_result = client
+                    .post(&endpoint)
+                    .bearer_auth(&token)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json, text/event-stream")
+                    .json(&tool_body)
+                    .send()
+                    .await;
+                let tool_latency_ms = start.elapsed().as_millis();
+
+                let key = format!("tool_test_{}", tool_name);
+                match tool_result {
+                    Ok(resp) => {
+                        let status = resp.status().as_u16();
+                        let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!(null));
+
+                        // Check if the response contains parseable JSON
+                        let has_json = body["result"]["content"]
+                            .as_array()
+                            .and_then(|arr| arr.first())
+                            .and_then(|c| c["text"].as_str())
+                            .map(|text| {
+                                // Try to find JSON in the response text
+                                if let Some(start) = text.find('{') {
+                                    if let Some(end) = text.rfind('}') {
+                                        serde_json::from_str::<serde_json::Value>(&text[start..=end]).is_ok()
+                                    } else { false }
+                                } else { false }
+                            })
+                            .unwrap_or(false);
+
+                        report["sections"][&key] = serde_json::json!({
+                            "tool": tool_name,
+                            "status": status,
+                            "latency_ms": tool_latency_ms,
+                            "contains_parseable_json": has_json,
+                            "response": body,
+                        });
+                    }
+                    Err(e) => {
+                        report["sections"][&key] = serde_json::json!({
+                            "tool": tool_name,
+                            "error": format!("{e}"),
+                            "latency_ms": tool_latency_ms,
+                        });
+                    }
+                }
+            }
+        }
+
+        // 2c. People search test
+        log::info!("[I559] Testing people search for {}", acct);
+        let people_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "search",
+                "arguments": {
+                    "query": format!("people: {}", acct),
+                    "maxResults": 10
+                }
+            }
+        });
+
+        let start = Instant::now();
+        let people_result = client
+            .post(&endpoint)
+            .bearer_auth(&token)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&people_body)
+            .send()
+            .await;
+        let people_latency_ms = start.elapsed().as_millis();
+
+        match people_result {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!(null));
+                report["sections"]["people_search"] = serde_json::json!({
+                    "status": status,
+                    "latency_ms": people_latency_ms,
+                    "query": format!("people: {}", acct),
+                    "response": body,
+                });
+            }
+            Err(e) => {
+                report["sections"]["people_search"] = serde_json::json!({
+                    "error": format!("{e}"),
+                    "latency_ms": people_latency_ms,
+                });
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. REST API auth probe (Agents API compatibility)
+    // -----------------------------------------------------------------------
+    let base_url = endpoint
+        .split("/mcp")
+        .next()
+        .unwrap_or(&endpoint)
+        .to_string();
+
+    let agents_url = format!("{}/rest/api/v1/agents", base_url);
+    log::info!("[I559] Probing Agents REST API at {}", agents_url);
+
+    let start = Instant::now();
+    let agents_result = client
+        .get(&agents_url)
+        .bearer_auth(&token)
+        .header("Accept", "application/json")
+        .send()
+        .await;
+    let agents_latency_ms = start.elapsed().as_millis();
+
+    match agents_result {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!(null));
+            report["sections"]["agents_api_probe"] = serde_json::json!({
+                "url": agents_url,
+                "status": status,
+                "latency_ms": agents_latency_ms,
+                "auth_compatible": status != 401 && status != 403,
+                "response_preview": if let Some(s) = body.as_str() {
+                    serde_json::Value::String(s.chars().take(500).collect())
+                } else {
+                    body
+                },
+            });
+            log::info!("[I559] Agents API returned {} (auth_compatible: {})", status, status != 401 && status != 403);
+        }
+        Err(e) => {
+            report["sections"]["agents_api_probe"] = serde_json::json!({
+                "url": agents_url,
+                "error": format!("{e}"),
+                "latency_ms": agents_latency_ms,
+                "auth_compatible": false,
+            });
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Summary
+    // -----------------------------------------------------------------------
+    let tool_count = report["sections"]["tools_list"]["response"]["result"]["tools"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    let tool_names: Vec<String> = report["sections"]["tools_list"]["response"]["result"]["tools"]
+        .as_array()
+        .map(|tools| {
+            tools.iter().filter_map(|t| t["name"].as_str().map(String::from)).collect()
+        })
+        .unwrap_or_default();
+
+    let agents_auth = report["sections"]["agents_api_probe"]["auth_compatible"]
+        .as_bool()
+        .unwrap_or(false);
+
+    report["summary"] = serde_json::json!({
+        "total_mcp_tools": tool_count,
+        "mcp_tool_names": tool_names,
+        "agents_api_auth_compatible": agents_auth,
+        "account_tested": account_name,
+    });
+
+    log::info!(
+        "[I559] Exploration complete: {} MCP tools found, agents API auth={}, tools={:?}",
+        tool_count, agents_auth, tool_names
+    );
+
+    Ok(report)
+}
