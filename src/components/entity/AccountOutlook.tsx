@@ -84,7 +84,7 @@ export function AccountOutlook({
   onItemFeedback,
 }: AccountOutlookProps) {
   const renewal = intelligence.renewalOutlook ?? null;
-  const signals = intelligence.expansionSignals ?? [];
+  const signals = (intelligence.expansionSignals ?? []).filter((s) => s.opportunity?.trim());
   const contract = intelligence.contractContext ?? null;
 
   const hasRenewal =
