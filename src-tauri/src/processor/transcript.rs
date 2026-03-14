@@ -12,8 +12,9 @@ use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{
-    CalendarEvent, CapturedAction, CompetitorMention, EngagementSignals, EscalationSignal,
-    InteractionDynamics, SpeakerSentiment, TranscriptResult, TranscriptSentiment,
+    CalendarEvent, CapturedAction, ChampionHealth, CompetitorMention, EngagementSignals,
+    EscalationSignal, InteractionDynamics, RoleChange, SpeakerSentiment, TranscriptCommitment,
+    TranscriptResult, TranscriptSentiment,
 };
 use crate::util::{
     encode_high_risk_field, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE,
@@ -311,6 +312,25 @@ pub fn process_transcript_with_kind(
     let sentiment = parse_sentiment_block(&output);
     let interaction_dynamics = parse_interaction_dynamics(&output);
 
+    // 7c. Parse I554 blocks: champion health, role changes, commitments
+    let champion_health = parse_champion_health_block(&output);
+    let role_changes = parse_role_changes_block(&output);
+    let commitments = parse_commitments_block(&output);
+
+    // 7d. Persist I555 enriched data to new tables
+    if let Some(db) = db {
+        persist_enriched_transcript_data(
+            db,
+            &meeting.id,
+            &meeting.title,
+            meeting.account.as_deref(),
+            interaction_dynamics.as_ref(),
+            champion_health.as_ref(),
+            &role_changes,
+            &commitments,
+        );
+    }
+
     // If summary is empty after parsing, include truncated raw output for debugging
     let debug_message = if summary.is_empty() {
         let preview = if output.len() > 200 {
@@ -336,6 +356,9 @@ pub fn process_transcript_with_kind(
         message: debug_message,
         sentiment,
         interaction_dynamics,
+        champion_health,
+        role_changes,
+        commitments,
     }
 }
 
@@ -475,6 +498,185 @@ fn extract_transcript_actions(
     }
 }
 
+/// Persist I555 enriched transcript data (interaction dynamics, champion health,
+/// role changes, commitments) to their respective tables.
+///
+/// Backwards-compatible: silently skips any block that wasn't parsed (None/empty).
+#[allow(clippy::too_many_arguments)]
+fn persist_enriched_transcript_data(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    meeting_title: &str,
+    account_id: Option<&str>,
+    interaction_dynamics: Option<&InteractionDynamics>,
+    champion_health: Option<&ChampionHealth>,
+    role_changes: &[RoleChange],
+    commitments: &[TranscriptCommitment],
+) {
+    // Persist interaction dynamics
+    if let Some(dynamics) = interaction_dynamics {
+        let db_dynamics = convert_dynamics_to_db(meeting_id, dynamics);
+        if let Err(e) = db.upsert_interaction_dynamics(meeting_id, &db_dynamics) {
+            log::warn!("Failed to persist interaction dynamics for {}: {}", meeting_id, e);
+        }
+    }
+
+    // Persist champion health
+    if let Some(health) = champion_health {
+        let db_health = crate::db::types::ChampionHealthAssessment {
+            meeting_id: meeting_id.to_string(),
+            champion_name: Some(health.champion_name.clone()),
+            champion_status: health.champion_status.clone(),
+            champion_evidence: health.champion_evidence.clone(),
+            champion_risk: health.champion_risk.clone(),
+        };
+        if let Err(e) = db.upsert_champion_health(meeting_id, &db_health) {
+            log::warn!("Failed to persist champion health for {}: {}", meeting_id, e);
+        }
+    }
+
+    // Persist role changes
+    if !role_changes.is_empty() {
+        let db_changes: Vec<crate::db::types::RoleChange> = role_changes
+            .iter()
+            .map(|rc| crate::db::types::RoleChange {
+                id: uuid::Uuid::new_v4().to_string(),
+                meeting_id: meeting_id.to_string(),
+                person_name: rc.person_name.clone(),
+                old_status: rc.old_status.clone(),
+                new_status: rc.new_status.clone(),
+                evidence_quote: rc.evidence.clone(),
+            })
+            .collect();
+        if let Err(e) = db.insert_role_changes(meeting_id, &db_changes) {
+            log::warn!("Failed to persist role changes for {}: {}", meeting_id, e);
+        }
+    }
+
+    // Persist commitments as dual-write: captured_commitments + captures table
+    if !commitments.is_empty() {
+        for commitment in commitments {
+            // Write to captured_commitments (structured, for objective suggestion pipeline)
+            if let Some(acct_id) = account_id {
+                let commit_id = uuid::Uuid::new_v4().to_string();
+                let now = chrono::Utc::now().to_rfc3339();
+                let source_label = format!("transcript:{}", meeting_title);
+                let owned_by = commitment.owned_by.as_deref().unwrap_or("joint");
+                if let Err(e) = db.conn_ref().execute(
+                    "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'medium', ?7, 0, ?8)",
+                    rusqlite::params![
+                        commit_id,
+                        acct_id,
+                        meeting_id,
+                        commitment.commitment,
+                        owned_by,
+                        commitment.target_date,
+                        source_label,
+                        now,
+                    ],
+                ) {
+                    log::warn!("Failed to insert captured_commitment: {}", e);
+                }
+            }
+
+            // Also write to captures table with capture_type='commitment' for automatic
+            // flow into intel context and meeting prep via existing queries
+            if let Err(e) = db.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                "commitment",
+                &commitment.commitment,
+                None,
+                None,
+                commitment.success_criteria.as_deref(),
+            ) {
+                log::warn!("Failed to insert commitment capture: {}", e);
+            }
+        }
+    }
+}
+
+/// Convert the parsed `InteractionDynamics` (types.rs) to the DB version (db/types.rs).
+fn convert_dynamics_to_db(
+    meeting_id: &str,
+    dynamics: &InteractionDynamics,
+) -> crate::db::types::InteractionDynamics {
+    // Parse talk_balance string like "60/40" into customer/internal percentages
+    let (customer_pct, internal_pct) = dynamics
+        .talk_balance
+        .as_deref()
+        .and_then(|tb| {
+            let parts: Vec<&str> = tb.split('/').collect();
+            if parts.len() == 2 {
+                let c = parts[0].trim().parse::<i32>().ok()?;
+                let i = parts[1].trim().parse::<i32>().ok()?;
+                Some((Some(c), Some(i)))
+            } else {
+                None
+            }
+        })
+        .unwrap_or((None, None));
+
+    // Convert speaker sentiments
+    let speaker_sentiments: Vec<crate::db::types::SpeakerSentiment> = dynamics
+        .speaker_sentiment
+        .iter()
+        .map(|ss| crate::db::types::SpeakerSentiment {
+            name: ss.name.clone(),
+            sentiment: ss.sentiment.clone(),
+            evidence: ss.evidence.clone().unwrap_or_default(),
+        })
+        .collect();
+
+    // Convert competitor mentions (same type name, different module)
+    let competitor_mentions: Vec<crate::db::types::CompetitorMention> = dynamics
+        .competitor_mentions
+        .iter()
+        .map(|cm| crate::db::types::CompetitorMention {
+            competitor: cm.competitor.clone(),
+            context: cm.context.clone(),
+        })
+        .collect();
+
+    // Convert escalation signals to escalation quotes
+    let escalation_language: Vec<crate::db::types::EscalationQuote> = dynamics
+        .escalation_signals
+        .iter()
+        .map(|es| crate::db::types::EscalationQuote {
+            quote: es.quote.clone(),
+            speaker: es.speaker.clone().unwrap_or_default(),
+        })
+        .collect();
+
+    // Extract engagement signals
+    let (question_density, decision_maker_active, forward_looking, monologue_risk) =
+        if let Some(ref eng) = dynamics.engagement_signals {
+            (
+                eng.question_density.clone(),
+                eng.decision_maker_active.clone(),
+                eng.forward_looking.clone(),
+                eng.monologue_risk.unwrap_or(false),
+            )
+        } else {
+            (None, None, None, false)
+        };
+
+    crate::db::types::InteractionDynamics {
+        meeting_id: meeting_id.to_string(),
+        talk_balance_customer_pct: customer_pct,
+        talk_balance_internal_pct: internal_pct,
+        speaker_sentiments,
+        question_density,
+        decision_maker_active,
+        forward_looking,
+        monologue_risk,
+        competitor_mentions,
+        escalation_language,
+    }
+}
+
 /// Truncate transcript content with a tail-biased strategy.
 ///
 /// For very long transcripts (>60K chars), keeps the first 3K chars (attendee
@@ -563,14 +765,56 @@ ACTIONS:
 - <concise action title> P1/P2/P3 @Account due: YYYY-MM-DD #"context sentence"
 END_ACTIONS
 WINS:
-- <customer win, positive outcome, expansion signal>
+Extract only verifiable positive outcomes — not vague sentiment. Each win MUST include
+a specific, observable event. "Customer seems happy" is NOT a win.
+
+Sub-types (tag each):
+- ADOPTION: milestone crossed, feature activated, user activation target met, integration completed
+- EXPANSION: interest in additional scope, new department/team, usage ceiling hit, cross-functional mention
+- VALUE_REALIZED: customer articulates ROI in their own words, KPI improvement attributed to product, results shared with leadership
+- RELATIONSHIP: executive sponsor actively engaged, new champion identified, reference/case study agreement, advisory board join
+- COMMERCIAL: renewal confirmed (especially early), upsell/cross-sell, multi-year commitment, budget increase
+- ADVOCACY: public endorsement, referral, conference speaking, internal win-sharing to leadership
+
+Format: - [SUB_TYPE] <specific win with evidence> #"verbatim quote if available"
 END_WINS
 RISKS:
-- <churn signal, concern, blocker>
+Categorize each risk by urgency. Be specific — name the person, the competitor, the timeline.
+
+RED (critical — requires immediate action):
+- Champion departure or executive sponsor disengagement
+- Active competitor evaluation or piloting
+- Severe usage collapse (<50% utilization mentioned)
+- Active escalation (unresolved critical issue)
+- Budget elimination or review
+- Explicit renewal doubt
+
+YELLOW (moderate — needs a recovery plan):
+- Usage decline mentioned but not severe
+- Champion role change (internal move)
+- Delayed implementation or milestone pushback
+- Organizational restructuring affecting ownership
+- Repeated feature complaints without resolution
+- Reduced meeting attendance by key stakeholders
+
+GREEN_WATCH (early warning — monitor):
+- Vague dissatisfaction without specific cause
+- New leadership reviewing vendor relationships
+- Industry/company headwinds (layoffs, funding concerns)
+- Reduced energy or engagement without stated reason
+
+Format: - [RED|YELLOW|GREEN_WATCH] <specific risk with named people/timelines> #"verbatim quote"
 END_RISKS
 DECISIONS:
-- <explicit decision made, who decided, any conditions>
+- [CUSTOMER_COMMITMENT|INTERNAL_DECISION|JOINT_AGREEMENT] <decision> @owner #"verbatim quote"
 END_DECISIONS
+COMMITMENTS:
+Mutual agreements, stated goals, success criteria, or outcome targets discussed.
+Focus on strategic commitments (not individual action items).
+Examples: "Achieve 50% adoption across 3 teams by Q3", "Deliver ROI report before
+renewal", "Resolve integration blockers before go-live".
+- <commitment> by: YYYY-MM-DD owned_by: us|them|joint #"success criteria"
+END_COMMITMENTS
 
 Rules for actions:
 - TITLE MUST be concise and imperative: verb + object, max 10 words. Not a sentence, not a description — a task.
@@ -586,17 +830,44 @@ Rules for actions:
 - If no metadata can be inferred, just write the action text plainly
 - Example: Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2 budget lock"
 
-Rules for wins/risks:
-- Wins: successful launches, expanded usage, positive feedback, renewals, upsells
-- Risks: churn signals, budget cuts, champion leaving, low adoption, complaints
-- Keep each item to one concise sentence
+Rules for wins:
+- Evidence threshold: only extract if specific evidence exists
+- Tag each win with its sub-type ([ADOPTION], [EXPANSION], [VALUE_REALIZED], [RELATIONSHIP], [COMMERCIAL], [ADVOCACY])
+- Include verbatim quotes via #"..." suffix when available
+- If none are apparent, leave the section empty (just the markers)
+
+Rules for risks:
+- Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
+- Name the specific person, competitor, or timeline
+- Include verbatim quotes via #"..." suffix when available
 - If none are apparent, leave the section empty (just the markers)
 
 Rules for decisions:
-- Capture explicit decisions ("we decided to...", "agreed that...", "going with...")
-- Include the decision owner or group if identifiable
+- Tag each with [CUSTOMER_COMMITMENT], [INTERNAL_DECISION], or [JOINT_AGREEMENT]
+- Include the decision owner via @owner
 - Note any conditions or caveats attached to the decision
 - If no decisions were made, leave the section empty
+
+Rules for commitments:
+- Focus on strategic commitments, not individual action items (those go in ACTIONS)
+- Include target date (by: YYYY-MM-DD) and ownership (owned_by: us|them|joint) when available
+- Include success criteria in quotes when discussed
+- If no commitments were made, leave the section empty (just the markers)
+
+CHAMPION_HEALTH:
+- champion_name: <name or "unidentified">
+- champion_status: strong|weak|lost|none
+  strong = has power/influence + personally invested + actively advocates internally
+  weak = present and helpful but lacks influence, personal stake unclear, or not advocating
+  lost = champion departed, moved roles, or disengaged
+  none = no identifiable champion in the meeting
+- champion_evidence: <specific behavioral evidence from the call>
+- champion_risk: <if weak/lost, what is the risk and recommended action>
+END_CHAMPION_HEALTH
+
+ROLE_CHANGES:
+- <person name>: <old role/status> -> <new role/status> #"evidence quote"
+END_ROLE_CHANGES
 
 SENTIMENT:
 - overall: positive|neutral|negative|mixed
@@ -606,6 +877,11 @@ SENTIMENT:
 - competitor_mentions: comma-separated list or "none"
 - champion_present: yes|no|unknown
 - champion_engaged: yes|no|n/a
+- ownership_language: customer|vendor|mixed (does the customer say "our tool" or "your product"?)
+- past_tense_references: yes|no (does the customer refer to using the product in past tense?)
+- data_export_interest: yes|no (did the customer ask about data export, portability, or switching?)
+- internal_advocacy_visible: yes|no (did the customer mention sharing results internally?)
+- roadmap_interest: yes|no (did the customer ask about future features or roadmap?)
 END_SENTIMENT
 
 INTERACTION_DYNAMICS:
@@ -627,12 +903,30 @@ ESCALATION_LANGUAGE:
 END_ESCALATION_LANGUAGE
 END_INTERACTION_DYNAMICS
 
+Rules for champion health:
+- Focus on the PRIMARY champion/advocate at the customer org
+- "strong" requires evidence of all three: influence, investment, and advocacy
+- "weak" means helpful but missing one or more of the three pillars
+- "lost" means champion has departed, moved roles, or visibly disengaged
+- If no champion is identifiable from this interaction, use "none"
+- champion_risk is only needed for weak/lost status
+
+Rules for role changes:
+- Only include if a role change, departure, hire, or promotion is explicitly mentioned
+- Include the person's name, their previous and new status, and evidence
+- If no role changes were mentioned, leave the section empty (just the markers)
+
 Rules for sentiment:
 - Overall sentiment reflects the general tone of the entire meeting
 - Customer sentiment focuses specifically on the customer's tone and language
 - Engagement measures how actively participants contributed
 - Champion = internal advocate for your product/service at the customer org
 - If you cannot determine champion presence, use "unknown"
+- ownership_language: "customer" if they say "our tool/system", "vendor" if "your product/service", "mixed" if both
+- past_tense_references: "yes" if customer talks about using the product in past tense (churn signal)
+- data_export_interest: "yes" if customer asks about data portability or export capabilities
+- internal_advocacy_visible: "yes" if customer mentions sharing results or promoting product internally
+- roadmap_interest: "yes" if customer asks about future features or product direction
 
 Rules for interaction dynamics:
 - Talk balance approximates speaking time split between customer and internal team
@@ -736,6 +1030,11 @@ pub fn parse_sentiment_block(response: &str) -> Option<TranscriptSentiment> {
     let mut competitor_mentions = Vec::new();
     let mut champion_present = None;
     let mut champion_engaged = None;
+    let mut ownership_language = None;
+    let mut past_tense_references = None;
+    let mut data_export_interest = None;
+    let mut internal_advocacy_visible = None;
+    let mut roadmap_interest = None;
 
     for line in block.lines() {
         let trimmed = line.trim();
@@ -787,6 +1086,25 @@ pub fn parse_sentiment_block(response: &str) -> Option<TranscriptSentiment> {
                     "no" => champion_engaged = Some(false),
                     _ => {} // "n/a" or invalid → None
                 },
+                // I554: Expanded sentiment markers
+                "ownership_language" => {
+                    let v = value.to_lowercase();
+                    if ["customer", "vendor", "mixed"].contains(&v.as_str()) {
+                        ownership_language = Some(v);
+                    }
+                }
+                "past_tense_references" => {
+                    past_tense_references = Some(value.to_lowercase().trim() == "yes");
+                }
+                "data_export_interest" => {
+                    data_export_interest = Some(value.to_lowercase().trim() == "yes");
+                }
+                "internal_advocacy_visible" => {
+                    internal_advocacy_visible = Some(value.to_lowercase().trim() == "yes");
+                }
+                "roadmap_interest" => {
+                    roadmap_interest = Some(value.to_lowercase().trim() == "yes");
+                }
                 _ => {}
             }
         }
@@ -800,6 +1118,11 @@ pub fn parse_sentiment_block(response: &str) -> Option<TranscriptSentiment> {
         competitor_mentions,
         champion_present,
         champion_engaged,
+        ownership_language,
+        past_tense_references,
+        data_export_interest,
+        internal_advocacy_visible,
+        roadmap_interest,
     })
 }
 
@@ -961,6 +1284,231 @@ pub fn parse_interaction_dynamics(response: &str) -> Option<InteractionDynamics>
     })
 }
 
+// =============================================================================
+// I554 — Champion Health, Role Changes, Commitments Parsing
+// =============================================================================
+
+/// Parse the CHAMPION_HEALTH block from AI transcript response.
+///
+/// Returns `None` if the block is missing entirely.
+pub fn parse_champion_health_block(response: &str) -> Option<ChampionHealth> {
+    let block = extract_block(response, "CHAMPION_HEALTH:", "END_CHAMPION_HEALTH")?;
+
+    let mut champion_name = None;
+    let mut champion_status = None;
+    let mut champion_evidence = None;
+    let mut champion_risk = None;
+
+    for line in block.lines() {
+        let trimmed = line.trim();
+        let kv = if let Some(rest) = trimmed.strip_prefix("- ") {
+            rest.trim()
+        } else {
+            trimmed
+        };
+
+        if let Some((key, value)) = kv.split_once(':') {
+            let key = key.trim().to_lowercase();
+            let value = value.trim();
+            if value.is_empty() {
+                continue;
+            }
+
+            match key.as_str() {
+                "champion_name" => {
+                    champion_name = Some(value.to_string());
+                }
+                "champion_status" => {
+                    let v = value.to_lowercase();
+                    if ["strong", "weak", "lost", "none"].contains(&v.as_str()) {
+                        champion_status = Some(v);
+                    }
+                }
+                "champion_evidence" => {
+                    champion_evidence = Some(value.to_string());
+                }
+                "champion_risk" => {
+                    champion_risk = Some(value.to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Require at least name and status to produce a valid result
+    let name = champion_name.unwrap_or_else(|| "unidentified".to_string());
+    let status = champion_status?;
+
+    Some(ChampionHealth {
+        champion_name: name,
+        champion_status: status,
+        champion_evidence,
+        champion_risk,
+    })
+}
+
+/// Parse the ROLE_CHANGES block from AI transcript response.
+///
+/// Returns an empty vec if the block is missing or contains no entries.
+pub fn parse_role_changes_block(response: &str) -> Vec<RoleChange> {
+    let block = match extract_block(response, "ROLE_CHANGES:", "END_ROLE_CHANGES") {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+
+    block
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let entry = trimmed.strip_prefix("- ")?;
+            if entry.trim().is_empty() {
+                return None;
+            }
+
+            // Format: <person name>: <old role/status> -> <new role/status> #"evidence"
+            let (main_part, evidence) = extract_verbatim_quote(entry);
+
+            if let Some((person, role_change)) = main_part.split_once(':') {
+                let person_name = person.trim().to_string();
+                if person_name.is_empty() {
+                    return None;
+                }
+                let role_change = role_change.trim();
+                let (old_status, new_status) =
+                    if let Some((old, new)) = role_change.split_once("->") {
+                        (
+                            Some(old.trim().to_string()),
+                            Some(new.trim().to_string()),
+                        )
+                    } else if let Some((old, new)) = role_change.split_once("→") {
+                        (
+                            Some(old.trim().to_string()),
+                            Some(new.trim().to_string()),
+                        )
+                    } else {
+                        (None, Some(role_change.to_string()))
+                    };
+
+                Some(RoleChange {
+                    person_name,
+                    old_status,
+                    new_status,
+                    evidence: evidence.map(|s| s.to_string()),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Parse the COMMITMENTS block from AI transcript response.
+///
+/// Returns an empty vec if the block is missing or contains no entries.
+pub fn parse_commitments_block(response: &str) -> Vec<TranscriptCommitment> {
+    let block = match extract_block(response, "COMMITMENTS:", "END_COMMITMENTS") {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+
+    block
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let entry = trimmed.strip_prefix("- ")?;
+            if entry.trim().is_empty() {
+                return None;
+            }
+
+            // Extract optional fields: by: YYYY-MM-DD, owned_by: us|them|joint, #"criteria"
+            let (main_part, success_criteria) = extract_verbatim_quote(entry);
+
+            let target_date = extract_inline_field(main_part, "by:");
+            let owned_by = extract_inline_field(main_part, "owned_by:");
+
+            // The commitment text is everything before the first metadata field.
+            // Check owned_by: first (longer prefix) to avoid "by:" matching inside "owned_by:".
+            let commitment = main_part
+                .split("owned_by:")
+                .next()
+                .unwrap_or(main_part)
+                .split(" by:")
+                .next()
+                .unwrap_or(main_part)
+                .trim()
+                .to_string();
+
+            if commitment.is_empty() {
+                return None;
+            }
+
+            Some(TranscriptCommitment {
+                commitment,
+                target_date,
+                owned_by,
+                success_criteria: success_criteria.map(|s| s.to_string()),
+            })
+        })
+        .collect()
+}
+
+/// Extract a verbatim quote from a line (text after `#"..."` suffix).
+///
+/// Returns `(main_text, Some(quote))` or `(original, None)`.
+fn extract_verbatim_quote(text: &str) -> (&str, Option<&str>) {
+    if let Some(hash_idx) = text.rfind("#\"") {
+        let quote_start = hash_idx + 2;
+        let main = text[..hash_idx].trim();
+        // Find the closing quote
+        if let Some(end_idx) = text[quote_start..].find('"') {
+            let quote = &text[quote_start..quote_start + end_idx];
+            (main, Some(quote))
+        } else {
+            // No closing quote — treat everything after #" as the quote
+            let quote = &text[quote_start..];
+            (main, Some(quote.trim_end_matches('"')))
+        }
+    } else {
+        (text, None)
+    }
+}
+
+/// Extract an inline field value like `by: 2026-06-01` or `owned_by: us` from text.
+///
+/// For short prefixes like "by:", only matches when preceded by a space or at the start
+/// of the text, to avoid matching inside longer field names like "owned_by:".
+fn extract_inline_field(text: &str, field_prefix: &str) -> Option<String> {
+    // For short prefixes, require a space before or start-of-string
+    let idx = if field_prefix.len() <= 3 {
+        // Look for ` by:` (space-prefixed) to avoid matching inside `owned_by:`
+        let space_prefix = format!(" {}", field_prefix);
+        text.find(&space_prefix).map(|i| i + 1) // skip the space to get to "by:"
+            .or_else(|| {
+                // Also match at start of text
+                if text.starts_with(field_prefix) {
+                    Some(0)
+                } else {
+                    None
+                }
+            })
+    } else {
+        text.find(field_prefix)
+    };
+
+    let idx = idx?;
+    let after = &text[idx + field_prefix.len()..];
+    let value = after
+        .split_whitespace()
+        .next()?
+        .trim()
+        .to_string();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 /// Title-case and hyphenate account name for directory routing.
 fn sanitize_account_dir(name: &str) -> String {
     name.split_whitespace()
@@ -990,6 +1538,9 @@ impl Default for TranscriptResult {
             message: None,
             sentiment: None,
             interaction_dynamics: None,
+            champion_health: None,
+            role_changes: Vec::new(),
+            commitments: Vec::new(),
         }
     }
 }
@@ -1034,6 +1585,28 @@ mod tests {
         assert!(prompt.contains("END_SENTIMENT"));
         assert!(prompt.contains("INTERACTION_DYNAMICS:"));
         assert!(prompt.contains("END_INTERACTION_DYNAMICS"));
+        // I554 — new extraction sections
+        assert!(prompt.contains("CHAMPION_HEALTH:"));
+        assert!(prompt.contains("END_CHAMPION_HEALTH"));
+        assert!(prompt.contains("ROLE_CHANGES:"));
+        assert!(prompt.contains("END_ROLE_CHANGES"));
+        assert!(prompt.contains("COMMITMENTS:"));
+        assert!(prompt.contains("END_COMMITMENTS"));
+        // I554 — win sub-types
+        assert!(prompt.contains("ADOPTION:"));
+        assert!(prompt.contains("EXPANSION:"));
+        assert!(prompt.contains("VALUE_REALIZED:"));
+        assert!(prompt.contains("[SUB_TYPE]"));
+        // I554 — risk urgency tiers
+        assert!(prompt.contains("RED (critical"));
+        assert!(prompt.contains("YELLOW (moderate"));
+        assert!(prompt.contains("GREEN_WATCH (early"));
+        // I554 — expanded sentiment markers
+        assert!(prompt.contains("ownership_language:"));
+        assert!(prompt.contains("past_tense_references:"));
+        assert!(prompt.contains("data_export_interest:"));
+        assert!(prompt.contains("internal_advocacy_visible:"));
+        assert!(prompt.contains("roadmap_interest:"));
         // Verify focus on substance over chitchat
         assert!(prompt.contains("Skip social chitchat"));
         // Verify concise title instructions
@@ -1372,5 +1945,250 @@ END_DECISIONS";
             "Expand pilot to EMEA starting Q2 — agreed by VP Sales"
         );
         assert_eq!(parsed.decisions[1], "Defer mobile launch to Q3");
+    }
+
+    // =========================================================================
+    // I554 — Champion Health, Role Changes, Commitments, Expanded Sentiment
+    // =========================================================================
+
+    #[test]
+    fn test_parse_champion_health_block_valid() {
+        let input = "\
+CHAMPION_HEALTH:
+- champion_name: Sarah Chen
+- champion_status: strong
+- champion_evidence: Led the roadmap discussion, asked detailed questions about integration
+- champion_risk:
+END_CHAMPION_HEALTH";
+
+        let result = parse_champion_health_block(input).expect("should parse");
+        assert_eq!(result.champion_name, "Sarah Chen");
+        assert_eq!(result.champion_status, "strong");
+        assert!(result.champion_evidence.is_some());
+        assert!(result.champion_risk.is_none()); // empty value should be None
+    }
+
+    #[test]
+    fn test_parse_champion_health_block_weak() {
+        let input = "\
+CHAMPION_HEALTH:
+- champion_name: Bob Vance
+- champion_status: weak
+- champion_evidence: Present but mostly silent, deferred to manager
+- champion_risk: Single-threaded relationship, need to identify executive sponsor
+END_CHAMPION_HEALTH";
+
+        let result = parse_champion_health_block(input).expect("should parse");
+        assert_eq!(result.champion_status, "weak");
+        assert!(result.champion_risk.is_some());
+    }
+
+    #[test]
+    fn test_parse_champion_health_block_none() {
+        let input = "\
+CHAMPION_HEALTH:
+- champion_name: unidentified
+- champion_status: none
+- champion_evidence: No clear advocate in this meeting
+END_CHAMPION_HEALTH";
+
+        let result = parse_champion_health_block(input).expect("should parse");
+        assert_eq!(result.champion_name, "unidentified");
+        assert_eq!(result.champion_status, "none");
+    }
+
+    #[test]
+    fn test_parse_champion_health_block_missing() {
+        let input = "SUMMARY: No champion block\nACTIONS:\nEND_ACTIONS";
+        assert!(parse_champion_health_block(input).is_none());
+    }
+
+    #[test]
+    fn test_parse_role_changes_block_valid() {
+        let input = "\
+ROLE_CHANGES:
+- Sarah Chen: VP Engineering -> CTO #\"promoted last month\"
+- Mike Ross: Account Manager -> Departed #\"leaving end of March\"
+END_ROLE_CHANGES";
+
+        let result = parse_role_changes_block(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].person_name, "Sarah Chen");
+        assert_eq!(result[0].old_status.as_deref(), Some("VP Engineering"));
+        assert_eq!(result[0].new_status.as_deref(), Some("CTO"));
+        assert_eq!(result[0].evidence.as_deref(), Some("promoted last month"));
+        assert_eq!(result[1].person_name, "Mike Ross");
+    }
+
+    #[test]
+    fn test_parse_role_changes_block_empty() {
+        let input = "\
+ROLE_CHANGES:
+END_ROLE_CHANGES";
+
+        let result = parse_role_changes_block(input);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_role_changes_block_missing() {
+        let input = "SUMMARY: No role changes\nACTIONS:\nEND_ACTIONS";
+        let result = parse_role_changes_block(input);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_commitments_block_valid() {
+        let input = "\
+COMMITMENTS:
+- Achieve 50% adoption across 3 teams by: 2026-06-01 owned_by: joint #\"primary success criterion\"
+- Deliver ROI report before renewal owned_by: us
+END_COMMITMENTS";
+
+        let result = parse_commitments_block(input);
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result[0].commitment,
+            "Achieve 50% adoption across 3 teams"
+        );
+        assert_eq!(result[0].target_date.as_deref(), Some("2026-06-01"));
+        assert_eq!(result[0].owned_by.as_deref(), Some("joint"));
+        assert_eq!(
+            result[0].success_criteria.as_deref(),
+            Some("primary success criterion")
+        );
+        assert_eq!(
+            result[1].commitment,
+            "Deliver ROI report before renewal"
+        );
+        assert_eq!(result[1].owned_by.as_deref(), Some("us"));
+        assert!(result[1].target_date.is_none());
+    }
+
+    #[test]
+    fn test_parse_commitments_block_missing() {
+        let input = "SUMMARY: No commitments\nACTIONS:\nEND_ACTIONS";
+        let result = parse_commitments_block(input);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_sentiment_expanded_markers() {
+        let input = "\
+SENTIMENT:
+- overall: positive
+- customer: positive
+- engagement: high
+- forward_looking: yes
+- competitor_mentions: none
+- champion_present: yes
+- champion_engaged: yes
+- ownership_language: customer
+- past_tense_references: no
+- data_export_interest: no
+- internal_advocacy_visible: yes
+- roadmap_interest: yes
+END_SENTIMENT";
+
+        let result = parse_sentiment_block(input).expect("should parse");
+        assert_eq!(result.ownership_language.as_deref(), Some("customer"));
+        assert_eq!(result.past_tense_references, Some(false));
+        assert_eq!(result.data_export_interest, Some(false));
+        assert_eq!(result.internal_advocacy_visible, Some(true));
+        assert_eq!(result.roadmap_interest, Some(true));
+    }
+
+    #[test]
+    fn test_parse_sentiment_churn_signals() {
+        let input = "\
+SENTIMENT:
+- overall: negative
+- ownership_language: vendor
+- past_tense_references: yes
+- data_export_interest: yes
+- internal_advocacy_visible: no
+- roadmap_interest: no
+END_SENTIMENT";
+
+        let result = parse_sentiment_block(input).expect("should parse");
+        assert_eq!(result.ownership_language.as_deref(), Some("vendor"));
+        assert_eq!(result.past_tense_references, Some(true));
+        assert_eq!(result.data_export_interest, Some(true));
+        assert_eq!(result.internal_advocacy_visible, Some(false));
+        assert_eq!(result.roadmap_interest, Some(false));
+    }
+
+    #[test]
+    fn test_parse_sentiment_backwards_compat_no_new_fields() {
+        // Old-format sentiment without I554 fields should still parse
+        let input = "\
+SENTIMENT:
+- overall: positive
+- customer: neutral
+- engagement: moderate
+- forward_looking: yes
+- competitor_mentions: none
+- champion_present: yes
+- champion_engaged: yes
+END_SENTIMENT";
+
+        let result = parse_sentiment_block(input).expect("should parse");
+        assert_eq!(result.overall.as_deref(), Some("positive"));
+        // New fields should be None when not present
+        assert!(result.ownership_language.is_none());
+        assert!(result.past_tense_references.is_none());
+        assert!(result.data_export_interest.is_none());
+        assert!(result.internal_advocacy_visible.is_none());
+        assert!(result.roadmap_interest.is_none());
+    }
+
+    #[test]
+    fn test_extract_verbatim_quote() {
+        let (main, quote) = extract_verbatim_quote(
+            "[ADOPTION] Deployed to 3 teams #\"we rolled it out to engineering, sales, and support\""
+        );
+        assert_eq!(main, "[ADOPTION] Deployed to 3 teams");
+        assert_eq!(
+            quote,
+            Some("we rolled it out to engineering, sales, and support")
+        );
+
+        // No quote
+        let (main, quote) = extract_verbatim_quote("[RED] Champion departing");
+        assert_eq!(main, "[RED] Champion departing");
+        assert!(quote.is_none());
+    }
+
+    #[test]
+    fn test_parse_wins_with_subtypes() {
+        // Verify parser handles [SUB_TYPE] tagged wins from the new format
+        let output = "\
+FILE_TYPE: meeting_notes
+ACCOUNT: Acme
+MEETING: NONE
+SUMMARY: Update
+ACTIONS:
+END_ACTIONS
+WINS:
+- [ADOPTION] Deployed to 3 new teams in Q1 #\"rolled out across engineering\"
+- [VALUE_REALIZED] Reduced reporting time by 65%, saving $30K/month
+END_WINS
+RISKS:
+- [RED] Champion Sarah leaving end of March #\"she mentioned her last day\"
+- [YELLOW] Usage declining in APAC team
+- [GREEN_WATCH] New VP reviewing vendor stack
+END_RISKS
+DECISIONS:
+END_DECISIONS";
+
+        let parsed = parse_enrichment_response(output);
+        assert_eq!(parsed.wins.len(), 2);
+        // Sub-type tags are stored as-is in the text (I555 will parse metadata)
+        assert!(parsed.wins[0].starts_with("[ADOPTION]"));
+        assert!(parsed.wins[1].starts_with("[VALUE_REALIZED]"));
+        assert_eq!(parsed.risks.len(), 3);
+        assert!(parsed.risks[0].starts_with("[RED]"));
+        assert!(parsed.risks[1].starts_with("[YELLOW]"));
+        assert!(parsed.risks[2].starts_with("[GREEN_WATCH]"));
     }
 }

@@ -1,0 +1,249 @@
+/* =============================================================================
+   ACCOUNT OUTLOOK — Renewal, Expansion, Contract styles
+   ============================================================================= */
+
+.section {
+  scroll-margin-top: 60px;
+}
+
+/* ── Subsection headings ── */
+
+.subsection {
+  margin-bottom: var(--space-2xl);
+}
+
+.subsection:last-child {
+  margin-bottom: 0;
+}
+
+.subsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin: 0 0 16px;
+}
+
+/* ── Renewal Outlook — summary card ── */
+
+.renewalCard {
+  padding: 20px 24px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.renewalHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.renewalConfidenceLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.renewalSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.renewalFieldLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.renewalText {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.renewalDate {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+}
+
+.riskFactorList {
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: disc;
+}
+
+.riskFactorItem {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+}
+
+/* ── Expansion Signals — list ── */
+
+.signalList {
+  display: flex;
+  flex-direction: column;
+}
+
+.signalItem {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.signalItem:last-child {
+  border-bottom: none;
+}
+
+.signalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signalText {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+  flex: 1;
+}
+
+.arrImpact {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-spice-turmeric);
+  letter-spacing: 0.02em;
+  margin-top: 4px;
+}
+
+/* ── Contract Context — compact vitals ── */
+
+.contractGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.contractField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contractFieldLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.contractFieldValue {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+}
+
+/* ── Badges ── */
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.badgeSage {
+  background: var(--color-garden-sage-12, rgba(136, 159, 120, 0.12));
+  color: var(--color-garden-sage);
+}
+
+.badgeTurmeric {
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.badgeTerracotta {
+  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.12));
+  color: var(--color-spice-terracotta);
+}
+
+.badgeLarkspur {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
+}
+
+.badgeNeutral {
+  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
+  color: var(--color-text-tertiary);
+}
+
+/* ── Hover-reveal item actions (I550) ── */
+
+.riskFactorContent {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.riskFactorItem:hover .itemActions,
+.signalItem:hover .itemActions,
+.itemActions:focus-within {
+  opacity: 1;
+}
+
+.dismissButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.dismissButton:hover {
+  color: var(--color-spice-terracotta);
+}

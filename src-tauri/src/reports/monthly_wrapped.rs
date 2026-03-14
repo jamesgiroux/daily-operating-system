@@ -380,6 +380,140 @@ fn build_monthly_wrapped_prompt(
         prompt.push_str("\n\n");
     }
 
+    // Meeting summaries for the month (from transcripts)
+    let month_summaries: String = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.title, m.start_time, mt.summary
+             FROM meetings m
+             JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2
+               AND mt.summary IS NOT NULL AND mt.summary != ''
+             ORDER BY m.start_time
+             LIMIT 50",
+        )
+        .and_then(|mut s| {
+            let rows = s.query_map(rusqlite::params![month_start_str, month_end_str], |row| {
+                let title: String = row.get(0)?;
+                let time: String = row.get(1)?;
+                let summary: String = row.get(2)?;
+                let date = time.split('T').next().unwrap_or(&time).to_string();
+                Ok(format!("- {} | {} | {}", date, title, summary))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+        })
+        .unwrap_or_default();
+
+    if !month_summaries.is_empty() {
+        prompt.push_str("### Meeting Summaries (from transcripts)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&month_summaries));
+        prompt.push_str("\n\n");
+    }
+
+    // Captures for the month (wins, risks, decisions)
+    let month_captures: String = db
+        .conn_ref()
+        .prepare(
+            "SELECT capture_type, content, sub_type, urgency, impact,
+                    evidence_quote, meeting_title, captured_at
+             FROM captures
+             WHERE captured_at >= ?1 AND captured_at <= ?2
+             ORDER BY CASE urgency WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'green_watch' THEN 2 ELSE 3 END,
+                      captured_at
+             LIMIT 50",
+        )
+        .and_then(|mut s| {
+            let rows = s.query_map(rusqlite::params![month_start_str, month_end_str], |row| {
+                let ctype: String = row.get(0)?;
+                let content: String = row.get(1)?;
+                let sub_type: Option<String> = row.get(2)?;
+                let urgency: Option<String> = row.get(3)?;
+                let _impact: Option<String> = row.get(4)?;
+                let quote: Option<String> = row.get(5)?;
+                let mtitle: Option<String> = row.get(6)?;
+                let captured: String = row.get(7)?;
+                let date = captured.split('T').next().unwrap_or(&captured).to_string();
+                let sub = sub_type.map(|s| format!("[{}] ", s)).unwrap_or_default();
+                let urg = urgency.map(|u| format!("[{}] ", u)).unwrap_or_default();
+                let src = mtitle.map(|t| format!(" — from {}", t)).unwrap_or_default();
+                let q = quote.map(|q| format!(" #\"{}\"", q)).unwrap_or_default();
+                Ok(format!("- {}: {}{}{}{} ({}){}",
+                    ctype.to_uppercase(), urg, sub, content, src, date, q
+                ))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+        })
+        .unwrap_or_default();
+
+    if !month_captures.is_empty() {
+        prompt.push_str("### Outcomes Captured (wins, risks, decisions)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&month_captures));
+        prompt.push_str("\n\n");
+    }
+
+    // Champion health assessments from the month
+    let champion_health: String = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.title, mch.champion_name, mch.champion_status, mch.champion_evidence
+             FROM meeting_champion_health mch
+             JOIN meetings m ON m.id = mch.meeting_id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2
+             ORDER BY m.start_time
+             LIMIT 30",
+        )
+        .and_then(|mut s| {
+            let rows = s.query_map(rusqlite::params![month_start_str, month_end_str], |row| {
+                let title: String = row.get(0)?;
+                let name: String = row.get(1)?;
+                let status: String = row.get(2)?;
+                let evidence: Option<String> = row.get(3)?;
+                let ev = evidence.map(|e| format!(" — {}", e)).unwrap_or_default();
+                Ok(format!("- {} | {} | status: {}{}", title, name, status, ev))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+        })
+        .unwrap_or_default();
+
+    if !champion_health.is_empty() {
+        prompt.push_str("### Champion Health Trends\n");
+        prompt.push_str(&crate::util::wrap_user_data(&champion_health));
+        prompt.push_str("\n\n");
+    }
+
+    // Interaction dynamics trends (engagement quality)
+    let dynamics: String = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.title, mid.talk_balance_customer_pct,
+                    mid.question_density, mid.decision_maker_active
+             FROM meeting_interaction_dynamics mid
+             JOIN meetings m ON m.id = mid.meeting_id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2
+             ORDER BY m.start_time
+             LIMIT 30",
+        )
+        .and_then(|mut s| {
+            let rows = s.query_map(rusqlite::params![month_start_str, month_end_str], |row| {
+                let title: String = row.get(0)?;
+                let talk_pct: Option<f64> = row.get(1)?;
+                let q_density: Option<f64> = row.get(2)?;
+                let dm_active: Option<bool> = row.get(3)?;
+                let talk = talk_pct.map(|p| format!(" | customer talk: {:.0}%", p)).unwrap_or_default();
+                let qd = q_density.map(|d| format!(" | question density: {:.1}", d)).unwrap_or_default();
+                let dm = dm_active.map(|a| format!(" | decision-maker active: {}", a)).unwrap_or_default();
+                Ok(format!("- {}{}{}{}", title, talk, qd, dm))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+        })
+        .unwrap_or_default();
+
+    if !dynamics.is_empty() {
+        prompt.push_str("### Engagement Dynamics\n");
+        prompt.push_str(&crate::util::wrap_user_data(&dynamics));
+        prompt.push_str("\n\n");
+    }
+
     prompt.push_str("## Output Format\n\n");
     prompt.push_str(
         "Respond with ONLY valid JSON (no markdown fences) matching this schema exactly:\n\n",
@@ -429,12 +563,12 @@ fn build_monthly_wrapped_prompt(
     prompt.push_str(&format!(
         "- totalConversations, totalEntitiesTouched, totalPeopleMet, signalsCaptured: use the EXACT numbers from the data above. Do not change them.\n\
          - topEntityName / topEntityTouches: use the values from the data above.\n\
-         - moments: 2-3 SPECIFIC moments. Not 'a productive month' — 'First meeting with [actual name] on [actual date].' Use real names and dates from the meeting list.\n\
-         - hiddenPattern: Something genuinely interesting the user might not have noticed. Be specific.\n\
+         - moments: 2-3 SPECIFIC moments. Not 'a productive month' — 'First meeting with [actual name] on [actual date].' Use real names and dates from the meeting list. Cite actual meeting outcomes from Meeting Summaries and Outcomes Captured when available.\n\
+         - hiddenPattern: Something genuinely interesting the user might not have noticed. Use engagement dynamics and champion health trends when available. Be specific.\n\
          - personality: Assign the type that BEST fits the data. description and keySignal must reference this user's actual month, not be generic. rarityLabel should feel real ('Only 14% this month') — pick a % that makes the type feel earned.\n\
          - priorityAlignmentPct: if priorities are set, estimate what % of {entity_noun} touches were on priority entities. null if no priorities.\n\
          - priorityAlignmentLabel: 'On track' if >60%, 'Worth a look' if 40-60%, 'Your call' if <40%, null if no priorities.\n\
-         - topWin: One achievement. Celebrate it with specificity.\n\
+         - topWin: One achievement. Reference the strongest captured win from the Outcomes Captured section if available. Celebrate it with specificity.\n\
          - carryForward: One thing, forward-framed. Never guilt-inducing.\n\
          - wordOne/wordTwo/wordThree: Specific and evocative. Not 'busy' or 'productive'. Try: momentum, foundation, expansion, steady, breakthrough, reconnection.\n\
          - Do NOT mention AI, enrichment, signals, or internal app mechanics in any output text. Use human language.\n"

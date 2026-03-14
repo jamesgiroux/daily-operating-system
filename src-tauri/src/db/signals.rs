@@ -222,6 +222,29 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Insert an enriched capture with metadata columns (I555).
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_capture_enriched(
+        &self,
+        meeting_id: &str,
+        meeting_title: &str,
+        account_id: Option<&str>,
+        capture_type: &str,
+        content: &str,
+        sub_type: Option<&str>,
+        urgency: Option<&str>,
+        evidence_quote: Option<&str>,
+    ) -> Result<(), DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, captured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, now],
+        )?;
+        Ok(())
+    }
+
     /// Query recent captures (wins/risks) for an account within `days_back` days.
     ///
     /// Used by meeting:prep (ADR-0030 / I33) to surface recent wins and risks
