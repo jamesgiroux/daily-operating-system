@@ -6,13 +6,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "sonner";
 import { FileText, AlertTriangle, Search, Layers, MessageSquare, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AccountListItem } from "@/types";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { useActivePreset } from "@/hooks/useActivePreset";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
@@ -20,12 +18,9 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { CoverSlide } from "@/components/book-of-business/CoverSlide";
 import { AttentionSlide } from "@/components/book-of-business/AttentionSlide";
-import { SnapshotSlide } from "@/components/book-of-business/SnapshotSlide";
 import { SpotlightSlide } from "@/components/book-of-business/SpotlightSlide";
 import { ValueThemesSlide } from "@/components/book-of-business/ValueThemesSlide";
 import { AskSlide } from "@/components/book-of-business/AskSlide";
-import { AppendixSlide } from "@/components/book-of-business/AppendixSlide";
-import { getPortfolioReportLabel } from "@/lib/report-config";
 import type {
   ReportRow,
   BookOfBusinessContent,
@@ -38,7 +33,6 @@ import type {
   LeadershipAsk,
 } from "@/types/reports";
 import slides from "./report-slides.module.css";
-import bob from "@/components/book-of-business/BookOfBusinessSlides.module.css";
 
 // =============================================================================
 // Normalization — guards against cached reports with old schema
@@ -92,8 +86,6 @@ const EDITORIAL_QUOTES = [
 
 export default function BookOfBusinessPage() {
   const navigate = useNavigate();
-  const preset = useActivePreset();
-  const reportLabel = getPortfolioReportLabel(preset?.id);
 
   const [userId, setUserId] = useState<string | null>(null);
   const [report, setReport] = useState<ReportRow | null>(null);
@@ -102,7 +94,7 @@ export default function BookOfBusinessPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [genSeconds, setGenSeconds] = useState(0);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [selectedSpotlights, setSelectedSpotlights] = useState<Set<string>>(new Set());
 
@@ -143,7 +135,6 @@ export default function BookOfBusinessPage() {
   const debouncedSave = useCallback((updated: BookOfBusinessContent) => {
     if (!userId) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    setSaveStatus("saving");
     saveTimerRef.current = setTimeout(() => {
       invoke("save_report", {
         entityId: userId,
@@ -156,11 +147,7 @@ export default function BookOfBusinessPage() {
           if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
           fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
         })
-        .catch((e) => {
-          console.error("Failed to save book of business report:", e);
-          setSaveStatus("idle");
-          toast.error("Failed to save portfolio review");
-        });
+        .catch((e) => console.error("Failed to save book of business report:", e));
     }, 500);
   }, [userId]);
 
@@ -176,18 +163,17 @@ export default function BookOfBusinessPage() {
 
   useRevealObserver(!loading && !!content);
 
-  const appendixCount = useMemo(() => {
-    if (!content) return 0;
-    const spotlightIds = new Set(content.deepDives.map((dive) => dive.accountId));
-    return content.accountSnapshot.filter((row) => !spotlightIds.has(row.accountId)).length;
-  }, [content]);
-
   // Build dynamic slide/chapter list based on content
   const slideIds = useMemo(() => {
     if (!content) return [];
-    const ids: string[] = ["cover", "attention", "snapshot"];
+    const ids: string[] = ["cover", "attention"];
     content.deepDives.forEach((_, i) => ids.push(`spotlight-${i + 1}`));
-    ids.push("value-themes", "the-ask", "appendix");
+    if (content.valueDelivered.length > 0 || content.keyThemes.length > 0) {
+      ids.push("value-themes");
+    }
+    if (content.leadershipAsks.length > 0) {
+      ids.push("the-ask");
+    }
     return ids;
   }, [content]);
 
@@ -196,7 +182,6 @@ export default function BookOfBusinessPage() {
     const ch: { id: string; label: string; icon: React.ReactNode }[] = [
       { id: "cover", label: "Cover", icon: <FileText size={18} strokeWidth={1.5} /> },
       { id: "attention", label: "Attention", icon: <AlertTriangle size={18} strokeWidth={1.5} /> },
-      { id: "snapshot", label: "Snapshot", icon: <Layers size={18} strokeWidth={1.5} /> },
     ];
     content.deepDives.forEach((dive, i) => {
       ch.push({
@@ -205,11 +190,14 @@ export default function BookOfBusinessPage() {
         icon: <Search size={18} strokeWidth={1.5} />,
       });
     });
-    ch.push({ id: "value-themes", label: "Value & Themes", icon: <Layers size={18} strokeWidth={1.5} /> });
-    ch.push({ id: "the-ask", label: "Leadership", icon: <MessageSquare size={18} strokeWidth={1.5} /> });
-    ch.push({ id: "appendix", label: appendixCount > 0 ? `Appendix (${appendixCount})` : "Appendix", icon: <FileText size={18} strokeWidth={1.5} /> });
+    if (content.valueDelivered.length > 0 || content.keyThemes.length > 0) {
+      ch.push({ id: "value-themes", label: "Value & Themes", icon: <Layers size={18} strokeWidth={1.5} /> });
+    }
+    if (content.leadershipAsks.length > 0) {
+      ch.push({ id: "the-ask", label: "The Ask", icon: <MessageSquare size={18} strokeWidth={1.5} /> });
+    }
     return ch;
-  }, [appendixCount, content]);
+  }, [content]);
 
   // Load cached report once userId is available
   useEffect(() => {
@@ -287,33 +275,10 @@ export default function BookOfBusinessPage() {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [content]);
 
-  const handleAddDeepDive = useCallback(() => {
-    if (!content) return;
-    const spotlightIds = new Set(content.deepDives.map((dive) => dive.accountId));
-    const nextAccount = content.accountSnapshot.find((account) => !spotlightIds.has(account.accountId));
-    if (!nextAccount) return;
-    updateContent({
-      ...content,
-      deepDives: [
-        ...content.deepDives,
-        {
-          accountId: nextAccount.accountId,
-          accountName: nextAccount.accountName,
-          arr: nextAccount.arr,
-          renewalDate: nextAccount.renewalDate,
-          statusNarrative: "Add the current account narrative.",
-          renewalOrGrowthImpact: "Add the revenue impact for this account.",
-          activeWorkstreams: [],
-          risksAndGaps: [],
-        },
-      ],
-    });
-  }, [content, updateContent]);
-
   // Register magazine shell
   const shellConfig = useMemo(
     () => ({
-      folioLabel: reportLabel,
+      folioLabel: "Book of Business",
       atmosphereColor: "turmeric" as const,
       activePage: "me" as const,
       backLink: {
@@ -324,28 +289,19 @@ export default function BookOfBusinessPage() {
             : navigate({ to: "/me" }),
       },
       chapters,
-      folioStatusText:
-        saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: content ? (
-        <div className={bob.sectionActions}>
-          <button
-            onClick={handleAddDeepDive}
-            disabled={generating || content.accountSnapshot.length <= content.deepDives.length}
-            className={`${bob.button} ${bob.buttonPrimary} ${generating || content.accountSnapshot.length <= content.deepDives.length ? bob.buttonDisabled : ""}`}
-          >
-            Add Spotlight
-          </button>
-          <button
-            onClick={handleRegenerate}
-            disabled={generating}
-            className={`${bob.button} ${bob.buttonPrimary} ${generating ? bob.buttonDisabled : ""}`}
-          >
-            {generating ? "Generating..." : "Regenerate"}
-          </button>
-        </div>
+        <button
+          onClick={handleRegenerate}
+          disabled={generating}
+          className={`${slides.folioAction} ${generating ? slides.folioActionDisabled : ""}`}
+          style={{ "--report-accent": "var(--color-spice-turmeric)" } as React.CSSProperties}
+        >
+          {generating ? "Generating..." : "Regenerate"}
+        </button>
       ) : undefined,
     }),
-    [navigate, reportLabel, content, chapters, saveStatus, handleRegenerate, handleAddDeepDive, generating],
+    [navigate, content, chapters, saveStatus, handleRegenerate, generating],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -405,6 +361,12 @@ export default function BookOfBusinessPage() {
 
   // ── Empty state with spotlight picker ─────────────────────────────────
   if (!content && !generating) {
+    const healthDotColor: Record<string, string> = {
+      green: "var(--color-garden-sage)",
+      yellow: "var(--color-spice-saffron)",
+      red: "var(--color-spice-terracotta)",
+    };
+
     // Group accounts: parents first (with children indented), then standalone
     const parentAccounts = accounts.filter((a) => a.isParent);
     const childrenOf = new Map<string, AccountListItem[]>();
@@ -419,48 +381,102 @@ export default function BookOfBusinessPage() {
 
     const renderAccountRow = (acct: AccountListItem, indent = false) => {
       const selected = selectedSpotlights.has(acct.id);
-      const healthClass =
-        acct.health === "green"
-          ? bob.pickerHealthGreen
-          : acct.health === "yellow"
-            ? bob.pickerHealthYellow
-            : acct.health === "red"
-              ? bob.pickerHealthRed
-              : bob.pickerHealthNeutral;
       return (
         <button
           key={acct.id}
           onClick={() => toggleSpotlight(acct.id)}
-          className={[
-            bob.pickerRow,
-            selected ? bob.pickerRowSelected : "",
-            indent ? bob.pickerRowIndented : "",
-          ]
-            .filter(Boolean)
-            .join(" ")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            width: "100%",
+            padding: "10px 12px",
+            paddingLeft: indent ? 36 : 12,
+            background: selected ? "var(--color-cream-hover)" : "transparent",
+            border: "none",
+            borderBottom: "1px solid var(--color-rule-light)",
+            cursor: "pointer",
+            textAlign: "left",
+            transition: "background 0.1s",
+          }}
         >
-          <span className={`${bob.pickerCheck} ${selected ? bob.pickerCheckSelected : ""}`}>
+          <span
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              border: selected
+                ? "2px solid var(--color-spice-turmeric)"
+                : "2px solid var(--color-rule-light)",
+              background: selected ? "var(--color-spice-turmeric)" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              transition: "all 0.1s",
+            }}
+          >
             {selected && <Check size={12} strokeWidth={3} color="white" />}
           </span>
           {acct.health && (
-            <span className={`${bob.pickerHealth} ${healthClass}`} />
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: healthDotColor[acct.health] ?? "var(--color-text-tertiary)",
+                flexShrink: 0,
+              }}
+            />
           )}
-          <span className={bob.pickerName}>{acct.name}</span>
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              color: "var(--color-text-primary)",
+              flex: 1,
+            }}
+          >
+            {acct.name}
+          </span>
           {acct.arr != null && acct.arr > 0 && (
-            <span className={bob.pickerMeta}>${(acct.arr / 1000).toFixed(0)}k</span>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              ${(acct.arr / 1000).toFixed(0)}k
+            </span>
           )}
           {acct.renewalDate && (
-            <span className={bob.pickerMeta}>{acct.renewalDate}</span>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                color: "var(--color-text-tertiary)",
+                textTransform: "uppercase",
+              }}
+            >
+              {acct.renewalDate}
+            </span>
           )}
         </button>
       );
     };
 
     return (
-      <div className={slides.emptyState}>
-        <div className={bob.overline}>{reportLabel}</div>
+      <div
+        className={slides.emptyState}
+        style={{
+          "--report-accent": "var(--color-spice-turmeric)",
+          alignItems: accounts.length > 0 ? "center" : "center",
+        } as React.CSSProperties}
+      >
+        <div className={slides.emptyOverline}>Book of Business</div>
         <h2 className={slides.emptyTitle}>
-          {report ? "Select accounts to spotlight" : `No ${reportLabel.toLowerCase()} yet`}
+          {report ? "Select accounts to spotlight" : "No portfolio review yet"}
         </h2>
         <p className={slides.emptyDescription}>
           {accounts.length > 0
@@ -469,7 +485,17 @@ export default function BookOfBusinessPage() {
         </p>
 
         {accounts.length > 0 && (
-          <div className={bob.emptyState}>
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              maxHeight: 400,
+              overflowY: "auto",
+              border: "1px solid var(--color-rule-light)",
+              borderRadius: 8,
+              marginBottom: 24,
+            }}
+          >
             {parentAccounts.map((parent) => (
               <div key={parent.id}>
                 {renderAccountRow(parent)}
@@ -483,8 +509,16 @@ export default function BookOfBusinessPage() {
         )}
 
         {selectedSpotlights.size > 0 && (
-          <p className={bob.pickerSelection}>
-            {selectedSpotlights.size} account{selectedSpotlights.size !== 1 ? "s" : ""} selected for spotlight
+          <p
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              marginBottom: 16,
+            }}
+          >
+            {selectedSpotlights.size} account{selectedSpotlights.size !== 1 ? "s" : ""} selected for
+            spotlight
           </p>
         )}
 
@@ -500,7 +534,7 @@ export default function BookOfBusinessPage() {
   if (generating) {
     return (
       <GeneratingProgress
-        title={`Building ${reportLabel}`}
+        title="Building Portfolio Review"
         accentColor="var(--color-spice-turmeric)"
         phases={ANALYSIS_PHASES}
         currentPhaseKey={
@@ -521,7 +555,6 @@ export default function BookOfBusinessPage() {
       <section id="cover" className={slides.slideSection}>
         <CoverSlide
           content={c}
-          reportLabel={reportLabel}
           isStale={report?.isStale}
           onRegenerate={handleRegenerate}
           generating={generating}
@@ -539,14 +572,6 @@ export default function BookOfBusinessPage() {
         <IntelligenceFeedback
           value={feedback.getFeedback("attention")}
           onFeedback={(type) => feedback.submitFeedback("attention", type)}
-        />
-      </div>
-
-      <div className="editorial-reveal">
-        <SnapshotSlide
-          content={c}
-          onAddSpotlight={handleAddDeepDive}
-          canAddSpotlight={c.accountSnapshot.length > c.deepDives.length}
         />
       </div>
 
@@ -568,26 +593,26 @@ export default function BookOfBusinessPage() {
       ))}
 
       {/* Value Delivered + Themes */}
-      <div className="editorial-reveal">
-        <ValueThemesSlide content={c} onUpdate={updateContent} />
-        <IntelligenceFeedback
-          value={feedback.getFeedback("value_themes")}
-          onFeedback={(type) => feedback.submitFeedback("value_themes", type)}
-        />
-      </div>
+      {(c.valueDelivered.length > 0 || c.keyThemes.length > 0) && (
+        <div className="editorial-reveal">
+          <ValueThemesSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("value_themes")}
+            onFeedback={(type) => feedback.submitFeedback("value_themes", type)}
+          />
+        </div>
+      )}
 
       {/* The Ask — leadership asks (conditional) */}
-      <div className="editorial-reveal">
-        <AskSlide content={c} onUpdate={updateContent} />
-        <IntelligenceFeedback
-          value={feedback.getFeedback("leadership_asks")}
-          onFeedback={(type) => feedback.submitFeedback("leadership_asks", type)}
-        />
-      </div>
-
-      <div className="editorial-reveal">
-        <AppendixSlide content={c} />
-      </div>
+      {c.leadershipAsks.length > 0 && (
+        <div className="editorial-reveal">
+          <AskSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("leadership_asks")}
+            onFeedback={(type) => feedback.submitFeedback("leadership_asks", type)}
+          />
+        </div>
+      )}
 
       {/* Finis marker */}
       <div className="editorial-reveal">
