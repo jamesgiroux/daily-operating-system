@@ -23,6 +23,7 @@ pub mod pipeline;
 pub mod projects;
 pub mod search;
 pub mod signals;
+pub mod success_plans;
 pub mod types;
 
 pub use core::*;

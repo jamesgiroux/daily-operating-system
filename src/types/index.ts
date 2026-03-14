@@ -1212,6 +1212,7 @@ export interface AccountDetail extends AccountListItem {
   /** I114: Parent-child hierarchy */
   children: AccountChildSummary[];
   parentAggregate?: ParentAggregate;
+  objectives: AccountObjective[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
 }
@@ -1853,12 +1854,19 @@ export type AccountEventType =
   | "expansion"
   | "churn"
   | "downsell"
+  | "downgrade"
   | "escalation"
+  | "escalation_resolved"
   | "champion_change"
+  | "executive_sponsor_change"
+  | "contract_signed"
+  | "pilot_start"
+  | "kickoff"
   | "go_live"
   | "qbr_completed"
   | "ebr_completed"
-  | "onboarding_complete";
+  | "onboarding_complete"
+  | "health_review";
 
 export interface AccountEvent {
   id: number;
@@ -1868,6 +1876,70 @@ export interface AccountEvent {
   arrImpact?: number;
   notes?: string;
   createdAt: string;
+}
+
+export interface AccountMilestone {
+  id: string;
+  objectiveId: string;
+  accountId: string;
+  title: string;
+  status: "pending" | "completed" | "skipped";
+  targetDate?: string | null;
+  completedAt?: string | null;
+  autoDetectSignal?: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountObjective {
+  id: string;
+  accountId: string;
+  title: string;
+  description?: string | null;
+  status: "draft" | "active" | "completed" | "abandoned";
+  targetDate?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  source: "user" | "ai_suggested" | "template";
+  sortOrder: number;
+  milestones: AccountMilestone[];
+  linkedActions: Action[];
+  linkedActionCount: number;
+  completedMilestoneCount: number;
+  totalMilestoneCount: number;
+}
+
+export interface SuggestedMilestone {
+  title: string;
+  targetDate?: string | null;
+  autoDetectEvent?: string | null;
+}
+
+export interface SuggestedObjective {
+  title: string;
+  description?: string | null;
+  confidence: "high" | "medium" | "low" | string;
+  sourceEvidence?: string | null;
+  milestones: SuggestedMilestone[];
+  sourceCommitmentIds: string[];
+}
+
+export interface SuccessPlanTemplate {
+  id: string;
+  name: string;
+  description: string;
+  lifecycleTrigger: string;
+  objectives: {
+    title: string;
+    description: string;
+    milestones: {
+      title: string;
+      offsetDays: number;
+      autoDetectSignal?: string | null;
+    }[];
+  }[];
 }
 
 // =============================================================================

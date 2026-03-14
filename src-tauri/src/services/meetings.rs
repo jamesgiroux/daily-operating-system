@@ -1780,7 +1780,7 @@ pub fn update_meeting_user_notes(
 /// - `"attendeeContext[2].assessment"` (nested array + key)
 pub fn update_meeting_prep_field(
     db: &ActionDb,
-    _state: &AppState,
+    state: &AppState,
     meeting_id: &str,
     field_path: &str,
     value: &str,
@@ -1819,7 +1819,7 @@ pub fn update_meeting_prep_field(
         let (signal_type, source, confidence) = if is_curation {
             ("intelligence_curated", "user_curation", 0.5)
         } else {
-            ("user_correction", "user_correction", 1.0)
+            ("user_correction", "user_edit", 1.0)
         };
 
         // Emit signal for each linked entity
@@ -1830,8 +1830,9 @@ pub fn update_meeting_prep_field(
                 crate::entity::EntityType::Person => "person",
                 _ => continue,
             };
-            crate::services::signals::emit(
+            crate::services::signals::emit_and_propagate(
                 tx,
+                &state.signals.engine,
                 entity_type_str,
                 &entity.id,
                 signal_type,
@@ -1844,8 +1845,9 @@ pub fn update_meeting_prep_field(
 
         // Attendee assessment edits: also target the specific person entity
         if let Some(person_id) = target_person_id {
-            crate::services::signals::emit(
+            crate::services::signals::emit_and_propagate(
                 tx,
+                &state.signals.engine,
                 "person",
                 person_id,
                 signal_type,
