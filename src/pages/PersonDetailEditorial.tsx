@@ -328,13 +328,16 @@ export default function PersonDetailEditorial() {
 
       {/* Chapter 5: The Record */}
       <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
-        <AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />
-        <UnifiedTimeline data={{
-          recentMeetings: detail.recentMeetings ?? [],
-          recentCaptures: detail.recentCaptures,
-          recentEmailSignals: detail.recentEmailSignals,
-          contextEntries: entityCtx.entries,
-        }} sectionId="" />
+        <UnifiedTimeline
+          data={{
+            recentMeetings: detail.recentMeetings ?? [],
+            recentCaptures: detail.recentCaptures,
+            recentEmailSignals: detail.recentEmailSignals,
+            contextEntries: entityCtx.entries,
+          }}
+          sectionId=""
+          actionSlot={<AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />}
+        />
       </div>
 
       {/* Chapter 6: The Work (suppressed when empty per I351) */}

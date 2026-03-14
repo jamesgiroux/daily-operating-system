@@ -9,16 +9,11 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
-  opacity: 0;
-  transition: opacity var(--transition-normal);
   vertical-align: middle;
-  margin-left: var(--space-sm);
 }
 
-/* Show when wrapper is hovered, when a vote is active, or on focus */
-.visible,
-.wrapper:hover .container,
-.container:focus-within {
+/* When a vote is active, keep visible even outside hover */
+.visible {
   opacity: 1;
 }
 

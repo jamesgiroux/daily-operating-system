@@ -1,13 +1,12 @@
 /**
- * AccountOutlook — Outlook chapter.
+ * AccountOutlook -- Narrative editorial outlook section.
  * Surfaces renewalOutlook, expansionSignals, and contractContext
- * from EntityIntelligence. Collapses entirely when all are empty.
+ * from EntityIntelligence as flowing editorial prose.
  *
  * I550: Per-item inline editing, dismiss, and feedback controls.
  */
 import { X } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
-import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { formatArr } from "@/lib/utils";
@@ -27,7 +26,7 @@ function formatDate(dateStr?: string): string {
   if (!dateStr) return "";
   try {
     return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
+      month: "long",
       day: "numeric",
       year: "numeric",
     });
@@ -36,27 +35,26 @@ function formatDate(dateStr?: string): string {
   }
 }
 
-function getConfidenceColor(confidence?: string): string {
+function getConfidenceClass(confidence?: string): string {
   switch (confidence?.toLowerCase()) {
     case "high":
-      return css.badgeSage;
+      return css.confidenceHigh;
     case "moderate":
-      return css.badgeTurmeric;
+      return css.confidenceModerate;
     case "low":
-      return css.badgeTerracotta;
+      return css.confidenceLow;
     default:
-      return css.badgeNeutral;
+      return "";
   }
 }
 
-function getStageColor(stage?: string): string {
+function getStageBadge(stage?: string): string {
   switch (stage?.toLowerCase().replace(/[_\s-]/g, "")) {
     case "committed":
-      return css.badgeSage;
     case "evaluating":
-      return css.badgeTurmeric;
+      return css.badgeSage;
     case "exploring":
-      return css.badgeLarkspur;
+      return css.badgeTurmeric;
     case "blocked":
       return css.badgeTerracotta;
     default:
@@ -89,143 +87,176 @@ export function AccountOutlook({
   const signals = intelligence.expansionSignals ?? [];
   const contract = intelligence.contractContext ?? null;
 
-  const hasRenewal = renewal != null && (renewal.confidence || renewal.riskFactors?.length || renewal.expansionPotential);
+  const hasRenewal =
+    renewal != null &&
+    (renewal.confidence ||
+      renewal.riskFactors?.length ||
+      renewal.expansionPotential);
   const hasSignals = signals.length > 0;
-  const hasContract = contract != null && (contract.contractType || contract.renewalDate || contract.currentArr != null);
+  const hasContract =
+    contract != null &&
+    (contract.contractType ||
+      contract.renewalDate ||
+      contract.currentArr != null);
 
   if (!hasRenewal && !hasSignals && !hasContract) return null;
 
   return (
     <section className={css.section}>
-      <ChapterHeading title="Outlook" />
-
-      {/* Renewal Outlook */}
+      {/* Editorial statement */}
       {hasRenewal && renewal && (
-        <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Renewal Outlook</h3>
-          <div className={css.renewalCard}>
-            {renewal.confidence && (
-              <div className={css.renewalHeader}>
-                <span className={css.renewalConfidenceLabel}>Confidence</span>
-                <span className={`${css.badge} ${getConfidenceColor(renewal.confidence)}`}>
-                  {renewal.confidence}
-                </span>
-              </div>
-            )}
-            {renewal.riskFactors && renewal.riskFactors.length > 0 && (
-              <div className={css.renewalSection}>
-                <span className={css.renewalFieldLabel}>Risk Factors</span>
-                <ul className={css.riskFactorList}>
-                  {renewal.riskFactors.map((factor, i) => (
-                    <li key={i} className={css.riskFactorItem}>
-                      <span className={css.riskFactorContent}>
-                        {onUpdateField ? (
-                          <EditableText
-                            value={factor}
-                            onChange={(v) => onUpdateField(`renewalOutlook.riskFactors[${i}]`, v)}
-                            as="span"
-                            multiline
-                            style={{ font: "inherit", color: "inherit" }}
+        <>
+          <h2 className={css.statement}>
+            Renewal confidence is{" "}
+            <span className={getConfidenceClass(renewal.confidence)}>
+              {renewal.confidence?.toLowerCase() ?? "unknown"}
+            </span>
+            {renewal.expansionPotential &&
+              ` \u2014 ${renewal.expansionPotential}`}
+          </h2>
+
+          {/* Risk factors as supporting detail */}
+          {renewal.riskFactors && renewal.riskFactors.length > 0 && (
+            <ul className={css.riskFactorList}>
+              {renewal.riskFactors.map((factor, i) => (
+                <li key={i} className={css.riskFactorItem}>
+                  <span className={css.riskFactorContent}>
+                    {onUpdateField ? (
+                      <EditableText
+                        value={factor}
+                        onChange={(v) =>
+                          onUpdateField(
+                            `renewalOutlook.riskFactors[${i}]`,
+                            v,
+                          )
+                        }
+                        as="span"
+                        multiline
+                      />
+                    ) : (
+                      factor
+                    )}
+                    {(onUpdateField || onItemFeedback) && (
+                      <span className={css.itemActions}>
+                        {onItemFeedback && (
+                          <IntelligenceFeedback
+                            value={
+                              getItemFeedback?.(
+                                `renewalOutlook.riskFactors[${i}]`,
+                              ) ?? null
+                            }
+                            onFeedback={(type) =>
+                              onItemFeedback(
+                                `renewalOutlook.riskFactors[${i}]`,
+                                type,
+                              )
+                            }
                           />
-                        ) : (
-                          factor
                         )}
-                        {(onUpdateField || onItemFeedback) && (
-                          <span className={css.itemActions}>
-                            {onItemFeedback && (
-                              <IntelligenceFeedback
-                                value={getItemFeedback?.(`renewalOutlook.riskFactors[${i}]`) ?? null}
-                                onFeedback={(type) => onItemFeedback(`renewalOutlook.riskFactors[${i}]`, type)}
-                              />
-                            )}
-                            {onUpdateField && (
-                              <button
-                                type="button"
-                                className={css.dismissButton}
-                                onClick={() => onUpdateField(`renewalOutlook.riskFactors[${i}]`, "")}
-                                title="Dismiss"
-                              >
-                                <X size={13} />
-                              </button>
-                            )}
-                          </span>
+                        {onUpdateField && (
+                          <button
+                            type="button"
+                            className={css.dismissButton}
+                            onClick={() =>
+                              onUpdateField(
+                                `renewalOutlook.riskFactors[${i}]`,
+                                "",
+                              )
+                            }
+                            title="Dismiss"
+                          >
+                            <X size={13} />
+                          </button>
                         )}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {renewal.expansionPotential && (
-              <div className={css.renewalSection}>
-                <span className={css.renewalFieldLabel}>Expansion Potential</span>
-                <p className={css.renewalText}>{renewal.expansionPotential}</p>
-              </div>
-            )}
-            {renewal.recommendedStart && (
-              <div className={css.renewalSection}>
-                <span className={css.renewalFieldLabel}>Recommended Start</span>
-                <span className={css.renewalDate}>{formatDate(renewal.recommendedStart)}</span>
-              </div>
-            )}
-          </div>
-        </div>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Recommended start date */}
+          {renewal.recommendedStart && (
+            <p className={css.recommendedStart}>
+              Start the conversation by {formatDate(renewal.recommendedStart)}.
+            </p>
+          )}
+        </>
       )}
 
-      {/* Expansion Signals */}
+      {/* Expansion signals */}
       {hasSignals && (
-        <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Expansion Signals</h3>
+        <div className={css.expansionSection}>
+          <div className={css.expansionLabel}>Expansion Signals</div>
           <div className={css.signalList}>
             {signals.map((signal, i) => (
               <div key={i} className={css.signalItem}>
-                <div className={css.signalHeader}>
+                <div className={css.signalBody}>
                   {onUpdateField ? (
                     <EditableText
                       value={signal.opportunity}
-                      onChange={(v) => onUpdateField(`expansionSignals[${i}].opportunity`, v)}
+                      onChange={(v) =>
+                        onUpdateField(
+                          `expansionSignals[${i}].opportunity`,
+                          v,
+                        )
+                      }
                       as="p"
                       multiline
-                      style={{
-                        fontFamily: "var(--font-serif)",
-                        fontSize: 16,
-                        lineHeight: 1.5,
-                        color: "var(--color-text-primary)",
-                        margin: 0,
-                        flex: 1,
-                      }}
+                      className={css.signalText}
                     />
                   ) : (
                     <p className={css.signalText}>{signal.opportunity}</p>
                   )}
-                  {signal.stage && (
-                    <span className={`${css.badge} ${getStageColor(signal.stage)}`}>
-                      {getStageLabel(signal.stage)}
-                    </span>
-                  )}
-                  {(onUpdateField || onItemFeedback) && (
-                    <span className={css.itemActions}>
-                      {onItemFeedback && (
-                        <IntelligenceFeedback
-                          value={getItemFeedback?.(`expansionSignals[${i}].opportunity`) ?? null}
-                          onFeedback={(type) => onItemFeedback(`expansionSignals[${i}].opportunity`, type)}
-                        />
-                      )}
-                      {onUpdateField && (
-                        <button
-                          type="button"
-                          className={css.dismissButton}
-                          onClick={() => onUpdateField(`expansionSignals[${i}].opportunity`, "")}
-                          title="Dismiss"
-                        >
-                          <X size={13} />
-                        </button>
-                      )}
-                    </span>
-                  )}
+                  <div className={css.signalMeta}>
+                    {signal.stage && (
+                      <span
+                        className={`${css.badge} ${getStageBadge(signal.stage)}`}
+                      >
+                        {getStageLabel(signal.stage)}
+                      </span>
+                    )}
+                    {signal.arrImpact != null && signal.arrImpact > 0 && (
+                      <span className={css.arrImpact}>
+                        +${formatArr(signal.arrImpact)} ARR
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {signal.arrImpact != null && signal.arrImpact > 0 && (
-                  <span className={css.arrImpact}>+${formatArr(signal.arrImpact)} ARR</span>
+                {(onUpdateField || onItemFeedback) && (
+                  <span className={css.itemActions}>
+                    {onItemFeedback && (
+                      <IntelligenceFeedback
+                        value={
+                          getItemFeedback?.(
+                            `expansionSignals[${i}].opportunity`,
+                          ) ?? null
+                        }
+                        onFeedback={(type) =>
+                          onItemFeedback(
+                            `expansionSignals[${i}].opportunity`,
+                            type,
+                          )
+                        }
+                      />
+                    )}
+                    {onUpdateField && (
+                      <button
+                        type="button"
+                        className={css.dismissButton}
+                        onClick={() =>
+                          onUpdateField(
+                            `expansionSignals[${i}].opportunity`,
+                            "",
+                          )
+                        }
+                        title="Dismiss"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </span>
                 )}
               </div>
             ))}
@@ -233,42 +264,39 @@ export function AccountOutlook({
         </div>
       )}
 
-      {/* Contract Context */}
+      {/* Contract strip */}
       {hasContract && contract && (
-        <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Contract Context</h3>
-          <div className={css.contractGrid}>
-            {contract.contractType && (
-              <div className={css.contractField}>
-                <span className={css.contractFieldLabel}>Type</span>
-                <span className={css.contractFieldValue}>{contract.contractType}</span>
+        <div className={css.contractStrip}>
+          {contract.contractType && (
+            <div className={css.contractCell}>
+              <div className={css.contractLabel}>Type</div>
+              <div className={css.contractValue}>{contract.contractType}</div>
+            </div>
+          )}
+          {contract.autoRenew != null && (
+            <div className={css.contractCell}>
+              <div className={css.contractLabel}>Auto-Renew</div>
+              <div className={css.contractValue}>
+                {contract.autoRenew ? "Yes" : "No"}
               </div>
-            )}
-            {contract.autoRenew != null && (
-              <div className={css.contractField}>
-                <span className={css.contractFieldLabel}>Auto-Renew</span>
-                <span className={css.contractFieldValue}>{contract.autoRenew ? "Yes" : "No"}</span>
+            </div>
+          )}
+          {contract.renewalDate && (
+            <div className={css.contractCell}>
+              <div className={css.contractLabel}>Renewal Date</div>
+              <div className={css.contractValue}>
+                {formatDate(contract.renewalDate)}
               </div>
-            )}
-            {contract.renewalDate && (
-              <div className={css.contractField}>
-                <span className={css.contractFieldLabel}>Renewal Date</span>
-                <span className={css.contractFieldValue}>{formatDate(contract.renewalDate)}</span>
+            </div>
+          )}
+          {contract.currentArr != null && (
+            <div className={css.contractCell}>
+              <div className={css.contractLabel}>Current ARR</div>
+              <div className={css.contractValueArr}>
+                ${formatArr(contract.currentArr)}
               </div>
-            )}
-            {contract.currentArr != null && (
-              <div className={css.contractField}>
-                <span className={css.contractFieldLabel}>Current ARR</span>
-                <span className={css.contractFieldValue}>${formatArr(contract.currentArr)}</span>
-              </div>
-            )}
-            {contract.multiYearRemaining != null && contract.multiYearRemaining > 0 && (
-              <div className={css.contractField}>
-                <span className={css.contractFieldLabel}>Multi-Year Remaining</span>
-                <span className={css.contractFieldValue}>{contract.multiYearRemaining} year{contract.multiYearRemaining !== 1 ? "s" : ""}</span>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </section>

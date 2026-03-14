@@ -525,8 +525,11 @@ export default function ProjectDetailEditorial() {
 
       {/* Chapter 6: The Record */}
       <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
-        <AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />
-        <UnifiedTimeline data={{ ...detail, contextEntries: entityCtx.entries }} sectionId="" />
+        <UnifiedTimeline
+          data={{ ...detail, contextEntries: entityCtx.entries }}
+          sectionId=""
+          actionSlot={<AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />}
+        />
       </div>
 
       {/* Chapter 7: The Work (I351) */}
