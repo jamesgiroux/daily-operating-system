@@ -134,6 +134,7 @@ function buildAccountVitals(detail: {
 // I393: Portfolio chapter conditionally included for parent accounts
 const BASE_CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "headline", label: "The Headline", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
+  { id: "outlook", label: "Outlook", icon: <Telescope size={18} strokeWidth={1.5} /> },
   { id: "state-of-play", label: "State of Play", icon: <Clock size={18} strokeWidth={1.5} /> },
   { id: "the-room", label: "The Room", icon: <Users size={18} strokeWidth={1.5} /> },
   { id: "watch-list", label: "Watch List", icon: <Eye size={18} strokeWidth={1.5} /> },
@@ -141,7 +142,6 @@ const BASE_CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "strategic-landscape", label: "Competitive & Strategic", icon: <Compass size={18} strokeWidth={1.5} /> },
   { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
   { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
-  { id: "outlook", label: "Outlook", icon: <Telescope size={18} strokeWidth={1.5} /> },
   { id: "reports", label: "Reports", icon: <FileText size={18} strokeWidth={1.5} /> },
 ];
 
@@ -533,6 +533,21 @@ export default function AccountDetailEditorial() {
         )}
       </section>
 
+      {/* Chapter 2: Outlook — commercial picture immediately after hero */}
+      {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
+        <div id="outlook" className={`editorial-reveal ${shared.marginLabelSection}`}>
+          <div className={shared.marginLabel}>Outlook</div>
+          <div className={shared.marginContent}>
+            <AccountOutlook
+              intelligence={intelligence}
+              onUpdateField={handleUpdateIntelField}
+              getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+              onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* I393: Portfolio chapter — only for parent accounts */}
       {detail.isParent && detail.children.length > 0 && (
         <section id="portfolio" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
@@ -814,9 +829,11 @@ export default function AccountDetailEditorial() {
       <div id="the-record" className={`editorial-reveal ${shared.marginLabelSection}`}>
         <div className={shared.marginLabel}>The<br/>Record</div>
         <div className={shared.marginContent}>
-          <ChapterHeading title="The Record" />
-          <AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />
-          <UnifiedTimeline data={{ ...detail, accountEvents: events, contextEntries: entityCtx.entries }} sectionId="" />
+          <UnifiedTimeline
+            data={{ ...detail, accountEvents: events, contextEntries: entityCtx.entries }}
+            sectionId=""
+            actionSlot={<AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />}
+          />
         </div>
       </div>
 
@@ -837,21 +854,6 @@ export default function AccountDetailEditorial() {
           />
         </div>
       </div>
-
-      {/* Chapter: Outlook (I557) */}
-      {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
-        <div id="outlook" className={`editorial-reveal ${shared.marginLabelSection}`}>
-          <div className={shared.marginLabel}>Outlook</div>
-          <div className={shared.marginContent}>
-            <AccountOutlook
-              intelligence={intelligence}
-              onUpdateField={handleUpdateIntelField}
-              getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
-              onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
-            />
-          </div>
-        </div>
-      ) : null}
 
       {/* Chapter 8: Reports */}
       <div id="reports" className={`editorial-reveal ${shared.marginLabelSection}`}>
