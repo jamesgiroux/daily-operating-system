@@ -7,16 +7,10 @@
 import React from "react";
 import type { ProjectDetail, ContentFile } from "@/types";
 import { FileListSection } from "@/components/entity/FileListSection";
-import { ContextEntryList } from "@/components/entity/ContextEntryList";
 
 interface ProjectAppendixProps {
   detail: ProjectDetail;
   files: ContentFile[];
-  // Context entries
-  contextEntries?: { id: string; title: string; content: string; createdAt: string }[];
-  onCreateContextEntry?: (title: string, content: string) => void;
-  onUpdateContextEntry?: (id: string, title: string, content: string) => void;
-  onDeleteContextEntry?: (id: string) => void;
   onIndexFiles?: () => void;
   indexing?: boolean;
   indexFeedback?: string | null;
@@ -48,10 +42,6 @@ function milestoneStatusColor(status: string): string {
 export function ProjectAppendix({
   detail,
   files,
-  contextEntries,
-  onCreateContextEntry,
-  onUpdateContextEntry,
-  onDeleteContextEntry,
   onIndexFiles,
   indexing,
   indexFeedback,
@@ -131,36 +121,6 @@ export function ProjectAppendix({
             </p>
           </div>
         )}
-
-        {/* Context */}
-        <div style={ruleStyle}>
-          <div style={sectionLabelStyle}>Context</div>
-          {onCreateContextEntry && onUpdateContextEntry && onDeleteContextEntry && contextEntries ? (
-            <ContextEntryList
-              entries={contextEntries}
-              onCreate={onCreateContextEntry}
-              onUpdate={onUpdateContextEntry}
-              onDelete={onDeleteContextEntry}
-              addLabel="+ Add context entry"
-              placeholders={{
-                title: "e.g., 'Architecture decision' or 'Risk identified'",
-                content: "What happened and why it matters...",
-              }}
-            />
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 13,
-                color: "var(--color-text-tertiary)",
-                fontStyle: "italic",
-                margin: 0,
-              }}
-            >
-              No context entries.
-            </p>
-          )}
-        </div>
 
         {/* Files */}
         <div style={ruleStyle}>
