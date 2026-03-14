@@ -15,6 +15,7 @@ import type {
   AccountSnapshotItem,
   MeetingOutcomeData,
   MeetingIntelligence,
+  MeetingPostIntelligence,
   CalendarEvent,
   StakeholderInsight,
   ApplyPrepPrefillResult,
@@ -36,6 +37,7 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { PostMeetingIntelligence } from "@/components/meeting/PostMeetingIntelligence";
 import { EditableText } from "@/components/ui/EditableText";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import {
@@ -119,6 +121,7 @@ export default function MeetingDetailPage() {
   const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
   const [entityHealthMap, setEntityHealthMap] = useState<MeetingIntelligence["entityHealthMap"]>({});
   const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
+  const [postIntel, setPostIntel] = useState<MeetingPostIntelligence | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
@@ -196,6 +199,26 @@ export default function MeetingDetailPage() {
         userAgenda: intel.userAgenda ?? basePrep.userAgenda,
         userNotes: intel.userNotes ?? basePrep.userNotes,
       });
+
+      // Fetch post-meeting intelligence (non-blocking — only relevant for past meetings with transcripts)
+      if (intel.outcomes || intel.transcriptProcessedAt) {
+        invoke<MeetingPostIntelligence>("get_meeting_post_intelligence", { meetingId })
+          .then((pi) => {
+            const hasPostIntelData =
+              pi.interactionDynamics != null ||
+              pi.championHealth != null ||
+              pi.roleChanges.length > 0 ||
+              pi.enrichedCaptures.length > 0;
+            setPostIntel(hasPostIntelData ? pi : null);
+          })
+          .catch(() => {
+            // Non-critical — silently fail
+            setPostIntel(null);
+          });
+      } else {
+        setPostIntel(null);
+      }
+
       transientRetryCount.current = 0;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -737,8 +760,25 @@ Thanks!`;
   return (
     <>
       <div className={styles.pageContainer}>
-        {/* Outcomes always at top when present */}
-        {outcomes && (
+        {/* Post-meeting intelligence — replaces flat outcomes when available */}
+        {postIntel && (
+          <>
+            <div className={styles.outcomesWrap}>
+              <PostMeetingIntelligence
+                data={postIntel}
+                getItemFeedback={feedback.getFeedback}
+                onItemFeedback={feedback.submitFeedback}
+              />
+            </div>
+            <div className={styles.outcomesDivider} />
+            <p className={styles.preMeetingLabel}>
+              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Briefing"}
+            </p>
+          </>
+        )}
+
+        {/* Flat outcomes — shown only when no post-meeting intelligence is available */}
+        {outcomes && !postIntel && (
           <>
             <div className={styles.outcomesWrap}>
               <OutcomesSection
@@ -756,7 +796,7 @@ Thanks!`;
           </>
         )}
 
-        {!hasAnyContent && !outcomes && (
+        {!hasAnyContent && !outcomes && !postIntel && (
           <div className={clsx(styles.emptyState, !hasLinkedEntities && styles.emptyStateActionable)}>
             {hasLinkedEntities && <Clock className={styles.emptyIcon} />}
             {!hasLinkedEntities ? (
@@ -804,7 +844,7 @@ Thanks!`;
           </div>
         )}
 
-        {(hasAnyContent || outcomes) && (
+        {(hasAnyContent || outcomes || postIntel) && (
           <div className={isPastMeeting && outcomes ? styles.pastMeetingOpacity : undefined}>
 
             {/* ================================================================
@@ -948,6 +988,35 @@ Thanks!`;
                 </p>
               )}
 
+              {/* Since Last Meeting — compact timeline of what changed */}
+              {data.sinceLast && data.sinceLast.length > 0 && (
+                <div className={styles.sinceLastWrap}>
+                  <p className={styles.sinceLastHeading}>Since Last Meeting</p>
+                  <ul className={styles.sinceLastList}>
+                    {data.sinceLast.map((item, i) => (
+                      <li key={i} className={styles.sinceLastItem}>
+                        <span className={styles.bulletDotTurmericMuted} />
+                        <span>{sanitizeInlineText(item)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Account Pulse — what's working / not working */}
+              {data.currentState && data.currentState.length > 0 && (
+                <div className={styles.currentStateWrap}>
+                  <p className={styles.currentStateHeading}>Account Pulse</p>
+                  <div className={styles.currentStateGrid}>
+                    {data.currentState.map((item, i) => (
+                      <span key={i} className={styles.currentStateItem}>
+                        {sanitizeInlineText(item)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Entity Readiness — "Before This Meeting" checklist */}
               {data.entityReadiness && data.entityReadiness.length > 0 && (
                 <div className={styles.readinessWrap}>
@@ -1010,6 +1079,51 @@ Thanks!`;
                       </div>
                     );
                   })}
+                </div>
+              </section>
+            )}
+
+            {/* Recent Wins — positive context after risks */}
+            {data.recentWins && data.recentWins.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Recent Wins" />
+                <div className={styles.recentWinsContainer}>
+                  {data.recentWins.map((win, i) => (
+                    <div key={i} className={styles.recentWinItem}>
+                      <span className={styles.bulletDotSage} />
+                      <p className={styles.recentWinText}>{cleanPrepLine(win)}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Open Items — follow-ups from previous meetings */}
+            {data.openItems && data.openItems.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Open Items" />
+                <div className={styles.openItemsContainer}>
+                  {data.openItems.map((item, i) => (
+                    <div
+                      key={i}
+                      className={clsx(
+                        styles.openItemRow,
+                        item.isOverdue && styles.openItemOverdue,
+                      )}
+                    >
+                      <p className={styles.openItemTitle}>{item.title}</p>
+                      {item.dueDate && (
+                        <span
+                          className={clsx(
+                            styles.openItemDue,
+                            item.isOverdue && styles.openItemDueOverdue,
+                          )}
+                        >
+                          {item.isOverdue ? "Overdue" : "Due"}: {item.dueDate}
+                        </span>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </section>
             )}

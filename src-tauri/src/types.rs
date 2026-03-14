@@ -1826,6 +1826,21 @@ pub struct TranscriptSentiment {
     /// Whether the champion was actively engaged
     #[serde(skip_serializing_if = "Option::is_none")]
     pub champion_engaged: Option<bool>,
+    /// I554: Ownership language — customer|vendor|mixed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ownership_language: Option<String>,
+    /// I554: Whether customer refers to product in past tense (churn predictor)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub past_tense_references: Option<bool>,
+    /// I554: Whether customer asked about data export/portability (churn predictor)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_export_interest: Option<bool>,
+    /// I554: Whether customer mentioned promoting product internally
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub internal_advocacy_visible: Option<bool>,
+    /// I554: Whether customer asked about roadmap or future features
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roadmap_interest: Option<bool>,
 }
 
 /// Per-speaker sentiment from a transcript (I509).
@@ -1867,6 +1882,56 @@ pub struct EscalationSignal {
     pub quote: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speaker: Option<String>,
+}
+
+/// I554: Champion health assessment from transcript analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionHealth {
+    /// Name of the primary champion/advocate
+    pub champion_name: String,
+    /// strong|weak|lost|none
+    pub champion_status: String,
+    /// Specific behavioral evidence from the interaction
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_evidence: Option<String>,
+    /// Risk if status is weak or lost
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_risk: Option<String>,
+}
+
+/// I554: Stakeholder role change detected in transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleChange {
+    /// Person affected
+    pub person_name: String,
+    /// Previous role or status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_status: Option<String>,
+    /// New role or status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_status: Option<String>,
+    /// Evidence quote
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+}
+
+/// I554: Strategic commitment extracted from transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptCommitment {
+    /// What was committed to
+    pub commitment: String,
+    /// Target date (YYYY-MM-DD)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    /// us|them|joint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owned_by: Option<String>,
+    /// Success criteria
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_criteria: Option<String>,
 }
 
 /// Interaction dynamics extracted from transcript analysis (I509).
@@ -1914,6 +1979,15 @@ pub struct TranscriptResult {
     /// Interaction dynamics from transcript (I509)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_dynamics: Option<InteractionDynamics>,
+    /// I554: Champion health assessment
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub champion_health: Option<ChampionHealth>,
+    /// I554: Stakeholder role changes detected
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub role_changes: Vec<RoleChange>,
+    /// I554: Strategic commitments extracted
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commitments: Vec<TranscriptCommitment>,
 }
 
 /// Outcomes for a meeting (query response)

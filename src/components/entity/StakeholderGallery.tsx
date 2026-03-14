@@ -718,6 +718,49 @@ export function StakeholderGallery({
         </div>
       )}
 
+      {/* I557: Relationship Depth Summary */}
+      {intelligence?.relationshipDepth && (
+        <div className={css.relationshipDepthSection}>
+          <span className={css.depthSectionLabel}>Relationship Depth</span>
+          <div className={css.depthBadges}>
+            {intelligence.relationshipDepth.championStrength && (
+              <div className={css.depthItem}>
+                <span className={css.depthItemLabel}>Champion Strength</span>
+                <span className={`${css.depthBadge} ${getDepthColor("champion", intelligence.relationshipDepth.championStrength)}`}>
+                  {intelligence.relationshipDepth.championStrength}
+                </span>
+              </div>
+            )}
+            {intelligence.relationshipDepth.executiveAccess && (
+              <div className={css.depthItem}>
+                <span className={css.depthItemLabel}>Executive Access</span>
+                <span className={`${css.depthBadge} ${getDepthColor("access", intelligence.relationshipDepth.executiveAccess)}`}>
+                  {intelligence.relationshipDepth.executiveAccess}
+                </span>
+              </div>
+            )}
+            {intelligence.relationshipDepth.stakeholderCoverage && (
+              <div className={css.depthItem}>
+                <span className={css.depthItemLabel}>Stakeholder Coverage</span>
+                <span className={`${css.depthBadge} ${getDepthColor("coverage", intelligence.relationshipDepth.stakeholderCoverage)}`}>
+                  {intelligence.relationshipDepth.stakeholderCoverage}
+                </span>
+              </div>
+            )}
+          </div>
+          {intelligence.relationshipDepth.coverageGaps && intelligence.relationshipDepth.coverageGaps.length > 0 && (
+            <div className={css.coverageGaps}>
+              <span className={css.depthItemLabel}>Coverage Gaps</span>
+              <ul className={css.gapsList}>
+                {intelligence.relationshipDepth.coverageGaps.map((gap, i) => (
+                  <li key={i} className={css.gapItem}>{gap}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Your Team — compact clickable chips with inline edit mode */}
       {(teamMembers.length > 0 || canEditTeam) && (
         <div className={css.teamChipsSection}>
@@ -819,6 +862,31 @@ export function StakeholderGallery({
       )}
     </section>
   );
+}
+
+// Relationship depth color helpers
+function getDepthColor(dimension: string, value: string): string {
+  const v = value.toLowerCase().replace(/[_\s-]/g, "");
+  if (dimension === "champion") {
+    if (v === "strong") return css.depthBadgeSage;
+    if (v === "moderate" || v === "adequate") return css.depthBadgeTurmeric;
+    if (v === "weak") return css.depthBadgeTerracotta;
+    if (v === "none") return css.depthBadgeRed;
+    return css.depthBadgeNeutral;
+  }
+  if (dimension === "access") {
+    if (v === "direct") return css.depthBadgeSage;
+    if (v === "indirect" || v === "limited") return css.depthBadgeTurmeric;
+    if (v === "none") return css.depthBadgeTerracotta;
+    return css.depthBadgeNeutral;
+  }
+  if (dimension === "coverage") {
+    if (v === "broad") return css.depthBadgeSage;
+    if (v === "narrow") return css.depthBadgeTurmeric;
+    if (v === "singlethreaded") return css.depthBadgeTerracotta;
+    return css.depthBadgeNeutral;
+  }
+  return css.depthBadgeNeutral;
 }
 
 // Static badge helpers for non-editable mode

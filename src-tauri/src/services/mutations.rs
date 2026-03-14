@@ -502,16 +502,46 @@ pub fn persist_transcript_outcomes(
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
         for win in wins {
-            tx.insert_capture(meeting_id, meeting_title, account_id, "win", win)
-                .map_err(|e| format!("insert win capture failed: {e}"))?;
+            let (content, sub_type, evidence_quote) = parse_win_metadata(win);
+            tx.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                "win",
+                content,
+                sub_type,
+                None, // wins don't have urgency
+                evidence_quote,
+            )
+            .map_err(|e| format!("insert win capture failed: {e}"))?;
         }
         for risk in risks {
-            tx.insert_capture(meeting_id, meeting_title, account_id, "risk", risk)
-                .map_err(|e| format!("insert risk capture failed: {e}"))?;
+            let (content, urgency, evidence_quote) = parse_risk_metadata(risk);
+            tx.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                "risk",
+                content,
+                None, // risks use urgency, not sub_type
+                urgency.as_deref(),
+                evidence_quote,
+            )
+            .map_err(|e| format!("insert risk capture failed: {e}"))?;
         }
         for decision in decisions {
-            tx.insert_capture(meeting_id, meeting_title, account_id, "decision", decision)
-                .map_err(|e| format!("insert decision capture failed: {e}"))?;
+            let (content, evidence_quote) = parse_evidence_quote(decision);
+            tx.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                "decision",
+                content,
+                None,
+                None,
+                evidence_quote,
+            )
+            .map_err(|e| format!("insert decision capture failed: {e}"))?;
         }
 
         let capture_count = wins.len() + risks.len() + decisions.len();
@@ -536,6 +566,85 @@ pub fn persist_transcript_outcomes(
 
         Ok(())
     })
+}
+
+/// Parse `[SUB_TYPE] content #"quote"` from a win line.
+///
+/// Returns `(content, sub_type, evidence_quote)`.
+fn parse_win_metadata(raw: &str) -> (&str, Option<&str>, Option<&str>) {
+    let (text, evidence) = parse_evidence_quote(raw);
+
+    // Parse [SUB_TYPE] prefix
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let sub_type = &rest[..end];
+            let content = rest[end + 1..].trim();
+            // Only accept known sub_types
+            let sub_lower = sub_type.to_lowercase();
+            let valid = matches!(
+                sub_lower.as_str(),
+                "adoption"
+                    | "expansion"
+                    | "value_realized"
+                    | "relationship"
+                    | "commercial"
+                    | "advocacy"
+            );
+            if valid {
+                return (content, Some(sub_type), evidence);
+            }
+        }
+    }
+
+    (text, None, evidence)
+}
+
+/// Parse `[RED|YELLOW|GREEN_WATCH] content #"quote"` from a risk line.
+///
+/// Returns `(content, urgency, evidence_quote)`.
+fn parse_risk_metadata(raw: &str) -> (&str, Option<String>, Option<&str>) {
+    let (text, evidence) = parse_evidence_quote(raw);
+
+    // Parse [URGENCY] prefix — normalize to lowercase for consistent storage
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let urgency_raw = &rest[..end];
+            let content = rest[end + 1..].trim();
+            let urgency_lower = urgency_raw.to_lowercase();
+            let valid = matches!(
+                urgency_lower.as_str(),
+                "red" | "yellow" | "green_watch"
+            );
+            if valid {
+                return (content, Some(urgency_lower), evidence);
+            }
+        }
+    }
+
+    (text, None, evidence)
+}
+
+/// Parse `#"quote"` suffix from any capture line.
+///
+/// Returns `(main_text, evidence_quote)`.
+fn parse_evidence_quote(raw: &str) -> (&str, Option<&str>) {
+    if let Some(hash_idx) = raw.rfind("#\"") {
+        let main = raw[..hash_idx].trim();
+        let quote_start = hash_idx + 2;
+        // Find closing quote
+        if let Some(end_idx) = raw[quote_start..].find('"') {
+            let quote = &raw[quote_start..quote_start + end_idx];
+            (main, Some(quote))
+        } else {
+            // No closing quote — treat rest as quote
+            let quote = raw[quote_start..].trim_end_matches('"');
+            (main, Some(quote))
+        }
+    } else {
+        (raw, None)
+    }
 }
 
 pub fn insert_processing_log(db: &ActionDb, log_entry: &DbProcessingLog) -> Result<(), String> {
