@@ -9,6 +9,7 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { TimelineEntry, TimelineContainer, type TimelineEntryType } from "@/components/editorial/TimelineEntry";
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
 import type { TimelineSource } from "@/lib/entity-types";
+import s from "./UnifiedTimeline.module.css";
 
 interface UnifiedTimelineProps {
   data: TimelineSource;
@@ -136,22 +137,7 @@ export function UnifiedTimeline({
           {hasMore && (
             <button
               onClick={() => setExpanded(!expanded)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "var(--color-spice-turmeric)",
-                cursor: "pointer",
-                padding: "8px 0",
-                marginTop: 12,
-                border: "none",
-                background: "none",
-              }}
+              className={s.toggleButton}
             >
               {expanded ? "Hide earlier history" : `Show full timeline (${items.length - 10} more)`}
               <svg
@@ -161,12 +147,7 @@ export function UnifiedTimeline({
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                style={{
-                  width: 14,
-                  height: 14,
-                  transform: expanded ? "rotate(180deg)" : "none",
-                  transition: "transform 0.3s ease",
-                }}
+                className={`${s.chevron} ${expanded ? s.chevronExpanded : ""}`}
               >
                 <polyline points="6 9 12 15 18 9" />
               </svg>
@@ -174,7 +155,7 @@ export function UnifiedTimeline({
           )}
         </>
       ) : (
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
+        <p className={s.emptyMessage}>
           {emptyMessage}
         </p>
       )}
