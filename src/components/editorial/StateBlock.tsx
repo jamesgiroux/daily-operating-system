@@ -9,6 +9,7 @@
 import { X } from "lucide-react";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import styles from "./StateBlock.module.css";
 
 interface StateBlockProps {
   label: string;
@@ -36,79 +37,29 @@ export function StateBlock({
   if (items.length === 0) return null;
 
   return (
-    <div style={{ marginBottom: 32 }}>
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 10,
-          fontWeight: 500,
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-          color: labelColor,
-          marginBottom: 14,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div
+      className={styles.container}
+      style={{ "--state-block-color": labelColor } as React.CSSProperties}
+    >
+      <div className={styles.label}>{label}</div>
+      <div className={styles.itemList}>
         {items.map((item, i) => (
-          <div
-            key={i}
-            className="state-item-row"
-            style={{
-              borderLeft: `3px solid ${labelColor}`,
-              paddingLeft: 16,
-              paddingTop: 4,
-              paddingBottom: 4,
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 8,
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
+          <div key={i} className={styles.itemRow}>
+            <div className={styles.itemContent}>
               {onItemChange ? (
                 <EditableText
                   value={item}
                   onChange={(v) => onItemChange(i, v)}
                   as="p"
                   multiline
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 15,
-                    lineHeight: 1.65,
-                    color: "var(--color-text-primary)",
-                    maxWidth: 620,
-                    margin: 0,
-                  }}
+                  className={styles.itemText}
                 />
               ) : (
-                <p
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 15,
-                    lineHeight: 1.65,
-                    color: "var(--color-text-primary)",
-                    maxWidth: 620,
-                    margin: 0,
-                  }}
-                >
-                  {item}
-                </p>
+                <p className={styles.itemText}>{item}</p>
               )}
             </div>
             {(onItemFeedback || onItemDismiss) && (
-              <div
-                className="state-item-actions"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 2,
-                  flexShrink: 0,
-                  marginTop: 2,
-                  opacity: 0,
-                  transition: "opacity 0.15s ease",
-                }}
-              >
+              <div className={styles.actions}>
                 {onItemFeedback && getItemFeedback && (
                   <IntelligenceFeedback
                     value={getItemFeedback(i)}
@@ -120,19 +71,7 @@ export function StateBlock({
                     type="button"
                     onClick={() => onItemDismiss(i)}
                     title="Dismiss"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 22,
-                      height: 22,
-                      padding: 0,
-                      border: "none",
-                      borderRadius: 2,
-                      background: "transparent",
-                      color: "var(--color-text-tertiary)",
-                      cursor: "pointer",
-                    }}
+                    className={styles.dismissButton}
                   >
                     <X size={13} />
                   </button>
@@ -142,14 +81,6 @@ export function StateBlock({
           </div>
         ))}
       </div>
-      <style>{`
-        .state-item-row:hover .state-item-actions {
-          opacity: 1 !important;
-        }
-        .state-item-actions:focus-within {
-          opacity: 1 !important;
-        }
-      `}</style>
     </div>
   );
 }
