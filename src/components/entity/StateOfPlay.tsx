@@ -37,8 +37,8 @@ export function StateOfPlay({
   getItemFeedback,
   onItemFeedback,
 }: StateOfPlayProps) {
-  const working = intelligence?.currentState?.working ?? [];
-  const struggling = intelligence?.currentState?.notWorking ?? [];
+  const working = (intelligence?.currentState?.working ?? []).filter((w) => w?.trim());
+  const struggling = (intelligence?.currentState?.notWorking ?? []).filter((s) => s?.trim());
 
   const hasContent = working.length > 0 || struggling.length > 0;
 
