@@ -512,8 +512,7 @@ export function StakeholderGallery({
                     />
                   ) : s.engagement ? (
                     <span
-                      className={css.engagementBadge}
-                      style={getStaticBadgeStyle(s.engagement)}
+                      className={`${css.engagementBadge} ${getEngagementBadgeClass(s.engagement)}`}
                     >
                       {getStaticBadgeLabel(s.engagement)}
                     </span>
@@ -870,9 +869,12 @@ function getDepthColor(dimension: string, value: string): string {
 }
 
 // Static badge helpers for non-editable mode
-function getStaticBadgeStyle(engagement: string): { background: string; color: string } {
-  const d = getEngagementDisplay(engagement);
-  return { background: d.background, color: d.color };
+function getEngagementBadgeClass(engagement: string): string {
+  const e = (engagement ?? "").toLowerCase();
+  if (e === "high" || e === "active") return css.engagementActive;
+  if (e === "medium" || e === "warm") return css.engagementWarm;
+  if (e === "low" || e === "cooling") return css.engagementCooling;
+  return css.engagementNew;
 }
 
 function getStaticBadgeLabel(engagement: string): string {

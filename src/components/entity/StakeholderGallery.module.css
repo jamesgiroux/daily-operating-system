@@ -596,6 +596,24 @@
   color: var(--color-garden-larkspur);
 }
 
+/* ── Engagement badges ── */
+
+.engagementBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+.engagementActive { background: rgba(126, 170, 123, 0.12); color: var(--color-garden-sage); }
+.engagementWarm { background: rgba(222, 184, 65, 0.12); color: var(--color-spice-turmeric); }
+.engagementCooling { background: rgba(196, 101, 74, 0.12); color: var(--color-spice-terracotta); }
+.engagementNew { background: rgba(143, 163, 196, 0.12); color: var(--color-garden-larkspur); }
+
 /* ── Relationship Depth Summary (I557) ── */
 
 .relationshipDepthSection {
