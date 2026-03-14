@@ -3679,6 +3679,198 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Expanded account event {}/{}: {}", account_id, event_type, e))?;
     }
 
+    // ─── I555: Enriched captures with metadata ──────────────────────────────
+
+    // Enriched captures: RED risks
+    let enriched_captures: Vec<(
+        &str, &str, &str, Option<&str>, &str, &str,
+        Option<&str>, Option<&str>, Option<&str>,
+    )> = vec![
+        // (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote)
+        (
+            "mock-cap-enr-red-1", "mock-mh-acme-7d", "Acme Corp Weekly Sync",
+            Some("mock-acme-corp"), "risk",
+            "Champion Sarah Chen considering departure",
+            None, Some("red"),
+            Some("I'm exploring other opportunities"),
+        ),
+        (
+            "mock-cap-enr-red-2", "mock-mh-globex-3d", "Globex Check-in",
+            Some("mock-globex-industries"), "risk",
+            "Active competitor evaluation with Salesforce",
+            Some("displacement"), Some("red"),
+            Some("We've been piloting Salesforce for the last two weeks"),
+        ),
+        // YELLOW risks
+        (
+            "mock-cap-enr-yellow-1", "mock-mh-acme-7d", "Acme Corp Weekly Sync",
+            Some("mock-acme-corp"), "risk",
+            "Declining feature adoption in Q1",
+            Some("adoption_decline"), Some("yellow"),
+            Some("Usage dropped 20% month-over-month"),
+        ),
+        (
+            "mock-cap-enr-yellow-2", "mock-mh-globex-3d", "Globex Check-in",
+            Some("mock-globex-industries"), "risk",
+            "Budget review scheduled for next quarter",
+            None, Some("yellow"),
+            None,
+        ),
+        // GREEN_WATCH risk
+        (
+            "mock-cap-enr-green-1", "mock-mh-acme-2d", "Acme Corp Status Call",
+            Some("mock-acme-corp"), "risk",
+            "Minor integration frustration mentioned",
+            None, Some("green_watch"),
+            Some("The API latency has been a bit annoying"),
+        ),
+        // Sub-typed wins
+        (
+            "mock-cap-enr-win-adoption", "mock-mh-acme-2d", "Acme Corp Status Call",
+            Some("mock-acme-corp"), "win",
+            "Engineering team onboarded 15 new users",
+            Some("ADOPTION"), None,
+            Some("We just hit 100 active users this week"),
+        ),
+        (
+            "mock-cap-enr-win-expansion", "mock-mh-globex-3d", "Globex Check-in",
+            Some("mock-globex-industries"), "win",
+            "Evaluating enterprise tier for APAC region",
+            Some("EXPANSION"), None,
+            Some("Singapore team wants to start a pilot next month"),
+        ),
+        (
+            "mock-cap-enr-win-value", "mock-mh-acme-7d", "Acme Corp Weekly Sync",
+            Some("mock-acme-corp"), "win",
+            "Reported 40% reduction in deployment time",
+            Some("VALUE_REALIZED"), None,
+            Some("Our deployment cycle went from 2 hours to 72 minutes"),
+        ),
+        // Commitment captures (dual-write to captures table)
+        (
+            "mock-cap-enr-commit-1", "mock-mh-acme-2d", "Acme Corp Status Call",
+            Some("mock-acme-corp"), "commitment",
+            "Achieve 50% adoption across engineering by Q3",
+            None, None,
+            Some("We need at least half the team using it daily"),
+        ),
+        (
+            "mock-cap-enr-commit-2", "mock-mh-globex-3d", "Globex Check-in",
+            Some("mock-globex-industries"), "commitment",
+            "Deliver integration performance report by end of month",
+            None, None,
+            None,
+        ),
+    ];
+
+    for (id, meeting_id, meeting_title, account_id, ctype, content, sub_type, urgency, evidence_quote) in &enriched_captures {
+        conn.execute(
+            "INSERT OR REPLACE INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, captured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![id, meeting_id, meeting_title, account_id, ctype, content, sub_type, urgency, evidence_quote, &today],
+        ).map_err(|e| format!("Enriched capture {}: {}", id, e))?;
+    }
+
+    // ─── I555: Interaction dynamics ──────────────────────────────────────────
+
+    let dynamics_rows: Vec<(&str, i32, i32, &str, &str, &str, i32)> = vec![
+        // (meeting_id, customer_pct, internal_pct, question_density, decision_maker_active, forward_looking, monologue_risk)
+        ("mock-mh-acme-2d", 60, 40, "high", "yes", "high", 0),
+        ("mock-mh-globex-3d", 30, 70, "low", "no", "low", 1),
+        ("mock-mh-acme-7d", 50, 50, "moderate", "yes", "moderate", 0),
+    ];
+
+    for (meeting_id, cust_pct, int_pct, qd, dma, fl, mono) in &dynamics_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_interaction_dynamics
+             (meeting_id, talk_balance_customer_pct, talk_balance_internal_pct,
+              speaker_sentiments_json, question_density, decision_maker_active,
+              forward_looking, monologue_risk, competitor_mentions_json, escalation_language_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                meeting_id, cust_pct, int_pct,
+                r#"[{"name":"Sarah Chen","sentiment":"positive","evidence":"Proactively shared roadmap feedback"},{"name":"Alex Torres","sentiment":"neutral","evidence":"Mostly listening, asked clarifying questions"}]"#,
+                qd, dma, fl, mono,
+                "[]",
+                "[]",
+            ],
+        ).map_err(|e| format!("Interaction dynamics {}: {}", meeting_id, e))?;
+    }
+
+    // ─── I555: Champion health assessments ───────────────────────────────────
+
+    let champion_rows: Vec<(&str, &str, &str, &str, Option<&str>)> = vec![
+        // (meeting_id, champion_name, status, evidence, risk)
+        (
+            "mock-mh-acme-2d", "Sarah Chen", "strong",
+            "Proactively shared roadmap feedback and secured Phase 2 budget approval",
+            None,
+        ),
+        (
+            "mock-mh-acme-7d", "Sarah Chen", "weak",
+            "Delegated to junior team member, didn't attend last 20 minutes",
+            Some("Champion may be losing interest; schedule 1:1 to re-engage"),
+        ),
+    ];
+
+    for (meeting_id, name, status, evidence, risk) in &champion_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO meeting_champion_health
+             (meeting_id, champion_name, champion_status, champion_evidence, champion_risk)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![meeting_id, name, status, evidence, risk],
+        ).map_err(|e| format!("Champion health {}: {}", meeting_id, e))?;
+    }
+
+    // ─── I555: Role changes ─────────────────────────────────────────────────
+
+    conn.execute(
+        "INSERT OR REPLACE INTO meeting_role_changes
+         (id, meeting_id, person_name, old_status, new_status, evidence_quote)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            "mock-role-change-1",
+            "mock-mh-globex-14d",
+            "Mike Johnson",
+            "VP Engineering",
+            "CTO",
+            "Promoted last week per LinkedIn",
+        ],
+    ).map_err(|e| format!("Role change: {}", e))?;
+
+    // ─── I555: Captured commitments ─────────────────────────────────────────
+
+    let commitment_rows: Vec<(&str, &str, Option<&str>, &str, Option<&str>, Option<&str>, &str, i32)> = vec![
+        // (id, account_id, meeting_id, title, owner, target_date, source, consumed)
+        (
+            "mock-commitment-1", "mock-acme-corp", Some("mock-mh-acme-2d"),
+            "Achieve 50% adoption across engineering by Q3",
+            Some("joint"), Some("2026-09-30"),
+            "transcript:Acme Corp Status Call", 0,
+        ),
+        (
+            "mock-commitment-2", "mock-acme-corp", Some("mock-mh-acme-7d"),
+            "Deliver integration performance report",
+            Some("us"), Some("2026-03-31"),
+            "transcript:Acme Corp Weekly Sync", 0,
+        ),
+        (
+            "mock-commitment-3", "mock-globex-industries", Some("mock-mh-globex-3d"),
+            "Provide API access for custom dashboards",
+            Some("us"), None,
+            "transcript:Globex Check-in", 1,
+        ),
+    ];
+
+    for (id, account_id, meeting_id, title, owner, target_date, source, consumed) in &commitment_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO captured_commitments
+             (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'medium', ?7, ?8, ?9)",
+            rusqlite::params![id, account_id, meeting_id, title, owner, target_date, source, consumed, &today],
+        ).map_err(|e| format!("Captured commitment {}: {}", id, e))?;
+    }
+
     Ok(())
 }
 
@@ -3854,8 +4046,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             customer_fiscal_year_start: Some(1),
         }),
         expansion_signals: vec![
-            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(200_000.0), source: Some("meeting".into()), stage: Some("evaluating".into()) },
-            ExpansionSignal { opportunity: "APAC Singapore pilot".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()) },
+            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(200_000.0), source: Some("meeting".into()), stage: Some("evaluating".into()), strength: Some("strong".into()) },
+            ExpansionSignal { opportunity: "APAC Singapore pilot".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("moderate".into()) },
         ],
         renewal_outlook: Some(RenewalOutlook {
             confidence: Some("high".into()),
@@ -4023,7 +4215,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             customer_fiscal_year_start: Some(1),
         }),
         expansion_signals: vec![
-            ExpansionSignal { opportunity: "3 new team deployments".into(), arr_impact: Some(120_000.0), source: Some("deployment tracker".into()), stage: Some("committed".into()) },
+            ExpansionSignal { opportunity: "3 new team deployments".into(), arr_impact: Some(120_000.0), source: Some("deployment tracker".into()), stage: Some("committed".into()), strength: Some("strong".into()) },
         ],
         renewal_outlook: Some(RenewalOutlook {
             confidence: Some("low".into()),
@@ -4176,7 +4368,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             customer_fiscal_year_start: Some(10),
         }),
         expansion_signals: vec![
-            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()) },
+            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("early".into()) },
         ],
         renewal_outlook: Some(RenewalOutlook {
             confidence: Some("moderate".into()),

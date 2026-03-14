@@ -1277,3 +1277,139 @@ details[open] .detailsChevron {
   font-size: 13px;
   color: var(--color-text-secondary);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SINCE LAST MEETING — I558 compact timeline
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.sinceLastWrap {
+  margin-top: var(--space-xl);
+  border-left: 2px solid var(--color-rule-light);
+  padding-left: var(--space-lg);
+}
+
+.sinceLastHeading {
+  composes: chapterHeading;
+  margin-bottom: 10px;
+}
+
+.sinceLastList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sinceLastItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACCOUNT PULSE — I558 current state (working / not working)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.currentStateWrap {
+  margin-top: var(--space-lg);
+}
+
+.currentStateHeading {
+  composes: chapterHeading;
+  margin-bottom: 10px;
+}
+
+.currentStateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm) var(--space-lg);
+}
+
+.currentStateItem {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RECENT WINS — I558 positive context after risks
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.recentWinsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.recentWinItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.bulletDotSage {
+  composes: bulletDot;
+  background: var(--color-garden-sage);
+}
+
+.recentWinText {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   OPEN ITEMS — I558 follow-up tracking
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.openItemsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.openItemRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.openItemRow:last-child {
+  border-bottom: none;
+}
+
+.openItemOverdue {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.openItemTitle {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.openItemDue {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.openItemDueOverdue {
+  color: var(--color-spice-terracotta);
+  font-weight: 600;
+}
