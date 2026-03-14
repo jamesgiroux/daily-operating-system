@@ -138,8 +138,37 @@ fn build_account_health_prompt(
     }
     prompt.push('\n');
 
+    // Gather urgency-enriched captures (90 days) via existing DB function
+    let enriched_captures = db
+        .get_account_enriched_captures(entity_id, 90)
+        .unwrap_or_default();
+
+    let captures_section: String = if enriched_captures.is_empty() {
+        String::new()
+    } else {
+        let mut lines = Vec::new();
+        for cap in enriched_captures.iter().take(20) {
+            let urg = cap.urgency.as_deref().unwrap_or("none");
+            let sub = cap.sub_type.as_deref().unwrap_or("");
+            let date = cap.captured_at.split('T').next().unwrap_or(&cap.captured_at);
+            let quote = cap.evidence_quote.as_ref()
+                .map(|q| format!(" #\"{}\"", q))
+                .unwrap_or_default();
+            lines.push(format!(
+                "- [{}] {} | [{}] {} ({}){}", urg, cap.capture_type, sub, cap.content, date, quote
+            ));
+        }
+        lines.join("\n")
+    };
+
     prompt.push_str("# Intelligence Data\n\n");
     append_intel_context(&mut prompt, &ctx);
+
+    if !captures_section.is_empty() {
+        prompt.push_str("\n## Recent Captures (urgency-sorted, RED first)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&captures_section));
+        prompt.push_str("\n\n");
+    }
 
     prompt.push_str("# Output Format\n\n");
     prompt.push_str(
@@ -180,6 +209,7 @@ fn build_account_health_prompt(
     prompt.push_str("- value_delivered: Must have real citations where possible.\n");
     prompt.push_str("- recommended_actions: Exactly 3. Concrete verb phrases.\n");
     prompt.push_str("- SPECIFICITY: The Entity Intelligence Assessment (if present above) is your primary source. Use the specific risks, named people, and strategic context it identifies. Generic observations from meeting metadata alone are not sufficient.\n");
+    prompt.push_str("- CAPTURES: When Recent Captures are present, distinguish RED urgency items from GREEN_WATCH. RED items should inform risks and what_is_struggling. Use evidence_quote when available for customer_quote.\n");
 
     prompt
 }

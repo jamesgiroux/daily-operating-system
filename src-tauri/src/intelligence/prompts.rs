@@ -70,6 +70,8 @@ pub struct IntelligenceContext {
     pub computed_health: Option<super::io::AccountHealth>,
     /// I500: Org-level health data from external sources (Glean/CRM).
     pub org_health: Option<super::io::OrgHealthData>,
+    /// I555: Additional context blocks (engagement patterns, champion health, commitments).
+    pub extra_blocks: Vec<String>,
 }
 
 /// I508c structured gap query item used for local ranking + remote fan-out.
@@ -246,6 +248,105 @@ pub fn build_intelligence_context(
             })
             .collect();
         ctx.recent_captures = lines.join("\n");
+    }
+
+    // --- I555: Meeting engagement patterns (last 5 meetings with dynamics) ---
+    if entity_type == "account" {
+        if let Ok(mut stmt) = db.conn.prepare(
+            "SELECT m.start_time, m.title, mid.talk_balance_customer_pct, mid.talk_balance_internal_pct,
+                    mid.question_density, mid.decision_maker_active, mid.forward_looking,
+                    mch.champion_name, mch.champion_status
+             FROM meeting_interaction_dynamics mid
+             JOIN meetings m ON m.id = mid.meeting_id
+             JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+             LEFT JOIN meeting_champion_health mch ON mch.meeting_id = m.id
+             ORDER BY m.start_time DESC LIMIT 5"
+        ) {
+            let rows: Vec<(String, String, Option<i32>, Option<i32>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
+                stmt.query_map(rusqlite::params![entity_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?))
+                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+
+            if !rows.is_empty() {
+                let mut lines = vec!["## Meeting Engagement Patterns (last 5 meetings)".to_string()];
+                for (date, title, cust_pct, int_pct, _qd, _dma, fl, champ_name, champ_status) in &rows {
+                    let short_date = date.split('T').next().unwrap_or(date);
+                    let talk = match (cust_pct, int_pct) {
+                        (Some(c), Some(i)) => format!("Talk: {}% customer / {}% internal", c, i),
+                        _ => "Talk: unknown".to_string(),
+                    };
+                    let champion = match (champ_name, champ_status) {
+                        (Some(n), Some(s)) => format!("Champion {n}: {s}"),
+                        _ => "Champion: n/a".to_string(),
+                    };
+                    let fwd = fl.as_deref().unwrap_or("unknown");
+                    lines.push(format!("- {short_date} | {title} | {talk} | {champion} | Forward-looking: {fwd}"));
+                }
+                ctx.extra_blocks.push(lines.join("\n"));
+            }
+        }
+
+        // --- I555: Champion health trend ---
+        if let Ok(mut stmt) = db.conn.prepare(
+            "SELECT m.start_time, mch.champion_name, mch.champion_status, mch.champion_evidence
+             FROM meeting_champion_health mch
+             JOIN meetings m ON m.id = mch.meeting_id
+             JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+             WHERE mch.champion_name IS NOT NULL
+             ORDER BY m.start_time DESC LIMIT 5"
+        ) {
+            let rows: Vec<(String, String, String, Option<String>)> =
+                stmt.query_map(rusqlite::params![entity_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+
+            if !rows.is_empty() {
+                let champion_name = &rows[0].1;
+                let statuses: Vec<String> = rows.iter().map(|(d, _, s, _)| {
+                    let short = d.split('T').next().unwrap_or(d);
+                    format!("{s} ({short})")
+                }).collect();
+                let mut lines = vec![
+                    "## Champion Health Trend".to_string(),
+                    format!("{champion_name} — {}", statuses.join(", ")),
+                ];
+                // Add evidence for weak/lost entries
+                for (date, _, status, evidence) in &rows {
+                    if (status == "weak" || status == "lost") && evidence.is_some() {
+                        let short = date.split('T').next().unwrap_or(date);
+                        lines.push(format!("  {short} ({status}): {}", evidence.as_deref().unwrap_or("")));
+                    }
+                }
+                ctx.extra_blocks.push(lines.join("\n"));
+            }
+        }
+
+        // --- I555: Open commitments from prior meetings ---
+        if let Ok(mut stmt) = db.conn.prepare(
+            "SELECT title, owner, target_date, source
+             FROM captured_commitments
+             WHERE account_id = ?1 AND consumed = 0
+             ORDER BY created_at DESC LIMIT 10"
+        ) {
+            let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> =
+                stmt.query_map(rusqlite::params![entity_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+
+            if !rows.is_empty() {
+                let mut lines = vec!["## Open Commitments (from prior meetings)".to_string()];
+                for (title, owner, target, source) in &rows {
+                    let owner_str = owner.as_deref().unwrap_or("unassigned");
+                    let target_str = target.as_deref().unwrap_or("no target date");
+                    let source_str = source.as_deref().map(|s| format!(", from {s}")).unwrap_or_default();
+                    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+                    let overdue = target.as_deref().map(|t| t < today.as_str()).unwrap_or(false);
+                    let tag = if overdue { " [OVERDUE]" } else { "" };
+                    lines.push(format!("- \"{title}\" — owned_by: {owner_str}, target: {target_str}{source_str}{tag}"));
+                }
+                ctx.extra_blocks.push(lines.join("\n"));
+            }
+        }
     }
 
     // --- Recent email signals ---
@@ -1571,6 +1672,12 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
+    // I555: Extra context blocks (engagement patterns, champion health, commitments)
+    for block in &ctx.extra_blocks {
+        prompt.push_str(&wrap_user_data(block));
+        prompt.push_str("\n\n");
+    }
+
     // Writing style instructions
     prompt.push_str(&format!(
         "WRITING RULES:\n\
@@ -1801,8 +1908,15 @@ fn build_intelligence_prompt_inner(
     // Shared fields — always present regardless of health mode
     prompt.push_str(
         ",\n\
-           \"valueDelivered\": [{\"date\": \"ISO date\", \"statement\": \"what value was delivered\", \
-         \"source\": \"evidence source\", \"impact\": \"business impact\"}],\n\
+           \"valueDelivered\": [\n\
+         // ONLY include when the customer articulates a measurable business outcome.\n\
+         // Must be: quantified (includes a number), attributed (customer connects to your product),\n\
+         // and business-relevant (ties to revenue, cost, risk, or speed).\n\
+         // BAD: \"The product is useful\" / \"They use it daily\" / \"Team likes it\"\n\
+         // GOOD: \"Reduced troubleshooting time by 65%, saving ~$30K/month\"\n\
+         // GOOD: \"Onboarded 500 users in 2 weeks vs previous 6 weeks\"\n\
+         {\"date\": \"ISO date\", \"statement\": \"quantified outcome\", \
+         \"source\": \"meeting|email|capture\", \"impact\": \"revenue|cost|risk|speed\"}],\n\
            \"successMetrics\": [{\"name\": \"KPI name\", \"target\": \"target value\", \
          \"current\": \"current value\", \"status\": \"on_track|at_risk|behind|achieved\", \
          \"owner\": \"who owns this metric\"}],\n\
@@ -1828,12 +1942,26 @@ fn build_intelligence_prompt_inner(
                \"emailResponsiveness\": {\"trend\": \"improving|stable|slowing|gone_quiet\", \"assessment\": \"responsive|normal|slow|unresponsive\"},\n\
                \"blockers\": [{\"description\": \"...\", \"owner\": \"...\", \"since\": \"ISO date\", \"impact\": \"critical|high|moderate|low\"}],\n\
                \"contractContext\": {\"contractType\": \"annual|multi_year|month_to_month\", \"autoRenew\": true, \"renewalDate\": \"ISO date\", \"currentArr\": 0.0},\n\
-               \"expansionSignals\": [{\"opportunity\": \"...\", \"arrImpact\": 0.0, \"stage\": \"exploring|evaluating|committed|blocked\"}],\n\
+               \"expansionSignals\": [\n\
+               // Cross-departmental interest, usage ceiling hits, proactive internal advocacy,\n\
+               // organizational growth (hiring, acquisitions), questions about roadmap/pricing,\n\
+               // budget increase mentions. Each must cite specific evidence.\n\
+               {\"opportunity\": \"...\", \"arrImpact\": 0.0, \"stage\": \"exploring|evaluating|committed|blocked\", \"strength\": \"strong|moderate|early\"}],\n\
                \"renewalOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date\"},\n\
                \"supportHealth\": {\"openTickets\": 0, \"criticalTickets\": 0, \"trend\": \"improving|stable|degrading\", \"csat\": 0.0},\n\
                \"productAdoption\": {\"adoptionRate\": 0.0, \"trend\": \"growing|stable|declining\", \"featureAdoption\": [\"...\"], \"lastActive\": \"ISO date\"},\n\
                \"npsCsat\": {\"nps\": 0, \"csat\": 0.0, \"surveyDate\": \"ISO date\", \"verbatim\": \"quote\"},\n\
                \"sourceAttribution\": {\"fieldName\": [\"source1\"]}",
+        );
+
+        // I554: Success plan signals for accounts
+        prompt.push_str(
+            ",\n\
+               \"successPlanSignals\": {\n\
+                 \"statedObjectives\": [{\"objective\": \"...\", \"source\": \"meeting|email|file\", \"owner\": \"...\", \"targetDate\": \"ISO or null\", \"confidence\": \"high|medium|low\"}],\n\
+                 \"mutualSuccessCriteria\": [{\"criterion\": \"...\", \"ownedBy\": \"us|them|joint\", \"status\": \"not_started|in_progress|achieved|at_risk\"}],\n\
+                 \"milestoneCandidates\": [{\"milestone\": \"...\", \"expectedBy\": \"ISO or null\", \"detectedFrom\": \"source\", \"autoDetectEvent\": \"lifecycle event type or null\"}]\n\
+               }",
         );
     }
 
@@ -1862,7 +1990,21 @@ fn build_intelligence_prompt_inner(
              include ONLY when evidence exists in the provided context (Glean snippets, \
              meeting notes, files, email signals). Return null or empty array when no evidence. \
              Do NOT fabricate. Evidence sources may include workspace files, meeting transcripts, \
-             email signals, and Glean documents — extract intelligence from all available sources.\n",
+             email signals, and Glean documents — extract intelligence from all available sources.\n\n\
+             successPlanSignals — Synthesize the strategic objectives for this account from aggregate \
+             context. What is this customer trying to achieve with us? What have we mutually committed \
+             to? Focus on explicitly stated goals (\"our goal is...\", \"success looks like...\"), mutual \
+             commitments beyond individual action items, measurable criteria, and key milestones. \
+             Confidence: \"high\" = explicitly stated, \"medium\" = inferred from multiple signals, \
+             \"low\" = extrapolated from limited data. Do NOT fabricate objectives — return empty arrays \
+             if no stated goals exist.\n\n\
+             valueDelivered — ONLY include when the customer articulates a measurable business outcome. \
+             Must be quantified (includes a number), attributed (customer connects to your product), \
+             and business-relevant (ties to revenue, cost, risk, or speed). Reject vague usage \
+             statements like \"they use it daily\" or \"team likes it.\"\n\n\
+             expansionSignals — Include strength classification for each signal: \"strong\" = explicit \
+             interest with budget or timeline, \"moderate\" = multiple mentions or cross-departmental \
+             interest, \"early\" = single mention or indirect signal.\n",
         );
     }
 
@@ -1969,6 +2111,9 @@ struct AiIntelResponse {
     nps_csat: Option<super::io::SatisfactionData>,
     #[serde(default)]
     source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
+    /// I554: Success plan signals synthesized from aggregate context.
+    #[serde(default)]
+    success_plan_signals: Option<crate::types::SuccessPlanSignals>,
 }
 
 /// I396: Health trend direction with rationale.
@@ -2575,6 +2720,7 @@ fn try_parse_json_response(
         product_adoption: ai_resp.product_adoption,
         nps_csat: ai_resp.nps_csat,
         source_attribution: ai_resp.source_attribution,
+        success_plan_signals: ai_resp.success_plan_signals,
     })
 }
 
@@ -2921,6 +3067,7 @@ mod tests {
             gap_queries: Vec::new(),
             computed_health: None,
             org_health: None,
+            extra_blocks: Vec::new(),
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
