@@ -72,7 +72,7 @@ export function AccountHero({
       )}
 
       {/* Hero date / intelligence timestamp + account type badge */}
-      <div className={styles.heroDate} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div className={`${styles.heroDate} ${styles.heroDateLayout}`}>
         <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
         {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
         {onSaveField && (
@@ -106,20 +106,12 @@ export function AccountHero({
       {narrative && (
         <div className={styles.lede}>
           {narrative.split("\n\n").map((p, i) => (
-            <p key={i} style={{ margin: i === 0 ? 0 : "12px 0 0" }}>{p}</p>
+            <p key={i} className={i === 0 ? styles.ledeParagraph : styles.ledeParagraphSpaced}>{p}</p>
           ))}
           {narrativeTruncated && (
             <button
               onClick={() => setShowFullLede(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "4px 0 0",
-              }}
+              className={styles.readMore}
             >
               Read more
             </button>
@@ -133,10 +125,10 @@ export function AccountHero({
 
 // ─── Account Type Badge (inline dropdown) ──────────────────────────────────
 
-const ACCOUNT_TYPES: { value: "customer" | "internal" | "partner"; label: string; badgeClass: string; color: string }[] = [
-  { value: "customer", label: "Customer", badgeClass: "customerBadge", color: "var(--color-spice-turmeric)" },
-  { value: "internal", label: "Internal", badgeClass: "internalBadge", color: "var(--color-garden-larkspur)" },
-  { value: "partner", label: "Partner", badgeClass: "partnerBadge", color: "var(--color-garden-rosemary)" },
+const ACCOUNT_TYPES: { value: "customer" | "internal" | "partner"; label: string; badgeClass: string; optionActiveClass: string }[] = [
+  { value: "customer", label: "Customer", badgeClass: "customerBadge", optionActiveClass: "typeBadgeOptionCustomer" },
+  { value: "internal", label: "Internal", badgeClass: "internalBadge", optionActiveClass: "typeBadgeOptionInternal" },
+  { value: "partner", label: "Partner", badgeClass: "partnerBadge", optionActiveClass: "typeBadgeOptionPartner" },
 ];
 
 function AccountTypeBadge({
@@ -161,55 +153,21 @@ function AccountTypeBadge({
   const current = ACCOUNT_TYPES.find((t) => t.value === value) ?? ACCOUNT_TYPES[0];
 
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
+    <div ref={ref} className={styles.typeBadgeWrapper}>
       <button
-        className={`${styles.badge} ${styles[current.badgeClass]}`}
-        style={{
-          cursor: "pointer",
-          border: "none",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 3,
-        }}
+        className={`${styles.badge} ${styles[current.badgeClass]} ${styles.typeBadgeButton}`}
         onClick={() => setOpen(!open)}
       >
         {current.label}
-        <ChevronDown size={10} strokeWidth={2} style={{ opacity: 0.5 }} />
+        <ChevronDown size={10} strokeWidth={2} className={styles.typeBadgeChevron} />
       </button>
       {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            background: "var(--color-paper-cream)",
-            border: "1px solid var(--color-rule-light)",
-            borderRadius: 4,
-            boxShadow: "var(--shadow-lg)",
-            zIndex: 50,
-            minWidth: 120,
-            padding: "4px 0",
-          }}
-        >
+        <div className={styles.typeBadgeDropdown}>
           {ACCOUNT_TYPES.map((opt) => (
             <button
               key={opt.value}
               onClick={() => { onChange(opt.value); setOpen(false); }}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                padding: "6px 12px",
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: opt.value === value ? 600 : 400,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: opt.value === value ? opt.color : "var(--color-text-tertiary)",
-                background: opt.value === value ? "var(--color-desk-charcoal-4)" : "transparent",
-                border: "none",
-                cursor: "pointer",
-              }}
+              className={`${styles.typeBadgeOption} ${opt.value === value ? `${styles.typeBadgeOptionActive} ${styles[opt.optionActiveClass]}` : ""}`}
             >
               {opt.label}
             </button>

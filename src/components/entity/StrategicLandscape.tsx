@@ -1,26 +1,29 @@
 /**
- * StrategicLandscape — Competitive & Strategic chapter.
- * Surfaces strategicPriorities, competitiveContext, organizationalChanges,
- * and blockers from EntityIntelligence. Collapses entirely when all are empty.
+ * StrategicLandscape -- Competitive & Strategic chapter (Ledger style).
+ *
+ * Four subsections: Strategic Priorities (numbered list), Competitive Landscape
+ * (threat matrix grid), Organizational Changes (compact timeline with icons),
+ * and Blockers (terracotta accent blocks).
+ *
+ * Each subsection renders only when its data is non-empty.
+ * Returns null when all four sources are empty.
  *
  * I550: Per-item inline editing, dismiss, and feedback controls.
  */
 import { X } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
-import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import css from "./StrategicLandscape.module.css";
 
 interface StrategicLandscapeProps {
   intelligence: EntityIntelligence;
-  /** When provided, items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
-  /** Per-item feedback value getter. */
   getItemFeedback?: (fieldPath: string) => "positive" | "negative" | null;
-  /** Per-item feedback submit. */
   onItemFeedback?: (fieldPath: string, type: "positive" | "negative") => void;
 }
+
+/* -- Helpers -------------------------------------------------------------- */
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "";
@@ -28,126 +31,84 @@ function formatDate(dateStr?: string): string {
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
-      year: "numeric",
     });
   } catch {
     return dateStr;
   }
 }
 
-function getPriorityStatusColor(status?: string): string {
+function priorityStatusBadge(status?: string): { label: string; cls: string } {
   switch (status?.toLowerCase().replace(/[_\s-]/g, "")) {
     case "active":
-      return css.badgeSage;
+      return { label: "Active", cls: css.badgeSage };
     case "atrisk":
-      return css.badgeTurmeric;
+      return { label: "At Risk", cls: css.badgeTerracotta };
     case "completed":
-      return css.badgeLarkspur;
+      return { label: "Completed", cls: css.badgeSage };
     case "paused":
-      return css.badgeNeutral;
+      return { label: "Paused", cls: css.badgeLarkspur };
     default:
-      return css.badgeNeutral;
+      return { label: status ?? "", cls: css.badgeNeutral };
   }
 }
 
-function getPriorityStatusLabel(status?: string): string {
-  switch (status?.toLowerCase().replace(/[_\s-]/g, "")) {
-    case "active":
-      return "Active";
-    case "atrisk":
-      return "At Risk";
-    case "completed":
-      return "Completed";
-    case "paused":
-      return "Paused";
-    default:
-      return status ?? "";
-  }
-}
-
-function getThreatLevelColor(level?: string): string {
+function threatBadge(level?: string): { label: string; cls: string } {
   switch (level?.toLowerCase().replace(/[_\s-]/g, "")) {
     case "displacement":
-      return css.badgeTerracotta;
+      return { label: "Displacement", cls: css.badgeTerracotta };
     case "evaluation":
-      return css.badgeTurmeric;
+      return { label: "Evaluation", cls: css.badgeTerracotta };
     case "mentioned":
-      return css.badgeSage;
+      return { label: "Mentioned", cls: css.badgeNeutral };
     case "incumbent":
-      return css.badgeNeutral;
+      return { label: "Incumbent", cls: css.badgeSage };
     default:
-      return css.badgeNeutral;
+      return { label: level ?? "", cls: css.badgeNeutral };
   }
 }
 
-function getThreatLevelLabel(level?: string): string {
-  switch (level?.toLowerCase().replace(/[_\s-]/g, "")) {
-    case "displacement":
-      return "Displacement";
-    case "evaluation":
-      return "Evaluation";
-    case "mentioned":
-      return "Mentioned";
-    case "incumbent":
-      return "Incumbent";
-    default:
-      return level ?? "";
-  }
-}
-
-function getChangeTypeLabel(changeType: string): string {
+function changeIconClass(changeType: string): string {
   switch (changeType.toLowerCase().replace(/[_\s-]/g, "")) {
     case "departure":
-      return "Departure";
+      return css.changeIconDeparture;
     case "hire":
-      return "New Hire";
+      return css.changeIconHire;
     case "promotion":
-      return "Promotion";
-    case "reorg":
-      return "Reorg";
-    case "rolechange":
-      return "Role Change";
+      return css.changeIconPromotion;
     default:
-      return changeType;
+      return css.changeIconDefault;
   }
 }
 
-function getChangeTypeColor(changeType: string): string {
+function changeIconChar(changeType: string): string {
   switch (changeType.toLowerCase().replace(/[_\s-]/g, "")) {
     case "departure":
-      return css.badgeTerracotta;
+      return "\u2197"; // ↗
     case "hire":
-      return css.badgeSage;
+      return "+";
     case "promotion":
-      return css.badgeLarkspur;
-    case "reorg":
-      return css.badgeTurmeric;
-    case "rolechange":
-      return css.badgeNeutral;
+      return "\u2191"; // ↑
     default:
-      return css.badgeNeutral;
+      return "\u2022"; // bullet
   }
 }
 
-function getImpactColor(impact?: string): string {
+function impactBadge(impact?: string): { label: string; cls: string } {
   switch (impact?.toLowerCase()) {
     case "critical":
-      return css.badgeTerracotta;
+      return { label: "Critical", cls: css.badgeTerracotta };
     case "high":
-      return css.badgeTurmeric;
+      return { label: "High", cls: css.badgeTurmeric };
     case "moderate":
-      return css.badgeSage;
+      return { label: "Moderate", cls: css.badgeSage };
     case "low":
-      return css.badgeNeutral;
+      return { label: "Low", cls: css.badgeNeutral };
     default:
-      return css.badgeNeutral;
+      return { label: impact ?? "", cls: css.badgeNeutral };
   }
 }
 
-function getImpactLabel(impact?: string): string {
-  if (!impact) return "";
-  return impact.charAt(0).toUpperCase() + impact.slice(1);
-}
+/* -- Component ------------------------------------------------------------ */
 
 export function StrategicLandscape({
   intelligence,
@@ -167,218 +128,208 @@ export function StrategicLandscape({
 
   if (!hasPriorities && !hasCompetitors && !hasOrgChanges && !hasBlockers) return null;
 
+  const showActions = !!(onUpdateField || onItemFeedback);
+
   return (
     <section className={css.section}>
-      <ChapterHeading title="Competitive & Strategic Landscape" />
-
-      {/* Strategic Priorities */}
+      {/* ── Strategic Priorities ── */}
       {hasPriorities && (
         <div className={css.subsection}>
           <h3 className={css.subsectionLabel}>Strategic Priorities</h3>
-          <div className={css.itemList}>
-            {priorities.map((p, i) => (
-              <div key={i} className={css.item}>
-                <div className={css.itemHeader}>
+          {priorities.map((p, i) => {
+            const badge = p.status ? priorityStatusBadge(p.status) : null;
+            const path = `strategicPriorities[${i}].priority`;
+            return (
+              <div key={i} className={css.priorityRow}>
+                <div className={css.priorityNum}>{i + 1}</div>
+                <div className={css.priorityBody}>
                   {onUpdateField ? (
                     <EditableText
                       value={p.priority}
-                      onChange={(v) => onUpdateField(`strategicPriorities[${i}].priority`, v)}
+                      onChange={(v) => onUpdateField(path, v)}
                       as="p"
                       multiline
-                      className={css.itemText}
-                      style={{
-                        fontFamily: "var(--font-serif)",
-                        fontSize: 16,
-                        lineHeight: 1.5,
-                        color: "var(--color-text-primary)",
-                        margin: 0,
-                        flex: 1,
-                      }}
+                      className={css.priorityText}
                     />
                   ) : (
-                    <p className={css.itemText}>{p.priority}</p>
+                    <p className={css.priorityText}>{p.priority}</p>
                   )}
-                  {p.status && (
-                    <span className={`${css.badge} ${getPriorityStatusColor(p.status)}`}>
-                      {getPriorityStatusLabel(p.status)}
-                    </span>
-                  )}
-                  {(onUpdateField || onItemFeedback) && (
-                    <span className={css.itemActions}>
-                      {onItemFeedback && (
-                        <IntelligenceFeedback
-                          value={getItemFeedback?.(`strategicPriorities[${i}].priority`) ?? null}
-                          onFeedback={(type) => onItemFeedback(`strategicPriorities[${i}].priority`, type)}
-                        />
-                      )}
-                      {onUpdateField && (
-                        <button
-                          type="button"
-                          className={css.dismissButton}
-                          onClick={() => onUpdateField(`strategicPriorities[${i}].priority`, "")}
-                          title="Dismiss"
-                        >
-                          <X size={13} />
-                        </button>
-                      )}
-                    </span>
-                  )}
+                  <div className={css.priorityMeta}>
+                    {badge && (
+                      <span className={`${css.badge} ${badge.cls}`}>{badge.label}</span>
+                    )}
+                    {p.owner && <span>{p.owner}</span>}
+                    {p.timeline && <span>{p.timeline}</span>}
+                  </div>
                 </div>
-                <div className={css.itemMeta}>
-                  {p.owner && <span className={css.metaText}>{p.owner}</span>}
-                  {p.timeline && <span className={css.metaText}>{p.timeline}</span>}
-                </div>
+                {showActions && (
+                  <span className={css.itemActions}>
+                    {onItemFeedback && (
+                      <IntelligenceFeedback
+                        value={getItemFeedback?.(path) ?? null}
+                        onFeedback={(type) => onItemFeedback(path, type)}
+                      />
+                    )}
+                    {onUpdateField && (
+                      <button
+                        type="button"
+                        className={css.dismissButton}
+                        onClick={() => onUpdateField(path, "")}
+                        title="Dismiss"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Competitive Context */}
+      {/* ── Competitive Landscape ── */}
       {hasCompetitors && (
         <div className={css.subsection}>
-          <h3 className={css.subsectionLabel}>Competitive Context</h3>
-          <div className={css.itemList}>
-            {competitors.map((c, i) => (
-              <div key={i} className={css.item}>
-                <div className={css.itemHeader}>
-                  <span className={css.competitorName}>{c.competitor}</span>
-                  {c.threatLevel && (
-                    <span className={`${css.badge} ${getThreatLevelColor(c.threatLevel)}`}>
-                      {getThreatLevelLabel(c.threatLevel)}
-                    </span>
-                  )}
-                  {(onUpdateField || onItemFeedback) && (
-                    <span className={css.itemActions}>
+          <h3 className={css.subsectionLabel}>Competitive Landscape</h3>
+          <div className={css.threatMatrix}>
+            {competitors.map((c, i) => {
+              const badge = c.threatLevel ? threatBadge(c.threatLevel) : null;
+              const path = `competitiveContext[${i}].context`;
+              return (
+                <div key={i} className={css.threatRow}>
+                  <div className={css.competitorCell}>
+                    <span className={css.competitorName}>{c.competitor}</span>
+                    {badge && (
+                      <span className={`${css.badge} ${badge.cls}`}>{badge.label}</span>
+                    )}
+                  </div>
+                  <div>
+                    {c.context && (
+                      onUpdateField ? (
+                        <EditableText
+                          value={c.context}
+                          onChange={(v) => onUpdateField(path, v)}
+                          as="p"
+                          multiline
+                          className={css.threatContext}
+                        />
+                      ) : (
+                        <p className={css.threatContext}>{c.context}</p>
+                      )
+                    )}
+                  </div>
+                  {showActions ? (
+                    <div className={css.threatActions}>
                       {onItemFeedback && (
                         <IntelligenceFeedback
-                          value={getItemFeedback?.(`competitiveContext[${i}].context`) ?? null}
-                          onFeedback={(type) => onItemFeedback(`competitiveContext[${i}].context`, type)}
+                          value={getItemFeedback?.(path) ?? null}
+                          onFeedback={(type) => onItemFeedback(path, type)}
                         />
                       )}
                       {onUpdateField && (
                         <button
                           type="button"
                           className={css.dismissButton}
-                          onClick={() => onUpdateField(`competitiveContext[${i}].context`, "")}
+                          onClick={() => onUpdateField(path, "")}
                           title="Dismiss"
                         >
                           <X size={13} />
                         </button>
                       )}
-                    </span>
+                    </div>
+                  ) : (
+                    <div />
                   )}
                 </div>
-                {c.context && (
-                  onUpdateField ? (
-                    <EditableText
-                      value={c.context}
-                      onChange={(v) => onUpdateField(`competitiveContext[${i}].context`, v)}
-                      as="p"
-                      multiline
-                      style={{
-                        fontFamily: "var(--font-serif)",
-                        fontSize: 15,
-                        lineHeight: 1.55,
-                        color: "var(--color-text-secondary)",
-                        margin: "6px 0 0",
-                      }}
-                    />
-                  ) : (
-                    <p className={css.contextText}>{c.context}</p>
-                  )
-                )}
-                {c.detectedAt && (
-                  <span className={css.metaText}>{formatDate(c.detectedAt)}</span>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Organizational Changes */}
+      {/* ── Organizational Changes ── */}
       {hasOrgChanges && (
         <div className={css.subsection}>
           <h3 className={css.subsectionLabel}>Organizational Changes</h3>
-          <div className={css.itemList}>
-            {orgChanges.map((change, i) => (
-              <div key={i} className={css.item}>
-                <div className={css.itemHeader}>
-                  <span className={`${css.badge} ${getChangeTypeColor(change.changeType)}`}>
-                    {getChangeTypeLabel(change.changeType)}
-                  </span>
-                  <span className={css.personName}>{change.person}</span>
-                  {onItemFeedback && (
-                    <span className={css.itemActions}>
-                      <IntelligenceFeedback
-                        value={getItemFeedback?.(`organizationalChanges[${i}].person`) ?? null}
-                        onFeedback={(type) => onItemFeedback(`organizationalChanges[${i}].person`, type)}
-                      />
-                    </span>
-                  )}
+          {orgChanges.map((change, i) => {
+            const path = `organizationalChanges[${i}].person`;
+            const detail = [change.from, change.to].filter(Boolean).join(" \u2192 ");
+            return (
+              <div key={i} className={css.changeRow}>
+                <div className={changeIconClass(change.changeType)}>
+                  {changeIconChar(change.changeType)}
                 </div>
-                {(change.from || change.to) && (
-                  <p className={css.changeDetail}>
-                    {change.from && <span>{change.from}</span>}
-                    {change.from && change.to && <span className={css.changeArrow}>{" \u2192 "}</span>}
-                    {change.to && <span>{change.to}</span>}
-                  </p>
-                )}
+                <div className={css.changeBody}>
+                  <div>
+                    <span className={css.changeName}>{change.person}</span>
+                    {detail && (
+                      <span className={css.changeDetail}>{` \u2014 ${detail}`}</span>
+                    )}
+                  </div>
+                </div>
                 {change.detectedAt && (
-                  <span className={css.metaText}>{formatDate(change.detectedAt)}</span>
+                  <span className={css.changeDate}>
+                    Detected {formatDate(change.detectedAt)}
+                  </span>
+                )}
+                {onItemFeedback && (
+                  <span className={css.itemActions}>
+                    <IntelligenceFeedback
+                      value={getItemFeedback?.(path) ?? null}
+                      onFeedback={(type) => onItemFeedback(path, type)}
+                    />
+                  </span>
                 )}
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Blockers & Risks */}
+      {/* ── Blockers ── */}
       {hasBlockers && (
         <div className={css.subsection}>
-          <h3 className={css.subsectionLabelTerracotta}>Blockers & Risks</h3>
-          <div className={css.itemList}>
-            {blockers.map((b, i) => (
+          <h3 className={css.subsectionLabel}>Blockers</h3>
+          {blockers.map((b, i) => {
+            const badge = b.impact ? impactBadge(b.impact) : null;
+            const path = `blockers[${i}].description`;
+            return (
               <div key={i} className={css.blockerItem}>
-                <div className={css.itemHeader}>
-                  {onUpdateField ? (
-                    <EditableText
-                      value={b.description}
-                      onChange={(v) => onUpdateField(`blockers[${i}].description`, v)}
-                      as="p"
-                      multiline
-                      className={css.itemText}
-                      style={{
-                        fontFamily: "var(--font-serif)",
-                        fontSize: 16,
-                        lineHeight: 1.5,
-                        color: "var(--color-text-primary)",
-                        margin: 0,
-                        flex: 1,
-                      }}
-                    />
-                  ) : (
-                    <p className={css.itemText}>{b.description}</p>
-                  )}
-                  {b.impact && (
-                    <span className={`${css.badge} ${getImpactColor(b.impact)}`}>
-                      {getImpactLabel(b.impact)}
-                    </span>
-                  )}
-                  {(onUpdateField || onItemFeedback) && (
+                <div className={css.blockerInner}>
+                  <div className={css.blockerContent}>
+                    {onUpdateField ? (
+                      <EditableText
+                        value={b.description}
+                        onChange={(v) => onUpdateField(path, v)}
+                        as="p"
+                        multiline
+                        className={css.blockerDesc}
+                      />
+                    ) : (
+                      <p className={css.blockerDesc}>{b.description}</p>
+                    )}
+                    <div className={css.blockerMeta}>
+                      {b.owner && <span>{b.owner}</span>}
+                      {b.since && <span>Since: {formatDate(b.since)}</span>}
+                      {badge && (
+                        <span className={`${css.badge} ${badge.cls}`}>{badge.label}</span>
+                      )}
+                    </div>
+                  </div>
+                  {showActions && (
                     <span className={css.itemActions}>
                       {onItemFeedback && (
                         <IntelligenceFeedback
-                          value={getItemFeedback?.(`blockers[${i}].description`) ?? null}
-                          onFeedback={(type) => onItemFeedback(`blockers[${i}].description`, type)}
+                          value={getItemFeedback?.(path) ?? null}
+                          onFeedback={(type) => onItemFeedback(path, type)}
                         />
                       )}
                       {onUpdateField && (
                         <button
                           type="button"
                           className={css.dismissButton}
-                          onClick={() => onUpdateField(`blockers[${i}].description`, "")}
+                          onClick={() => onUpdateField(path, "")}
                           title="Dismiss"
                         >
                           <X size={13} />
@@ -387,13 +338,9 @@ export function StrategicLandscape({
                     </span>
                   )}
                 </div>
-                <div className={css.itemMeta}>
-                  {b.owner && <span className={css.metaText}>{b.owner}</span>}
-                  {b.since && <span className={css.metaText}>Since {formatDate(b.since)}</span>}
-                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
     </section>

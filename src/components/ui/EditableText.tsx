@@ -129,6 +129,9 @@ export function EditableText({
 
   if (editing) {
     const inputStyle: React.CSSProperties = {
+      font: "inherit",
+      color: "inherit",
+      letterSpacing: "inherit",
       ...style,
       background: "transparent",
       border: "none",

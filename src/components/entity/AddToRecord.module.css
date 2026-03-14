@@ -11,6 +11,7 @@
   text-transform: uppercase;
   color: var(--color-spice-turmeric);
   padding: 0;
+  margin-bottom: 20px;
 }
 
 .addButton:hover {

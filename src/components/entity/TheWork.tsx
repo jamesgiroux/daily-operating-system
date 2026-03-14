@@ -453,16 +453,6 @@ export function TheWork({
         </div>
       )}
 
-      {(data.objectives ?? []).length === 0 && !addingObjective && data.accountId && (
-        <div className={s.emptyObjectives}>
-          No objectives yet
-          <span> · </span>
-          <button className={s.inlineAdder} onClick={() => setAddingObjective(true)}>
-            + Objective
-          </button>
-        </div>
-      )}
-
       {(data.objectives ?? []).map((objective, index) => {
         const statusClass = objective.status === "draft" ? s.objectiveDraft
           : objective.status === "completed" ? s.objectiveCompleted
