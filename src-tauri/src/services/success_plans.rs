@@ -247,6 +247,71 @@ pub fn get_objective_suggestions(db: &ActionDb, account_id: &str) -> Result<Vec<
         });
     }
 
+    // Fallback: if no signals and no commitments, parse existing assessment fields
+    if suggestions.is_empty() {
+        if let Ok((metrics_json, commitments_json, risks_json)) =
+            db.get_assessment_fallback_fields(account_id)
+        {
+            // Parse success_metrics → candidate objectives
+            if let Some(raw) = metrics_json {
+                if let Ok(metrics) = serde_json::from_str::<Vec<crate::intelligence::io::SuccessMetric>>(&raw) {
+                    for metric in metrics.iter().filter(|m| m.status.as_deref() != Some("achieved")).take(2) {
+                        let desc = match (&metric.target, &metric.current) {
+                            (Some(target), Some(current)) => Some(format!("Current: {current} → Target: {target}")),
+                            (Some(target), None) => Some(format!("Target: {target}")),
+                            _ => None,
+                        };
+                        suggestions.push(SuggestedObjective {
+                            title: metric.name.clone(),
+                            description: desc,
+                            confidence: "medium".to_string(),
+                            source_evidence: Some("From account intelligence metrics".to_string()),
+                            milestones: Vec::new(),
+                            source_commitment_ids: Vec::new(),
+                        });
+                    }
+                }
+            }
+            // Parse open_commitments → candidate objectives
+            if let Some(raw) = commitments_json {
+                if let Ok(commitments) = serde_json::from_str::<Vec<crate::intelligence::io::OpenCommitment>>(&raw) {
+                    for commitment in commitments.iter().filter(|c| c.status.as_deref() != Some("completed")).take(2) {
+                        let milestones = commitment.due_date.as_ref().map(|date| {
+                            vec![SuggestedMilestone {
+                                title: "Target date reached".to_string(),
+                                target_date: Some(date.clone()),
+                                auto_detect_event: None,
+                            }]
+                        }).unwrap_or_default();
+                        suggestions.push(SuggestedObjective {
+                            title: commitment.description.clone(),
+                            description: commitment.owner.as_ref().map(|o| format!("Owner: {o}")),
+                            confidence: "low".to_string(),
+                            source_evidence: commitment.source.clone(),
+                            milestones,
+                            source_commitment_ids: Vec::new(),
+                        });
+                    }
+                }
+            }
+            // Parse risks_json → mitigation objectives (critical/watch only)
+            if let Some(raw) = risks_json {
+                if let Ok(risks) = serde_json::from_str::<Vec<crate::intelligence::io::IntelRisk>>(&raw) {
+                    for risk in risks.iter().filter(|r| r.urgency == "critical" || r.urgency == "red").take(1) {
+                        suggestions.push(SuggestedObjective {
+                            title: format!("Mitigate: {}", risk.text),
+                            description: None,
+                            confidence: "low".to_string(),
+                            source_evidence: risk.source.clone(),
+                            milestones: Vec::new(),
+                            source_commitment_ids: Vec::new(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     suggestions.truncate(5);
     Ok(suggestions)
 }

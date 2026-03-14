@@ -10,7 +10,6 @@
 }
 
 .headerActions,
-.bannerActions,
 .objectiveActions,
 .milestoneActions {
   display: flex;
@@ -20,7 +19,6 @@
 
 .headerButton,
 .templateApply,
-.bannerAction,
 .smallAction,
 .smallActionMuted,
 .inlineAdder {
@@ -37,7 +35,6 @@
 
 .headerButton,
 .templateApply,
-.bannerAction,
 .smallAction,
 .inlineAdder {
   color: var(--color-spice-turmeric);
@@ -47,35 +44,19 @@
   color: var(--color-text-tertiary);
 }
 
-.banner {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 28px;
-  padding: 16px 18px;
-  border: 1px solid var(--color-rule-light);
-  background: var(--color-paper-warm-white);
-}
-
-.bannerTitle,
 .panelTitle,
 .subheading,
-.templateName,
 .suggestionTitle {
   font-family: var(--font-serif);
   color: var(--color-text-primary);
 }
 
-.bannerTitle,
 .panelTitle {
   font-size: 20px;
   font-weight: 400;
   margin-bottom: 4px;
 }
 
-.bannerText,
-.templateDescription,
 .suggestionDescription,
 .suggestionMeta,
 .objectiveMeta,
@@ -92,7 +73,6 @@
   border: 1px solid var(--color-rule-light);
 }
 
-.templateCard,
 .suggestionCard,
 .objectiveCard {
   border-top: 1px solid var(--color-rule-light);
@@ -100,14 +80,12 @@
   margin-top: 18px;
 }
 
-.templateCard:first-of-type,
 .suggestionCard:first-of-type {
   border-top: none;
   padding-top: 0;
   margin-top: 0;
 }
 
-.templateHead,
 .suggestionTop,
 .objectiveTop,
 .linkedActionRow,
@@ -121,7 +99,6 @@
   gap: 12px;
 }
 
-.templateName,
 .suggestionTitle,
 .objectiveTitle {
   font-size: 22px;
@@ -129,7 +106,6 @@
   margin: 0;
 }
 
-.templateObjectives,
 .suggestionMilestones,
 .milestoneList {
   margin: 12px 0 0;
@@ -137,24 +113,11 @@
   list-style: none;
 }
 
-.templateObjectives li,
 .suggestionMilestones li {
   padding: 6px 0;
   font-family: var(--font-sans);
   font-size: 14px;
   color: var(--color-text-primary);
-}
-
-.templateObjectiveTitle {
-  display: block;
-  font-weight: 500;
-}
-
-.templateObjectiveMeta {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
 }
 
 .objectiveInput,
@@ -243,6 +206,7 @@
   padding-bottom: 6px;
   border-bottom: 1px solid var(--color-rule-light);
   margin-bottom: 12px;
+  color: var(--label-color, var(--color-text-tertiary));
 }
 
 .actionGroup {
@@ -260,3 +224,45 @@
   color: var(--color-text-tertiary);
   font-style: italic;
 }
+
+/* Progress bar */
+.progressBar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border-subtle);
+  margin-top: 8px;
+  overflow: hidden;
+}
+.progressFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.progressOnTrack .progressFill { background: var(--color-garden-sage); }
+.progressWarning .progressFill { background: var(--color-spice-turmeric); }
+.progressOverdue .progressFill { background: var(--color-spice-terracotta); }
+
+/* Objective target date */
+.objectiveTargetDate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* Objective status states */
+.objectiveDraft { opacity: 0.6; }
+.objectiveCompleted { border-left: 3px solid var(--color-garden-sage); padding-left: 12px; }
+.objectiveAbandoned { opacity: 0.5; }
+.objectiveAbandoned .objectiveTitle { text-decoration: line-through; }
+
+/* Empty state */
+.emptyObjectives {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  padding: 16px 0;
+}
+
+/* Scroll target */
+.scrollTarget { scroll-margin-top: 60px; }

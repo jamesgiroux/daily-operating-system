@@ -50,6 +50,7 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { AddToRecord } from "@/components/entity/AddToRecord";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import shared from "@/styles/entity-detail.module.css";
@@ -327,11 +328,13 @@ export default function PersonDetailEditorial() {
 
       {/* Chapter 5: The Record */}
       <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
+        <AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />
         <UnifiedTimeline data={{
           recentMeetings: detail.recentMeetings ?? [],
           recentCaptures: detail.recentCaptures,
           recentEmailSignals: detail.recentEmailSignals,
-        }} />
+          contextEntries: entityCtx.entries,
+        }} sectionId="" />
       </div>
 
       {/* Chapter 6: The Work (suppressed when empty per I351) */}
@@ -349,30 +352,23 @@ export default function PersonDetailEditorial() {
         </div>
       )}
 
-      {/* Finis marker */}
-      <div className="editorial-reveal">
-        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
-      </div>
-
       {/* Appendix */}
       <div className="editorial-reveal">
         <PersonAppendix
           detail={detail}
-          onSave={person.handleSave}
-          dirty={person.dirty}
-          saving={person.saving}
           duplicateCandidates={person.duplicateCandidates}
           onMergeSuggested={person.handleOpenSuggestedMerge}
           merging={person.merging}
-          contextEntries={entityCtx.entries}
-          onCreateContextEntry={entityCtx.createEntry}
-          onUpdateContextEntry={entityCtx.updateEntry}
-          onDeleteContextEntry={entityCtx.deleteEntry}
           files={person.files}
           onIndexFiles={person.handleIndexFiles}
           indexing={person.indexing}
           indexFeedback={person.indexFeedback}
         />
+      </div>
+
+      {/* Finis marker */}
+      <div className="editorial-reveal">
+        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
       </div>
 
       {/* Merge Person Picker Dialog */}
