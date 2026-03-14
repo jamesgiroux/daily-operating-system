@@ -1692,7 +1692,9 @@ fn build_intelligence_prompt_inner(
          - blockers[]: Specific OBSTACLES with an identifiable owner blocking progress on \
            a known initiative. Must have an owner and a since-date. Not general concerns.\n\
          - openCommitments[]: PROMISES made by either side with a deliverable and timeline. \
-           Not strategic goals (those are strategicPriorities). Not blockers.\n\
+           Not strategic goals (those are strategicPriorities). Not blockers. \
+           If the context already contains an \"Open Commitments\" section from prior meetings, \
+           do NOT re-extract the same items. Supplement only with new commitments not already listed.\n\
          - strategicPriorities[]: The customer's stated BUSINESS OBJECTIVES for the engagement. \
            High-level goals, not tactical commitments or individual blockers.\n\
          - renewalOutlook.riskFactors[]: Factors that could affect the CONTRACT DECISION \

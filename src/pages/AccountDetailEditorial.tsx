@@ -158,14 +158,16 @@ const HEALTH_CHAPTER = {
 };
 
 function buildChapters(isParent: boolean, hasHealth: boolean) {
+  // BASE_CHAPTERS: [headline, outlook, state-of-play, the-room, watch-list, ...]
   let chapters = [...BASE_CHAPTERS];
-  // Health appears after state-of-play (index 1), before the-room
-  if (hasHealth) {
-    chapters.splice(2, 0, HEALTH_CHAPTER);
-  }
-  // Portfolio appears after headline, before State of Play
+  // Portfolio inserts after outlook (index 2), before state-of-play
   if (isParent) {
-    chapters = [chapters[0], PORTFOLIO_CHAPTER, ...chapters.slice(1)];
+    chapters.splice(2, 0, PORTFOLIO_CHAPTER);
+  }
+  // Health inserts after state-of-play, before the-room
+  const sopIndex = chapters.findIndex((c) => c.id === "state-of-play");
+  if (hasHealth && sopIndex >= 0) {
+    chapters.splice(sopIndex + 1, 0, HEALTH_CHAPTER);
   }
   return chapters;
 }
