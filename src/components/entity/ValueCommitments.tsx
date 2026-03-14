@@ -269,7 +269,7 @@ export function ValueCommitments({
         </div>
       )}
 
-      {/* Open Commitments -- ledger rows */}
+      {/* Open Commitments -- dossier-style vertical cards */}
       {hasCommitments && (
         <div className={css.subsection}>
           <h3 className={css.subsectionLabel}>Open Commitments</h3>
@@ -279,81 +279,68 @@ export function ValueCommitments({
                 commitment.status !== "delivered" &&
                 isOverdue(commitment.dueDate);
               return (
-                <div key={i} className={css.commitmentRow}>
-                  <div className={css.commitmentDesc}>
-                    {onUpdateField ? (
-                      <EditableText
-                        value={commitment.description}
-                        onChange={(v) =>
-                          onUpdateField(
-                            `openCommitments[${i}].description`,
-                            v
-                          )
-                        }
-                        as="span"
-                        multiline
-                      />
-                    ) : (
-                      commitment.description
-                    )}
+                <div key={i} className={css.commitmentItem}>
+                  <div className={`${css.commitmentDot} ${overdue ? css.commitmentDotOverdue : css.commitmentDotOpen}`} />
+                  <div className={css.commitmentBody}>
+                    <div className={css.commitmentDesc}>
+                      {onUpdateField ? (
+                        <EditableText
+                          value={commitment.description}
+                          onChange={(v) =>
+                            onUpdateField(`openCommitments[${i}].description`, v)
+                          }
+                          as="span"
+                          multiline
+                        />
+                      ) : (
+                        commitment.description
+                      )}
+                    </div>
+                    <div className={css.commitmentMeta}>
+                      {commitment.owner && (
+                        <span className={css.commitmentOwner}>{commitment.owner}</span>
+                      )}
+                      {commitment.dueDate && (
+                        <span className={overdue ? css.commitmentDueOverdue : css.commitmentDue}>
+                          {overdue ? "Overdue: " : "Due: "}{formatShortDate(commitment.dueDate)}
+                        </span>
+                      )}
+                      {commitment.status && (
+                        <span className={`${css.statusBadge} ${getCommitmentBadgeColor(commitment.status)}`}>
+                          {getCommitmentStatusLabel(commitment.status)}
+                        </span>
+                      )}
+                      {commitment.source && (
+                        <span className={css.commitmentSource}>Source: {commitment.source}</span>
+                      )}
+                    </div>
                   </div>
-                  <span className={css.commitmentOwner}>
-                    {commitment.owner ?? "\u2014"}
-                  </span>
-                  <span
-                    className={
-                      overdue ? css.commitmentDueOverdue : css.commitmentDue
-                    }
-                  >
-                    {commitment.dueDate
-                      ? overdue
-                        ? `${formatShortDate(commitment.dueDate)} [OVERDUE]`
-                        : formatShortDate(commitment.dueDate)
-                      : "\u2014"}
-                  </span>
-                  <span className={css.commitmentTrailing}>
-                    {commitment.status && (
-                      <span
-                        className={`${css.statusBadge} ${getCommitmentBadgeColor(commitment.status)}`}
-                      >
-                        {getCommitmentStatusLabel(commitment.status)}
-                      </span>
-                    )}
-                    {(onUpdateField || onItemFeedback) && (
-                      <span className={css.itemActions}>
-                        {onItemFeedback && (
-                          <IntelligenceFeedback
-                            value={
-                              getItemFeedback?.(
-                                `openCommitments[${i}].description`
-                              ) ?? null
-                            }
-                            onFeedback={(type) =>
-                              onItemFeedback(
-                                `openCommitments[${i}].description`,
-                                type
-                              )
-                            }
-                          />
-                        )}
-                        {onUpdateField && (
-                          <button
-                            type="button"
-                            className={css.dismissButton}
-                            onClick={() =>
-                              onUpdateField(
-                                `openCommitments[${i}].description`,
-                                ""
-                              )
-                            }
-                            title="Remove"
+                  {(onUpdateField || onItemFeedback) && (
+                    <span className={css.itemActions}>
+                      {onItemFeedback && (
+                        <IntelligenceFeedback
+                          value={
+                            getItemFeedback?.(`openCommitments[${i}].description`) ?? null
+                          }
+                          onFeedback={(type) =>
+                            onItemFeedback(`openCommitments[${i}].description`, type)
+                          }
+                        />
+                      )}
+                      {onUpdateField && (
+                        <button
+                          type="button"
+                          className={css.dismissButton}
+                          onClick={() =>
+                            onUpdateField(`openCommitments[${i}].description`, "")
+                          }
+                          title="Remove"
                           >
                             <X size={13} />
                           </button>
                         )}
                       </span>
                     )}
-                  </span>
                 </div>
               );
             })}

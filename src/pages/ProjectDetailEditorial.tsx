@@ -157,7 +157,7 @@ export default function ProjectDetailEditorial() {
     updateField: handleUpdateIntelField,
     saveStatus,
     setSaveStatus: setFolioSaveStatus,
-  } = useIntelligenceFieldUpdate("project", projectId);
+  } = useIntelligenceFieldUpdate("project", projectId, proj.silentRefresh);
 
   const finishFolioSave = () => {
     setFolioSaveStatus("saved");
