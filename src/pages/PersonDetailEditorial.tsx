@@ -138,7 +138,7 @@ export default function PersonDetailEditorial() {
     updateField: handleUpdateIntelField,
     saveStatus,
     setSaveStatus: setFolioSaveStatus,
-  } = useIntelligenceFieldUpdate("person", personId);
+  } = useIntelligenceFieldUpdate("person", personId, person.silentRefresh);
 
   const finishFolioSave = useCallback(() => {
     setFolioSaveStatus("saved");
