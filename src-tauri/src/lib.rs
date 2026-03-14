@@ -617,6 +617,24 @@ pub fn run() {
             // I143: Account Events
             commands::record_account_event,
             commands::get_account_events,
+            commands::create_objective,
+            commands::update_objective,
+            commands::complete_objective,
+            commands::abandon_objective,
+            commands::delete_objective,
+            commands::create_milestone,
+            commands::update_milestone,
+            commands::complete_milestone,
+            commands::skip_milestone,
+            commands::delete_milestone,
+            commands::link_action_to_objective,
+            commands::unlink_action_from_objective,
+            commands::reorder_objectives,
+            commands::reorder_milestones,
+            commands::get_objective_suggestions,
+            commands::create_objective_from_suggestion,
+            commands::list_success_plan_templates,
+            commands::apply_success_plan_template,
             // I194: User Agenda + Notes (ADR-0065)
             commands::apply_meeting_prep_prefill,
             commands::generate_meeting_agenda_message_draft,
@@ -735,6 +753,8 @@ pub fn run() {
             commands::start_glean_auth,
             commands::get_glean_auth_status,
             commands::disconnect_glean,
+            // I559: Glean Agent Validation Spike (temporary dev exploration)
+            commands::dev_explore_glean_tools,
             // I427: Global Search
             commands::search_global,
             commands::rebuild_search_index,
