@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
@@ -132,7 +133,37 @@ export default function PersonDetailEditorial() {
   useRevealObserver(!person.loading && !!person.detail);
 
   // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
-  const { updateField: handleUpdateIntelField, saveStatus } = useIntelligenceFieldUpdate("person", personId);
+  const {
+    updateField: handleUpdateIntelField,
+    saveStatus,
+    setSaveStatus: setFolioSaveStatus,
+  } = useIntelligenceFieldUpdate("person", personId);
+
+  const finishFolioSave = useCallback(() => {
+    setFolioSaveStatus("saved");
+    window.setTimeout(() => setFolioSaveStatus("idle"), 2000);
+  }, [setFolioSaveStatus]);
+
+  const saveMetadata = useCallback(
+    async (updated: Record<string, string>) => {
+      if (!personId) return;
+      setFolioSaveStatus("saving");
+      try {
+        await invoke("update_entity_metadata", {
+          entityId: personId,
+          entityType: "person",
+          metadata: JSON.stringify(updated),
+        });
+        finishFolioSave();
+      } catch (err) {
+        console.error("update_entity_metadata failed:", err);
+        toast.error("Failed to save metadata");
+        setFolioSaveStatus("idle");
+        throw err;
+      }
+    },
+    [finishFolioSave, personId, setFolioSaveStatus],
+  );
 
   const relationship = person.detail?.relationship ?? "unknown";
   const shellConfig = useMemo(
@@ -217,11 +248,7 @@ export default function PersonDetailEditorial() {
                 if (source === "metadata") {
                   setMetadataValues((prev) => {
                     const updated = { ...prev, [key]: value };
-                    invoke("update_entity_metadata", {
-                      entityId: personId,
-                      entityType: "person",
-                      metadata: JSON.stringify(updated),
-                    }).catch((err) => console.error("update_entity_metadata failed:", err));
+                    void saveMetadata(updated);
                     return updated;
                   });
                 }
@@ -240,11 +267,7 @@ export default function PersonDetailEditorial() {
               onChange={(key, value) => {
                 setMetadataValues((prev) => {
                   const updated = { ...prev, [key]: value };
-                  invoke("update_entity_metadata", {
-                    entityId: personId,
-                    entityType: "person",
-                    metadata: JSON.stringify(updated),
-                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  void saveMetadata(updated);
                   return updated;
                 });
               }}

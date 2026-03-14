@@ -51,6 +51,8 @@ pub struct AccountDetailResult {
     pub parent_aggregate: Option<crate::db::ParentAggregate>,
     pub account_type: crate::db::AccountType,
     pub archived: bool,
+    #[serde(default)]
+    pub objectives: Vec<crate::types::AccountObjective>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::intelligence::IntelligenceJson>,
 }
