@@ -3871,6 +3871,13 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Captured commitment {}: {}", id, e))?;
     }
 
+    // ── I555: Seed success_plan_signals_json on mock accounts ──
+    let signals_json = r#"{"statedObjectives":[{"objective":"Reduce time-to-value by 40% through platform optimization","source":"Acme Weekly Sync, Mar 5","owner":"Sarah Chen","targetDate":"2026-06-15","confidence":"high"},{"objective":"Expand platform adoption to APAC engineering teams","source":"QBR, Feb 28","owner":"Joint","targetDate":"2026-09-01","confidence":"medium"}],"mutualSuccessCriteria":[{"criterion":"Platform adoption exceeds 85% across all teams","ownedBy":"joint","status":"in_progress"},{"criterion":"Deployment velocity sustained above 3x baseline","ownedBy":"them","status":"achieved"}],"milestoneCandidates":[{"milestone":"APAC team onboarding complete","expectedBy":"2026-06-01","detectedFrom":"QBR discussion","autoDetectEvent":"onboarding_complete"},{"milestone":"Executive business review with ROI data","expectedBy":"2026-04-15","detectedFrom":"Commitment from Sarah Chen","autoDetectEvent":"ebr_completed"}]}"#;
+    conn.execute(
+        "UPDATE entity_assessment SET success_plan_signals_json = ?1 WHERE entity_id = 'mock-acme-corp'",
+        rusqlite::params![signals_json],
+    ).ok();
+
     Ok(())
 }
 
