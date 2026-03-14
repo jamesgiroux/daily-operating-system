@@ -316,7 +316,7 @@ export function useAccountDetail(accountId: string | undefined) {
       });
       setNewActionTitle("");
       setAddingAction(false);
-      await load();
+      await silentRefresh();
     } catch (e) {
       setError(String(e));
     } finally {

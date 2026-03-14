@@ -52,6 +52,7 @@ import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { AddToRecord } from "@/components/entity/AddToRecord";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
@@ -524,7 +525,8 @@ export default function ProjectDetailEditorial() {
 
       {/* Chapter 6: The Record */}
       <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
-        <UnifiedTimeline data={detail} />
+        <AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />
+        <UnifiedTimeline data={{ ...detail, contextEntries: entityCtx.entries }} sectionId="" />
       </div>
 
       {/* Chapter 7: The Work (I351) */}
@@ -540,24 +542,20 @@ export default function ProjectDetailEditorial() {
         />
       </div>
 
-      {/* Finis marker */}
-      <div className="editorial-reveal">
-        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
-      </div>
-
       {/* Appendix */}
       <div className="editorial-reveal">
         <ProjectAppendix
           detail={detail}
           files={files}
-          contextEntries={entityCtx.entries}
-          onCreateContextEntry={entityCtx.createEntry}
-          onUpdateContextEntry={entityCtx.updateEntry}
-          onDeleteContextEntry={entityCtx.deleteEntry}
           onIndexFiles={proj.handleIndexFiles}
           indexing={proj.indexing}
           indexFeedback={proj.indexFeedback}
         />
+      </div>
+
+      {/* Finis marker */}
+      <div className="editorial-reveal">
+        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
       </div>
 
       {/* Archive Confirmation */}
