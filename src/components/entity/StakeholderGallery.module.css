@@ -7,7 +7,6 @@
 
 .section {
   scroll-margin-top: 60px;
-  padding-top: var(--space-5xl);
 }
 
 /* ── 2-column card grid ── */
@@ -54,6 +53,21 @@
   font-size: 16px;
   font-weight: 500;
   color: var(--color-text-primary);
+}
+
+/* ── Name as link ── */
+
+.nameLink {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.nameLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* ── Link icon ── */
@@ -333,17 +347,19 @@
   padding: 0;
 }
 
-/* ── Your Team strip ── */
+/* ── Your Team — compact clickable chips ── */
 
-.teamStrip {
-  border-top: 1px solid var(--color-rule-heavy);
-  border-bottom: 1px solid var(--color-rule-heavy);
-  padding: 14px 0;
+.teamChipsSection {
   margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.teamHeader {
   display: flex;
-  align-items: baseline;
-  gap: 24px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .teamLabel {
@@ -355,25 +371,168 @@
   color: var(--color-text-tertiary);
 }
 
-.teamMember {
+.teamEditToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.teamHeader:hover .teamEditToggle {
+  opacity: 1;
+}
+
+.teamEditToggleActive {
+  composes: teamEditToggle;
+  opacity: 1;
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.teamChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: relative;
+}
+
+.teamChip {
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-warm-white);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease;
 }
 
-.teamMemberRole {
+.teamChip:hover {
+  border-color: var(--color-text-tertiary);
+}
+
+.teamChipName {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.teamChipRole {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   color: var(--color-text-tertiary);
 }
 
-.teamMemberName {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  color: var(--color-text-secondary);
+/* ── Team edit mode ── */
+
+.teamChipEditable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--color-garden-larkspur-14);
+  background: var(--color-paper-warm-white);
+}
+
+.teamChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.teamChipRemove:hover {
+  border-color: var(--color-earth-terracotta);
+  color: var(--color-earth-terracotta);
+}
+
+.teamAddTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px dashed var(--color-rule-light);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.teamAddTrigger:hover {
+  border-color: var(--color-garden-larkspur);
+  color: var(--color-garden-larkspur);
+}
+
+.teamAddForm {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.teamAddCancel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.teamSearchDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  width: 320px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-paper-warm-white);
+  box-shadow: var(--shadow-lg);
+}
+
+.teamSearchDropdownPortal {
+  position: fixed;
+  z-index: 9999;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-paper-cream);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 4px 0;
 }
 
 /* ── Coverage strip ── */
@@ -399,4 +558,28 @@
   font-family: var(--font-sans);
   font-size: 13px;
   color: var(--color-text-tertiary);
+}
+
+/* ── Enrichment provenance tag (I550) ── */
+
+.enrichmentTag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+
+.enrichmentTag[data-source="clay"] {
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.enrichmentTag[data-source="gravatar"] {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
 }

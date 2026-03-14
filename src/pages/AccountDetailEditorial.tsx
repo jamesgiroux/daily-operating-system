@@ -11,6 +11,7 @@ import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import {
   AlignLeft,
+  BarChart3,
   Briefcase,
   Clock,
   Users,
@@ -18,6 +19,9 @@ import {
   Activity,
   CheckSquare2,
   FileText,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +58,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
+import { DimensionBar } from "@/components/shared/DimensionBar";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import shared from "@/styles/entity-detail.module.css";
 import styles from "./AccountDetailEditorial.module.css";
@@ -137,10 +142,23 @@ const PORTFOLIO_CHAPTER = {
   icon: <Briefcase size={18} strokeWidth={1.5} />,
 };
 
-function buildChapters(isParent: boolean) {
-  if (!isParent) return BASE_CHAPTERS;
+const HEALTH_CHAPTER = {
+  id: "relationship-health",
+  label: "Health",
+  icon: <BarChart3 size={18} strokeWidth={1.5} />,
+};
+
+function buildChapters(isParent: boolean, hasHealth: boolean) {
+  let chapters = [...BASE_CHAPTERS];
+  // Health appears after state-of-play (index 1), before the-room
+  if (hasHealth) {
+    chapters.splice(2, 0, HEALTH_CHAPTER);
+  }
   // Portfolio appears after headline, before State of Play
-  return [BASE_CHAPTERS[0], PORTFOLIO_CHAPTER, ...BASE_CHAPTERS.slice(1)];
+  if (isParent) {
+    chapters = [chapters[0], PORTFOLIO_CHAPTER, ...chapters.slice(1)];
+  }
+  return chapters;
 }
 
 function getHealthColorClass(health: string): string {
@@ -181,10 +199,37 @@ export default function AccountDetailEditorial() {
       atmosphereColor: acct.detail?.accountType === "internal" ? "larkspur" as const : "turmeric" as const,
       activePage: "accounts" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
-      chapters: buildChapters(acct.detail?.isParent ?? false),
+      chapters: buildChapters(acct.detail?.isParent ?? false, !!acct.intelligence?.health),
       folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: (
         <div className={shared.folioActions}>
+          {acct.detail && !acct.detail.archived && (
+            <button
+              className={shared.folioActionButton}
+              style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-rule-heavy)" }}
+              onClick={acct.handleEnrich}
+              disabled={acct.enriching}
+            >
+              {acct.enriching ? `Refreshing… ${acct.enrichSeconds ?? 0}s` : "Refresh"}
+            </button>
+          )}
+          {acct.detail?.archived ? (
+            <button
+              className={shared.folioActionButton}
+              style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-rule-heavy)" }}
+              onClick={acct.handleUnarchive}
+            >
+              Unarchive
+            </button>
+          ) : acct.detail ? (
+            <button
+              className={shared.folioActionButton}
+              style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-rule-heavy)" }}
+              onClick={() => setArchiveDialogOpen(true)}
+            >
+              Archive
+            </button>
+          ) : null}
           {acct.detail && (
             <button
               onClick={() => acct.setCreateChildOpen(true)}
@@ -228,7 +273,7 @@ export default function AccountDetailEditorial() {
         </div>
       ),
     }),
-    [navigate, accountId, acct.detail, acct.setCreateChildOpen, reportsOpen, setReportsOpen, preset?.id, saveStatus],
+    [navigate, accountId, acct.detail, acct.intelligence?.health, acct.setCreateChildOpen, acct.handleEnrich, acct.enriching, acct.enrichSeconds, acct.handleUnarchive, reportsOpen, setReportsOpen, preset?.id, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -327,43 +372,38 @@ export default function AccountDetailEditorial() {
               .then(() => acct.load())
               .catch((err) => console.error("update_account_field failed:", err));
           }}
-          onEnrich={acct.handleEnrich}
-          enriching={acct.enriching}
-          enrichSeconds={acct.enrichSeconds}
-          onArchive={() => setArchiveDialogOpen(true)}
-          onUnarchive={acct.handleUnarchive}
+          vitalsSlot={
+            detail.accountType !== "internal" ? (
+              preset ? (
+                <EditableVitalsStrip
+                  fields={preset.vitals.account}
+                  entityData={detail}
+                  metadata={metadataValues}
+                  onFieldChange={(key, columnMapping, source, value) => {
+                    if (source === "metadata") {
+                      setMetadataValues((prev) => {
+                        const updated = { ...prev, [key]: value };
+                        invoke("update_entity_metadata", {
+                          entityId: accountId,
+                          entityType: "account",
+                          metadata: JSON.stringify(updated),
+                        }).catch((err) => console.error("update_entity_metadata failed:", err));
+                        return updated;
+                      });
+                    } else if (source === "column") {
+                      const field = columnMapping ?? key;
+                      invoke("update_account_field", { accountId: detail.id, field, value })
+                        .then(() => acct.load())
+                        .catch((err) => console.error("update_account_field failed:", err));
+                    }
+                  }}
+                />
+              ) : (
+                <VitalsStrip vitals={buildAccountVitals(detail)} />
+              )
+            ) : undefined
+          }
         />
-        <div className="editorial-reveal">
-          {detail.accountType !== "internal" && (
-            preset ? (
-              <EditableVitalsStrip
-                fields={preset.vitals.account}
-                entityData={detail}
-                metadata={metadataValues}
-                onFieldChange={(key, columnMapping, source, value) => {
-                  if (source === "metadata") {
-                    setMetadataValues((prev) => {
-                      const updated = { ...prev, [key]: value };
-                      invoke("update_entity_metadata", {
-                        entityId: accountId,
-                        entityType: "account",
-                        metadata: JSON.stringify(updated),
-                      }).catch((err) => console.error("update_entity_metadata failed:", err));
-                      return updated;
-                    });
-                  } else if (source === "column") {
-                    const field = columnMapping ?? key;
-                    invoke("update_account_field", { accountId: detail.id, field, value })
-                      .then(() => acct.load())
-                      .catch((err) => console.error("update_account_field failed:", err));
-                  }
-                }}
-              />
-            ) : (
-              <VitalsStrip vitals={buildAccountVitals(detail)} />
-            )
-          )}
-        </div>
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.account.length > 0 && (
           <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
@@ -555,91 +595,171 @@ export default function AccountDetailEditorial() {
       )}
 
       {/* Chapter 2: State of Play */}
-      <div id="state-of-play" className={`editorial-reveal ${shared.chapterSection}`}>
-        <StateOfPlay
-          intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
-          feedbackSlot={
-            <IntelligenceFeedback
-              value={feedback.getFeedback("state_of_play")}
-              onFeedback={(type) => feedback.submitFeedback("state_of_play", type)}
-            />
-          }
-        />
+      <div id="state-of-play" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>State of<br/>Play</div>
+        <div className={shared.marginContent}>
+          <StateOfPlay
+            intelligence={intelligence}
+            sectionId=""
+            onUpdateField={handleUpdateIntelField}
+            getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+            onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+            feedbackSlot={
+              <IntelligenceFeedback
+                value={feedback.getFeedback("state_of_play")}
+                onFeedback={(type) => feedback.submitFeedback("state_of_play", type)}
+              />
+            }
+          />
+        </div>
       </div>
 
-      {/* Chapter 3: The Room */}
-      <div id="the-room" className={`editorial-reveal ${shared.chapterSection}`}>
-        <StakeholderGallery
-          intelligence={intelligence}
-          linkedPeople={detail.linkedPeople}
-          accountTeam={detail.accountTeam}
-          entityId={accountId}
-          entityType="account"
-          onIntelligenceUpdated={acct.silentRefresh}
-        />
+      {/* Pull quote — first paragraph of executive assessment */}
+      {intelligence?.executiveAssessment && (
+        <div className={`editorial-reveal-slow ${styles.pullQuote}`}>
+          <blockquote className={styles.pullQuoteText}>
+            {intelligence.executiveAssessment.split("\n")[0]}
+          </blockquote>
+          <cite className={styles.pullQuoteAttribution}>From the executive assessment</cite>
+        </div>
+      )}
+
+      {/* Chapter 3: Relationship Health */}
+      {intelligence?.health && (
+        <div id="relationship-health" className={`editorial-reveal ${shared.marginLabelSection}`}>
+          <div className={shared.marginLabel}>Relationship<br/>Health</div>
+          <div className={shared.marginContent}>
+            <ChapterHeading title="Relationship Health" />
+            <div className={styles.healthHero}>
+              <div className={styles.healthScoreNumber}>
+                {Math.round(intelligence.health.score)}
+              </div>
+              <div className={styles.healthMeta}>
+                <div className={
+                  intelligence.health.band === "green" ? styles.healthBandGreen
+                    : intelligence.health.band === "red" ? styles.healthBandRed
+                    : styles.healthBandYellow
+                }>
+                  {intelligence.health.band === "green" ? "Healthy"
+                    : intelligence.health.band === "red" ? "At Risk"
+                    : "Monitor"}
+                </div>
+                {intelligence.health.narrative && (
+                  <p className={styles.healthNarrative}>{intelligence.health.narrative}</p>
+                )}
+                <div className={styles.healthTrendLabel}>
+                  {intelligence.health.trend.direction === "improving" && <TrendingUp size={12} strokeWidth={2} />}
+                  {intelligence.health.trend.direction === "declining" && <TrendingDown size={12} strokeWidth={2} />}
+                  {(intelligence.health.trend.direction === "stable" || intelligence.health.trend.direction === "volatile") && <Minus size={12} strokeWidth={2} />}
+                  {intelligence.health.trend.direction}
+                  {intelligence.health.trend.timeframe && ` \u00b7 ${intelligence.health.trend.timeframe}`}
+                </div>
+              </div>
+            </div>
+            <div className="editorial-reveal-stagger">
+              <DimensionBar dimensions={intelligence.health.dimensions} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chapter 4: The Room */}
+      <div id="the-room" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>The<br/>Room</div>
+        <div className={shared.marginContent}>
+          <StakeholderGallery
+            intelligence={intelligence}
+            linkedPeople={detail.linkedPeople}
+            accountTeam={detail.accountTeam}
+            sectionId=""
+            entityId={accountId}
+            entityType="account"
+            onIntelligenceUpdated={acct.silentRefresh}
+            onRemoveTeamMember={acct.handleRemoveTeamMember}
+            onChangeTeamRole={acct.changeTeamMemberRole}
+            onAddTeamMember={acct.addTeamMemberDirect}
+            onCreateTeamMember={acct.createTeamMemberDirect}
+            teamSearchQuery={acct.teamSearchQuery}
+            onTeamSearchQueryChange={acct.setTeamSearchQuery}
+            teamSearchResults={acct.teamSearchResults}
+          />
+        </div>
       </div>
 
-      {/* Chapter 4: Watch List (full-bleed linen band) */}
-      <div id="watch-list" className={`editorial-reveal ${shared.chapterSection}`}>
-        <WatchList
-          intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
-          feedbackSlot={
-            <IntelligenceFeedback
-              value={feedback.getFeedback("watch_list")}
-              onFeedback={(type) => feedback.submitFeedback("watch_list", type)}
-            />
-          }
-        />
+      {/* Chapter 5: Watch List */}
+      <div id="watch-list" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>Watch<br/>List</div>
+        <div className={shared.marginContent}>
+          <WatchList
+            intelligence={intelligence}
+            sectionId=""
+            onUpdateField={handleUpdateIntelField}
+            feedbackSlot={
+              <IntelligenceFeedback
+                value={feedback.getFeedback("watch_list")}
+                onFeedback={(type) => feedback.submitFeedback("watch_list", type)}
+              />
+            }
+          />
+        </div>
       </div>
 
-      {/* Chapter 5: The Record */}
-      <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
-        <UnifiedTimeline data={{ ...detail, accountEvents: events }} />
+      {/* Chapter 6: The Record */}
+      <div id="the-record" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>The<br/>Record</div>
+        <div className={shared.marginContent}>
+          <UnifiedTimeline data={{ ...detail, accountEvents: events }} sectionId="" />
+        </div>
       </div>
 
-      {/* Chapter 6: The Work */}
-      <div id="the-work" className={`editorial-reveal ${shared.chapterSection}`}>
-        <TheWork
-          data={detail}
-          addingAction={acct.addingAction}
-          setAddingAction={acct.setAddingAction}
-          newActionTitle={acct.newActionTitle}
-          setNewActionTitle={acct.setNewActionTitle}
-          creatingAction={acct.creatingAction}
-          onCreateAction={acct.handleCreateAction}
-        />
+      {/* Chapter 7: The Work */}
+      <div id="the-work" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>The<br/>Work</div>
+        <div className={shared.marginContent}>
+          <TheWork
+            data={detail}
+            sectionId=""
+            addingAction={acct.addingAction}
+            setAddingAction={acct.setAddingAction}
+            newActionTitle={acct.newActionTitle}
+            setNewActionTitle={acct.setNewActionTitle}
+            creatingAction={acct.creatingAction}
+            onCreateAction={acct.handleCreateAction}
+          />
+        </div>
       </div>
 
-      {/* Chapter 7: Reports */}
-      <div id="reports" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
-        <ChapterHeading title="Reports" />
-        <div className={styles.reportsChapter}>
-          {getAccountReports(preset?.id).map((item) => {
-            const handleClick = () => {
-              if (item.reportType === null) {
-                navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
-              } else if (item.reportType === "account_health") {
-                navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
-              } else if (item.reportType === "ebr_qbr") {
-                navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
-              } else {
-                navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
-              }
-            };
-            return (
-              <button
-                key={item.label}
-                onClick={handleClick}
-                className={styles.reportRow}
-              >
-                <FileText size={16} strokeWidth={1.5} className={styles.reportIcon} />
-                <span className={styles.reportName}>{item.label}</span>
-                <span className={styles.reportAction}>View</span>
-              </button>
-            );
-          })}
+      {/* Chapter 8: Reports */}
+      <div id="reports" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>Reports</div>
+        <div className={shared.marginContent}>
+          <ChapterHeading title="Reports" />
+          <div className={styles.reportsChapter}>
+            {getAccountReports(preset?.id).map((item) => {
+              const handleClick = () => {
+                if (item.reportType === null) {
+                  navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+                } else if (item.reportType === "account_health") {
+                  navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
+                } else if (item.reportType === "ebr_qbr") {
+                  navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
+                } else {
+                  navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
+                }
+              };
+              return (
+                <button
+                  key={item.label}
+                  onClick={handleClick}
+                  className={styles.reportRow}
+                >
+                  <FileText size={16} strokeWidth={1.5} className={styles.reportIcon} />
+                  <span className={styles.reportName}>{item.label}</span>
+                  <span className={styles.reportAction}>View</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -662,7 +782,6 @@ export default function AccountDetailEditorial() {
           onIndexFiles={acct.handleIndexFiles}
           indexing={acct.indexing}
           indexFeedback={acct.indexFeedback}
-          onCreateChild={() => acct.setCreateChildOpen(true)}
           onMerge={() => setMergeDialogOpen(true)}
         />
       </div>

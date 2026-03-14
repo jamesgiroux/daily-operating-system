@@ -124,7 +124,7 @@ export function useAccountDetail(accountId: string | undefined) {
   // ─── Composed sub-hooks ───────────────────────────────────────────────
 
   const fields = useAccountFields(detail, load, setError);
-  const team = useTeamManagement(accountId, load);
+  const team = useTeamManagement(accountId, silentRefresh);
 
   // ─── Event listeners ──────────────────────────────────────────────────
 

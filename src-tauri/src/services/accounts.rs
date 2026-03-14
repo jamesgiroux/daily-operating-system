@@ -277,7 +277,7 @@ pub async fn get_account_detail(
                     .collect();
 
             let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
-            let account_team = db.get_account_team(&account_id).unwrap_or_default();
+            let account_team = db.get_account_team_internal(&account_id).unwrap_or_default();
             let account_team_import_notes = db
                 .get_account_team_import_notes(&account_id)
                 .unwrap_or_default();
