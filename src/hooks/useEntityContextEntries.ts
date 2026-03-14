@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import type { EntityContextEntry } from "@/types";
 
 export function useEntityContextEntries(entityType: string, entityId: string | null) {
@@ -17,6 +18,7 @@ export function useEntityContextEntries(entityType: string, entityId: string | n
       setEntries(result);
     } catch (e) {
       console.error("Failed to fetch entity context entries:", e);
+      toast.error("Failed to load notes");
     } finally {
       setLoading(false);
     }
@@ -38,6 +40,7 @@ export function useEntityContextEntries(entityType: string, entityId: string | n
       setEntries((prev) => [entry, ...prev]);
     } catch (e) {
       console.error("Failed to create entity context entry:", e);
+      toast.error("Failed to save note");
     }
   }, [entityType, entityId]);
 
@@ -51,6 +54,7 @@ export function useEntityContextEntries(entityType: string, entityId: string | n
       );
     } catch (e) {
       console.error("Failed to update entity context entry:", e);
+      toast.error("Failed to save note");
     }
   }, []);
 
@@ -60,6 +64,7 @@ export function useEntityContextEntries(entityType: string, entityId: string | n
       setEntries((prev) => prev.filter((e) => e.id !== id));
     } catch (e) {
       console.error("Failed to delete entity context entry:", e);
+      toast.error("Failed to delete note");
     }
   }, []);
 
