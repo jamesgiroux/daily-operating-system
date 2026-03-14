@@ -366,6 +366,29 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Get account team members filtered to internal people only (for UI display).
+    /// Health scoring uses `get_account_team` which includes all stakeholders.
+    pub fn get_account_team_internal(&self, account_id: &str) -> Result<Vec<DbAccountTeamMember>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT as_.account_id, as_.person_id, p.name, p.email, as_.role, as_.created_at
+             FROM account_stakeholders as_
+             JOIN people p ON p.id = as_.person_id
+             WHERE as_.account_id = ?1 AND p.relationship = 'internal'
+             ORDER BY as_.role, p.name",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountTeamMember {
+                account_id: row.get(0)?,
+                person_id: row.get(1)?,
+                person_name: row.get(2)?,
+                person_email: row.get(3)?,
+                role: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Add an account team member role link (idempotent).
     pub fn add_account_team_member(
         &self,
