@@ -3,13 +3,12 @@
  * Mockup: h1 76px serif, 2-3 sentence italic lede from intelligence,
  * hero-date line, watermark asterisk, health/lifecycle badges, and meta row.
  */
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { EditableText } from "@/components/ui/EditableText";
-import { HealthBadge } from "@/components/shared/HealthBadge";
 import { ChevronDown } from "lucide-react";
 import styles from "./AccountHero.module.css";
 
@@ -24,42 +23,32 @@ interface AccountHeroProps {
   setEditLifecycle?: (value: string) => void;
   onSave?: () => void;
   onSaveField?: (field: string, value: string) => void;
-  onEnrich?: () => void;
-  enriching?: boolean;
-  enrichSeconds?: number;
-  onArchive?: () => void;
-  onUnarchive?: () => void;
+  /** I550: Slot for vitals strip, rendered between name and lede */
+  vitalsSlot?: React.ReactNode;
 }
 
-const healthClass: Record<string, string> = {
-  green: styles.healthGreen,
-  yellow: styles.healthYellow,
-  red: styles.healthRed,
-};
 
 export function AccountHero({
   detail,
   intelligence,
   editName,
   setEditName,
-  editHealth,
+  editHealth: _editHealth,
   setEditHealth: _setEditHealth,
-  editLifecycle,
+  editLifecycle: _editLifecycle,
   setEditLifecycle: _setEditLifecycle,
   onSave: _onSave,
   onSaveField,
-  onEnrich,
-  enriching,
-  enrichSeconds,
-  onArchive,
-  onUnarchive,
+  vitalsSlot,
 }: AccountHeroProps) {
-  // Extract first paragraph of executive assessment as lede
-  const ledeFull = intelligence?.executiveAssessment?.split("\n")[0] ?? null;
-  const LEDE_LIMIT = 300;
+  // Extract all paragraphs of executive assessment as the narrative
+  const paragraphs = intelligence?.executiveAssessment?.split("\n").filter((p) => p.trim()) ?? [];
+  const LEDE_LIMIT = 500;
   const [showFullLede, setShowFullLede] = useState(false);
-  const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
-  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "…" : ledeFull;
+  const fullNarrative = paragraphs.join("\n\n");
+  const narrativeTruncated = fullNarrative.length > LEDE_LIMIT && !showFullLede;
+  const narrative = narrativeTruncated ? fullNarrative.slice(0, LEDE_LIMIT) + "…" : fullNarrative;
+
   return (
     <div className={styles.hero}>
       {/* Parent breadcrumb */}
@@ -82,13 +71,19 @@ export function AccountHero({
         </div>
       )}
 
-      {/* Hero date / intelligence timestamp */}
-      <div className={styles.heroDate}>
+      {/* Hero date / intelligence timestamp + account type badge */}
+      <div className={styles.heroDate} style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <IntelligenceQualityBadge enrichedAt={intelligence?.enrichedAt} />
         {intelligence ? ` Last updated ${formatRelativeDateShort(intelligence.enrichedAt)}` : ""}
+        {onSaveField && (
+          <AccountTypeBadge
+            value={detail.accountType as "customer" | "internal" | "partner"}
+            onChange={(v) => onSaveField("account_type", v)}
+          />
+        )}
       </div>
 
-      {/* Account name — 76px serif, inline-editable */}
+      {/* Account name — 76px serif */}
       <h1 className={styles.name}>
         {editName != null && setEditName ? (
           <EditableText
@@ -104,11 +99,16 @@ export function AccountHero({
         )}
       </h1>
 
-      {/* Lede from intelligence — italic serif */}
-      {lede && (
-        <p className={styles.lede}>
-          {lede}
-          {ledeTruncated && (
+      {/* I550: Vitals strip between name and narrative */}
+      {vitalsSlot}
+
+      {/* Executive assessment narrative — italic serif, all paragraphs */}
+      {narrative && (
+        <div className={styles.lede}>
+          {narrative.split("\n\n").map((p, i) => (
+            <p key={i} style={{ margin: i === 0 ? 0 : "12px 0 0" }}>{p}</p>
+          ))}
+          {narrativeTruncated && (
             <button
               onClick={() => setShowFullLede(true)}
               style={{
@@ -118,84 +118,15 @@ export function AccountHero({
                 background: "none",
                 border: "none",
                 cursor: "pointer",
-                padding: "0 0 0 4px",
+                padding: "4px 0 0",
               }}
             >
               Read more
             </button>
           )}
-        </p>
-      )}
-
-      {/* Badges row — read-only display (editing happens via VitalsStrip) */}
-      <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
-        {(editHealth ?? detail.health) && (
-          <span
-            className={`${styles.badge} ${healthClass[editHealth ?? detail.health ?? ""] ?? ""}`}
-          >
-            {editHealth ?? detail.health}
-          </span>
-        )}
-        {(editLifecycle ?? detail.lifecycle) && (
-          <span className={`${styles.badge} ${styles.lifecycleBadge}`}>
-            {editLifecycle ?? detail.lifecycle}
-          </span>
-        )}
-        {onSaveField ? (
-          <AccountTypeBadge
-            value={detail.accountType as "customer" | "internal" | "partner"}
-            onChange={(v) => onSaveField("account_type", v)}
-          />
-        ) : (
-          <span className={`${styles.badge} ${
-            detail.accountType === "internal" ? styles.internalBadge
-            : detail.accountType === "partner" ? styles.partnerBadge
-            : styles.lifecycleBadge
-          }`}>
-            {detail.accountType === "internal" ? "Internal"
-             : detail.accountType === "partner" ? "Partner"
-             : "Customer"}
-          </span>
-        )}
-      </div>
-
-      {/* Intelligence health (hero size) — I502 */}
-      {intelligence?.health && (
-        <div style={{ marginTop: 24 }}>
-          <HealthBadge
-            score={intelligence.health.score}
-            band={intelligence.health.band}
-            trend={intelligence.health.trend}
-            confidence={intelligence.health.confidence}
-            source={intelligence.health.source === "org" ? "Org data" : intelligence.health.source === "userSet" ? "Your assessment" : undefined}
-            divergence={intelligence.health.divergence}
-            size="hero"
-          />
         </div>
       )}
 
-      {/* Meta row: action links */}
-      <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
-        {onEnrich && (
-          <button
-            className={enriching ? styles.metaButtonEnriching : styles.metaButton}
-            onClick={onEnrich}
-            disabled={enriching}
-          >
-            {enriching ? `Refreshing… ${enrichSeconds ?? 0}s` : "Refresh"}
-          </button>
-        )}
-        {detail.archived && onUnarchive && (
-          <button className={styles.metaButton} onClick={onUnarchive}>
-            Unarchive
-          </button>
-        )}
-        {!detail.archived && onArchive && (
-          <button className={styles.metaButton} onClick={onArchive}>
-            Archive
-          </button>
-        )}
-      </div>
     </div>
   );
 }
@@ -203,8 +134,8 @@ export function AccountHero({
 // ─── Account Type Badge (inline dropdown) ──────────────────────────────────
 
 const ACCOUNT_TYPES: { value: "customer" | "internal" | "partner"; label: string; badgeClass: string; color: string }[] = [
-  { value: "customer", label: "Customer", badgeClass: "lifecycleBadge", color: "var(--color-text-secondary)" },
-  { value: "internal", label: "Internal", badgeClass: "internalBadge", color: "var(--color-spice-turmeric)" },
+  { value: "customer", label: "Customer", badgeClass: "customerBadge", color: "var(--color-spice-turmeric)" },
+  { value: "internal", label: "Internal", badgeClass: "internalBadge", color: "var(--color-garden-larkspur)" },
   { value: "partner", label: "Partner", badgeClass: "partnerBadge", color: "var(--color-garden-rosemary)" },
 ];
 

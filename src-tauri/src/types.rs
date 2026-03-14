@@ -2090,6 +2090,154 @@ pub struct EntityContextEntry {
     pub updated_at: String,
 }
 
+// =============================================================================
+// Success Plans (I551-I553)
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountObjective {
+    pub id: String,
+    pub account_id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub source: String,
+    pub sort_order: i32,
+    #[serde(default)]
+    pub milestones: Vec<AccountMilestone>,
+    #[serde(default)]
+    pub linked_actions: Vec<crate::db::DbAction>,
+    pub linked_action_count: i32,
+    pub completed_milestone_count: i32,
+    pub total_milestone_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountMilestone {
+    pub id: String,
+    pub objective_id: String,
+    pub account_id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_signal: Option<String>,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedMilestone {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_event: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedObjective {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub confidence: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_evidence: Option<String>,
+    #[serde(default)]
+    pub milestones: Vec<SuggestedMilestone>,
+    #[serde(default)]
+    pub source_commitment_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessPlanSignals {
+    #[serde(default)]
+    pub stated_objectives: Vec<StatedObjective>,
+    #[serde(default)]
+    pub mutual_success_criteria: Vec<MutualSuccessCriterion>,
+    #[serde(default)]
+    pub milestone_candidates: Vec<MilestoneCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatedObjective {
+    pub objective: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    pub confidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MutualSuccessCriterion {
+    pub criterion: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owned_by: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MilestoneCandidate {
+    pub milestone: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_event: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessPlanTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub lifecycle_trigger: String,
+    #[serde(default)]
+    pub objectives: Vec<TemplateObjective>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateObjective {
+    pub title: String,
+    pub description: String,
+    #[serde(default)]
+    pub milestones: Vec<TemplateMilestone>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateMilestone {
+    pub title: String,
+    pub offset_days: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_signal: Option<String>,
+}
+
 /// An annual priority (year-level bet).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

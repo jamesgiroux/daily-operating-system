@@ -35,6 +35,7 @@ mod integrations;
 mod people_entities;
 mod planning_reports;
 mod projects_data;
+mod success_plans;
 mod workspace;
 
 pub use accounts_content_chat::*;
@@ -45,6 +46,7 @@ pub use integrations::*;
 pub use people_entities::*;
 pub use planning_reports::*;
 pub use projects_data::*;
+pub use success_plans::*;
 pub use workspace::*;
 
 pub(crate) use app_support::{
