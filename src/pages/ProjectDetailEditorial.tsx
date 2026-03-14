@@ -467,12 +467,8 @@ export default function ProjectDetailEditorial() {
           onUpdateField={handleUpdateIntelField}
           sectionId="the-landscape"
           chapterTitle="The Landscape"
-          feedbackSlot={
-            <IntelligenceFeedback
-              value={feedback.getFeedback("watch_list")}
-              onFeedback={(type) => feedback.submitFeedback("watch_list", type)}
-            />
-          }
+          getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+          onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
           bottomSection={
             detail.milestones.length > 0 ? (
               <WatchListMilestones milestones={detail.milestones} />
