@@ -56,20 +56,11 @@ export function StateOfPlay({
   const visibleStruggling = expandedStruggling ? struggling : struggling.slice(0, STATE_LIMIT);
   const hasMoreStruggling = struggling.length > STATE_LIMIT && !expandedStruggling;
 
-  const showMoreButtonStyle: React.CSSProperties = {
-    fontFamily: "var(--font-mono)",
-    fontSize: 11,
-    color: "var(--color-text-tertiary)",
-    background: "none",
-    border: "none",
-    cursor: "pointer",
-    padding: "8px 0 0",
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-  };
-
   return (
-    <section id={sectionId || undefined} style={{ scrollMarginTop: sectionId ? 60 : undefined }}>
+    <section
+      id={sectionId || undefined}
+      className={sectionId ? styles.sectionWithScrollMargin : undefined}
+    >
       <ChapterHeading title={chapterTitle} feedbackSlot={feedbackSlot} />
 
       <div className={styles.stateColumns}>
@@ -100,7 +91,7 @@ export function StateOfPlay({
             }
           />
           {hasMoreWorking && (
-            <button onClick={() => setExpandedWorking(true)} style={showMoreButtonStyle}>
+            <button onClick={() => setExpandedWorking(true)} className={styles.showMoreButton}>
               Show {working.length - STATE_LIMIT} more
             </button>
           )}
@@ -132,7 +123,7 @@ export function StateOfPlay({
             }
           />
           {hasMoreStruggling && (
-            <button onClick={() => setExpandedStruggling(true)} style={showMoreButtonStyle}>
+            <button onClick={() => setExpandedStruggling(true)} className={styles.showMoreButton}>
               Show {struggling.length - STATE_LIMIT} more
             </button>
           )}

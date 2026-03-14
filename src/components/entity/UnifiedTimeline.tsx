@@ -16,6 +16,8 @@ interface UnifiedTimelineProps {
   sectionId?: string;
   chapterTitle?: string;
   emptyMessage?: string;
+  /** Slot rendered between heading and timeline list (e.g., AddToRecord). */
+  actionSlot?: React.ReactNode;
 }
 
 interface TimelineItem {
@@ -33,6 +35,7 @@ export function UnifiedTimeline({
   sectionId = "the-record",
   chapterTitle = "The Record",
   emptyMessage = "No meetings, emails, or captures recorded yet.",
+  actionSlot,
 }: UnifiedTimelineProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -117,6 +120,7 @@ export function UnifiedTimeline({
   return (
     <section id={sectionId || undefined} style={{ scrollMarginTop: sectionId ? 60 : undefined }}>
       <ChapterHeading title={chapterTitle} />
+      {actionSlot}
 
       {items.length > 0 ? (
         <>
