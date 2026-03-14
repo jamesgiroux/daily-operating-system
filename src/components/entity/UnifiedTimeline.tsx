@@ -91,6 +91,18 @@ export function UnifiedTimeline({
     }
   }
 
+  if (data.contextEntries) {
+    for (const entry of data.contextEntries) {
+      items.push({
+        date: formatShortDate(entry.createdAt),
+        sortDate: entry.createdAt,
+        type: "context",
+        title: entry.title,
+        subtitle: entry.content.length > 140 ? `${entry.content.slice(0, 140)}… · Added by you` : `${entry.content} · Added by you`,
+      });
+    }
+  }
+
   items.sort((a, b) => {
     if (!a.sortDate && !b.sortDate) return 0;
     if (!a.sortDate) return 1;
@@ -102,7 +114,7 @@ export function UnifiedTimeline({
   const hasMore = items.length > 10;
 
   return (
-    <section id={sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+    <section id={sectionId || undefined} style={{ scrollMarginTop: sectionId ? 60 : undefined }}>
       <ChapterHeading title={chapterTitle} />
 
       {items.length > 0 ? (

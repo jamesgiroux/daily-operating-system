@@ -54,5 +54,5 @@ export function useIntelligenceFieldUpdate(
     [entityType, entityId],
   );
 
-  return { updateField, updatingField, saveStatus };
+  return { updateField, updatingField, saveStatus, setSaveStatus };
 }
