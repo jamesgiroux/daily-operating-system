@@ -142,7 +142,11 @@ pub fn default_engine() -> PropagationEngine {
         "rule_person_job_change",
         super::rules::rule_person_job_change,
     );
-    // NOTE: rule_meeting_frequency_drop removed — no code emits "meeting_frequency" signals (I377 audit)
+    // I555: Re-registered — transcript processing now emits "meeting_frequency" signals
+    engine.register(
+        "rule_meeting_frequency_drop",
+        super::rules::rule_meeting_frequency_drop,
+    );
     engine.register("rule_overdue_actions", super::rules::rule_overdue_actions);
     engine.register(
         "rule_champion_sentiment",
