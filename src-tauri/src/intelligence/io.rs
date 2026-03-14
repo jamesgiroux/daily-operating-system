@@ -285,6 +285,21 @@ pub struct TranscriptSentiment {
     pub champion_present: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub champion_engaged: Option<String>,
+    /// I554: Ownership language — customer|vendor|mixed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ownership_language: Option<String>,
+    /// I554: Past-tense product references (churn predictor)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub past_tense_references: Option<bool>,
+    /// I554: Data export interest (churn predictor)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_export_interest: Option<bool>,
+    /// I554: Internal advocacy visible
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub internal_advocacy_visible: Option<bool>,
+    /// I554: Roadmap interest
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roadmap_interest: Option<bool>,
 }
 
 fn default_health_band() -> String {
@@ -525,6 +540,9 @@ pub struct ExpansionSignal {
     pub source: Option<String>,
     /// exploring | evaluating | committed | blocked
     pub stage: Option<String>,
+    /// I554: Signal strength classification — strong | moderate | early
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strength: Option<String>,
 }
 
 /// Renewal outlook assessment for an account.
@@ -745,6 +763,10 @@ pub struct IntelligenceJson {
     // Cross-cutting: source attribution (I507)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
+
+    // I554: Success plan signals synthesized from aggregate context
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub success_plan_signals: Option<crate::types::SuccessPlanSignals>,
 }
 
 /// I508a: Serialization wrapper for all dimension fields stored in `dimensions_json`.
@@ -1376,8 +1398,8 @@ impl ActionDb {
                 relationship_depth, health_json, org_health_json, consistency_status,
                 consistency_findings_json, consistency_checked_at,
                 portfolio_json, network_json, user_edits_json, source_manifest_json,
-                dimensions_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
+                dimensions_json, success_plan_signals_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
             ON CONFLICT(entity_id) DO UPDATE SET
                 entity_type = excluded.entity_type,
                 enriched_at = excluded.enriched_at,
@@ -1402,7 +1424,8 @@ impl ActionDb {
                 network_json = excluded.network_json,
                 user_edits_json = excluded.user_edits_json,
                 source_manifest_json = excluded.source_manifest_json,
-                dimensions_json = excluded.dimensions_json",
+                dimensions_json = excluded.dimensions_json,
+                success_plan_signals_json = excluded.success_plan_signals_json",
             rusqlite::params![
                 intel.entity_id,
                 intel.entity_type,
@@ -1432,6 +1455,7 @@ impl ActionDb {
                 serde_json::to_string(&intel.user_edits).ok(),
                 serde_json::to_string(&intel.source_manifest).ok(),
                 dimensions_json,
+                intel.success_plan_signals.as_ref().and_then(|v| serde_json::to_string(v).ok()),
             ],
         )?;
 
@@ -2589,6 +2613,7 @@ mod tests {
             arr_impact: Some(30_000.0),
             source: Some("champion-email".to_string()),
             stage: Some("discovery".to_string()),
+            strength: Some("early".to_string()),
         }];
         intel.renewal_outlook = Some(RenewalOutlook {
             confidence: Some("high".to_string()),
