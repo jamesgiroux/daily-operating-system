@@ -528,6 +528,21 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     let n = delete_mock("entity_assessment", "entity_id");
     summary.push(format!("entity_assessment: {}", n));
 
+    // --- Success plan tables (FK to objectives, then objectives, then accounts) ---
+    let n = conn
+        .execute(
+            "DELETE FROM action_objective_links WHERE objective_id LIKE 'mock-%'",
+            [],
+        )
+        .unwrap_or(0);
+    summary.push(format!("action_objective_links: {}", n));
+
+    let n = delete_mock("account_milestones", "id");
+    summary.push(format!("account_milestones: {}", n));
+
+    let n = delete_mock("account_objectives", "id");
+    summary.push(format!("account_objectives: {}", n));
+
     // --- Account-specific tables ---
     let n = delete_mock("account_domains", "account_id");
     summary.push(format!("account_domains: {}", n));
@@ -3374,6 +3389,294 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 if entity_type.is_empty() { &None::<&str> as &dyn rusqlite::types::ToSql } else { entity_type as &dyn rusqlite::types::ToSql },
                 summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, &today, &today],
         ).map_err(|e| format!("Email {}: {}", email_id, e))?;
+    }
+
+    // =========================================================================
+    // Success Plans: objectives, milestones, action links, expanded lifecycle events
+    // =========================================================================
+
+    // --- Account Objectives ---
+    let objective_rows: Vec<(&str, &str, &str, Option<&str>, &str, &str, Option<&str>, &str, i32)> = vec![
+        // Acme: 2 active objectives
+        (
+            "mock-objective-acme-ttv",
+            "mock-acme-corp",
+            "Reduce time-to-value by 40%",
+            Some("Streamline onboarding and deployment processes to cut time-to-value from 90 days to 54 days across all new team rollouts."),
+            "active",
+            "2026-06-15",
+            None,
+            "user",
+            0,
+        ),
+        (
+            "mock-objective-acme-eng-expand",
+            "mock-acme-corp",
+            "Expand to engineering team",
+            Some("Roll out platform adoption to the 40-person engineering organization beyond the current DevOps team."),
+            "active",
+            "2026-09-01",
+            None,
+            "ai_suggested",
+            1,
+        ),
+        // Globex: 1 active objective (overdue)
+        (
+            "mock-objective-globex-pipeline",
+            "mock-globex-industries",
+            "Stabilize deployment pipeline",
+            Some("Resolve recurring CI/CD failures and bring deployment success rate above 95%."),
+            "active",
+            "2026-03-01",
+            None,
+            "user",
+            0,
+        ),
+        // Initech: 1 completed + 1 template-sourced
+        (
+            "mock-objective-initech-onboarding",
+            "mock-initech",
+            "Complete onboarding",
+            Some("Ensure all Phase 1 users are trained, credentialed, and actively using the platform."),
+            "completed",
+            "2026-02-28",
+            Some("2026-02-15"),
+            "user",
+            0,
+        ),
+        (
+            "mock-objective-initech-tech-setup",
+            "mock-initech",
+            "Technical setup & integration",
+            Some("Establish SSO, API integrations, and data pipeline connections for production use."),
+            "active",
+            "2026-05-01",
+            None,
+            "template",
+            1,
+        ),
+    ];
+
+    for (id, account_id, title, description, status, target_date, completed_at, source, sort_order) in &objective_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO account_objectives (id, account_id, title, description, status, target_date, completed_at, source, sort_order, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![id, account_id, title, description, status, target_date, completed_at, source, sort_order, &today, &today],
+        ).map_err(|e| format!("Objective {}: {}", id, e))?;
+    }
+
+    // --- Account Milestones ---
+    let milestone_rows: Vec<(&str, &str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>, i32)> = vec![
+        // Acme TTV objective: 2 completed, 1 pending
+        (
+            "mock-milestone-acme-ttv-1",
+            "mock-objective-acme-ttv",
+            "mock-acme-corp",
+            "Baseline measurement complete",
+            "completed",
+            Some("2026-02-01"),
+            Some("2026-01-28"),
+            None,
+            0,
+        ),
+        (
+            "mock-milestone-acme-ttv-2",
+            "mock-objective-acme-ttv",
+            "mock-acme-corp",
+            "Automated provisioning deployed",
+            "completed",
+            Some("2026-03-15"),
+            Some("2026-03-10"),
+            Some("go_live"),
+            1,
+        ),
+        (
+            "mock-milestone-acme-ttv-3",
+            "mock-objective-acme-ttv",
+            "mock-acme-corp",
+            "40% reduction validated with 3 new teams",
+            "pending",
+            Some("2026-06-15"),
+            None,
+            Some("onboarding_complete"),
+            2,
+        ),
+        // Acme eng expand objective: 0 completed, 3 pending
+        (
+            "mock-milestone-acme-eng-1",
+            "mock-objective-acme-eng-expand",
+            "mock-acme-corp",
+            "Engineering champion identified",
+            "pending",
+            Some("2026-04-15"),
+            None,
+            None,
+            0,
+        ),
+        (
+            "mock-milestone-acme-eng-2",
+            "mock-objective-acme-eng-expand",
+            "mock-acme-corp",
+            "Pilot team onboarded (10 engineers)",
+            "pending",
+            Some("2026-06-01"),
+            None,
+            Some("onboarding_complete"),
+            1,
+        ),
+        (
+            "mock-milestone-acme-eng-3",
+            "mock-objective-acme-eng-expand",
+            "mock-acme-corp",
+            "Full engineering rollout (40 engineers)",
+            "pending",
+            Some("2026-09-01"),
+            None,
+            None,
+            2,
+        ),
+        // Globex pipeline objective: 1 completed, 2 pending (at-risk — target date passed)
+        (
+            "mock-milestone-globex-pipe-1",
+            "mock-objective-globex-pipeline",
+            "mock-globex-industries",
+            "Root cause analysis documented",
+            "completed",
+            Some("2026-01-15"),
+            Some("2026-01-20"),
+            None,
+            0,
+        ),
+        (
+            "mock-milestone-globex-pipe-2",
+            "mock-objective-globex-pipeline",
+            "mock-globex-industries",
+            "Pipeline reliability above 90%",
+            "pending",
+            Some("2026-02-15"),
+            None,
+            None,
+            1,
+        ),
+        (
+            "mock-milestone-globex-pipe-3",
+            "mock-objective-globex-pipeline",
+            "mock-globex-industries",
+            "95% success rate sustained for 30 days",
+            "pending",
+            Some("2026-03-01"),
+            None,
+            Some("go_live"),
+            2,
+        ),
+        // Initech onboarding objective: all 3 completed
+        (
+            "mock-milestone-initech-onb-1",
+            "mock-objective-initech-onboarding",
+            "mock-initech",
+            "Admin users trained",
+            "completed",
+            Some("2026-01-15"),
+            Some("2026-01-12"),
+            None,
+            0,
+        ),
+        (
+            "mock-milestone-initech-onb-2",
+            "mock-objective-initech-onboarding",
+            "mock-initech",
+            "All Phase 1 users credentialed",
+            "completed",
+            Some("2026-02-01"),
+            Some("2026-01-30"),
+            Some("onboarding_complete"),
+            1,
+        ),
+        (
+            "mock-milestone-initech-onb-3",
+            "mock-objective-initech-onboarding",
+            "mock-initech",
+            "Weekly active usage above 80%",
+            "completed",
+            Some("2026-02-15"),
+            Some("2026-02-15"),
+            Some("ebr_completed"),
+            2,
+        ),
+        // Initech tech setup objective: 1 completed (auto_detect_signal='go_live'), 2 pending
+        (
+            "mock-milestone-initech-tech-1",
+            "mock-objective-initech-tech-setup",
+            "mock-initech",
+            "SSO integration live",
+            "completed",
+            Some("2026-02-15"),
+            Some("2026-02-10"),
+            Some("go_live"),
+            0,
+        ),
+        (
+            "mock-milestone-initech-tech-2",
+            "mock-objective-initech-tech-setup",
+            "mock-initech",
+            "API integration validated",
+            "pending",
+            Some("2026-03-30"),
+            None,
+            None,
+            1,
+        ),
+        (
+            "mock-milestone-initech-tech-3",
+            "mock-objective-initech-tech-setup",
+            "mock-initech",
+            "Data pipeline in production",
+            "pending",
+            Some("2026-05-01"),
+            None,
+            Some("go_live"),
+            2,
+        ),
+    ];
+
+    for (id, objective_id, account_id, title, status, target_date, completed_at, auto_detect_signal, sort_order) in &milestone_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO account_milestones (id, objective_id, account_id, title, status, target_date, completed_at, auto_detect_signal, sort_order, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![id, objective_id, account_id, title, status, target_date, completed_at, auto_detect_signal, sort_order, &today, &today],
+        ).map_err(|e| format!("Milestone {}: {}", id, e))?;
+    }
+
+    // --- Action-Objective Links ---
+    // Link existing mock actions to objectives
+    let action_links: Vec<(&str, &str)> = vec![
+        ("mock-act-nps-acme", "mock-objective-acme-ttv"),
+        ("mock-act-transcript-phase2-scope", "mock-objective-acme-eng-expand"),
+        ("mock-act-qbr-deck-globex", "mock-objective-globex-pipeline"),
+    ];
+
+    for (action_id, objective_id) in &action_links {
+        conn.execute(
+            "INSERT OR IGNORE INTO action_objective_links (action_id, objective_id, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![action_id, objective_id, &today],
+        ).map_err(|e| format!("Action-objective link {}/{}: {}", action_id, objective_id, e))?;
+    }
+
+    // --- Expanded lifecycle events (new event types from migration 069) ---
+    let expanded_event_rows: Vec<(&str, &str, String, Option<f64>, &str)> = vec![
+        ("mock-acme-corp", "go_live", "2026-01-15".to_string(), None, "Phase 1 production deployment completed successfully"),
+        ("mock-acme-corp", "ebr_completed", "2026-02-28".to_string(), None, "Q1 EBR reviewed Phase 1 outcomes and Phase 2 roadmap"),
+        ("mock-globex-industries", "escalation", "2026-02-01".to_string(), None, "Team B deployment failures causing customer-facing outages. VP Engineering escalated."),
+        ("mock-globex-industries", "champion_change", "2026-02-20".to_string(), None, "Pat Reynolds (VP Product) confirmed Q2 departure. Jamie Morrison stepping into champion role."),
+        ("mock-initech", "kickoff", "2026-01-10".to_string(), None, "Phase 1 kickoff with Dana Patel and Priya Sharma. 60-day implementation timeline agreed."),
+        ("mock-initech", "go_live", "2026-02-01".to_string(), None, "Phase 1 go-live for core team. 25 users provisioned."),
+    ];
+
+    for (account_id, event_type, event_date, arr_impact, notes) in &expanded_event_rows {
+        conn.execute(
+            "INSERT INTO account_events (account_id, event_type, event_date, arr_impact, notes) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![account_id, event_type, event_date, arr_impact, notes],
+        ).map_err(|e| format!("Expanded account event {}/{}: {}", account_id, event_type, e))?;
     }
 
     Ok(())

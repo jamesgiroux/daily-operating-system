@@ -522,7 +522,7 @@ pub async fn run_glean_consent_flow(instance_url: &str) -> Result<GleanAuthResul
         endpoints.authorization_endpoint,
         oauth::urlencode(&dcr.client_id),
         oauth::urlencode(&redirect_uri),
-        oauth::urlencode("openid profile email"),
+        oauth::urlencode("openid profile email mcp search chat agents people entities tools offline_access"),
         oauth::urlencode(&pkce_challenge),
         oauth::urlencode(&oauth_state),
         oauth::urlencode(&endpoints.resource),

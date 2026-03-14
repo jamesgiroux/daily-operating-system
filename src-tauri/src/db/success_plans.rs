@@ -483,6 +483,27 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Read assessment fields for objective suggestion fallback.
+    /// Returns (success_metrics_json, open_commitments_json, risks_json).
+    pub fn get_assessment_fallback_fields(
+        &self,
+        account_id: &str,
+    ) -> Result<(Option<String>, Option<String>, Option<String>), DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT success_metrics, open_commitments, risks_json
+             FROM entity_assessment
+             WHERE entity_id = ?1",
+        )?;
+        let result = stmt.query_row(params![account_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        });
+        match result {
+            Ok(fields) => Ok(fields),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, None, None)),
+            Err(e) => Err(DbError::from(e)),
+        }
+    }
+
     pub fn complete_milestones_for_account_event(
         &self,
         account_id: &str,

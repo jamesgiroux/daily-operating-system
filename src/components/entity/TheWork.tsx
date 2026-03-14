@@ -11,6 +11,8 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
 import { ActionRow } from "@/components/shared/ActionRow";
 import { MeetingRow } from "@/components/shared/MeetingRow";
+import { TemplateSuggestionBanner } from "@/components/entity/TemplateSuggestionBanner";
+import { TemplatePreview } from "@/components/entity/TemplatePreview";
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
 import {
   classifyAction,
@@ -88,6 +90,7 @@ export function TheWork({
   const [dismissedTemplateIds, setDismissedTemplateIds] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<SuggestedObjective[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [addingObjective, setAddingObjective] = useState(false);
   const [newObjectiveTitle, setNewObjectiveTitle] = useState("");
   const [creatingObjective, setCreatingObjective] = useState(false);
   const [addingMilestoneFor, setAddingMilestoneFor] = useState<string | null>(null);
@@ -104,14 +107,16 @@ export function TheWork({
       });
   }, [data.accountId]);
 
+  const hasTemplateObjectives = (data.objectives ?? []).some((o) => o.source === "template");
+
   const suggestedTemplates = useMemo(() => {
     return templates.filter((template) => {
       if (dismissedTemplateIds.includes(template.id)) return false;
-      if (template.id === "renewal-preparation") return isRenewalNear(data.renewalDate);
+      if (template.id === "renewal-preparation") return isRenewalNear(data.renewalDate) && !hasTemplateObjectives;
       if (template.id === "at-risk-recovery") return data.health === "red";
       return template.lifecycleTrigger === data.lifecycle;
     });
-  }, [data.health, data.lifecycle, data.renewalDate, dismissedTemplateIds, templates]);
+  }, [data.health, data.lifecycle, data.renewalDate, dismissedTemplateIds, hasTemplateObjectives, templates]);
 
   const refresh = async () => {
     await onRefresh?.();
@@ -164,6 +169,16 @@ export function TheWork({
     } catch (err) {
       console.error("abandon_objective failed:", err);
       toast.error("Failed to update objective");
+    }
+  };
+
+  const deleteObjective = async (objectiveId: string) => {
+    try {
+      await invoke("delete_objective", { id: objectiveId });
+      await refresh();
+    } catch (err) {
+      console.error("delete_objective failed:", err);
+      toast.error("Failed to delete objective");
     }
   };
 
@@ -221,6 +236,16 @@ export function TheWork({
     } catch (err) {
       console.error("skip_milestone failed:", err);
       toast.error("Failed to skip milestone");
+    }
+  };
+
+  const deleteMilestone = async (milestoneId: string) => {
+    try {
+      await invoke("delete_milestone", { id: milestoneId });
+      await refresh();
+    } catch (err) {
+      console.error("delete_milestone failed:", err);
+      toast.error("Failed to delete milestone");
     }
   };
 
@@ -322,7 +347,7 @@ export function TheWork({
   if (!hasContent) return null;
 
   return (
-    <section id={sectionId || undefined} className={s.section} style={{ scrollMarginTop: sectionId ? 60 : undefined }}>
+    <section id={sectionId || undefined} className={`${s.section}${sectionId ? ` ${s.scrollTarget}` : ""}`}>
       <div className={s.headerRow}>
         <ChapterHeading title={chapterTitle} />
         {data.accountId && (
@@ -338,54 +363,19 @@ export function TheWork({
       </div>
 
       {suggestedTemplates.length > 0 && (
-        <div className={s.banner}>
-          <div>
-            <div className={s.bannerTitle}>A success plan template is available.</div>
-            <div className={s.bannerText}>
-              {suggestedTemplates[0].name} matches this account&apos;s current stage.
-            </div>
-          </div>
-          <div className={s.bannerActions}>
-            <button className={s.bannerAction} onClick={() => setTemplatesOpen(true)}>
-              View
-            </button>
-            <button
-              className={s.bannerActionMuted}
-              onClick={() => setDismissedTemplateIds((prev) => [...prev, suggestedTemplates[0].id])}
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
+        <TemplateSuggestionBanner
+          template={suggestedTemplates[0]}
+          onView={() => setTemplatesOpen(true)}
+          onDismiss={() => setDismissedTemplateIds((prev) => [...prev, suggestedTemplates[0].id])}
+        />
       )}
 
       {templatesOpen && templates.length > 0 && (
-        <div className={s.panel}>
-          <div className={s.panelTitle}>Templates</div>
-          {templates.map((template) => (
-            <div key={template.id} className={s.templateCard}>
-              <div className={s.templateHead}>
-                <div>
-                  <div className={s.templateName}>{template.name}</div>
-                  <div className={s.templateDescription}>{template.description}</div>
-                </div>
-                <button className={s.templateApply} onClick={() => applyTemplate(template.id)}>
-                  Apply
-                </button>
-              </div>
-              <ul className={s.templateObjectives}>
-                {template.objectives.map((objective) => (
-                  <li key={objective.title}>
-                    <span className={s.templateObjectiveTitle}>{objective.title}</span>
-                    <span className={s.templateObjectiveMeta}>
-                      {objective.milestones.map((milestone) => milestone.title).join(" · ")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <TemplatePreview
+          templates={templates}
+          onApply={applyTemplate}
+          onClose={() => setTemplatesOpen(false)}
+        />
       )}
 
       {suggestionsOpen && (
@@ -425,30 +415,71 @@ export function TheWork({
       )}
 
       {data.accountId && (
-        <div className={s.newObjectiveRow}>
-          <input
-            value={newObjectiveTitle}
-            onChange={(event) => setNewObjectiveTitle(event.target.value)}
-            placeholder="Add an objective..."
-            className={s.objectiveInput}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && newObjectiveTitle.trim()) {
-                void createObjective("user", newObjectiveTitle);
-              }
-            }}
-          />
-          <button
-            className={s.templateApply}
-            disabled={creatingObjective || !newObjectiveTitle.trim()}
-            onClick={() => createObjective("user", newObjectiveTitle)}
-          >
-            Add
+        <div className={s.actionComposer}>
+          {addingObjective ? (
+            <div className={s.newObjectiveRow}>
+              <input
+                value={newObjectiveTitle}
+                onChange={(event) => setNewObjectiveTitle(event.target.value)}
+                placeholder="Add an objective..."
+                className={s.objectiveInput}
+                autoFocus
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && newObjectiveTitle.trim()) {
+                    void createObjective("user", newObjectiveTitle);
+                  }
+                  if (event.key === "Escape") {
+                    setAddingObjective(false);
+                    setNewObjectiveTitle("");
+                  }
+                }}
+              />
+              <button
+                className={s.templateApply}
+                disabled={creatingObjective || !newObjectiveTitle.trim()}
+                onClick={() => createObjective("user", newObjectiveTitle)}
+              >
+                Add
+              </button>
+              <button className={s.smallActionMuted} onClick={() => { setAddingObjective(false); setNewObjectiveTitle(""); }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button className={s.inlineAdder} onClick={() => setAddingObjective(true)}>
+              + Objective
+            </button>
+          )}
+        </div>
+      )}
+
+      {(data.objectives ?? []).length === 0 && !addingObjective && data.accountId && (
+        <div className={s.emptyObjectives}>
+          No objectives yet
+          <span> · </span>
+          <button className={s.inlineAdder} onClick={() => setAddingObjective(true)}>
+            + Objective
           </button>
         </div>
       )}
 
-      {(data.objectives ?? []).map((objective, index) => (
-        <div key={objective.id} className={s.objectiveCard}>
+      {(data.objectives ?? []).map((objective, index) => {
+        const statusClass = objective.status === "draft" ? s.objectiveDraft
+          : objective.status === "completed" ? s.objectiveCompleted
+          : objective.status === "abandoned" ? s.objectiveAbandoned
+          : "";
+        const progressRatio = objective.totalMilestoneCount > 0
+          ? objective.completedMilestoneCount / objective.totalMilestoneCount
+          : 0;
+        const pendingMilestones = objective.totalMilestoneCount - objective.completedMilestoneCount;
+        const targetDate = objective.targetDate ? new Date(objective.targetDate) : null;
+        const daysUntilTarget = targetDate ? Math.round((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : null;
+        const progressClass = pendingMilestones === 0 ? s.progressOnTrack
+          : !targetDate || (daysUntilTarget !== null && daysUntilTarget > 14) ? s.progressOnTrack
+          : daysUntilTarget !== null && daysUntilTarget < 0 ? s.progressOverdue
+          : s.progressWarning;
+        return (
+        <div key={objective.id} className={`${s.objectiveCard}${statusClass ? ` ${statusClass}` : ""}`}>
           <div className={s.objectiveTop}>
             <div className={s.objectiveMain}>
               <EditableText
@@ -469,32 +500,48 @@ export function TheWork({
               <div className={s.objectiveMeta}>
                 {labelObjectiveStatus(objective.status)} · {objective.completedMilestoneCount} of {objective.totalMilestoneCount} milestones · {objective.linkedActionCount} linked actions
               </div>
+              {objective.targetDate && (
+                <div className={s.objectiveTargetDate}>
+                  Target: {formatShortDate(objective.targetDate)}
+                </div>
+              )}
+              {objective.totalMilestoneCount > 0 && (
+                <div className={`${s.progressBar} ${progressClass}`}>
+                  <div className={s.progressFill} style={{ width: `${progressRatio * 100}%` } as React.CSSProperties} />
+                </div>
+              )}
             </div>
             <div className={s.objectiveActions}>
-              <button
-                className={s.smallAction}
-                onClick={() => reorderObjectives([
-                  ...(data.objectives ?? []).slice(0, index - 1).map((item) => item.id),
-                  objective.id,
-                  (data.objectives ?? [])[index - 1].id,
-                  ...(data.objectives ?? []).slice(index + 1).map((item) => item.id),
-                ])}
-                disabled={index === 0}
-              >
-                Up
-              </button>
-              <button
-                className={s.smallAction}
-                onClick={() => reorderObjectives([
-                  ...(data.objectives ?? []).slice(0, index).map((item) => item.id),
-                  (data.objectives ?? [])[index + 1].id,
-                  objective.id,
-                  ...(data.objectives ?? []).slice(index + 2).map((item) => item.id),
-                ])}
-                disabled={index === (data.objectives?.length ?? 1) - 1}
-              >
-                Down
-              </button>
+              {(data.objectives?.length ?? 0) > 1 && (
+                <>
+                  <button
+                    className={s.smallAction}
+                    onClick={() => reorderObjectives([
+                      ...(data.objectives ?? []).slice(0, index - 1).map((item) => item.id),
+                      objective.id,
+                      (data.objectives ?? [])[index - 1].id,
+                      ...(data.objectives ?? []).slice(index + 1).map((item) => item.id),
+                    ])}
+                    disabled={index === 0}
+                    title="Move up"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className={s.smallAction}
+                    onClick={() => reorderObjectives([
+                      ...(data.objectives ?? []).slice(0, index).map((item) => item.id),
+                      (data.objectives ?? [])[index + 1].id,
+                      objective.id,
+                      ...(data.objectives ?? []).slice(index + 2).map((item) => item.id),
+                    ])}
+                    disabled={index === (data.objectives?.length ?? 1) - 1}
+                    title="Move down"
+                  >
+                    ↓
+                  </button>
+                </>
+              )}
               {objective.status !== "completed" && (
                 <button className={s.smallAction} onClick={() => completeObjective(objective.id)}>
                   Complete
@@ -505,6 +552,9 @@ export function TheWork({
                   Abandon
                 </button>
               )}
+              <button className={s.smallActionMuted} onClick={() => deleteObjective(objective.id)}>
+                Delete
+              </button>
             </div>
           </div>
 
@@ -526,21 +576,24 @@ export function TheWork({
                   <div className={s.milestoneMeta}>
                     {labelMilestoneStatus(milestone.status)}
                     {milestone.targetDate ? ` · ${formatShortDate(milestone.targetDate)}` : ""}
-                    {milestone.autoDetectSignal ? " · auto-complete enabled" : ""}
+                    {milestone.autoDetectSignal ? " · ⚡" : ""}
                   </div>
                 </div>
                 <div className={s.milestoneActions}>
-                  <button className={s.smallAction} onClick={() => reorderMilestones(objective, milestone.id, -1)}>
-                    Up
-                  </button>
-                  <button className={s.smallAction} onClick={() => reorderMilestones(objective, milestone.id, 1)}>
-                    Down
-                  </button>
+                  {objective.milestones.length > 1 && (
+                    <>
+                      <button className={s.smallAction} onClick={() => reorderMilestones(objective, milestone.id, -1)} title="Move up">↑</button>
+                      <button className={s.smallAction} onClick={() => reorderMilestones(objective, milestone.id, 1)} title="Move down">↓</button>
+                    </>
+                  )}
                   {milestone.status === "pending" && (
                     <button className={s.smallActionMuted} onClick={() => skipMilestone(milestone.id)}>
                       Skip
                     </button>
                   )}
+                  <button className={s.smallActionMuted} onClick={() => deleteMilestone(milestone.id)} title="Delete milestone">
+                    ×
+                  </button>
                 </div>
               </div>
             ))}
@@ -587,15 +640,19 @@ export function TheWork({
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
 
       <div className={s.actionSection}>
-        <div className={s.sectionLabel}>Unlinked Actions</div>
+        <div className={s.sectionLabel}>Actions</div>
         {unlinkedActions.length > 0 ? (
           <>
             <ActionGroup label="Overdue" labelColor="var(--color-spice-terracotta)" actions={overdue} objectives={data.objectives ?? []} onLink={linkAction} linkingActionId={linkingActionId} setLinkingActionId={setLinkingActionId} accentColor="var(--color-spice-terracotta)" dateColor="var(--color-spice-terracotta)" bold />
             <ActionGroup label="This Week" labelColor="var(--color-spice-turmeric)" actions={thisWeek} objectives={data.objectives ?? []} onLink={linkAction} linkingActionId={linkingActionId} setLinkingActionId={setLinkingActionId} accentColor="var(--color-spice-turmeric)" />
-            <ActionGroup label="Upcoming" labelColor="var(--color-text-tertiary)" actions={[...upcoming, ...noDue]} objectives={data.objectives ?? []} onLink={linkAction} linkingActionId={linkingActionId} setLinkingActionId={setLinkingActionId} />
+            <ActionGroup label="Upcoming" labelColor="var(--color-text-tertiary)" actions={upcoming} objectives={data.objectives ?? []} onLink={linkAction} linkingActionId={linkingActionId} setLinkingActionId={setLinkingActionId} />
+            {noDue.length > 0 && (
+              <ActionGroup label="No Due Date" labelColor="var(--color-text-tertiary)" actions={noDue} objectives={data.objectives ?? []} onLink={linkAction} linkingActionId={linkingActionId} setLinkingActionId={setLinkingActionId} />
+            )}
           </>
         ) : (
           <p className={s.emptyMessage}>No unlinked actions.</p>
@@ -682,7 +739,7 @@ function ActionGroup({
   if (actions.length === 0) return null;
   return (
     <div className={s.actionGroup}>
-      <div className={s.groupLabel} style={{ color: labelColor }}>
+      <div className={s.groupLabel} style={{ '--label-color': labelColor } as React.CSSProperties}>
         {label}
       </div>
       {actions.map((action) => (

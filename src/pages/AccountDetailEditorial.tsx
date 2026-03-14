@@ -46,7 +46,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AccountHero } from "@/components/account/AccountHero";
-import { AccountAppendix } from "@/components/account/AccountAppendix";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
@@ -57,7 +56,8 @@ import { TheWork } from "@/components/entity/TheWork";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
-import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
+import { AddToRecord } from "@/components/entity/AddToRecord";
+import { FileListSection } from "@/components/entity/FileListSection";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 import { DimensionBar } from "@/components/shared/DimensionBar";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
@@ -181,13 +181,14 @@ export default function AccountDetailEditorial() {
   useRevealObserver(!acct.loading && !!acct.detail);
 
   const [reportsOpen, setReportsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   useEffect(() => {
-    if (!reportsOpen) return;
-    function handleClick() { setReportsOpen(false); }
+    if (!reportsOpen && !toolsOpen) return;
+    function handleClick() { setReportsOpen(false); setToolsOpen(false); }
     document.addEventListener("click", handleClick);
     return () => document.removeEventListener("click", handleClick);
-  }, [reportsOpen]);
+  }, [reportsOpen, toolsOpen]);
 
   // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
   const {
@@ -251,47 +252,12 @@ export default function AccountDetailEditorial() {
       folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: (
         <div className={shared.folioActions}>
-          {acct.detail && !acct.detail.archived && (
-            <button
-              className={shared.folioActionButton}
-              style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-rule-heavy)" }}
-              onClick={acct.handleEnrich}
-              disabled={acct.enriching}
-            >
-              {acct.enriching ? `Refreshing… ${acct.enrichSeconds ?? 0}s` : "Refresh"}
-            </button>
-          )}
-          {acct.detail?.archived ? (
-            <button
-              className={shared.folioActionButton}
-              style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-rule-heavy)" }}
-              onClick={acct.handleUnarchive}
-            >
-              Unarchive
-            </button>
-          ) : acct.detail ? (
-            <button
-              className={shared.folioActionButton}
-              style={{ color: "var(--color-text-tertiary)", border: "1px solid var(--color-rule-heavy)" }}
-              onClick={() => setArchiveDialogOpen(true)}
-            >
-              Archive
-            </button>
-          ) : null}
-          {acct.detail && (
-            <button
-              onClick={() => acct.setCreateChildOpen(true)}
-              className={styles.addChildButton}
-            >
-              + Business Unit
-            </button>
-          )}
           <div className={styles.reportsDropdownWrapper}>
             <button
               onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
               className={styles.reportsButton}
             >
-              Reports {reportsOpen ? "▴" : "▾"}
+              Reports {reportsOpen ? "\u25b4" : "\u25be"}
             </button>
             {reportsOpen && (
               <div className={styles.reportsDropdown}>
@@ -318,15 +284,73 @@ export default function AccountDetailEditorial() {
               </div>
             )}
           </div>
+          <div className={styles.toolsDropdownWrapper}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setToolsOpen(o => !o); }}
+              className={styles.toolsButton}
+            >
+              Tools {toolsOpen ? "\u25b4" : "\u25be"}
+            </button>
+            {toolsOpen && (
+              <div className={styles.toolsDropdown}>
+                {acct.detail && !acct.detail.archived && (
+                  <button
+                    className={styles.toolsDropdownItem}
+                    onClick={() => { setToolsOpen(false); acct.handleEnrich(); }}
+                    disabled={acct.enriching}
+                  >
+                    {acct.enriching ? `Refreshing\u2026 ${acct.enrichSeconds ?? 0}s` : "Refresh"}
+                  </button>
+                )}
+                <div className={styles.toolsDropdownSeparator} />
+                {acct.detail && (
+                  <button
+                    className={styles.toolsDropdownItem}
+                    onClick={() => { setToolsOpen(false); acct.setCreateChildOpen(true); }}
+                  >
+                    + Business Unit
+                  </button>
+                )}
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); setMergeDialogOpen(true); }}
+                >
+                  Merge Into\u2026
+                </button>
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); acct.handleIndexFiles(); }}
+                  disabled={acct.indexing}
+                >
+                  {acct.indexing ? "Indexing\u2026" : "Index Files"}
+                </button>
+                <div className={styles.toolsDropdownSeparator} />
+                {acct.detail?.archived ? (
+                  <button
+                    className={styles.toolsDropdownItem}
+                    onClick={() => { setToolsOpen(false); acct.handleUnarchive(); }}
+                  >
+                    Unarchive
+                  </button>
+                ) : acct.detail ? (
+                  <button
+                    className={styles.toolsDropdownItem}
+                    onClick={() => { setToolsOpen(false); setArchiveDialogOpen(true); }}
+                  >
+                    Archive
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
       ),
     }),
-    [navigate, accountId, acct.detail, acct.intelligence?.health, acct.setCreateChildOpen, acct.handleEnrich, acct.enriching, acct.enrichSeconds, acct.handleUnarchive, reportsOpen, setReportsOpen, preset?.id, saveStatus],
+    [navigate, accountId, acct.detail, acct.intelligence?.health, acct.setCreateChildOpen, acct.handleEnrich, acct.enriching, acct.enrichSeconds, acct.handleUnarchive, acct.handleIndexFiles, acct.indexing, reportsOpen, setReportsOpen, toolsOpen, setToolsOpen, preset?.id, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
-  // Drawer/dialog open state
-  const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
+  // Dialog open state
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [rolloverDismissed, setRolloverDismissed] = useState(false);
@@ -469,7 +493,8 @@ export default function AccountDetailEditorial() {
                 onClick={() => {
                   acct.setNewEventType("renewal");
                   acct.setNewEventDate(detail.renewalDate!);
-                  setEventDrawerOpen(true);
+                  acct.handleRecordEvent();
+                  setRolloverDismissed(true);
                 }}
                 className={styles.rolloverButton}
               >
@@ -481,7 +506,8 @@ export default function AccountDetailEditorial() {
                 onClick={() => {
                   acct.setNewEventType("churn");
                   acct.setNewEventDate(detail.renewalDate!);
-                  setEventDrawerOpen(true);
+                  acct.handleRecordEvent();
+                  setRolloverDismissed(true);
                 }}
                 className={styles.rolloverButton}
               >
@@ -732,6 +758,8 @@ export default function AccountDetailEditorial() {
       <div id="the-record" className={`editorial-reveal ${shared.marginLabelSection}`}>
         <div className={shared.marginLabel}>The<br/>Record</div>
         <div className={shared.marginContent}>
+          <ChapterHeading title="The Record" />
+          <AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />
           <UnifiedTimeline data={{ ...detail, accountEvents: events, contextEntries: entityCtx.entries }} sectionId="" />
         </div>
       </div>
@@ -741,7 +769,7 @@ export default function AccountDetailEditorial() {
         <div className={shared.marginLabel}>The<br/>Work</div>
         <div className={shared.marginContent}>
           <TheWork
-            data={detail}
+            data={{ ...detail, accountId: detail.id }}
             sectionId=""
             addingAction={acct.addingAction}
             setAddingAction={acct.setAddingAction}
@@ -788,38 +816,20 @@ export default function AccountDetailEditorial() {
         </div>
       </div>
 
+      {/* Files section — inline when files exist */}
+      {files.length > 0 && (
+        <div className={shared.marginLabelSection}>
+          <div className={shared.marginLabel}>Files</div>
+          <div className={shared.marginContent}>
+            <FileListSection files={files} />
+          </div>
+        </div>
+      )}
+
       {/* Finis marker */}
       <div className="editorial-reveal">
         <FinisMarker enrichedAt={intelligence?.enrichedAt} />
       </div>
-
-      {/* Chapter 8: Appendix */}
-      <div className="editorial-reveal">
-        <AccountAppendix
-          detail={detail}
-          events={events}
-          files={files}
-          onRecordEvent={() => setEventDrawerOpen(true)}
-          onIndexFiles={acct.handleIndexFiles}
-          indexing={acct.indexing}
-          indexFeedback={acct.indexFeedback}
-          onMerge={() => setMergeDialogOpen(true)}
-        />
-      </div>
-
-      <LifecycleEventDrawer
-        open={eventDrawerOpen}
-        onOpenChange={setEventDrawerOpen}
-        newEventType={acct.newEventType}
-        setNewEventType={acct.setNewEventType}
-        newEventDate={acct.newEventDate}
-        setNewEventDate={acct.setNewEventDate}
-        newArrImpact={acct.newArrImpact}
-        setNewArrImpact={acct.setNewArrImpact}
-        newEventNotes={acct.newEventNotes}
-        setNewEventNotes={acct.setNewEventNotes}
-        onSave={acct.handleRecordEvent}
-      />
 
       {/* ─── Archive Confirmation ─── */}
       <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
