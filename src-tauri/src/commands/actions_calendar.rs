@@ -616,6 +616,21 @@ pub async fn get_meeting_outcomes(
         .await
 }
 
+/// Get post-meeting intelligence: interaction dynamics, champion health,
+/// role changes, and enriched captures (I555/I558).
+#[tauri::command]
+pub async fn get_meeting_post_intelligence(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::db::types::MeetingPostIntelligence, String> {
+    state
+        .db_read(move |db| {
+            db.get_meeting_post_intelligence(&meeting_id)
+                .map_err(|e| e.to_string())
+        })
+        .await
+}
+
 /// Update the content of a capture (win/risk/decision) — I45 inline editing.
 #[tauri::command]
 pub async fn update_capture(

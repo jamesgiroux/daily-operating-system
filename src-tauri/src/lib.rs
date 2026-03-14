@@ -465,6 +465,7 @@ pub fn run() {
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
             commands::get_meeting_outcomes,
+            commands::get_meeting_post_intelligence,
             commands::update_capture,
             commands::update_action_priority,
             // I127/I128: Manual Action CRUD

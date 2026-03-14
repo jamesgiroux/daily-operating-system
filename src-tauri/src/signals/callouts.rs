@@ -51,6 +51,7 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "proactive_prep_gap",
     "proactive_no_contact",
     "cadence_anomaly",
+    "risk_detected",
 ];
 
 // ---------------------------------------------------------------------------
@@ -396,6 +397,22 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 "Renewal at risk: no recent engagement".to_string(),
                 format!("No meetings in {} days near renewal window", days),
             )
+        }
+        "risk_detected" => {
+            let urgency = parsed
+                .get("urgency")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let content = parsed
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Risk identified in recent meeting");
+            let headline = match urgency {
+                "red" => "Critical risk detected".to_string(),
+                "yellow" => "Risk flagged".to_string(),
+                _ => "Risk signal".to_string(),
+            };
+            (headline, content.to_string())
         }
         "cadence_anomaly" => {
             // I319: value is the anomaly type string ("gone_quiet" or "activity_spike")

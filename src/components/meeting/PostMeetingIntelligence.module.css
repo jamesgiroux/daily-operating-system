@@ -1,0 +1,483 @@
+/* =============================================================================
+   PostMeetingIntelligence — Post-meeting analysis section (I558)
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CONTAINER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENGAGEMENT DYNAMICS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.dynamicsSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.talkBalanceWrap {
+  max-width: 400px;
+}
+
+/* Speaker sentiment cards */
+.speakerList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.speakerCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.speakerCard:last-child {
+  border-bottom: none;
+}
+
+.speakerName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+  white-space: nowrap;
+  min-width: 100px;
+}
+
+.sentimentBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.sentimentPositive {
+  composes: sentimentBadge;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-12);
+}
+
+.sentimentNeutral {
+  composes: sentimentBadge;
+  color: var(--color-text-tertiary);
+  background: var(--color-rule-light);
+}
+
+.sentimentCautious {
+  composes: sentimentBadge;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-12);
+}
+
+.sentimentNegative {
+  composes: sentimentBadge;
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-12);
+}
+
+.speakerEvidence {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Engagement signals strip */
+.signalStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.signalBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 3px;
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.signalBadgeActive {
+  composes: signalBadge;
+  color: var(--color-garden-sage);
+  border-color: var(--color-garden-sage-30);
+  background: var(--color-garden-sage-8);
+}
+
+.signalBadgeWarning {
+  composes: signalBadge;
+  color: var(--color-spice-terracotta);
+  border-color: var(--color-spice-terracotta-30);
+  background: var(--color-spice-terracotta-8);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CHAMPION HEALTH
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.championCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.championHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.championName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.championStatusBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 2px 10px;
+}
+
+.championStrong {
+  composes: championStatusBadge;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-12);
+}
+
+.championWeak {
+  composes: championStatusBadge;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-12);
+}
+
+.championLost {
+  composes: championStatusBadge;
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-12);
+}
+
+.championNone {
+  composes: championStatusBadge;
+  color: var(--color-text-tertiary);
+  background: var(--color-rule-light);
+}
+
+.championEvidence {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.championRisk {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-spice-terracotta);
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--color-spice-terracotta-30);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CATEGORIZED OUTCOMES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.outcomeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.outcomeGroupTitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.outcomeGroupCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.captureList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.captureItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.captureItem:last-child {
+  border-bottom: none;
+}
+
+.captureHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Hover-reveal feedback actions on capture items */
+.captureActions {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.captureItem:hover .captureActions {
+  opacity: 1;
+}
+
+.captureActions:focus-within {
+  opacity: 1;
+}
+
+.captureContent {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.captureEvidence {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--color-rule-light);
+}
+
+.captureSpeaker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+}
+
+/* Sub-type badge */
+.subTypeBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
+/* Urgency badges */
+.urgencyRed {
+  composes: subTypeBadge;
+  color: var(--color-spice-terracotta);
+  border-color: var(--color-spice-terracotta-30);
+  background: var(--color-spice-terracotta-8);
+}
+
+.urgencyYellow {
+  composes: subTypeBadge;
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric-30);
+  background: var(--color-spice-turmeric-8);
+}
+
+.urgencyGreen {
+  composes: subTypeBadge;
+  color: var(--color-garden-sage);
+  border-color: var(--color-garden-sage-30);
+  background: var(--color-garden-sage-8);
+}
+
+/* Impact badge */
+.impactBadge {
+  composes: subTypeBadge;
+  color: var(--color-garden-sage);
+  border-color: var(--color-garden-sage-30);
+}
+
+/* Risk items with left border accent */
+.captureItemRiskRed {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.captureItemRiskYellow {
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding-left: var(--space-md);
+}
+
+.captureItemRiskGreen {
+  border-left: 3px solid var(--color-garden-sage);
+  padding-left: var(--space-md);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROLE CHANGES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.roleChangeList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.roleChangeItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.roleChangeItem:last-child {
+  border-bottom: none;
+}
+
+.roleChangeHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.roleChangeName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.roleChangeArrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.roleChangeStatus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.roleChangeEvidence {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   COMPETITOR MENTIONS & ESCALATION
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.mentionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.mentionItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.mentionLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-terracotta);
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+.escalationItem {
+  composes: mentionItem;
+  border-left: 2px solid var(--color-spice-terracotta-30);
+  padding-left: var(--space-sm);
+}
+
+.escalationQuote {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.escalationSpeaker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SECTION SUBHEADING
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.sectionSubheading {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}

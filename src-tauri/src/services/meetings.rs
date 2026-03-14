@@ -2666,6 +2666,14 @@ pub async fn attach_meeting_transcript(
                     .and_then(|e| e.decision_maker_active.as_deref())
                     .map(|v| v == "no")
                     .unwrap_or(false);
+                // I555: Capture champion health, role changes, and risks for signal emissions
+                let champion_health = result.champion_health.clone();
+                let role_changes_data: Vec<(String, Option<String>, Option<String>)> = result
+                    .role_changes
+                    .iter()
+                    .map(|rc| (rc.person_name.clone(), rc.old_status.clone(), rc.new_status.clone()))
+                    .collect();
+                let risk_strings: Vec<String> = result.risks.clone();
                 let meeting_title = meeting.title.clone();
                 let _ = state
                     .db_write(move |db| {
@@ -2718,6 +2726,92 @@ pub async fn attach_meeting_transcript(
                                     db, "account", aid,
                                     "stakeholder_disengagement", "transcript",
                                     Some("decision_maker_inactive"), 0.6,
+                                );
+                            }
+
+                            // I555: Champion health → person-level signal
+                            if let Some(ref ch) = champion_health {
+                                if let Ok(Some(champion_pid)) = db.get_champion_person_id(aid) {
+                                    match ch.champion_status.as_str() {
+                                        "weak" | "lost" => {
+                                            let confidence = if ch.champion_status == "lost" { 0.9 } else { 0.7 };
+                                            let value = serde_json::json!({
+                                                "champion_status": ch.champion_status,
+                                                "evidence": ch.champion_evidence,
+                                            }).to_string();
+                                            let _ = crate::signals::bus::emit_signal_and_propagate(
+                                                db, &engine,
+                                                "person", &champion_pid,
+                                                "negative_sentiment", "transcript",
+                                                Some(&value), confidence,
+                                            );
+                                        }
+                                        "strong" => {
+                                            let value = serde_json::json!({
+                                                "champion_status": "strong",
+                                                "evidence": ch.champion_evidence,
+                                            }).to_string();
+                                            let _ = crate::signals::bus::emit_signal(
+                                                db, "person", &champion_pid,
+                                                "champion_engagement_confirmed", "transcript",
+                                                Some(&value), 0.8,
+                                            );
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+
+                            // I555: Meeting frequency signal → triggers rule_meeting_frequency_drop
+                            let current_count = db.count_account_meetings_in_days(aid, 30).unwrap_or(0);
+                            let previous_count = db.count_account_meetings_in_period(aid, 30, 30).unwrap_or(0);
+                            let freq_value = serde_json::json!({
+                                "meeting_count_30d": current_count,
+                                "current_count": current_count,
+                                "previous_count": previous_count,
+                            }).to_string();
+                            let _ = crate::signals::bus::emit_signal_and_propagate(
+                                db, &engine,
+                                "account", aid,
+                                "meeting_frequency", "transcript",
+                                Some(&freq_value), 0.9,
+                            );
+
+                            // I555: Risk signals with urgency-graduated confidence
+                            for risk in &risk_strings {
+                                let (urgency, confidence) = if risk.starts_with("[RED]") {
+                                    ("red", 0.9)
+                                } else if risk.starts_with("[YELLOW]") {
+                                    ("yellow", 0.6)
+                                } else if risk.starts_with("[GREEN_WATCH]") {
+                                    ("green_watch", 0.3)
+                                } else {
+                                    ("unknown", 0.5)
+                                };
+                                let risk_value = serde_json::json!({
+                                    "urgency": urgency,
+                                    "content": risk,
+                                }).to_string();
+                                let _ = crate::signals::bus::emit_signal_and_propagate(
+                                    db, &engine,
+                                    "account", aid,
+                                    "risk_detected", "transcript",
+                                    Some(&risk_value), confidence,
+                                );
+                            }
+
+                            // I555: Role changes → stakeholder_change signal
+                            for (person_name, old_status, new_status) in &role_changes_data {
+                                let rc_value = serde_json::json!({
+                                    "person": person_name,
+                                    "old": old_status,
+                                    "new": new_status,
+                                }).to_string();
+                                let _ = crate::signals::bus::emit_signal_and_propagate(
+                                    db, &engine,
+                                    "account", aid,
+                                    "stakeholder_change", "transcript",
+                                    Some(&rc_value), 0.8,
                                 );
                             }
                         }
