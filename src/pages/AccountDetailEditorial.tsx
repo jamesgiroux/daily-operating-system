@@ -63,7 +63,6 @@ import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import shared from "@/styles/entity-detail.module.css";
 import styles from "./AccountDetailEditorial.module.css";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
-import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 
 /* ── Vitals assembly (moved from old account/VitalsStrip) ── */
 
@@ -193,13 +192,20 @@ export default function AccountDetailEditorial() {
   const { updateField: handleUpdateIntelField, saveStatus } = useIntelligenceFieldUpdate("account", accountId);
 
   // Register magazine shell configuration — MagazinePageLayout consumes this
+  // Memoize chapters separately — they only change with isParent/hasHealth,
+  // not with frequently-changing folio state (saveStatus, enrichSeconds, etc.)
+  const chapters = useMemo(
+    () => buildChapters(acct.detail?.isParent ?? false, !!acct.intelligence?.health),
+    [acct.detail?.isParent, acct.intelligence?.health],
+  );
+
   const shellConfig = useMemo(
     () => ({
       folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
       atmosphereColor: acct.detail?.accountType === "internal" ? "larkspur" as const : "turmeric" as const,
       activePage: "accounts" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
-      chapters: buildChapters(acct.detail?.isParent ?? false, !!acct.intelligence?.health),
+      chapters,
       folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: (
         <div className={shared.folioActions}>
@@ -604,12 +610,6 @@ export default function AccountDetailEditorial() {
             onUpdateField={handleUpdateIntelField}
             getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
             onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
-            feedbackSlot={
-              <IntelligenceFeedback
-                value={feedback.getFeedback("state_of_play")}
-                onFeedback={(type) => feedback.submitFeedback("state_of_play", type)}
-              />
-            }
           />
         </div>
       </div>
@@ -694,12 +694,8 @@ export default function AccountDetailEditorial() {
             intelligence={intelligence}
             sectionId=""
             onUpdateField={handleUpdateIntelField}
-            feedbackSlot={
-              <IntelligenceFeedback
-                value={feedback.getFeedback("watch_list")}
-                onFeedback={(type) => feedback.submitFeedback("watch_list", type)}
-              />
-            }
+            getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+            onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
           />
         </div>
       </div>
