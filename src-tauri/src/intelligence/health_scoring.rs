@@ -245,6 +245,40 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
         }
     }
 
+    // I555: Quality modifier from interaction dynamics
+    let quality_multiplier = {
+        let mut q = 1.0f64;
+        if let Ok(dynamics_rows) = db.conn.prepare(
+            "SELECT mid.question_density, mid.decision_maker_active, mid.forward_looking
+             FROM meeting_interaction_dynamics mid
+             JOIN meeting_entities me ON me.meeting_id = mid.meeting_id AND me.entity_id = ?1
+             ORDER BY mid.created_at DESC LIMIT 3"
+        ).and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![account_id], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            }).map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+        }) {
+            if !dynamics_rows.is_empty() {
+                let mut quality_score = 0.0f64;
+                let n = dynamics_rows.len() as f64;
+                for (qd, dma, fl) in &dynamics_rows {
+                    if qd.as_deref() == Some("high") { quality_score += 1.0; }
+                    if dma.as_deref() == Some("yes") { quality_score += 1.0; }
+                    if fl.as_deref() == Some("high") { quality_score += 1.0; }
+                }
+                let avg_quality = quality_score / (n * 3.0);
+                q = 0.7 + (avg_quality * 0.5); // Range: 0.7 to 1.2
+            }
+        }
+        q
+    };
+
+    score = (score * quality_multiplier).clamp(0.0, 100.0);
+
     let trend = if ratio > 1.2 {
         "improving".to_string()
     } else if ratio < 0.5 {
@@ -254,9 +288,9 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
     };
 
     DimensionScore {
-        score: (score as f64).clamp(0.0, 100.0),
+        score,
         weight: 1.0,
-        evidence: vec![format!("{count_30d:.0} meetings in 30d, ratio={ratio:.2}")],
+        evidence: vec![format!("{count_30d:.0} meetings in 30d, ratio={ratio:.2}, quality={quality_multiplier:.2}")],
         trend,
     }
 }
@@ -310,59 +344,152 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
     }
 
     let expected_roles = ["champion", "executive", "technical"];
-    let filled = expected_roles
-        .iter()
-        .filter(|role| team.iter().any(|t| t.role.to_lowercase().contains(*role)))
-        .count() as f64;
-    let fill_rate: f64 = filled / expected_roles.len() as f64;
+    let mut weighted_fill = 0.0f64;
+    let mut evidence = Vec::new();
+
+    for role in &expected_roles {
+        let has_role = team.iter().any(|t| t.role.to_lowercase().contains(role));
+        if !has_role {
+            evidence.push(format!("Missing: {role}"));
+            continue;
+        }
+
+        // I555: Verify attendance recency via meeting_attendees
+        let weight = if let Some(person_id) = team.iter()
+            .find(|t| t.role.to_lowercase().contains(role))
+            .map(|t| t.person_id.as_str())
+        {
+            let last_seen_days = db.conn.query_row(
+                "SELECT CAST(julianday('now') - julianday(MAX(m.start_time)) AS INTEGER)
+                 FROM meeting_attendees ma
+                 JOIN meetings m ON m.id = ma.meeting_id
+                 WHERE ma.person_id = ?1",
+                rusqlite::params![person_id],
+                |row| row.get::<_, Option<i64>>(0),
+            ).unwrap_or(None);
+
+            match last_seen_days {
+                Some(d) if d <= 90 => {
+                    evidence.push(format!("{role}: active (seen {d}d ago)"));
+                    1.0
+                }
+                Some(d) if d <= 180 => {
+                    evidence.push(format!("{role}: stale ({d}d ago)"));
+                    0.5
+                }
+                Some(d) => {
+                    evidence.push(format!("{role}: inactive ({d}d ago)"));
+                    0.0
+                }
+                None => {
+                    evidence.push(format!("{role}: mapped but never seen in meetings"));
+                    0.3
+                }
+            }
+        } else {
+            evidence.push(format!("{role}: mapped (no person linked)"));
+            0.5
+        };
+
+        weighted_fill += weight;
+    }
+
+    let fill_rate = weighted_fill / expected_roles.len() as f64;
 
     DimensionScore {
         score: (fill_rate * 100.0).clamp(0.0, 100.0),
         weight: 1.0,
-        evidence: vec![format!(
-            "{}/{} expected roles filled",
-            filled as usize,
-            expected_roles.len()
-        )],
+        evidence,
         trend: String::new(),
     }
 }
 
 fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     let team = db.get_account_team(account_id).unwrap_or_default();
-    let has_champion = team
+    let champion = team
         .iter()
-        .any(|t| t.role.to_lowercase().contains("champion"));
+        .find(|t| t.role.to_lowercase().contains("champion"));
 
-    if !has_champion {
+    if champion.is_none() {
         return null_dimension("No champion identified");
     }
 
-    let mut score: f64 = 60.0;
-    let mut evidence = vec!["Champion identified".to_string()];
+    // I555: Query per-champion meeting engagement from meeting_champion_health
+    let champion_assessments: Vec<(String, String, Option<String>)> = db.conn.prepare(
+        "SELECT m.start_time, mch.champion_status, mch.champion_evidence
+         FROM meeting_champion_health mch
+         JOIN meetings m ON m.id = mch.meeting_id
+         JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+         WHERE mch.champion_name IS NOT NULL
+         ORDER BY m.start_time DESC LIMIT 5"
+    ).and_then(|mut stmt| {
+        stmt.query_map(rusqlite::params![account_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        }).map(|rows| rows.filter_map(|r| r.ok()).collect())
+    }).unwrap_or_default();
 
-    // Check recent meeting attendance
-    if let Ok(signals) = db.get_stakeholder_signals(account_id) {
-        if signals.meeting_frequency_30d > 0 {
-            score += 20.0;
-            evidence.push("Active in recent meetings".to_string());
+    if champion_assessments.is_empty() {
+        // Fallback to structural check (pre-I555 behavior)
+        let mut score: f64 = 60.0;
+        let mut evidence = vec!["Champion identified (no meeting engagement data)".to_string()];
+
+        if let Ok(signals) = db.get_stakeholder_signals(account_id) {
+            if signals.meeting_frequency_30d > 0 {
+                score += 20.0;
+                evidence.push("Active in recent meetings".to_string());
+            }
         }
+
+        return DimensionScore {
+            score: score.clamp(0.0, 100.0),
+            weight: 1.0,
+            evidence,
+            trend: String::new(),
+        };
     }
 
-    // Check email activity
-    let email_signals = db
-        .list_recent_email_signals_for_entity(account_id, 10)
-        .unwrap_or_default();
-    if !email_signals.is_empty() {
-        score += 20.0;
-        evidence.push("Recent email activity".to_string());
+    // Score based on recent champion engagement
+    let status_scores: Vec<f64> = champion_assessments.iter().map(|(_, status, _)| {
+        match status.as_str() {
+            "strong" => 90.0,
+            "weak" => 40.0,
+            "lost" => 10.0,
+            "none" => 20.0,
+            _ => 50.0,
+        }
+    }).collect();
+
+    let avg_score = status_scores.iter().sum::<f64>() / status_scores.len() as f64;
+
+    // Trend detection
+    let trend = if status_scores.len() >= 2 {
+        let recent = status_scores[0];
+        let older = status_scores[status_scores.len() - 1];
+        if recent > older + 10.0 { "improving" }
+        else if recent < older - 10.0 { "declining" }
+        else { "stable" }
+    } else {
+        "stable"
+    };
+
+    // Build evidence with specific meeting dates and statuses
+    let champion_name = champion.map(|c| c.person_name.as_str()).unwrap_or("Champion");
+    let mut evidence = vec![format!(
+        "{champion_name}: {} across {} meetings",
+        champion_assessments[0].1,
+        champion_assessments.len()
+    )];
+    for (date, status, ev) in &champion_assessments {
+        let short_date = date.split('T').next().unwrap_or(date);
+        let detail = ev.as_deref().map(|e| format!(" — {e}")).unwrap_or_default();
+        evidence.push(format!("{short_date}: {status}{detail}"));
     }
 
     DimensionScore {
-        score: score.clamp(0.0, 100.0),
+        score: avg_score.clamp(0.0, 100.0),
         weight: 1.0,
         evidence,
-        trend: String::new(),
+        trend: trend.to_string(),
     }
 }
 
