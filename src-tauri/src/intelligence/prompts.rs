@@ -1678,6 +1678,29 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
+    // Field-level deduplication rules
+    prompt.push_str(
+        "FIELD SCOPING RULES (critical — avoid redundancy across fields):\n\
+         Each item should appear in exactly ONE field. Do not repeat the same event, \
+         commitment, or concern across multiple fields. Cross-reference when relevant \
+         (e.g., renewalOutlook.riskFactors can say \"champion transition\" without \
+         duplicating the full description from organizationalChanges).\n\
+         - risks[]: Account-level THREATS to the relationship. Not blockers (those have owners), \
+           not commitments (those have due dates), not current-state observations.\n\
+         - currentState.notWorking[]: Present-tense observations about what is NOT going well \
+           RIGHT NOW. Not future risks, not blockers waiting on someone, not commitments.\n\
+         - blockers[]: Specific OBSTACLES with an identifiable owner blocking progress on \
+           a known initiative. Must have an owner and a since-date. Not general concerns.\n\
+         - openCommitments[]: PROMISES made by either side with a deliverable and timeline. \
+           Not strategic goals (those are strategicPriorities). Not blockers.\n\
+         - strategicPriorities[]: The customer's stated BUSINESS OBJECTIVES for the engagement. \
+           High-level goals, not tactical commitments or individual blockers.\n\
+         - renewalOutlook.riskFactors[]: Factors that could affect the CONTRACT DECISION \
+           specifically. Brief references to items detailed elsewhere — not full duplicates.\n\
+         - valueDelivered[]: OUTCOMES already achieved. Past tense. Not promises or goals.\n\
+         - expansionSignals[]: GROWTH opportunities not yet closed. Not existing commitments.\n\n",
+    );
+
     // Writing style instructions
     prompt.push_str(&format!(
         "WRITING RULES:\n\
