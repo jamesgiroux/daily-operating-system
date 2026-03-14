@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { useProjectDetail } from "@/hooks/useProjectDetail";
 import { useActivePreset } from "@/hooks/useActivePreset";
@@ -151,7 +152,48 @@ export default function ProjectDetailEditorial() {
   useRevealObserver(!proj.loading && !!proj.detail);
 
   // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
-  const { updateField: handleUpdateIntelField, saveStatus } = useIntelligenceFieldUpdate("project", projectId);
+  const {
+    updateField: handleUpdateIntelField,
+    saveStatus,
+    setSaveStatus: setFolioSaveStatus,
+  } = useIntelligenceFieldUpdate("project", projectId);
+
+  const finishFolioSave = () => {
+    setFolioSaveStatus("saved");
+    window.setTimeout(() => setFolioSaveStatus("idle"), 2000);
+  };
+
+  const saveMetadata = async (updated: Record<string, string>) => {
+    if (!projectId) return;
+    setFolioSaveStatus("saving");
+    try {
+      await invoke("update_entity_metadata", {
+        entityId: projectId,
+        entityType: "project",
+        metadata: JSON.stringify(updated),
+      });
+      finishFolioSave();
+    } catch (err) {
+      console.error("update_entity_metadata failed:", err);
+      toast.error("Failed to save metadata");
+      setFolioSaveStatus("idle");
+      throw err;
+    }
+  };
+
+  const saveProjectField = async (field: string, value: string) => {
+    if (!proj.detail) return;
+    setFolioSaveStatus("saving");
+    try {
+      await invoke("update_project_field", { projectId: proj.detail.id, field, value });
+      await proj.load();
+      finishFolioSave();
+    } catch (err) {
+      console.error("update_project_field failed:", err);
+      toast.error("Failed to save field");
+      setFolioSaveStatus("idle");
+    }
+  };
 
   const shellConfig = useMemo(
     () => ({
@@ -275,18 +317,12 @@ export default function ProjectDetailEditorial() {
                 if (source === "metadata") {
                   setMetadataValues((prev) => {
                     const updated = { ...prev, [key]: value };
-                    invoke("update_entity_metadata", {
-                      entityId: projectId,
-                      entityType: "project",
-                      metadata: JSON.stringify(updated),
-                    }).catch((err) => console.error("update_entity_metadata failed:", err));
+                    void saveMetadata(updated);
                     return updated;
                   });
                 } else if (source === "column") {
                   const field = columnMapping ?? key;
-                  invoke("update_project_field", { projectId: detail.id, field, value })
-                    .then(() => proj.load())
-                    .catch((err) => console.error("update_project_field failed:", err));
+                  void saveProjectField(field, value);
                 }
               }}
             />
@@ -303,11 +339,7 @@ export default function ProjectDetailEditorial() {
               onChange={(key, value) => {
                 setMetadataValues((prev) => {
                   const updated = { ...prev, [key]: value };
-                  invoke("update_entity_metadata", {
-                    entityId: projectId,
-                    entityType: "project",
-                    metadata: JSON.stringify(updated),
-                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  void saveMetadata(updated);
                   return updated;
                 });
               }}

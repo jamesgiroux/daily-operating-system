@@ -64,6 +64,7 @@ export function LifecycleEventDrawer({
   setNewEventNotes,
   onSave,
 }: LifecycleEventDrawerProps) {
+  const showArrImpact = ["renewal", "expansion", "downgrade", "downsell", "churn", "contract_signed"].includes(newEventType);
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" style={{ width: 380, padding: 32 }}>
@@ -91,16 +92,32 @@ export function LifecycleEventDrawer({
               onChange={(e) => setNewEventType(e.target.value)}
               style={selectStyle}
             >
-              <option value="renewal">Renewal</option>
-              <option value="expansion">Expansion</option>
-              <option value="churn">Churn</option>
-              <option value="downsell">Downsell</option>
-              <option value="escalation">Escalation</option>
-              <option value="champion_change">Champion Change</option>
-              <option value="go_live">Go-Live</option>
-              <option value="qbr_completed">QBR Completed</option>
-              <option value="ebr_completed">EBR Completed</option>
-              <option value="onboarding_complete">Onboarding Complete</option>
+              <optgroup label="Contract">
+                <option value="renewal">Renewal</option>
+                <option value="expansion">Expansion</option>
+                <option value="downgrade">Downgrade</option>
+                <option value="churn">Churn</option>
+                <option value="contract_signed">Contract Signed</option>
+              </optgroup>
+              <optgroup label="Onboarding">
+                <option value="kickoff">Kickoff</option>
+                <option value="pilot_start">Pilot Start</option>
+                <option value="go_live">Go-Live</option>
+                <option value="onboarding_complete">Onboarding Complete</option>
+              </optgroup>
+              <optgroup label="Review">
+                <option value="ebr_completed">EBR Completed</option>
+                <option value="qbr_completed">QBR Completed</option>
+                <option value="health_review">Health Review</option>
+              </optgroup>
+              <optgroup label="People">
+                <option value="champion_change">Champion Change</option>
+                <option value="executive_sponsor_change">Executive Sponsor Change</option>
+              </optgroup>
+              <optgroup label="Escalation">
+                <option value="escalation">Escalation</option>
+                <option value="escalation_resolved">Escalation Resolved</option>
+              </optgroup>
             </select>
           </div>
 
@@ -113,15 +130,17 @@ export function LifecycleEventDrawer({
             />
           </div>
 
-          <div>
-            <label style={labelStyle}>ARR Impact</label>
-            <Input
-              type="number"
-              value={newArrImpact}
-              onChange={(e) => setNewArrImpact(e.target.value)}
-              placeholder="Annual revenue impact"
-            />
-          </div>
+          {showArrImpact && (
+            <div>
+              <label style={labelStyle}>ARR Impact</label>
+              <Input
+                type="number"
+                value={newArrImpact}
+                onChange={(e) => setNewArrImpact(e.target.value)}
+                placeholder="Annual revenue impact"
+              />
+            </div>
+          )}
 
           <div>
             <label style={labelStyle}>Notes</label>

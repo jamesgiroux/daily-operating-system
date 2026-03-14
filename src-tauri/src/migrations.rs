@@ -287,6 +287,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 67,
         sql: include_str!("migrations/067_feedback_unique_constraint.sql"),
     },
+    Migration {
+        version: 68,
+        sql: include_str!("migrations/068_success_plans.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
