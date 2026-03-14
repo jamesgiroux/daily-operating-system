@@ -116,10 +116,10 @@ export function StrategicLandscape({
   getItemFeedback,
   onItemFeedback,
 }: StrategicLandscapeProps) {
-  const priorities = intelligence.strategicPriorities ?? [];
-  const competitors = intelligence.competitiveContext ?? [];
-  const orgChanges = intelligence.organizationalChanges ?? [];
-  const blockers = intelligence.blockers ?? [];
+  const priorities = (intelligence.strategicPriorities ?? []).filter((p) => p.priority?.trim());
+  const competitors = (intelligence.competitiveContext ?? []).filter((c) => c.context?.trim() || c.competitor?.trim());
+  const orgChanges = (intelligence.organizationalChanges ?? []).filter((o) => o.person?.trim());
+  const blockers = (intelligence.blockers ?? []).filter((b) => b.description?.trim());
 
   const hasPriorities = priorities.length > 0;
   const hasCompetitors = competitors.length > 0;

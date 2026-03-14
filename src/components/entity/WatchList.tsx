@@ -108,9 +108,9 @@ export function WatchList({
   const [expandedRisks, setExpandedRisks] = useState(false);
   const [expandedWins, setExpandedWins] = useState(false);
 
-  const risks = intelligence?.risks ?? [];
-  const wins = intelligence?.recentWins ?? [];
-  const unknowns = intelligence?.currentState?.unknowns ?? [];
+  const risks = (intelligence?.risks ?? []).filter((r) => r.text?.trim());
+  const wins = (intelligence?.recentWins ?? []).filter((w) => w.text?.trim());
+  const unknowns = (intelligence?.currentState?.unknowns ?? []).filter((u) => u?.trim());
 
   const hasWatchItems = risks.length > 0 || wins.length > 0 || unknowns.length > 0;
   const hasContent = hasWatchItems || !!bottomSection;
