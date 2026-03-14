@@ -1,15 +1,16 @@
 /* =============================================================================
-   STRATEGIC LANDSCAPE — Competitive & Strategic chapter styles
+   STRATEGIC LANDSCAPE — Ledger-style Competitive & Strategic chapter
+   Mockup ref: intelligence-sections-variations.html, Variation A "The Ledger"
    ============================================================================= */
 
 .section {
   scroll-margin-top: 60px;
 }
 
-/* ── Subsection headings ── */
+/* -- Subsections ---------------------------------------------------------- */
 
 .subsection {
-  margin-bottom: var(--space-2xl);
+  margin-bottom: var(--space-3xl);
 }
 
 .subsection:last-child {
@@ -26,108 +27,242 @@
   margin: 0 0 16px;
 }
 
-.subsectionLabelTerracotta {
-  composes: subsectionLabel;
-  color: var(--color-spice-terracotta);
-}
+/* ==========================================================================
+   STRATEGIC PRIORITIES — numbered list
+   ========================================================================== */
 
-/* ── Item list ── */
-
-.itemList {
-  display: flex;
-  flex-direction: column;
-}
-
-.item {
-  padding: 14px 0;
-  border-bottom: 1px solid var(--color-rule-light);
-}
-
-.item:last-child {
-  border-bottom: none;
-}
-
-.blockerItem {
-  padding: 14px 0;
-  border-bottom: 1px solid var(--color-rule-light);
-  border-left: 3px solid var(--color-spice-terracotta);
-  padding-left: 16px;
-}
-
-.blockerItem:last-child {
-  border-bottom: none;
-}
-
-/* ── Item header — text + badge ── */
-
-.itemHeader {
+.priorityRow {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-rule-light);
 }
 
-.itemText {
+.priorityRow:last-child {
+  border-bottom: none;
+}
+
+.priorityNum {
   font-family: var(--font-serif);
-  font-size: 16px;
+  font-size: 32px;
+  font-weight: 200;
+  color: var(--color-text-tertiary);
+  line-height: 0.9;
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.priorityBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.priorityText {
+  font-family: var(--font-serif);
+  font-size: 17px;
   line-height: 1.5;
   color: var(--color-text-primary);
   margin: 0;
-  flex: 1;
+}
+
+.priorityMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ==========================================================================
+   COMPETITIVE CONTEXT — threat matrix (3-column grid)
+   ========================================================================== */
+
+.threatMatrix {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 16px;
+}
+
+.threatRow {
+  display: contents;
+}
+
+.threatRow > * {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-self: center;
+}
+
+.competitorCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .competitorName {
-  font-family: var(--font-sans);
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.personName {
-  font-family: var(--font-sans);
-  font-size: 15px;
+  font-family: var(--font-serif);
+  font-size: 17px;
   font-weight: 500;
   color: var(--color-text-primary);
 }
 
-.contextText {
-  font-family: var(--font-serif);
-  font-size: 15px;
-  line-height: 1.55;
-  color: var(--color-text-secondary);
-  margin: 6px 0 0;
-}
-
-.changeDetail {
+.threatContext {
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--color-text-secondary);
-  margin: 4px 0 0;
+  margin: 0;
 }
 
-.changeArrow {
-  color: var(--color-text-tertiary);
+.threatActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-/* ── Meta text (mono, small) ── */
+/* Grid rows use display:contents so hover must target grandparent */
+.threatMatrix:has(.threatRow:hover) .threatActions {
+  opacity: 0;
+}
 
-.itemMeta {
+/* Each threat row: hover any cell in the row to reveal its actions */
+.threatRow:hover > .threatActions,
+.threatActions:focus-within {
+  opacity: 1;
+}
+
+/* ==========================================================================
+   ORGANIZATIONAL CHANGES — compact timeline
+   ========================================================================== */
+
+.changeRow {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 4px;
-  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-size: 14px;
 }
 
-.metaText {
+.changeRow:last-child {
+  border-bottom: none;
+}
+
+.changeIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.changeIconDeparture {
+  composes: changeIcon;
+  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.1));
+  color: var(--color-spice-terracotta);
+}
+
+.changeIconHire {
+  composes: changeIcon;
+  background: var(--color-garden-sage-12, rgba(136, 159, 120, 0.1));
+  color: var(--color-garden-sage);
+}
+
+.changeIconPromotion {
+  composes: changeIcon;
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.1));
+  color: var(--color-spice-turmeric);
+}
+
+.changeIconDefault {
+  composes: changeIcon;
+  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
+  color: var(--color-text-tertiary);
+}
+
+.changeBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.changeName {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.changeDetail {
+  color: var(--color-text-secondary);
+}
+
+.changeDate {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-tertiary);
   letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
-/* ── Badges ── */
+/* ==========================================================================
+   BLOCKERS — terracotta accent blocks
+   ========================================================================== */
+
+.blockerItem {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding: 16px 24px;
+  margin-bottom: 16px;
+  background: var(--color-spice-terracotta-3, rgba(192, 108, 84, 0.03));
+}
+
+.blockerItem:last-child {
+  margin-bottom: 0;
+}
+
+.blockerInner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.blockerContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.blockerDesc {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.blockerMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+/* ==========================================================================
+   BADGES
+   ========================================================================== */
 
 .badge {
   font-family: var(--font-mono);
@@ -166,7 +301,9 @@
   color: var(--color-text-tertiary);
 }
 
-/* ── Hover-reveal item actions (I550) ── */
+/* ==========================================================================
+   HOVER-REVEAL ACTIONS (shared across subsections)
+   ========================================================================== */
 
 .itemActions {
   display: flex;
@@ -177,7 +314,8 @@
   transition: opacity 0.15s ease;
 }
 
-.item:hover .itemActions,
+.priorityRow:hover .itemActions,
+.changeRow:hover .itemActions,
 .blockerItem:hover .itemActions,
 .itemActions:focus-within {
   opacity: 1;

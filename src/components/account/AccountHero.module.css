@@ -163,3 +163,98 @@
   text-decoration: none;
   cursor: default;
 }
+
+/* ── Hero date layout ── */
+
+.heroDateLayout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Lede paragraph spacing ── */
+
+.ledeParagraph {
+  margin: 0;
+}
+
+.ledeParagraphSpaced {
+  margin: 12px 0 0;
+}
+
+/* ── Read more button ── */
+
+.readMore {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0 0;
+}
+
+/* ── Account Type Badge ── */
+
+.typeBadgeWrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.typeBadgeButton {
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.typeBadgeChevron {
+  opacity: 0.5;
+}
+
+.typeBadgeDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  min-width: 120px;
+  padding: 4px 0;
+}
+
+.typeBadgeOption {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.typeBadgeOptionActive {
+  font-weight: 600;
+  background: var(--color-desk-charcoal-4);
+}
+
+.typeBadgeOptionCustomer {
+  color: var(--color-spice-turmeric);
+}
+
+.typeBadgeOptionInternal {
+  color: var(--color-garden-larkspur);
+}
+
+.typeBadgeOptionPartner {
+  color: var(--color-garden-rosemary);
+}
