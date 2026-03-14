@@ -21,7 +21,7 @@ interface EditableTextProps {
   /** Called when user commits an edit (blur or Enter) */
   onChange: (value: string) => void;
   /** HTML element to render in display mode */
-  as?: "span" | "p" | "h1" | "h2" | "div";
+  as?: "span" | "p" | "h1" | "h2" | "h3" | "div";
   /** Inline styles applied to both display and edit mode */
   style?: React.CSSProperties;
   /**

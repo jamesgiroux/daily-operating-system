@@ -5,7 +5,7 @@
 import { Link } from "@tanstack/react-router";
 import styles from "./TimelineEntry.module.css";
 
-export type TimelineEntryType = "meeting" | "email" | "capture" | "event" | "value" | "risk" | "decision";
+export type TimelineEntryType = "meeting" | "email" | "capture" | "event" | "value" | "risk" | "decision" | "context";
 
 interface TimelineEntryProps {
   date: string;
@@ -24,6 +24,7 @@ const dotClass: Record<TimelineEntryType, string> = {
   value: styles.dotValue,
   risk: styles.dotRisk,
   decision: styles.dotDecision,
+  context: styles.dotContext,
 };
 
 const badgeClass: Record<TimelineEntryType, string> = {
@@ -34,6 +35,7 @@ const badgeClass: Record<TimelineEntryType, string> = {
   value: styles.typeValue,
   risk: styles.typeRisk,
   decision: styles.typeDecision,
+  context: styles.typeContext,
 };
 
 const typeLabels: Record<TimelineEntryType, string> = {
@@ -44,6 +46,7 @@ const typeLabels: Record<TimelineEntryType, string> = {
   value: "Value",
   risk: "Risk",
   decision: "Decision",
+  context: "Note",
 };
 
 export function TimelineEntry({ date, type, title, subtitle, linkTo, linkParams }: TimelineEntryProps) {

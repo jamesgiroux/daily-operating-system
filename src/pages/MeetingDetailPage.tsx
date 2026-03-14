@@ -1351,6 +1351,7 @@ function UnifiedAttendeeList({
                       setTimeout(() => onSaveStatus?.("idle"), 2000);
                     } catch (err) {
                       console.error("Save failed:", err);
+                      toast.error("Failed to save attendee visibility");
                       onSaveStatus?.("idle");
                     }
                   }
@@ -1451,6 +1452,7 @@ function UnifiedPlanEditor({
       setTimeout(() => onSaveStatus("idle"), 2000);
     } catch (err) {
       console.error("Save failed:", err);
+      toast.error("Failed to save agenda");
       onSaveStatus("idle");
     }
   }

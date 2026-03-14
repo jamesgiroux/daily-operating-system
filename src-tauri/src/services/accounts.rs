@@ -303,6 +303,9 @@ pub async fn get_account_detail(
             } else {
                 None
             };
+            let objectives = db
+                .get_account_objectives(&account.id)
+                .map_err(|e: crate::db::DbError| e.to_string())?;
             let children: Vec<AccountChildSummary> = child_accounts
                 .iter()
                 .map(|child| {
@@ -348,6 +351,7 @@ pub async fn get_account_detail(
                 parent_aggregate,
                 account_type: account.account_type.clone(),
                 archived: account.archived,
+                objectives,
                 intelligence,
             })
         })
@@ -753,6 +757,41 @@ pub fn record_account_event(
             0.8,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
+        let auto_completed = tx
+            .complete_milestones_for_account_event(account_id, event_type)
+            .map_err(|e| e.to_string())?;
+        for completed in auto_completed.milestones {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &state.signals.engine,
+                "account",
+                account_id,
+                "milestone_completed",
+                "lifecycle_event",
+                Some(&format!(
+                    "{{\"milestone_id\":\"{}\",\"objective_id\":\"{}\",\"event_type\":\"{}\"}}",
+                    completed.id, completed.objective_id, event_type
+                )),
+                0.9,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+        }
+        for completed in auto_completed.objectives {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &state.signals.engine,
+                "account",
+                account_id,
+                "objective_completed",
+                "lifecycle_event",
+                Some(&format!(
+                    "{{\"objective_id\":\"{}\",\"event_type\":\"{}\"}}",
+                    completed.id, event_type
+                )),
+                0.95,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+        }
         Ok(event_id)
     })
 }

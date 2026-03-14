@@ -1,0 +1,17 @@
+/* =============================================================================
+   STATE OF PLAY — Two-column layout for Working/Struggling blocks
+   ============================================================================= */
+
+.stateColumns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+
+@media (max-width: 680px) {
+  .stateColumns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stateColumn {}

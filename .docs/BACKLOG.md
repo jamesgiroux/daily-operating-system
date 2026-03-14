@@ -512,11 +512,11 @@ Dissolved 2026-03-02. I494, I495 moved to v1.1.0 (Teams + Portfolio). See ADR-00
 |----|-------|----------|------|
 | I533 | Publication engine — Google Drive output layer, auto-publish, Glean auto-indexed. Spec: `.docs/issues/i533.md` | P1 | Backend / Publication |
 | I534 | Portfolio reader — cross-IC intelligence from Shared Drive, JSON sidecar. Spec: `.docs/issues/i534.md` | P1 | Backend + Frontend |
-| I535 | Glean Agent integration — REST API calls to purpose-built agents for org-level analysis. Spec: `.docs/issues/i535.md` | P1 | Backend / Connectors |
+| ~~I535~~ | ~~Glean Agent integration~~ — **pulled into v1.0.0 Phase 5** (2026-03-14) | — | — |
 | I492 | Portfolio Health page — editorial aggregate, exception list, renewal timeline | P1 | Frontend / Pages |
-| I494 | Glean account discovery — import CRM accounts, one-click add | P1 | Backend / Connectors + Frontend |
-| I495 | Ephemeral account query — transient briefing via Glean | P1 | Backend / Connectors + Frontend |
-| I531 | Glean-powered proactive self-healing — hygiene gaps trigger Glean searches, signal emission fixes. Spec: `.docs/issues/i531.md` | P1 | Backend / Self-Healing / Connectors |
+| ~~I494~~ | ~~Glean account discovery~~ — **pulled into v1.0.0 Phase 5** (2026-03-14) | — | — |
+| ~~I495~~ | ~~Ephemeral account query~~ — **pulled into v1.0.0 Phase 5** (2026-03-14) | — | — |
+| ~~I531~~ | ~~Glean-powered proactive self-healing~~ — **pulled into v1.0.0 Phase 5** (2026-03-14) | — | — |
 | I532 | Intelligence surfacing threshold model — when to tap the user on the shoulder vs stay quiet. Spec: `.docs/issues/i532.md` | P1 | Backend / Signals + Frontend / Briefing |
 
 Version brief: `.docs/plans/v1.1.0.md`. Research: `.docs/research/2026-03-01-portfolio-intelligence-architecture.md`, `.docs/research/2026-03-03-architecture-first-principles-review.md`.
@@ -675,6 +675,20 @@ Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches,
 | I546 | Design documentation: interaction, data presentation, navigation — INTERACTION-PATTERNS.md, DATA-PRESENTATION-GUIDELINES.md, NAVIGATION-ARCHITECTURE.md. Spec: `.docs/issues/i546.md` | P2 | Documentation / Design System |
 | I547 | Book of Business Review report — user-scoped portfolio report aggregating all accounts into leadership-ready document. Spec: `.docs/issues/i547.md` | P1 | Full Stack / Reports |
 | I549 | Composable report slide templates + report mockups — 9 reusable slide templates + 6 full report page mockups in dailyos.pen. Design-only. Spec: `.docs/issues/i549.md` | P1 | Design / Reports / Mockups |
+| I550 | Account detail editorial redesign: margin label layout + visual storytelling — margin label gutter, visual section differentiation, scroll-driven reveal, vitals strip repositioned, 140px chapter spacing. Frontend-only. Spec: `.docs/issues/i550.md` | P1 | Frontend / Entity Detail / UX |
+| I551 | Success Plan data model + backend — objectives, milestones, expanded lifecycle events (4→16 types), action-objective links, suggestion extraction from enrichment. PTY prompt changes superseded by I554; captured_commitments table + success_plan_signals_json superseded by I555. Spec: `.docs/issues/i551.md` | P1 | Backend / Accounts / Data Model |
+| I552 | Success Plan frontend — The Work chapter evolution (objectives + milestones + linked actions), context entries → The Record (UnifiedTimeline), expanded LifecycleEventDrawer (16 types), AI suggestion UI. Spec: `.docs/issues/i552.md` | P1 | Frontend / Entity Detail / UX |
+| I553 | Success Plan templates + starter lifecycle collection — 4 built-in templates (onboarding, growth, renewal, at-risk), lifecycle-stage-triggered suggestions, auto-detect milestone signals, template application with computed target dates. Spec: `.docs/issues/i553.md` | P1 | Backend + Frontend / Templates |
+| I554 | Transcript extraction signal fidelity — CS-grounded prompt definitions: 6 win sub-types, Red/Yellow/Green risk urgency, value delivered quantification, 3-level champion health (MEDDPICC), COMMITMENTS extraction, successPlanSignals schema. Absorbs I551 PTY changes. Spec: `.docs/issues/i554.md` | P0 | Backend / Intelligence / Prompts |
+| I555 | Captures metadata + interaction dynamics persistence + architecture integration — urgency/sub_type/impact/evidence_quote columns on captures, interaction dynamics + champion health + role changes tables, captured_commitments table (dual-write to captures). Signal bus emissions (champion → person-level → propagation → callouts), reactivates `rule_meeting_frequency_drop`, upgrades 3 health scoring dimensions to behavioral, adds dynamics/commitments to intel + prep context. Absorbs I551 schema. Spec: `.docs/issues/i555.md` | P0 | Backend / Schema / Signals / Health Scoring |
+| I556 | Report content pipeline — meeting summaries + captures for Weekly Impact/Monthly Wrapped (currently title-only), customer quote pipeline for EBR/QBR, urgency-enriched captures for Account Health + BoB. Spec: `.docs/issues/i556.md` | P1 | Backend / Reports |
+| I557 | Surface hidden intelligence on Account Detail — renders ~15 computed-but-invisible fields (valueDelivered, successMetrics, openCommitments, relationshipDepth, competitiveContext, strategicPriorities, expansionSignals, renewalOutlook, organizationalChanges, blockers). 3 new chapters. Spec: `.docs/issues/i557.md` | P1 | Frontend / Entity Detail |
+| I558 | Meeting Detail intelligence expansion — post-meeting intelligence section (engagement dynamics, champion health, categorized outcomes, role changes, sentiment), surfaces unused FullMeetingPrep fields. Spec: `.docs/issues/i558.md` | P1 | Frontend + Backend / Meeting Detail |
+| I559 | Glean Agent validation spike — resolve 6 open questions (auth, rate limits, connectors, JSON output, latency, MCP tool discovery). Exploration only, no production code. GATE for I535. | P0 | Backend / Connectors / Exploration |
+| I535 | Glean Agent integration — `GleanAgentClient`, agent registry, response parsing into I508 types, circuit breaker. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i535.md` | P0 | Backend / Connectors |
+| I531 | Proactive self-healing with Glean — hygiene gap queries via agents, signal emission fixes (2 bugs + 7 missing), DB migration. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i531.md` | P1 | Backend / Self-Healing / Connectors |
+| I494 | Glean account discovery — "Discover from Glean" on Accounts page, CRM import, one-click add. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i494.md` | P1 | Backend / Connectors + Frontend |
+| I495 | Ephemeral account query — "Tell me about..." transient briefing, not persisted. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i495.md` | P1 | Backend / Connectors + Frontend |
 
 **CS Report Suite (after Phase 2):**
 

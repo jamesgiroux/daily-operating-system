@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
@@ -189,7 +190,48 @@ export default function AccountDetailEditorial() {
   }, [reportsOpen]);
 
   // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
-  const { updateField: handleUpdateIntelField, saveStatus } = useIntelligenceFieldUpdate("account", accountId);
+  const {
+    updateField: handleUpdateIntelField,
+    saveStatus,
+    setSaveStatus: setFolioSaveStatus,
+  } = useIntelligenceFieldUpdate("account", accountId);
+
+  const finishFolioSave = () => {
+    setFolioSaveStatus("saved");
+    window.setTimeout(() => setFolioSaveStatus("idle"), 2000);
+  };
+
+  const saveMetadata = async (updated: Record<string, string>) => {
+    if (!accountId) return;
+    setFolioSaveStatus("saving");
+    try {
+      await invoke("update_entity_metadata", {
+        entityId: accountId,
+        entityType: "account",
+        metadata: JSON.stringify(updated),
+      });
+      finishFolioSave();
+    } catch (err) {
+      console.error("update_entity_metadata failed:", err);
+      toast.error("Failed to save metadata");
+      setFolioSaveStatus("idle");
+      throw err;
+    }
+  };
+
+  const saveAccountField = async (field: string, value: string) => {
+    if (!acct.detail) return;
+    setFolioSaveStatus("saving");
+    try {
+      await invoke("update_account_field", { accountId: acct.detail.id, field, value });
+      await acct.load();
+      finishFolioSave();
+    } catch (err) {
+      console.error("update_account_field failed:", err);
+      toast.error("Failed to save field");
+      setFolioSaveStatus("idle");
+    }
+  };
 
   // Register magazine shell configuration — MagazinePageLayout consumes this
   // Memoize chapters separately — they only change with isParent/hasHealth,
@@ -373,11 +415,7 @@ export default function AccountDetailEditorial() {
           editLifecycle={acct.editLifecycle}
           setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
           onSave={acct.handleSave}
-          onSaveField={(field, value) => {
-            invoke("update_account_field", { accountId: detail.id, field, value })
-              .then(() => acct.load())
-              .catch((err) => console.error("update_account_field failed:", err));
-          }}
+          onSaveField={saveAccountField}
           vitalsSlot={
             detail.accountType !== "internal" ? (
               preset ? (
@@ -387,23 +425,17 @@ export default function AccountDetailEditorial() {
                   metadata={metadataValues}
                   onFieldChange={(key, columnMapping, source, value) => {
                     if (source === "metadata") {
-                      setMetadataValues((prev) => {
-                        const updated = { ...prev, [key]: value };
-                        invoke("update_entity_metadata", {
-                          entityId: accountId,
-                          entityType: "account",
-                          metadata: JSON.stringify(updated),
-                        }).catch((err) => console.error("update_entity_metadata failed:", err));
-                        return updated;
-                      });
-                    } else if (source === "column") {
-                      const field = columnMapping ?? key;
-                      invoke("update_account_field", { accountId: detail.id, field, value })
-                        .then(() => acct.load())
-                        .catch((err) => console.error("update_account_field failed:", err));
-                    }
-                  }}
-                />
+                  setMetadataValues((prev) => {
+                    const updated = { ...prev, [key]: value };
+                    void saveMetadata(updated);
+                    return updated;
+                  });
+                } else if (source === "column") {
+                  const field = columnMapping ?? key;
+                  void saveAccountField(field, value);
+                }
+              }}
+            />
               ) : (
                 <VitalsStrip vitals={buildAccountVitals(detail)} />
               )
@@ -419,11 +451,7 @@ export default function AccountDetailEditorial() {
               onChange={(key, value) => {
                 setMetadataValues((prev) => {
                   const updated = { ...prev, [key]: value };
-                  invoke("update_entity_metadata", {
-                    entityId: accountId,
-                    entityType: "account",
-                    metadata: JSON.stringify(updated),
-                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  void saveMetadata(updated);
                   return updated;
                 });
               }}
@@ -704,7 +732,7 @@ export default function AccountDetailEditorial() {
       <div id="the-record" className={`editorial-reveal ${shared.marginLabelSection}`}>
         <div className={shared.marginLabel}>The<br/>Record</div>
         <div className={shared.marginContent}>
-          <UnifiedTimeline data={{ ...detail, accountEvents: events }} sectionId="" />
+          <UnifiedTimeline data={{ ...detail, accountEvents: events, contextEntries: entityCtx.entries }} sectionId="" />
         </div>
       </div>
 
@@ -721,6 +749,7 @@ export default function AccountDetailEditorial() {
             setNewActionTitle={acct.setNewActionTitle}
             creatingAction={acct.creatingAction}
             onCreateAction={acct.handleCreateAction}
+            onRefresh={acct.silentRefresh}
           />
         </div>
       </div>
@@ -770,10 +799,6 @@ export default function AccountDetailEditorial() {
           detail={detail}
           events={events}
           files={files}
-          contextEntries={entityCtx.entries}
-          onCreateContextEntry={entityCtx.createEntry}
-          onUpdateContextEntry={entityCtx.updateEntry}
-          onDeleteContextEntry={entityCtx.deleteEntry}
           onRecordEvent={() => setEventDrawerOpen(true)}
           onIndexFiles={acct.handleIndexFiles}
           indexing={acct.indexing}
