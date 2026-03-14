@@ -119,9 +119,10 @@ export function ValueCommitments({
   getItemFeedback,
   onItemFeedback,
 }: ValueCommitmentsProps) {
-  const valueDelivered = intelligence.valueDelivered ?? [];
-  const successMetrics = intelligence.successMetrics ?? [];
-  const openCommitments = intelligence.openCommitments ?? [];
+  // Filter out dismissed items (empty description/statement = removed by user)
+  const valueDelivered = (intelligence.valueDelivered ?? []).filter((v) => v.statement?.trim());
+  const successMetrics = (intelligence.successMetrics ?? []).filter((m) => m.name?.trim());
+  const openCommitments = (intelligence.openCommitments ?? []).filter((c) => c.description?.trim());
 
   const hasValue = valueDelivered.length > 0;
   const hasMetrics = successMetrics.length > 0;
