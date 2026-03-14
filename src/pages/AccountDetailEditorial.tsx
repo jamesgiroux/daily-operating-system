@@ -206,7 +206,7 @@ export default function AccountDetailEditorial() {
     updateField: handleUpdateIntelField,
     saveStatus,
     setSaveStatus: setFolioSaveStatus,
-  } = useIntelligenceFieldUpdate("account", accountId);
+  } = useIntelligenceFieldUpdate("account", accountId, acct.silentRefresh);
 
   const finishFolioSave = () => {
     setFolioSaveStatus("saved");
