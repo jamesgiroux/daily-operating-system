@@ -13,6 +13,7 @@
 import { X } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
 import { EditableText } from "@/components/ui/EditableText";
+import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import css from "./StrategicLandscape.module.css";
 
@@ -218,6 +219,7 @@ export function StrategicLandscape({
                         <p className={css.threatContext}>{c.context}</p>
                       )
                     )}
+                    <ProvenanceTag itemSource={c.itemSource} discrepancy={c.discrepancy} />
                   </div>
                   {showActions ? (
                     <div className={css.threatActions}>

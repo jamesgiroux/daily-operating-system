@@ -1334,6 +1334,26 @@ pub fn apply_intelligence_field_update(
         .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
     set_json_path(&mut json_val, field_path, new_value)?;
 
+    // I576: Tag edited items with user_correction source attribution.
+    // If the edited path points to an item in a Vec (e.g., "risks[0]"),
+    // set the itemSource on that item.
+    if let Ok(segments) = parse_path_segments(field_path) {
+        if let Some(PathSegment::Index(arr_name, idx)) = segments.last() {
+            if let Some(arr) = json_val.get_mut(arr_name.as_str()).and_then(|v| v.as_array_mut()) {
+                if let Some(item) = arr.get_mut(*idx) {
+                    if item.is_object() {
+                        item["itemSource"] = serde_json::json!({
+                            "source": "user_correction",
+                            "confidence": 1.0,
+                            "sourcedAt": Utc::now().to_rfc3339(),
+                            "reference": "user edit"
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // Record user edit (dedup: replace existing edit for same path)
     let edits = json_val.get_mut("userEdits").and_then(|v| v.as_array_mut());
     let edit_entry = serde_json::json!({
