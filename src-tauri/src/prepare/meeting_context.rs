@@ -438,25 +438,8 @@ fn gather_person_context(
         }
     }
 
-    // Open actions mentioning this person (filter from all pending)
-    let all_actions = get_all_pending_actions(db, 50);
-    let person_name_lower = entity_match.name.to_lowercase();
-    if let Some(arr) = all_actions.as_array() {
-        let person_actions: Vec<_> = arr
-            .iter()
-            .filter(|a| {
-                a.get("title")
-                    .and_then(|t| t.as_str())
-                    .map(|t| t.to_lowercase().contains(&person_name_lower))
-                    .unwrap_or(false)
-            })
-            .take(5)
-            .cloned()
-            .collect();
-        if !person_actions.is_empty() {
-            ctx["open_actions"] = json!(person_actions);
-        }
-    }
+    // Open actions linked to this person (by person_id or shared account)
+    ctx["open_actions"] = get_person_actions(db, &entity_match.entity_id);
 
     // Archive summaries
     let archive_dir = workspace.join("_archive");
@@ -1524,6 +1507,43 @@ fn get_captures_for_account(db: &crate::db::ActionDb, account_id: &str, days_bac
                     }))
                 },
             )
+            .ok()?;
+        Some(rows.flatten().collect())
+    })()
+    .unwrap_or_default();
+    json!(result)
+}
+
+/// Get pending/waiting actions linked to a person — by `person_id` directly,
+/// or by shared accounts (via `account_stakeholders`). Up to 10 results.
+fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
+    let result: Vec<Value> = (|| {
+        let conn = db.conn_ref();
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.due_date
+                 FROM actions a
+                 WHERE a.status IN ('pending', 'waiting')
+                   AND (
+                     a.person_id = ?1
+                     OR a.account_id IN (
+                       SELECT account_id FROM account_stakeholders WHERE person_id = ?1
+                     )
+                   )
+                 ORDER BY a.priority, a.due_date
+                 LIMIT 10",
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map([person_id], |row: &rusqlite::Row| {
+                Ok(json!({
+                    "id": row.get::<_, Option<String>>(0)?,
+                    "title": row.get::<_, Option<String>>(1)?,
+                    "priority": row.get::<_, Option<String>>(2)?,
+                    "status": row.get::<_, Option<String>>(3)?,
+                    "due_date": row.get::<_, Option<String>>(4)?,
+                }))
+            })
             .ok()?;
         Some(rows.flatten().collect())
     })()

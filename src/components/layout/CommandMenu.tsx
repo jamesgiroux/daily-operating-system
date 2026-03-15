@@ -12,6 +12,7 @@ import {
   Play,
   RefreshCw,
   Settings,
+  UserCircle,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -150,27 +151,27 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         <CommandGroup heading="Navigate">
           <CommandItem onSelect={() => go("/")}>
             <LayoutDashboard className="mr-2 size-4" />
-            <span>Overview</span>
-          </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
-            <Inbox className="mr-2 size-4" />
-            <span>Inbox</span>
+            <span>Today</span>
           </CommandItem>
           <CommandItem onSelect={() => go("/week")}>
             <CalendarDays className="mr-2 size-4" />
-            <span>Calendar</span>
+            <span>This Week</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/emails")}>
+            <Mail className="mr-2 size-4" />
+            <span>Mail</span>
           </CommandItem>
           <CommandItem onSelect={() => go("/actions")}>
             <CheckSquare className="mr-2 size-4" />
             <span>Actions</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/emails")}>
-            <Mail className="mr-2 size-4" />
-            <span>The Correspondent</span>
+          <CommandItem onSelect={() => go("/me")}>
+            <UserCircle className="mr-2 size-4" />
+            <span>Me</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/settings")}>
-            <Settings className="mr-2 size-4" />
-            <span>Settings</span>
+          <CommandItem onSelect={() => go("/people")}>
+            <Users className="mr-2 size-4" />
+            <span>People</span>
           </CommandItem>
           <CommandItem onSelect={() => go("/accounts")}>
             <Building2 className="mr-2 size-4" />
@@ -180,9 +181,13 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             <FolderKanban className="mr-2 size-4" />
             <span>Projects</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/people")}>
-            <Users className="mr-2 size-4" />
-            <span>People</span>
+          <CommandItem onSelect={() => go("/inbox")}>
+            <Inbox className="mr-2 size-4" />
+            <span>Inbox</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/settings")}>
+            <Settings className="mr-2 size-4" />
+            <span>Settings</span>
           </CommandItem>
         </CommandGroup>
 
