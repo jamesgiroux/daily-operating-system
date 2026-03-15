@@ -435,6 +435,35 @@ pub fn emit_enriched_email_signals(
             emitted,
             rows.len()
         );
+
+        // Recompute health for all accounts that received email signals.
+        // Collect unique account IDs from the rows (direct account entities +
+        // accounts reached via person→account propagation).
+        let mut recompute_accounts: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (_, entity_id, entity_type, _, _, _, _) in &rows {
+            if entity_type == "account" {
+                recompute_accounts.insert(entity_id.clone());
+            } else if entity_type == "person" {
+                // Include accounts linked via stakeholders
+                if let Ok(mut stmt) = db.conn_ref().prepare(
+                    "SELECT account_id FROM account_stakeholders WHERE person_id = ?1",
+                ) {
+                    if let Ok(ids) = stmt
+                        .query_map([entity_id.as_str()], |row| row.get::<_, String>(0))
+                        .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                    {
+                        recompute_accounts.extend(ids);
+                    }
+                }
+            }
+        }
+        for account_id in &recompute_accounts {
+            if let Err(e) = crate::services::intelligence::recompute_entity_health(
+                db, account_id, "account",
+            ) {
+                log::warn!("Health recompute failed for {} after email signals: {}", account_id, e);
+            }
+        }
     }
 
     emitted

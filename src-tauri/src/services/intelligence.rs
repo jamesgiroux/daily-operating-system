@@ -508,7 +508,15 @@ pub async fn update_stakeholders(
                 Vec::new()
             };
 
-            let intel = crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?;
+            // DB-first: prefer intelligence from DB over disk
+            let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
+            let intel = if let Some(existing) = existing_intel {
+                crate::intelligence::apply_stakeholders_update_in_memory(existing, stakeholders)?
+            } else {
+                crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?
+            };
+            // Write back to disk for MCP sidecar
+            let _ = crate::intelligence::write_intelligence_json(&dir, &intel);
 
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
@@ -621,7 +629,13 @@ pub async fn dismiss_intelligence_item(
                 account.as_ref(),
             )?;
 
-            let mut intel = crate::intelligence::read_intelligence_json(&dir)?;
+            // DB-first: prefer intelligence from DB over disk
+            let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
+            let mut intel = if let Some(existing) = existing_intel {
+                existing
+            } else {
+                crate::intelligence::read_intelligence_json(&dir)?
+            };
 
             // Add tombstone
             intel.dismissed_items.push(crate::intelligence::DismissedItem {
@@ -670,6 +684,72 @@ pub async fn dismiss_intelligence_item(
             Ok(())
         })
         .await
+}
+
+/// Recompute health dimensions for an account without full re-enrichment.
+///
+/// Called when signals arrive that affect health (meetings, emails, stakeholder changes).
+/// Updates both the DB (entity_assessment.health_json + entity_quality) and the
+/// in-memory IntelligenceJson so downstream surfaces see fresh scores.
+pub fn recompute_entity_health(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+) -> Result<(), String> {
+    if entity_type != "account" {
+        return Ok(()); // Health scoring is account-only for now
+    }
+
+    // Need the DbAccount for lifecycle weights and contract proximity
+    let account = match db.get_account(entity_id).map_err(|e| e.to_string())? {
+        Some(a) => a,
+        None => return Ok(()), // Account not found, nothing to recompute
+    };
+
+    // Get existing intelligence
+    let mut intel = match db.get_entity_intelligence(entity_id).ok().flatten() {
+        Some(i) => i,
+        None => return Ok(()), // No intelligence yet, nothing to recompute
+    };
+
+    // Recompute health
+    let health =
+        crate::intelligence::health_scoring::compute_account_health(db, &account, None);
+
+    intel.health = Some(health.clone());
+
+    // Write to DB
+    db.upsert_entity_intelligence(&intel)
+        .map_err(|e| e.to_string())?;
+
+    // Also update entity_quality for dashboard queries
+    db.conn_ref()
+        .execute(
+            "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
+             VALUES (?1, 'account', ?2, ?3)
+             ON CONFLICT(entity_id) DO UPDATE SET
+                 health_score = excluded.health_score,
+                 health_trend = excluded.health_trend",
+            rusqlite::params![
+                entity_id,
+                health.score,
+                serde_json::to_string(&health.trend).ok(),
+            ],
+        )
+        .ok();
+
+    // Note: disk write (for MCP sidecar) is skipped here because we don't have
+    // workspace access. The DB is the primary source; disk catches up on next
+    // full enrichment cycle.
+
+    log::info!(
+        "Health recomputed for {} after signal arrival (score={:.1}, band={})",
+        entity_id,
+        health.score,
+        health.band,
+    );
+
+    Ok(())
 }
 
 /// Generate a risk briefing for an account (async, PTY enrichment).

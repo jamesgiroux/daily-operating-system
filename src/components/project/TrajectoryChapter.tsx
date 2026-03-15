@@ -92,7 +92,7 @@ export function TrajectoryChapter({
 
   const paragraphs =
     intelligence?.executiveAssessment?.split("\n").filter((p) => p.trim()) ?? [];
-  const pullQuote = paragraphs.length > 1 ? paragraphs[1] : null;
+  const pullQuote = intelligence?.pullQuote ?? (paragraphs.length > 1 ? paragraphs[1] : null);
   const remainingParagraphs = paragraphs.slice(2);
 
   const hasContent = working.length > 0 || notWorking.length > 0 || paragraphs.length > 0;
