@@ -2252,6 +2252,7 @@ pub async fn refresh_meeting_briefing_full(
             entity_id.clone(),
             entity_type.clone(),
             state,
+            app_handle,
         )
         .await
         {

@@ -12,6 +12,7 @@ pub async fn enrich_entity(
     entity_id: String,
     entity_type: String,
     state: &AppState,
+    app_handle: Option<&tauri::AppHandle>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
     use crate::intel_queue::{
         gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
@@ -88,6 +89,7 @@ pub async fn enrich_entity(
                     &input.entity_name,
                     ctx,
                     input.relationship.as_deref(),
+                    app_handle,
                 )
                 .await
             {
@@ -119,22 +121,24 @@ pub async fn enrich_entity(
         match glean_result {
             Some(parsed) => parsed,
             None => {
-                // Fallback to PTY (manual path — no AppHandle for progressive events)
+                // Fallback to PTY
                 let input_for_enrichment = input.clone();
                 let ai_config_for_enrichment = ai_config.clone();
+                let app_handle_clone = app_handle.cloned();
                 tauri::async_runtime::spawn_blocking(move || {
-                    run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, None)
+                    run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, app_handle_clone.as_ref())
                 })
                 .await
                 .map_err(|e| format!("Enrichment task panicked: {}", e))??
             }
         }
     } else {
-        // Local-only: direct PTY path (manual path — no AppHandle for progressive events)
+        // Local-only: direct PTY path
         let input_for_enrichment = input.clone();
         let ai_config_for_enrichment = ai_config.clone();
+        let app_handle_clone = app_handle.cloned();
         tauri::async_runtime::spawn_blocking(move || {
-            run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, None)
+            run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, app_handle_clone.as_ref())
         })
         .await
         .map_err(|e| format!("Enrichment task panicked: {}", e))??
@@ -551,6 +555,108 @@ pub async fn update_stakeholders(
         .await
 }
 
+/// I576: Dismiss an intelligence item, creating a tombstone to prevent re-creation.
+///
+/// Removes the item from the specified Vec field and adds a `DismissedItem`
+/// tombstone that prevents future enrichment from re-creating it.
+pub async fn dismiss_intelligence_item(
+    entity_id: &str,
+    entity_type: &str,
+    field: &str,
+    item_text: &str,
+    state: &AppState,
+) -> Result<(), String> {
+    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let config = config.ok_or("No configuration loaded")?;
+    let workspace_path = config.workspace_path.clone();
+
+    let engine = state.signals.engine.clone();
+    let entity_id = entity_id.to_string();
+    let entity_type = entity_type.to_string();
+    let field = field.to_string();
+    let item_text = item_text.to_string();
+    state
+        .db_write(move |db| {
+            let workspace = Path::new(&workspace_path);
+
+            let account = if entity_type == "account" {
+                db.get_account(&entity_id).map_err(|e| e.to_string())?
+            } else {
+                None
+            };
+
+            let entity_name = match entity_type.as_str() {
+                "account" => account.as_ref().map(|a| a.name.clone()),
+                "project" => db
+                    .get_project(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                "person" => db
+                    .get_person(&entity_id)
+                    .map_err(|e| e.to_string())?
+                    .map(|p| p.name),
+                _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+            }
+            .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+
+            let dir = crate::intelligence::resolve_entity_dir(
+                workspace,
+                &entity_type,
+                &entity_name,
+                account.as_ref(),
+            )?;
+
+            let mut intel = crate::intelligence::read_intelligence_json(&dir)?;
+
+            // Add tombstone
+            intel.dismissed_items.push(crate::intelligence::DismissedItem {
+                field: field.clone(),
+                content: item_text.clone(),
+                dismissed_at: chrono::Utc::now().to_rfc3339(),
+            });
+
+            // Remove item from the relevant Vec by matching text
+            let item_lower = item_text.to_lowercase();
+            match field.as_str() {
+                "risks" => intel.risks.retain(|r| !r.text.to_lowercase().contains(&item_lower)),
+                "recentWins" => intel.recent_wins.retain(|w| !w.text.to_lowercase().contains(&item_lower)),
+                "stakeholderInsights" => intel.stakeholder_insights.retain(|s| !s.name.to_lowercase().contains(&item_lower)),
+                "valueDelivered" => intel.value_delivered.retain(|v| !v.statement.to_lowercase().contains(&item_lower)),
+                "competitiveContext" => intel.competitive_context.retain(|c| !c.competitor.to_lowercase().contains(&item_lower)),
+                "organizationalChanges" => intel.organizational_changes.retain(|o| !o.person.to_lowercase().contains(&item_lower)),
+                "expansionSignals" => intel.expansion_signals.retain(|e| !e.opportunity.to_lowercase().contains(&item_lower)),
+                "openCommitments" => {
+                    if let Some(ref mut ocs) = intel.open_commitments {
+                        ocs.retain(|c| !c.description.to_lowercase().contains(&item_lower));
+                    }
+                }
+                _ => return Err(format!("Cannot dismiss items from field: {}", field)),
+            }
+
+            crate::intelligence::write_intelligence_json(&dir, &intel)?;
+
+            db.with_transaction(|tx| {
+                tx.upsert_entity_intelligence(&intel)
+                    .map_err(|e| e.to_string())?;
+                crate::services::signals::emit_and_propagate(
+                    tx,
+                    &engine,
+                    &entity_type,
+                    &entity_id,
+                    "intelligence_curated",
+                    "user_curation",
+                    Some(&format!("{{\"field\":\"{field}\",\"dismissed\":\"{item_text}\"}}",)),
+                    0.5,
+                )
+                .map_err(|e| format!("signal emit failed: {e}"))?;
+                Ok(())
+            })?;
+
+            Ok(())
+        })
+        .await
+}
+
 /// Generate a risk briefing for an account (async, PTY enrichment).
 pub async fn generate_risk_briefing(
     state: &std::sync::Arc<AppState>,
@@ -831,7 +937,7 @@ mod live_acceptance_tests {
 
         // End-to-end path: gather context -> AI enrichment -> deterministic consistency pass ->
         // write intelligence.json + DB cache.
-        let intel = enrich_entity(entity_id.clone(), entity_type.clone(), &state)
+        let intel = enrich_entity(entity_id.clone(), entity_type.clone(), &state, None)
             .await
             .expect("manual enrich_entity failed");
 
@@ -1809,7 +1915,7 @@ mod live_acceptance_tests {
             .await
             .expect("read i504 pre-state failed");
 
-        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state)
+        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state, None)
             .await
             .expect("manual enrich_entity for i504 validation failed");
 
@@ -1940,7 +2046,7 @@ mod live_acceptance_tests {
             );
         }
 
-        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state)
+        let _ = enrich_entity(account_id.clone(), "account".to_string(), &state, None)
             .await
             .expect("second enrich_entity for i504 validation failed");
 

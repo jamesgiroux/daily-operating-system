@@ -19,6 +19,7 @@ import type {
   StrategicProgram,
 } from "@/types";
 import { useAccountFields } from "./useAccountFields";
+import { useEnrichmentProgress } from "./useEnrichmentProgress";
 import { useTeamManagement } from "./useTeamManagement";
 
 export function useAccountDetail(accountId: string | undefined) {
@@ -125,6 +126,12 @@ export function useAccountDetail(accountId: string | undefined) {
 
   const fields = useAccountFields(detail, load, setError);
   const team = useTeamManagement(accountId, silentRefresh);
+
+  // I575: Progressive enrichment — refresh data as each dimension completes
+  const enrichmentProgress = useEnrichmentProgress(accountId, silentRefresh);
+  const enrichmentPercentage = enrichmentProgress
+    ? Math.round((enrichmentProgress.completed / enrichmentProgress.total) * 100)
+    : null;
 
   // ─── Event listeners ──────────────────────────────────────────────────
 
@@ -342,6 +349,8 @@ export function useAccountDetail(accountId: string | undefined) {
     // Enrichment
     enriching,
     enrichSeconds,
+    enrichmentProgress,
+    enrichmentPercentage,
 
     // Action creation
     addingAction, setAddingAction,

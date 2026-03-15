@@ -23,8 +23,8 @@ use crate::util::{
 use super::enrich::parse_enrichment_response;
 use super::hooks;
 
-/// Timeout for transcript AI processing (3 minutes — larger transcripts need more time)
-const TRANSCRIPT_AI_TIMEOUT_SECS: u64 = 180;
+/// Per-phase timeout for phased transcript processing (30s each, 3 phases = 90s max)
+const TRANSCRIPT_PHASE_TIMEOUT_SECS: u64 = 30;
 
 /// Maximum transcript content sent to AI (covers ~75 min calls).
 const TRANSCRIPT_MAX_CHARS: usize = 60_000;
@@ -144,25 +144,36 @@ pub fn process_transcript_with_kind(
         destination.display()
     );
 
-    // 3. Build prompt and invoke Claude
+    // 3. Phased transcript processing (AC 67d)
+    //
+    // Phase 1: Core extraction (summary + actions + decisions) — ~30s
+    // Phase 2: Intelligence extraction (wins + risks + sentiment + champion) — ~30s
+    // Phase 3: Deep analysis (dynamics + commitments + role changes) — ~30s
+    //
+    // Each phase persists immediately. If Phase 1 fails, abort all.
+    // If Phase 2 or 3 fails, Phase 1 results are already persisted (partial success).
+
+    let default_config = AiModelConfig::default();
+    let effective_config = ai_config.unwrap_or(&default_config);
+
     // I535 Step 10: Inject Gong call summaries as supplementary context when in Glean mode
     let gong_context = build_gong_pre_context(db, meeting);
-    let mut prompt = build_transcript_prompt_with_kind(meeting, &content, content_kind);
+
+    // ── Phase 1: Core extraction (summary, discussion, analysis, actions) ──
+    let mut phase1_prompt = build_phase1_prompt(meeting, &content, content_kind);
     if let Some(ref ctx) = gong_context {
-        prompt = format!("{}\n\n{}", ctx, prompt);
+        phase1_prompt = format!("{}\n\n{}", ctx, phase1_prompt);
     }
-    let default_config = AiModelConfig::default();
-    let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config.unwrap_or(&default_config))
-        .with_timeout(TRANSCRIPT_AI_TIMEOUT_SECS);
-    let output = match pty.spawn_claude(workspace, &prompt) {
+    let pty1 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
+    let phase1_output = match pty1.spawn_claude(workspace, &phase1_prompt) {
         Ok(o) => o.stdout,
         Err(e) => {
             log::error!(
-                "AI transcript processing failed for '{}': {}",
+                "Phase 1 (core extraction) failed for '{}': {}",
                 meeting.title,
                 e
             );
-            // Return partial success — file was routed, but no AI extraction
             return TranscriptResult {
                 status: "success".to_string(),
                 summary: None,
@@ -173,33 +184,30 @@ pub fn process_transcript_with_kind(
         }
     };
 
-    // Audit trail (I297)
-    let _ = crate::audit::write_audit_entry(workspace, "transcript", &meeting.id, &output);
+    // Audit trail (I297) — Phase 1
+    let _ =
+        crate::audit::write_audit_entry(workspace, "transcript-p1", &meeting.id, &phase1_output);
 
-    // Debug: log raw Claude output for transcript processing
     log::info!(
-        "Transcript AI output for '{}' ({} bytes): {}",
+        "Phase 1 output for '{}' ({} bytes): {}",
         meeting.title,
-        output.len(),
-        if output.len() > 500 {
-            &output[..500]
+        phase1_output.len(),
+        if phase1_output.len() > 500 {
+            &phase1_output[..500]
         } else {
-            &output
+            &phase1_output
         }
     );
 
-    // 4. Parse response
-    let parsed = parse_enrichment_response(&output);
-    let summary = parsed.summary.clone();
-    let wins = parsed.wins.clone();
-    let risks = parsed.risks.clone();
-    let decisions = parsed.decisions.clone();
-    let discussion = parsed.discussion.clone();
-    let analysis = parsed.analysis.clone();
+    // Parse Phase 1
+    let parsed_p1 = parse_enrichment_response(&phase1_output);
+    let summary = parsed_p1.summary.clone();
+    let discussion = parsed_p1.discussion.clone();
+    let analysis = parsed_p1.analysis.clone();
 
-    // Extract actions to SQLite
+    // Persist Phase 1: actions to SQLite
     let mut extracted_actions = Vec::new();
-    if let Some(ref actions_text) = parsed.actions_text {
+    if let Some(ref actions_text) = parsed_p1.actions_text {
         if let Some(db) = db {
             extract_transcript_actions(
                 actions_text,
@@ -209,7 +217,6 @@ pub fn process_transcript_with_kind(
                 meeting.account.as_deref(),
             );
         }
-        // Parse for return value
         for line in actions_text.lines() {
             let Some(raw) = parse_action_line(line) else {
                 continue;
@@ -228,7 +235,54 @@ pub fn process_transcript_with_kind(
         }
     }
 
-    // 4b. Persist transcript captures + emit outcomes signal transactionally.
+    // ── Phase 2: Intelligence extraction (wins, risks, decisions, sentiment, champion) ──
+    let phase2_prompt = build_phase2_prompt(meeting, &content, content_kind, &summary);
+    let pty2 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
+
+    let (wins, risks, decisions, sentiment, champion_health) =
+        match pty2.spawn_claude(workspace, &phase2_prompt) {
+            Ok(o) => {
+                let phase2_output = o.stdout;
+                let _ = crate::audit::write_audit_entry(
+                    workspace,
+                    "transcript-p2",
+                    &meeting.id,
+                    &phase2_output,
+                );
+                log::info!(
+                    "Phase 2 output for '{}' ({} bytes): {}",
+                    meeting.title,
+                    phase2_output.len(),
+                    if phase2_output.len() > 500 {
+                        &phase2_output[..500]
+                    } else {
+                        &phase2_output
+                    }
+                );
+
+                let parsed_p2 = parse_enrichment_response(&phase2_output);
+                let sentiment = parse_sentiment_block(&phase2_output);
+                let champion_health = parse_champion_health_block(&phase2_output);
+                (
+                    parsed_p2.wins,
+                    parsed_p2.risks,
+                    parsed_p2.decisions,
+                    sentiment,
+                    champion_health,
+                )
+            }
+            Err(e) => {
+                log::warn!(
+                    "Phase 2 (intelligence extraction) failed for '{}': {} — Phase 1 results preserved",
+                    meeting.title,
+                    e
+                );
+                (Vec::new(), Vec::new(), Vec::new(), None, None)
+            }
+        };
+
+    // Persist Phase 2: transcript captures + outcomes signal
     if let Some(db) = db {
         let entity_type = meeting
             .linked_entities
@@ -262,9 +316,82 @@ pub fn process_transcript_with_kind(
                 );
             }
         }
+
+        // Persist champion health from Phase 2
+        if let Some(ref health) = champion_health {
+            let db_health = crate::db::types::ChampionHealthAssessment {
+                meeting_id: meeting.id.clone(),
+                champion_name: Some(health.champion_name.clone()),
+                champion_status: health.champion_status.clone(),
+                champion_evidence: health.champion_evidence.clone(),
+                champion_risk: health.champion_risk.clone(),
+            };
+            if let Err(e) = db.upsert_champion_health(&meeting.id, &db_health) {
+                log::warn!(
+                    "Failed to persist champion health for {}: {}",
+                    meeting.id,
+                    e
+                );
+            }
+        }
     }
 
-    // 5. Run post-enrichment hooks
+    // ── Phase 3: Deep analysis (dynamics, commitments, role changes) ──
+    let phase3_prompt = build_phase3_prompt(meeting, &content, content_kind, &summary);
+    let pty3 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
+        .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
+
+    let (interaction_dynamics, role_changes, commitments) =
+        match pty3.spawn_claude(workspace, &phase3_prompt) {
+            Ok(o) => {
+                let phase3_output = o.stdout;
+                let _ = crate::audit::write_audit_entry(
+                    workspace,
+                    "transcript-p3",
+                    &meeting.id,
+                    &phase3_output,
+                );
+                log::info!(
+                    "Phase 3 output for '{}' ({} bytes): {}",
+                    meeting.title,
+                    phase3_output.len(),
+                    if phase3_output.len() > 500 {
+                        &phase3_output[..500]
+                    } else {
+                        &phase3_output
+                    }
+                );
+
+                let interaction_dynamics = parse_interaction_dynamics(&phase3_output);
+                let role_changes = parse_role_changes_block(&phase3_output);
+                let commitments = parse_commitments_block(&phase3_output);
+                (interaction_dynamics, role_changes, commitments)
+            }
+            Err(e) => {
+                log::warn!(
+                    "Phase 3 (deep analysis) failed for '{}': {} — Phase 1/2 results preserved",
+                    meeting.title,
+                    e
+                );
+                (None, Vec::new(), Vec::new())
+            }
+        };
+
+    // Persist Phase 3: dynamics, role changes, commitments
+    if let Some(db) = db {
+        persist_enriched_transcript_data(
+            db,
+            &meeting.id,
+            &meeting.title,
+            meeting.account.as_deref(),
+            interaction_dynamics.as_ref(),
+            None, // champion_health already persisted in Phase 2
+            &role_changes,
+            &commitments,
+        );
+    }
+
+    // Post-phase hooks and logging (run after all phases)
     if let Some(db) = db {
         let ctx = hooks::EnrichmentContext {
             workspace: workspace.to_path_buf(),
@@ -290,7 +417,7 @@ pub fn process_transcript_with_kind(
         }
     }
 
-    // 6. Log to processing_log
+    // Log to processing_log
     if let Some(db) = db {
         let log_entry = DbProcessingLog {
             id: uuid::Uuid::new_v4().to_string(),
@@ -308,40 +435,17 @@ pub fn process_transcript_with_kind(
         }
     }
 
-    // 7. Append wins to impact log
+    // Append wins to impact log
     if !wins.is_empty() {
         append_to_impact_log(workspace, meeting, &wins);
     }
 
-    // 7b. Parse sentiment and interaction dynamics (I509)
-    let sentiment = parse_sentiment_block(&output);
-    let interaction_dynamics = parse_interaction_dynamics(&output);
-
-    // 7c. Parse I554 blocks: champion health, role changes, commitments
-    let champion_health = parse_champion_health_block(&output);
-    let role_changes = parse_role_changes_block(&output);
-    let commitments = parse_commitments_block(&output);
-
-    // 7d. Persist I555 enriched data to new tables
-    if let Some(db) = db {
-        persist_enriched_transcript_data(
-            db,
-            &meeting.id,
-            &meeting.title,
-            meeting.account.as_deref(),
-            interaction_dynamics.as_ref(),
-            champion_health.as_ref(),
-            &role_changes,
-            &commitments,
-        );
-    }
-
     // If summary is empty after parsing, include truncated raw output for debugging
     let debug_message = if summary.is_empty() {
-        let preview = if output.len() > 200 {
-            format!("{}...", &output[..200])
+        let preview = if phase1_output.len() > 200 {
+            format!("{}...", &phase1_output[..200])
         } else {
-            output.clone()
+            phase1_output.clone()
         };
         Some(format!("Empty parse result. Raw output: {}", preview))
     } else {
@@ -710,6 +814,331 @@ fn truncate_transcript(content: &str) -> String {
         &content[..head_end],
         tail_start - head_end,
         &content[tail_start..],
+    )
+}
+
+/// Build the common prompt header (preamble + meeting context + source intro).
+///
+/// Shared across all 3 phases to maintain consistent meeting context framing.
+fn build_prompt_header(
+    meeting: &CalendarEvent,
+    content: &str,
+    content_kind: TranscriptContentKind,
+) -> (String, String) {
+    let truncated = truncate_transcript(content);
+    let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
+    let title = if meeting.title.trim().is_empty() {
+        "Untitled meeting"
+    } else {
+        &meeting.title
+    };
+    let account_line = match meeting.account.as_deref() {
+        Some(a) if !a.trim().is_empty() => format!("Account: {}\n", sanitize_external_field(a)),
+        _ => String::new(),
+    };
+    let date = meeting.end.format("%Y-%m-%d").to_string();
+    let source_intro = match content_kind {
+        TranscriptContentKind::Transcript => {
+            format!("You are analyzing a transcript from a {meeting_type} meeting.")
+        }
+        TranscriptContentKind::Notes => format!(
+            "You are analyzing meeting notes from a {meeting_type} meeting. These notes may already be condensed, so extract actions, decisions, wins, and risks from what is actually present. Do not repeat the notes verbatim or invent detail that is not supported."
+        ),
+    };
+
+    let header = format!(
+        r#"{preamble}{source_intro}
+
+Meeting: "{title}"
+{account_line}Date: {date}
+
+IMPORTANT: Focus on the substantive business discussion. Skip social chitchat,
+internal team banter, and small talk that typically occurs at the start of calls.
+Prioritize customer-facing content — what the customer said, asked, or committed to."#,
+        preamble = INJECTION_PREAMBLE,
+        source_intro = source_intro,
+        title = encode_high_risk_field(title),
+        account_line = account_line,
+        date = date,
+    );
+
+    (header, wrap_user_data(&truncated).to_string())
+}
+
+/// Phase 1 prompt: Core extraction — SUMMARY, DISCUSSION, ANALYSIS, ACTIONS.
+///
+/// This is the "meeting is done, what happened?" fast response (~30s).
+fn build_phase1_prompt(
+    meeting: &CalendarEvent,
+    content: &str,
+    content_kind: TranscriptContentKind,
+) -> String {
+    let (header, wrapped_content) = build_prompt_header(meeting, content, content_kind);
+
+    format!(
+        r#"{header}
+
+Respond in exactly this format:
+
+SUMMARY: <2-3 sentence executive summary focused on business outcomes and decisions, not a chronological recap. Who met, what was substantively discussed, key outcomes.>
+
+DISCUSSION:
+- <Topic 1>: <What was discussed, decided, or committed to. Include direct customer quotes where they reveal priorities, concerns, or sentiment.>
+- <Topic 2>: ...
+END_DISCUSSION
+
+ANALYSIS: <1-2 sentences of strategic TAM-perspective insight — connect what happened in this meeting to account health, expansion potential, or renewal risk.>
+
+ACTIONS:
+- <concise action title> P1/P2/P3 @Account due: YYYY-MM-DD #"context sentence"
+END_ACTIONS
+
+Rules for actions:
+- TITLE MUST be concise and imperative: verb + object, max 10 words. Not a sentence, not a description — a task.
+  - Good: "Follow up on renewal pricing"
+  - Bad: "Follow up with the client regarding the renewal discussion they mentioned during the quarterly business review"
+- Include priority when urgency is inferable (P1=urgent, P2=normal, P3=low)
+- Include @AccountName when action relates to a specific customer/account
+- Include due: YYYY-MM-DD when a deadline is mentioned or implied
+- Include #"context" with a short sentence explaining WHY this action matters or WHAT was discussed. Use quotes around multi-word context.
+  - Good: #"Renewal decision pending CFO approval, budget freeze risk"
+  - Bad: #billing
+- Use "waiting" or "blocked" in the title if action depends on someone else
+- If no metadata can be inferred, just write the action text plainly
+- Example: Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2 budget lock"
+
+Transcript:
+{content}
+"#,
+        header = header,
+        content = wrapped_content,
+    )
+}
+
+/// Phase 2 prompt: Intelligence extraction — WINS, RISKS, DECISIONS, SENTIMENT, CHAMPION_HEALTH.
+///
+/// Includes Phase 1 summary as context for coherence (~30s).
+fn build_phase2_prompt(
+    meeting: &CalendarEvent,
+    content: &str,
+    content_kind: TranscriptContentKind,
+    phase1_summary: &str,
+) -> String {
+    let (header, wrapped_content) = build_prompt_header(meeting, content, content_kind);
+
+    let summary_context = if phase1_summary.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nPrevious analysis summary (for context): {}\n",
+            phase1_summary
+        )
+    };
+
+    format!(
+        r#"{header}
+{summary_context}
+Respond in exactly this format:
+
+WINS:
+Extract only verifiable positive outcomes — not vague sentiment. Each win MUST include
+a specific, observable event. "Customer seems happy" is NOT a win.
+
+Sub-types (tag each):
+- ADOPTION: milestone crossed, feature activated, user activation target met, integration completed
+- EXPANSION: interest in additional scope, new department/team, usage ceiling hit, cross-functional mention
+- VALUE_REALIZED: customer articulates ROI in their own words, KPI improvement attributed to product, results shared with leadership
+- RELATIONSHIP: executive sponsor actively engaged, new champion identified, reference/case study agreement, advisory board join
+- COMMERCIAL: renewal confirmed (especially early), upsell/cross-sell, multi-year commitment, budget increase
+- ADVOCACY: public endorsement, referral, conference speaking, internal win-sharing to leadership
+
+Format: - [SUB_TYPE] <specific win with evidence> #"verbatim quote if available"
+END_WINS
+RISKS:
+Categorize each risk by urgency. Be specific — name the person, the competitor, the timeline.
+
+RED (critical — requires immediate action):
+- Champion departure or executive sponsor disengagement
+- Active competitor evaluation or piloting
+- Severe usage collapse (<50% utilization mentioned)
+- Active escalation (unresolved critical issue)
+- Budget elimination or review
+- Explicit renewal doubt
+
+YELLOW (moderate — needs a recovery plan):
+- Usage decline mentioned but not severe
+- Champion role change (internal move)
+- Delayed implementation or milestone pushback
+- Organizational restructuring affecting ownership
+- Repeated feature complaints without resolution
+- Reduced meeting attendance by key stakeholders
+
+GREEN_WATCH (early warning — monitor):
+- Vague dissatisfaction without specific cause
+- New leadership reviewing vendor relationships
+- Industry/company headwinds (layoffs, funding concerns)
+- Reduced energy or engagement without stated reason
+
+Format: - [RED|YELLOW|GREEN_WATCH] <specific risk with named people/timelines> #"verbatim quote"
+END_RISKS
+DECISIONS:
+- [CUSTOMER_COMMITMENT|INTERNAL_DECISION|JOINT_AGREEMENT] <decision> @owner #"verbatim quote"
+END_DECISIONS
+
+CHAMPION_HEALTH:
+- champion_name: <name or "unidentified">
+- champion_status: strong|weak|lost|none
+  strong = has power/influence + personally invested + actively advocates internally
+  weak = present and helpful but lacks influence, personal stake unclear, or not advocating
+  lost = champion departed, moved roles, or disengaged
+  none = no identifiable champion in the meeting
+- champion_evidence: <specific behavioral evidence from the call>
+- champion_risk: <if weak/lost, what is the risk and recommended action>
+END_CHAMPION_HEALTH
+
+SENTIMENT:
+- overall: positive|neutral|negative|mixed
+- customer: positive|neutral|negative|mixed|n/a
+- engagement: high|moderate|low|disengaged
+- forward_looking: yes|no
+- competitor_mentions: comma-separated list or "none"
+- champion_present: yes|no|unknown
+- champion_engaged: yes|no|n/a
+- ownership_language: customer|vendor|mixed (does the customer say "our tool" or "your product"?)
+- past_tense_references: yes|no (does the customer refer to using the product in past tense?)
+- data_export_interest: yes|no (did the customer ask about data export, portability, or switching?)
+- internal_advocacy_visible: yes|no (did the customer mention sharing results internally?)
+- roadmap_interest: yes|no (did the customer ask about future features or roadmap?)
+END_SENTIMENT
+
+Rules for wins:
+- Evidence threshold: only extract if specific evidence exists
+- Tag each win with its sub-type ([ADOPTION], [EXPANSION], [VALUE_REALIZED], [RELATIONSHIP], [COMMERCIAL], [ADVOCACY])
+- Include verbatim quotes via #"..." suffix when available
+- If none are apparent, leave the section empty (just the markers)
+
+Rules for risks:
+- Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
+- Name the specific person, competitor, or timeline
+- Include verbatim quotes via #"..." suffix when available
+- If none are apparent, leave the section empty (just the markers)
+
+Rules for decisions:
+- Tag each with [CUSTOMER_COMMITMENT], [INTERNAL_DECISION], or [JOINT_AGREEMENT]
+- Include the decision owner via @owner
+- Note any conditions or caveats attached to the decision
+- If no decisions were made, leave the section empty
+
+Rules for champion health:
+- Focus on the PRIMARY champion/advocate at the customer org
+- "strong" requires evidence of all three: influence, investment, and advocacy
+- "weak" means helpful but missing one or more of the three pillars
+- "lost" means champion has departed, moved roles, or visibly disengaged
+- If no champion is identifiable from this interaction, use "none"
+- champion_risk is only needed for weak/lost status
+
+Rules for sentiment:
+- Overall sentiment reflects the general tone of the entire meeting
+- Customer sentiment focuses specifically on the customer's tone and language
+- Engagement measures how actively participants contributed
+- Champion = internal advocate for your product/service at the customer org
+- If you cannot determine champion presence, use "unknown"
+- ownership_language: "customer" if they say "our tool/system", "vendor" if "your product/service", "mixed" if both
+- past_tense_references: "yes" if customer talks about using the product in past tense (churn signal)
+- data_export_interest: "yes" if customer asks about data portability or export capabilities
+- internal_advocacy_visible: "yes" if customer mentions sharing results or promoting product internally
+- roadmap_interest: "yes" if customer asks about future features or product direction
+
+Transcript:
+{content}
+"#,
+        header = header,
+        summary_context = summary_context,
+        content = wrapped_content,
+    )
+}
+
+/// Phase 3 prompt: Deep analysis — INTERACTION_DYNAMICS, COMMITMENTS, ROLE_CHANGES.
+///
+/// Includes Phase 1 summary as context for coherence (~30s).
+fn build_phase3_prompt(
+    meeting: &CalendarEvent,
+    content: &str,
+    content_kind: TranscriptContentKind,
+    phase1_summary: &str,
+) -> String {
+    let (header, wrapped_content) = build_prompt_header(meeting, content, content_kind);
+
+    let summary_context = if phase1_summary.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nPrevious analysis summary (for context): {}\n",
+            phase1_summary
+        )
+    };
+
+    format!(
+        r#"{header}
+{summary_context}
+Respond in exactly this format:
+
+COMMITMENTS:
+Mutual agreements, stated goals, success criteria, or outcome targets discussed.
+Focus on strategic commitments (not individual action items).
+Examples: "Achieve 50% adoption across 3 teams by Q3", "Deliver ROI report before
+renewal", "Resolve integration blockers before go-live".
+- <commitment> by: YYYY-MM-DD owned_by: us|them|joint #"success criteria"
+END_COMMITMENTS
+
+ROLE_CHANGES:
+- <person name>: <old role/status> -> <new role/status> #"evidence quote"
+END_ROLE_CHANGES
+
+INTERACTION_DYNAMICS:
+TALK_BALANCE: <customer_pct>/<internal_pct> or "unclear"
+SPEAKER_SENTIMENT:
+- <Name>: <positive|neutral|cautious|negative|mixed> — <evidence>
+END_SPEAKER_SENTIMENT
+ENGAGEMENT_SIGNALS:
+- question_density: <high|moderate|low>
+- decision_maker_active: <yes|no|unclear>
+- forward_looking: <high|moderate|low>
+- monologue_risk: <yes|no>
+END_ENGAGEMENT_SIGNALS
+COMPETITOR_MENTIONS:
+- <Competitor>: <context>
+END_COMPETITOR_MENTIONS
+ESCALATION_LANGUAGE:
+- <quote or paraphrase> — <speaker>
+END_ESCALATION_LANGUAGE
+END_INTERACTION_DYNAMICS
+
+Rules for commitments:
+- Focus on strategic commitments, not individual action items (those go in ACTIONS)
+- Include target date (by: YYYY-MM-DD) and ownership (owned_by: us|them|joint) when available
+- Include success criteria in quotes when discussed
+- If no commitments were made, leave the section empty (just the markers)
+
+Rules for role changes:
+- Only include if a role change, departure, hire, or promotion is explicitly mentioned
+- Include the person's name, their previous and new status, and evidence
+- If no role changes were mentioned, leave the section empty (just the markers)
+
+Rules for interaction dynamics:
+- Talk balance approximates speaking time split between customer and internal team
+- Speaker sentiment should cover the 2-4 most prominent speakers
+- Evidence should be a brief quote or paraphrase supporting the sentiment assessment
+- Only include competitor mentions if competitors were explicitly named
+- Escalation language captures quotes suggesting frustration, urgency, or risk
+- If a sub-section has no data, leave it empty (just the markers)
+
+Transcript:
+{content}
+"#,
+        header = header,
+        summary_context = summary_context,
+        content = wrapped_content,
     )
 }
 
