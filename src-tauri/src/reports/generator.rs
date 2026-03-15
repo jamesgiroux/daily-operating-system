@@ -27,8 +27,15 @@ pub struct ReportGeneratorInput {
 /// Phase 2: Run the PTY call for report generation.
 /// No DB lock held — this is the long-running operation.
 pub fn run_report_generation(input: &ReportGeneratorInput) -> Result<String, String> {
+    let timeout_secs = match input.report_type.as_str() {
+        // These report types still use monolithic prompts for now.
+        // Keep a larger timeout until they are decomposed like BoB/SWOT.
+        "monthly_wrapped" | "weekly_impact" | "ebr_qbr" => 180,
+        "account_health" => 120,
+        _ => 30,
+    };
     let pty = PtyManager::for_tier(ModelTier::Synthesis, &input.ai_models)
-        .with_timeout(30)
+        .with_timeout(timeout_secs)
         .with_nice_priority(10);
 
     let output = pty
