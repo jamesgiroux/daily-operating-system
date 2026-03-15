@@ -614,98 +614,68 @@
 .engagementCooling { background: rgba(196, 101, 74, 0.12); color: var(--color-spice-terracotta); }
 .engagementNew { background: rgba(143, 163, 196, 0.12); color: var(--color-garden-larkspur); }
 
-/* ── Relationship Depth Summary (I557) ── */
+/* ── Relationship Depth — full-width strip (Ledger-inspired) ── */
 
 .relationshipDepthSection {
-  margin-top: var(--space-xl);
-  padding-top: 16px;
-  border-top: 1px solid var(--color-rule-light);
+  margin-top: 32px;
+  border-top: 2px solid var(--color-desk-charcoal);
+  border-bottom: 1px solid var(--color-rule-heavy);
 }
 
-.depthSectionLabel {
-  display: block;
+.depthStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0;
+}
+
+.depthCell {
+  padding: 20px 20px;
+  border-right: 1px solid var(--color-rule-light);
+}
+
+.depthCell:last-child {
+  border-right: none;
+}
+
+.depthCellLabel {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--color-text-tertiary);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
-.depthBadges {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-
-.depthItem {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.depthItemLabel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
-}
-
-.depthBadge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
+.depthCellValue {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 300;
   text-transform: capitalize;
+  letter-spacing: -0.01em;
+}
+
+.depthBadgeSage { color: var(--color-garden-sage); }
+.depthBadgeTurmeric { color: var(--color-spice-turmeric); }
+.depthBadgeTerracotta { color: var(--color-spice-terracotta); }
+.depthBadgeRed { color: var(--color-spice-terracotta); }
+.depthBadgeNeutral { color: var(--color-text-tertiary); }
+
+.depthGapsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.depthGapTag {
+  font-family: var(--font-mono);
+  font-size: 10px;
   letter-spacing: 0.04em;
+  color: var(--color-spice-terracotta);
   padding: 2px 8px;
   border-radius: 3px;
-  display: inline-block;
-}
-
-.depthBadgeSage {
-  background: var(--color-garden-sage-12, rgba(136, 159, 120, 0.12));
-  color: var(--color-garden-sage);
-}
-
-.depthBadgeTurmeric {
-  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
-  color: var(--color-spice-turmeric);
-}
-
-.depthBadgeTerracotta {
-  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.12));
-  color: var(--color-spice-terracotta);
-}
-
-.depthBadgeRed {
-  background: rgba(192, 60, 60, 0.12);
-  color: var(--color-spice-terracotta);
-}
-
-.depthBadgeNeutral {
-  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
-  color: var(--color-text-tertiary);
-}
-
-.coverageGaps {
-  margin-top: 12px;
-}
-
-.gapsList {
-  margin: 4px 0 0;
-  padding: 0 0 0 16px;
-  list-style: disc;
-}
-
-.gapItem {
-  font-family: var(--font-serif);
-  font-size: 14px;
-  font-style: italic;
-  line-height: 1.55;
-  color: var(--color-text-secondary);
-  margin-bottom: 2px;
+  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.08));
 }
 
 /* ── Editable text overrides for stakeholder cards ── */

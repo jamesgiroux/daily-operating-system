@@ -720,43 +720,42 @@ export function StakeholderGallery({
       {/* I557: Relationship Depth Summary */}
       {intelligence?.relationshipDepth && (
         <div className={css.relationshipDepthSection}>
-          <span className={css.depthSectionLabel}>Relationship Depth</span>
-          <div className={css.depthBadges}>
+          <div className={css.depthStrip}>
             {intelligence.relationshipDepth.championStrength && (
-              <div className={css.depthItem}>
-                <span className={css.depthItemLabel}>Champion Strength</span>
-                <span className={`${css.depthBadge} ${getDepthColor("champion", intelligence.relationshipDepth.championStrength)}`}>
+              <div className={css.depthCell}>
+                <div className={css.depthCellLabel}>Champion</div>
+                <div className={`${css.depthCellValue} ${getDepthColor("champion", intelligence.relationshipDepth.championStrength)}`}>
                   {intelligence.relationshipDepth.championStrength}
-                </span>
+                </div>
               </div>
             )}
             {intelligence.relationshipDepth.executiveAccess && (
-              <div className={css.depthItem}>
-                <span className={css.depthItemLabel}>Executive Access</span>
-                <span className={`${css.depthBadge} ${getDepthColor("access", intelligence.relationshipDepth.executiveAccess)}`}>
+              <div className={css.depthCell}>
+                <div className={css.depthCellLabel}>Executive Access</div>
+                <div className={`${css.depthCellValue} ${getDepthColor("access", intelligence.relationshipDepth.executiveAccess)}`}>
                   {intelligence.relationshipDepth.executiveAccess}
-                </span>
+                </div>
               </div>
             )}
             {intelligence.relationshipDepth.stakeholderCoverage && (
-              <div className={css.depthItem}>
-                <span className={css.depthItemLabel}>Stakeholder Coverage</span>
-                <span className={`${css.depthBadge} ${getDepthColor("coverage", intelligence.relationshipDepth.stakeholderCoverage)}`}>
+              <div className={css.depthCell}>
+                <div className={css.depthCellLabel}>Coverage</div>
+                <div className={`${css.depthCellValue} ${getDepthColor("coverage", intelligence.relationshipDepth.stakeholderCoverage)}`}>
                   {intelligence.relationshipDepth.stakeholderCoverage}
-                </span>
+                </div>
+              </div>
+            )}
+            {intelligence.relationshipDepth.coverageGaps && intelligence.relationshipDepth.coverageGaps.length > 0 && (
+              <div className={css.depthCell}>
+                <div className={css.depthCellLabel}>Gaps</div>
+                <div className={css.depthGapsList}>
+                  {intelligence.relationshipDepth.coverageGaps.map((gap, i) => (
+                    <span key={i} className={css.depthGapTag}>{gap}</span>
+                  ))}
+                </div>
               </div>
             )}
           </div>
-          {intelligence.relationshipDepth.coverageGaps && intelligence.relationshipDepth.coverageGaps.length > 0 && (
-            <div className={css.coverageGaps}>
-              <span className={css.depthItemLabel}>Coverage Gaps</span>
-              <ul className={css.gapsList}>
-                {intelligence.relationshipDepth.coverageGaps.map((gap, i) => (
-                  <li key={i} className={css.gapItem}>{gap}</li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
       )}
 
