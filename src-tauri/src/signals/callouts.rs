@@ -52,6 +52,11 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "proactive_no_contact",
     "cadence_anomaly",
     "risk_detected",
+    // I535/ADR-0100: Glean-sourced signal types
+    "renewal_data_updated",
+    "support_health_updated",
+    "glean_org_change",
+    "glean_champion_departed",
 ];
 
 // ---------------------------------------------------------------------------
@@ -434,6 +439,73 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                     format!("Unusual email pattern for {}", signal.entity_id),
                 ),
             }
+        }
+        // I535/ADR-0100: Glean-sourced callout text handlers
+        "renewal_data_updated" => {
+            let likelihood = parsed
+                .get("renewal_likelihood")
+                .or_else(|| parsed.get("renewalProbability"))
+                .and_then(|v| v.as_str().or_else(|| v.as_f64().map(|_| "see details")))
+                .unwrap_or("updated");
+            let detail = parsed
+                .get("detail")
+                .or_else(|| parsed.get("dealStage"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Renewal data changed in CRM");
+            (
+                format!("Renewal update: {}", likelihood),
+                detail.to_string(),
+            )
+        }
+        "support_health_updated" => {
+            let ticket_count = parsed
+                .get("openTickets")
+                .and_then(|v| v.as_u64())
+                .map(|n| format!("{} open", n))
+                .unwrap_or_else(|| "tickets updated".to_string());
+            let trend = parsed
+                .get("recentTrend")
+                .or_else(|| parsed.get("trend"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("updated");
+            let summary = parsed
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Support health data updated from Zendesk");
+            (
+                format!("Support health: {} ({})", ticket_count, trend),
+                summary.to_string(),
+            )
+        }
+        "glean_org_change" => {
+            let person = parsed
+                .get("person")
+                .and_then(|v| v.as_str())
+                .unwrap_or("A stakeholder");
+            let change = parsed
+                .get("change")
+                .and_then(|v| v.as_str())
+                .unwrap_or("changed role");
+            (
+                format!("{} — org change", person),
+                change.to_string(),
+            )
+        }
+        "glean_champion_departed" => {
+            let name = parsed
+                .get("name")
+                .or_else(|| parsed.get("champion_name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Champion");
+            let detail = parsed
+                .get("detail")
+                .or_else(|| parsed.get("evidence"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("No longer at the company per org directory");
+            (
+                format!("Champion departure: {}", name),
+                detail.to_string(),
+            )
         }
         _ => (
             format!("Signal: {}", signal.signal_type),
