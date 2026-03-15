@@ -1112,17 +1112,21 @@ pub async fn enrich_account_from_clay(
     state: State<'_, Arc<AppState>>,
 ) -> Result<EnrichmentResultData, String> {
     // Find a linked person for this account, enrich them, company data follows
-    let person_id: Option<String> = state.db.lock().ok().and_then(|g| {
-        g.as_ref().and_then(|db| {
-            db.conn_ref()
+    // I568: Use async db_read to avoid blocking Tokio threads.
+    let acct_id = account_id.clone();
+    let person_id: Option<String> = state
+        .db_read(move |db| {
+            Ok(db
+                .conn_ref()
                 .query_row(
                     "SELECT person_id FROM account_stakeholders WHERE account_id = ?1 LIMIT 1",
-                    [&account_id],
+                    [&acct_id],
                     |row| row.get(0),
                 )
-                .ok()
+                .ok())
         })
-    });
+        .await
+        .unwrap_or(None);
 
     let person_id = person_id.ok_or("No linked people found for this account")?;
 
@@ -2483,43 +2487,29 @@ pub fn set_context_mode(
     let new_provider = state.build_context_provider(&parsed);
     state.swap_context_provider(new_provider);
 
-    // Enqueue all entities for re-enrichment at ProactiveHygiene priority.
-    // A mode switch means context sources changed — existing intelligence
-    // should be refreshed with the new provider immediately.
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            use crate::intel_queue::{IntelPriority, IntelRequest};
-            let mut count = 0u32;
-
-            // Re-enqueue all entities that have intelligence (stale threshold = 0)
-            if let Ok(entities) = db.get_stale_entity_intelligence(0) {
-                for (entity_id, entity_type, _) in entities {
-                    state.intel_queue.enqueue(IntelRequest::new(
-                        entity_id,
-                        entity_type,
-                        IntelPriority::ProactiveHygiene,
-                    ));
-                    count += 1;
-                }
-            }
-            // Also enqueue entities with no intelligence yet
-            if let Ok(missing) = db.get_entities_without_intelligence() {
-                for (entity_id, entity_type) in missing {
-                    state.intel_queue.enqueue(IntelRequest::new(
-                        entity_id,
-                        entity_type,
-                        IntelPriority::ProactiveHygiene,
-                    ));
-                    count += 1;
-                }
-            }
-
-            if count > 0 {
-                log::info!(
-                    "Context mode switch: enqueued {} entities for re-enrichment",
-                    count
-                );
-            }
+    if let Ok(targets) = state.with_db_read(|db| {
+        let stale = db
+            .get_stale_entity_intelligence(0)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(id, typ, _)| (id, typ))
+            .collect::<Vec<_>>();
+        let missing = db.get_entities_without_intelligence().unwrap_or_default();
+        let mut targets = stale;
+        targets.extend(missing);
+        Ok::<_, String>(targets)
+    }) {
+        use crate::intel_queue::{IntelPriority, IntelRequest};
+        for (id, typ) in &targets {
+            state
+                .intel_queue
+                .enqueue(IntelRequest::new(id.clone(), typ.clone(), IntelPriority::ProactiveHygiene));
+        }
+        if !targets.is_empty() {
+            log::info!(
+                "Context mode switch: enqueued {} entities for re-enrichment",
+                targets.len()
+            );
         }
     }
 
@@ -2577,30 +2567,33 @@ pub async fn start_glean_auth(
                 );
             }
 
-            // Enqueue all entities for re-enrichment with Glean provider.
-            if let Ok(db_guard) = state.db.lock() {
-                if let Some(db) = db_guard.as_ref() {
+            // I568: Enqueue all entities for re-enrichment — use db_read to avoid blocking Tokio.
+            {
+                let entities_to_enqueue: Vec<(String, String)> = state
+                    .db_read(|db| {
+                        let mut all = Vec::new();
+                        if let Ok(stale) = db.get_stale_entity_intelligence(0) {
+                            for (id, typ, _) in stale {
+                                all.push((id, typ));
+                            }
+                        }
+                        if let Ok(missing) = db.get_entities_without_intelligence() {
+                            all.extend(missing);
+                        }
+                        Ok(all)
+                    })
+                    .await
+                    .unwrap_or_default();
+
+                if !entities_to_enqueue.is_empty() {
                     use crate::intel_queue::{IntelPriority, IntelRequest};
-                    let mut count = 0u32;
-                    if let Ok(entities) = db.get_stale_entity_intelligence(0) {
-                        for (entity_id, entity_type, _) in entities {
-                            state.intel_queue.enqueue(IntelRequest::new(
-                                entity_id, entity_type, IntelPriority::ProactiveHygiene,
-                            ));
-                            count += 1;
-                        }
+                    let count = entities_to_enqueue.len();
+                    for (entity_id, entity_type) in entities_to_enqueue {
+                        state.intel_queue.enqueue(IntelRequest::new(
+                            entity_id, entity_type, IntelPriority::ProactiveHygiene,
+                        ));
                     }
-                    if let Ok(missing) = db.get_entities_without_intelligence() {
-                        for (entity_id, entity_type) in missing {
-                            state.intel_queue.enqueue(IntelRequest::new(
-                                entity_id, entity_type, IntelPriority::ProactiveHygiene,
-                            ));
-                            count += 1;
-                        }
-                    }
-                    if count > 0 {
-                        log::info!("Glean auth: enqueued {} entities for re-enrichment", count);
-                    }
+                    log::info!("Glean auth: enqueued {} entities for re-enrichment", count);
                 }
             }
 
@@ -3273,4 +3266,207 @@ pub async fn discover_accounts_from_glean(
     );
 
     Ok(accounts)
+}
+
+// =============================================================================
+// I561 — Onboarding: Three Connectors
+// =============================================================================
+
+/// Result of batch account import during onboarding.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingImportResult {
+    pub created: usize,
+    pub failed: Vec<String>,
+}
+
+/// Batch-create accounts from onboarding discovery. Emits entity_created signal
+/// for each and enqueues Glean enrichment at Onboarding priority.
+#[tauri::command]
+pub async fn onboarding_import_accounts(
+    account_names: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<OnboardingImportResult, String> {
+    let mut created = 0usize;
+    let mut failed = Vec::new();
+    let mut created_ids = Vec::new();
+
+    for name in &account_names {
+        let name_clone = name.clone();
+        let app_state = state.inner().clone();
+        match state
+            .db_write(move |db| {
+                crate::services::accounts::create_account(
+                    db,
+                    &app_state,
+                    &name_clone,
+                    None,
+                    Some(crate::db::AccountType::Customer),
+                )
+            })
+            .await
+        {
+            Ok(id) => {
+                created_ids.push((id, "account".to_string()));
+                created += 1;
+            }
+            Err(e) => {
+                log::warn!("[I561] Failed to create account '{}': {}", name, e);
+                failed.push(name.clone());
+            }
+        }
+    }
+
+    // Enqueue Glean enrichment at Onboarding priority for all created accounts
+    if !created_ids.is_empty() {
+        use crate::intel_queue::{IntelPriority, IntelRequest};
+        for (entity_id, entity_type) in &created_ids {
+            state.intel_queue.enqueue(IntelRequest::new(
+                entity_id.clone(),
+                entity_type.clone(),
+                IntelPriority::Onboarding,
+            ));
+        }
+        log::info!(
+            "[I561] Onboarding: created {} accounts, enqueued for enrichment",
+            created_ids.len()
+        );
+    }
+
+    Ok(OnboardingImportResult { created, failed })
+}
+
+/// Pre-fill user profile from Glean org directory during onboarding.
+/// Returns None if Glean is not connected or lookup fails.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserProfileSuggestion {
+    pub name: Option<String>,
+    pub title: Option<String>,
+    pub department: Option<String>,
+    pub company: Option<String>,
+}
+
+#[tauri::command]
+pub async fn onboarding_prefill_profile(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<UserProfileSuggestion>, String> {
+    use crate::context_provider::glean::GleanMcpClient;
+
+    // Require Glean endpoint
+    let provider = state.context_provider();
+    let endpoint = match provider.remote_endpoint() {
+        Some(e) => e.to_string(),
+        None => return Ok(None),
+    };
+
+    // Get user email
+    let user_email = crate::google_api::token_store::peek_account_email().unwrap_or_default();
+    if user_email.is_empty() {
+        return Ok(None);
+    }
+
+    let client = GleanMcpClient::new(&endpoint);
+    let prompt = format!(
+        "Look up the employee profile for {} in the company directory. \
+         Return ONLY a JSON object with these fields: \
+         {{\"name\": \"...\", \"title\": \"...\", \"department\": \"...\", \"company\": \"...\"}}. \
+         If a field is unknown, set it to null.",
+        user_email
+    );
+
+    let response = match client.chat(&prompt, None).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[I561] Glean profile prefill failed: {}", e);
+            return Ok(None);
+        }
+    };
+
+    // Extract JSON from response
+    let json_text = match crate::intelligence::glean_provider::extract_json_object(&response) {
+        Some(j) => j.to_string(),
+        None => {
+            log::warn!("[I561] No JSON in Glean profile response");
+            return Ok(None);
+        }
+    };
+
+    #[derive(serde::Deserialize)]
+    struct ProfileResponse {
+        name: Option<String>,
+        title: Option<String>,
+        department: Option<String>,
+        company: Option<String>,
+    }
+
+    match serde_json::from_str::<ProfileResponse>(&json_text) {
+        Ok(p) => Ok(Some(UserProfileSuggestion {
+            name: p.name,
+            title: p.title,
+            department: p.department,
+            company: p.company,
+        })),
+        Err(e) => {
+            log::warn!("[I561] Failed to parse profile response: {}", e);
+            Ok(None)
+        }
+    }
+}
+
+/// Enrichment progress for a single account during onboarding.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentProgress {
+    pub entity_id: String,
+    pub name: String,
+    pub status: String, // "queued" | "complete" | "failed"
+}
+
+/// Query enrichment status for recently created accounts (onboarding polling).
+#[tauri::command]
+pub async fn onboarding_enrichment_status(
+    account_names: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<EnrichmentProgress>, String> {
+    state
+        .db_read(move |db| {
+            let all_accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
+            let mut results = Vec::new();
+
+            for account in all_accounts {
+                let name_lower = account.name.to_lowercase();
+                if !account_names
+                    .iter()
+                    .any(|n| n.to_lowercase() == name_lower)
+                {
+                    continue;
+                }
+
+                // Check if entity_assessment exists for this account
+                let has_assessment: bool = db
+                    .conn
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM entity_assessment WHERE entity_id = ?1 AND enriched_at IS NOT NULL)",
+                        [&account.id],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(false);
+
+                let status = if has_assessment {
+                    "complete"
+                } else {
+                    "queued"
+                };
+
+                results.push(EnrichmentProgress {
+                    entity_id: account.id.clone(),
+                    name: account.name.clone(),
+                    status: status.to_string(),
+                });
+            }
+
+            Ok(results)
+        })
+        .await
 }
