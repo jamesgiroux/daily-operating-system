@@ -19,7 +19,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ~~I115~~ | ~~Multi-line action extraction~~ — superseded by transcript pipeline improvements | — | — |
 | ~~I141~~ | ~~AI content tagging during enrichment~~ — superseded by intelligence schema (I508) | — | — |
 | ~~I142~~ | ~~Account Plan artifact~~ — superseded by reports suite | — | — |
-| **I198** | Account merge + transcript reassignment | P2 | Entity |
+| ~~I198~~ | ~~Account merge + transcript reassignment~~ — archived (parked, rare use case) | — | — |
 | **I199** | Archived account recovery UX — restore + relink | P2 | Entity |
 | ~~I225~~ | ~~Gong integration~~ — done (Gong transcripts via Glean) | — | — |
 | ~~I227~~ | ~~Gainsight integration~~ — archived (won't do, no clear path) | — | — |
@@ -57,7 +57,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I384** | Parent account portfolio intelligence — two-layer intelligence.json (portfolio synthesis + own signals) | P1 | Backend / Intelligence |
 | **I385** | Bidirectional entity hierarchy signal propagation — upward accumulation, downward fan-out | P1 | Backend / Signals |
 | **I386** | Calendar lifecycle gaps — future meeting cancellation detection, rescheduling sync, continuous future polling | P1 | Backend / Calendar |
-| **I387** | Multi-entity signal extraction from parent-level meetings — content-level entity resolution in transcript processor | P3 | Backend / Pipeline |
+| ~~I387~~ | ~~Multi-entity signal extraction from parent-level meetings~~ — archived (deferred per ADR-0087, bidirectional propagation covers the need) | — | — |
 | **I388** | Project hierarchy intelligence — two-layer intelligence.json + bidirectional propagation for project entities | P1 | Backend / Intelligence |
 | **I389** | Entity-mode-aware surface ordering — nav/primary surface adapts to preset's entityModeDefault | P2 | Frontend / UX |
 | **I390** | Person relationship graph — `person_relationships` table, typed edges, confidence scoring, context scoping | P1 | Backend / Entity |
@@ -110,11 +110,11 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ~~I428~~ | ~~Offline/degraded mode — serve cached intelligence gracefully when APIs unavailable; system status indicator~~ — done | — | — |
 | ~~I429~~ | ~~Data export — JSON ZIP export of entities, signals, intelligence; portability guarantee~~ — done | — | — |
 | ~~I430~~ | ~~Privacy clarity — Settings section explaining what's stored, how long, clear intelligence + delete all data options~~ — done | — | — |
-| **I431** | Cost visibility — Claude call tracking, estimated weekly cost breakdown in Settings | P2 | Backend + Frontend |
+| ~~I431~~ | ~~Cost visibility — Claude call tracking, estimated weekly cost~~ — archived (nice-to-have, deferred indefinitely) | — | — |
 | **I432** | IntelligenceProvider abstraction — multi-LLM backend trait replacing direct PtyManager calls in intel_queue | P1 | Backend / Architecture |
 | **I433** | Ollama provider — local LLM support; nothing leaves the device when Ollama is selected | P1 | Backend / Intelligence |
 | **I434** | OpenAI API provider — GPT-4o with user-supplied key; shares HTTP client with Ollama (OpenAI-compatible) | P2 | Backend / Intelligence |
-| **I435** | Token optimization — audit ModelTier usage; Haiku for email enrichment; quality-gated entity enrichment | P1 | Backend |
+| ~~I435~~ | ~~Token optimization — audit ModelTier usage~~ — archived (nice-to-have, deferred indefinitely) | — | — |
 | ~~I436~~ | ~~Workspace file deprecation~~ — absorbed by I513 (workspace file elimination) in v1.0.0 | — | — |
 | **I437** | Empty state redesign — every surface guides action rather than reporting emptiness; role-preset-aware copy | P1 | Frontend / UX |
 | ~~I438~~ | ~~Onboarding: Prime DailyOS — first content ingestion step; manual (drop transcript/doc) or connector (Quill/Granola/Drive); teaches feeding habit before automation takes over~~ — done | — | — |
@@ -137,7 +137,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I455** | 1:1 meeting prep focuses on person entity intelligence, not account | P1 | Backend / Intelligence |
 | **I456** | In-app markdown reader for entity documents — view .md files from account/project/person Documents/ without leaving app | P2 | Frontend / UX |
 | **I457** | Background task throttling — ActivityMonitor, HeavyWorkSemaphore, adaptive polling intervals | P1 | Backend / Performance |
-| **I475** | Inbox entity-gating follow-ups — transcript NeedsEntity path, onAssignEntity result check, enrich.rs redundant DB, action account validation | P2 | Backend / Pipeline + Frontend / UX |
+| ~~I475~~ | ~~Inbox entity-gating follow-ups~~ — archived (re-raise if bugs surface) | — | — |
 | **I477** | Meeting entity switch should hot-swap briefing content — stale disk fallback guard + single mutation-and-refresh service | P1 | Backend / Meeting + Frontend / UX |
 | **I478** | Remove feature toggle section from Advanced Settings — internal dev knobs, not user-facing | P1 | Frontend / Settings + Backend / Config |
 | ~~I479~~ | ~~ContextProvider trait + LocalContextProvider — pure refactor~~ — done in v0.15.2 | P1 | Backend / Architecture |
