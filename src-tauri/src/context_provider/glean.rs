@@ -20,6 +20,8 @@ use crate::intelligence::IntelligenceJson;
 
 /// Timeout for individual Glean API calls.
 const GLEAN_CALL_TIMEOUT: Duration = Duration::from_secs(10);
+/// I535: Longer timeout for Glean `chat` tool — AI synthesis takes 10-30s.
+const GLEAN_CHAT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Maximum documents to fetch per entity context gather.
 const MAX_DOCUMENTS_PER_ENTITY: usize = 10;
@@ -283,6 +285,147 @@ impl GleanMcpClient {
             .map(|s| s.to_string());
 
         Ok(content)
+    }
+
+    /// I535: AI-powered chat for structured intelligence queries.
+    ///
+    /// Calls the Glean MCP `chat` tool which synthesizes across all connected
+    /// data sources (Salesforce, Zendesk, Gong, Slack, etc.) with multi-step
+    /// reasoning. Returns the final AI-generated text response.
+    ///
+    /// Uses a longer timeout (60s) than search (10s) because AI synthesis
+    /// involves multiple internal search + read steps.
+    ///
+    /// The response is the raw text from Glean's AI — callers are responsible
+    /// for parsing JSON if they requested structured output.
+    pub async fn chat(
+        &self,
+        message: &str,
+        context: Option<Vec<String>>,
+    ) -> Result<String, ContextError> {
+        let token = self.get_token()?;
+
+        let mut arguments = serde_json::json!({
+            "message": message,
+        });
+        if let Some(ctx) = context {
+            arguments["context"] = serde_json::json!(ctx);
+        }
+
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "chat",
+                "arguments": arguments
+            }
+        });
+
+        // Build a client with the longer chat timeout
+        let chat_client = reqwest::Client::builder()
+            .timeout(GLEAN_CHAT_TIMEOUT)
+            .build()
+            .unwrap_or_default();
+
+        let response = chat_client
+            .post(&self.endpoint)
+            .bearer_auth(&token)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    ContextError::Timeout(format!("Glean chat timed out after 60s: {}", e))
+                } else if e.is_status() {
+                    ContextError::Auth(format!("Glean chat auth error: {}", e))
+                } else {
+                    ContextError::Other(format!("Glean chat failed: {}", e))
+                }
+            })?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(ContextError::Auth(format!(
+                "Glean chat returned {}",
+                status
+            )));
+        }
+
+        let json: serde_json::Value = response.json().await.map_err(|e| {
+            ContextError::Other(format!("Failed to parse Glean chat response: {}", e))
+        })?;
+
+        // The chat tool returns a different structure than search:
+        // { "result": { "content": [{ "type": "text", "text": "{\"messages\":[...]}" }] } }
+        // Inside the text field is a JSON object with a `messages` array.
+        // We need the last GLEAN_AI message that isn't an UPDATE (search step).
+        let content_text = json
+            .get("result")
+            .and_then(|r| r.get("content"))
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|item| item.get("text"))
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| {
+                // Check for error response
+                if let Some(err) = json.get("error") {
+                    ContextError::Other(format!("Glean chat error: {}", err))
+                } else {
+                    ContextError::Other("Glean chat returned empty response".to_string())
+                }
+            })?;
+
+        // Check if content_text is an error message
+        if content_text.starts_with("Error running tool") {
+            return Err(ContextError::Other(format!(
+                "Glean chat tool error: {}",
+                content_text
+            )));
+        }
+
+        // Try to parse the messages envelope and extract the final AI response
+        if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(content_text) {
+            if let Some(messages) = envelope.get("messages").and_then(|m| m.as_array()) {
+                // Find the last GLEAN_AI message that is CONTENT type (not UPDATE)
+                for msg in messages.iter().rev() {
+                    let is_ai = msg
+                        .get("author")
+                        .and_then(|a| a.as_str())
+                        .map(|a| a == "GLEAN_AI")
+                        .unwrap_or(false);
+                    let is_content = msg
+                        .get("messageType")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t != "UPDATE")
+                        .unwrap_or(true);
+
+                    if is_ai && is_content {
+                        // Concatenate all text fragments from this message
+                        let text = msg
+                            .get("fragments")
+                            .and_then(|f| f.as_array())
+                            .map(|frags| {
+                                frags
+                                    .iter()
+                                    .filter_map(|f| f.get("text").and_then(|t| t.as_str()))
+                                    .collect::<Vec<_>>()
+                                    .join("")
+                            })
+                            .unwrap_or_default();
+
+                        if !text.is_empty() {
+                            return Ok(text);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: return the raw content text (might already be the final answer)
+        Ok(content_text.to_string())
     }
 }
 
@@ -1056,5 +1199,9 @@ impl ContextProvider for GleanContextProvider {
 
     fn is_remote(&self) -> bool {
         true
+    }
+
+    fn remote_endpoint(&self) -> Option<&str> {
+        Some(&self.endpoint)
     }
 }

@@ -26,7 +26,7 @@ const MAX_CONTEXT_BYTES: usize = 10_000;
 // =============================================================================
 
 /// Assembled signals for the intelligence enrichment prompt.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct IntelligenceContext {
     /// Structured facts (ARR/health/lifecycle or status/milestone/owner).
     pub facts_block: String,
