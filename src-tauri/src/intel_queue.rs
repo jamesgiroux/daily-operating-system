@@ -46,8 +46,10 @@ pub enum IntelPriority {
     ContentChange = 1,
     /// Triggered by calendar changes affecting this entity's meetings.
     CalendarChange = 2,
+    /// Onboarding batch import — higher than content, lower than manual (I561).
+    Onboarding = 3,
     /// User clicked "Refresh Intelligence" manually.
-    Manual = 3,
+    Manual = 4,
 }
 
 /// A request to enrich an entity's intelligence.
@@ -340,6 +342,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             entity_names,
         );
 
+        // I571: Emit background work status for frontend indicator
+        let _ = app.emit(
+            "background-work-status",
+            serde_json::json!({
+                "phase": "started",
+                "message": "Updating insights…",
+                "count": batch.len(),
+            }),
+        );
+
         // Audit: entity enrichment started
         if let Ok(mut audit) = state.audit_log.lock() {
             let _ = audit.append(
@@ -389,10 +401,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // Phase 2: Run PTY enrichment (no DB lock held)
         // Acquire heavy-work semaphore — limits concurrent expensive operations
         // (PTY subprocess, embedding inference) to one at a time.
-        let _permit = match state.heavy_work_semaphore.acquire().await {
+        let _permit = match state.permits.pty.acquire().await {
             Ok(permit) => permit,
             Err(_) => {
-                log::warn!("IntelProcessor: heavy_work_semaphore closed, stopping");
+                log::warn!("IntelProcessor: pty permit closed, stopping");
                 return;
             }
         };
@@ -418,15 +430,31 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 run_glean_enrichment_with_fallback(inputs, &ai_config, &state, &app).await
             } else {
                 // I574: Per-entity enrichment (tries parallel fan-out, falls back to legacy)
+                // I564: Run PTY enrichment on blocking threads to avoid stalling Tokio workers.
                 let mut entity_results = Vec::new();
                 for (request, input) in inputs {
-                    match run_enrichment(&input, &ai_config, Some(&app)) {
-                        Ok(parsed) => entity_results.push((request, input, parsed)),
-                        Err(e) => {
+                    let ai_cfg = ai_config.clone();
+                    let input_clone = input.clone();
+                    let app_clone = app.clone();
+                    match tauri::async_runtime::spawn_blocking(move || {
+                        run_enrichment(&input_clone, &ai_cfg, Some(&app_clone))
+                    })
+                    .await
+                    {
+                        Ok(Ok(parsed)) => entity_results.push((request, input, parsed)),
+                        Ok(Err(e)) => {
                             let category = categorize_enrichment_error(&e);
                             error_categories.insert(request.entity_id.clone(), category);
                             log::warn!(
                                 "IntelProcessor: enrichment failed for {}: {}",
+                                request.entity_id,
+                                e
+                            );
+                        }
+                        Err(e) => {
+                            error_categories.insert(request.entity_id.clone(), "panic");
+                            log::error!(
+                                "IntelProcessor: enrichment task panicked for {}: {}",
                                 request.entity_id,
                                 e
                             );
@@ -652,6 +680,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 written_intel.recent_wins.len(),
             );
         }
+
+        // I571: Emit completion status for frontend indicator
+        let _ = app.emit(
+            "background-work-status",
+            serde_json::json!({
+                "phase": "completed",
+                "message": "Insights updated",
+                "count": results.len(),
+            }),
+        );
     }
 }
 
@@ -928,10 +966,20 @@ async fn run_glean_enrichment_with_fallback(
             log::warn!("[I535] Glean mode active but no endpoint found, falling back to PTY");
             let mut fallback_results = Vec::new();
             for (request, input) in inputs {
-                match run_enrichment(&input, ai_config, None) {
-                    Ok(parsed) => fallback_results.push((request, input, parsed)),
-                    Err(e) => {
+                // I564: PTY calls on blocking threads
+                let ai_cfg = ai_config.clone();
+                let input_clone = input.clone();
+                match tauri::async_runtime::spawn_blocking(move || {
+                    run_enrichment(&input_clone, &ai_cfg, None)
+                })
+                .await
+                {
+                    Ok(Ok(parsed)) => fallback_results.push((request, input, parsed)),
+                    Ok(Err(e)) => {
                         log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
+                    }
+                    Err(e) => {
+                        log::error!("PTY fallback panicked for {}: {}", request.entity_id, e);
                     }
                 }
             }
@@ -1014,16 +1062,26 @@ async fn run_glean_enrichment_with_fallback(
     }
 
     // Run PTY enrichment for all entities that Glean failed on
+    // I564: PTY calls on blocking threads
     if !pty_fallback_inputs.is_empty() {
         log::info!(
             "[I535] Running PTY fallback for {} entities",
             pty_fallback_inputs.len()
         );
         for (request, input) in pty_fallback_inputs {
-            match run_enrichment(&input, ai_config, None) {
-                Ok(parsed) => results.push((request, input, parsed)),
-                Err(e) => {
+            let ai_cfg = ai_config.clone();
+            let input_clone = input.clone();
+            match tauri::async_runtime::spawn_blocking(move || {
+                run_enrichment(&input_clone, &ai_cfg, None)
+            })
+            .await
+            {
+                Ok(Ok(parsed)) => results.push((request, input, parsed)),
+                Ok(Err(e)) => {
                     log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
+                }
+                Err(e) => {
+                    log::error!("PTY fallback panicked for {}: {}", request.entity_id, e);
                 }
             }
         }
@@ -1522,11 +1580,30 @@ pub fn write_enrichment_results(
         });
     }
 
-    // Write intelligence.json to disk (no DB needed)
-    write_intelligence_json(&input.entity_dir, &final_intel)?;
-
-    // Own DB connection for cache update
+    // Own DB connection for cache update + user-fact reconciliation
     let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
+
+    // Reconcile user-entered facts with AI-inferred values.
+    // User-edited fields (source weight 1.0) override AI guesses.
+    if input.entity_type == "account" {
+        if let Ok(Some(account)) = db.get_account(&input.entity_id) {
+            if let Some(user_arr) = account.arr {
+                let cc = final_intel.contract_context.get_or_insert_with(Default::default);
+                if cc.current_arr != Some(user_arr) {
+                    log::info!(
+                        "[intel_queue] Overriding AI currentArr ({:?}) with user ARR ({}) for {}",
+                        cc.current_arr,
+                        user_arr,
+                        input.entity_id,
+                    );
+                    cc.current_arr = Some(user_arr);
+                }
+            }
+        }
+    }
+
+    // Write intelligence.json to disk
+    write_intelligence_json(&input.entity_dir, &final_intel)?;
     crate::services::intelligence::upsert_assessment_from_enrichment(
         &db,
         &_state.signals.engine,
