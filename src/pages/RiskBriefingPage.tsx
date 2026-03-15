@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import {
   AlignLeft,
@@ -30,6 +31,7 @@ import { WhatHappenedSlide } from "@/components/risk-briefing/WhatHappenedSlide"
 import { StakesSlide } from "@/components/risk-briefing/StakesSlide";
 import { ThePlanSlide } from "@/components/risk-briefing/ThePlanSlide";
 import { TheAskSlide } from "@/components/risk-briefing/TheAskSlide";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import type {
   RiskBriefing,
   RiskBottomLine,
@@ -56,6 +58,8 @@ export default function RiskBriefingPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [genSeconds, setGenSeconds] = useState(0);
+  const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
+  const [currentPhaseKey, setCurrentPhaseKey] = useState<string>("gathering");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,6 +132,8 @@ export default function RiskBriefingPage() {
     setGenerating(true);
     setGenSeconds(0);
     setError(null);
+    setCompletedSections(new Set());
+    setCurrentPhaseKey("gathering");
     window.scrollTo({ top: 0, behavior: "instant" });
 
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
@@ -142,6 +148,36 @@ export default function RiskBriefingPage() {
       if (timerRef.current) clearInterval(timerRef.current);
     }
   }, [accountId, generating]);
+
+  useEffect(() => {
+    if (!generating) return;
+
+    let unlistenContent: UnlistenFn | null = null;
+
+    listen<RiskBriefing>("risk-briefing-content", (event) => {
+      if (event.payload.accountId !== accountId) return;
+      setBriefing(event.payload);
+    }).then((fn) => {
+      unlistenContent = fn;
+    });
+
+    return () => {
+      if (unlistenContent) unlistenContent();
+    };
+  }, [accountId, generating]);
+
+  const handleRiskProgress = useCallback((payload: {
+    accountId: string;
+    sectionName: string;
+    completed: number;
+    total: number;
+  }) => {
+    if (!accountId || payload.accountId !== accountId) return;
+    setCompletedSections((prev) => new Set([...prev, payload.sectionName]));
+    setCurrentPhaseKey(payload.sectionName);
+  }, [accountId]);
+
+  useTauriEvent("risk-briefing-progress", handleRiskProgress);
 
   // Register magazine shell (after handleGenerate so folioActions can reference it)
   const shellConfig = useMemo(
@@ -310,13 +346,24 @@ export default function RiskBriefingPage() {
   }
 
   // Generating state
-  if (generating) {
+  if (generating && !briefing) {
+    const phaseMap: Record<string, string> = {
+      bottomLine: "building",
+      whatHappened: "reading",
+      stakes: "mapping",
+      thePlan: "planning",
+      theAsk: "finalizing",
+    };
     return (
       <GeneratingProgress
         title="Building Risk Briefing"
         accentColor="var(--color-spice-terracotta)"
         phases={ANALYSIS_PHASES}
-        currentPhaseKey={ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key}
+        currentPhaseKey={
+          completedSections.size > 0
+            ? (phaseMap[currentPhaseKey] ?? "gathering")
+            : ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key
+        }
         quotes={EDITORIAL_QUOTES}
         elapsed={genSeconds}
       />
@@ -423,4 +470,3 @@ const EDITORIAL_QUOTES = [
   "What gets measured gets managed.",
   "The most dangerous phrase is: we've always done it this way.",
 ];
-
