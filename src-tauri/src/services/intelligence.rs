@@ -379,11 +379,46 @@ pub async fn update_stakeholders(
                 account.as_ref(),
             )?;
 
+            // Capture linked stakeholders with scoring-relevant roles before
+            // the vec is consumed by apply_stakeholders_update.
+            let scoring_roles: Vec<(String, String)> = if entity_type == "account" {
+                stakeholders
+                    .iter()
+                    .filter_map(|s| {
+                        let role = s.role.as_deref().unwrap_or("").to_lowercase();
+                        let person_id = s.person_id.as_deref()?;
+                        if role.contains("champion")
+                            || role.contains("executive")
+                            || role.contains("technical")
+                            || role.contains("decision")
+                        {
+                            Some((person_id.to_string(), role))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             let intel = crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?;
 
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
+
+                // Sync scoring-relevant stakeholder roles to account_stakeholders
+                // so health scoring (champion health, stakeholder coverage) picks them up.
+                for (person_id, role) in &scoring_roles {
+                    tx.add_account_team_member(&entity_id, person_id, role)
+                        .map_err(|e| {
+                            log::warn!("Stakeholder sync to account_stakeholders failed for {person_id}: {e}");
+                            e.to_string()
+                        })
+                        .ok(); // Non-fatal — don't fail the whole update
+                }
+
                 crate::services::signals::emit_and_propagate(
                     tx,
                     &engine,
