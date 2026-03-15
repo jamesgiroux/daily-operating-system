@@ -16,7 +16,6 @@ interface ContextModeLocal {
 interface ContextModeGlean {
   mode: "Glean";
   endpoint: string;
-  strategy: "Additive" | "Governed";
 }
 
 type ContextMode = ContextModeLocal | ContextModeGlean;
@@ -28,9 +27,6 @@ type ContextMode = ContextModeLocal | ContextModeGlean;
 export default function ContextSourceSection() {
   const [mode, setMode] = useState<ContextMode>({ mode: "Local" });
   const [endpoint, setEndpoint] = useState("");
-  const [strategy, setStrategy] = useState<"Additive" | "Governed">(
-    "Additive"
-  );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
@@ -43,7 +39,6 @@ export default function ContextSourceSection() {
       setMode(currentMode);
       if (currentMode.mode === "Glean") {
         setEndpoint(currentMode.endpoint);
-        setStrategy(currentMode.strategy);
       }
     } catch {
       // DB not ready yet — defaults are fine
@@ -68,7 +63,6 @@ export default function ContextSourceSection() {
       const newMode: ContextModeGlean = {
         mode: "Glean",
         endpoint: endpoint.trim(),
-        strategy,
       };
       await invoke("set_context_mode", { mode: newMode });
       setMode(newMode);
@@ -313,54 +307,7 @@ export default function ContextSourceSection() {
             </button>
           ) : (
             <>
-              {/* Strategy (only shown after connected) */}
-              <label style={styles.fieldLabel}>Strategy</label>
-              <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                    color: "var(--color-text-secondary)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="glean-strategy"
-                    checked={strategy === "Additive"}
-                    onChange={() => {
-                      setStrategy("Additive");
-                      setDirty(true);
-                    }}
-                  />
-                  Additive
-                </label>
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                    color: "var(--color-text-secondary)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="glean-strategy"
-                    checked={strategy === "Governed"}
-                    onChange={() => {
-                      setStrategy("Governed");
-                      setDirty(true);
-                    }}
-                  />
-                  Governed
-                </label>
-              </div>
+              {/* Mode info */}
               <p
                 style={{
                   fontFamily: "var(--font-sans)",
@@ -369,9 +316,7 @@ export default function ContextSourceSection() {
                   margin: "0 0 16px",
                 }}
               >
-                {strategy === "Additive"
-                  ? "Glean is the primary context source. Local sources (Gmail, Calendar) are still active."
-                  : "Glean is the only context source. Gmail polling and local file processing are disabled."}
+                Glean is the primary context source. Local sources (Gmail, Calendar) are still active.
               </p>
 
               {/* Actions */}
