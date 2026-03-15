@@ -759,6 +759,10 @@ pub fn run() {
             commands::dev_explore_glean_tools,
             // I535 Step 9: Discover accounts from Glean
             commands::discover_accounts_from_glean,
+            // I561: Onboarding — Three Connectors
+            commands::onboarding_import_accounts,
+            commands::onboarding_prefill_profile,
+            commands::onboarding_enrichment_status,
             // I495: Ephemeral Account Query via Glean
             commands::query_ephemeral_account,
             // I427: Global Search
