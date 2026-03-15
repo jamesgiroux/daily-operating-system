@@ -232,8 +232,10 @@ pub fn run_hygiene_scan(
 
     // --- Phase 3: AI-budgeted gap filling (self-healing portfolio evaluation) ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
-        report.fixes.ai_enrichments_enqueued =
-            crate::self_healing::evaluate_portfolio(db, budget, queue, embedding_model);
+        let (risk_gap_count, details) = enqueue_glean_risk_gap_fills(db, budget, queue);
+        all_details.extend(details);
+        report.fixes.ai_enrichments_enqueued = risk_gap_count
+            + crate::self_healing::evaluate_portfolio(db, budget, queue, embedding_model);
     }
 
     // Truncate details to max and store on report
@@ -663,29 +665,77 @@ fn count_empty_shell_accounts(db: &ActionDb) -> usize {
         .unwrap_or(0)
 }
 
+fn enqueue_glean_risk_gap_fills(
+    db: &ActionDb,
+    budget: &crate::state::HygieneBudget,
+    queue: &crate::intel_queue::IntelligenceQueue,
+) -> (usize, Vec<HygieneFixDetail>) {
+    if !matches!(
+        crate::context_provider::read_context_mode(db),
+        crate::context_provider::ContextMode::Glean { .. }
+    ) {
+        return (0, Vec::new());
+    }
+
+    let mut stmt = match db.conn_ref().prepare(
+        "SELECT a.id, a.name
+         FROM accounts a
+         INNER JOIN entity_assessment ea ON ea.entity_id = a.id AND ea.entity_type = 'account'
+         WHERE a.archived = 0
+           AND (
+               ea.risks_json IS NULL
+               OR TRIM(ea.risks_json) = ''
+               OR TRIM(ea.risks_json) = '[]'
+           )
+         ORDER BY a.updated_at DESC",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return (0, Vec::new()),
+    };
+
+    let candidates: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map(|rows| rows.filter_map(|row| row.ok()).collect())
+        .unwrap_or_default();
+
+    let mut enqueued = 0usize;
+    let mut details = Vec::new();
+
+    for (entity_id, name) in candidates {
+        if !budget.try_consume() {
+            break;
+        }
+
+        queue.enqueue(crate::intel_queue::IntelRequest::new(
+            entity_id,
+            "account".to_string(),
+            crate::intel_queue::IntelPriority::ProactiveHygiene,
+        ));
+        details.push(HygieneFixDetail {
+            fix_type: "glean_risk_gap_fill".to_string(),
+            entity_name: Some(name.clone()),
+            description: format!(
+                "Queued targeted Glean gap-fill for '{}' because risks were empty",
+                name
+            ),
+        });
+        enqueued += 1;
+    }
+
+    (enqueued, details)
+}
+
 // =============================================================================
 // Phase 2: Email Name Resolution + Domain Linking (I146)
 // =============================================================================
 
-/// Resolve unnamed people from email From headers in emails.json.
+/// Resolve unnamed people from sender names stored in the emails table.
 ///
-/// Reads `_today/data/emails.json` (created by daily briefing), extracts display
-/// names from From headers, and updates people who only have email-derived names.
+/// Uses SQLite as the single source of truth and never depends on `_today/data/emails.json`.
 pub fn resolve_names_from_emails(
     db: &ActionDb,
-    workspace: &Path,
+    _workspace: &Path,
 ) -> (usize, Vec<HygieneFixDetail>) {
-    let emails_path = workspace.join("_today").join("data").join("emails.json");
-    let raw = match std::fs::read_to_string(&emails_path) {
-        Ok(r) => r,
-        Err(_) => return (0, Vec::new()),
-    };
-
-    let data: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(d) => d,
-        Err(_) => return (0, Vec::new()),
-    };
-
     // Get unnamed people to match against
     let unnamed = match db.get_unnamed_people() {
         Ok(p) if !p.is_empty() => p,
@@ -697,40 +747,44 @@ pub fn resolve_names_from_emails(
     let mut resolved = 0;
     let mut details = Vec::new();
 
-    // Scan all email categories
-    for key in &["highPriority", "mediumPriority", "lowPriority"] {
-        if let Some(emails) = data.get(key).and_then(|v| v.as_array()) {
-            for email in emails {
-                let from = match email.get("from").and_then(|v| v.as_str()) {
-                    Some(f) => f,
-                    None => continue,
-                };
+    let mut stmt = match db.conn_ref().prepare(
+        "SELECT DISTINCT sender_email, sender_name
+         FROM emails
+         WHERE sender_email IS NOT NULL
+           AND sender_name IS NOT NULL
+           AND TRIM(sender_name) != ''",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return (0, Vec::new()),
+    };
 
-                // Extract display name and email address
-                let display_name = match crate::prepare::email_classify::extract_display_name(from)
-                {
-                    Some(n) => n,
-                    None => continue,
-                };
-                let addr = crate::prepare::email_classify::extract_email_address(from);
+    let rows = match stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return (0, Vec::new()),
+    };
 
-                // Only update if this person is in our unnamed set
-                if !unnamed_emails.contains(&addr) {
-                    continue;
-                }
+    for row in rows.flatten() {
+        let (addr, display_name) = row;
+        let addr = addr.to_lowercase();
+        if !unnamed_emails.contains(&addr) {
+            continue;
+        }
 
-                let person_id = crate::util::person_id_from_email(&addr);
-                if crate::services::hygiene::update_person_name(db, &person_id, &display_name)
-                    .is_ok()
-                {
-                    details.push(HygieneFixDetail {
-                        fix_type: "name_resolved".to_string(),
-                        entity_name: Some(display_name.clone()),
-                        description: format!("Resolved {}'s name from {}", display_name, addr),
-                    });
-                    resolved += 1;
-                }
-            }
+        let cleaned_name = display_name.trim();
+        if cleaned_name.is_empty() {
+            continue;
+        }
+
+        let person_id = crate::util::person_id_from_email(&addr);
+        if crate::services::hygiene::update_person_name(db, &person_id, cleaned_name).is_ok() {
+            details.push(HygieneFixDetail {
+                fix_type: "name_resolved".to_string(),
+                entity_name: Some(cleaned_name.to_string()),
+                description: format!("Resolved {}'s name from {}", cleaned_name, addr),
+            });
+            resolved += 1;
         }
     }
 
@@ -1529,7 +1583,6 @@ pub struct OvernightReport {
 }
 
 /// Run an expanded overnight scan with higher AI budget.
-/// Writes maintenance.json for the morning briefing to reference.
 pub fn run_overnight_scan(
     db: &ActionDb,
     config: &Config,
@@ -1560,15 +1613,6 @@ pub fn run_overnight_scan(
         summaries_extracted: report.fixes.summaries_extracted,
         relationships_reclassified: report.fixes.relationships_reclassified,
     };
-
-    // Write maintenance.json for morning briefing
-    let maintenance_path = workspace
-        .join("_today")
-        .join("data")
-        .join("maintenance.json");
-    if let Ok(json) = serde_json::to_string_pretty(&overnight) {
-        let _ = crate::util::atomic_write_str(&maintenance_path, &json);
-    }
 
     overnight
 }
@@ -2655,17 +2699,13 @@ mod tests {
             "external",
         );
 
-        // Create workspace with emails.json
-        let workspace = tempfile::tempdir().unwrap();
-        let data_dir = workspace.path().join("_today").join("data");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        std::fs::write(
-            data_dir.join("emails.json"),
-            r#"{"highPriority": [{"from": "Jane Doe <jane@customer.com>", "subject": "Hi"}]}"#,
-        )
-        .unwrap();
+        db.conn_ref().execute(
+            "INSERT INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, created_at, updated_at)
+             VALUES ('em-1', 'th-1', 'jane@customer.com', 'Jane Doe', 'Hi', '', 'high_priority', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            [],
+        ).unwrap();
 
-        let (resolved, _) = resolve_names_from_emails(&db, workspace.path());
+        let (resolved, _) = resolve_names_from_emails(&db, Path::new("/unused"));
         assert_eq!(resolved, 1);
 
         let person = db.get_person("jane-customer-com").unwrap().unwrap();
@@ -2690,17 +2730,14 @@ mod tests {
             "external",
         );
 
-        let workspace = tempfile::tempdir().unwrap();
-        let data_dir = workspace.path().join("_today").join("data");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        std::fs::write(
-            data_dir.join("emails.json"),
-            r#"{"highPriority": [{"from": "Jane Doe <jane@customer.com>", "subject": "Hi"}]}"#,
-        )
-        .unwrap();
+        db.conn_ref().execute(
+            "INSERT INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, created_at, updated_at)
+             VALUES ('em-2', 'th-2', 'jane@customer.com', 'Jane Doe', 'Hi', '', 'high_priority', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            [],
+        ).unwrap();
 
         // "Jane Doe" has spaces so not in unnamed set
-        let (resolved, _) = resolve_names_from_emails(&db, workspace.path());
+        let (resolved, _) = resolve_names_from_emails(&db, Path::new("/unused"));
         assert_eq!(resolved, 0);
     }
 
@@ -2909,14 +2946,10 @@ mod tests {
     }
 
     #[test]
-    fn test_overnight_scan_produces_maintenance_json() {
+    fn test_overnight_scan_returns_report_without_writing_filesystem_artifact() {
         let db = test_db();
         let queue = crate::intel_queue::IntelligenceQueue::new();
         let workspace = tempfile::tempdir().unwrap();
-
-        // Create _today/data dir
-        let data_dir = workspace.path().join("_today").join("data");
-        std::fs::create_dir_all(&data_dir).unwrap();
 
         let config = Config {
             workspace_path: workspace.path().to_string_lossy().to_string(),
@@ -2928,15 +2961,8 @@ mod tests {
 
         // Report should have a timestamp
         assert!(!report.ran_at.is_empty());
-
-        // maintenance.json should exist
-        let maint_path = data_dir.join("maintenance.json");
-        assert!(maint_path.exists());
-
-        // Should be valid JSON
-        let content = std::fs::read_to_string(&maint_path).unwrap();
-        let parsed: OvernightReport = serde_json::from_str(&content).unwrap();
-        assert!(!parsed.ran_at.is_empty());
+        let maint_path = workspace.path().join("_today").join("data").join("maintenance.json");
+        assert!(!maint_path.exists());
     }
 
     #[test]

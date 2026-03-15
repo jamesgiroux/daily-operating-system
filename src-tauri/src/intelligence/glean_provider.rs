@@ -8,6 +8,8 @@
 //! The provider is called from `intel_queue.rs` when `context_provider.is_remote()`.
 //! On failure, the caller falls back to the PTY path transparently.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
@@ -26,6 +28,20 @@ use serde::{Deserialize, Serialize};
 /// `parse_intelligence_response()` — the same parser used for PTY output.
 pub struct GleanIntelligenceProvider {
     endpoint: String,
+}
+
+const DISCOVERY_CACHE_TTL: Duration = Duration::from_secs(4 * 60 * 60);
+
+#[derive(Debug, Clone)]
+struct DiscoveryCacheEntry {
+    cached_at: Instant,
+    accounts: Vec<DiscoveredAccount>,
+}
+
+static DISCOVERY_CACHE: OnceLock<Mutex<HashMap<String, DiscoveryCacheEntry>>> = OnceLock::new();
+
+fn discovery_cache() -> &'static Mutex<HashMap<String, DiscoveryCacheEntry>> {
+    DISCOVERY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// I535: Canonical `DiscoveredAccount` type (referenced by I494, I561).
@@ -471,6 +487,20 @@ impl GleanIntelligenceProvider {
         user_email: &str,
         user_name: &str,
     ) -> Result<Vec<DiscoveredAccount>, String> {
+        let cache_key = format!("{}::{}", self.endpoint, user_email.to_lowercase());
+        if let Ok(cache) = discovery_cache().lock() {
+            if let Some(entry) = cache.get(&cache_key) {
+                if entry.cached_at.elapsed() < DISCOVERY_CACHE_TTL {
+                    log::info!(
+                        "[I494] Using cached Glean discovery results for {} ({} accounts)",
+                        user_email,
+                        entry.accounts.len()
+                    );
+                    return Ok(entry.accounts.clone());
+                }
+            }
+        }
+
         let prompt =
             super::glean_prompts::build_account_discovery_prompt(user_email, user_name);
 
@@ -494,6 +524,16 @@ impl GleanIntelligenceProvider {
             discovery.accounts.len(),
             user_email
         );
+
+        if let Ok(mut cache) = discovery_cache().lock() {
+            cache.insert(
+                cache_key,
+                DiscoveryCacheEntry {
+                    cached_at: Instant::now(),
+                    accounts: discovery.accounts.clone(),
+                },
+            );
+        }
 
         Ok(discovery.accounts)
     }
@@ -573,6 +613,14 @@ pub fn emit_glean_signals(
 ) {
     use crate::signals::bus::{emit_signal, emit_signal_and_propagate};
 
+    fn source_mentions_slack(source: Option<&str>) -> bool {
+        source
+            .map(|value| value.to_lowercase())
+            .is_some_and(|value| value.contains("slack"))
+    }
+
+    let mut slack_context: Vec<String> = Vec::new();
+
     // CRM / Salesforce data at 0.9 — system of record
     if let Some(ref org) = intel.org_health {
         if let Ok(value) = serde_json::to_string(org) {
@@ -622,6 +670,18 @@ pub fn emit_glean_signals(
                 0.7,
             );
         }
+        slack_context.extend(
+            intel.competitive_context
+                .iter()
+                .filter(|item| {
+                    source_mentions_slack(item.source.as_deref())
+                        || item
+                            .item_source
+                            .as_ref()
+                            .is_some_and(|source| source.source == "glean_slack")
+                })
+                .map(|item| format!("competitive: {}", item.competitor)),
+        );
     }
 
     // Org changes at 0.8 — stakeholder movements
@@ -638,6 +698,18 @@ pub fn emit_glean_signals(
                 0.8,
             );
         }
+        slack_context.extend(
+            intel.organizational_changes
+                .iter()
+                .filter(|item| {
+                    source_mentions_slack(item.source.as_deref())
+                        || item
+                            .item_source
+                            .as_ref()
+                            .is_some_and(|source| source.source == "glean_slack")
+                })
+                .map(|item| format!("org_change: {}", item.person)),
+        );
     }
 
     // Gong call summaries at 0.8 — engagement patterns from recorded calls
@@ -656,9 +728,86 @@ pub fn emit_glean_signals(
         }
     }
 
-    // TODO: Slack signals at 0.5 (ADR-0100 tier) deferred until Glean exposes
-    // Slack data as a separate structured field. Currently Slack content is mixed
-    // into the AI synthesis and emitted under "glean_chat" at 0.7.
+    slack_context.extend(
+        intel.risks
+            .iter()
+            .filter(|item| {
+                source_mentions_slack(item.source.as_deref())
+                    || item
+                        .item_source
+                        .as_ref()
+                        .is_some_and(|source| source.source == "glean_slack")
+            })
+            .map(|item| format!("risk: {}", item.text)),
+    );
+    slack_context.extend(
+        intel.recent_wins
+            .iter()
+            .filter(|item| {
+                source_mentions_slack(item.source.as_deref())
+                    || item
+                        .item_source
+                        .as_ref()
+                        .is_some_and(|source| source.source == "glean_slack")
+            })
+            .map(|item| format!("win: {}", item.text)),
+    );
+    slack_context.extend(
+        intel.stakeholder_insights
+            .iter()
+            .filter(|item| {
+                source_mentions_slack(item.source.as_deref())
+                    || item
+                        .item_source
+                        .as_ref()
+                        .is_some_and(|source| source.source == "glean_slack")
+            })
+            .map(|item| format!("stakeholder: {}", item.name)),
+    );
+    if let Some(open_commitments) = intel.open_commitments.as_ref() {
+        slack_context.extend(
+            open_commitments
+                .iter()
+                .filter(|item| {
+                    source_mentions_slack(item.source.as_deref())
+                        || item
+                            .item_source
+                            .as_ref()
+                            .is_some_and(|source| source.source == "glean_slack")
+                })
+                .map(|item| format!("commitment: {}", item.description)),
+        );
+    }
+    slack_context.extend(
+        intel.expansion_signals
+            .iter()
+            .filter(|item| {
+                source_mentions_slack(item.source.as_deref())
+                    || item
+                        .item_source
+                        .as_ref()
+                        .is_some_and(|source| source.source == "glean_slack")
+            })
+            .map(|item| format!("expansion: {}", item.opportunity)),
+    );
+
+    if !slack_context.is_empty() {
+        let payload = serde_json::json!({
+            "items": slack_context,
+            "count": slack_context.len(),
+        })
+        .to_string();
+        let _ = emit_signal_and_propagate(
+            db,
+            engine,
+            entity_type,
+            entity_id,
+            "slack_context_updated",
+            "glean_slack",
+            Some(&payload),
+            0.5,
+        );
+    }
 
     // Champion health at 0.8 — if champion is weak or lost, emit risk signal
     if let Some(ref health) = intel.health {

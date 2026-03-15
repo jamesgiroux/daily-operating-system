@@ -9,6 +9,8 @@
 use std::path::Path;
 
 use chrono::Utc;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 use std::path::PathBuf;
 
@@ -16,7 +18,10 @@ use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
 use crate::intelligence::IntelligenceContext;
 use crate::pty::{ModelTier, PtyManager};
-use crate::types::{AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover};
+use crate::types::{
+    AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover, RiskStakes, RiskTheAsk,
+    RiskThePlan, RiskWhatHappened,
+};
 use crate::util::{atomic_write_str, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
 // =============================================================================
@@ -31,9 +36,18 @@ pub struct GatheredRiskInput {
     pub account_arr: Option<f64>,
     pub account_dir: PathBuf,
     pub workspace_path: PathBuf,
-    pub prompt: String,
+    pub context_prompt: String,
     pub tam_name: Option<String>,
     pub ai_models: AiModelConfig,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RiskBriefingProgress {
+    account_id: String,
+    section_name: String,
+    completed: u32,
+    total: u32,
 }
 
 // =============================================================================
@@ -63,7 +77,7 @@ pub fn write_risk_briefing(account_dir: &Path, briefing: &RiskBriefing) -> Resul
 // Prompt Construction
 // =============================================================================
 
-fn build_risk_briefing_prompt(
+fn build_risk_briefing_context(
     account_name: &str,
     ctx: &IntelligenceContext,
     existing_intel: Option<&str>,
@@ -142,67 +156,151 @@ fn build_risk_briefing_prompt(
         prompt.push_str("\n\n");
     }
 
+    prompt
+}
+
+fn build_risk_section_prompt(context_prompt: &str, section: &str) -> String {
+    let mut prompt = String::with_capacity(context_prompt.len() + 4_000);
+    prompt.push_str(context_prompt);
     prompt.push_str("# Output Format\n\n");
     prompt.push_str(
-        "This is a SLIDE DECK for a 5-minute risk huddle. Each slide fills one screen.\n",
+        "This is a SLIDE DECK for a 5-minute risk huddle. Generate ONLY the requested section as valid JSON.\n\n",
     );
-    prompt.push_str("The story: severity → decline arc → stakes → recovery → ask.\n");
-    prompt.push_str("BREVITY IS ABSOLUTE. Every field has a hard word limit. Exceeding limits is a failure.\n\n");
-    prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences, no commentary) matching this exact schema:\n\n");
-    prompt.push_str(r#"{
-  "bottomLine": {
-    "headline": "The whole story in one breath. MAX 20 WORDS. e.g. 'Account at risk: MUV dispute blocks $308K renewal. Plan: scraping pilot plus analytics fix by April.'",
-    "riskLevel": "high|medium|low — one word ONLY",
-    "renewalWindow": "e.g. '9 weeks ending April 20' or null"
-  },
-  "whatHappened": {
-    "narrative": "EXACTLY 3 SENTENCES. MAX 60 WORDS TOTAL. Sentence 1: baseline (~15 words). Sentence 2: disruption (~20 words). Sentence 3: current state (~20 words). Cite dates and names. Do NOT write a paragraph.",
-    "healthArc": [{"period": "Q3 2025", "status": "green", "detail": "2-3 words ONLY, not a sentence"}],
-    "keyLosses": ["Max 3 items. Max 10 words each. Action title format: 'VP Eng disengaged since Jan 15'"]
-  },
-  "stakes": {
-    "financialHeadline": "ACTION HEADLINE, max 10 words. e.g. '$308K base plus $150K expansion at risk through April'",
-    "stakeholders": [
-      {
-        "name": "First Last",
-        "role": "Title",
-        "alignment": "champion|neutral|detractor|unknown",
-        "engagement": "high|medium|low|disengaged",
-        "decisionWeight": "decision_maker|influencer|user|blocker",
-        "assessment": "OMIT unless critical — badges say it"
-      }
-    ],
-    "decisionMaker": "Name, Title — max 5 words",
-    "worstCase": "One line. e.g. 'Full churn: $308K ARR loss, reference account gone'"
-  },
-  "thePlan": {
-    "strategy": "ACTION HEADLINE, max 10 words. e.g. 'Scraping pilot plus analytics fix tied to Q4 expansion'",
-    "actions": [
-      {"step": "Verb phrase, max 6 words", "owner": "Role", "timeline": "This week"}
-    ],
-    "timeline": "e.g. 'Save window: 9 weeks ending April 20'",
-    "assumptions": ["Max 2. 'If X, plan fails because Y.' Folded from red team."]
-  },
-  "theAsk": {
-    "requests": [
-      {"request": "Verb phrase, max 8 words", "urgency": "immediate|this_week|this_month", "from": "Team or role, 2 words"}
-    ],
-    "decisions": ["Max 2. Max 8 words each."],
-    "escalation": "Single line. 'If X → escalate to Y.' or null"
-  }
-}"#);
 
-    prompt.push_str("\n\n# Writing Rules\n\n");
-    prompt.push_str("1. This is a SLIDE DECK for a 5-minute risk huddle. If the exec reads only bottomLine.headline, they get the whole story.\n");
-    prompt.push_str("2. WORD LIMITS ARE HARD CONSTRAINTS. Count your words. whatHappened.narrative = 3 sentences, 60 words max. headline = 20 words. keyLosses = 10 words each. Violating word limits is a failure.\n");
-    prompt.push_str("3. McKinsey action titles, not prose. 'Champion intact, budget frozen' not 'The champion relationship remains stable.'\n");
-    prompt.push_str("4. Name names, cite dates, state numbers. 'No VP Eng meeting since Jan 15' not 'engagement decreased.'\n");
-    prompt.push_str("5. Max items: stakeholders=4, everything else=3 or fewer.\n");
-    prompt.push_str("6. Assumptions max 2, each must state: 'If [assumption], plan fails because [consequence].'\n");
-    prompt.push_str("7. Do NOT wrap the JSON in markdown code fences.\n");
-    prompt.push_str("8. healthArc.detail must be 2-3 WORDS (e.g. 'Strong engagement', 'MUV dispute'), never a full sentence.\n");
+    match section {
+        "bottomLine" => {
+            prompt.push_str("Return ONLY:\n");
+            prompt.push_str(
+                r#"{ "bottomLine": { "headline": "MAX 20 WORDS", "riskLevel": "high|medium|low", "renewalWindow": "string or null" } }"#,
+            );
+            prompt.push_str("\n\nRules:\n");
+            prompt.push_str("- headline is the whole story in one breath.\n");
+            prompt.push_str("- Use dates, names, and numbers when known.\n");
+            prompt.push_str("- No commentary outside the JSON object.\n");
+        }
+        "whatHappened" => {
+            prompt.push_str("Return ONLY:\n");
+            prompt.push_str(
+                r#"{ "whatHappened": { "narrative": "EXACTLY 3 SENTENCES, MAX 60 WORDS TOTAL", "healthArc": [{"period": "Q3 2025", "status": "green|yellow|red", "detail": "2-3 words"}], "keyLosses": ["Max 3 items, 10 words each"] } }"#,
+            );
+            prompt.push_str("\n\nRules:\n");
+            prompt.push_str("- Sentence 1 baseline, sentence 2 disruption, sentence 3 current state.\n");
+            prompt.push_str("- Cite dates and names.\n");
+            prompt.push_str("- healthArc.detail must be 2-3 words, never a sentence.\n");
+        }
+        "stakes" => {
+            prompt.push_str("Return ONLY:\n");
+            prompt.push_str(
+                r#"{ "stakes": { "financialHeadline": "ACTION HEADLINE, max 10 words", "stakeholders": [{ "name": "First Last", "role": "Title", "alignment": "champion|neutral|detractor|unknown", "engagement": "high|medium|low|disengaged", "decisionWeight": "decision_maker|influencer|user|blocker", "assessment": "optional" }], "decisionMaker": "Name, Title", "worstCase": "Single line" } }"#,
+            );
+            prompt.push_str("\n\nRules:\n");
+            prompt.push_str("- Max 4 stakeholders.\n");
+            prompt.push_str("- Focus on money, decision-maker posture, and downside.\n");
+        }
+        "thePlan" => {
+            prompt.push_str("Return ONLY:\n");
+            prompt.push_str(
+                r#"{ "thePlan": { "strategy": "ACTION HEADLINE, max 10 words", "actions": [{ "step": "Verb phrase, max 6 words", "owner": "Role", "timeline": "This week" }], "timeline": "string or null", "assumptions": ["Max 2, 'If X, plan fails because Y'"] } }"#,
+            );
+            prompt.push_str("\n\nRules:\n");
+            prompt.push_str("- Max 3 actions.\n");
+            prompt.push_str("- Make the actions specific and near-term.\n");
+        }
+        "theAsk" => {
+            prompt.push_str("Return ONLY:\n");
+            prompt.push_str(
+                r#"{ "theAsk": { "requests": [{ "request": "Verb phrase, max 8 words", "urgency": "immediate|this_week|this_month", "from": "Team or role" }], "decisions": ["Max 2, 8 words each"], "escalation": "Single line or null" } }"#,
+            );
+            prompt.push_str("\n\nRules:\n");
+            prompt.push_str("- Max 3 requests.\n");
+            prompt.push_str("- Every request should be concrete and action-oriented.\n");
+        }
+        _ => {}
+    }
+
+    prompt.push_str("\nShared rules:\n");
+    prompt.push_str("- Brevity is absolute.\n");
+    prompt.push_str("- McKinsey action titles, not prose.\n");
+    prompt.push_str("- Name names, cite dates, state numbers.\n");
+    prompt.push_str("- Do NOT wrap the JSON in markdown fences.\n");
 
     prompt
+}
+
+fn empty_risk_briefing(input: &GatheredRiskInput) -> RiskBriefing {
+    let now = Utc::now().to_rfc3339();
+    RiskBriefing {
+        account_id: input.account_id.clone(),
+        generated_at: now.clone(),
+        cover: RiskCover {
+            account_name: input.account_name.clone(),
+            risk_level: None,
+            arr_at_risk: input.account_arr,
+            date: now.split('T').next().unwrap_or(&now).to_string(),
+            tam_name: input.tam_name.clone(),
+        },
+        bottom_line: RiskBottomLine {
+            headline: String::new(),
+            risk_level: None,
+            renewal_window: None,
+        },
+        what_happened: RiskWhatHappened {
+            narrative: String::new(),
+            health_arc: Vec::new(),
+            key_losses: Vec::new(),
+        },
+        stakes: RiskStakes {
+            financial_headline: None,
+            stakeholders: Vec::new(),
+            decision_maker: None,
+            worst_case: None,
+        },
+        the_plan: RiskThePlan {
+            strategy: String::new(),
+            actions: Vec::new(),
+            timeline: None,
+            assumptions: Vec::new(),
+        },
+        the_ask: RiskTheAsk {
+            requests: Vec::new(),
+            decisions: Vec::new(),
+            escalation: None,
+        },
+    }
+}
+
+fn merge_risk_section(briefing: &mut RiskBriefing, section: &str, value: serde_json::Value) -> Result<(), String> {
+    match section {
+        "bottomLine" => {
+            briefing.bottom_line = serde_json::from_value(
+                value.get("bottomLine").cloned().unwrap_or_default(),
+            )
+            .map_err(|e| format!("Failed to parse bottomLine: {}", e))?;
+            briefing.cover.risk_level = briefing.bottom_line.risk_level.clone();
+        }
+        "whatHappened" => {
+            briefing.what_happened = serde_json::from_value(
+                value.get("whatHappened").cloned().unwrap_or_default(),
+            )
+            .map_err(|e| format!("Failed to parse whatHappened: {}", e))?;
+        }
+        "stakes" => {
+            briefing.stakes = serde_json::from_value(value.get("stakes").cloned().unwrap_or_default())
+                .map_err(|e| format!("Failed to parse stakes: {}", e))?;
+        }
+        "thePlan" => {
+            briefing.the_plan =
+                serde_json::from_value(value.get("thePlan").cloned().unwrap_or_default())
+                    .map_err(|e| format!("Failed to parse thePlan: {}", e))?;
+        }
+        "theAsk" => {
+            briefing.the_ask = serde_json::from_value(value.get("theAsk").cloned().unwrap_or_default())
+                .map_err(|e| format!("Failed to parse theAsk: {}", e))?;
+        }
+        _ => return Err(format!("Unknown risk briefing section: {}", section)),
+    }
+    briefing.generated_at = Utc::now().to_rfc3339();
+    Ok(())
 }
 
 // =============================================================================
@@ -337,7 +435,7 @@ pub fn gather_risk_input(
         .and_then(|i| serde_json::to_string_pretty(i).ok());
 
     // Build prompt (all data is owned by the prompt string)
-    let prompt = build_risk_briefing_prompt(&account.name, &ctx, intel_json.as_deref());
+    let context_prompt = build_risk_briefing_context(&account.name, &ctx, intel_json.as_deref());
 
     Ok(GatheredRiskInput {
         account_id: account_id.to_string(),
@@ -345,7 +443,7 @@ pub fn gather_risk_input(
         account_arr: account.arr,
         account_dir,
         workspace_path: workspace.to_path_buf(),
-        prompt,
+        context_prompt,
         tam_name,
         ai_models,
     })
@@ -353,30 +451,83 @@ pub fn gather_risk_input(
 
 /// Phase 2: Run PTY enrichment + parse + write (no DB lock needed).
 ///
-/// This is the long-running operation (~60-120s). Run via `spawn_blocking`.
-pub fn run_risk_enrichment(input: &GatheredRiskInput) -> Result<RiskBriefing, String> {
-    // Spawn Claude Code (Synthesis tier, 300s timeout for complex accounts)
-    let pty = PtyManager::for_tier(ModelTier::Synthesis, &input.ai_models).with_timeout(300);
-    let output = pty
-        .spawn_claude(&input.workspace_path, &input.prompt)
-        .map_err(|e| format!("Claude Code error: {}", e))?;
+/// This is the long-running operation. Keep the AI call bounded to 30s
+/// so it cannot monopolize a worker indefinitely.
+pub fn run_risk_enrichment(
+    input: &GatheredRiskInput,
+    app_handle: Option<&AppHandle>,
+) -> Result<RiskBriefing, String> {
+    let sections = ["bottomLine", "whatHappened", "stakes", "thePlan", "theAsk"];
+    let total_sections = sections.len() as u32;
+    let (tx, rx) = std::sync::mpsc::channel();
 
-    // Audit trail (I297)
-    let _ = crate::audit::write_audit_entry(
-        &input.workspace_path,
-        "risk_briefing",
-        &input.account_id,
-        &output.stdout,
-    );
+    for section in sections {
+        let workspace = input.workspace_path.clone();
+        let ai_models = input.ai_models.clone();
+        let section_name = section.to_string();
+        let prompt = build_risk_section_prompt(&input.context_prompt, section);
+        let sender = tx.clone();
 
-    // Parse response
-    let briefing = parse_risk_briefing_response(
-        &output.stdout,
-        &input.account_id,
-        &input.account_name,
-        input.account_arr,
-        input.tam_name.clone(),
-    )?;
+        std::thread::spawn(move || {
+            let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_models)
+                .with_timeout(30)
+                .with_nice_priority(10);
+            let result = pty
+                .spawn_claude(&workspace, &prompt)
+                .map_err(|e| format!("Claude Code error for {}: {}", section_name, e))
+                .and_then(|output| {
+                    let json_str = extract_json_object(&output.stdout).ok_or_else(|| {
+                        format!("No valid JSON object found in {} response", section_name)
+                    })?;
+                    let value = serde_json::from_str::<serde_json::Value>(&json_str)
+                        .map_err(|e| format!("Failed to parse {} JSON: {}", section_name, e))?;
+                    Ok((section_name, value, output.stdout))
+                });
+            let _ = sender.send(result);
+        });
+    }
+    drop(tx);
+
+    let mut briefing = empty_risk_briefing(input);
+    let mut completed = 0u32;
+
+    for result in rx {
+        match result {
+            Ok((section, value, raw_output)) => {
+                let _ = crate::audit::write_audit_entry(
+                    &input.workspace_path,
+                    &format!("risk_briefing_{}", section),
+                    &input.account_id,
+                    &raw_output,
+                );
+                match merge_risk_section(&mut briefing, &section, value) {
+                    Ok(()) => {
+                        completed += 1;
+                        if let Some(handle) = app_handle {
+                            let _ = handle.emit(
+                                "risk-briefing-progress",
+                                RiskBriefingProgress {
+                                    account_id: input.account_id.clone(),
+                                    section_name: section,
+                                    completed,
+                                    total: total_sections,
+                                },
+                            );
+                            let _ = handle.emit("risk-briefing-content", &briefing);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("risk_briefing: section merge failed: {}", e);
+                    }
+                }
+            }
+            Err(e) => log::warn!("risk_briefing: section generation failed: {}", e),
+        }
+    }
+
+    if completed == 0 {
+        return Err("All risk briefing sections failed".to_string());
+    }
 
     // Write to file
     write_risk_briefing(&input.account_dir, &briefing)?;

@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use tauri::{AppHandle, Emitter};
+
 use crate::reports::generator::run_report_generation;
 use crate::reports::swot::gather_swot_input;
 use crate::reports::{get_report, get_reports_for_entity, upsert_report, ReportRow};
@@ -9,12 +11,16 @@ use crate::state::AppState;
 
 /// Generate a report for an entity.
 /// Blocks for ~60-300s (PTY call). Returns the stored report row.
+///
+/// I547: For `book_of_business`, uses parallel section generation with
+/// optional Glean pre-fetch. Falls back to monolithic on failure.
 pub async fn generate_report(
     state: &Arc<AppState>,
     entity_id: &str,
     entity_type: &str,
     report_type_str: &str,
     spotlight_account_ids: Option<&[String]>,
+    app_handle: Option<AppHandle>,
 ) -> Result<ReportRow, String> {
     let state = state.clone();
     let entity_id = entity_id.to_string();
@@ -24,6 +30,17 @@ pub async fn generate_report(
 
     let task = tauri::async_runtime::spawn_blocking(move || -> Result<ReportRow, String> {
         // Phase 1: Gather input under brief DB lock
+        if report_type_str == "book_of_business" {
+            return generate_book_of_business(
+                &state,
+                spotlight_account_ids.as_deref(),
+                app_handle.as_ref(),
+            );
+        }
+        if report_type_str == "swot" {
+            return generate_swot_report(&state, &entity_id, &entity_type, app_handle.as_ref());
+        }
+
         let mut input = {
             let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
             let db = db_guard.as_ref().ok_or("Database not initialized")?;
@@ -85,23 +102,11 @@ pub async fn generate_report(
                         ctx_provider,
                     )?
                 }
-                "book_of_business" => {
-                    let active_preset = config.role.clone();
-                    crate::reports::book_of_business::gather_book_of_business_input(
-                        workspace,
-                        db,
-                        ai_models,
-                        &active_preset,
-                        spotlight_account_ids.as_deref(),
-                    )?
-                }
                 _ => return Err(format!("Unknown report type: {}", report_type_str)),
             }
         };
 
         // Phase 1.5: Inject relevant user context into prompt (I413).
-        // Opens a fresh DB connection so the Phase 1 lock is already released.
-        // No-op if the embedding model is not ready or no entries exceed 0.70 similarity.
         if let Ok(db_ctx) = crate::db::ActionDb::open() {
             crate::reports::prompts::append_user_context(
                 &mut input.prompt,
@@ -111,7 +116,7 @@ pub async fn generate_report(
             );
         }
 
-        // Phase 2: Run PTY (no DB lock held — this is the long-running operation)
+        // Phase 2: Run PTY (no DB lock held)
         let stdout = run_report_generation(&input)?;
 
         // Parse report-type-specific response
@@ -143,18 +148,6 @@ pub async fn generate_report(
                 serde_json::to_string(&ebr)
                     .map_err(|e| format!("Failed to serialize EBR/QBR: {}", e))?
             }
-            "book_of_business" => {
-                let metrics: crate::reports::book_of_business::BookMetrics =
-                    serde_json::from_str(
-                        input.extra_data.as_deref().ok_or("Missing book metrics")?,
-                    )
-                    .map_err(|e| format!("Failed to parse BookMetrics: {}", e))?;
-                let bob = crate::reports::book_of_business::parse_book_of_business_response(
-                    &stdout, metrics,
-                )?;
-                serde_json::to_string(&bob)
-                    .map_err(|e| format!("Failed to serialize Book of Business: {}", e))?
-            }
             _ => return Err(format!("Unknown report type: {}", report_type_str)),
         };
 
@@ -179,6 +172,202 @@ pub async fn generate_report(
         Ok(result) => result,
         Err(e) => Err(format!("Report generation task panicked: {}", e)),
     }
+}
+
+fn generate_swot_report(
+    state: &Arc<AppState>,
+    entity_id: &str,
+    entity_type: &str,
+    app_handle: Option<&AppHandle>,
+) -> Result<ReportRow, String> {
+    let gathered = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+        let config = config_guard.as_ref().ok_or("Config not initialized")?;
+        let workspace = std::path::Path::new(&config.workspace_path);
+        let ai_models = config.ai_models.clone();
+        let ctx_arc = state.context_provider();
+        let ctx_provider = ctx_arc.as_ref();
+
+        crate::reports::swot::gather_swot_data(
+            workspace,
+            db,
+            entity_id,
+            entity_type,
+            ai_models,
+            ctx_provider,
+        )?
+    };
+
+    let content = crate::reports::swot::run_parallel_swot_generation(&gathered, app_handle)?;
+    let content_json =
+        serde_json::to_string(&content).map_err(|e| format!("Failed to serialize SWOT: {}", e))?;
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let report_id = upsert_report(
+        db,
+        &gathered.entity_id,
+        &gathered.entity_type,
+        "swot",
+        &content_json,
+        &gathered.intel_hash,
+    )?;
+
+    get_report(db, &gathered.entity_id, &gathered.entity_type, "swot")?
+        .ok_or_else(|| format!("Report {} not found after insert", report_id))
+}
+
+/// I547: Parallel Book of Business generation pipeline.
+///
+/// Phase 1: Gather data (DB lock)
+/// Phase 2: Glean pre-fetch (no lock, when connected)
+/// Phase 3: Wave 1 — 6 sections in parallel
+/// Phase 4: Wave 2 — executiveSummary sequential
+/// Phase 5: Merge + write to DB
+fn generate_book_of_business(
+    state: &Arc<AppState>,
+    spotlight_account_ids: Option<&[String]>,
+    app_handle: Option<&AppHandle>,
+) -> Result<ReportRow, String> {
+    use crate::reports::book_of_business::*;
+
+    // Phase 1: Gather data under brief DB lock
+    let mut gather = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+        let config = config_guard.as_ref().ok_or("Config not initialized")?;
+        let workspace = std::path::Path::new(&config.workspace_path);
+        let ai_models = config.ai_models.clone();
+        let active_preset = config.role.clone();
+
+        gather_book_of_business_data(
+            workspace,
+            db,
+            ai_models,
+            &active_preset,
+            spotlight_account_ids,
+        )?
+    };
+
+    // Phase 1.5: Pre-compute user context block (I413 semantic search).
+    // Fresh DB connection so the Phase 1 lock is already released.
+    if let Ok(db_ctx) = crate::db::ActionDb::open() {
+        let mut ctx_buf = String::new();
+        crate::reports::prompts::append_user_context(
+            &mut ctx_buf,
+            &db_ctx,
+            Some(state.embedding_model.as_ref()),
+            "Book of Business",
+        );
+        gather.user_context_block = ctx_buf;
+    }
+
+    // Phase 2: Glean pre-fetch (no DB lock)
+    let glean_ctx = {
+        let ctx_arc = state.context_provider();
+        if ctx_arc.is_remote() {
+            if let Some(endpoint) = ctx_arc.remote_endpoint() {
+                let account_names: Vec<String> = gather
+                    .snapshot
+                    .iter()
+                    .take(20) // Top 20 by ARR (already sorted)
+                    .map(|s| s.account_name.clone())
+                    .collect();
+                log::info!(
+                    "[I547] Glean connected — pre-fetching portfolio context for {} accounts",
+                    account_names.len()
+                );
+                let ctx = prefetch_glean_portfolio_context(endpoint, &account_names);
+
+                // Emit glean phase completion event
+                if let Some(handle) = app_handle {
+                    let _ = handle.emit(
+                        "bob-section-progress",
+                        BobSectionProgress {
+                            section_name: "glean".to_string(),
+                            completed: 0,
+                            total: 7,
+                            wave: 0,
+                        },
+                    );
+                }
+                ctx
+            } else {
+                GleanPortfolioContext::default()
+            }
+        } else {
+            GleanPortfolioContext::default()
+        }
+    };
+
+    // Phase 3+4: Parallel generation with fallback
+    let ai_response = match run_parallel_bob_generation(
+        &gather,
+        &glean_ctx,
+        &gather.metrics,
+        app_handle,
+    ) {
+        Ok(response) => response,
+        Err(e) => {
+            log::warn!(
+                "[I547] Parallel BoB failed, falling back to monolithic: {}",
+                e
+            );
+
+            // Monolithic fallback
+            let mut input = gather_to_report_input(&gather)?;
+
+            // Inject user context
+            if let Ok(db_ctx) = crate::db::ActionDb::open() {
+                crate::reports::prompts::append_user_context(
+                    &mut input.prompt,
+                    &db_ctx,
+                    Some(state.embedding_model.as_ref()),
+                    &input.entity_name,
+                );
+            }
+
+            let stdout = run_report_generation(&input)?;
+            let json_str = crate::risk_briefing::extract_json_object(&stdout)
+                .ok_or_else(|| "No JSON in monolithic BoB response".to_string())?;
+            serde_json::from_str::<AiBookResponse>(&json_str)
+                .map_err(|e| format!("Failed to parse monolithic BoB: {}", e))?
+        }
+    };
+
+    // Phase 5: Merge with metrics + write to DB
+    let content = assemble_book_content(ai_response, gather.metrics.clone());
+    let content_json = serde_json::to_string(&content)
+        .map_err(|e| format!("Failed to serialize BoB content: {}", e))?;
+
+    // Audit trail
+    let _ = crate::audit::write_audit_entry(
+        &gather.workspace,
+        "report_book_of_business",
+        &gather.user_entity_id,
+        &content_json,
+    );
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let report_id = upsert_report(
+        db,
+        &gather.user_entity_id,
+        "user",
+        "book_of_business",
+        &content_json,
+        &gather.intel_hash,
+    )?;
+
+    get_report(db, &gather.user_entity_id, "user", "book_of_business")?
+        .ok_or_else(|| format!("Report {} not found after insert", report_id))
 }
 
 /// Read a cached report (fast, no AI). Returns None if not found.
@@ -239,7 +428,7 @@ pub async fn generate_monthly_wrapped_if_needed(
         "Scheduler: auto-generating monthly wrapped for {}",
         intel_hash_key
     );
-    generate_report(state, "user", "user", "monthly_wrapped", None).await?;
+    generate_report(state, "user", "user", "monthly_wrapped", None, None).await?;
     Ok(())
 }
 
@@ -295,6 +484,6 @@ pub async fn generate_weekly_impact_if_needed(
         "Scheduler: auto-generating weekly impact for {}",
         intel_hash_key
     );
-    generate_report(state, "user", "user", "weekly_impact", None).await?;
+    generate_report(state, "user", "user", "weekly_impact", None, None).await?;
     Ok(())
 }
