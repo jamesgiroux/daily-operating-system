@@ -635,6 +635,8 @@ mod tests {
                 text: "No new progress signals since the prior assessment.".to_string(),
                 source: None,
                 urgency: "watch".to_string(),
+                item_source: None,
+                discrepancy: None,
             }],
             ..Default::default()
         };
@@ -704,6 +706,8 @@ mod tests {
                 source: None,
                 person_id: None,
                 suggested_person_id: None,
+                item_source: None,
+                discrepancy: None,
             }],
             ..Default::default()
         };

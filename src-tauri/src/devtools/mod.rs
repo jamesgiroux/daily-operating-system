@@ -3935,13 +3935,13 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
              in engineering requires attention before QBR.".into()
         ),
         risks: vec![
-            IntelRisk { text: "Alex Torres departing March — critical knowledge transfer gap".into(), source: Some("meeting notes".into()), urgency: "act_now".into() },
-            IntelRisk { text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into() },
-            IntelRisk { text: "Legal review of MSA amendment stalled for 10 days".into(), source: Some("email signal".into()), urgency: "act_now".into() },
+            IntelRisk { text: "Alex Torres departing March — critical knowledge transfer gap".into(), source: Some("meeting notes".into()), urgency: "act_now".into(), item_source: None, discrepancy: None },
+            IntelRisk { text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into(), item_source: None, discrepancy: None },
+            IntelRisk { text: "Legal review of MSA amendment stalled for 10 days".into(), source: Some("email signal".into()), urgency: "act_now".into(), item_source: None, discrepancy: None },
         ],
         recent_wins: vec![
-            IntelWin { text: "Phase 1 migration completed ahead of schedule".into(), source: Some("project tracker".into()), impact: Some("High — demonstrates execution capability for Phase 2".into()) },
-            IntelWin { text: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative for expansion".into()) },
+            IntelWin { text: "Phase 1 migration completed ahead of schedule".into(), source: Some("project tracker".into()), impact: Some("High — demonstrates execution capability for Phase 2".into()), item_source: None, discrepancy: None },
+            IntelWin { text: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative for expansion".into()), item_source: None, discrepancy: None },
         ],
         current_state: Some(CurrentState {
             working: vec!["Executive sponsorship strong — Sarah Chen fully bought in".into(), "Phase 1 delivered on time and above benchmark".into(), "Platform adoption across engineering team is solid".into()],
@@ -3949,13 +3949,13 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["APAC expansion viability — Singapore pilot not yet scoped".into(), "Replacement for Alex Torres not yet identified".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strong champion. Secured Phase 2 budget independently.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None },
-            StakeholderInsight { name: "Alex Torres".into(), role: Some("Tech Lead".into()), assessment: Some("Technical backbone of Phase 1. Departing March — urgency around KT.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-alex-torres".into()), suggested_person_id: None },
-            StakeholderInsight { name: "Pat Kim".into(), role: Some("CTO".into()), assessment: Some("Strategic decision maker. Focused on APAC and cost consolidation.".into()), engagement: Some("periodic".into()), source: None, person_id: Some("mock-pat-kim".into()), suggested_person_id: None },
+            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strong champion. Secured Phase 2 budget independently.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Alex Torres".into(), role: Some("Tech Lead".into()), assessment: Some("Technical backbone of Phase 1. Departing March — urgency around KT.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-alex-torres".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Pat Kim".into(), role: Some("CTO".into()), assessment: Some("Strategic decision maker. Focused on APAC and cost consolidation.".into()), engagement: Some("periodic".into()), source: None, person_id: Some("mock-pat-kim".into()), suggested_person_id: None, item_source: None, discrepancy: None },
         ],
         value_delivered: vec![
-            ValueItem { date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()) },
-            ValueItem { date: Some(days_ago_rfc(60)), statement: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative".into()) },
+            ValueItem { date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: None, discrepancy: None },
+            ValueItem { date: Some(days_ago_rfc(60)), statement: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative".into()), item_source: None, discrepancy: None },
         ],
         company_context: Some(CompanyContext {
             description: Some("Enterprise SaaS company serving mid-market and enterprise customers".into()),
@@ -3993,9 +3993,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Platform Adoption".into(), target: Some("80%+".into()), current: Some("85%".into()), status: Some("on_track".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Finalize Phase 2 SOW with legal".into(), owner: Some("Legal / us".into()), due_date: Some(date_only(7)), source: Some("meeting".into()), status: Some("blocked".into()) },
-            OpenCommitment { description: "Complete Alex Torres knowledge transfer".into(), owner: Some("Alex Torres + team".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("not_started".into()) },
-            OpenCommitment { description: "Address NPS detractor concerns".into(), owner: Some("CS team".into()), due_date: Some(date_only(21)), source: Some("NPS survey".into()), status: Some("in_progress".into()) },
+            OpenCommitment { description: "Finalize Phase 2 SOW with legal".into(), owner: Some("Legal / us".into()), due_date: Some(date_only(7)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
+            OpenCommitment { description: "Complete Alex Torres knowledge transfer".into(), owner: Some("Alex Torres + team".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { description: "Address NPS detractor concerns".into(), owner: Some("CS team".into()), due_date: Some(date_only(21)), source: Some("NPS survey".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
@@ -4005,7 +4005,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         }),
         // Dimension 1: Strategic Assessment
         competitive_context: vec![
-            CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("mentioned".into()), context: Some("Pat Kim mentioned evaluating Contoso for APAC deployment".into()), source: Some("meeting".into()), detected_at: Some(days_ago_rfc(14)) },
+            CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("mentioned".into()), context: Some("Pat Kim mentioned evaluating Contoso for APAC deployment".into()), source: Some("meeting".into()), detected_at: Some(days_ago_rfc(14)), item_source: None, discrepancy: None },
         ],
         strategic_priorities: vec![
             StrategicPriority { priority: "Phase 2 Expansion".into(), status: Some("active".into()), owner: Some("Sarah Chen".into()), source: Some("meeting".into()), timeline: Some("Q2 2026".into()) },
@@ -4019,7 +4019,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             level: Some("adequate".into()),
         }),
         organizational_changes: vec![
-            OrgChange { change_type: "departure".into(), person: "Alex Torres".into(), from: Some("Tech Lead".into()), to: None, detected_at: Some(days_ago_rfc(14)), source: Some("meeting".into()) },
+            OrgChange { change_type: "departure".into(), person: "Alex Torres".into(), from: Some("Tech Lead".into()), to: None, detected_at: Some(days_ago_rfc(14)), source: Some("meeting".into()), item_source: None, discrepancy: None },
         ],
         internal_team: vec![
             InternalTeamMember { person_id: Some("mock-mike-chen".into()), name: "Mike Chen".into(), role: "Account Manager".into(), source: Some("user".into()) },
@@ -4053,8 +4053,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             customer_fiscal_year_start: Some(1),
         }),
         expansion_signals: vec![
-            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(200_000.0), source: Some("meeting".into()), stage: Some("evaluating".into()), strength: Some("strong".into()) },
-            ExpansionSignal { opportunity: "APAC Singapore pilot".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("moderate".into()) },
+            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(200_000.0), source: Some("meeting".into()), stage: Some("evaluating".into()), strength: Some("strong".into()), item_source: None, discrepancy: None },
+            ExpansionSignal { opportunity: "APAC Singapore pilot".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("moderate".into()), item_source: None, discrepancy: None },
         ],
         renewal_outlook: Some(RenewalOutlook {
             confidence: Some("high".into()),
@@ -4106,14 +4106,14 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
              pitching. The upcoming QBR is the pivotal moment.".into()
         ),
         risks: vec![
-            IntelRisk { text: "Pat Reynolds (executive sponsor) departing Q2 — successor unknown".into(), source: Some("direct communication".into()), urgency: "act_now".into() },
-            IntelRisk { text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into() },
-            IntelRisk { text: "Contoso actively pitching to Globex leadership".into(), source: Some("email intel from Jamie Morrison".into()), urgency: "watch".into() },
+            IntelRisk { text: "Pat Reynolds (executive sponsor) departing Q2 — successor unknown".into(), source: Some("direct communication".into()), urgency: "act_now".into(), item_source: None, discrepancy: None },
+            IntelRisk { text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into(), item_source: None, discrepancy: None },
+            IntelRisk { text: "Contoso actively pitching to Globex leadership".into(), source: Some("email intel from Jamie Morrison".into()), urgency: "watch".into(), item_source: None, discrepancy: None },
         ],
         recent_wins: vec![
-            IntelWin { text: "Expanded to 3 new teams this quarter".into(), source: Some("deployment tracker".into()), impact: Some("Demonstrates platform value at scale".into()) },
-            IntelWin { text: "Team A usage up 40% since January".into(), source: Some("usage analytics".into()), impact: Some("Strong adoption proof point".into()) },
-            IntelWin { text: "CSAT improved from 7.2 to 8.1".into(), source: Some("survey results".into()), impact: Some("Customer satisfaction trending positive".into()) },
+            IntelWin { text: "Expanded to 3 new teams this quarter".into(), source: Some("deployment tracker".into()), impact: Some("Demonstrates platform value at scale".into()), item_source: None, discrepancy: None },
+            IntelWin { text: "Team A usage up 40% since January".into(), source: Some("usage analytics".into()), impact: Some("Strong adoption proof point".into()), item_source: None, discrepancy: None },
+            IntelWin { text: "CSAT improved from 7.2 to 8.1".into(), source: Some("survey results".into()), impact: Some("Customer satisfaction trending positive".into()), item_source: None, discrepancy: None },
         ],
         current_state: Some(CurrentState {
             working: vec!["Team A adoption excellent — 40% growth".into(), "CSAT improving across active teams".into(), "Jamie Morrison is a strong internal champion".into()],
@@ -4121,13 +4121,13 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["Root cause of Team B decline".into(), "Who will replace Pat Reynolds".into(), "Impact of Contoso pitch on renewal decision".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Pat Reynolds".into(), role: Some("VP Product".into()), assessment: Some("Departing Q2 but still engaged. Will influence successor choice.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-pat-reynolds".into()), suggested_person_id: None },
-            StakeholderInsight { name: "Jamie Morrison".into(), role: Some("Eng Director".into()), assessment: Some("Strongest champion. Could be elevated to executive sponsor.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-jamie-morrison".into()), suggested_person_id: None },
-            StakeholderInsight { name: "Casey Lee".into(), role: Some("Head of Ops".into()), assessment: Some("Skeptical about Team B ROI. Evaluating Contoso.".into()), engagement: Some("at_risk".into()), source: None, person_id: Some("mock-casey-lee".into()), suggested_person_id: None },
+            StakeholderInsight { name: "Pat Reynolds".into(), role: Some("VP Product".into()), assessment: Some("Departing Q2 but still engaged. Will influence successor choice.".into()), engagement: Some("transitioning".into()), source: None, person_id: Some("mock-pat-reynolds".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Jamie Morrison".into(), role: Some("Eng Director".into()), assessment: Some("Strongest champion. Could be elevated to executive sponsor.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-jamie-morrison".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Casey Lee".into(), role: Some("Head of Ops".into()), assessment: Some("Skeptical about Team B ROI. Evaluating Contoso.".into()), engagement: Some("at_risk".into()), source: None, person_id: Some("mock-casey-lee".into()), suggested_person_id: None, item_source: None, discrepancy: None },
         ],
         value_delivered: vec![
-            ValueItem { date: Some(days_ago_rfc(30)), statement: "3 new team deployments in Q1".into(), source: Some("deployment tracker".into()), impact: Some("Scale validation".into()) },
-            ValueItem { date: Some(days_ago_rfc(60)), statement: "CSAT improvement: 7.2 → 8.1".into(), source: Some("survey".into()), impact: Some("Positive trend".into()) },
+            ValueItem { date: Some(days_ago_rfc(30)), statement: "3 new team deployments in Q1".into(), source: Some("deployment tracker".into()), impact: Some("Scale validation".into()), item_source: None, discrepancy: None },
+            ValueItem { date: Some(days_ago_rfc(60)), statement: "CSAT improvement: 7.2 → 8.1".into(), source: Some("survey".into()), impact: Some("Positive trend".into()), item_source: None, discrepancy: None },
         ],
         company_context: Some(CompanyContext {
             description: Some("Manufacturing technology company with global operations".into()),
@@ -4164,9 +4164,9 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Team B Usage".into(), target: Some("stable".into()), current: Some("-20% MoM".into()), status: Some("critical".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Address Team B usage decline before QBR".into(), owner: Some("CS + Product".into()), due_date: Some(date_only(5)), source: Some("meeting".into()), status: Some("in_progress".into()) },
-            OpenCommitment { description: "Secure renewal commitment".into(), owner: Some("Account team".into()), due_date: Some(date_only(45)), source: Some("renewal".into()), status: Some("not_started".into()) },
-            OpenCommitment { description: "Identify Pat Reynolds' successor".into(), owner: Some("Account team".into()), due_date: Some(date_only(30)), source: Some("meeting".into()), status: Some("not_started".into()) },
+            OpenCommitment { description: "Address Team B usage decline before QBR".into(), owner: Some("CS + Product".into()), due_date: Some(date_only(5)), source: Some("meeting".into()), status: Some("in_progress".into()), item_source: None, discrepancy: None },
+            OpenCommitment { description: "Secure renewal commitment".into(), owner: Some("Account team".into()), due_date: Some(date_only(45)), source: Some("renewal".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
+            OpenCommitment { description: "Identify Pat Reynolds' successor".into(), owner: Some("Account team".into()), due_date: Some(date_only(30)), source: Some("meeting".into()), status: Some("not_started".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("moderate".into()),
@@ -4175,7 +4175,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             coverage_gaps: Some(vec!["executive_sponsor".into(), "ops_decision_maker".into()]),
         }),
         competitive_context: vec![
-            CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("evaluation".into()), context: Some("Casey Lee actively evaluating Contoso for Team B replacement".into()), source: Some("email".into()), detected_at: Some(days_ago_rfc(7)) },
+            CompetitiveInsight { competitor: "Contoso Platform".into(), threat_level: Some("evaluation".into()), context: Some("Casey Lee actively evaluating Contoso for Team B replacement".into()), source: Some("email".into()), detected_at: Some(days_ago_rfc(7)), item_source: None, discrepancy: None },
         ],
         strategic_priorities: vec![
             StrategicPriority { priority: "Renewal Commitment".into(), status: Some("at_risk".into()), owner: Some("Account team".into()), source: Some("renewal cycle".into()), timeline: Some(date_only(45)) },
@@ -4188,7 +4188,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             level: Some("thin".into()),
         }),
         organizational_changes: vec![
-            OrgChange { change_type: "departure".into(), person: "Pat Reynolds".into(), from: Some("VP Product".into()), to: None, detected_at: Some(days_ago_rfc(10)), source: Some("direct".into()) },
+            OrgChange { change_type: "departure".into(), person: "Pat Reynolds".into(), from: Some("VP Product".into()), to: None, detected_at: Some(days_ago_rfc(10)), source: Some("direct".into()), item_source: None, discrepancy: None },
         ],
         internal_team: vec![
             InternalTeamMember { person_id: Some("mock-mike-chen".into()), name: "Mike Chen".into(), role: "Account Manager".into(), source: Some("user".into()) },
@@ -4222,7 +4222,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             customer_fiscal_year_start: Some(1),
         }),
         expansion_signals: vec![
-            ExpansionSignal { opportunity: "3 new team deployments".into(), arr_impact: Some(120_000.0), source: Some("deployment tracker".into()), stage: Some("committed".into()), strength: Some("strong".into()) },
+            ExpansionSignal { opportunity: "3 new team deployments".into(), arr_impact: Some(120_000.0), source: Some("deployment tracker".into()), stage: Some("committed".into()), strength: Some("strong".into()), item_source: None, discrepancy: None },
         ],
         renewal_outlook: Some(RenewalOutlook {
             confidence: Some("low".into()),
@@ -4273,11 +4273,11 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
              team.".into()
         ),
         risks: vec![
-            IntelRisk { text: "Phase 2 budget approval pending from finance — 7 days with no response".into(), source: Some("email from Dana Patel".into()), urgency: "watch".into() },
-            IntelRisk { text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into() },
+            IntelRisk { text: "Phase 2 budget approval pending from finance — 7 days with no response".into(), source: Some("email from Dana Patel".into()), urgency: "watch".into(), item_source: None, discrepancy: None },
+            IntelRisk { text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: None, discrepancy: None },
         ],
         recent_wins: vec![
-            IntelWin { text: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong proof point for Phase 2 business case".into()) },
+            IntelWin { text: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong proof point for Phase 2 business case".into()), item_source: None, discrepancy: None },
         ],
         current_state: Some(CurrentState {
             working: vec!["Phase 1 execution was flawless — strong credibility".into(), "Dana Patel is championing Phase 2 internally".into(), "Technical integration is stable and performant".into()],
@@ -4285,11 +4285,11 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["When finance will approve Phase 2 budget".into(), "Exact scope of Phase 2".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Dana Patel".into(), role: Some("CTO".into()), assessment: Some("Data-driven decision maker. Phase 1 ROI is the key argument.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-dana-patel".into()), suggested_person_id: None },
-            StakeholderInsight { name: "Priya Sharma".into(), role: Some("VP Product".into()), assessment: Some("Concerned about Q2 capacity. Needs phased rollout plan.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-priya-sharma".into()), suggested_person_id: None },
+            StakeholderInsight { name: "Dana Patel".into(), role: Some("CTO".into()), assessment: Some("Data-driven decision maker. Phase 1 ROI is the key argument.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-dana-patel".into()), suggested_person_id: None, item_source: None, discrepancy: None },
+            StakeholderInsight { name: "Priya Sharma".into(), role: Some("VP Product".into()), assessment: Some("Concerned about Q2 capacity. Needs phased rollout plan.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-priya-sharma".into()), suggested_person_id: None, item_source: None, discrepancy: None },
         ],
         value_delivered: vec![
-            ValueItem { date: Some(days_ago_rfc(10)), statement: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong ROI proof".into()) },
+            ValueItem { date: Some(days_ago_rfc(10)), statement: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong ROI proof".into()), item_source: None, discrepancy: None },
         ],
         company_context: Some(CompanyContext {
             description: Some("Financial technology company focused on enterprise automation".into()),
@@ -4326,8 +4326,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             SuccessMetric { name: "Phase 1 Completion".into(), target: Some("100%".into()), current: Some("100%".into()), status: Some("on_track".into()), owner: None },
         ]),
         open_commitments: Some(vec![
-            OpenCommitment { description: "Get Phase 2 budget approved".into(), owner: Some("Dana Patel / Finance".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("blocked".into()) },
-            OpenCommitment { description: "Schedule Phase 2 kickoff".into(), owner: Some("Account team".into()), due_date: None, source: Some("meeting".into()), status: Some("waiting".into()) },
+            OpenCommitment { description: "Get Phase 2 budget approved".into(), owner: Some("Dana Patel / Finance".into()), due_date: Some(date_only(14)), source: Some("meeting".into()), status: Some("blocked".into()), item_source: None, discrepancy: None },
+            OpenCommitment { description: "Schedule Phase 2 kickoff".into(), owner: Some("Account team".into()), due_date: None, source: Some("meeting".into()), status: Some("waiting".into()), item_source: None, discrepancy: None },
         ]),
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("developing".into()),
@@ -4375,7 +4375,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             customer_fiscal_year_start: Some(10),
         }),
         expansion_signals: vec![
-            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("early".into()) },
+            ExpansionSignal { opportunity: "Phase 2 platform expansion".into(), arr_impact: Some(150_000.0), source: Some("meeting".into()), stage: Some("exploring".into()), strength: Some("early".into()), item_source: None, discrepancy: None },
         ],
         renewal_outlook: Some(RenewalOutlook {
             confidence: Some("moderate".into()),
@@ -4419,11 +4419,11 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
              Acme's leadership team.".into()
         ),
         risks: vec![
-            IntelRisk { text: "May face internal pressure if NPS detractors aren't addressed".into(), source: Some("inferred from NPS trend".into()), urgency: "watch".into() },
+            IntelRisk { text: "May face internal pressure if NPS detractors aren't addressed".into(), source: Some("inferred from NPS trend".into()), urgency: "watch".into(), item_source: None, discrepancy: None },
         ],
         recent_wins: vec![
-            IntelWin { text: "Secured Phase 2 budget approval independently".into(), source: Some("meeting notes".into()), impact: Some("Removed the biggest Phase 2 blocker".into()) },
-            IntelWin { text: "Confirmed executive sponsorship for expansion".into(), source: Some("direct communication".into()), impact: Some("Strategic alignment at VP level".into()) },
+            IntelWin { text: "Secured Phase 2 budget approval independently".into(), source: Some("meeting notes".into()), impact: Some("Removed the biggest Phase 2 blocker".into()), item_source: None, discrepancy: None },
+            IntelWin { text: "Confirmed executive sponsorship for expansion".into(), source: Some("direct communication".into()), impact: Some("Strategic alignment at VP level".into()), item_source: None, discrepancy: None },
         ],
         current_state: Some(CurrentState {
             working: vec!["Strong internal advocacy".into(), "Proactive communication on status and blockers".into(), "Budget approval secured for Phase 2".into()],
@@ -4431,7 +4431,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             unknowns: vec!["Her stance on APAC expansion timeline".into()],
         }),
         stakeholder_insights: vec![
-            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strongest champion in the portfolio. Data-driven, decisive.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None },
+            StakeholderInsight { name: "Sarah Chen".into(), role: Some("VP Engineering".into()), assessment: Some("Strongest champion in the portfolio. Data-driven, decisive.".into()), engagement: Some("active".into()), source: None, person_id: Some("mock-sarah-chen".into()), suggested_person_id: None, item_source: None, discrepancy: None },
         ],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
@@ -4471,17 +4471,23 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             text: "May lose influence if Team B decline isn't addressed — it's in his org".into(),
             source: Some("inferred".into()),
             urgency: "watch".into(),
+            item_source: None,
+            discrepancy: None,
         }],
         recent_wins: vec![
             IntelWin {
                 text: "Drove 40% usage growth in Team A".into(),
                 source: Some("usage analytics".into()),
                 impact: Some("Strongest adoption success story at Globex".into()),
+                item_source: None,
+                discrepancy: None,
             },
             IntelWin {
                 text: "Offered to present at QBR — proactive champion behavior".into(),
                 source: Some("email".into()),
                 impact: Some("Internal advocacy momentum".into()),
+                item_source: None,
+                discrepancy: None,
             },
         ],
         current_state: Some(CurrentState {
@@ -4500,6 +4506,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             source: None,
             person_id: Some("mock-jamie-morrison".into()),
             suggested_person_id: None,
+            item_source: None,
+            discrepancy: None,
         }],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("strong".into()),
@@ -4553,11 +4561,15 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 .into(),
             source: Some("inferred".into()),
             urgency: "watch".into(),
+            item_source: None,
+            discrepancy: None,
         }],
         recent_wins: vec![IntelWin {
             text: "Phase 1 success validates her technology bet".into(),
             source: Some("project outcomes".into()),
             impact: Some("Strengthens her credibility with finance and board".into()),
+            item_source: None,
+            discrepancy: None,
         }],
         current_state: Some(CurrentState {
             working: vec![
@@ -4575,6 +4587,8 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             source: None,
             person_id: Some("mock-dana-patel".into()),
             suggested_person_id: None,
+            item_source: None,
+            discrepancy: None,
         }],
         relationship_depth: Some(RelationshipDepth {
             champion_strength: Some("developing".into()),

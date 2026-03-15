@@ -160,6 +160,8 @@ mod tests {
             source: None,
             person_id: None,
             suggested_person_id: None,
+            item_source: None,
+            discrepancy: None,
         }
     }
 
@@ -211,6 +213,8 @@ mod tests {
             source: None,
             person_id: Some("p2".to_string()),
             suggested_person_id: None,
+            item_source: None,
+            discrepancy: None,
         }];
 
         reconcile_stakeholders(&mut stakeholders, &people, &[]);
