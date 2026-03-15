@@ -9,7 +9,8 @@ import { useActivePreset } from "@/hooks/useActivePreset";
 import { getAccountReports } from "@/lib/report-config";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
-import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import {
   AlignLeft,
   BarChart3,
@@ -253,6 +254,8 @@ export default function AccountDetailEditorial() {
     [acct.detail?.isParent, acct.intelligence?.health],
   );
 
+  // I563: Split stable shell config from volatile folio state to prevent render loops.
+  // Stable config only changes on page/entity identity changes → re-registers rarely.
   const shellConfig = useMemo(
     () => ({
       folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
@@ -260,109 +263,115 @@ export default function AccountDetailEditorial() {
       activePage: "accounts" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
       chapters,
-      folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
-      folioActions: (
-        <div className={shared.folioActions}>
-          {acct.detail && !acct.detail.archived && (
-            <button
-              className={styles.refreshButton}
-              onClick={acct.handleEnrich}
-              disabled={acct.enriching}
-            >
-              {acct.enriching
-                ? acct.enrichmentPercentage != null
-                  ? `Refreshing\u2026 ${acct.enrichmentPercentage}%`
-                  : `Refreshing\u2026 ${acct.enrichSeconds ?? 0}s`
-                : "Refresh"}
-            </button>
-          )}
-          <div className={styles.reportsDropdownWrapper}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
-              className={styles.reportsButton}
-            >
-              Reports {reportsOpen ? "\u25b4" : "\u25be"}
-            </button>
-            {reportsOpen && (
-              <div className={styles.reportsDropdown}>
-                {getAccountReports(preset?.id).map((item) => (
-                  <button
-                    key={item.label}
-                    onClick={() => {
-                      setReportsOpen(false);
-                      if (item.reportType === null) {
-                        navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
-                      } else if (item.reportType === "account_health") {
-                        navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
-                      } else if (item.reportType === "ebr_qbr") {
-                        navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
-                      } else {
-                        navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
-                      }
-                    }}
-                    className={styles.reportsDropdownItem}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className={styles.toolsDropdownWrapper}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setToolsOpen(o => !o); }}
-              className={styles.toolsButton}
-            >
-              Tools {toolsOpen ? "\u25b4" : "\u25be"}
-            </button>
-            {toolsOpen && (
-              <div className={styles.toolsDropdown}>
-                {acct.detail && (
-                  <button
-                    className={styles.toolsDropdownItem}
-                    onClick={() => { setToolsOpen(false); acct.setCreateChildOpen(true); }}
-                  >
-                    + Business Unit
-                  </button>
-                )}
-                <button
-                  className={styles.toolsDropdownItem}
-                  onClick={() => { setToolsOpen(false); setMergeDialogOpen(true); }}
-                >
-                  Merge Into...
-                </button>
-                <button
-                  className={styles.toolsDropdownItem}
-                  onClick={() => { setToolsOpen(false); acct.handleIndexFiles(); }}
-                  disabled={acct.indexing}
-                >
-                  {acct.indexing ? "Indexing\u2026" : "Index Files"}
-                </button>
-                <div className={styles.toolsDropdownSeparator} />
-                {acct.detail?.archived ? (
-                  <button
-                    className={styles.toolsDropdownItem}
-                    onClick={() => { setToolsOpen(false); acct.handleUnarchive(); }}
-                  >
-                    Unarchive
-                  </button>
-                ) : acct.detail ? (
-                  <button
-                    className={styles.toolsDropdownItem}
-                    onClick={() => { setToolsOpen(false); setArchiveDialogOpen(true); }}
-                  >
-                    Archive
-                  </button>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
-      ),
     }),
-    [navigate, accountId, acct.detail, acct.intelligence?.health, acct.setCreateChildOpen, acct.handleEnrich, acct.enriching, acct.enrichSeconds, acct.enrichmentPercentage, acct.handleUnarchive, acct.handleIndexFiles, acct.indexing, reportsOpen, setReportsOpen, toolsOpen, setToolsOpen, preset?.id, saveStatus],
+    [navigate, acct.detail?.accountType, chapters],
   );
   useRegisterMagazineShell(shellConfig);
+
+  // I563: Volatile folio state — updates via ref, no re-registration.
+  // Pass accountId as repaintKey so MagazinePageLayout re-reads when navigating
+  // between accounts (same route, different params → component doesn't remount).
+  useUpdateFolioVolatile({
+    folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+    folioActions: (
+      <div className={shared.folioActions}>
+        {acct.detail && !acct.detail.archived && (
+          <FolioRefreshButton
+            onClick={acct.handleEnrich}
+            loading={!!acct.enriching}
+            loadingProgress={
+              acct.enriching
+                ? acct.enrichmentPercentage != null
+                  ? `${acct.enrichmentPercentage}%`
+                  : `${acct.enrichSeconds ?? 0}s`
+                : undefined
+            }
+          />
+        )}
+        <div className={styles.reportsDropdownWrapper}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
+            className={styles.reportsButton}
+          >
+            Reports {reportsOpen ? "\u25b4" : "\u25be"}
+          </button>
+          {reportsOpen && (
+            <div className={styles.reportsDropdown}>
+              {getAccountReports(preset?.id).map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => {
+                    setReportsOpen(false);
+                    if (item.reportType === null) {
+                      navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+                    } else if (item.reportType === "account_health") {
+                      navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
+                    } else if (item.reportType === "ebr_qbr") {
+                      navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
+                    } else {
+                      navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
+                    }
+                  }}
+                  className={styles.reportsDropdownItem}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className={styles.toolsDropdownWrapper}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setToolsOpen(o => !o); }}
+            className={styles.toolsButton}
+          >
+            Tools {toolsOpen ? "\u25b4" : "\u25be"}
+          </button>
+          {toolsOpen && (
+            <div className={styles.toolsDropdown}>
+              {acct.detail && (
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); acct.setCreateChildOpen(true); }}
+                >
+                  + Business Unit
+                </button>
+              )}
+              <button
+                className={styles.toolsDropdownItem}
+                onClick={() => { setToolsOpen(false); setMergeDialogOpen(true); }}
+              >
+                Merge Into...
+              </button>
+              <button
+                className={styles.toolsDropdownItem}
+                onClick={() => { setToolsOpen(false); acct.handleIndexFiles(); }}
+                disabled={acct.indexing}
+              >
+                {acct.indexing ? "Indexing\u2026" : "Index Files"}
+              </button>
+              <div className={styles.toolsDropdownSeparator} />
+              {acct.detail?.archived ? (
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); acct.handleUnarchive(); }}
+                >
+                  Unarchive
+                </button>
+              ) : acct.detail ? (
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); setArchiveDialogOpen(true); }}
+                >
+                  Archive
+                </button>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    ),
+  }, accountId);
 
   // Dialog open state
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
