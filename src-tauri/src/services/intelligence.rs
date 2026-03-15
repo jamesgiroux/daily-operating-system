@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::db::ActionDb;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
+use tauri::Emitter;
 
 /// Enrich an entity via the intelligence queue (split-lock pattern).
 pub async fn enrich_entity(
@@ -27,6 +28,18 @@ pub async fn enrich_entity(
     );
 
     let request = IntelRequest::new(entity_id, entity_type, IntelPriority::Manual);
+    let manual_entity_id = request.entity_id.clone();
+
+    if let Some(app) = app_handle {
+        let _ = app.emit(
+            "background-work-status",
+            serde_json::json!({
+                "phase": "started",
+                "message": format!("Updating insights for {}…", manual_entity_id),
+                "count": 1,
+            }),
+        );
+    }
 
     // Manual refresh: clear circuit breaker so enrichment proceeds (I410)
     let entity_id_for_reset = request.entity_id.clone();
@@ -58,11 +71,23 @@ pub async fn enrich_entity(
 
     // I535/ADR-0100: Glean-first enrichment for manual refresh.
     // Try Glean chat if connected, fall back to PTY on failure.
-    let _permit = state
-        .heavy_work_semaphore
-        .acquire()
-        .await
-        .map_err(|_| "Heavy work semaphore closed".to_string())?;
+    // I566: Timeout on user-facing permit acquisition — return a friendly message
+    // instead of blocking indefinitely when background enrichment is running.
+    let _permit = match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        state.permits.user_initiated.acquire(),
+    )
+    .await
+    {
+        Ok(Ok(permit)) => permit,
+        Ok(Err(_)) => return Err("PTY permit closed".to_string()),
+        Err(_) => {
+            return Err(
+                "Background work in progress — your refresh is queued and will run shortly"
+                    .to_string(),
+            )
+        }
+    };
 
     let provider = state.context_provider();
     let is_remote = provider.is_remote();
@@ -144,7 +169,23 @@ pub async fn enrich_entity(
         .map_err(|e| format!("Enrichment task panicked: {}", e))??
     };
 
-    let final_intel = write_enrichment_results(state, &input, &parsed.intel, Some(&ai_config))?;
+    let final_intel = match write_enrichment_results(state, &input, &parsed.intel, Some(&ai_config))
+    {
+        Ok(intel) => intel,
+        Err(e) => {
+            if let Some(app) = app_handle {
+                let _ = app.emit(
+                    "background-work-status",
+                    serde_json::json!({
+                        "phase": "completed",
+                        "message": format!("Insight refresh failed for {}", input.entity_name),
+                        "count": 1,
+                    }),
+                );
+            }
+            return Err(e);
+        }
+    };
     if !parsed.inferred_relationships.is_empty() {
         let engine = state.signals.engine.clone();
         let entity_id_for_persist = input.entity_id.clone();
@@ -162,6 +203,17 @@ pub async fn enrich_entity(
                 .map(|_| ())
             })
             .await?;
+    }
+
+    if let Some(app) = app_handle {
+        let _ = app.emit(
+            "background-work-status",
+            serde_json::json!({
+                "phase": "completed",
+                "message": format!("Insights updated for {}", input.entity_name),
+                "count": 1,
+            }),
+        );
     }
 
     Ok(final_intel)

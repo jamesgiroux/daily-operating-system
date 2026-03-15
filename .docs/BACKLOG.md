@@ -566,6 +566,7 @@ Final pass before tagging v1.0.0. No beach balls, no silent failures, no securit
 | I570 | Keychain retry off Tokio threads | P2 | Backend / Performance |
 | I563 | shellConfig render loop on AccountDetailEditorial | P2 | Frontend / Architecture |
 | I571 | Surface background work status to user | P1 | Frontend / UX |
+| I599 | Welcome screen — eliminate blank window on startup, branded static HTML + React crossfade | P0 | Frontend + Backend / Startup UX |
 | I572 | Audit log for OAuth token lifecycle | P2 | Backend / Security |
 | I573 | Mutex poisoning recovery for critical state | P2 | Backend / Stability |
 

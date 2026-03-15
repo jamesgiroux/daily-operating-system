@@ -8,6 +8,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
@@ -58,6 +59,8 @@ import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useBackgroundStatus } from "@/hooks/useBackgroundStatus";
+import type { CalendarEvent, GoogleAuthStatus } from "@/types";
 import { PersonalityProvider } from "@/hooks/usePersonality";
 import { UpdateBanner } from "@/components/notifications/UpdateBanner";
 import { WhatsNewModal, useWhatsNewAutoShow } from "@/components/notifications/WhatsNewModal";
@@ -91,13 +94,90 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 // Add new editorial routes here as they're built.
 const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
+const WELCOME_MIN_MS = 1500;
+const WELCOME_MAX_MS = 5000;
+const CALENDAR_SETTLE_GRACE_MS = 450;
+
+function StartupWelcomeOverlay({ fading }: { fading: boolean }) {
+  const formattedDate = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "var(--color-paper-cream, #f5f2ef)",
+        opacity: fading ? 0 : 1,
+        transition: "opacity 300ms ease-out",
+        pointerEvents: fading ? "none" : "auto",
+      }}
+    >
+      <div style={{ width: 48, height: 1, background: "var(--color-rule-heavy, rgba(30,37,48,0.12))", marginBottom: 32 }} />
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width={36} height={36} aria-hidden="true">
+        <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="var(--color-spice-turmeric, #c9a227)" />
+      </svg>
+      <span
+        style={{
+          fontFamily: "var(--font-display, Newsreader), serif",
+          fontSize: 22,
+          fontWeight: 400,
+          letterSpacing: "0.06em",
+          color: "var(--color-text-primary, #1e2530)",
+          marginTop: 20,
+        }}
+      >
+        DailyOS
+      </span>
+      <span
+        style={{
+          fontFamily: "var(--font-body, DM Sans), sans-serif",
+          fontSize: 11,
+          fontWeight: 400,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: "var(--color-text-tertiary, #6b7280)",
+          marginTop: 8,
+        }}
+      >
+        {formattedDate}
+      </span>
+      <span
+        style={{
+          fontFamily: "var(--font-body, DM Sans), sans-serif",
+          fontSize: 12,
+          color: "var(--color-text-secondary, #4b5563)",
+          marginTop: 10,
+        }}
+      >
+        Preparing your briefing
+      </span>
+      <div style={{ width: 48, height: 1, background: "var(--color-rule-heavy, rgba(30,37,48,0.12))", marginTop: 32 }} />
+    </div>
+  );
+}
+
 // Root layout that wraps all pages
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
   useNotifications();
+  useBackgroundStatus();
   const navigate = useNavigate();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [checkingConfig, setCheckingConfig] = useState(true);
+  const [welcomeVisible, setWelcomeVisible] = useState(true);
+  const [welcomeFading, setWelcomeFading] = useState(false);
+  const mountTime = useRef(Date.now());
+  const [startupNeedsCalendarSettle, setStartupNeedsCalendarSettle] = useState<boolean | null>(null);
+  const [startupCalendarSettled, setStartupCalendarSettled] = useState(false);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const { autoShowOpen, dismissAutoShow } = useWhatsNewAutoShow();
   const { isLocked, setIsLocked } = useAppLock();
@@ -173,10 +253,119 @@ function RootLayout() {
     needsOnboarding,
   });
 
-  if (startupGate === "checking") {
+  const showWelcomeShellOnly = startupGate === "checking";
+  const showWelcomeOverlay = startupGate === "app" && welcomeVisible;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (startupGate !== "app") {
+      setStartupNeedsCalendarSettle(null);
+      setStartupCalendarSettled(false);
+      return;
+    }
+
+    async function inspectStartupStability() {
+      try {
+        const auth = await invoke<GoogleAuthStatus>("get_google_auth_status");
+        if (cancelled) return;
+        if (auth.status !== "authenticated") {
+          setStartupNeedsCalendarSettle(false);
+          setStartupCalendarSettled(true);
+          return;
+        }
+
+        setStartupNeedsCalendarSettle(true);
+        const events = await invoke<CalendarEvent[]>("get_calendar_events").catch(() => []);
+        if (cancelled) return;
+
+        if (events.length > 0) {
+          setStartupCalendarSettled(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setStartupNeedsCalendarSettle(false);
+          setStartupCalendarSettled(true);
+        }
+      }
+    }
+
+    inspectStartupStability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [startupGate]);
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    if (startupGate !== "app") {
+      return;
+    }
+
+    listen("calendar-updated", () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        setStartupCalendarSettled(true);
+      }, CALENDAR_SETTLE_GRACE_MS);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      unlisten?.();
+    };
+  }, [startupGate]);
+
+  // I599: Dismiss the pre-React HTML welcome screen once the React overlay is active.
+  useEffect(() => {
+    if (!showWelcomeShellOnly && !showWelcomeOverlay) return;
+    const htmlWelcome = document.getElementById("welcome-screen");
+    if (htmlWelcome) htmlWelcome.remove();
+  }, [showWelcomeOverlay, showWelcomeShellOnly]);
+
+  useEffect(() => {
+    if (startupGate !== "checking" && startupGate !== "app") {
+      setWelcomeVisible(false);
+      setWelcomeFading(false);
+    }
+  }, [startupGate]);
+
+  // Welcome screen: hold briefly, then fade while the app continues mounting underneath it.
+  useEffect(() => {
+    if (startupGate !== "app" || !welcomeVisible) {
+      return;
+    }
+    const elapsed = Date.now() - mountTime.current;
+    const minRemaining = Math.max(0, WELCOME_MIN_MS - elapsed);
+    const maxRemaining = Math.max(0, WELCOME_MAX_MS - elapsed);
+    const calendarReady =
+      startupNeedsCalendarSettle === false ||
+      (startupNeedsCalendarSettle === true && startupCalendarSettled);
+    const remaining = calendarReady ? minRemaining : maxRemaining;
+    const fadeTimer = setTimeout(() => {
+      const nowElapsed = Date.now() - mountTime.current;
+      const canFade =
+        nowElapsed >= WELCOME_MIN_MS &&
+        (
+          startupNeedsCalendarSettle !== true ||
+          startupCalendarSettled ||
+          nowElapsed >= WELCOME_MAX_MS
+        );
+      if (!canFade) return;
+      setWelcomeFading(true);
+      setTimeout(() => setWelcomeVisible(false), 300);
+    }, remaining);
+    return () => clearTimeout(fadeTimer);
+  }, [startupGate, startupCalendarSettled, startupNeedsCalendarSettle, welcomeVisible]);
+
+  if (showWelcomeShellOnly) {
     return (
       <ThemeProvider>
-        <div className="flex h-screen items-center justify-center bg-background" />
+        <StartupWelcomeOverlay fading={false} />
         <DevToolsPanel />
       </ThemeProvider>
     );
@@ -244,6 +433,7 @@ function RootLayout() {
             <TourTips />
             <Toaster position="bottom-right" />
             <DevToolsPanel />
+            {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
           </AppStateCtx.Provider>
         </PersonalityProvider>
       </ThemeProvider>
@@ -269,6 +459,7 @@ function RootLayout() {
           <TourTips />
           <Toaster position="bottom-right" />
           <DevToolsPanel />
+          {showWelcomeOverlay && <StartupWelcomeOverlay fading={welcomeFading} />}
         </AppStateCtx.Provider>
       </PersonalityProvider>
     </ThemeProvider>

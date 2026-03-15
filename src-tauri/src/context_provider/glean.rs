@@ -109,16 +109,22 @@ impl GleanMcpClient {
     ///
     /// Transparently refreshes expired tokens via Keychain + token endpoint.
     fn get_token(&self) -> Result<String, ContextError> {
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => tokio::task::block_in_place(|| {
-                handle.block_on(crate::glean::get_valid_access_token())
-            })
-            .map_err(|e| ContextError::Auth(format!("Glean token error: {}", e))),
-            Err(_) => match crate::glean::token_store::load_token() {
-                Ok(token) => Ok(token.access_token),
-                Err(e) => Err(ContextError::Auth(format!("Glean token not found: {}", e))),
-            },
-        }
+        // I569: Never refresh tokens on the caller's Tokio worker. Use a
+        // dedicated OS thread + single-thread runtime for the async refresh.
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| ContextError::Other(format!("Failed to build Glean token runtime: {}", e)))
+                .and_then(|rt| {
+                    rt.block_on(crate::glean::get_valid_access_token())
+                        .map_err(|e| ContextError::Auth(format!("Glean token error: {}", e)))
+                });
+            let _ = tx.send(result);
+        });
+        rx.recv()
+            .map_err(|_| ContextError::Auth("Token thread panicked".to_string()))?
     }
 
     /// Search Glean for documents related to a query.
@@ -824,6 +830,194 @@ impl GleanContextProvider {
 }
 
 // ---------------------------------------------------------------------------
+// I569: Standalone Glean context gather — runs on a separate OS thread with its
+// own DB connection to avoid blocking Tokio worker threads.
+// ---------------------------------------------------------------------------
+
+/// Standalone version of `gather_glean_context` that takes pre-extracted search
+/// queries and a thread-local DB connection. Used by the spawned thread in
+/// `gather_entity_context` to keep network calls off the Tokio thread pool.
+async fn gather_glean_context_standalone(
+    endpoint: &str,
+    cache: &GleanCache,
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    pre_queries: &[String],
+    gap_queries: &[GapQueryItem],
+) -> Result<GleanEntityData, ContextError> {
+    let client = GleanMcpClient::new(endpoint);
+
+    let mut queries: Vec<String> = pre_queries.to_vec();
+    // I508c: Append gap queries for dimension-aware Glean fan-out (cap at 3)
+    for q in gap_queries.iter().take(3) {
+        queries.push(q.query.clone());
+    }
+
+    let mut all_results: Vec<GleanSearchResult> = Vec::new();
+    let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Search Glean with each query
+    for query in &queries {
+        // Check cache first
+        if let Some(cached) =
+            cache.get_with_db(CacheKind::Document, &format!("search:{}", query), db)
+        {
+            if let Ok(results) = serde_json::from_str::<Vec<GleanSearchResult>>(&cached) {
+                for r in results {
+                    if let Some(ref url) = r.url {
+                        if seen_urls.insert(url.clone()) {
+                            all_results.push(r);
+                        }
+                    }
+                }
+                continue;
+            }
+        }
+
+        match client.search(query, MAX_DOCUMENTS_PER_ENTITY).await {
+            Ok(results) => {
+                // Cache the raw results
+                if let Ok(json) = serde_json::to_string(&results) {
+                    cache.put(CacheKind::Document, &format!("search:{}", query), &json, db);
+                }
+                for r in results {
+                    if let Some(ref url) = r.url {
+                        if seen_urls.insert(url.clone()) {
+                            all_results.push(r);
+                        }
+                    }
+                }
+            }
+            Err(ContextError::Timeout(msg)) => {
+                log::warn!("Glean search timeout for '{}': {}", query, msg);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    // I487: Emit Glean document signals for new/updated results
+    for result in &all_results {
+        let Some(ref snippet) = result.snippet else {
+            continue;
+        };
+        if snippet.is_empty() {
+            continue;
+        }
+        let url = result.url.as_deref().unwrap_or("");
+        if url.is_empty() {
+            continue;
+        }
+
+        let updated_at = result.updated_at.as_deref();
+        let has_existing =
+            match db.has_glean_signal_for_url(entity_type, entity_id, url, updated_at, 30) {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!(
+                        "I487: failed dedupe check for {} {} url={}: {}",
+                        entity_type, entity_id, url, e
+                    );
+                    false
+                }
+            };
+        if has_existing {
+            continue;
+        }
+
+        let value = format!(
+            "{}|{}|{}",
+            result.title.as_deref().unwrap_or(""),
+            result.doc_type.as_deref().unwrap_or(""),
+            url,
+        );
+        let _ = crate::signals::bus::emit_signal(
+            db, entity_type, entity_id, "glean_document", "glean_search",
+            Some(&value), 0.7,
+        );
+    }
+
+    // I500: Parse org health data from CRM-type documents (accounts only)
+    let org_health = if entity_type == "account" {
+        let account_name = db
+            .get_account(entity_id)
+            .ok()
+            .flatten()
+            .map(|a| a.name)
+            .unwrap_or_default();
+        parse_org_health_data(&all_results, &account_name)
+    } else {
+        None
+    };
+
+    // Build file_contents from search results (snippets)
+    let mut file_parts: Vec<String> = Vec::new();
+    let mut total_bytes = 0usize;
+    let max_bytes = 10_000;
+
+    for result in &all_results {
+        let title = result.title.as_deref().unwrap_or("Untitled");
+        let doc_type = result.doc_type.as_deref().unwrap_or("unknown");
+        let snippet = result.snippet.as_deref().unwrap_or("");
+        let updated = result.updated_at.as_deref().unwrap_or("unknown");
+
+        let entry = format!("--- {} [{}] ({}) ---\n{}", title, doc_type, updated, snippet);
+        let entry_bytes = entry.len();
+
+        if total_bytes + entry_bytes > max_bytes {
+            break;
+        }
+
+        file_parts.push(entry);
+        total_bytes += entry_bytes;
+    }
+
+    // People/org graph search (for stakeholders enrichment)
+    let people_results = if entity_type == "account" || entity_type == "project" {
+        let entity_name = match entity_type {
+            "account" => db.get_account(entity_id).ok().flatten().map(|a| a.name),
+            "project" => db.get_project(entity_id).ok().flatten().map(|p| p.name),
+            _ => None,
+        };
+
+        if let Some(name) = entity_name {
+            let cache_key = format!("org:{}", name);
+            if let Some(cached) = cache.get_with_db(CacheKind::OrgGraph, &cache_key, db) {
+                serde_json::from_str(&cached).unwrap_or_default()
+            } else {
+                match client.search_people(&name, 50).await {
+                    Ok(results) => {
+                        if let Ok(json) = serde_json::to_string(&results) {
+                            cache.put(CacheKind::OrgGraph, &cache_key, &json, db);
+                        }
+                        results
+                    }
+                    Err(e) => {
+                        log::warn!("Glean people search failed: {}", e);
+                        Vec::new()
+                    }
+                }
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    Ok(GleanEntityData {
+        file_contents: if file_parts.is_empty() {
+            String::new()
+        } else {
+            file_parts.join("\n\n")
+        },
+        people: people_results,
+        search_results: all_results,
+        org_health,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // I505: Glean contact processing — DB writes from Glean people results
 // ---------------------------------------------------------------------------
 
@@ -1063,40 +1257,64 @@ impl ContextProvider for GleanContextProvider {
                 .gather_entity_context(db, entity_id, entity_type, prior)?;
 
         // Phase B: Glean-sourced data (network calls).
-        // We use tokio::runtime::Handle to run async code from this sync trait method.
-        // SAFETY: block_in_place requires a multi-threaded tokio runtime and must NOT
-        // be called from inside spawn_blocking. All current callers (intel_queue,
-        // report generators) run on async tasks, so this is safe.
-        let glean_data = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                // We're inside a tokio runtime — use block_in_place to avoid deadlock
-                let gap_q = ctx.gap_queries.clone();
-                match tokio::task::block_in_place(|| {
-                    handle.block_on(self.gather_glean_context(db, entity_id, entity_type, &gap_q))
-                }) {
-                    Ok(data) => Some(data),
-                    Err(ContextError::Timeout(msg)) => {
-                        log::warn!(
-                            "Glean timeout for {} {}, using local-only context: {}",
-                            entity_type,
-                            entity_id,
-                            msg
-                        );
-                        None
-                    }
-                    Err(ContextError::Auth(msg)) => {
-                        log::warn!("Glean auth error: {}. Falling back to local.", msg);
-                        None
-                    }
-                    Err(e) => {
-                        log::warn!("Glean context gather failed: {}. Falling back to local.", e);
-                        None
-                    }
+        // I569: Use std::thread::spawn + oneshot to move network calls off Tokio threads
+        // entirely, avoiding block_in_place deadlock risk under contention.
+        let glean_data = {
+            // Pre-extract DB-dependent search queries on the current thread
+            let queries = self.entity_search_queries(db, entity_id, entity_type);
+            let gap_q = ctx.gap_queries.clone();
+            let endpoint = self.endpoint.clone();
+            let cache = Arc::clone(&self.cache);
+            let entity_id_owned = entity_id.to_string();
+            let entity_type_owned = entity_type.to_string();
+
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            std::thread::spawn(move || {
+                let result = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| ContextError::Other(format!("Failed to build Glean runtime: {}", e)))
+                    .and_then(|rt| {
+                        rt.block_on(async {
+                            // Open a fresh DB connection for this thread (ActionDb is !Send)
+                            let thread_db = crate::db::ActionDb::open()
+                                .map_err(|e| ContextError::Db(format!("Thread DB: {}", e)))?;
+                            gather_glean_context_standalone(
+                                &endpoint,
+                                &cache,
+                                &thread_db,
+                                &entity_id_owned,
+                                &entity_type_owned,
+                                &queries,
+                                &gap_q,
+                            )
+                            .await
+                        })
+                    });
+                let _ = tx.send(result);
+            });
+
+            match rx.recv() {
+                Ok(Ok(data)) => Some(data),
+                Ok(Err(ContextError::Timeout(msg))) => {
+                    log::warn!(
+                        "Glean timeout for {} {}, using local-only context: {}",
+                        entity_type, entity_id, msg
+                    );
+                    None
                 }
-            }
-            Err(_) => {
-                log::warn!("No tokio runtime available for Glean calls. Using local-only context.");
-                None
+                Ok(Err(ContextError::Auth(msg))) => {
+                    log::warn!("Glean auth error: {}. Falling back to local.", msg);
+                    None
+                }
+                Ok(Err(e)) => {
+                    log::warn!("Glean context gather failed: {}. Falling back to local.", e);
+                    None
+                }
+                Err(_) => {
+                    log::error!("Glean context thread panicked. Falling back to local.");
+                    None
+                }
             }
         };
 

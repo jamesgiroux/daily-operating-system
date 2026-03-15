@@ -872,25 +872,10 @@ pub async fn clear_intelligence(
 
 #[tauri::command]
 pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    // Get DB path before closing
-    let db_path = {
-        let guard = state.db.lock().map_err(|_| "DB lock failed")?;
-        if let Some(ref action_db) = *guard {
-            let path: String = action_db
-                .conn_ref()
-                .query_row("PRAGMA database_list", [], |row| row.get(2))
-                .map_err(|e| e.to_string())?;
-            Some(path)
-        } else {
-            None
-        }
-    };
+    let db_path = state.current_sync_db_path()?;
 
     // Close DB connection
-    {
-        let mut guard = state.db.lock().map_err(|_| "DB lock failed")?;
-        *guard = None;
-    }
+    state.replace_sync_db(None)?;
 
     // Delete database file
     if let Some(path) = db_path {
