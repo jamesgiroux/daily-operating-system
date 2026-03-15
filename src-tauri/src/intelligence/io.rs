@@ -1377,6 +1377,62 @@ pub fn apply_intelligence_field_update(
     Ok(intel)
 }
 
+/// Apply a field update to an in-memory IntelligenceJson (DB-sourced).
+///
+/// Same logic as `apply_intelligence_field_update` but operates on a struct
+/// instead of reading from disk. Used when the DB is the source of truth
+/// (post-I513, Glean enrichment writes directly to DB).
+pub fn apply_intelligence_field_update_in_memory(
+    existing: IntelligenceJson,
+    field_path: &str,
+    value: &str,
+) -> Result<IntelligenceJson, String> {
+    let mut json_val = serde_json::to_value(&existing)
+        .map_err(|e| format!("Failed to serialize existing intelligence: {}", e))?;
+
+    // Apply the update
+    let new_value: serde_json::Value = serde_json::from_str(value)
+        .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
+    set_json_path(&mut json_val, field_path, new_value)?;
+
+    // I576: Tag edited items with user_correction source attribution.
+    if let Ok(segments) = parse_path_segments(field_path) {
+        if let Some(PathSegment::Index(arr_name, idx)) = segments.last() {
+            if let Some(arr) = json_val.get_mut(arr_name.as_str()).and_then(|v| v.as_array_mut()) {
+                if let Some(item) = arr.get_mut(*idx) {
+                    if item.is_object() {
+                        item["itemSource"] = serde_json::json!({
+                            "source": "user_correction",
+                            "confidence": 1.0,
+                            "sourcedAt": Utc::now().to_rfc3339(),
+                            "reference": "user edit"
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Record user edit (dedup: replace existing edit for same path)
+    let edits = json_val.get_mut("userEdits").and_then(|v| v.as_array_mut());
+    let edit_entry = serde_json::json!({
+        "fieldPath": field_path,
+        "editedAt": Utc::now().to_rfc3339(),
+    });
+    if let Some(arr) = edits {
+        arr.retain(|e| e.get("fieldPath").and_then(|v| v.as_str()) != Some(field_path));
+        arr.push(edit_entry);
+    } else {
+        json_val["userEdits"] = serde_json::json!([edit_entry]);
+    }
+
+    // Validate by re-parsing into typed struct
+    let intel: IntelligenceJson =
+        serde_json::from_value(json_val).map_err(|e| format!("Updated JSON is invalid: {}", e))?;
+
+    Ok(intel)
+}
+
 /// Replace the stakeholderInsights array and record as user-edited.
 pub fn apply_stakeholders_update(
     dir: &Path,
