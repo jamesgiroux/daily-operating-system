@@ -269,7 +269,11 @@ export default function AccountDetailEditorial() {
               onClick={acct.handleEnrich}
               disabled={acct.enriching}
             >
-              {acct.enriching ? `Refreshing\u2026 ${acct.enrichSeconds ?? 0}s` : "Refresh"}
+              {acct.enriching
+                ? acct.enrichmentPercentage != null
+                  ? `Refreshing\u2026 ${acct.enrichmentPercentage}%`
+                  : `Refreshing\u2026 ${acct.enrichSeconds ?? 0}s`
+                : "Refresh"}
             </button>
           )}
           <div className={styles.reportsDropdownWrapper}>
@@ -356,7 +360,7 @@ export default function AccountDetailEditorial() {
         </div>
       ),
     }),
-    [navigate, accountId, acct.detail, acct.intelligence?.health, acct.setCreateChildOpen, acct.handleEnrich, acct.enriching, acct.enrichSeconds, acct.handleUnarchive, acct.handleIndexFiles, acct.indexing, reportsOpen, setReportsOpen, toolsOpen, setToolsOpen, preset?.id, saveStatus],
+    [navigate, accountId, acct.detail, acct.intelligence?.health, acct.setCreateChildOpen, acct.handleEnrich, acct.enriching, acct.enrichSeconds, acct.enrichmentPercentage, acct.handleUnarchive, acct.handleIndexFiles, acct.indexing, reportsOpen, setReportsOpen, toolsOpen, setToolsOpen, preset?.id, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 

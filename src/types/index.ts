@@ -1495,6 +1495,10 @@ export interface CompetitiveInsight {
   context?: string;
   source?: string;
   detectedAt?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface StrategicPriority {
@@ -1521,6 +1525,10 @@ export interface OrgChange {
   to?: string;
   detectedAt?: string;
   source?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface InternalTeamMember {
@@ -1576,6 +1584,10 @@ export interface ExpansionSignal {
   arrImpact?: number;
   source?: string;
   stage?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface RenewalOutlook {
@@ -1639,11 +1651,11 @@ export interface EntityIntelligence {
   /** I500 org-health baseline payload (when available). */
   orgHealth?: OrgHealthData | null;
   /** I396: Value delivered to the account. */
-  valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string }> | null;
+  valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
   /** I396: Success metrics / KPIs tracked for this entity. */
   successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
   /** I396: Open commitments (promises made to/from the account). */
-  openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string }> | null;
+  openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
   /** I396: Relationship depth assessment. */
   relationshipDepth?: { championStrength?: string; executiveAccess?: string; stakeholderCoverage?: string; coverageGaps?: string[] } | null;
   /** I527: Deterministic consistency status. */
@@ -1699,16 +1711,32 @@ export interface SourceManifestEntry {
   format?: string;
 }
 
+/** I576: Source attribution for individual intelligence items. */
+export interface ItemSource {
+  source: string;
+  confidence: number;
+  sourcedAt: string;
+  reference?: string;
+}
+
 export interface IntelRisk {
   text: string;
   source?: string;
   urgency: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface IntelWin {
   text: string;
   source?: string;
   impact?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface IntelCurrentState {
@@ -1727,6 +1755,10 @@ export interface StakeholderInsight {
   personId?: string;
   /** Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420). */
   suggestedPersonId?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface IntelMeetingReadiness {

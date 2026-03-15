@@ -131,10 +131,11 @@ pub async fn update_project_notes(
 /// Enrich a project via Claude Code intelligence enrichment.
 #[tauri::command]
 pub async fn enrich_project(
+    app_handle: tauri::AppHandle,
     project_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    crate::services::intelligence::enrich_entity(project_id, "project".to_string(), &state).await
+    crate::services::intelligence::enrich_entity(project_id, "project".to_string(), &state, Some(&app_handle)).await
 }
 
 // ── I76: Database Backup & Rebuild ──────────────────────────────────

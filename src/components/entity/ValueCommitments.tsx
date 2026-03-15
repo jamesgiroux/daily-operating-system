@@ -9,6 +9,7 @@ import { X } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
 import css from "./ValueCommitments.module.css";
 
 interface ValueCommitmentsProps {
@@ -183,6 +184,7 @@ export function ValueCommitments({
                         )}
                       </div>
                     )}
+                    <ProvenanceTag itemSource={item.itemSource} discrepancy={item.discrepancy} />
                   </div>
                   {(onUpdateField || onItemFeedback) && (
                     <span className={css.itemActions}>
