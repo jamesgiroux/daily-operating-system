@@ -1051,6 +1051,8 @@ mod live_acceptance_tests {
                 ),
                 source: Some("live-acceptance-test".to_string()),
                 urgency: "critical".to_string(),
+                item_source: None,
+                discrepancy: None,
             }],
             ..Default::default()
         };

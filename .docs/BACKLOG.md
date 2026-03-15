@@ -78,11 +78,11 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I401** | Show internal attendees for internal meetings — hydrate_attendee_context filters out all internal people, leaving "The Room" empty for team syncs | P2 | Backend / UX |
 | ~~I402~~ | ~~IntelligenceService extraction~~ — absorbed by I512 (ServiceLayer) in v1.0.0 | — | — |
 | **I403** | SignalService formalization — formalize signals/ module boundary as a service with clear public API | P2 | Code Quality / Refactor |
-| **I450** | ProjectService extraction — move 6 thick project handlers to services/projects.rs | P1 | Code Quality / Refactor |
-| **I451** | EmailService expansion — move email mutation handlers to services/emails.rs | P1 | Code Quality / Refactor |
-| **I452** | AccountService expansion — move create_internal_organization + child account handlers | P1 | Code Quality / Refactor |
-| **I453** | MeetingService expansion — move refresh_meeting_preps + attach_meeting_transcript | P1 | Code Quality / Refactor |
-| **I454** | SettingsService extraction — create services/settings.rs, move 7 settings handlers | P1 | Code Quality / Refactor |
+| ~~I450~~ | ~~ProjectService extraction — move 6 thick project handlers to services/projects.rs~~ — done | — | — |
+| ~~I451~~ | ~~EmailService expansion — move email mutation handlers to services/emails.rs~~ — done | — | — |
+| ~~I452~~ | ~~AccountService expansion — move create_internal_organization + child account handlers~~ — done | — | — |
+| ~~I453~~ | ~~MeetingService expansion — move refresh_meeting_preps + attach_meeting_transcript~~ — done | — | — |
+| ~~I454~~ | ~~SettingsService extraction — create services/settings.rs, move 7 settings handlers~~ — done | — | — |
 | **I404** | AppState decomposition Phase 1 — split 28-field AppState into domain containers (Db, Workflow, Calendar, Capture, Hygiene) | P1 | Code Quality / Refactor |
 | **I405** | AppState decomposition Phase 2 — split integration and signal fields into IntegrationState and SignalState containers | P2 | Code Quality / Refactor |
 | **I406** | Entity quality scoring — Beta distribution quality model per entity (`entity_quality` table); replaces binary has/missing classification | P1 | Backend / Intelligence |
@@ -106,10 +106,10 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I424** | Granola hardening — fix DB mutex hold during AI pipeline; add wake signal from calendar poller | P1 | Backend / Granola |
 | **I425** | Linear signal wiring — emit signals on issue sync; surface blocked/overdue issues in meeting prep and briefing attention | P1 | Backend / Linear + Intelligence |
 | **I426** | Google Drive connector — OAuth scope, folder/doc selection, doc import to `_inbox/` or entity context, markdown conversion, entity linking | P1 | Backend / Integrations + Frontend |
-| **I427** | Full-text search — Cmd+K finds entities, meetings, actions, contacts using SQLite FTS5; results in < 300ms | P1 | Frontend + Backend |
-| **I428** | Offline/degraded mode — serve cached intelligence gracefully when APIs unavailable; system status indicator | P1 | Backend |
-| **I429** | Data export — JSON ZIP export of entities, signals, intelligence; portability guarantee | P1 | Backend |
-| **I430** | Privacy clarity — Settings section explaining what's stored, how long, clear intelligence + delete all data options | P1 | Frontend |
+| ~~I427~~ | ~~Full-text search — Cmd+K finds entities, meetings, actions, contacts using SQLite FTS5; results in < 300ms~~ — done | — | — |
+| ~~I428~~ | ~~Offline/degraded mode — serve cached intelligence gracefully when APIs unavailable; system status indicator~~ — done | — | — |
+| ~~I429~~ | ~~Data export — JSON ZIP export of entities, signals, intelligence; portability guarantee~~ — done | — | — |
+| ~~I430~~ | ~~Privacy clarity — Settings section explaining what's stored, how long, clear intelligence + delete all data options~~ — done | — | — |
 | **I431** | Cost visibility — Claude call tracking, estimated weekly cost breakdown in Settings | P2 | Backend + Frontend |
 | **I432** | IntelligenceProvider abstraction — multi-LLM backend trait replacing direct PtyManager calls in intel_queue | P1 | Backend / Architecture |
 | **I433** | Ollama provider — local LLM support; nothing leaves the device when Ollama is selected | P1 | Backend / Intelligence |
@@ -117,7 +117,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I435** | Token optimization — audit ModelTier usage; Haiku for email enrichment; quality-gated entity enrichment | P1 | Backend |
 | ~~I436~~ | ~~Workspace file deprecation~~ — absorbed by I513 (workspace file elimination) in v1.0.0 | — | — |
 | **I437** | Empty state redesign — every surface guides action rather than reporting emptiness; role-preset-aware copy | P1 | Frontend / UX |
-| **I438** | Onboarding: Prime DailyOS — first content ingestion step; manual (drop transcript/doc) or connector (Quill/Granola/Drive); teaches feeding habit before automation takes over | P0 | Frontend / Onboarding |
+| ~~I438~~ | ~~Onboarding: Prime DailyOS — first content ingestion step; manual (drop transcript/doc) or connector (Quill/Granola/Drive); teaches feeding habit before automation takes over~~ — done | — | — |
 | **I439** | Personality expanded in UI — completion messages, generating states, toasts, error copy; never touches AI prompts (role presets handle intelligence framing) | P1 | Frontend / UX |
 | **I440** | Meeting prep preset persona — remove hardcoded "Customer Success Manager"; use active preset role name and vocabulary | P1 | Backend / Intelligence |
 | **I441** | Personality coverage + useActivePreset cache — fill 3 missing empty state keys; shared reactive context replacing per-page IPC calls | P1 | Frontend |
@@ -126,14 +126,14 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I444** | lifecycle_events wired — lifecycle stage pickers use preset events; stage injected into entity intelligence prompts | P1 | Backend / Frontend |
 | **I445** | prioritization wired — account list default sort and weekly forecast ranking use preset's primary_signal and urgency_drivers | P1 | Backend / Frontend |
 | **I446** | User entity page × role preset — section prominence, vocabulary/placeholders, named playbook sections for all 9 presets | P1 | Frontend / Entity |
-| **I447** | Design token audit — formalise opacity tokens, fix phantom token (`eucalyptus`), replace all rgba() violations, unify max-width | P1 | Frontend / Tokens |
-| **I448** | ActionsPage editorial rebuild — CSS module, margin grid, ChapterHeadings for groups, correct max-width, unconditional FinisMarker | P1 | Frontend / Actions |
-| **I449** | WeekPage + EmailsPage CSS module polish — TimelineDayGroup module, stat line tokens, EditorialLoading/EditorialError, FinisMarker | P1 | Frontend |
-| **I450** | Portfolio chapter extraction — shared CSS module for Account + Project Detail portfolio; conclusion-before-evidence editorial order | P1 | Frontend / Entity |
-| **I451** | MeetingDetailPage polish — Recent Correspondence editorial treatment; avatar tint tokens; FinisMarker unconditional | P2 | Frontend / Meeting |
-| **I452** | Settings page editorial audit — inline style cleanup, vocabulary compliance, section rules, FinisMarker | P2 | Frontend / Settings |
-| **I453** | Onboarding pages editorial standards — v0.16.0 wizard/demo/tour built to editorial spec; no inline styles | P1 | Frontend / Onboarding |
-| **I454** | Vocabulary pass — replace all remaining user-visible system terms per ADR-0083 | P1 | Frontend / Copy |
+| ~~I447~~ | ~~Design token audit — formalise opacity tokens, fix phantom token (`eucalyptus`), replace all rgba() violations, unify max-width~~ — done | — | — |
+| ~~I448~~ | ~~ActionsPage editorial rebuild — CSS module, margin grid, ChapterHeadings for groups, correct max-width, unconditional FinisMarker~~ — done | — | — |
+| ~~I449~~ | ~~WeekPage + EmailsPage CSS module polish — TimelineDayGroup module, stat line tokens, EditorialLoading/EditorialError, FinisMarker~~ — done | — | — |
+| ~~I450~~ | ~~Portfolio chapter extraction — shared CSS module for Account + Project Detail portfolio; conclusion-before-evidence editorial order~~ — done | — | — |
+| ~~I451~~ | ~~MeetingDetailPage polish — Recent Correspondence editorial treatment; avatar tint tokens; FinisMarker unconditional~~ — done | — | — |
+| ~~I452~~ | ~~Settings page editorial audit — inline style cleanup, vocabulary compliance, section rules, FinisMarker~~ — done | — | — |
+| ~~I453~~ | ~~Onboarding pages editorial standards — v0.16.0 wizard/demo/tour built to editorial spec; no inline styles~~ — done | — | — |
+| ~~I454~~ | ~~Vocabulary pass — replace all remaining user-visible system terms per ADR-0083~~ — done | — | — |
 | **I455** | 1:1 meeting prep focuses on person entity intelligence, not account | P1 | Backend / Intelligence |
 | **I456** | In-app markdown reader for entity documents — view .md files from account/project/person Documents/ without leaving app | P2 | Frontend / UX |
 | **I457** | Background task throttling — ActivityMonitor, HeavyWorkSemaphore, adaptive polling intervals | P1 | Backend / Performance |
@@ -150,61 +150,61 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I482** | Role-aware Glean query optimization — preset vocabulary shapes search queries, lifecycle-stage filtering, dedup | P1 | Backend / Connectors + Intelligence |
 | **I483** | Theme infrastructure + shipped presets — `data-theme` token layering, typography scale controls, three shipped themes (Warm/Dark/Cool), Settings picker, custom theme docs | P1 | Frontend / Tokens + Settings |
 | ~~I484~~ | ~~Health score always-on~~ — superseded by I499–I503 per ADR-0097 | — | — |
-| **I499** | Health scoring engine — 6 algorithmic relationship dimensions, lifecycle weighting, sparse data handling | P1 | Backend / Intelligence |
-| **I500** | Glean org-score parsing — extract structured health data from Glean results as baseline | P1 | Backend / Connectors |
+| ~~I499~~ | ~~Health scoring engine — 6 algorithmic relationship dimensions, lifecycle weighting, sparse data handling~~ — done | — | — |
+| ~~I500~~ | ~~Glean org-score parsing — extract structured health data from Glean results as baseline~~ — done | — | — |
 | ~~I501~~ | ~~Transcript sentiment extraction~~ — absorbed by I509 (interaction dynamics + sentiment) | — | — |
-| **I502** | Health surfaces — render health band, dimensions, divergence across all app pages | P1 | Frontend / UX |
-| **I503** | intelligence.json health schema evolution — AccountHealth struct, RelationshipDimensions, migration | P1 | Backend / Intelligence + Frontend |
+| ~~I502~~ | ~~Health surfaces — render health band, dimensions, divergence across all app pages~~ — done | — | — |
+| ~~I503~~ | ~~intelligence.json health schema evolution — AccountHealth struct, RelationshipDimensions, migration~~ — done | — | — |
 | ~~I485~~ | ~~Store inferred relationships from enrichment~~ — superseded by I504–I506 | — | — |
 | ~~I486~~ | ~~Glean structured person data writeback~~ — absorbed by I505 | — | — |
-| **I504** | AI-inferred relationship extraction — fix prompt schema, call extraction function, persist to person_relationships | P1 | Backend / Intelligence |
-| **I505** | Glean stakeholder intelligence — contact discovery, profile enrichment, entity linkage, manager relationships, team sync (absorbs I486) | P1 | Backend / Connectors + Entity |
-| **I506** | Co-attendance relationship inference — algorithmic collaborator/peer edges from meeting frequency | P2 | Backend / Intelligence + Signals |
-| **I487** | Glean signal emission — new-only document signals, ADR-0098 purge compliance (person signals → I505) | P1 | Backend / Connectors + Signals |
-| **I507** | Source-attributed correction feedback — close feedback loop for Glean, Clay, email sources | P2 | Backend / Signals + Intelligence |
+| ~~I504~~ | ~~AI-inferred relationship extraction — fix prompt schema, call extraction function, persist to person_relationships~~ — done | — | — |
+| ~~I505~~ | ~~Glean stakeholder intelligence — contact discovery, profile enrichment, entity linkage, manager relationships, team sync (absorbs I486)~~ — done | — | — |
+| ~~I506~~ | ~~Co-attendance relationship inference — algorithmic collaborator/peer edges from meeting frequency~~ — done | — | — |
+| ~~I487~~ | ~~Glean signal emission — new-only document signals, ADR-0098 purge compliance (person signals → I505)~~ — done | — | — |
+| ~~I507~~ | ~~Source-attributed correction feedback — close feedback loop for Glean, Clay, email sources~~ — done | — | — |
 | ~~I488~~ | ~~Semantic gap queries sent to Glean~~ — absorbed by I508 (intelligence schema redesign) | — | — |
-| **I508** | Intelligence schema redesign for multi-source enrichment — 6 research-grounded dimensions, gap detection, source-agnostic prompt | P0 | Backend / Intelligence + Frontend |
-| **I509** | Transcript personal interpretation + sentiment — personal priority impact, relationship trajectory, sentiment as local signal; org-level dynamics deferred to Glean; absorbs I501 (← I508) | P1 | Backend / Pipeline + Intelligence |
+| ~~I508~~ | ~~Intelligence schema redesign for multi-source enrichment — 6 research-grounded dimensions, gap detection, source-agnostic prompt~~ — done | — | — |
+| ~~I509~~ | ~~Transcript personal interpretation + sentiment — personal priority impact, relationship trajectory, sentiment as local signal; org-level dynamics deferred to Glean; absorbs I501 (← I508)~~ — done | — | — |
 | **I489** | VP Account Review report type — leadership-facing strategic assessment, risk/opportunity matrix, VP-level actions | P1 | Backend / Reports |
 | **I490** | Renewal Readiness report type (absorbs I458) — 90-day renewal risk assessment, readiness rating, champion alignment | P1 | Backend / Reports |
 | **I491** | Portfolio Health Summary report type — cross-account VP synthesis, exceptions, renewal pipeline, portfolio narrative | P1 | Backend / Reports |
 | **I492** | Portfolio Health page — editorial aggregate view, health heatmap, exception list, renewal timeline | P1 | Frontend / Pages |
-| **I493** | Account detail enriched intelligence surface — Glean-sourced titles, coverage gaps, reports chapter (health rendering owned by I502) | P1 | Frontend / Entity |
+| ~~I493~~ | ~~Account detail enriched intelligence surface — Glean-sourced titles, coverage gaps, reports chapter (health rendering owned by I502)~~ — done | — | — |
 | **I494** | Glean account discovery flow — import CRM accounts via Glean, one-click add with pre-populated context | P1 | Backend / Connectors + Frontend |
 | **I495** | Ephemeral account query — "tell me about X" transient briefing via Glean, no persistent entity | P1 | Backend / Connectors + Frontend |
 | **I496** | Stakeholder Map report type (absorbs I459) — coverage grid, influence network, engagement assessment | P1 | Backend / Reports |
 | **I497** | Success Plan report type (absorbs I460) — shared objectives, progress, customer-presentable | P1 | Backend / Reports |
 | **I498** | Coaching Patterns report type (absorbs I461) — meeting cadence, engagement patterns, book-level norms, coaching recommendations | P2 | Backend / Reports |
 | ~~I510~~ | ~~Supabase project provisioning~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
-| **I511** | Local schema decomposition + migration safety hardening (backend-only) — fail-hard runner, guaranteed backups, atomic decomposition migration, schema integrity checks | P0 | Backend / DB |
-| **I512** | ServiceLayer — every mutation → local DB write + signal emission (mandatory mutation path) | P0 | Backend / Architecture |
-| **I513** | Workspace file elimination — DB as sole local data layer, no _today/data/, no intelligence.json on disk | P0 | Backend / Architecture |
-| **I514** | Module decomposition — commands.rs→domain files, db.rs→domain modules. Spec: `.docs/issues/i514.md` | P1 | Backend / Architecture |
-| **I515** | Pipeline reliability — retry with backoff, circuit breaker, partial result preservation, pipeline_failures table. Spec: `.docs/issues/i515.md` | P1 | Backend / Architecture |
+| ~~I511~~ | ~~Local schema decomposition + migration safety hardening (backend-only) — fail-hard runner, guaranteed backups, atomic decomposition migration, schema integrity checks~~ — done | — | — |
+| ~~I512~~ | ~~ServiceLayer — every mutation → local DB write + signal emission (mandatory mutation path)~~ — done | — | — |
+| ~~I513~~ | ~~Workspace file elimination — DB as sole local data layer, no _today/data/, no intelligence.json on disk~~ — done | — | — |
+| ~~I514~~ | ~~Module decomposition — commands.rs→domain files, db.rs→domain modules. Spec: `.docs/issues/i514.md`~~ — done | — | — |
+| ~~I515~~ | ~~Pipeline reliability — retry with backoff, circuit breaker, partial result preservation, pipeline_failures table. Spec: `.docs/issues/i515.md`~~ — done | — | — |
 | ~~I516~~ | ~~Sync engine~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I517~~ | ~~Supabase Auth~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I518~~ | ~~Organization + territory model~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I519~~ | ~~RLS policy design~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I520~~ | ~~Auth-first onboarding~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
-| **I521** | Frontend structural cleanup + production-data parity gate — remove ghost components, consolidate duplicate patterns, lock command/field contracts, enforce mock+production fixture parity. Spec: `.docs/issues/i521.md` | P1 | Frontend / Architecture + QA |
+| ~~I521~~ | ~~Frontend structural cleanup + production-data parity gate — remove ghost components, consolidate duplicate patterns, lock command/field contracts, enforce mock+production fixture parity. Spec: `.docs/issues/i521.md`~~ — done | — | — |
 | ~~I522~~ | ~~Server-side embedding pipeline~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I523~~ | ~~Admin panel~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I524~~ | ~~Conflict resolution~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
 | ~~I525~~ | ~~Offline mode redesign~~ — withdrawn with ADR-0099 (2026-03-03). I428 restored. | — | — |
 | ~~I526~~ | ~~Online/offline detection~~ — withdrawn with ADR-0099 (2026-03-03) | — | — |
-| **I527** | Intelligence consistency guardrails — deterministic contradiction checks, balanced repair retry, and corrected/flagged trust surfacing for intelligence output. Spec: `.docs/issues/i527.md` | P0 | Backend / Intelligence + Frontend / UX + Docs |
-| **I528** | ADR-0098 data lifecycle infrastructure — DataSource enum, purge_source(), data_lifecycle.rs. Prerequisite for I487 + I505. Spec: `.docs/issues/i528.md` | P1 | Backend / Data Governance |
-| **I529** | Intelligence quality feedback UI — thumbs up/down on hover for any intelligence item. Feeds Bayesian source weights. Spec: `.docs/issues/i529.md` | P1 | Frontend + Backend / Signals |
-| **I530** | Signal taxonomy: curation vs correction — delete = no source penalty, edit = correction, thumbs down = correction. Spec: `.docs/issues/i530.md` | P1 | Backend / Signals |
+| ~~I527~~ | ~~Intelligence consistency guardrails — deterministic contradiction checks, balanced repair retry, and corrected/flagged trust surfacing for intelligence output. Spec: `.docs/issues/i527.md`~~ — done | — | — |
+| ~~I528~~ | ~~ADR-0098 data lifecycle infrastructure — DataSource enum, purge_source(), data_lifecycle.rs. Prerequisite for I487 + I505. Spec: `.docs/issues/i528.md`~~ — done | — | — |
+| ~~I529~~ | ~~Intelligence quality feedback UI — thumbs up/down on hover for any intelligence item. Feeds Bayesian source weights. Spec: `.docs/issues/i529.md`~~ — done | — | — |
+| ~~I530~~ | ~~Signal taxonomy: curation vs correction — delete = no source penalty, edit = correction, thumbs down = correction. Spec: `.docs/issues/i530.md`~~ — done | — | — |
 | **I531** | Glean-powered proactive self-healing — hygiene detects gaps, searches Glean, fills intelligence. Signal emission fixes. Spec: `.docs/issues/i531.md` | P1 | Backend / Self-Healing / Connectors |
 | **I532** | Intelligence surfacing threshold model — significance scoring, surfacing budgets, fatigue prevention, feedback-driven learning. Spec: `.docs/issues/i532.md` | P1 | Backend / Signals + Frontend / Briefing |
 | **I533** | Publication engine — Google Drive output layer. Reports published as PDF/Google Doc to Shared Drive. Auto-indexed by Glean. Spec: `.docs/issues/i533.md` | P1 | Backend / Publication |
 | **I534** | Portfolio reader — read published intelligence from Shared Drive for cross-IC portfolio synthesis. JSON sidecar parsing. Spec: `.docs/issues/i534.md` | P1 | Backend + Frontend |
-| **I535** | Glean Agent integration — call purpose-built Glean Agents via REST API for org-level analysis during enrichment. Spec: `.docs/issues/i535.md` | P1 | Backend / Connectors |
-| **I536** | Dev tools mock data migration — rewrite seed data for v1.0.0 schema, consolidate scenarios (6→4), eliminate workspace file writes, rich 6-dimension intelligence data. Spec: `.docs/issues/i536.md` | P1 | Backend / Dev Tools |
-| **I537** | Gate role presets behind feature flag — hide preset selection UI (onboarding + settings), hard-default to CS. Preset infrastructure stays. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
-| **I538** | Meeting briefing refresh — rollback on failure. Snapshot existing prep before clearing, restore if enrichment fails. Spec: `.docs/issues/i538.md` | P1 | Backend / Pipeline |
-| **I539** | Database recovery UX for migration/DB failure — startup blocker + Settings/Data recovery controls; scope extracted from I511. Spec: `.docs/issues/i539.md` | P1 | Frontend + Backend / Settings + Startup Recovery |
+| **I535** | Glean Agent integration — call purpose-built Glean Agents via REST API for org-level analysis during enrichment. Spec: `.docs/issues/i535.md` — Steps 1-8 implemented, blocked on testing | P1 | Backend / Connectors |
+| ~~I536~~ | ~~Dev tools mock data migration — rewrite seed data for v1.0.0 schema, consolidate scenarios (6→4), eliminate workspace file writes, rich 6-dimension intelligence data. Spec: `.docs/issues/i536.md`~~ — done | — | — |
+| ~~I537~~ | ~~Gate role presets behind feature flag — hide preset selection UI (onboarding + settings), hard-default to CS. Preset infrastructure stays. Spec: `.docs/issues/i537.md`~~ — done | — | — |
+| ~~I538~~ | ~~Meeting briefing refresh — rollback on failure. Snapshot existing prep before clearing, restore if enrichment fails. Spec: `.docs/issues/i538.md`~~ — done | — | — |
+| ~~I539~~ | ~~Database recovery UX for migration/DB failure — startup blocker + Settings/Data recovery controls; scope extracted from I511. Spec: `.docs/issues/i539.md`~~ — done | — | — |
 | **I563** | shellConfig render loop on AccountDetailEditorial — `useRegisterMagazineShell` re-register cycle causes max update depth warning | P2 | Frontend / Architecture |
 
 ---
@@ -584,14 +584,14 @@ Dissolved 2026-03-04. GA features (I427-I431, I435, I438) absorbed into v1.0.0 P
 
 | ID | Title | Absorbed Into |
 |----|-------|---------------|
-| I427 | Full-text search | v1.0.0 Phase 3b |
-| I428 | Offline/degraded mode | v1.0.0 Phase 3b |
-| I429 | Data export | v1.0.0 Phase 3b |
-| I430 | Privacy clarity | v1.0.0 Phase 3b |
+| ~~I427~~ | ~~Full-text search~~ — done | v1.0.0 Phase 3b |
+| ~~I428~~ | ~~Offline/degraded mode~~ — done | v1.0.0 Phase 3b |
+| ~~I429~~ | ~~Data export~~ — done | v1.0.0 Phase 3b |
+| ~~I430~~ | ~~Privacy clarity~~ — done | v1.0.0 Phase 3b |
 | I431 | Cost visibility | v1.0.0 Phase 3b |
 | I435 | Token optimization | v1.0.0 Phase 2 |
-| I438 | Prime DailyOS | v1.0.0 Phase 3b |
-| I527 | Intelligence consistency guardrails | v1.0.0 Phase 2 |
+| ~~I438~~ | ~~Prime DailyOS~~ — done | v1.0.0 Phase 3b |
+| ~~I527~~ | ~~Intelligence consistency guardrails~~ — done | v1.0.0 Phase 2 |
 
 ---
 
@@ -607,37 +607,37 @@ Dissolved 2026-03-03. Editorial polish absorbed into v1.0.0 Phase 3: I447-I454. 
 
 Requires v0.16.0 first. Full version brief: `.docs/plans/v1.0.0.md`.
 
-**Phase 1 — Schema + ServiceLayer + Workspace File Elimination:**
+**Phase 1 — Schema + ServiceLayer + Workspace File Elimination (DONE):**
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I511 | Local schema decomposition + migration safety hardening (backend-only) — spec: `.docs/issues/i511.md` (absorbs I381) | P0 | Backend / DB |
-| I539 | Database recovery UX for migration/DB failure — startup blocker + Settings/Data recovery controls. Scope extracted from I511. Spec: `.docs/issues/i539.md` | P1 | Frontend + Backend / Settings + Startup Recovery |
-| I512 | ServiceLayer — mandatory mutation path + signal emission — spec: `.docs/issues/i512.md` (absorbs I380, I402) | P0 | Backend / Architecture |
-| I513 | DB as sole source of truth for app-generated state — spec: `.docs/issues/i513.md` (absorbs I436). Workspace dirs + user files stay; app stops reading intelligence.json, dashboard.json, _today/data/*.json as data sources | P0 | Backend / Architecture |
+| ~~I511~~ | ~~Local schema decomposition + migration safety hardening (backend-only) — spec: `.docs/issues/i511.md` (absorbs I381)~~ — done | — | — |
+| ~~I539~~ | ~~Database recovery UX for migration/DB failure — startup blocker + Settings/Data recovery controls. Scope extracted from I511. Spec: `.docs/issues/i539.md`~~ — done | — | — |
+| ~~I512~~ | ~~ServiceLayer — mandatory mutation path + signal emission — spec: `.docs/issues/i512.md` (absorbs I380, I402)~~ — done | — | — |
+| ~~I513~~ | ~~DB as sole source of truth for app-generated state — spec: `.docs/issues/i513.md` (absorbs I436). Workspace dirs + user files stay; app stops reading intelligence.json, dashboard.json, _today/data/*.json as data sources~~ — done | — | — |
 
-**Phase 2 — Intelligence Foundation:**
+**Phase 2 — Intelligence Foundation (DONE):**
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I508 | Intelligence schema redesign — 6 dimensions | P0 | Backend / Intelligence |
-| I499 | Health scoring engine | P1 | Backend / Intelligence |
-| I503 | Health schema evolution | P1 | Backend / Intelligence + Frontend |
-| I500 | Glean org-score parsing | P1 | Backend / Connectors |
-| I504 | AI-inferred relationship extraction | P1 | Backend / Intelligence |
-| I505 | Glean stakeholder intelligence | P1 | Backend / Connectors + Entity |
-| I506 | Co-attendance relationship inference | P2 | Backend / Intelligence |
-| I487 | Glean signal emission | P1 | Backend / Connectors + Signals |
-| I509 | Transcript personal interpretation + sentiment | P1 | Backend / Pipeline |
-| I507 | Source-attributed correction feedback | P2 | Backend / Signals |
-| I528 | ADR-0098 data lifecycle infrastructure — DataSource enum, purge_source(), data_lifecycle.rs. Prerequisite for I487 + I505 purge ACs. Spec: `.docs/issues/i528.md` | P1 | Backend / Data Governance |
+| ~~I508~~ | ~~Intelligence schema redesign — 6 dimensions~~ — done | — | — |
+| ~~I499~~ | ~~Health scoring engine~~ — done | — | — |
+| ~~I503~~ | ~~Health schema evolution~~ — done | — | — |
+| ~~I500~~ | ~~Glean org-score parsing~~ — done | — | — |
+| ~~I504~~ | ~~AI-inferred relationship extraction~~ — done | — | — |
+| ~~I505~~ | ~~Glean stakeholder intelligence~~ — done | — | — |
+| ~~I506~~ | ~~Co-attendance relationship inference~~ — done | — | — |
+| ~~I487~~ | ~~Glean signal emission~~ — done | — | — |
+| ~~I509~~ | ~~Transcript personal interpretation + sentiment~~ — done | — | — |
+| ~~I507~~ | ~~Source-attributed correction feedback~~ — done | — | — |
+| ~~I528~~ | ~~ADR-0098 data lifecycle infrastructure — DataSource enum, purge_source(), data_lifecycle.rs. Prerequisite for I487 + I505 purge ACs. Spec: `.docs/issues/i528.md`~~ — done | — | — |
 | I435 | Token optimization — ModelTier audit; Haiku for email enrichment | P1 | Backend / Pipeline |
 
-**Phase 2a — Dev Tools Mock Data Migration (after Phase 2, before Phase 3):**
+**Phase 2a — Dev Tools Mock Data Migration (DONE):**
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I536 | Dev tools mock data migration — rewrite seed data for v1.0.0 schema (I511 tables), 6-dimension intelligence (I508), health scores (I499), signal/feedback variety (I529/I530). Consolidate scenarios 6→4. Eliminate workspace file writes. `mock-` prefix IDs. Spec: `.docs/issues/i536.md` | P1 | Backend / Dev Tools |
+| ~~I536~~ | ~~Dev tools mock data migration — rewrite seed data for v1.0.0 schema (I511 tables), 6-dimension intelligence (I508), health scores (I499), signal/feedback variety (I529/I530). Consolidate scenarios 6→4. Eliminate workspace file writes. `mock-` prefix IDs. Spec: `.docs/issues/i536.md`~~ — done | — | — |
 
 **Phase 3 — Structural Cleanup + Surfaces + GA Readiness:**
 
@@ -645,48 +645,48 @@ Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches,
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| I514 | Module decomposition — commands.rs → domain files, db.rs → re-export hub. Spec: `.docs/issues/i514.md` | P1 | Backend / Architecture |
-| I515 | Pipeline reliability — retry with backoff, circuit breaker, partial result preservation, pipeline_failures table. Spec: `.docs/issues/i515.md` | P1 | Backend / Architecture |
-| I521 | Frontend structural cleanup + production-data parity gate — ghost removal, duplicate consolidation, command/field contract registry, mock+production parity gate. Spec: `.docs/issues/i521.md` | P1 | Frontend / Architecture + QA |
-| I502 | Health surfaces — render health band, dimensions, divergence across all pages | P1 | Frontend / UX |
-| I493 | Account detail enriched intelligence — Glean-sourced titles, coverage gaps, reports chapter | P1 | Frontend / Entity |
-| I427 | Full-text search — Cmd+K via SQLite FTS5, < 300ms (build on clean schema post-I511) | P1 | Frontend + Backend |
-| I428 | Offline/degraded mode — cached intelligence, system status indicator, no blank screens | P1 | Backend + Frontend |
-| I429 | Data export — JSON ZIP of all entities, signals, intelligence; portability guarantee | P1 | Backend |
-| I430 | Privacy clarity — what's stored, how long, clear intelligence + delete all data | P1 | Frontend |
+| ~~I514~~ | ~~Module decomposition — commands.rs → domain files, db.rs → re-export hub. Spec: `.docs/issues/i514.md`~~ — done | — | — |
+| ~~I515~~ | ~~Pipeline reliability — retry with backoff, circuit breaker, partial result preservation, pipeline_failures table. Spec: `.docs/issues/i515.md`~~ — done | — | — |
+| ~~I521~~ | ~~Frontend structural cleanup + production-data parity gate — ghost removal, duplicate consolidation, command/field contract registry, mock+production parity gate. Spec: `.docs/issues/i521.md`~~ — done | — | — |
+| ~~I502~~ | ~~Health surfaces — render health band, dimensions, divergence across all pages~~ — done | — | — |
+| ~~I493~~ | ~~Account detail enriched intelligence — Glean-sourced titles, coverage gaps, reports chapter~~ — done | — | — |
+| ~~I427~~ | ~~Full-text search — Cmd+K via SQLite FTS5, < 300ms (build on clean schema post-I511)~~ — done | — | — |
+| ~~I428~~ | ~~Offline/degraded mode — cached intelligence, system status indicator, no blank screens~~ — done | — | — |
+| ~~I429~~ | ~~Data export — JSON ZIP of all entities, signals, intelligence; portability guarantee~~ — done | — | — |
+| ~~I430~~ | ~~Privacy clarity — what's stored, how long, clear intelligence + delete all data~~ — done | — | — |
 | I431 | Cost visibility — Claude call tracking, estimated weekly cost in Settings | P2 | Backend + Frontend |
-| I438 | Prime DailyOS — first content ingestion step in wizard; manual or connector | P1 | Frontend / Onboarding |
-| I447 | Design token audit — opacity tokens, rgba violations, max-width unification | P1 | Frontend / Tokens |
-| I448 | ActionsPage editorial rebuild — CSS module, margin grid, ChapterHeadings | P1 | Frontend / Actions |
-| I449 | WeekPage + EmailsPage CSS module polish | P1 | Frontend |
-| I450 | Portfolio chapter extraction — shared CSS module, conclusion-before-evidence order | P1 | Frontend / Entity |
+| ~~I438~~ | ~~Prime DailyOS — first content ingestion step in wizard; manual or connector~~ — done | — | — |
+| ~~I447~~ | ~~Design token audit — opacity tokens, rgba violations, max-width unification~~ — done | — | — |
+| ~~I448~~ | ~~ActionsPage editorial rebuild — CSS module, margin grid, ChapterHeadings~~ — done | — | — |
+| ~~I449~~ | ~~WeekPage + EmailsPage CSS module polish~~ — done | — | — |
+| ~~I450~~ | ~~Portfolio chapter extraction — shared CSS module, conclusion-before-evidence order~~ — done | — | — |
 | ~~I451~~ | ~~MeetingDetailPage polish~~ — superseded by I542 (full style migration + vocabulary) | — | — |
 | ~~I452~~ | ~~Settings page editorial audit~~ — superseded by I541 (full UX rebuild: IA reorg, style migration, pagination, vocabulary) | — | — |
-| I453 | Onboarding pages editorial standards — v0.16.0 pages built to editorial spec | P1 | Frontend / Onboarding |
-| I454 | Vocabulary pass — replace all remaining user-visible system terms per ADR-0083 | P1 | Frontend / Copy |
-| I529 | Intelligence quality feedback UI — thumbs up/down on hover for intelligence items. Spec: `.docs/issues/i529.md` | P1 | Frontend + Backend / Signals |
-| I530 | Signal taxonomy: curation vs correction — delete ≠ wrong. Spec: `.docs/issues/i530.md` | P1 | Backend / Signals |
-| I537 | Gate role presets behind feature flag — hide preset selection UI, hard-default to CS. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
-| I540 | Actions pipeline integrity + lifecycle — 6 broken paths: Granola metadata loss, briefing blind to DB actions, archive never called, rejection source "unknown", thin free-tier summaries, deceptive tooltip. 30-day pending archive, Granola enrichment, briefing integration. Spec: `.docs/issues/i540.md` | P0 | Backend / Pipeline + Frontend / Actions |
-| I541 | Settings page UX rebuild — IA reorg (YouCard split into Identity/Workspace/Preferences), full inline style migration to CSS modules, audit log pagination, vocabulary fixes, StatusDot consolidation. Supersedes I452. Spec: `.docs/issues/i541.md` | P1 | Frontend / Settings / UX |
-| I542 | MeetingDetailPage style migration + vocabulary — migrate 51 inline styles to CSS module, replace hardcoded colors with tokens, fix 3 ADR-0083 violations. Supersedes I451. Spec: `.docs/issues/i542.md` | P1 | Frontend / Meeting Detail / UX |
+| ~~I453~~ | ~~Onboarding pages editorial standards — v0.16.0 pages built to editorial spec~~ — done | — | — |
+| ~~I454~~ | ~~Vocabulary pass — replace all remaining user-visible system terms per ADR-0083~~ — done | — | — |
+| ~~I529~~ | ~~Intelligence quality feedback UI — thumbs up/down on hover for intelligence items. Spec: `.docs/issues/i529.md`~~ — done | — | — |
+| ~~I530~~ | ~~Signal taxonomy: curation vs correction — delete ≠ wrong. Spec: `.docs/issues/i530.md`~~ — done | — | — |
+| ~~I537~~ | ~~Gate role presets behind feature flag — hide preset selection UI, hard-default to CS. Spec: `.docs/issues/i537.md`~~ — done | — | — |
+| ~~I540~~ | ~~Actions pipeline integrity + lifecycle — 6 broken paths: Granola metadata loss, briefing blind to DB actions, archive never called, rejection source "unknown", thin free-tier summaries, deceptive tooltip. 30-day pending archive, Granola enrichment, briefing integration. Spec: `.docs/issues/i540.md`~~ — done | — | — |
+| ~~I541~~ | ~~Settings page UX rebuild — IA reorg (YouCard split into Identity/Workspace/Preferences), full inline style migration to CSS modules, audit log pagination, vocabulary fixes, StatusDot consolidation. Supersedes I452. Spec: `.docs/issues/i541.md`~~ — done | — | — |
+| ~~I542~~ | ~~MeetingDetailPage style migration + vocabulary — migrate 51 inline styles to CSS module, replace hardcoded colors with tokens, fix 3 ADR-0083 violations. Supersedes I451. Spec: `.docs/issues/i542.md`~~ — done | — | — |
 | I543 | GA design documentation — document 11 undocumented pages, add 114 missing components to inventory, create STATE-PATTERNS.md, developer checklists. Spec: `.docs/issues/i543.md` | P1 | Documentation / Design System |
-| I544 | Component DRY/SRP reconciliation — app-wide duplicate detection (StatusDot 3x, per-page empty/loading states), shared component extraction, dead code removal, SRP violations. Spec: `.docs/issues/i544.md` | P1 | Frontend / Code Quality |
-| I545 | Entity detail pages style migration — 105 inline styles across AccountDetailEditorial (51), ProjectDetailEditorial (39), PersonDetailEditorial (15) + 7 hardcoded rgba values. Shared CSS module extraction. Spec: `.docs/issues/i545.md` | P1 | Frontend / Entity Detail / UX |
+| ~~I544~~ | ~~Component DRY/SRP reconciliation — app-wide duplicate detection (StatusDot 3x, per-page empty/loading states), shared component extraction, dead code removal, SRP violations. Spec: `.docs/issues/i544.md`~~ — done | — | — |
+| ~~I545~~ | ~~Entity detail pages style migration — 105 inline styles across AccountDetailEditorial (51), ProjectDetailEditorial (39), PersonDetailEditorial (15) + 7 hardcoded rgba values. Shared CSS module extraction. Spec: `.docs/issues/i545.md`~~ — done | — | — |
 | I546 | Design documentation: interaction, data presentation, navigation — INTERACTION-PATTERNS.md, DATA-PRESENTATION-GUIDELINES.md, NAVIGATION-ARCHITECTURE.md. Spec: `.docs/issues/i546.md` | P2 | Documentation / Design System |
-| ~~I547~~ | ~~Book of Business Review report~~ — done (2026-03-14) | — | — |
+| ~~I547~~ | ~~Book of Business Review report~~ — stashed (2026-03-14) | — | — |
 | ~~I549~~ | ~~Composable report slide templates + report mockups~~ — done (2026-03-14) | — | — |
-| ~~I550~~ | ~~Account detail editorial redesign: margin label layout + visual storytelling~~ — done (2026-03-14) | — | — |
+| ~~I550~~ | ~~Account detail editorial redesign: margin label layout + visual storytelling~~ — pass 1 done, pass 2 suspended (2026-03-14) | — | — |
 | ~~I551~~ | ~~Success Plan data model + backend~~ — done (2026-03-14) | — | — |
 | ~~I552~~ | ~~Success Plan frontend~~ — done (2026-03-14) | — | — |
 | ~~I553~~ | ~~Success Plan templates + starter lifecycle collection~~ — done (2026-03-14) | — | — |
-| I554 | Transcript extraction signal fidelity — CS-grounded prompt definitions: 6 win sub-types, Red/Yellow/Green risk urgency, value delivered quantification, 3-level champion health (MEDDPICC), COMMITMENTS extraction, successPlanSignals schema. Absorbs I551 PTY changes. Spec: `.docs/issues/i554.md` | P0 | Backend / Intelligence / Prompts |
-| I555 | Captures metadata + interaction dynamics persistence + architecture integration — urgency/sub_type/impact/evidence_quote columns on captures, interaction dynamics + champion health + role changes tables, captured_commitments table (dual-write to captures). Signal bus emissions (champion → person-level → propagation → callouts), reactivates `rule_meeting_frequency_drop`, upgrades 3 health scoring dimensions to behavioral, adds dynamics/commitments to intel + prep context. Absorbs I551 schema. Spec: `.docs/issues/i555.md` | P0 | Backend / Schema / Signals / Health Scoring |
-| I556 | Report content pipeline — meeting summaries + captures for Weekly Impact/Monthly Wrapped (currently title-only), customer quote pipeline for EBR/QBR, urgency-enriched captures for Account Health + BoB. Spec: `.docs/issues/i556.md` | P1 | Backend / Reports |
-| I557 | Surface hidden intelligence on Account Detail — renders ~15 computed-but-invisible fields (valueDelivered, successMetrics, openCommitments, relationshipDepth, competitiveContext, strategicPriorities, expansionSignals, renewalOutlook, organizationalChanges, blockers). 3 new chapters. Spec: `.docs/issues/i557.md` | P1 | Frontend / Entity Detail |
-| I558 | Meeting Detail intelligence expansion — post-meeting intelligence section (engagement dynamics, champion health, categorized outcomes, role changes, sentiment), surfaces unused FullMeetingPrep fields. Spec: `.docs/issues/i558.md` | P1 | Frontend + Backend / Meeting Detail |
-| I559 | Glean Agent validation spike — resolve 6 open questions (auth, rate limits, connectors, JSON output, latency, MCP tool discovery). Exploration only, no production code. GATE for I535. | P0 | Backend / Connectors / Exploration |
-| I535 | Glean Agent integration — `GleanAgentClient`, agent registry, response parsing into I508 types, circuit breaker. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i535.md` | P0 | Backend / Connectors |
+| ~~I554~~ | ~~Transcript extraction signal fidelity — CS-grounded prompt definitions: 6 win sub-types, Red/Yellow/Green risk urgency, value delivered quantification, 3-level champion health (MEDDPICC), COMMITMENTS extraction, successPlanSignals schema. Absorbs I551 PTY changes. Spec: `.docs/issues/i554.md`~~ — done | — | — |
+| ~~I555~~ | ~~Captures metadata + interaction dynamics persistence + architecture integration — urgency/sub_type/impact/evidence_quote columns on captures, interaction dynamics + champion health + role changes tables, captured_commitments table (dual-write to captures). Signal bus emissions (champion → person-level → propagation → callouts), reactivates `rule_meeting_frequency_drop`, upgrades 3 health scoring dimensions to behavioral, adds dynamics/commitments to intel + prep context. Absorbs I551 schema. Spec: `.docs/issues/i555.md`~~ — done | — | — |
+| ~~I556~~ | ~~Report content pipeline — meeting summaries + captures for Weekly Impact/Monthly Wrapped (currently title-only), customer quote pipeline for EBR/QBR, urgency-enriched captures for Account Health + BoB. Spec: `.docs/issues/i556.md`~~ — done | — | — |
+| ~~I557~~ | ~~Surface hidden intelligence on Account Detail — renders ~15 computed-but-invisible fields (valueDelivered, successMetrics, openCommitments, relationshipDepth, competitiveContext, strategicPriorities, expansionSignals, renewalOutlook, organizationalChanges, blockers). 3 new chapters. Spec: `.docs/issues/i557.md`~~ — done | — | — |
+| ~~I558~~ | ~~Meeting Detail intelligence expansion — post-meeting intelligence section (engagement dynamics, champion health, categorized outcomes, role changes, sentiment), surfaces unused FullMeetingPrep fields. Spec: `.docs/issues/i558.md`~~ — done | — | — |
+| ~~I559~~ | ~~Glean Agent validation spike — resolve 6 open questions (auth, rate limits, connectors, JSON output, latency, MCP tool discovery). Exploration only, no production code. GATE for I535. Spec: `.docs/issues/i559.md`~~ — done | — | — |
+| I535 | Glean Agent integration — `GleanAgentClient`, agent registry, response parsing into I508 types, circuit breaker. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i535.md` — Steps 1-8 implemented, blocked on testing | P0 | Backend / Connectors |
 | I531 | Proactive self-healing with Glean — hygiene gap queries via agents, signal emission fixes (2 bugs + 7 missing), DB migration. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i531.md` | P1 | Backend / Self-Healing / Connectors |
 | I494 | Glean account discovery — "Discover from Glean" on Accounts page, CRM import, one-click add. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i494.md` | P1 | Backend / Connectors + Frontend |
 | I495 | Ephemeral account query — "Tell me about..." transient briefing, not persisted. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i495.md` | P1 | Backend / Connectors + Frontend |
@@ -725,6 +725,17 @@ Final pass before tagging v1.0.0. No beach balls, no silent failures, no securit
 | I571 | Surface background work status to user | P1 | Frontend / UX |
 | I572 | Audit log for OAuth token lifecycle | P2 | Backend / Security |
 | I573 | Mutex poisoning recovery for critical state | P2 | Backend / Stability |
+
+**v1.0.1 — Email Intelligence for CS (The Correspondent enhancements):**
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I577 | Reply debt surface — unanswered customer emails as first-class signal | P1 | Backend + Frontend / Email |
+| I578 | Render `repliesNeeded` from existing `EmailBriefingData` | P1 | Frontend / Email |
+| I579 | Per-email triage actions — archive, open in Gmail, pin | P1 | Frontend + Backend / Email |
+| I580 | Commitment → Action promotion from email extraction | P1 | Backend + Frontend / Email |
+| I581 | Email cadence awareness — silence detection for tracked accounts | P1 | Backend + Frontend / Email |
+| I582 | Email-meeting linkage — surface `pre_meeting_context` on Correspondent + Meeting Detail | P1 | Frontend / Email |
 
 **CS Report Suite (after Phase 2):**
 

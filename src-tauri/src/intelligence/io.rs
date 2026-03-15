@@ -18,6 +18,42 @@ use crate::db::{ActionDb, DbAccount};
 use crate::util::atomic_write_str;
 
 // =============================================================================
+// I576: Source Attribution Types
+// =============================================================================
+
+/// I576: Source attribution for individual intelligence items.
+/// Every risk, win, stakeholder insight, etc. can carry provenance metadata
+/// indicating where the intelligence came from and how confident we are.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemSource {
+    /// Source identifier: "user_correction", "transcript", "local_file",
+    /// "glean_crm", "glean_zendesk", "glean_gong", "glean_chat", "email", "pty_synthesis"
+    pub source: String,
+    /// Confidence weight from ADR-0100 tiers × signal_weights Bayesian history.
+    /// Range: 0.0-1.0. user_correction=1.0, glean_crm=0.9, transcript=0.8, pty_synthesis=0.5
+    pub confidence: f64,
+    /// When this item was sourced (ISO 8601 timestamp)
+    pub sourced_at: String,
+    /// Human-readable reference: "meeting 2026-03-10", "Salesforce", "you edited this"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+}
+
+/// I576: Tombstone for user-dismissed intelligence items.
+/// Prevents enrichment from re-creating items the user explicitly removed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DismissedItem {
+    /// The field path (e.g., "risks", "recentWins")
+    pub field: String,
+    /// Text content of the dismissed item (for fuzzy matching)
+    pub content: String,
+    /// When dismissed
+    pub dismissed_at: String,
+}
+
+// =============================================================================
 // Intelligence JSON Schema
 // =============================================================================
 
@@ -346,6 +382,12 @@ pub struct OpenCommitment {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 /// Relationship depth assessment (I396).
@@ -382,6 +424,12 @@ pub struct CompetitiveInsight {
     pub source: Option<String>,
     /// When this was detected (ISO date).
     pub detected_at: Option<String>,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 /// A strategic priority tracked for this account or project.
@@ -434,6 +482,12 @@ pub struct OrgChange {
     pub detected_at: Option<String>,
     /// Source: "glean" | "meeting" | "email" | "user"
     pub source: Option<String>,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 /// An internal team member assigned to this account.
@@ -543,6 +597,12 @@ pub struct ExpansionSignal {
     /// I554: Signal strength classification — strong | moderate | early
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strength: Option<String>,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 /// Renewal outlook assessment for an account.
@@ -788,6 +848,10 @@ pub struct IntelligenceJson {
     // I554: Success plan signals synthesized from aggregate context
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub success_plan_signals: Option<crate::types::SuccessPlanSignals>,
+
+    /// I576: Tombstones for dismissed items — prevents re-creation on enrichment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dismissed_items: Vec<DismissedItem>,
 }
 
 /// I508a: Serialization wrapper for all dimension fields stored in `dimensions_json`.
@@ -874,6 +938,71 @@ fn default_version() -> u32 {
     1
 }
 
+// =============================================================================
+// I576: HasSource trait for source-attributed items
+// =============================================================================
+
+/// I576: Trait for intelligence items that carry source attribution.
+pub trait HasSource {
+    fn item_source(&self) -> Option<&ItemSource>;
+
+    /// Effective confidence for health scoring.
+    /// Returns the source confidence if present, or a default baseline.
+    fn effective_confidence(&self) -> f64 {
+        self.item_source()
+            .map(|s| s.confidence)
+            .unwrap_or(0.5) // default: pty_synthesis baseline
+    }
+}
+
+impl HasSource for IntelRisk {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for IntelWin {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for StakeholderInsight {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for ValueItem {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for CompetitiveInsight {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for OrgChange {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for OpenCommitment {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
+impl HasSource for ExpansionSignal {
+    fn item_source(&self) -> Option<&ItemSource> {
+        self.item_source.as_ref()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceManifestEntry {
@@ -907,6 +1036,12 @@ pub struct IntelRisk {
     pub source: Option<String>,
     #[serde(default = "default_urgency")]
     pub urgency: String,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 pub(crate) fn default_urgency() -> String {
@@ -921,6 +1056,12 @@ pub struct IntelWin {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impact: Option<String>,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -952,6 +1093,12 @@ pub struct StakeholderInsight {
     /// Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_person_id: Option<String>,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -964,6 +1111,12 @@ pub struct ValueItem {
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub impact: Option<String>,
+    /// I576: Structured source attribution with confidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_source: Option<ItemSource>,
+    /// I576: True if multiple sources disagree on this item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discrepancy: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2259,11 +2412,15 @@ mod tests {
                 text: "Champion leaving in Q2".to_string(),
                 source: Some("qbr-notes.md".to_string()),
                 urgency: "critical".to_string(),
+                item_source: None,
+                discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
                 text: "Expanded to 3 new teams".to_string(),
                 source: Some("capture".to_string()),
                 impact: Some("20% seat growth".to_string()),
+                item_source: None,
+                discrepancy: None,
             }],
             current_state: Some(CurrentState {
                 working: vec!["Onboarding flow".to_string()],
@@ -2278,12 +2435,16 @@ mod tests {
                 source: Some("meetings".to_string()),
                 person_id: None,
                 suggested_person_id: None,
+                item_source: None,
+                discrepancy: None,
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
                 statement: "Reduced onboarding time by 40%".to_string(),
                 source: Some("qbr-deck.pdf".to_string()),
                 impact: Some("$50k savings".to_string()),
+                item_source: None,
+                discrepancy: None,
             }],
             next_meeting_readiness: Some(MeetingReadiness {
                 meeting_title: Some("Weekly sync".to_string()),
@@ -2545,6 +2706,8 @@ mod tests {
             text: "New risk".to_string(),
             source: None,
             urgency: "watch".to_string(),
+            item_source: None,
+            discrepancy: None,
         });
 
         db.upsert_entity_intelligence(&intel)
@@ -2570,6 +2733,8 @@ mod tests {
             context: Some("Competing for same segment".to_string()),
             source: Some("qbr-notes.md".to_string()),
             detected_at: Some("2026-02-01".to_string()),
+            item_source: None,
+            discrepancy: None,
         }];
         intel.strategic_priorities = vec![StrategicPriority {
             priority: "Expand enterprise tier".to_string(),
@@ -2591,6 +2756,8 @@ mod tests {
             to: None,
             detected_at: Some("2026-01-20".to_string()),
             source: Some("email".to_string()),
+            item_source: None,
+            discrepancy: None,
         }];
         intel.internal_team = vec![InternalTeamMember {
             person_id: Some("p-alice".to_string()),
@@ -2635,6 +2802,8 @@ mod tests {
             source: Some("champion-email".to_string()),
             stage: Some("discovery".to_string()),
             strength: Some("early".to_string()),
+            item_source: None,
+            discrepancy: None,
         }];
         intel.renewal_outlook = Some(RenewalOutlook {
             confidence: Some("high".to_string()),
@@ -2756,11 +2925,15 @@ mod tests {
                 text: "Budget uncertainty for Q3".to_string(),
                 source: Some("QBR notes".to_string()),
                 urgency: "critical".to_string(),
+                item_source: None,
+                discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
                 text: "Expanded to 3 teams".to_string(),
                 source: Some("capture".to_string()),
                 impact: Some("20% seat growth".to_string()),
+                item_source: None,
+                discrepancy: None,
             }],
             current_state: Some(CurrentState {
                 working: vec!["Onboarding flow".to_string()],
@@ -2775,12 +2948,16 @@ mod tests {
                 source: None,
                 person_id: None,
                 suggested_person_id: None,
+                item_source: None,
+                discrepancy: None,
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
                 statement: "Reduced onboarding time by 40%".to_string(),
                 source: Some("QBR".to_string()),
                 impact: Some("$50k savings".to_string()),
+                item_source: None,
+                discrepancy: None,
             }],
             next_meeting_readiness: Some(MeetingReadiness {
                 meeting_title: Some("Acme QBR".to_string()),

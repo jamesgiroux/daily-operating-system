@@ -1787,6 +1787,8 @@ mod tests {
                 text: "Renewal owner unresolved".to_string(),
                 source: None,
                 urgency: "high".to_string(),
+                item_source: None,
+                discrepancy: None,
             }],
             ..Default::default()
         };
