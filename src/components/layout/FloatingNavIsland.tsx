@@ -134,9 +134,10 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
         {/* Home button — Brand mark */}
         <button
           className={styles.navIslandMark}
+          data-label="Today"
           onClick={onHome}
-          aria-label="Home"
-          title="Home"
+          aria-label="Today"
+          title="Today"
         >
           <BrandMark size={16} />
         </button>
