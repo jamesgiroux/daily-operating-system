@@ -697,15 +697,21 @@ export default function AccountDetailEditorial() {
         </div>
       </div>
 
-      {/* Pull quote — first paragraph of executive assessment */}
-      {intelligence?.executiveAssessment && (
-        <div className={`editorial-reveal-slow ${styles.pullQuote}`}>
-          <blockquote className={styles.pullQuoteText}>
-            {intelligence.executiveAssessment.split("\n")[0]}
-          </blockquote>
-          <cite className={styles.pullQuoteAttribution}>From the executive assessment</cite>
-        </div>
-      )}
+      {/* Pull quote — first sentence of executive assessment */}
+      {intelligence?.executiveAssessment && (() => {
+        const text = intelligence.executiveAssessment!;
+        // Extract first sentence: split on sentence-ending punctuation followed by space or newline
+        const match = text.match(/^(.+?[.!?])(?:\s|\n|$)/);
+        const quote = match ? match[1] : text.split("\n\n")[0]?.slice(0, 200);
+        return quote ? (
+          <div className={`editorial-reveal-slow ${styles.pullQuote}`}>
+            <blockquote className={styles.pullQuoteText}>
+              {quote}
+            </blockquote>
+            <cite className={styles.pullQuoteAttribution}>From the executive assessment</cite>
+          </div>
+        ) : null;
+      })()}
 
       {/* Chapter 3: Relationship Health */}
       {intelligence?.health && (
