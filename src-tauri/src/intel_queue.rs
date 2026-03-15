@@ -232,6 +232,32 @@ pub struct IntelligenceUpdatedPayload {
     pub entity_type: String,
 }
 
+/// I575: Progressive enrichment progress event payload.
+///
+/// Emitted after each dimension completes and is written to DB,
+/// so the frontend can show incremental progress and refresh data.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentProgress {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub completed: u32,
+    pub total: u32,
+    pub last_dimension: String,
+}
+
+/// I575: Progressive enrichment completion event payload.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentComplete {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub succeeded: u32,
+    pub failed: u32,
+    pub failed_dimensions: Vec<String>,
+    pub wall_clock_ms: u64,
+}
+
 /// Context gathered from the DB (held briefly, then released before PTY).
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
 #[derive(Clone)]
@@ -389,12 +415,12 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             if state.context_provider().is_remote() {
                 // I535/ADR-0100: Glean-first path — use chat MCP tool for enrichment.
                 // Falls back to PTY on failure (per entity).
-                run_glean_enrichment_with_fallback(inputs, &ai_config, &state).await
+                run_glean_enrichment_with_fallback(inputs, &ai_config, &state, &app).await
             } else {
                 // I574: Per-entity enrichment (tries parallel fan-out, falls back to legacy)
                 let mut entity_results = Vec::new();
                 for (request, input) in inputs {
-                    match run_enrichment(&input, &ai_config) {
+                    match run_enrichment(&input, &ai_config, Some(&app)) {
                         Ok(parsed) => entity_results.push((request, input, parsed)),
                         Err(e) => {
                             let category = categorize_enrichment_error(&e);
@@ -888,6 +914,7 @@ async fn run_glean_enrichment_with_fallback(
     inputs: Vec<(IntelRequest, EnrichmentInput)>,
     ai_config: &AiModelConfig,
     state: &AppState,
+    app_handle: &AppHandle,
 ) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
     // Get the Glean endpoint from the context provider (not DB — avoids lock contention)
     let glean_endpoint = state
@@ -901,7 +928,7 @@ async fn run_glean_enrichment_with_fallback(
             log::warn!("[I535] Glean mode active but no endpoint found, falling back to PTY");
             let mut fallback_results = Vec::new();
             for (request, input) in inputs {
-                match run_enrichment(&input, ai_config) {
+                match run_enrichment(&input, ai_config, None) {
                     Ok(parsed) => fallback_results.push((request, input, parsed)),
                     Err(e) => {
                         log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
@@ -992,7 +1019,7 @@ async fn run_glean_enrichment_with_fallback(
             pty_fallback_inputs.len()
         );
         for (request, input) in pty_fallback_inputs {
-            match run_enrichment(&input, ai_config) {
+            match run_enrichment(&input, ai_config, None) {
                 Ok(parsed) => results.push((request, input, parsed)),
                 Err(e) => {
                     log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
@@ -1024,12 +1051,16 @@ fn categorize_enrichment_error(error: &str) -> &'static str {
 ///
 /// I574: Tries parallel per-dimension fan-out first (if `intelligence_context` is available),
 /// then falls back to the legacy monolithic prompt path.
+///
+/// I575: When `app_handle` is provided, emits `enrichment-progress` and
+/// `enrichment-complete` events for progressive frontend updates.
 pub fn run_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
+    app_handle: Option<&AppHandle>,
 ) -> Result<EnrichmentParseResult, String> {
     if input.intelligence_context.is_some() {
-        match run_parallel_enrichment(input, ai_config) {
+        match run_parallel_enrichment(input, ai_config, app_handle) {
             Ok(result) => return Ok(result),
             Err(e) => {
                 log::warn!(
@@ -1048,9 +1079,14 @@ pub fn run_enrichment(
 /// Fans out 6 dimension-specific PTY calls in parallel threads (30s each),
 /// then merges successful dimension results into a single `IntelligenceJson`.
 /// Returns Err only if ALL 6 dimensions fail (caller falls back to legacy).
+///
+/// I575: Uses a channel pattern so each dimension result is written to DB and
+/// emitted as a progress event as soon as it completes, rather than waiting
+/// for all 6 to finish. This enables progressive frontend updates.
 fn run_parallel_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
+    app_handle: Option<&AppHandle>,
 ) -> Result<EnrichmentParseResult, String> {
     let ctx = input
         .intelligence_context
@@ -1059,10 +1095,12 @@ fn run_parallel_enrichment(
 
     let is_incremental = ctx.prior_intelligence.is_some();
     let overall_start = Instant::now();
+    let total_dimensions = DIMENSION_NAMES.len() as u32;
+
+    // Channel for receiving dimension results as they complete
+    let (tx, rx) = std::sync::mpsc::channel();
 
     // Spawn one thread per dimension
-    let mut handles = Vec::with_capacity(DIMENSION_NAMES.len());
-
     for &dimension in DIMENSION_NAMES {
         let dim_prompt = dimension_prompts::build_dimension_prompt(
             dimension,
@@ -1080,63 +1118,95 @@ fn run_parallel_enrichment(
         let file_count = input.file_count;
         let file_manifest = input.file_manifest.clone();
         let dim_name = dimension.to_string();
+        let sender = tx.clone();
 
-        let handle = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             let dim_start = Instant::now();
 
             let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
                 .with_timeout(30)
                 .with_nice_priority(10);
 
-            let output = pty
+            let result = pty
                 .spawn_claude(&workspace, &dim_prompt)
-                .map_err(|e| format!("PTY error for dimension {}: {}", dim_name, e))?;
+                .map_err(|e| format!("PTY error for dimension {}: {}", dim_name, e))
+                .and_then(|output| {
+                    let intel = parse_intelligence_response(
+                        &output.stdout,
+                        &entity_id,
+                        &entity_type,
+                        file_count,
+                        file_manifest,
+                    )
+                    .map_err(|e| format!("Parse error for dimension {}: {}", dim_name, e))?;
 
-            let intel = parse_intelligence_response(
-                &output.stdout,
-                &entity_id,
-                &entity_type,
-                file_count,
-                file_manifest,
-            )
-            .map_err(|e| format!("Parse error for dimension {}: {}", dim_name, e))?;
+                    let elapsed_ms = dim_start.elapsed().as_millis();
+                    log::info!(
+                        "[I574] Dimension {} completed in {}ms",
+                        dim_name,
+                        elapsed_ms
+                    );
 
-            let elapsed_ms = dim_start.elapsed().as_millis();
-            log::info!(
-                "[I574] Dimension {} completed in {}ms",
-                dim_name,
-                elapsed_ms
-            );
+                    Ok((dim_name, intel, output.stdout))
+                });
 
-            Ok::<(String, IntelligenceJson, String), String>((dim_name, intel, output.stdout))
+            // Send result through channel; ignore error if receiver dropped
+            let _ = sender.send(result);
         });
-
-        handles.push(handle);
     }
 
-    // Collect results
+    // Drop our copy of the sender so rx iterator ends after all threads finish
+    drop(tx);
+
+    // Process dimension results as they arrive
     let mut combined = IntelligenceJson::default();
-    let mut succeeded: usize = 0;
+    let mut succeeded: u32 = 0;
+    let mut failed_dims: Vec<String> = Vec::new();
     let mut all_raw_output = String::new();
 
-    for handle in handles {
-        match handle.join() {
-            Ok(Ok((dim_name, partial_intel, raw_output))) => {
+    for result in rx {
+        match result {
+            Ok((dim_name, partial_intel, raw_output)) => {
                 if let Err(e) =
                     dimension_prompts::merge_dimension_into(&mut combined, &dim_name, &partial_intel)
                 {
                     log::warn!("[I574] Merge failed for dimension {}: {}", dim_name, e);
+                    failed_dims.push(dim_name);
                 } else {
                     succeeded += 1;
                     all_raw_output.push_str(&raw_output);
                     all_raw_output.push('\n');
+
+                    // I575: Per-dimension DB write + event emission
+                    if let Some(handle) = app_handle {
+                        write_progressive_dimension(
+                            &input.entity_id,
+                            &input.entity_type,
+                            &combined,
+                        );
+                        let _ = handle.emit(
+                            "enrichment-progress",
+                            EnrichmentProgress {
+                                entity_id: input.entity_id.clone(),
+                                entity_type: input.entity_type.clone(),
+                                completed: succeeded,
+                                total: total_dimensions,
+                                last_dimension: dim_name,
+                            },
+                        );
+                    }
                 }
             }
-            Ok(Err(e)) => {
+            Err(e) => {
+                // Extract dimension name from error message for tracking
+                let dim = e
+                    .split("dimension ")
+                    .nth(1)
+                    .and_then(|s| s.split(':').next())
+                    .unwrap_or("unknown")
+                    .to_string();
                 log::warn!("[I574] Dimension thread returned error: {}", e);
-            }
-            Err(_) => {
-                log::warn!("[I574] Dimension thread panicked");
+                failed_dims.push(dim);
             }
         }
     }
@@ -1147,6 +1217,21 @@ fn run_parallel_enrichment(
         succeeded,
         total_ms
     );
+
+    // I575: Emit completion event
+    if let Some(handle) = app_handle {
+        let _ = handle.emit(
+            "enrichment-complete",
+            EnrichmentComplete {
+                entity_id: input.entity_id.clone(),
+                entity_type: input.entity_type.clone(),
+                succeeded,
+                failed: failed_dims.len() as u32,
+                failed_dimensions: failed_dims,
+                wall_clock_ms: total_ms as u64,
+            },
+        );
+    }
 
     if succeeded == 0 {
         return Err("All 6 dimensions failed".to_string());
@@ -1180,6 +1265,75 @@ fn run_parallel_enrichment(
         intel: combined,
         inferred_relationships,
     })
+}
+
+/// I575: Write the current progressive state of intelligence to DB after a dimension completes.
+///
+/// Opens a short-lived DB connection, reads existing entity_assessment, merges the
+/// new combined state, and writes back. Non-fatal on error — the final write in
+/// `write_enrichment_results` is the authoritative write.
+fn write_progressive_dimension(
+    entity_id: &str,
+    entity_type: &str,
+    combined: &IntelligenceJson,
+) {
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            log::warn!(
+                "[I575] Progressive write: failed to open DB for {}: {}",
+                entity_id,
+                e
+            );
+            return;
+        }
+    };
+
+    // Read existing intelligence and merge the progressive state on top
+    let existing = db.get_entity_intelligence(entity_id).ok().flatten();
+    let mut merged = combined.clone();
+
+    if let Some(existing) = existing {
+        // Preserve fields the progressive state hasn't populated yet
+        // (e.g. user_edits, fields from prior enrichment that this partial hasn't touched)
+        if merged.executive_assessment.is_none() {
+            merged.executive_assessment = existing.executive_assessment;
+        }
+        if merged.risks.is_empty() {
+            merged.risks = existing.risks;
+        }
+        if merged.recent_wins.is_empty() {
+            merged.recent_wins = existing.recent_wins;
+        }
+        if merged.stakeholder_insights.is_empty() {
+            merged.stakeholder_insights = existing.stakeholder_insights;
+        }
+        if merged.value_delivered.is_empty() {
+            merged.value_delivered = existing.value_delivered;
+        }
+        // Always preserve user edits
+        if merged.user_edits.is_empty() && !existing.user_edits.is_empty() {
+            merged.user_edits = existing.user_edits;
+        }
+    }
+
+    // Set entity metadata for the DB write
+    merged.entity_id = entity_id.to_string();
+    merged.entity_type = entity_type.to_string();
+    merged.enriched_at = chrono::Utc::now().to_rfc3339();
+
+    if let Err(e) = db.upsert_entity_intelligence(&merged) {
+        log::warn!(
+            "[I575] Progressive write failed for {}: {}",
+            entity_id,
+            e
+        );
+    } else {
+        log::debug!(
+            "[I575] Progressive write succeeded for {}",
+            entity_id,
+        );
+    }
 }
 
 /// Legacy monolithic PTY enrichment — single prompt, 180s timeout.
