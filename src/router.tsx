@@ -19,6 +19,7 @@ import { DailyBriefing } from "@/components/dashboard/DailyBriefing";
 import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { DashboardEmpty } from "@/components/dashboard/DashboardEmpty";
 import { DashboardError } from "@/components/dashboard/DashboardError";
+import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { useWorkflow } from "@/hooks/useWorkflow";
 
@@ -275,6 +276,28 @@ function RootLayout() {
   );
 }
 
+// Briefing workflow phases — shared with DashboardEmpty
+const BRIEFING_PHASES = [
+  { key: "preparing", label: "Gathering your day", detail: "Pulling calendar, emails, and account context" },
+  { key: "enriching", label: "Building context", detail: "Assembling meeting briefings, priorities, and action items" },
+  { key: "delivering", label: "Composing the briefing", detail: "Writing your morning document" },
+];
+
+const BRIEFING_QUOTES = [
+  "Grab a coffee — your day will be ready soon.",
+  "Combobulating your priorities\u2026",
+  `"The secret of getting ahead is getting started." — Mark Twain`,
+  "Teaching the system about your calendar\u2026",
+  `"By failing to prepare, you are preparing to fail." — Benjamin Franklin`,
+  "Cross-referencing all the things\u2026",
+  "Turning chaos into calendar clarity\u2026",
+  `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
+  "Consulting the schedule oracle\u2026",
+  "Almost done thinking about thinking\u2026",
+  `"Preparation is the key to success." — Alexander Graham Bell`,
+  "Crunching context like it owes us money\u2026",
+];
+
 // Dashboard page content
 function DashboardPage() {
   const { state, refresh } = useDashboardData();
@@ -289,6 +312,27 @@ function DashboardPage() {
       runNow();
     }
   }, [state.status, googleAuth, isRunning, runNow]);
+
+  // Show GeneratingProgress when a workflow is running and data is not yet
+  // enriched (freshness unknown/stale). This prevents the "flash of raw
+  // calendar events" that occurs when the calendar poller has loaded meetings
+  // into the DB but the briefing workflow hasn't completed yet.
+  const workflowRunning = isRunning && status?.status === "running";
+  const dataNotEnriched =
+    state.status === "success" &&
+    (state.freshness.freshness === "unknown" || state.freshness.freshness === "stale");
+
+  if (workflowRunning && (state.status !== "success" || dataNotEnriched)) {
+    return (
+      <GeneratingProgress
+        title="Preparing Daily Briefing"
+        accentColor="var(--color-spice-turmeric)"
+        phases={BRIEFING_PHASES}
+        currentPhaseKey={status.phase}
+        quotes={BRIEFING_QUOTES}
+      />
+    );
+  }
 
   switch (state.status) {
     case "loading":
