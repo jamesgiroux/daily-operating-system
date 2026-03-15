@@ -745,17 +745,15 @@ export function StakeholderGallery({
                 </div>
               </div>
             )}
-            {intelligence.relationshipDepth.coverageGaps && intelligence.relationshipDepth.coverageGaps.length > 0 && (
-              <div className={css.depthCell}>
-                <div className={css.depthCellLabel}>Gaps</div>
-                <div className={css.depthGapsList}>
-                  {intelligence.relationshipDepth.coverageGaps.map((gap, i) => (
-                    <span key={i} className={css.depthGapTag}>{gap}</span>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
+          {intelligence.relationshipDepth.coverageGaps && intelligence.relationshipDepth.coverageGaps.length > 0 && (
+            <div className={css.depthGapsRow}>
+              <span className={css.depthGapsLabel}>Gaps</span>
+              <span className={css.depthGapsText}>
+                {intelligence.relationshipDepth.coverageGaps.join(" · ")}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

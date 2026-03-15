@@ -661,21 +661,30 @@
 .depthBadgeRed { color: var(--color-spice-terracotta); }
 .depthBadgeNeutral { color: var(--color-text-tertiary); }
 
-.depthGapsList {
+.depthGapsRow {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-rule-light);
 }
 
-.depthGapTag {
+.depthGapsLabel {
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--color-spice-terracotta);
-  padding: 2px 8px;
-  border-radius: 3px;
-  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.08));
+  flex-shrink: 0;
+}
+
+.depthGapsText {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 /* ── Editable text overrides for stakeholder cards ── */
