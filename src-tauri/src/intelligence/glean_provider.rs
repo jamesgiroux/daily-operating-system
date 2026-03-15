@@ -873,7 +873,7 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
         // Items from refreshed sources are replaced by new_items
     }
 
-    // 2. Add new items, filtering against dismissed tombstones
+    // 2. Add new items, filtering against dismissed tombstones and existing duplicates
     for item in new_items {
         let item_text = get_text(item).to_lowercase();
 
@@ -881,7 +881,12 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
             d.field == field_name && item_text.contains(&d.content.to_lowercase())
         });
 
-        if !is_dismissed {
+        // Dedup: skip if an item with the same text already exists in result
+        let is_duplicate = result.iter().any(|existing| {
+            get_text(existing).to_lowercase() == item_text
+        });
+
+        if !is_dismissed && !is_duplicate {
             result.push(item.clone());
         }
     }
