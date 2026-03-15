@@ -1635,6 +1635,8 @@ export interface EntityIntelligence {
   sourceFileCount: number;
   sourceManifest: SourceManifestEntry[];
   executiveAssessment?: string;
+  /** I576: Concise editorial pull quote — one impactful sentence. */
+  pullQuote?: string;
   risks: IntelRisk[];
   recentWins: IntelWin[];
   currentState?: IntelCurrentState;

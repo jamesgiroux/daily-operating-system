@@ -252,6 +252,9 @@ pub fn merge_dimension_into(
             if partial.executive_assessment.is_some() {
                 existing.executive_assessment = partial.executive_assessment.clone();
             }
+            if partial.pull_quote.is_some() {
+                existing.pull_quote = partial.pull_quote.clone();
+            }
             if partial.current_state.is_some() {
                 existing.current_state = partial.current_state.clone();
             }
@@ -677,6 +680,7 @@ fn dimension_json_schema(
                 r#"  "executiveAssessment": "2-4 paragraphs. P1: one-sentence verdict. P2: top risk. P3: biggest opportunity. P4 (optional): key unknowns. Max 250 words.",
   "risks": [{"text": "specific risk with named people/timelines", "urgency": "critical|watch|low", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "recentWins": [{"text": "verifiable win", "impact": "high|medium|low", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+  "pullQuote": "One impactful sentence — the single most important thing about this account right now. Written as an editorial pull quote, not a summary. Max 30 words.",
   "currentState": {
     "working": ["specific positive with evidence"],
     "notWorking": ["specific concern with evidence"],

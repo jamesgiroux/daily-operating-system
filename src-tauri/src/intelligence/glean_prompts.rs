@@ -155,6 +155,7 @@ fn build_json_schema(entity_type: &str) -> String {
 
     // Core fields (all entity types)
     schema.push_str(r#"  "executiveAssessment": "2-4 paragraph narrative: current health verdict, top risk with evidence, biggest opportunity, key unknowns",
+  "pullQuote": "One impactful sentence — the single most important thing about this account right now. Written as an editorial pull quote, not a summary. Max 30 words.",
   "risks": [{ "text": "specific risk with named people/timelines", "urgency": "critical|watch|low", "source": "where this was found" }],
   "recentWins": [{ "text": "specific verifiable win", "impact": "high|medium|low", "subType": "adoption|expansion|value_realized|relationship|commercial|advocacy" }],
   "currentState": {
