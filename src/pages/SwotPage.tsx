@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { Compass, TrendingUp, AlertTriangle, Lightbulb, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
@@ -97,6 +99,7 @@ export default function SwotPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [genSeconds, setGenSeconds] = useState(0);
+  const [currentPhaseKey, setCurrentPhaseKey] = useState<string>("gathering");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -203,6 +206,39 @@ export default function SwotPage() {
       if (timerRef.current) clearInterval(timerRef.current);
     }
   }, [accountId, generating]);
+
+  useEffect(() => {
+    if (!generating) return;
+    let unlistenContent: UnlistenFn | null = null;
+    listen<{ entityId: string; content: Record<string, unknown> }>("swot-content", (event) => {
+      if (!accountId || event.payload.entityId !== accountId) return;
+      setContent(normalizeSwot(event.payload.content));
+    }).then((fn) => {
+      unlistenContent = fn;
+    });
+    return () => {
+      if (unlistenContent) unlistenContent();
+    };
+  }, [generating]);
+
+  const handleSwotProgress = useCallback((payload: {
+    entityId: string;
+    completed: number;
+    total: number;
+    sectionName: string;
+  }) => {
+    if (!accountId || payload.entityId !== accountId) return;
+    const phaseMap: Record<string, string> = {
+      strengths: "analyzing",
+      weaknesses: "analyzing",
+      opportunities: "scanning",
+      threats: "scanning",
+      summary: "finalizing",
+    };
+    setCurrentPhaseKey(phaseMap[payload.sectionName] ?? "gathering");
+  }, [accountId]);
+
+  useTauriEvent("swot-progress", handleSwotProgress);
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -325,15 +361,13 @@ export default function SwotPage() {
   }
 
   // Generating state
-  if (generating) {
+  if (generating && !content) {
     return (
       <GeneratingProgress
         title="Building SWOT Analysis"
         accentColor="var(--color-garden-sage)"
         phases={ANALYSIS_PHASES}
-        currentPhaseKey={
-          ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key
-        }
+        currentPhaseKey={currentPhaseKey || ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key}
         quotes={EDITORIAL_QUOTES}
         elapsed={genSeconds}
       />

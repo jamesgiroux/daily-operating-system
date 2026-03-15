@@ -685,7 +685,18 @@ export interface UserProfileSuggestion {
 export interface EnrichmentProgress {
   entityId: string;
   name: string;
-  status: "queued" | "complete" | "failed";
+  status: "queued" | "analyzing" | "complete" | "failed";
+  completed: number;
+  total: number;
+  stakeholderCount: number;
+  riskCount: number;
+}
+
+export interface GleanTokenHealth {
+  connected: boolean;
+  status: "healthy" | "expiring" | "expired" | "not_connected";
+  expiresAt: string | null;
+  expiresInHours: number | null;
 }
 
 export interface HygieneFixView {

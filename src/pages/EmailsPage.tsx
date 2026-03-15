@@ -134,6 +134,7 @@ export default function EmailsPage() {
   const silentRefresh = useCallback(() => { loadEmails(true); }, [loadEmails]);
   useTauriEvent("emails-updated", silentRefresh);
   useTauriEvent("workflow-completed", silentRefresh);
+  useTauriEvent("email-enrichment-progress", silentRefresh);
 
   const handleDismiss = useCallback(async (
     itemType: string,
