@@ -391,6 +391,23 @@ pub fn process_transcript_with_kind(
         );
     }
 
+    // Recompute health after transcript phases write champion_health + interaction_dynamics
+    if let Some(db) = db {
+        let transcript_entity_id = meeting
+            .linked_entities
+            .as_ref()
+            .and_then(|e| e.first())
+            .map(|e| (e.id.as_str(), e.entity_type.as_str()));
+
+        if let Some((eid, etype)) = transcript_entity_id {
+            if etype == "account" {
+                if let Err(e) = crate::services::intelligence::recompute_entity_health(db, eid, "account") {
+                    log::warn!("Health recompute failed for {} after transcript: {}", eid, e);
+                }
+            }
+        }
+    }
+
     // Post-phase hooks and logging (run after all phases)
     if let Some(db) = db {
         let ctx = hooks::EnrichmentContext {
