@@ -1074,7 +1074,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // Longer startup delay than calendar (10s vs 5s) — let auth + calendar settle
     tokio::time::sleep(Duration::from_secs(10)).await;
 
-    // Gmail always polls in Glean mode — additive strategy merges local + Glean signals.
+    // Gmail always polls — Glean Governed mode removed (I560 Wave 1).
 
     loop {
         // Dev mode isolation: pause background processing while dev sandbox is active
@@ -1109,15 +1109,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
         let data_dir = workspace.join("_today").join("data");
         if !data_dir.exists() {
-            // I368: Emails are DB-first — create the data directory so the
-            // poller can persist directive files. Previously this guard
-            // prevented polling until the briefing ran, leaving the emails
-            // page empty on first launch.
-            if let Err(e) = std::fs::create_dir_all(&data_dir) {
-                log::warn!("Email poll: failed to create data dir: {}", e);
-                tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
-                continue;
-            }
+            // No _today/data/ means briefing hasn't run yet
+            tokio::time::sleep(crate::activity::adaptive_network_interval(&state.activity)).await;
+            continue;
         }
 
         // Snapshot existing email IDs before refresh
