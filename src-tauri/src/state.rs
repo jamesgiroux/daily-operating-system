@@ -157,6 +157,42 @@ impl DatabaseRecoveryStatus {
     }
 }
 
+/// Typed resource permits for concurrent background work (I565).
+///
+/// Replaces the single `heavy_work_semaphore` with per-resource permits so
+/// independent workloads (e.g. embedding inference vs. Gmail fetch) can run
+/// concurrently while still serializing within each resource class.
+pub struct ResourcePermits {
+    /// PTY subprocess — Claude Code intelligence enrichment.
+    pub pty: Arc<tokio::sync::Semaphore>,
+    /// User-triggered operations that should not queue behind background PTY work.
+    pub user_initiated: Arc<tokio::sync::Semaphore>,
+    /// Embedding model inference — CPU-intensive.
+    pub embeddings: Arc<tokio::sync::Semaphore>,
+    /// Gmail API pipeline — email fetch + enrichment.
+    pub email: Arc<tokio::sync::Semaphore>,
+    /// Daily briefing orchestration pipeline.
+    pub orchestration: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for ResourcePermits {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ResourcePermits {
+    pub fn new() -> Self {
+        Self {
+            pty: Arc::new(tokio::sync::Semaphore::new(1)),
+            user_initiated: Arc::new(tokio::sync::Semaphore::new(1)),
+            embeddings: Arc::new(tokio::sync::Semaphore::new(1)),
+            email: Arc::new(tokio::sync::Semaphore::new(1)),
+            orchestration: Arc::new(tokio::sync::Semaphore::new(1)),
+        }
+    }
+}
+
 /// Application state managed by Tauri
 pub struct AppState {
     pub config: RwLock<Option<Config>>,
@@ -211,10 +247,8 @@ pub struct AppState {
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
-    /// Semaphore limiting concurrent heavy operations (PTY subprocess,
-    /// embedding inference) to one at a time. Prevents resource contention
-    /// between background processors.
-    pub heavy_work_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Typed resource permits for concurrent background work (I565).
+    pub permits: ResourcePermits,
     /// Context provider for intelligence enrichment (ADR-0095).
     /// Determines where entity context is gathered (local DB vs. Glean).
     /// Wrapped in RwLock to allow hot-swap without app restart.
@@ -485,8 +519,37 @@ impl AppState {
             audit_log,
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
-            heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+            permits: ResourcePermits::new(),
             context_provider: std::sync::RwLock::new(context_provider),
+        }
+    }
+
+    /// I573: Lock DB with poison recovery. Returns the MutexGuard or an error if
+    /// the DB is None. If the mutex was poisoned by a panicked thread, recovers
+    /// by clearing the poison and returns the inner data (with a logged warning).
+    /// Does NOT recover audit_log — integrity > availability for audit chains.
+    pub fn db_lock_or_recover(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Option<crate::db::ActionDb>>, String> {
+        match self.db.lock() {
+            Ok(guard) => Ok(guard),
+            Err(poisoned) => {
+                log::warn!("I573: DB mutex poisoned, recovering inner data");
+                Ok(poisoned.into_inner())
+            }
+        }
+    }
+
+    /// I573: Read config with poison recovery.
+    pub fn config_read_or_recover(
+        &self,
+    ) -> Result<std::sync::RwLockReadGuard<'_, Option<Config>>, String> {
+        match self.config.read() {
+            Ok(guard) => Ok(guard),
+            Err(poisoned) => {
+                log::warn!("I573: Config RwLock poisoned, recovering inner data");
+                Ok(poisoned.into_inner())
+            }
         }
     }
 
@@ -508,8 +571,7 @@ impl AppState {
         mode: &crate::context_provider::ContextMode,
     ) -> Arc<dyn crate::context_provider::ContextProvider> {
         let workspace_path = self
-            .config
-            .read()
+            .config_read_or_recover()
             .ok()
             .and_then(|c| c.as_ref().map(|cfg| std::path::PathBuf::from(&cfg.workspace_path)))
             .unwrap_or_default();
@@ -628,7 +690,7 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let guard = self.db_lock_or_recover()?;
         let db = guard
             .as_ref()
             .ok_or_else(|| "Database unavailable".to_string())?;
@@ -642,11 +704,35 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let guard = self.db_lock_or_recover()?;
         let db = guard
             .as_ref()
             .ok_or_else(|| "Database unavailable".to_string())?;
         f(db)
+    }
+
+    /// Replace the legacy sync DB handle. Used by lifecycle commands that must
+    /// swap or clear the on-disk database without leaking the mutex outside.
+    pub fn replace_sync_db(
+        &self,
+        db: Option<crate::db::ActionDb>,
+    ) -> Result<(), String> {
+        let mut guard = self.db_lock_or_recover()?;
+        *guard = db;
+        Ok(())
+    }
+
+    /// Read the on-disk database path from the legacy sync DB handle.
+    pub fn current_sync_db_path(&self) -> Result<Option<String>, String> {
+        let guard = self.db_lock_or_recover()?;
+        let Some(action_db) = guard.as_ref() else {
+            return Ok(None);
+        };
+        let path: String = action_db
+            .conn_ref()
+            .query_row("PRAGMA database_list", [], |row| row.get(2))
+            .map_err(|e| e.to_string())?;
+        Ok(Some(path))
     }
 
     /// Get startup database recovery status for the UI.
@@ -745,7 +831,7 @@ impl AppState {
         // Startup fallback: DbService initialization runs in background.
         // Keep commands working by using the legacy sync connection until
         // DbService is ready.
-        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let mut guard = self.db_lock_or_recover()?;
         if guard.is_none() {
             match crate::db::ActionDb::open() {
                 Ok(db) => {
@@ -795,7 +881,7 @@ impl AppState {
         }
 
         // Startup fallback: DbService initialization runs in background.
-        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let mut guard = self.db_lock_or_recover()?;
         if guard.is_none() {
             match crate::db::ActionDb::open() {
                 Ok(db) => {

@@ -152,10 +152,10 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
         if let Some(request) = request {
             // Acquire heavy-work semaphore — embedding inference is CPU-intensive,
             // serialize with PTY subprocess calls to avoid resource contention.
-            let _permit = match state.heavy_work_semaphore.acquire().await {
+            let _permit = match state.permits.embeddings.acquire().await {
                 Ok(permit) => permit,
                 Err(_) => {
-                    log::warn!("EmbeddingProcessor: heavy_work_semaphore closed, stopping");
+                    log::warn!("EmbeddingProcessor: embeddings permit closed, stopping");
                     return;
                 }
             };

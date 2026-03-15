@@ -1319,11 +1319,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
 /// Replaces refresh_emails.py. Writes: _today/data/email-refresh-directive.json
 pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
-    // Serialize heavy refresh work (PTY + embedding inference) with other queues to
-    // reduce wake/unlock contention and UI stalls under load.
-    let _heavy_work_permit = state.heavy_work_semaphore.acquire().await.map_err(|_| {
-        ExecutionError::ConfigurationError("Heavy work semaphore closed".to_string())
-    })?;
+    // I567: Permit moved to wrap only the PTY enrichment call below.
+    // Gmail fetch, DB persistence, thread update, signal emission run without the permit.
 
     let (_profile, user_domains, _user_focus) = get_config(state);
     let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
@@ -1463,6 +1460,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
 
     // I367: Mandatory email enrichment (entity resolution + AI analysis)
     // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
+    // I567: Only hold orchestration permit during the PTY enrichment call.
     {
         let ai_config = {
             let cfg = state.config.read().ok();
@@ -1471,8 +1469,12 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
                 .map(|c| c.ai_models.clone())
                 .unwrap_or_default()
         };
+        let _enrich_permit = state.permits.orchestration.acquire().await.map_err(|_| {
+            ExecutionError::ConfigurationError("Orchestration permit closed".to_string())
+        })?;
         let enriched =
             super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+        drop(_enrich_permit);
         if enriched > 0 {
             log::info!("refresh_emails: enriched {} emails", enriched);
         }
