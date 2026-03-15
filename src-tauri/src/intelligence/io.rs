@@ -721,6 +721,12 @@ pub struct IntelligenceJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executive_assessment: Option<String>,
 
+    /// I576: Concise editorial pull quote for visual storytelling.
+    /// One impactful sentence — the single thing a reader should remember.
+    /// Distinct from executiveAssessment which is a multi-paragraph narrative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_quote: Option<String>,
+
     /// Account risks / project blockers / relationship risks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub risks: Vec<IntelRisk>,
@@ -860,6 +866,9 @@ pub struct IntelligenceJson {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DimensionsBlob {
+    /// I576: Concise editorial pull quote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_quote: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub competitive_context: Vec<CompetitiveInsight>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -896,6 +905,7 @@ impl IntelligenceJson {
     /// Pack I508a dimension fields into a single JSON blob for DB storage.
     pub(crate) fn dimensions_blob(&self) -> DimensionsBlob {
         DimensionsBlob {
+            pull_quote: self.pull_quote.clone(),
             competitive_context: self.competitive_context.clone(),
             strategic_priorities: self.strategic_priorities.clone(),
             coverage_assessment: self.coverage_assessment.clone(),
@@ -916,6 +926,7 @@ impl IntelligenceJson {
 
     /// Unpack I508a dimension fields from DB blob into self.
     pub(crate) fn apply_dimensions_blob(&mut self, blob: &DimensionsBlob) {
+        self.pull_quote = blob.pull_quote.clone();
         self.competitive_context = blob.competitive_context.clone();
         self.strategic_priorities = blob.strategic_priorities.clone();
         self.coverage_assessment = blob.coverage_assessment.clone();
@@ -1452,6 +1463,30 @@ pub fn apply_stakeholders_update(
     });
 
     write_intelligence_json(dir, &intel)?;
+    Ok(intel)
+}
+
+/// Replace the stakeholderInsights array in-memory (DB-first path).
+///
+/// Same logic as `apply_stakeholders_update` but operates on an existing
+/// `IntelligenceJson` instead of reading from disk, allowing the caller
+/// to prefer DB-sourced intelligence over disk.
+pub fn apply_stakeholders_update_in_memory(
+    existing: IntelligenceJson,
+    stakeholders: Vec<StakeholderInsight>,
+) -> Result<IntelligenceJson, String> {
+    let mut intel = existing;
+    intel.stakeholder_insights = stakeholders;
+
+    // Record as user-edited
+    let edit_entry = UserEdit {
+        field_path: "stakeholderInsights".to_string(),
+        edited_at: Utc::now().to_rfc3339(),
+    };
+    intel
+        .user_edits
+        .retain(|e| e.field_path != "stakeholderInsights");
+    intel.user_edits.push(edit_entry);
     Ok(intel)
 }
 
