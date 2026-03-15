@@ -247,6 +247,13 @@ pub struct EnrichmentInput {
     pub file_count: usize,
     /// I499: Pre-computed algorithmic health for accounts.
     pub computed_health: Option<crate::intelligence::io::AccountHealth>,
+    /// I535: Entity name for Glean-first enrichment.
+    pub entity_name: String,
+    /// I535: Relationship type for Glean prompt (e.g., "customer", "partner").
+    pub relationship: Option<String>,
+    /// I535: Intelligence context for Glean-first enrichment.
+    /// Preserved from gather phase so Glean can inject local context into its prompt.
+    pub intelligence_context: Option<crate::intelligence::prompts::IntelligenceContext>,
 }
 
 /// Parsed enrichment output from one model response section.
@@ -381,7 +388,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
         let enrichment_start = Instant::now();
         let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> =
-            if inputs.len() == 1 {
+            if state.context_provider().is_remote() {
+                // I535/ADR-0100: Glean-first path — use chat MCP tool for enrichment.
+                // Falls back to PTY on failure (per entity).
+                run_glean_enrichment_with_fallback(inputs, &ai_config, &state).await
+            } else if inputs.len() == 1 {
                 // Single entity — use existing direct path (no batching overhead)
                 let (request, input) = inputs.pop().unwrap();
                 match run_enrichment(&input, &ai_config) {
@@ -528,6 +539,19 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         continue;
                     }
                 };
+
+            // I535: Emit tiered Glean signals after successful enrichment
+            if state.context_provider().is_remote() {
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    crate::intelligence::glean_provider::emit_glean_signals(
+                        &db,
+                        &state.signals.engine,
+                        &request.entity_type,
+                        &request.entity_id,
+                        &written_intel,
+                    );
+                }
+            }
 
             if !parsed.inferred_relationships.is_empty() {
                 let db = match crate::db::ActionDb::open() {
@@ -717,7 +741,7 @@ pub fn gather_enrichment_input(
     // In Glean mode, context is gathered from Glean search API instead.
     let gather_start = Instant::now();
     let ctx = state
-        .context_provider
+        .context_provider()
         .gather_entity_context(
             &db,
             &request.entity_id,
@@ -726,7 +750,7 @@ pub fn gather_enrichment_input(
         )
         .map_err(|e| {
             // Audit Glean-specific failures
-            if state.context_provider.is_remote() {
+            if state.context_provider().is_remote() {
                 let error_category = match &e {
                     crate::context_provider::ContextError::Timeout(_) => "timeout",
                     crate::context_provider::ContextError::Auth(_) => "auth",
@@ -748,7 +772,7 @@ pub fn gather_enrichment_input(
         })?;
 
     // Audit successful Glean context gather
-    if state.context_provider.is_remote() {
+    if state.context_provider().is_remote() {
         let gather_ms = gather_start.elapsed().as_millis() as u64;
         if let Ok(mut audit) = state.audit_log.lock() {
             let _ = audit.append(
@@ -838,6 +862,10 @@ pub fn gather_enrichment_input(
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
 
+    // I535: Preserve context for Glean-first enrichment path
+    let is_remote = state.context_provider().is_remote();
+    let glean_ctx = if is_remote { Some(ctx) } else { None };
+
     // Own DB connection drops here when db goes out of scope
     Ok(EnrichmentInput {
         workspace,
@@ -848,7 +876,140 @@ pub fn gather_enrichment_input(
         file_manifest,
         file_count,
         computed_health,
+        entity_name: entity_name.clone(),
+        relationship: relationship.map(|s| s.to_string()),
+        intelligence_context: glean_ctx,
     })
+}
+
+/// I535/ADR-0100: Glean-first enrichment with PTY fallback.
+///
+/// For each entity, tries the Glean `chat` MCP tool first. If that fails
+/// (timeout, auth, parse error), falls back to the PTY path for that entity.
+/// Entities without a Glean context (local-only) go straight to PTY.
+async fn run_glean_enrichment_with_fallback(
+    mut inputs: Vec<(IntelRequest, EnrichmentInput)>,
+    ai_config: &AiModelConfig,
+    state: &AppState,
+) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
+    // Get the Glean endpoint from the context provider (not DB — avoids lock contention)
+    let glean_endpoint = state
+        .context_provider()
+        .remote_endpoint()
+        .map(|s| s.to_string());
+
+    let endpoint = match glean_endpoint {
+        Some(ep) => ep,
+        None => {
+            log::warn!("[I535] Glean mode active but no endpoint found, falling back to PTY");
+            return if inputs.len() == 1 {
+                let (request, input) = inputs.pop().unwrap();
+                match run_enrichment(&input, ai_config) {
+                    Ok(parsed) => vec![(request, input, parsed)],
+                    Err(e) => {
+                        log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
+                        Vec::new()
+                    }
+                }
+            } else {
+                run_batch_enrichment(inputs, ai_config)
+            };
+        }
+    };
+
+    let provider =
+        crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+
+    let mut results = Vec::new();
+    let mut pty_fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
+
+    for (request, input) in inputs {
+        // Only try Glean if we have the intelligence context (populated for remote providers)
+        if let Some(ref ctx) = input.intelligence_context {
+            log::info!(
+                "[I535] Attempting Glean enrichment for {} ({})",
+                input.entity_name,
+                input.entity_type
+            );
+
+            match provider
+                .enrich_entity(
+                    &input.entity_id,
+                    &input.entity_type,
+                    &input.entity_name,
+                    ctx,
+                    input.relationship.as_deref(),
+                )
+                .await
+            {
+                Ok(intel) => {
+                    log::info!(
+                        "[I535] Glean enrichment succeeded for {} — assessment: {}, risks: {}, wins: {}",
+                        input.entity_name,
+                        intel.executive_assessment.is_some(),
+                        intel.risks.len(),
+                        intel.recent_wins.len(),
+                    );
+
+                    // Extract inferred relationships from the Glean output
+                    // (Glean may include inferredRelationships in its JSON)
+                    let inferred_relationships = if let Ok(raw_json) =
+                        serde_json::to_string(&intel)
+                    {
+                        extract_inferred_relationships(&raw_json)
+                    } else {
+                        Vec::new()
+                    };
+
+                    results.push((
+                        request,
+                        input,
+                        EnrichmentParseResult {
+                            intel,
+                            inferred_relationships,
+                        },
+                    ));
+                    continue;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[I535] Glean enrichment failed for {}, falling back to PTY: {}",
+                        input.entity_name,
+                        e
+                    );
+                }
+            }
+        } else {
+            log::info!(
+                "[I535] No intelligence context for {}, using PTY directly",
+                input.entity_id
+            );
+        }
+
+        // Fall back to PTY for this entity
+        pty_fallback_inputs.push((request, input));
+    }
+
+    // Run PTY enrichment for all entities that Glean failed on
+    if !pty_fallback_inputs.is_empty() {
+        log::info!(
+            "[I535] Running PTY fallback for {} entities",
+            pty_fallback_inputs.len()
+        );
+        if pty_fallback_inputs.len() == 1 {
+            let (request, input) = pty_fallback_inputs.pop().unwrap();
+            match run_enrichment(&input, ai_config) {
+                Ok(parsed) => results.push((request, input, parsed)),
+                Err(e) => {
+                    log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
+                }
+            }
+        } else {
+            results.extend(run_batch_enrichment(pty_fallback_inputs, ai_config));
+        }
+    }
+
+    results
 }
 
 /// Categorize an enrichment error for audit logging (I472).
@@ -1894,6 +2055,9 @@ mod tests {
                     file_manifest: vec![],
                     file_count: 0,
                     computed_health: None,
+                    entity_name: String::new(),
+                    relationship: None,
+                    intelligence_context: None,
                 },
             ),
             (
@@ -1913,6 +2077,9 @@ mod tests {
                     file_manifest: vec![],
                     file_count: 0,
                     computed_health: None,
+                    entity_name: String::new(),
+                    relationship: None,
+                    intelligence_context: None,
                 },
             ),
         ];
@@ -1970,6 +2137,9 @@ mod tests {
                 file_manifest: vec![],
                 file_count: 0,
                 computed_health: None,
+                entity_name: String::new(),
+                relationship: None,
+                intelligence_context: None,
             },
         )];
 
@@ -2005,6 +2175,9 @@ mod tests {
                     file_manifest: vec![],
                     file_count: 0,
                     computed_health: None,
+                    entity_name: String::new(),
+                    relationship: None,
+                    intelligence_context: None,
                 },
             ),
             (
@@ -2024,6 +2197,9 @@ mod tests {
                     file_manifest: vec![],
                     file_count: 0,
                     computed_health: None,
+                    entity_name: String::new(),
+                    relationship: None,
+                    intelligence_context: None,
                 },
             ),
         ];

@@ -167,6 +167,15 @@ pub fn default_engine() -> PropagationEngine {
         "rule_person_profile_discovered",
         super::rules::rule_person_profile_discovered,
     );
+    // I535/ADR-0100: Glean-sourced signal propagation
+    engine.register(
+        "rule_glean_org_change",
+        super::rules::rule_glean_org_change,
+    );
+    engine.register(
+        "rule_glean_champion_departed",
+        super::rules::rule_glean_champion_departed,
+    );
 
     engine
 }

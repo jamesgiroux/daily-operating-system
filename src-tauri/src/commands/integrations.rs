@@ -2425,7 +2425,7 @@ pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
     serde_json::to_value(&mode).map_err(|e| format!("Serialization error: {}", e))
 }
 
-/// Set the context mode. Requires app restart to take effect.
+/// Set the context mode and hot-swap the provider immediately.
 /// In Glean mode, Clay and Gravatar enrichment are automatically disabled.
 #[tauri::command]
 pub fn set_context_mode(
@@ -2460,9 +2460,13 @@ pub fn set_context_mode(
         );
     }
 
+    // Hot-swap the context provider immediately (no restart needed).
+    let new_provider = state.build_context_provider(&parsed);
+    state.swap_context_provider(new_provider);
+
     // Enqueue all entities for re-enrichment at ProactiveHygiene priority.
     // A mode switch means context sources changed — existing intelligence
-    // should be refreshed with the new provider on next app start.
+    // should be refreshed with the new provider immediately.
     if let Ok(db_guard) = state.db.lock() {
         if let Some(db) = db_guard.as_ref() {
             use crate::intel_queue::{IntelPriority, IntelRequest};
@@ -2531,6 +2535,57 @@ pub async fn start_glean_auth(
                 );
             }
 
+            // Auto-set context mode to Glean (Blockers 1 & 3).
+            let glean_mode = crate::context_provider::ContextMode::Glean {
+                endpoint: endpoint.clone(),
+                strategy: crate::context_provider::GleanStrategy::Additive,
+            };
+            if let Err(e) = state.with_db_write(|db| {
+                crate::context_provider::save_context_mode(db, &glean_mode)
+            }) {
+                log::error!("Failed to save Glean context mode: {}", e);
+            }
+
+            // Hot-swap context provider immediately (no restart needed).
+            let new_provider = state.build_context_provider(&glean_mode);
+            state.swap_context_provider(new_provider);
+
+            // Audit: context mode auto-set
+            if let Ok(mut audit) = state.audit_log.lock() {
+                let _ = audit.append(
+                    "config",
+                    "context_mode_changed",
+                    serde_json::json!({"from": "local", "to": "glean", "trigger": "glean_auth"}),
+                );
+            }
+
+            // Enqueue all entities for re-enrichment with Glean provider.
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    use crate::intel_queue::{IntelPriority, IntelRequest};
+                    let mut count = 0u32;
+                    if let Ok(entities) = db.get_stale_entity_intelligence(0) {
+                        for (entity_id, entity_type, _) in entities {
+                            state.intel_queue.enqueue(IntelRequest::new(
+                                entity_id, entity_type, IntelPriority::ProactiveHygiene,
+                            ));
+                            count += 1;
+                        }
+                    }
+                    if let Ok(missing) = db.get_entities_without_intelligence() {
+                        for (entity_id, entity_type) in missing {
+                            state.intel_queue.enqueue(IntelRequest::new(
+                                entity_id, entity_type, IntelPriority::ProactiveHygiene,
+                            ));
+                            count += 1;
+                        }
+                    }
+                    if count > 0 {
+                        log::info!("Glean auth: enqueued {} entities for re-enrichment", count);
+                    }
+                }
+            }
+
             let _ = app_handle.emit("glean-auth-changed", &status);
             Ok(status)
         }
@@ -2576,10 +2631,29 @@ pub fn disconnect_glean(
         );
     }
 
+    // Revert context mode to Local and hot-swap provider.
+    let local_mode = crate::context_provider::ContextMode::Local;
+    if let Err(e) = state.with_db_write(|db| {
+        crate::context_provider::save_context_mode(db, &local_mode)
+    }) {
+        log::error!("Failed to save Local context mode on disconnect: {}", e);
+    }
+    let new_provider = state.build_context_provider(&local_mode);
+    state.swap_context_provider(new_provider);
+
+    // Audit: context mode reverted
+    if let Ok(mut audit) = state.audit_log.lock() {
+        let _ = audit.append(
+            "config",
+            "context_mode_changed",
+            serde_json::json!({"from": "glean", "to": "local", "trigger": "glean_disconnect"}),
+        );
+    }
+
     let status = crate::glean::GleanAuthStatus::NotConfigured;
     let _ = app_handle.emit("glean-auth-changed", &status);
 
-    log::info!("Glean disconnected");
+    log::info!("Glean disconnected, context provider reverted to local");
     Ok(())
 }
 

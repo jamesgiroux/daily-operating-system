@@ -17,7 +17,7 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
 
     // In Glean Governed mode, Drive polling is replaced by Glean-sourced documents.
     // Sleep indefinitely — the app must restart to change modes.
-    if matches!(state.context_provider.provider_name(), "glean") {
+    if matches!(state.context_provider().provider_name(), "glean") {
         // Check if it's Governed strategy specifically
         let is_governed = state
             .with_db_read(|db| {

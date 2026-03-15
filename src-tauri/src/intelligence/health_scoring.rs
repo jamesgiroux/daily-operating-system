@@ -24,7 +24,7 @@ pub fn compute_account_health(
     let email_engagement = compute_email_engagement(db, &account.id);
     let stakeholder_coverage = compute_stakeholder_coverage(db, &account.id);
     let champion_health = compute_champion_health(db, &account.id);
-    let financial_proximity = compute_financial_proximity(account);
+    let financial_proximity = compute_financial_proximity(db, account);
     let signal_momentum = compute_signal_momentum(db, &account.id);
 
     let dims = RelationshipDimensions {
@@ -485,15 +485,52 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         evidence.push(format!("{short_date}: {status}{detail}"));
     }
 
+    // I535: Augment with Glean Gong signals if available
+    let mut final_score = avg_score;
+    let glean_gong_signals: Vec<(String, f64)> = db
+        .conn
+        .prepare(
+            "SELECT value, confidence FROM signal_events
+             WHERE entity_id = ?1 AND source = 'glean_gong'
+               AND signal_type LIKE '%champion%'
+               AND created_at > datetime('now', '-90 days')
+             ORDER BY created_at DESC LIMIT 3",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![account_id], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    row.get::<_, f64>(1)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    if !glean_gong_signals.is_empty() {
+        // Gong data shows champion engagement patterns we can't see locally
+        let avg_confidence: f64 =
+            glean_gong_signals.iter().map(|(_, c)| c).sum::<f64>() / glean_gong_signals.len() as f64;
+        if avg_confidence >= 0.7 {
+            // High-confidence Gong data — boost or reduce based on signal content
+            final_score = (final_score + avg_confidence * 100.0) / 2.0; // Blend
+            evidence.push(format!(
+                "Gong call data: {} signals, avg confidence {:.0}%",
+                glean_gong_signals.len(),
+                avg_confidence * 100.0
+            ));
+        }
+    }
+
     DimensionScore {
-        score: avg_score.clamp(0.0, 100.0),
+        score: final_score.clamp(0.0, 100.0),
         weight: 1.0,
         evidence,
         trend: trend.to_string(),
     }
 }
 
-fn compute_financial_proximity(account: &DbAccount) -> DimensionScore {
+fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionScore {
     let contract_end = match &account.contract_end {
         Some(end) if !end.is_empty() => end,
         _ => return null_dimension("No contract end date"),
@@ -506,7 +543,8 @@ fn compute_financial_proximity(account: &DbAccount) -> DimensionScore {
 
     let today = chrono::Utc::now().date_naive();
     let days_to_renewal = (end_date - today).num_days() as f64;
-    let score = (100.0 * (-days_to_renewal / 90.0).exp()).clamp(5.0, 100.0);
+    let mut score = (100.0 * (-days_to_renewal / 90.0).exp()).clamp(5.0, 100.0);
+    let mut evidence = vec![format!("{days_to_renewal:.0} days to renewal")];
 
     let trend = if days_to_renewal < 30.0 {
         "critical".to_string()
@@ -516,10 +554,56 @@ fn compute_financial_proximity(account: &DbAccount) -> DimensionScore {
         "stable".to_string()
     };
 
+    // I535: Augment with Glean CRM signals (Salesforce renewal probability)
+    let crm_signals: Vec<(String, f64)> = db
+        .conn
+        .prepare(
+            "SELECT value, confidence FROM signal_events
+             WHERE entity_id = ?1 AND source = 'glean_crm'
+               AND signal_type = 'renewal_data_updated'
+               AND created_at > datetime('now', '-30 days')
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![&account.id], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    row.get::<_, f64>(1)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    if let Some((value_json, _confidence)) = crm_signals.first() {
+        // Try to extract renewal probability from the CRM signal
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(value_json) {
+            if let Some(probability) = parsed
+                .get("renewal_likelihood")
+                .or_else(|| parsed.get("renewalProbability"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| {
+                    // Try to parse as percentage or keyword
+                    s.trim_end_matches('%').parse::<f64>().ok()
+                })
+            {
+                if probability < 50.0 {
+                    // CRM says renewal is at risk — cap score
+                    score = score.min(40.0);
+                    evidence.push(format!(
+                        "CRM renewal probability: {probability:.0}% — at risk"
+                    ));
+                } else {
+                    evidence.push(format!("CRM renewal probability: {probability:.0}%"));
+                }
+            }
+        }
+    }
+
     DimensionScore {
-        score,
+        score: score.clamp(0.0, 100.0),
         weight: 1.0,
-        evidence: vec![format!("{days_to_renewal:.0} days to renewal")],
+        evidence,
         trend,
     }
 }

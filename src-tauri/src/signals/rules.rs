@@ -867,6 +867,46 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
 }
 
 // ---------------------------------------------------------------------------
+// I535/ADR-0100: Glean-sourced signal propagation rules
+// ---------------------------------------------------------------------------
+
+/// When Glean detects an org chart change for an account, propagate
+/// `stakeholder_change` on the same account — triggers prep invalidation
+/// and downstream effects (same as `rule_person_job_change` for persons).
+pub fn rule_glean_org_change(signal: &SignalEvent, _db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.signal_type != "glean_org_change" {
+        return Vec::new();
+    }
+
+    // Derive a stakeholder_change on the same entity (already an account)
+    vec![DerivedSignal {
+        entity_type: signal.entity_type.clone(),
+        entity_id: signal.entity_id.clone(),
+        signal_type: "stakeholder_change".to_string(),
+        source: "glean_propagation".to_string(),
+        value: signal.value.clone(),
+        confidence: signal.confidence * 0.9, // Slight attenuation for derived signal
+    }]
+}
+
+/// When Glean detects a champion departure, propagate `champion_risk`
+/// on the account — surfaces in morning briefing callouts.
+pub fn rule_glean_champion_departed(signal: &SignalEvent, _db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.signal_type != "glean_champion_departed" {
+        return Vec::new();
+    }
+
+    vec![DerivedSignal {
+        entity_type: signal.entity_type.clone(),
+        entity_id: signal.entity_id.clone(),
+        signal_type: "champion_risk".to_string(),
+        source: "glean_propagation".to_string(),
+        value: signal.value.clone(),
+        confidence: signal.confidence * 0.95, // Champion departure is high-confidence
+    }]
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
