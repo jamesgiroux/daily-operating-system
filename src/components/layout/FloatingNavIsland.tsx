@@ -91,7 +91,7 @@ interface NavItem {
   id: 'week' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
   label: string;
   icon: React.ReactNode;
-  group: 'main' | 'entity' | 'admin';
+  group: 'main' | 'work' | 'entity' | 'admin';
 }
 
 export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
@@ -172,13 +172,17 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   const entityPair = entityMode === 'project' ? [projectsItem, accountsItem] : [accountsItem, projectsItem];
 
   const items: NavItem[] = [
+    // Time — schedule views
     { id: 'week', label: 'This Week', icon: <Calendar size={18} strokeWidth={1.8} />, group: 'main' },
-    { id: 'emails', label: 'Mail', icon: <Mail size={18} strokeWidth={1.8} />, group: 'main' },
-    { id: 'dropbox', label: 'Dropbox', icon: <Inbox size={18} strokeWidth={1.8} />, group: 'entity' },
-    { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'entity' },
+    // Work — mail + actions
+    { id: 'emails', label: 'Mail', icon: <Mail size={18} strokeWidth={1.8} />, group: 'work' },
+    { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'work' },
+    // Entities — me, people, accounts/projects
     { id: 'me', label: 'Me', icon: <UserCircle size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'people', label: 'People', icon: <Users size={18} strokeWidth={1.8} />, group: 'entity' },
-    ...entityPair,
+    ...entityPair.map(item => ({ ...item, group: 'entity' as const })),
+    // Tools — inbox + settings
+    { id: 'dropbox', label: 'Inbox', icon: <Inbox size={18} strokeWidth={1.8} />, group: 'admin' },
     { id: 'settings', label: 'Settings', icon: <Settings size={18} strokeWidth={1.8} />, group: 'admin' },
   ];
 
@@ -189,14 +193,14 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
       {/* Home / Today button — Brand mark */}
       <button
         className={`${styles.navIslandMark} ${activePage === 'today' ? styles.navIslandMarkActive : ''}`}
+        data-label="Today"
         onClick={onHome}
         aria-label="Today"
-        title="Today"
       >
         <BrandMark size={16} />
       </button>
 
-      {/* Main navigation items */}
+      {/* Time — This Week */}
       {items
         .filter((item) => item.group === 'main')
         .map((item) => (
@@ -214,7 +218,25 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
       <div className={styles.navIslandDivider} aria-hidden="true" />
 
-      {/* Entity navigation items */}
+      {/* Work — Mail, Actions */}
+      {items
+        .filter((item) => item.group === 'work')
+        .map((item) => (
+          <button
+            key={item.id}
+            className={`${styles.navIslandItem} ${isItemActive(item.id) ? activeClass : ''}`}
+            data-label={item.label}
+            onClick={() => onNavigate?.(item.id)}
+            aria-label={item.label}
+            title={item.label}
+          >
+            {item.icon}
+          </button>
+        ))}
+
+      <div className={styles.navIslandDivider} aria-hidden="true" />
+
+      {/* Entities — Me, People, Accounts/Projects */}
       {items
         .filter((item) => item.group === 'entity')
         .map((item) => (
@@ -235,7 +257,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
       <div className={styles.navIslandDivider} aria-hidden="true" />
 
-      {/* Admin navigation items */}
+      {/* Tools — Inbox, Settings */}
       {items
         .filter((item) => item.group === 'admin')
         .map((item) => (
