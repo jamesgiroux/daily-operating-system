@@ -145,7 +145,12 @@ pub fn process_transcript_with_kind(
     );
 
     // 3. Build prompt and invoke Claude
-    let prompt = build_transcript_prompt_with_kind(meeting, &content, content_kind);
+    // I535 Step 10: Inject Gong call summaries as supplementary context when in Glean mode
+    let gong_context = build_gong_pre_context(db, meeting);
+    let mut prompt = build_transcript_prompt_with_kind(meeting, &content, content_kind);
+    if let Some(ref ctx) = gong_context {
+        prompt = format!("{}\n\n{}", ctx, prompt);
+    }
     let default_config = AiModelConfig::default();
     let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config.unwrap_or(&default_config))
         .with_timeout(TRANSCRIPT_AI_TIMEOUT_SECS);
@@ -1543,6 +1548,47 @@ impl Default for TranscriptResult {
             commitments: Vec::new(),
         }
     }
+}
+
+/// I535 Step 10: Build Gong call history context block for transcript processing.
+///
+/// When in Glean mode and the meeting's account has existing intelligence with
+/// `gong_call_summaries`, format the most recent summaries (max 5, newest first)
+/// as supplementary context prepended to the transcript prompt.
+fn build_gong_pre_context(db: Option<&ActionDb>, meeting: &CalendarEvent) -> Option<String> {
+    let db = db?;
+    let account_name = meeting.account.as_deref()?;
+
+    // Check if we're in Glean mode
+    let mode = crate::context_provider::read_context_mode(db);
+    if matches!(mode, crate::context_provider::ContextMode::Local) {
+        return None;
+    }
+
+    // Look up account entity_id from account name
+    let account = db.get_account_by_name(account_name).ok().flatten()?;
+    let intel = db.get_entity_intelligence(&account.id).ok().flatten()?;
+
+    if intel.gong_call_summaries.is_empty() {
+        return None;
+    }
+
+    // Take up to 5 summaries, newest first (assume already sorted by date desc from Glean)
+    let mut summaries = intel.gong_call_summaries.clone();
+    summaries.sort_by(|a, b| b.date.cmp(&a.date));
+    summaries.truncate(5);
+
+    let mut block = String::from(
+        "SUPPLEMENTARY CONTEXT (prior calls with this account from Gong):\n",
+    );
+    for s in &summaries {
+        block.push_str(&format!(
+            "- [{}] \"{}\": {}, sentiment: {}\n",
+            s.date, s.title, s.key_topics, s.sentiment,
+        ));
+    }
+
+    Some(block)
 }
 
 #[cfg(test)]
