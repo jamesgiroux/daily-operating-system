@@ -205,6 +205,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I537** | Gate role presets behind feature flag — hide preset selection UI (onboarding + settings), hard-default to CS. Preset infrastructure stays. Spec: `.docs/issues/i537.md` | P1 | Frontend / Onboarding / Settings |
 | **I538** | Meeting briefing refresh — rollback on failure. Snapshot existing prep before clearing, restore if enrichment fails. Spec: `.docs/issues/i538.md` | P1 | Backend / Pipeline |
 | **I539** | Database recovery UX for migration/DB failure — startup blocker + Settings/Data recovery controls; scope extracted from I511. Spec: `.docs/issues/i539.md` | P1 | Frontend + Backend / Settings + Startup Recovery |
+| **I563** | shellConfig render loop on AccountDetailEditorial — `useRegisterMagazineShell` re-register cycle causes max update depth warning | P2 | Frontend / Architecture |
 
 ---
 
@@ -689,9 +690,41 @@ Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches,
 | I531 | Proactive self-healing with Glean — hygiene gap queries via agents, signal emission fixes (2 bugs + 7 missing), DB migration. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i531.md` | P1 | Backend / Self-Healing / Connectors |
 | I494 | Glean account discovery — "Discover from Glean" on Accounts page, CRM import, one-click add. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i494.md` | P1 | Backend / Connectors + Frontend |
 | I495 | Ephemeral account query — "Tell me about..." transient briefing, not persisted. Pulled from v1.1.0 (2026-03-14). Spec: `.docs/issues/i495.md` | P1 | Backend / Connectors + Frontend |
+| **I563** | shellConfig render loop — `useRegisterMagazineShell` triggers max update depth warning on AccountDetailEditorial | P2 | Frontend / Architecture |
+| **I564** | PTY enrichment blocks async runtime — wrap `run_enrichment()` in `spawn_blocking` in intel_queue processor | P0 | Backend / Performance |
+| **I565** | Split `heavy_work_semaphore` into typed resource permits — PTY, embedding, pipeline each get own capacity | P0 | Backend / Performance |
+| **I566** | User-facing semaphore timeout + cancellation — manual refresh times out after 10s, shows message instead of beach ball | P0 | Backend + Frontend / Performance |
+| **I567** | Narrow `refresh_emails` semaphore scope — hold permit only during PTY calls, not entire fetch+classify pipeline | P1 | Backend / Performance |
+| **I568** | Migrate remaining `state.db.lock()` calls to async `db_service` — 6 legacy Mutex locks in command handlers contend with background tasks | P1 | Backend / Performance |
+| **I569** | Replace `block_in_place`+`block_on` in Glean context provider with `spawn_blocking` — network calls block Tokio threads | P1 | Backend / Performance |
+| **I570** | Move Keychain retry/backoff off Tokio threads — `std::thread::sleep` in token stores blocks async runtime | P2 | Backend / Performance |
+| **I571** | Surface background work status to user — toast/indicator when semaphore blocks a user action | P1 | Frontend / UX |
+| **I572** | Audit log coverage for OAuth token lifecycle — token save, refresh, delete, expiry events not tracked | P2 | Backend / Security |
+| **I573** | Mutex poisoning recovery for critical state — re-create audit_log/config/db resources instead of permanent session failure | P2 | Backend / Stability |
+| **I574** | Parallel dimension enrichment — decompose ALL monolithic AI calls (PTY + Glean) into parallel focused calls. 12 call sites audited, no single call > 30s | P0 | Backend / Performance / Intelligence |
+| **I576** | Source-aware intelligence reconciliation — Glean chat as reconciliation engine, local context injected with source tags + confidence, source-attributed output items | P0 | Backend / Intelligence / Architecture |
+| **I575** | Progressive enrichment everywhere — write partial results as they complete, emit frontend events, show data filling in incrementally across all surfaces | P1 | Backend + Frontend / UX / Intelligence |
 | I560 | Glean mode connector optimization + token lifecycle + data governance — remove Additive/Governed, auto-connector management, token health monitoring with pre-expiry notifications, in-app re-auth without restart, purge gap fixes (entity_assessment/emails/gravatar on revocation), data residency clarity. Spec: `.docs/issues/i560.md` | P0 | Backend / Connectors / Auth / Data Governance |
 | I561 | Onboarding flow for Glean-connected users — wizard branches: Glean auth → auto-discover accounts → confirm → background enrichment → "Your book is ready." Profile pre-fill from org directory. No Claude Code needed. Spec: `.docs/issues/i561.md` | P0 | Frontend + Backend / Onboarding |
 | I562 | Glean `chat` PTY equivalence test suite — systematic test of every PTY prompt via Glean chat. 12 call sites, 8 testable. Replace vs augment per call site. Extends I559 validation. Spec: `.docs/issues/i562.md` | P1 | Backend / Exploration |
+
+**Phase 6 — GA Readiness (Performance, Security, Stability):**
+
+Final pass before tagging v1.0.0. No beach balls, no silent failures, no security gaps.
+
+| ID | Title | Priority | Area |
+|----|-------|----------|------|
+| I564 | PTY enrichment on blocking threads — wrap `run_enrichment()` in `spawn_blocking` in intel_queue | P0 | Backend / Performance |
+| I565 | Typed resource permits — replace single `heavy_work_semaphore(1)` with PTY/embedding/pipeline permits | P0 | Backend / Performance |
+| I566 | User-facing semaphore timeout — manual refresh times out after 10s with message, no infinite await | P0 | Backend + Frontend / Performance |
+| I567 | Narrow `refresh_emails` semaphore scope — only PTY calls hold the permit | P1 | Backend / Performance |
+| I568 | Migrate legacy `state.db.lock()` to async `db_service` | P1 | Backend / Performance |
+| I569 | Glean context provider async bridging — `spawn_blocking` instead of `block_in_place`+`block_on` | P1 | Backend / Performance |
+| I570 | Keychain retry off Tokio threads | P2 | Backend / Performance |
+| I563 | shellConfig render loop on AccountDetailEditorial | P2 | Frontend / Architecture |
+| I571 | Surface background work status to user | P1 | Frontend / UX |
+| I572 | Audit log for OAuth token lifecycle | P2 | Backend / Security |
+| I573 | Mutex poisoning recovery for critical state | P2 | Backend / Stability |
 
 **CS Report Suite (after Phase 2):**
 
