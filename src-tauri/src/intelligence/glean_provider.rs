@@ -10,6 +10,9 @@
 
 use std::time::{Duration, Instant};
 
+use futures::stream::{FuturesUnordered, StreamExt};
+use tauri::{AppHandle, Emitter};
+
 use crate::context_provider::glean::GleanMcpClient;
 use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
@@ -59,6 +62,8 @@ impl GleanIntelligenceProvider {
     ///
     /// Returns `IntelligenceJson` on success, or an error string for fallback.
     /// The caller (`intel_queue.rs`) falls back to PTY on any error.
+    ///
+    /// I575: When `app_handle` is provided, emits progressive enrichment events.
     pub async fn enrich_entity(
         &self,
         entity_id: &str,
@@ -66,10 +71,11 @@ impl GleanIntelligenceProvider {
         entity_name: &str,
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
+        app_handle: Option<&AppHandle>,
     ) -> Result<IntelligenceJson, String> {
         // Try parallel dimension fan-out first
         match self
-            .enrich_entity_parallel(entity_id, entity_type, entity_name, ctx, relationship)
+            .enrich_entity_parallel(entity_id, entity_type, entity_name, ctx, relationship, app_handle)
             .await
         {
             Ok(intel) => Ok(intel),
@@ -90,6 +96,10 @@ impl GleanIntelligenceProvider {
     /// Spawns 6 concurrent Glean `chat` calls (one per dimension group),
     /// each with a 30s timeout. Merges successful dimensions into a single
     /// `IntelligenceJson`. Falls back to legacy if 0 dimensions succeed.
+    ///
+    /// I575: Uses `FuturesUnordered` to process dimensions as they complete,
+    /// writing progressive updates to DB and emitting events when `app_handle`
+    /// is provided.
     pub async fn enrich_entity_parallel(
         &self,
         entity_id: &str,
@@ -97,9 +107,13 @@ impl GleanIntelligenceProvider {
         entity_name: &str,
         ctx: &IntelligenceContext,
         relationship: Option<&str>,
+        app_handle: Option<&AppHandle>,
     ) -> Result<IntelligenceJson, String> {
+        use crate::intel_queue::{EnrichmentComplete, EnrichmentProgress};
+
         let overall_start = Instant::now();
         let is_incremental = ctx.prior_intelligence.is_some();
+        let total_dimensions = DIMENSION_NAMES.len() as u32;
 
         // Build 6 dimension prompts
         let prompts: Vec<(String, String)> = DIMENSION_NAMES
@@ -131,8 +145,8 @@ impl GleanIntelligenceProvider {
         let entity_type_owned = entity_type.to_string();
         let entity_name_owned = entity_name.to_string();
 
-        // Spawn 6 concurrent tasks
-        let mut handles = Vec::with_capacity(6);
+        // Spawn 6 concurrent tasks into FuturesUnordered for progressive processing
+        let mut futures = FuturesUnordered::new();
         let mut wrote_debug_file = false;
 
         for (dim_name, prompt) in prompts {
@@ -143,7 +157,7 @@ impl GleanIntelligenceProvider {
             let is_first = !wrote_debug_file;
             wrote_debug_file = true;
 
-            let handle = tokio::spawn(async move {
+            futures.push(tokio::spawn(async move {
                 let start = Instant::now();
                 let client = GleanMcpClient::new(&ep);
 
@@ -220,18 +234,16 @@ impl GleanIntelligenceProvider {
                         (dim_name, Err(format!("parse failed: {}", e)))
                     }
                 }
-            });
-
-            handles.push(handle);
+            }));
         }
 
-        // Collect results
+        // Process results progressively as each dimension completes
         let mut combined = IntelligenceJson::default();
         let mut succeeded = 0u32;
         let mut failed_dims = Vec::new();
 
-        for handle in handles {
-            match handle.await {
+        while let Some(join_result) = futures.next().await {
+            match join_result {
                 Ok((dim_name, Ok(partial))) => {
                     if let Err(e) =
                         dimension_prompts::merge_dimension_into(&mut combined, &dim_name, &partial)
@@ -240,6 +252,25 @@ impl GleanIntelligenceProvider {
                         failed_dims.push(dim_name);
                     } else {
                         succeeded += 1;
+
+                        // I575: Progressive DB write + event emission
+                        if let Some(handle) = app_handle {
+                            write_progressive_glean_dimension(
+                                entity_id,
+                                entity_type,
+                                &combined,
+                            );
+                            let _ = handle.emit(
+                                "enrichment-progress",
+                                EnrichmentProgress {
+                                    entity_id: entity_id.to_string(),
+                                    entity_type: entity_type.to_string(),
+                                    completed: succeeded,
+                                    total: total_dimensions,
+                                    last_dimension: dim_name,
+                                },
+                            );
+                        }
                     }
                 }
                 Ok((dim_name, Err(_))) => {
@@ -259,6 +290,21 @@ impl GleanIntelligenceProvider {
             total_ms,
             failed_dims,
         );
+
+        // I575: Emit completion event
+        if let Some(handle) = app_handle {
+            let _ = handle.emit(
+                "enrichment-complete",
+                EnrichmentComplete {
+                    entity_id: entity_id.to_string(),
+                    entity_type: entity_type.to_string(),
+                    succeeded,
+                    failed: failed_dims.len() as u32,
+                    failed_dimensions: failed_dims.clone(),
+                    wall_clock_ms: total_ms as u64,
+                },
+            );
+        }
 
         if succeeded == 0 {
             return Err(format!(
@@ -444,6 +490,69 @@ impl GleanIntelligenceProvider {
     /// Get the endpoint this provider is configured for.
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+}
+
+/// I575: Write progressive dimension state to DB during Glean parallel enrichment.
+///
+/// Similar to `write_progressive_dimension` in `intel_queue.rs` but for the Glean path.
+/// Non-fatal on error — the final merge+write after all dimensions is authoritative.
+fn write_progressive_glean_dimension(
+    entity_id: &str,
+    entity_type: &str,
+    combined: &IntelligenceJson,
+) {
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            log::warn!(
+                "[I575] Glean progressive write: failed to open DB for {}: {}",
+                entity_id,
+                e
+            );
+            return;
+        }
+    };
+
+    let existing = db.get_entity_intelligence(entity_id).ok().flatten();
+    let mut merged = combined.clone();
+
+    if let Some(existing) = existing {
+        if merged.executive_assessment.is_none() {
+            merged.executive_assessment = existing.executive_assessment;
+        }
+        if merged.risks.is_empty() {
+            merged.risks = existing.risks;
+        }
+        if merged.recent_wins.is_empty() {
+            merged.recent_wins = existing.recent_wins;
+        }
+        if merged.stakeholder_insights.is_empty() {
+            merged.stakeholder_insights = existing.stakeholder_insights;
+        }
+        if merged.value_delivered.is_empty() {
+            merged.value_delivered = existing.value_delivered;
+        }
+        if merged.user_edits.is_empty() && !existing.user_edits.is_empty() {
+            merged.user_edits = existing.user_edits;
+        }
+    }
+
+    merged.entity_id = entity_id.to_string();
+    merged.entity_type = entity_type.to_string();
+    merged.enriched_at = chrono::Utc::now().to_rfc3339();
+
+    if let Err(e) = db.upsert_entity_intelligence(&merged) {
+        log::warn!(
+            "[I575] Glean progressive write failed for {}: {}",
+            entity_id,
+            e
+        );
+    } else {
+        log::debug!(
+            "[I575] Glean progressive write succeeded for {}",
+            entity_id,
+        );
     }
 }
 

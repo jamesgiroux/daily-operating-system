@@ -3022,6 +3022,176 @@ pub async fn dev_explore_glean_tools(
 }
 
 // ---------------------------------------------------------------------------
+// I495 — Ephemeral Account Query via Glean
+// ---------------------------------------------------------------------------
+
+/// A one-shot briefing about an account, produced from Glean without requiring
+/// the account to exist in the local database.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EphemeralBriefing {
+    pub name: String,
+    pub summary: String,
+    pub sections: Vec<BriefingSection>,
+    pub source_count: usize,
+    /// If the account already exists in DailyOS, this is its entity ID.
+    pub already_exists: Option<String>,
+}
+
+/// A single section within an ephemeral briefing.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BriefingSection {
+    pub title: String,
+    pub content: String,
+    pub source: Option<String>,
+}
+
+/// Query Glean for an ephemeral briefing about a named account.
+///
+/// Does not require the account to exist in the local database. If it does
+/// exist, `already_exists` is set to the entity ID so the frontend can link
+/// to the detail page instead.
+#[tauri::command]
+pub async fn query_ephemeral_account(
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<EphemeralBriefing, String> {
+    use crate::context_provider::glean::GleanMcpClient;
+    use crate::intelligence::glean_prompts::build_ephemeral_query_prompt;
+
+    // 1. Require a Glean endpoint
+    let provider = state.context_provider();
+    let endpoint = provider
+        .remote_endpoint()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Glean not connected".to_string())?;
+
+    // 2. Check if account already exists
+    let already_exists: Option<String> = state.with_db_read(|db| {
+        Ok(db
+            .get_account_by_name(&name)
+            .ok()
+            .flatten()
+            .map(|a| a.id))
+    })?;
+
+    // 3. Build prompt and call Glean
+    let prompt = build_ephemeral_query_prompt(&name);
+    let client = GleanMcpClient::new(&endpoint);
+    let response_text = client
+        .chat(&prompt, None)
+        .await
+        .map_err(|e| format!("Glean query failed for {}: {}", name, e))?;
+
+    log::info!(
+        "[I495] Ephemeral query for '{}' — {} chars response",
+        name,
+        response_text.len()
+    );
+
+    // 4. Parse response — try JSON first, fall back to wrapping prose
+    let briefing = parse_ephemeral_response(&name, &response_text, already_exists)?;
+
+    Ok(briefing)
+}
+
+/// Parse the Glean response into an EphemeralBriefing.
+///
+/// Tries to extract a JSON object first. If the response is prose rather than
+/// JSON, wraps it in a single section rather than failing.
+fn parse_ephemeral_response(
+    name: &str,
+    response_text: &str,
+    already_exists: Option<String>,
+) -> Result<EphemeralBriefing, String> {
+    // Try to extract JSON object
+    if let Some(json_start) = response_text.find('{') {
+        // Use brace-counting extraction
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut escape_next = false;
+
+        for (i, ch) in response_text[json_start..].char_indices() {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+            match ch {
+                '\\' if in_string => escape_next = true,
+                '"' => in_string = !in_string,
+                '{' if !in_string => depth += 1,
+                '}' if !in_string => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let json_text = &response_text[json_start..=json_start + i];
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_text) {
+                            let summary = parsed
+                                .get("summary")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
+                            let sections: Vec<BriefingSection> = parsed
+                                .get("sections")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|s| {
+                                            Some(BriefingSection {
+                                                title: s.get("title")?.as_str()?.to_string(),
+                                                content: s.get("content")?.as_str()?.to_string(),
+                                                source: s
+                                                    .get("source")
+                                                    .and_then(|v| v.as_str())
+                                                    .map(|s| s.to_string()),
+                                            })
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+
+                            let source_count = parsed
+                                .get("sourceCount")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(sections.len() as u64)
+                                as usize;
+
+                            return Ok(EphemeralBriefing {
+                                name: name.to_string(),
+                                summary,
+                                sections,
+                                source_count,
+                                already_exists,
+                            });
+                        }
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Fallback: wrap prose in a single section
+    let trimmed = response_text.trim();
+    if trimmed.is_empty() {
+        return Err(format!("Glean returned empty response for '{}'", name));
+    }
+
+    Ok(EphemeralBriefing {
+        name: name.to_string(),
+        summary: trimmed.to_string(),
+        sections: vec![BriefingSection {
+            title: "Overview".to_string(),
+            content: trimmed.to_string(),
+            source: None,
+        }],
+        source_count: 1,
+        already_exists,
+    })
+}
+
 // I535 Step 9 — Discover accounts from Glean
 // ---------------------------------------------------------------------------
 

@@ -119,22 +119,22 @@ pub async fn enrich_entity(
         match glean_result {
             Some(parsed) => parsed,
             None => {
-                // Fallback to PTY
+                // Fallback to PTY (manual path — no AppHandle for progressive events)
                 let input_for_enrichment = input.clone();
                 let ai_config_for_enrichment = ai_config.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
+                    run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, None)
                 })
                 .await
                 .map_err(|e| format!("Enrichment task panicked: {}", e))??
             }
         }
     } else {
-        // Local-only: direct PTY path
+        // Local-only: direct PTY path (manual path — no AppHandle for progressive events)
         let input_for_enrichment = input.clone();
         let ai_config_for_enrichment = ai_config.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
+            run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, None)
         })
         .await
         .map_err(|e| format!("Enrichment task panicked: {}", e))??

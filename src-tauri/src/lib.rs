@@ -758,6 +758,8 @@ pub fn run() {
             commands::dev_explore_glean_tools,
             // I535 Step 9: Discover accounts from Glean
             commands::discover_accounts_from_glean,
+            // I495: Ephemeral Account Query via Glean
+            commands::query_ephemeral_account,
             // I427: Global Search
             commands::search_global,
             commands::rebuild_search_index,
