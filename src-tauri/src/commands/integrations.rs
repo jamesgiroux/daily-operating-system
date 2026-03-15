@@ -183,6 +183,25 @@ pub async fn update_intelligence_field(
     .await
 }
 
+/// I576: Dismiss an intelligence item, creating a tombstone to prevent re-creation.
+#[tauri::command]
+pub async fn dismiss_intelligence_item(
+    entity_id: String,
+    entity_type: String,
+    field: String,
+    item_text: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::intelligence::dismiss_intelligence_item(
+        &entity_id,
+        &entity_type,
+        &field,
+        &item_text,
+        &state,
+    )
+    .await
+}
+
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
 #[tauri::command]
 pub async fn update_stakeholders(
