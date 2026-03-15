@@ -1,17 +1,19 @@
 /**
- * OnboardingFlow.tsx — First-run wizard (I57 refactor)
+ * OnboardingFlow.tsx — First-run wizard (I57 refactor, I561 three connectors)
  *
- * Trimmed from 11 chapters to 4 essential steps:
- * Landing → Claude Code → Google → YouCard → Role Preset → Dashboard
+ * Step sequence:
+ * Welcome → Google → Claude Code → Glean → YouCard → FirstAccount → Role → Prime
  *
- * The Claude Code step is required (no skip). All others are skippable.
+ * Google moves first (provides email identity for Glean discovery).
+ * Claude Code is skippable (recommended, not blocking).
+ * Glean is new and optional — enables account discovery + profile pre-fill.
  * Each step persists immediately via Tauri commands.
  */
 
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
-import type { EntityMode, FeatureFlags } from "@/types";
+import type { EntityMode, FeatureFlags, DiscoveredAccount, GleanAuthStatus } from "@/types";
 
 import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
 import { FolioBar } from "@/components/layout/FolioBar";
@@ -20,6 +22,7 @@ import {
   Sparkles,
   Mail,
   Terminal,
+  Globe,
   User,
   Briefcase,
   Building,
@@ -28,6 +31,7 @@ import {
 import { Welcome } from "./chapters/Welcome";
 import { GoogleConnect } from "./chapters/GoogleConnect";
 import { ClaudeCode } from "./chapters/ClaudeCode";
+import { GleanConnect } from "./chapters/GleanConnect";
 import { YouCardStep, type YouCardFormData } from "./chapters/YouCardStep";
 import { FirstAccountStep } from "./chapters/FirstAccountStep";
 import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
@@ -40,8 +44,9 @@ interface OnboardingFlowProps {
 
 const CHAPTERS = [
   "welcome",
-  "claude-code",
   "google",
+  "claude-code",
+  "glean",
   "youcard",
   "first-account",
   "role",
@@ -52,8 +57,9 @@ type Chapter = (typeof CHAPTERS)[number];
 
 const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
   "welcome": <Sparkles size={16} strokeWidth={1.8} />,
-  "claude-code": <Terminal size={16} strokeWidth={1.8} />,
   "google": <Mail size={16} strokeWidth={1.8} />,
+  "claude-code": <Terminal size={16} strokeWidth={1.8} />,
+  "glean": <Globe size={16} strokeWidth={1.8} />,
   "youcard": <User size={16} strokeWidth={1.8} />,
   "first-account": <Building size={16} strokeWidth={1.8} />,
   "role": <Briefcase size={16} strokeWidth={1.8} />,
@@ -62,8 +68,9 @@ const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
 
 const CHAPTER_LABELS: Record<Chapter, string> = {
   "welcome": "Welcome",
-  "claude-code": "Claude",
   "google": "Google",
+  "claude-code": "Claude",
+  "glean": "Glean",
   "youcard": "About You",
   "first-account": "Account",
   "role": "Your Role",
@@ -88,6 +95,11 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [resumeChecked, setResumeChecked] = useState(false);
   const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
 
+  // I561: Glean state
+  const [gleanConnected, setGleanConnected] = useState(false);
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+
   // Fetch feature flags on mount
   useEffect(() => {
     invoke<FeatureFlags>("get_feature_flags")
@@ -98,11 +110,23 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   // Resume from last completed step on mount
   useEffect(() => {
     if (resumeChecked) return;
-    invoke<{ wizardLastStep?: string | null }>("get_app_state")
-      .then((state) => {
+
+    const doResume = async () => {
+      try {
+        const state = await invoke<{ wizardLastStep?: string | null }>("get_app_state");
         const resumeTo = resolveResumeChapter(state.wizardLastStep);
+
+        // Re-check Glean auth on resume to restore gleanConnected state
+        try {
+          const gleanStatus = await invoke<GleanAuthStatus>("get_glean_auth_status");
+          if (gleanStatus.status === "authenticated") {
+            setGleanConnected(true);
+          }
+        } catch {
+          // Non-fatal
+        }
+
         if (resumeTo !== "welcome") {
-          // Mark all prior chapters as visited
           const visited = new Set<Chapter>();
           for (const c of CHAPTERS) {
             visited.add(c);
@@ -111,9 +135,14 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           setChapter(resumeTo);
           setVisitedChapters(visited);
         }
-      })
-      .catch(() => {}) // Non-fatal — just start from beginning
-      .finally(() => setResumeChecked(true));
+      } catch {
+        // Non-fatal — just start from beginning
+      } finally {
+        setResumeChecked(true);
+      }
+    };
+
+    doResume();
   }, [resumeChecked]);
 
   // Lifted form state
@@ -177,6 +206,19 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     onComplete();
   }
 
+  // Fire Glean account discovery in background
+  async function triggerGleanDiscovery() {
+    setDiscoveryLoading(true);
+    try {
+      const accounts = await invoke<DiscoveredAccount[]>("discover_accounts_from_glean");
+      setDiscoveredAccounts(accounts);
+    } catch (e) {
+      console.error("Glean discovery failed:", e);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  }
+
   // Complete wizard — mark done, trigger calendar poll if connected
   async function handleWizardComplete(_mode: EntityMode) {
     try {
@@ -235,9 +277,18 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         {/* Step content */}
         {chapter === "welcome" && (
           <Welcome
-            onNext={() => goToChapter("claude-code")}
+            onNext={() => goToChapter("google")}
             onDemoMode={handleDemoMode}
             onSkipSetup={handleSkipSetup}
+          />
+        )}
+
+        {chapter === "google" && (
+          <GoogleConnect
+            onNext={async () => {
+              await invoke("set_wizard_step", { step: "google" }).catch(() => {});
+              goToChapter("claude-code");
+            }}
           />
         )}
 
@@ -259,15 +310,30 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 // Non-fatal
               }
               await invoke("set_wizard_step", { step: "claude-code" }).catch(() => {});
-              goToChapter("google");
+              goToChapter("glean");
+            }}
+            onSkip={async () => {
+              await autoCreateWorkspace();
+              await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
+              await invoke("set_wizard_step", { step: "claude-code" }).catch(() => {});
+              goToChapter("glean");
             }}
           />
         )}
 
-        {chapter === "google" && (
-          <GoogleConnect
-            onNext={async () => {
-              await invoke("set_wizard_step", { step: "google" }).catch(() => {});
+        {chapter === "glean" && (
+          <GleanConnect
+            onNext={async (connected) => {
+              setGleanConnected(connected);
+              await invoke("set_wizard_step", { step: "glean" }).catch(() => {});
+              if (connected) {
+                // Fire discovery in background — results appear on FirstAccountStep
+                triggerGleanDiscovery();
+              }
+              goToChapter("youcard");
+            }}
+            onSkip={async () => {
+              await invoke("set_wizard_step", { step: "glean" }).catch(() => {});
               goToChapter("youcard");
             }}
           />
@@ -279,11 +345,15 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             onFormChange={setYouCardData}
             onNext={() => goToChapter("first-account")}
             onSkip={() => goToChapter("first-account")}
+            gleanConnected={gleanConnected}
           />
         )}
 
         {chapter === "first-account" && (
           <FirstAccountStep
+            gleanConnected={gleanConnected}
+            discoveredAccounts={discoveredAccounts}
+            discoveryLoading={discoveryLoading}
             onNext={async () => {
               if (rolePresetsEnabled) {
                 goToChapter("role");
