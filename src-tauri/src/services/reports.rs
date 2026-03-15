@@ -33,7 +33,8 @@ pub async fn generate_report(
             let workspace = std::path::Path::new(&config.workspace_path);
             let ai_models = config.ai_models.clone();
 
-            let ctx_provider = state.context_provider.as_ref();
+            let ctx_arc = state.context_provider();
+            let ctx_provider = ctx_arc.as_ref();
 
             match report_type_str.as_str() {
                 "swot" => gather_swot_input(

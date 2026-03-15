@@ -217,7 +217,8 @@ pub struct AppState {
     pub heavy_work_semaphore: Arc<tokio::sync::Semaphore>,
     /// Context provider for intelligence enrichment (ADR-0095).
     /// Determines where entity context is gathered (local DB vs. Glean).
-    pub context_provider: Arc<dyn crate::context_provider::ContextProvider>,
+    /// Wrapped in RwLock to allow hot-swap without app restart.
+    context_provider: std::sync::RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -408,6 +409,15 @@ impl AppState {
                 ))
             }
             _ => {
+                // Belt-and-suspenders: if mode is Local but Keychain has a Glean token,
+                // log a warning. With auto-set on auth (Step 3), this should be rare.
+                if crate::glean::token_store::load_token().is_ok() {
+                    log::warn!(
+                        "Context mode is Local but Glean token found in Keychain. \
+                         This may indicate a previous auth that didn't save the mode. \
+                         Connect Glean in Settings to activate Glean mode."
+                    );
+                }
                 log::info!("Context mode: Local");
                 Arc::new(local_provider)
             }
@@ -477,7 +487,50 @@ impl AppState {
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-            context_provider,
+            context_provider: std::sync::RwLock::new(context_provider),
+        }
+    }
+
+    /// Get a snapshot of the current context provider (cheap Arc clone).
+    pub fn context_provider(&self) -> Arc<dyn crate::context_provider::ContextProvider> {
+        Arc::clone(&self.context_provider.read().expect("context_provider lock poisoned"))
+    }
+
+    /// Hot-swap the context provider at runtime (ADR-0095 dynamic mode switch).
+    pub fn swap_context_provider(&self, new: Arc<dyn crate::context_provider::ContextProvider>) {
+        let mut guard = self.context_provider.write().expect("context_provider lock poisoned");
+        *guard = new;
+        log::info!("Context provider swapped to: {}", guard.provider_name());
+    }
+
+    /// Build a context provider for the given mode, using this state's config and embedding model.
+    pub fn build_context_provider(
+        &self,
+        mode: &crate::context_provider::ContextMode,
+    ) -> Arc<dyn crate::context_provider::ContextProvider> {
+        let workspace_path = self
+            .config
+            .read()
+            .ok()
+            .and_then(|c| c.as_ref().map(|cfg| std::path::PathBuf::from(&cfg.workspace_path)))
+            .unwrap_or_default();
+
+        let local_provider = crate::context_provider::local::LocalContextProvider::new(
+            workspace_path,
+            Arc::clone(&self.embedding_model),
+        );
+
+        match mode {
+            crate::context_provider::ContextMode::Glean { endpoint, strategy } => {
+                let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
+                Arc::new(crate::context_provider::glean::GleanContextProvider::new(
+                    endpoint.clone(),
+                    strategy.clone(),
+                    cache,
+                    local_provider,
+                ))
+            }
+            crate::context_provider::ContextMode::Local => Arc::new(local_provider),
         }
     }
 
