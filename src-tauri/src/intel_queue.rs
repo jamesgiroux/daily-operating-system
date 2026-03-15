@@ -1290,14 +1290,16 @@ fn write_progressive_dimension(
         }
     };
 
-    // I576: Source-aware reconciliation for progressive PTY writes
+    // Progressive writes within a single enrichment cycle use simple dimension
+    // merge, NOT reconciliation. Reconciliation happens at the final write.
     let existing = db.get_entity_intelligence(entity_id).ok().flatten();
-    let mut merged = if let Some(existing) = existing {
-        crate::intelligence::glean_provider::reconcile_enrichment(
-            existing,
-            combined.clone(),
-            &["pty_synthesis"],
-        )
+    let mut merged = if let Some(mut existing) = existing {
+        for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
+            let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
+                &mut existing, dim, combined,
+            );
+        }
+        existing
     } else {
         combined.clone()
     };
