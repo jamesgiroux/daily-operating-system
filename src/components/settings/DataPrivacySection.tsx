@@ -115,6 +115,16 @@ export default function DataPrivacySection() {
         Everything is stored locally on your Mac. Nothing leaves your device
         unless you explicitly connect an external service.
       </p>
+      <div style={{ marginBottom: 24 }}>
+        <p style={{ ...styles.description, marginBottom: 8 }}>
+          Stored locally: calendar events, email metadata and summaries, contacts,
+          meeting transcripts, and AI-generated intelligence.
+        </p>
+        <p style={{ ...styles.description, marginBottom: 0 }}>
+          Not stored permanently: full email bodies, Glean result payloads after disconnect,
+          or connector credentials outside the macOS Keychain.
+        </p>
+      </div>
 
       {summary && (
         <div

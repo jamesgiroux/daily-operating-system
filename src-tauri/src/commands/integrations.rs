@@ -3050,12 +3050,174 @@ pub struct EphemeralBriefing {
 }
 
 /// A single section within an ephemeral briefing.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BriefingSection {
     pub title: String,
     pub content: String,
     pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportAccountRequest {
+    pub name: String,
+    pub my_role: Option<String>,
+    pub evidence: Option<String>,
+    pub source: Option<String>,
+    pub domain: Option<String>,
+    pub industry: Option<String>,
+    pub context_preview: Option<String>,
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub sections: Vec<BriefingSection>,
+}
+
+fn build_seeded_account_context(request: &ImportAccountRequest) -> Option<String> {
+    let mut lines = Vec::new();
+
+    if let Some(summary) = request.summary.as_ref().filter(|value| !value.trim().is_empty()) {
+        lines.push(summary.trim().to_string());
+    }
+
+    if let Some(preview) = request
+        .context_preview
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        if lines.iter().all(|line| line != preview.trim()) {
+            lines.push(preview.trim().to_string());
+        }
+    }
+
+    if let Some(role) = request.my_role.as_ref().filter(|value| !value.trim().is_empty()) {
+        lines.push(format!("My role: {}", role.trim()));
+    }
+
+    if let Some(industry) = request
+        .industry
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        lines.push(format!("Industry: {}", industry.trim()));
+    }
+
+    if let Some(domain) = request.domain.as_ref().filter(|value| !value.trim().is_empty()) {
+        lines.push(format!("Domain: {}", domain.trim().to_lowercase()));
+    }
+
+    if let Some(evidence) = request.evidence.as_ref().filter(|value| !value.trim().is_empty()) {
+        lines.push(format!("Evidence: {}", evidence.trim()));
+    }
+
+    if let Some(source) = request.source.as_ref().filter(|value| !value.trim().is_empty()) {
+        lines.push(format!("Source: {}", source.trim()));
+    }
+
+    for section in request.sections.iter().filter(|section| {
+        !section.title.trim().is_empty() && !section.content.trim().is_empty()
+    }) {
+        if let Some(source) = section.source.as_ref().filter(|value| !value.trim().is_empty()) {
+            lines.push(format!(
+                "{} ({}): {}",
+                section.title.trim(),
+                source.trim(),
+                section.content.trim()
+            ));
+        } else {
+            lines.push(format!("{}: {}", section.title.trim(), section.content.trim()));
+        }
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n\n"))
+    }
+}
+
+async fn import_account_from_glean_internal(
+    request: ImportAccountRequest,
+    state: Arc<AppState>,
+    priority: crate::intel_queue::IntelPriority,
+) -> Result<String, String> {
+    let request_for_db = request.clone();
+    let state_for_db = state.clone();
+    let (account_id, created_new) = state
+        .db_write(move |db| {
+            if let Some(existing) = db.get_account_by_name(&request_for_db.name).map_err(|e| e.to_string())? {
+                return Ok((existing.id, false));
+            }
+
+            let account_id = crate::services::accounts::create_account(
+                db,
+                &state_for_db,
+                &request_for_db.name,
+                None,
+                Some(crate::db::AccountType::Customer),
+            )?;
+
+            if let Some(domain) = request_for_db
+                .domain
+                .as_ref()
+                .map(|value| value.trim().to_lowercase())
+                .filter(|value| !value.is_empty())
+            {
+                db.set_account_domains(&account_id, &[domain])
+                    .map_err(|e| e.to_string())?;
+            }
+
+            let signal_payload = serde_json::json!({
+                "source": request_for_db.source,
+                "evidence": request_for_db.evidence,
+                "myRole": request_for_db.my_role,
+                "domain": request_for_db.domain,
+                "industry": request_for_db.industry,
+            })
+            .to_string();
+
+            crate::services::signals::emit_and_propagate(
+                db,
+                &state_for_db.signals.engine,
+                "account",
+                &account_id,
+                "entity_created",
+                "glean_chat",
+                Some(&signal_payload),
+                0.9,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+
+            Ok((account_id, true))
+        })
+        .await?;
+
+    if created_new {
+        if let Some(seed_context) = build_seeded_account_context(&request) {
+            let title = if request.summary.as_ref().is_some_and(|value| !value.trim().is_empty()) {
+                "Glean briefing"
+            } else {
+                "Glean discovery"
+            };
+            crate::services::entity_context::create_entry(
+                "account",
+                &account_id,
+                title,
+                &seed_context,
+                &state,
+            )
+            .await
+            .map_err(|e| format!("Failed to seed account context: {e}"))?;
+        }
+    }
+
+    state.intel_queue.enqueue(crate::intel_queue::IntelRequest::new(
+        account_id.clone(),
+        "account".to_string(),
+        priority,
+    ));
+
+    Ok(account_id)
 }
 
 /// Query Glean for an ephemeral briefing about a named account.
@@ -3105,6 +3267,19 @@ pub async fn query_ephemeral_account(
     let briefing = parse_ephemeral_response(&name, &response_text, already_exists)?;
 
     Ok(briefing)
+}
+
+#[tauri::command]
+pub async fn import_account_from_glean(
+    request: ImportAccountRequest,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    import_account_from_glean_internal(
+        request,
+        state.inner().clone(),
+        crate::intel_queue::IntelPriority::Manual,
+    )
+    .await
 }
 
 /// Parse the Glean response into an EphemeralBriefing.
@@ -3247,16 +3422,31 @@ pub async fn discover_accounts_from_glean(
         .map_err(|e| format!("Glean discovery failed: {e}"))?;
 
     // 4. Check each discovered account against existing DB accounts
-    let existing_names: Vec<String> = state.with_db_read(|db| {
-        let all = db.get_all_accounts().map_err(|e| e.to_string())?;
-        Ok(all.into_iter().map(|a| a.name.to_lowercase()).collect())
+    let existing_accounts: Vec<(crate::db::DbAccount, Vec<String>)> = state.with_db_read(|db| {
+        db.get_all_accounts_with_domains(false).map_err(|e| e.to_string())
     })?;
 
     for account in &mut accounts {
-        let lower = account.name.to_lowercase();
-        if existing_names.iter().any(|n| n == &lower) {
-            account.already_in_dailyos = true;
-        }
+        let discovered_name = account.name.to_lowercase();
+        let discovered_domain = account.domain.as_ref().map(|value| value.to_lowercase());
+
+        account.already_in_dailyos = existing_accounts.iter().any(|(existing, domains)| {
+            let name_matches = existing.name.eq_ignore_ascii_case(&account.name);
+            let domain_matches = discovered_domain.as_ref().is_some_and(|domain| {
+                domains
+                    .iter()
+                    .any(|existing_domain| existing_domain.eq_ignore_ascii_case(domain))
+            });
+
+            domain_matches || (name_matches && discovered_domain.is_none()) || (name_matches && domains.is_empty()) || (name_matches && domains.iter().any(|existing_domain| existing_domain.eq_ignore_ascii_case(discovered_domain.as_deref().unwrap_or_default())))
+        }) || existing_accounts.iter().any(|(_, domains)| {
+            discovered_domain.as_ref().is_some_and(|domain| {
+                !discovered_name.is_empty()
+                    && domains
+                        .iter()
+                        .any(|existing_domain| existing_domain.eq_ignore_ascii_case(domain))
+            })
+        });
     }
 
     log::info!(
@@ -3280,57 +3470,104 @@ pub struct OnboardingImportResult {
     pub failed: Vec<String>,
 }
 
+fn completed_onboarding_dimensions(intel: &crate::intelligence::IntelligenceJson) -> u32 {
+    let mut completed = 0u32;
+
+    if intel.company_context.is_some()
+        || !intel.competitive_context.is_empty()
+        || !intel.strategic_priorities.is_empty()
+    {
+        completed += 1;
+    }
+
+    if !intel.stakeholder_insights.is_empty()
+        || intel.coverage_assessment.is_some()
+        || !intel.organizational_changes.is_empty()
+        || !intel.internal_team.is_empty()
+    {
+        completed += 1;
+    }
+
+    if intel.meeting_cadence.is_some()
+        || intel.email_responsiveness.is_some()
+        || intel.next_meeting_readiness.is_some()
+    {
+        completed += 1;
+    }
+
+    if !intel.value_delivered.is_empty()
+        || intel.success_metrics.as_ref().is_some_and(|items| !items.is_empty())
+        || intel.open_commitments.as_ref().is_some_and(|items| !items.is_empty())
+        || !intel.blockers.is_empty()
+    {
+        completed += 1;
+    }
+
+    if intel.contract_context.is_some()
+        || !intel.expansion_signals.is_empty()
+        || intel.renewal_outlook.is_some()
+        || intel.org_health.is_some()
+    {
+        completed += 1;
+    }
+
+    if intel.health.is_some()
+        || intel.support_health.is_some()
+        || intel.product_adoption.is_some()
+        || intel.nps_csat.is_some()
+        || !intel.gong_call_summaries.is_empty()
+    {
+        completed += 1;
+    }
+
+    completed.min(6)
+}
+
 /// Batch-create accounts from onboarding discovery. Emits entity_created signal
 /// for each and enqueues Glean enrichment at Onboarding priority.
 #[tauri::command]
 pub async fn onboarding_import_accounts(
-    account_names: Vec<String>,
+    #[allow(unused_variables)] account_names: Option<Vec<String>>,
+    accounts: Option<Vec<ImportAccountRequest>>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<OnboardingImportResult, String> {
+    let requests = accounts.unwrap_or_else(|| {
+        account_names
+            .unwrap_or_default()
+            .into_iter()
+            .map(|name| ImportAccountRequest {
+                name,
+                my_role: None,
+                evidence: None,
+                source: None,
+                domain: None,
+                industry: None,
+                context_preview: None,
+                summary: None,
+                sections: Vec::new(),
+            })
+            .collect()
+    });
     let mut created = 0usize;
     let mut failed = Vec::new();
-    let mut created_ids = Vec::new();
 
-    for name in &account_names {
-        let name_clone = name.clone();
-        let app_state = state.inner().clone();
-        match state
-            .db_write(move |db| {
-                crate::services::accounts::create_account(
-                    db,
-                    &app_state,
-                    &name_clone,
-                    None,
-                    Some(crate::db::AccountType::Customer),
-                )
-            })
-            .await
+    for request in requests {
+        let display_name = request.name.clone();
+        match import_account_from_glean_internal(
+            request,
+            state.inner().clone(),
+            crate::intel_queue::IntelPriority::Onboarding,
+        )
+        .await
         {
-            Ok(id) => {
-                created_ids.push((id, "account".to_string()));
+            Ok(_) => {
                 created += 1;
             }
             Err(e) => {
-                log::warn!("[I561] Failed to create account '{}': {}", name, e);
-                failed.push(name.clone());
+                log::warn!("[I561] Failed to create account '{}': {}", display_name, e);
+                failed.push(display_name);
             }
         }
-    }
-
-    // Enqueue Glean enrichment at Onboarding priority for all created accounts
-    if !created_ids.is_empty() {
-        use crate::intel_queue::{IntelPriority, IntelRequest};
-        for (entity_id, entity_type) in &created_ids {
-            state.intel_queue.enqueue(IntelRequest::new(
-                entity_id.clone(),
-                entity_type.clone(),
-                IntelPriority::Onboarding,
-            ));
-        }
-        log::info!(
-            "[I561] Onboarding: created {} accounts, enqueued for enrichment",
-            created_ids.len()
-        );
     }
 
     Ok(OnboardingImportResult { created, failed })
@@ -3420,7 +3657,11 @@ pub async fn onboarding_prefill_profile(
 pub struct EnrichmentProgress {
     pub entity_id: String,
     pub name: String,
-    pub status: String, // "queued" | "complete" | "failed"
+    pub status: String, // "queued" | "analyzing" | "complete" | "failed"
+    pub completed: u32,
+    pub total: u32,
+    pub stakeholder_count: usize,
+    pub risk_count: usize,
 }
 
 /// Query enrichment status for recently created accounts (onboarding polling).
@@ -3443,30 +3684,96 @@ pub async fn onboarding_enrichment_status(
                     continue;
                 }
 
-                // Check if entity_assessment exists for this account
-                let has_assessment: bool = db
-                    .conn
-                    .query_row(
-                        "SELECT EXISTS(SELECT 1 FROM entity_assessment WHERE entity_id = ?1 AND enriched_at IS NOT NULL)",
-                        [&account.id],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(false);
+                let intel = db
+                    .get_entity_intelligence(&account.id)
+                    .ok()
+                    .flatten();
 
-                let status = if has_assessment {
-                    "complete"
+                let (status, completed, stakeholder_count, risk_count) = if let Some(intel) = intel {
+                    let completed = completed_onboarding_dimensions(&intel);
+                    let status = if completed >= 6 || !intel.enriched_at.trim().is_empty() {
+                        "complete"
+                    } else if completed > 0 {
+                        "analyzing"
+                    } else {
+                        "queued"
+                    };
+                    (
+                        status.to_string(),
+                        completed,
+                        intel.stakeholder_insights.len(),
+                        intel.risks.len(),
+                    )
                 } else {
-                    "queued"
+                    ("queued".to_string(), 0, 0, 0)
                 };
 
                 results.push(EnrichmentProgress {
                     entity_id: account.id.clone(),
                     name: account.name.clone(),
-                    status: status.to_string(),
+                    status,
+                    completed,
+                    total: 6,
+                    stakeholder_count,
+                    risk_count,
                 });
             }
 
             Ok(results)
         })
         .await
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GleanTokenHealth {
+    pub connected: bool,
+    pub status: String,
+    pub expires_at: Option<String>,
+    pub expires_in_hours: Option<i64>,
+}
+
+#[tauri::command]
+pub fn get_glean_token_health() -> GleanTokenHealth {
+    match crate::glean::token_store::load_token() {
+        Ok(token) => {
+            let expiry = token
+                .expiry
+                .as_ref()
+                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| value.with_timezone(&chrono::Utc));
+
+            match expiry {
+                Some(expiry) => {
+                    let hours = (expiry - chrono::Utc::now()).num_hours();
+                    let status = if hours < 0 {
+                        "expired"
+                    } else if hours < 24 {
+                        "expiring"
+                    } else {
+                        "healthy"
+                    };
+
+                    GleanTokenHealth {
+                        connected: true,
+                        status: status.to_string(),
+                        expires_at: Some(expiry.to_rfc3339()),
+                        expires_in_hours: Some(hours),
+                    }
+                }
+                None => GleanTokenHealth {
+                    connected: true,
+                    status: "healthy".to_string(),
+                    expires_at: None,
+                    expires_in_hours: None,
+                },
+            }
+        }
+        Err(_) => GleanTokenHealth {
+            connected: false,
+            status: "not_connected".to_string(),
+            expires_at: None,
+            expires_in_hours: None,
+        },
+    }
 }

@@ -28,7 +28,7 @@ pub struct ReportGeneratorInput {
 /// No DB lock held — this is the long-running operation.
 pub fn run_report_generation(input: &ReportGeneratorInput) -> Result<String, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, &input.ai_models)
-        .with_timeout(300)
+        .with_timeout(30)
         .with_nice_priority(10);
 
     let output = pty

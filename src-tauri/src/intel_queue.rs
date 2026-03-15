@@ -1381,14 +1381,14 @@ fn write_progressive_dimension(
     }
 }
 
-/// Legacy monolithic PTY enrichment — single prompt, 180s timeout.
+/// Legacy monolithic PTY enrichment — single prompt, 30s timeout.
 /// Kept as fallback when parallel enrichment is unavailable or fails.
 fn run_enrichment_legacy(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
 ) -> Result<EnrichmentParseResult, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
-        .with_timeout(180)
+        .with_timeout(30)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &input.prompt)
@@ -1440,7 +1440,7 @@ fn run_consistency_repair_retry(
 ) -> Result<IntelligenceJson, String> {
     let prompt = crate::intelligence::build_repair_prompt(intel, report, facts);
     let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
-        .with_timeout(45)
+        .with_timeout(30)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &prompt)

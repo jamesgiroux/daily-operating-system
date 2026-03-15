@@ -185,6 +185,7 @@ pub fn process_fetched_transcript_without_db_with_kind(
         workspace,
         &temp_path_str,
         meeting,
+        None,
         None, // No DB reference — caller writes captures after re-acquiring lock
         profile,
         ai_config,
@@ -238,6 +239,7 @@ pub fn process_fetched_transcript(
         workspace,
         &temp_path_str,
         meeting,
+        None,
         Some(db),
         profile,
         ai_config,
