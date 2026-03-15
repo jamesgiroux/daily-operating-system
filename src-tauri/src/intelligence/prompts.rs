@@ -2633,6 +2633,8 @@ fn try_parse_json_response(
                 text: r.text,
                 source: r.source,
                 urgency: r.urgency,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         recent_wins: ai_resp
@@ -2642,6 +2644,8 @@ fn try_parse_json_response(
                 text: w.text,
                 source: w.source,
                 impact: w.impact,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         current_state,
@@ -2656,6 +2660,8 @@ fn try_parse_json_response(
                 source: None,
                 person_id: None,
                 suggested_person_id: None,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         value_delivered: ai_resp
@@ -2666,6 +2672,8 @@ fn try_parse_json_response(
                 statement: v.statement,
                 source: v.source,
                 impact: v.impact,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         next_meeting_readiness,
@@ -2715,6 +2723,8 @@ fn try_parse_json_response(
                     due_date: c.due_date,
                     source: c.source,
                     status: c.status,
+                    item_source: None,
+                    discrepancy: None,
                 })
                 .collect()
         }),
@@ -2747,6 +2757,7 @@ fn try_parse_json_response(
         source_attribution: ai_resp.source_attribution,
         gong_call_summaries: Vec::new(),
         success_plan_signals: ai_resp.success_plan_signals,
+        dismissed_items: Vec::new(),
     })
 }
 
@@ -2941,6 +2952,8 @@ fn parse_risk_line(rest: &str) -> Option<IntelRisk> {
         text,
         source,
         urgency,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
@@ -2958,6 +2971,8 @@ fn parse_win_line(rest: &str) -> Option<IntelWin> {
         text,
         source,
         impact,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
@@ -2980,6 +2995,8 @@ fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
         source: None,
         person_id: None,
         suggested_person_id: None,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
@@ -3002,6 +3019,8 @@ fn parse_value_line(rest: &str) -> Option<ValueItem> {
         statement,
         source,
         impact,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
