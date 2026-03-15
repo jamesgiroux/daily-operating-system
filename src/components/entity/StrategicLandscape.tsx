@@ -307,12 +307,24 @@ export function StrategicLandscape({
                     <ProvenanceTag itemSource={change.itemSource} discrepancy={change.discrepancy} />
                   </div>
                 </div>
-                {onItemFeedback && (
+                {showActions && (
                   <span className={css.itemActions}>
-                    <IntelligenceFeedback
-                      value={getItemFeedback?.(path) ?? null}
-                      onFeedback={(type) => onItemFeedback(path, type)}
-                    />
+                    {onItemFeedback && (
+                      <IntelligenceFeedback
+                        value={getItemFeedback?.(path) ?? null}
+                        onFeedback={(type) => onItemFeedback(path, type)}
+                      />
+                    )}
+                    {onUpdateField && (
+                      <button
+                        type="button"
+                        className={css.dismissButton}
+                        onClick={() => onUpdateField(path, "")}
+                        title="Dismiss"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
                   </span>
                 )}
               </div>

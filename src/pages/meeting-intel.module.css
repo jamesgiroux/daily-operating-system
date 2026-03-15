@@ -541,6 +541,9 @@ details[open] .detailsChevron {
    ───────────────────────────────────────────────────────────────────────────── */
 
 .keyInsight {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
   margin: 28px 0 0 0;
   border-left: 3px solid var(--color-spice-turmeric);
   padding: var(--space-md) 0 var(--space-md) var(--space-lg);
@@ -612,6 +615,9 @@ details[open] .detailsChevron {
 }
 
 .featuredRisk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
   border-left: 3px solid var(--color-spice-terracotta);
   padding: var(--space-md) 0 var(--space-md) var(--space-lg);
   margin: 0;
@@ -628,6 +634,9 @@ details[open] .detailsChevron {
 }
 
 .subordinateRisk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
   border-top: 1px solid var(--color-rule-light);
   padding-top: var(--space-md);
 }
@@ -1129,9 +1138,10 @@ details[open] .detailsChevron {
    ───────────────────────────────────────────────────────────────────────────── */
 
 .emailSignalLink {
-  composes: subordinateRisk;
   text-decoration: none;
   display: block;
+  flex: 1;
+  min-width: 0;
 }
 
 .emailSignalHeader {
@@ -1412,4 +1422,56 @@ details[open] .detailsChevron {
 .openItemDueOverdue {
   color: var(--color-spice-terracotta);
   font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PER-ITEM FEEDBACK ACTIONS — hover-reveal pattern (matches entity sections)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.intelRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.intelRowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  padding-top: 2px;
+}
+
+.featuredRisk:hover .itemActions,
+.subordinateRisk:hover .itemActions,
+.recentWinItem:hover .itemActions,
+.emailSignalLink:hover .itemActions,
+.intelRow:hover .itemActions,
+.itemActions:focus-within {
+  opacity: 1;
+}
+
+.dismissButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.dismissButton:hover {
+  color: var(--color-spice-terracotta);
 }

@@ -55,6 +55,7 @@ import {
   Target,
   Trophy,
   Users,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 import styles from "./meeting-intel.module.css";
@@ -963,20 +964,28 @@ Thanks!`;
               {/* The Key Insight — pull quote style */}
               {keyInsight && (
                 <blockquote className={styles.keyInsight}>
-                  {isEditable ? (
-                    <EditableText
-                      value={keyInsight}
-                      onChange={(v) => savePrepField(
-                        data.intelligenceSummary ? "intelligenceSummary" : "meetingContext",
-                        v,
-                      )}
-                      as="p"
-                      multiline
-                      className={styles.keyInsightText}
+                  <div className={styles.intelRowBody}>
+                    {isEditable ? (
+                      <EditableText
+                        value={keyInsight}
+                        onChange={(v) => savePrepField(
+                          data.intelligenceSummary ? "intelligenceSummary" : "meetingContext",
+                          v,
+                        )}
+                        as="p"
+                        multiline
+                        className={styles.keyInsightText}
+                      />
+                    ) : (
+                      <p className={styles.keyInsightText}>{keyInsight}</p>
+                    )}
+                  </div>
+                  <span className={styles.itemActions}>
+                    <IntelligenceFeedback
+                      value={feedback.getFeedback("key_insight")}
+                      onFeedback={(type) => feedback.submitFeedback("key_insight", type)}
                     />
-                  ) : (
-                    <p className={styles.keyInsightText}>{keyInsight}</p>
-                  )}
+                  </span>
                 </blockquote>
               )}
               {!keyInsight && (
@@ -1037,22 +1046,15 @@ Thanks!`;
             {/* Chapter: The Risks */}
             {hasRisks && (
               <section id="risks" className={clsx("editorial-reveal", styles.chapterSection)}>
-                <ChapterHeading
-                  title="The Risks"
-                  feedbackSlot={
-                    <IntelligenceFeedback
-                      value={feedback.getFeedback("risks")}
-                      onFeedback={(type) => feedback.submitFeedback("risks", type)}
-                    />
-                  }
-                />
+                <ChapterHeading title="The Risks" />
                 <div className={styles.risksContainer}>
                   {topRisks.map((risk, i) => {
                     const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
+                    const fieldPath = topRiskEntries[i]?.fieldPath;
                     const riskContent = isEditable ? (
                       <EditableText
                         value={risk}
-                        onChange={(v) => savePrepField(topRiskEntries[i].fieldPath, v)}
+                        onChange={(v) => savePrepField(fieldPath, v)}
                         as="p"
                         multiline
                         className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}
@@ -1060,19 +1062,39 @@ Thanks!`;
                     ) : (
                       <p className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}>{risk}</p>
                     );
+                    const itemActions = (
+                      <span className={styles.itemActions}>
+                        <IntelligenceFeedback
+                          value={feedback.getFeedback(`risks[${i}]`)}
+                          onFeedback={(type) => feedback.submitFeedback(`risks[${i}]`, type)}
+                        />
+                        {isEditable && fieldPath && (
+                          <button
+                            type="button"
+                            className={styles.dismissButton}
+                            onClick={() => savePrepField(fieldPath, "")}
+                            title="Dismiss"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </span>
+                    );
                     return i === 0 ? (
                       <blockquote
                         key={i}
                         className={clsx(styles.featuredRisk, isHighUrgency && "risk-pulse-once")}
                       >
-                        {riskContent}
+                        <div className={styles.intelRowBody}>{riskContent}</div>
+                        {itemActions}
                       </blockquote>
                     ) : (
                       <div
                         key={i}
                         className={clsx(styles.subordinateRisk, isHighUrgency && styles.subordinateRiskHighUrgency, isHighUrgency && "risk-pulse-once")}
                       >
-                        {riskContent}
+                        <div className={styles.intelRowBody}>{riskContent}</div>
+                        {itemActions}
                       </div>
                     );
                   })}
@@ -1089,6 +1111,22 @@ Thanks!`;
                     <div key={i} className={styles.recentWinItem}>
                       <span className={styles.bulletDotSage} />
                       <p className={styles.recentWinText}>{cleanPrepLine(win)}</p>
+                      <span className={styles.itemActions}>
+                        <IntelligenceFeedback
+                          value={feedback.getFeedback(`recentWins[${i}]`)}
+                          onFeedback={(type) => feedback.submitFeedback(`recentWins[${i}]`, type)}
+                        />
+                        {isEditable && (
+                          <button
+                            type="button"
+                            className={styles.dismissButton}
+                            onClick={() => savePrepField(`recentWins[${i}]`, "")}
+                            title="Dismiss"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -1143,32 +1181,32 @@ Thanks!`;
             {/* Recent Correspondence — email signals for meeting attendees */}
             {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
               <section className={clsx("editorial-reveal", styles.chapterSection)}>
-                <ChapterHeading
-                  title="Recent Correspondence"
-                  feedbackSlot={
-                    <IntelligenceFeedback
-                      value={feedback.getFeedback("recent_correspondence")}
-                      onFeedback={(type) =>
-                        feedback.submitFeedback("recent_correspondence", type)
-                      }
-                    />
-                  }
-                />
+                <ChapterHeading title="Recent Correspondence" />
                 <div className={styles.risksContainer}>
                   {data.recentEmailSignals.map((signal, i) => (
-                    <Link key={i} to="/emails" className={styles.emailSignalLink}>
-                      <div className={styles.emailSignalHeader}>
-                        <span className={styles.emailSignalSender}>
-                          {signal.senderEmail}
+                    <div key={i} className={styles.subordinateRisk}>
+                      <div className={styles.intelRow}>
+                        <Link to="/emails" className={styles.emailSignalLink}>
+                          <div className={styles.emailSignalHeader}>
+                            <span className={styles.emailSignalSender}>
+                              {signal.senderEmail}
+                            </span>
+                            {signal.detectedAt && (
+                              <span className={styles.emailSignalDate}>
+                                {new Date(signal.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </span>
+                            )}
+                          </div>
+                          <p className={styles.subordinateRiskText}>{signal.signalText}</p>
+                        </Link>
+                        <span className={styles.itemActions}>
+                          <IntelligenceFeedback
+                            value={feedback.getFeedback(`correspondence[${i}]`)}
+                            onFeedback={(type) => feedback.submitFeedback(`correspondence[${i}]`, type)}
+                          />
                         </span>
-                        {signal.detectedAt && (
-                          <span className={styles.emailSignalDate}>
-                            {new Date(signal.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                          </span>
-                        )}
                       </div>
-                      <p className={styles.subordinateRiskText}>{signal.signalText}</p>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               </section>
@@ -1177,15 +1215,7 @@ Thanks!`;
             {/* Chapter: Your Plan */}
             {hasPlan && (
               <section id="your-plan" className={clsx("editorial-reveal", styles.chapterSection)}>
-                <ChapterHeading
-                  title="Your Plan"
-                  feedbackSlot={
-                    <IntelligenceFeedback
-                      value={feedback.getFeedback("plan")}
-                      onFeedback={(type) => feedback.submitFeedback("plan", type)}
-                    />
-                  }
-                />
+                <ChapterHeading title="Your Plan" />
 
                 {meetingId && prefillNotice && (
                   <div className={styles.prefillNotice}>
