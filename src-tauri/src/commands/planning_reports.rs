@@ -841,9 +841,15 @@ pub async fn backfill_historical_meetings(
 #[tauri::command]
 pub async fn generate_risk_briefing(
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
     account_id: String,
 ) -> Result<crate::types::RiskBriefing, String> {
-    crate::services::intelligence::generate_risk_briefing(state.inner(), &account_id).await
+    crate::services::intelligence::generate_risk_briefing(
+        state.inner(),
+        &account_id,
+        Some(app_handle),
+    )
+    .await
 }
 
 /// Read a cached risk briefing for an account (fast, no AI).
@@ -865,9 +871,11 @@ pub async fn get_risk_briefing(
 // =============================================================================
 
 /// Generate a report for an entity (async, PTY enrichment).
+/// I547: AppHandle passed through for BoB progressive event emission.
 #[tauri::command]
 pub async fn generate_report(
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
     entity_id: String,
     entity_type: String,
     report_type: String,
@@ -879,6 +887,7 @@ pub async fn generate_report(
         &entity_type,
         &report_type,
         spotlight_account_ids.as_deref(),
+        Some(app_handle),
     )
     .await
 }

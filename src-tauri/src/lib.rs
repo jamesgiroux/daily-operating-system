@@ -104,6 +104,7 @@ pub fn run() {
         .setup(|app| {
             // Create shared state
             let state = Arc::new(AppState::new());
+            state.set_app_handle(app.handle().clone());
 
             // One-time filesystem hardening: permissions + Time Machine exclusion (I463)
             if let Some(home) = dirs::home_dir() {
@@ -754,11 +755,13 @@ pub fn run() {
             commands::set_context_mode,
             commands::start_glean_auth,
             commands::get_glean_auth_status,
+            commands::get_glean_token_health,
             commands::disconnect_glean,
             // I559: Glean Agent Validation Spike (temporary dev exploration)
             commands::dev_explore_glean_tools,
             // I535 Step 9: Discover accounts from Glean
             commands::discover_accounts_from_glean,
+            commands::import_account_from_glean,
             // I561: Onboarding — Three Connectors
             commands::onboarding_import_accounts,
             commands::onboarding_prefill_profile,

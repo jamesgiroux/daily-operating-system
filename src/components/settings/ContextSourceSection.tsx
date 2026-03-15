@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Globe, HardDrive, RefreshCw, Check, AlertCircle, Loader2 } from "lucide-react";
 import { styles } from "@/components/settings/styles";
 import { useGleanAuth } from "@/hooks/useGleanAuth";
+import type { GleanTokenHealth } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -29,6 +30,7 @@ export default function ContextSourceSection() {
   const [endpoint, setEndpoint] = useState("");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [tokenHealth, setTokenHealth] = useState<GleanTokenHealth | null>(null);
 
   const glean = useGleanAuth();
   const isConnected = glean.status.status === "authenticated";
@@ -49,6 +51,30 @@ export default function ContextSourceSection() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTokenHealth() {
+      try {
+        const health = await invoke<GleanTokenHealth>("get_glean_token_health");
+        if (!cancelled) {
+          setTokenHealth(health);
+        }
+      } catch {
+        if (!cancelled) {
+          setTokenHealth(null);
+        }
+      }
+    }
+
+    loadTokenHealth();
+    const interval = window.setInterval(loadTokenHealth, 6 * 60 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const handleConnectGlean = async () => {
     if (!endpoint.trim()) {
       toast.error("MCP endpoint is required");
@@ -67,7 +93,7 @@ export default function ContextSourceSection() {
       await invoke("set_context_mode", { mode: newMode });
       setMode(newMode);
       setDirty(false);
-      toast.success("Context source updated. Restart the app to apply.");
+      toast.success("Context source updated.");
     } catch (e) {
       toast.error(`Failed to save: ${e}`);
     } finally {
@@ -81,7 +107,7 @@ export default function ContextSourceSection() {
       await invoke("set_context_mode", { mode: { mode: "Local" } });
       setMode({ mode: "Local" });
       setDirty(false);
-      toast.success("Switched to local mode. Restart the app to apply.");
+      toast.success("Switched to local mode.");
     } catch (e) {
       toast.error(`Failed to save: ${e}`);
     } finally {
@@ -94,7 +120,7 @@ export default function ContextSourceSection() {
       await glean.disconnect();
       await invoke("set_context_mode", { mode: { mode: "Local" } });
       setMode({ mode: "Local" });
-      toast.success("Glean disconnected. Restart the app to apply.");
+      toast.success("Glean disconnected. Glean-derived data was cleared locally.");
     } catch (e) {
       toast.error(`Failed to disconnect: ${e}`);
     }
@@ -254,6 +280,37 @@ export default function ContextSourceSection() {
             >
               {glean.error}
             </p>
+          )}
+
+          {tokenHealth?.connected && tokenHealth.status !== "healthy" && (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: 12,
+                borderRadius: 6,
+                border: "1px solid var(--color-spice-turmeric)",
+                background: "var(--color-spice-turmeric-8)",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 13,
+                  color: "var(--color-text-primary)",
+                  margin: "0 0 8px 0",
+                }}
+              >
+                {tokenHealth.status === "expired"
+                  ? "Your Glean token has expired. Reconnect now to resume enrichment."
+                  : `Your Glean token expires in about ${tokenHealth.expiresInHours} hour${tokenHealth.expiresInHours === 1 ? "" : "s"}.`}
+              </p>
+              <button
+                onClick={handleConnectGlean}
+                style={{ ...styles.btn, ...styles.btnPrimary }}
+              >
+                Reconnect
+              </button>
+            </div>
           )}
 
           {/* Endpoint */}

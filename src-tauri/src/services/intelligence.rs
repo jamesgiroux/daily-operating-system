@@ -808,9 +808,11 @@ pub fn recompute_entity_health(
 pub async fn generate_risk_briefing(
     state: &std::sync::Arc<AppState>,
     account_id: &str,
+    app_handle: Option<tauri::AppHandle>,
 ) -> Result<crate::types::RiskBriefing, String> {
     let app_state = state.clone();
     let account_id = account_id.to_string();
+    let progress_handle = app_handle.clone();
 
     let task = tauri::async_runtime::spawn_blocking(move || {
         let input = {
@@ -841,7 +843,7 @@ pub async fn generate_risk_briefing(
             )?
         };
 
-        let briefing = crate::risk_briefing::run_risk_enrichment(&input)?;
+        let briefing = crate::risk_briefing::run_risk_enrichment(&input, progress_handle.as_ref())?;
 
         // Store in reports table for unified tracking (I398)
         if let Ok(db) = crate::db::ActionDb::open() {

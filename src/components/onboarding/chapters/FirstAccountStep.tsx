@@ -6,7 +6,7 @@
  * Supports adding multiple accounts before continuing.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight, Plus, X, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import styles from "../onboarding.module.css";
 interface FirstAccountStepProps {
   onNext: () => void;
   onSkip: () => void;
+  onImported?: (names: string[]) => void;
   gleanConnected?: boolean;
   discoveredAccounts?: DiscoveredAccount[];
   discoveryLoading?: boolean;
@@ -26,6 +27,7 @@ interface FirstAccountStepProps {
 export function FirstAccountStep({
   onNext,
   onSkip,
+  onImported,
   gleanConnected,
   discoveredAccounts,
   discoveryLoading,
@@ -58,6 +60,11 @@ export function FirstAccountStep({
 
   const importableAccounts = (discoveredAccounts ?? []).filter((a) => !a.alreadyInDailyos);
 
+  useEffect(() => {
+    if (importableAccounts.length === 0) return;
+    setSelectedDiscovered(new Set(importableAccounts.map((account) => account.name)));
+  }, [importableAccounts.length]);
+
   function toggleDiscovered(name: string) {
     setSelectedDiscovered((prev) => {
       const next = new Set(prev);
@@ -76,12 +83,24 @@ export function FirstAccountStep({
 
   async function handleImportDiscovered(names: string[]) {
     if (names.length === 0) return;
+    const selectedAccounts = importableAccounts.filter((account) => names.includes(account.name));
     setSaving(true);
     try {
       const result = await invoke<OnboardingImportResult>("onboarding_import_accounts", {
-        accountNames: names,
+        accounts: selectedAccounts.map((account) => ({
+          name: account.name,
+          myRole: account.myRole,
+          evidence: account.evidence,
+          source: account.source,
+          domain: account.domain,
+          industry: account.industry,
+          contextPreview: account.contextPreview,
+          summary: null,
+          sections: [],
+        })),
       });
       setImportResult(result);
+      onImported?.(selectedAccounts.map((account) => account.name));
       await invoke("set_wizard_step", { step: "first-account" }).catch(() => {});
       // Auto-advance after brief delay to show result
       setTimeout(() => onNext(), 1000);
@@ -176,7 +195,7 @@ export function FirstAccountStep({
         <div className={styles.ruleSection}>
           <div className={`${styles.flexBetween} ${styles.mb12}`}>
             <div className={styles.sectionLabel}>
-              Discovered accounts ({importableAccounts.length} new)
+              We found {discoveredAccounts?.length ?? 0} account{(discoveredAccounts?.length ?? 0) === 1 ? "" : "s"}
             </div>
             {importableAccounts.length > 0 && (
               <button
@@ -205,8 +224,10 @@ export function FirstAccountStep({
                 {account.myRole && (
                   <span className={styles.tertiaryText}> — {account.myRole}</span>
                 )}
-                {account.source && (
-                  <span className={styles.discoveryEvidence}>{account.source}</span>
+                {(account.evidence || account.source) && (
+                  <span className={styles.discoveryEvidence}>
+                    {[account.source, account.evidence].filter(Boolean).join(" · ")}
+                  </span>
                 )}
               </label>
             ))}

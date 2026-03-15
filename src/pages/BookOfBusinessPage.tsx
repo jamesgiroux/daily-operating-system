@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { FileText, AlertTriangle, Search, Layers, MessageSquare, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +16,6 @@ import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { CoverSlide } from "@/components/book-of-business/CoverSlide";
 import { AttentionSlide } from "@/components/book-of-business/AttentionSlide";
 import { SpotlightSlide } from "@/components/book-of-business/SpotlightSlide";
@@ -66,11 +66,17 @@ function normalizeBookOfBusiness(raw: Record<string, unknown>): BookOfBusinessCo
 // Generating progress config
 // =============================================================================
 
-const ANALYSIS_PHASES = [
+// I547: Event-driven progress phases — mapped from bob-section-progress events
+const BOB_PHASES = [
   { key: "gathering", label: "Gathering portfolio data", detail: "Reading account health, meeting history, and renewal context" },
-  { key: "analyzing", label: "Analyzing accounts", detail: "Assessing health, risks, and opportunities across the book" },
-  { key: "themes", label: "Identifying themes", detail: "Finding patterns and cross-account trends" },
-  { key: "synthesizing", label: "Synthesizing review", detail: "Building the portfolio narrative and leadership asks" },
+  { key: "glean", label: "Fetching enterprise insights", detail: "Querying Glean for cross-system context" },
+  { key: "topRisks", label: "Analyzing risks", detail: "Identifying top risks across the portfolio" },
+  { key: "topOpportunities", label: "Finding opportunities", detail: "Spotting expansion and growth signals" },
+  { key: "deepDives", label: "Building account spotlights", detail: "Generating deep dives for spotlight accounts" },
+  { key: "valueDelivered", label: "Documenting value delivered", detail: "Summarizing concrete outcomes" },
+  { key: "keyThemes", label: "Identifying themes", detail: "Finding cross-portfolio patterns" },
+  { key: "leadershipAsks", label: "Preparing leadership asks", detail: "Building executive-ready asks" },
+  { key: "executiveSummary", label: "Writing executive summary", detail: "Synthesizing the full portfolio narrative" },
 ];
 
 const EDITORIAL_QUOTES = [
@@ -97,6 +103,8 @@ export default function BookOfBusinessPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [selectedSpotlights, setSelectedSpotlights] = useState<Set<string>>(new Set());
+  const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
+  const [currentPhaseKey, setCurrentPhaseKey] = useState<string>("gathering");
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -236,6 +244,33 @@ export default function BookOfBusinessPage() {
     });
   }, []);
 
+  // I547: Listen for progressive section completion events
+  useEffect(() => {
+    if (!generating) return;
+
+    let unlistenProgress: UnlistenFn | null = null;
+    let unlistenContent: UnlistenFn | null = null;
+
+    listen<{ sectionName: string; completed: number; total: number; wave: number }>("bob-section-progress", (event) => {
+      const { sectionName } = event.payload;
+      setCompletedSections((prev) => new Set([...prev, sectionName]));
+      setCurrentPhaseKey(sectionName);
+    }).then((fn) => {
+      unlistenProgress = fn;
+    });
+
+    listen<Record<string, unknown>>("bob-section-content", (event) => {
+      setContent(normalizeBookOfBusiness(event.payload));
+    }).then((fn) => {
+      unlistenContent = fn;
+    });
+
+    return () => {
+      if (unlistenProgress) unlistenProgress();
+      if (unlistenContent) unlistenContent();
+    };
+  }, [generating]);
+
   // Generate handler
   const handleGenerate = useCallback(async () => {
     if (!userId || generating) return;
@@ -244,6 +279,8 @@ export default function BookOfBusinessPage() {
     setGenerating(true);
     setGenSeconds(0);
     setError(null);
+    setCompletedSections(new Set());
+    setCurrentPhaseKey("gathering");
     window.scrollTo({ top: 0, behavior: "instant" });
 
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
@@ -530,19 +567,89 @@ export default function BookOfBusinessPage() {
     );
   }
 
-  // ── Generating state ─────────────────────────────────────────────────────
-  if (generating) {
+  // ── Generating state (I547: event-driven progress) ──────────────────────
+  if (generating && !content) {
+    // For the initial gathering phase before events arrive, use timer fallback
+    const showGlean = completedSections.size === 0 && genSeconds >= 3 && genSeconds < 15;
+    const activeKey = completedSections.size > 0
+      ? currentPhaseKey
+      : (showGlean ? "glean" : "gathering");
+
+    const accentColor = "var(--color-spice-turmeric)";
+    const formatElapsed = (secs: number) => {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    };
+
     return (
-      <GeneratingProgress
-        title="Building Portfolio Review"
-        accentColor="var(--color-spice-turmeric)"
-        phases={ANALYSIS_PHASES}
-        currentPhaseKey={
-          ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key
-        }
-        quotes={EDITORIAL_QUOTES}
-        elapsed={genSeconds}
-      />
+      <div style={{ display: "grid", gridTemplateColumns: "100px 32px 1fr", paddingTop: 80, paddingBottom: 96 }}>
+        <div style={{ paddingTop: 6 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: accentColor }}>
+            {formatElapsed(genSeconds)}
+          </div>
+        </div>
+        <div />
+        <div style={{ maxWidth: 520 }}>
+          <div style={{ borderTop: "1px solid var(--color-rule-heavy)", marginBottom: 32 }} />
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: accentColor, marginBottom: 32 }}>
+            Building Portfolio Review
+          </div>
+
+          <div style={{ marginBottom: 56 }}>
+            {BOB_PHASES.map((phase, i) => {
+              const isComplete = completedSections.has(phase.key) || phase.key === "gathering";
+              const isCurrent = phase.key === activeKey;
+              const isPending = !isComplete && !isCurrent;
+
+              return (
+                <div key={phase.key} style={{ display: "flex", gap: 16, alignItems: "flex-start", padding: "10px 0", borderBottom: i < BOB_PHASES.length - 1 ? "1px solid var(--color-rule-light)" : "none", opacity: isPending ? 0.3 : 1, transition: "opacity 0.5s ease" }}>
+                  <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${isComplete ? "var(--color-garden-sage)" : isCurrent ? accentColor : "var(--color-rule-light)"}`, background: isComplete ? "var(--color-garden-sage)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, transition: "all 0.3s ease" }}>
+                    {isComplete && (
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    {isCurrent && !isComplete && (
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: accentColor, animation: "generating-pulse 1.5s ease infinite" }} />
+                    )}
+                  </div>
+                  <div style={{ paddingTop: 1 }}>
+                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: isCurrent ? 600 : 400, color: isCurrent ? "var(--color-text-primary)" : isComplete ? "var(--color-text-secondary)" : "var(--color-text-tertiary)", transition: "all 0.3s ease" }}>
+                      {phase.label}
+                    </div>
+                    {isCurrent && !isComplete && (
+                      <div style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 3 }}>
+                        {phase.detail}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Pull quote */}
+          <div>
+            <div style={{ borderTop: "1px solid var(--color-rule-light)", marginBottom: 20 }} />
+            <p style={{ fontFamily: "var(--font-serif)", fontSize: 16, fontStyle: "italic", fontWeight: 300, color: "var(--color-text-tertiary)", lineHeight: 1.6, margin: 0 }}>
+              {EDITORIAL_QUOTES[Math.floor(genSeconds / 8) % EDITORIAL_QUOTES.length]}
+            </p>
+            <div style={{ borderTop: "1px solid var(--color-rule-light)", marginTop: 20 }} />
+          </div>
+
+          <div style={{ marginTop: 20, fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-text-tertiary)", opacity: 0.6 }}>
+            This runs in the background — feel free to navigate away
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes generating-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+          }
+        `}</style>
+      </div>
     );
   }
 

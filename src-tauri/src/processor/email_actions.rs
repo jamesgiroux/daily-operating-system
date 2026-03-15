@@ -54,9 +54,9 @@ pub fn extract_email_commitments(
          Do not include any text outside the JSON array."
     );
 
-    // Run through Claude via PTY (Extraction tier, 60s timeout)
+    // Run through Claude via PTY (Extraction tier, 30s timeout)
     let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
-        .with_timeout(60)
+        .with_timeout(30)
         .with_nice_priority(10);
 
     let output = match pty.spawn_claude(workspace, &prompt) {

@@ -7,6 +7,8 @@
 use std::path::Path;
 
 use chrono::Utc;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
@@ -38,6 +40,58 @@ pub enum TranscriptContentKind {
     Notes,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptProgressPayload {
+    meeting_id: String,
+    phase: String,
+    completed: u32,
+    total: u32,
+    summary_ready: bool,
+    outcomes_ready: bool,
+    post_intel_ready: bool,
+    actions_count: usize,
+    wins_count: usize,
+    risks_count: usize,
+    decisions_count: usize,
+    commitments_count: usize,
+}
+
+fn emit_transcript_progress(
+    app_handle: Option<&AppHandle>,
+    meeting_id: &str,
+    phase: &str,
+    completed: u32,
+    summary_ready: bool,
+    outcomes_ready: bool,
+    post_intel_ready: bool,
+    actions_count: usize,
+    wins_count: usize,
+    risks_count: usize,
+    decisions_count: usize,
+    commitments_count: usize,
+) {
+    if let Some(app_handle) = app_handle {
+        let _ = app_handle.emit(
+            "transcript-progress",
+            TranscriptProgressPayload {
+                meeting_id: meeting_id.to_string(),
+                phase: phase.to_string(),
+                completed,
+                total: 3,
+                summary_ready,
+                outcomes_ready,
+                post_intel_ready,
+                actions_count,
+                wins_count,
+                risks_count,
+                decisions_count,
+                commitments_count,
+            },
+        );
+    }
+}
+
 /// Process a transcript file with meeting context.
 ///
 /// 1. Read the source file
@@ -49,6 +103,7 @@ pub fn process_transcript(
     workspace: &Path,
     file_path: &str,
     meeting: &CalendarEvent,
+    app_handle: Option<&AppHandle>,
     db: Option<&ActionDb>,
     profile: &str,
     ai_config: Option<&AiModelConfig>,
@@ -57,6 +112,7 @@ pub fn process_transcript(
         workspace,
         file_path,
         meeting,
+        app_handle,
         db,
         profile,
         ai_config,
@@ -68,6 +124,7 @@ pub fn process_transcript_with_kind(
     workspace: &Path,
     file_path: &str,
     meeting: &CalendarEvent,
+    app_handle: Option<&AppHandle>,
     db: Option<&ActionDb>,
     profile: &str,
     ai_config: Option<&AiModelConfig>,
@@ -235,6 +292,37 @@ pub fn process_transcript_with_kind(
         }
     }
 
+    if let Some(db) = db {
+        let processed_at = Utc::now().to_rfc3339();
+        let summary_ref = (!summary.trim().is_empty()).then_some(summary.as_str());
+        if let Err(e) = db.update_meeting_transcript_metadata(
+            &meeting.id,
+            &destination.display().to_string(),
+            &processed_at,
+            summary_ref,
+        ) {
+            log::warn!(
+                "Failed to persist phase 1 transcript metadata for {}: {}",
+                meeting.id,
+                e
+            );
+        }
+    }
+    emit_transcript_progress(
+        app_handle,
+        &meeting.id,
+        "phase1",
+        1,
+        !summary.trim().is_empty(),
+        false,
+        false,
+        extracted_actions.len(),
+        0,
+        0,
+        0,
+        0,
+    );
+
     // ── Phase 2: Intelligence extraction (wins, risks, decisions, sentiment, champion) ──
     let phase2_prompt = build_phase2_prompt(meeting, &content, content_kind, &summary);
     let pty2 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
@@ -335,6 +423,20 @@ pub fn process_transcript_with_kind(
             }
         }
     }
+    emit_transcript_progress(
+        app_handle,
+        &meeting.id,
+        "phase2",
+        2,
+        !summary.trim().is_empty(),
+        true,
+        false,
+        extracted_actions.len(),
+        wins.len(),
+        risks.len(),
+        decisions.len(),
+        0,
+    );
 
     // ── Phase 3: Deep analysis (dynamics, commitments, role changes) ──
     let phase3_prompt = build_phase3_prompt(meeting, &content, content_kind, &summary);
@@ -390,6 +492,20 @@ pub fn process_transcript_with_kind(
             &commitments,
         );
     }
+    emit_transcript_progress(
+        app_handle,
+        &meeting.id,
+        "phase3",
+        3,
+        !summary.trim().is_empty(),
+        true,
+        true,
+        extracted_actions.len(),
+        wins.len(),
+        risks.len(),
+        decisions.len(),
+        commitments.len(),
+    );
 
     // Recompute health after transcript phases write champion_health + interaction_dynamics
     if let Some(db) = db {

@@ -45,6 +45,14 @@ pub struct PurgeReport {
     pub signals_deleted: usize,
     pub relationships_deleted: usize,
     pub enrichment_sources_cleared: usize,
+    #[serde(default)]
+    pub assessments_cleared: usize,
+    #[serde(default)]
+    pub emails_deleted: usize,
+    #[serde(default)]
+    pub email_signals_deleted: usize,
+    #[serde(default)]
+    pub caches_deleted: usize,
 }
 
 fn is_profile_field(field: &str) -> bool {
@@ -133,12 +141,25 @@ fn purge_people_profile_fields_by_source(
     Ok(fields_cleared)
 }
 
+fn table_exists(db: &ActionDb, table: &str) -> bool {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table' AND name = ?1
+            )",
+            [table],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|exists| exists == 1)
+        .unwrap_or(false)
+}
+
 /// Purge data originating from a revoked source.
 ///
 /// Notes:
 /// - User-entered data (`DataSource::User`) is never purged.
-/// - Entity intelligence payloads are not deleted; downstream re-enrichment
-///   should reconcile stale source-derived claims.
 pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, DbError> {
     if source == DataSource::User {
         return Ok(PurgeReport {
@@ -158,12 +179,20 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             )
             .map_err(|e| format!("purge account_stakeholders failed: {e}"))?;
 
-        // I487: Glean signals use sub-sources (glean_search, glean_org) in addition
-        // to the base "glean" source. Purge all of them when revoking Glean access.
         let signals_deleted = if source == DataSource::Glean {
             tx.conn_ref()
                 .execute(
-                    "DELETE FROM signal_events WHERE source IN ('glean', 'glean_search', 'glean_org')",
+                    "DELETE FROM signal_events
+                     WHERE source IN (
+                        'glean',
+                        'glean_search',
+                        'glean_org',
+                        'glean_crm',
+                        'glean_zendesk',
+                        'glean_gong',
+                        'glean_chat',
+                        'glean_synthesis'
+                     )",
                     [],
                 )
                 .map_err(|e| format!("purge signal_events failed: {e}"))?
@@ -178,10 +207,69 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             .execute("DELETE FROM person_relationships WHERE source = ?1", [source_str])
             .map_err(|e| format!("purge person_relationships failed: {e}"))?;
 
-        if source == DataSource::Glean {
-            tx.conn_ref()
-                .execute("DELETE FROM glean_document_cache", [])
-                .map_err(|e| format!("purge glean_document_cache failed: {e}"))?;
+        let mut assessments_cleared = 0usize;
+        let mut emails_deleted = 0usize;
+        let mut email_signals_deleted = 0usize;
+        let mut caches_deleted = 0usize;
+
+        match source {
+            DataSource::Glean => {
+                if table_exists(tx, "entity_assessment") {
+                    assessments_cleared = tx
+                        .conn_ref()
+                        .execute(
+                            "UPDATE entity_assessment
+                             SET org_health_json = NULL,
+                                 executive_assessment = NULL,
+                                 risks_json = NULL,
+                                 stakeholder_insights_json = NULL,
+                                 current_state_json = NULL,
+                                 company_context_json = NULL,
+                                 dimensions_json = NULL
+                             WHERE source_manifest_json LIKE '%glean%' OR org_health_json IS NOT NULL",
+                            [],
+                        )
+                        .map_err(|e| format!("purge entity_assessment failed: {e}"))?;
+                }
+
+                if table_exists(tx, "glean_document_cache") {
+                    caches_deleted = tx
+                        .conn_ref()
+                        .execute("DELETE FROM glean_document_cache", [])
+                        .map_err(|e| format!("purge glean_document_cache failed: {e}"))?;
+                }
+            }
+            DataSource::Google => {
+                if table_exists(tx, "emails") {
+                    emails_deleted = tx
+                        .conn_ref()
+                        .execute("DELETE FROM emails", [])
+                        .map_err(|e| format!("purge emails failed: {e}"))?;
+                }
+                if table_exists(tx, "email_signals") {
+                    email_signals_deleted = tx
+                        .conn_ref()
+                        .execute("DELETE FROM email_signals", [])
+                        .map_err(|e| format!("purge email_signals failed: {e}"))?;
+                }
+                if table_exists(tx, "email_threads") {
+                    let _ = tx.conn_ref().execute("DELETE FROM email_threads", []);
+                }
+                if table_exists(tx, "meetings") {
+                    let _ = tx
+                        .conn_ref()
+                        .execute("UPDATE meetings SET description = NULL WHERE description IS NOT NULL", []);
+                }
+            }
+            DataSource::Gravatar => {
+                if table_exists(tx, "gravatar_cache") {
+                    caches_deleted = tx
+                        .conn_ref()
+                        .execute("DELETE FROM gravatar_cache", [])
+                        .map_err(|e| format!("purge gravatar_cache failed: {e}"))?;
+                }
+            }
+            _ => {}
         }
 
         let enrichment_sources_cleared = purge_people_profile_fields_by_source(tx, source)
@@ -193,6 +281,10 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             signals_deleted,
             relationships_deleted,
             enrichment_sources_cleared,
+            assessments_cleared,
+            emails_deleted,
+            email_signals_deleted,
+            caches_deleted,
         })
     })
     .map_err(DbError::Migration)

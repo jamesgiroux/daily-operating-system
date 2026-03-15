@@ -613,7 +613,29 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
         .get_recent_signals_for_entity(account_id, 30)
         .unwrap_or_default();
 
-    if signals.is_empty() {
+    let zendesk_signals: Vec<(String, f64, String)> = db
+        .conn
+        .prepare(
+            "SELECT value, confidence, created_at FROM signal_events
+             WHERE entity_id = ?1
+               AND source = 'glean_zendesk'
+               AND signal_type = 'support_health_updated'
+               AND created_at > datetime('now', '-30 days')
+             ORDER BY created_at DESC",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![account_id], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|row| row.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    if signals.is_empty() && zendesk_signals.is_empty() {
         // Signal momentum returns 50 (neutral) when no data, NOT null
         return DimensionScore {
             score: 50.0,
@@ -625,6 +647,7 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
 
     let now = chrono::Utc::now();
     let mut weighted_sum = 0.0f64;
+    let mut evidence = vec![format!("{} signals in 30d", signals.len())];
     for (_, _, confidence, created_at) in &signals {
         let age_days = chrono::DateTime::parse_from_rfc3339(created_at)
             .map(|d| (now - d.with_timezone(&chrono::Utc)).num_days() as f64)
@@ -634,12 +657,77 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
         weighted_sum += confidence * decay;
     }
 
-    let momentum = (weighted_sum * 10.0).clamp(10.0, 100.0);
+    let base_momentum = (weighted_sum * 10.0).clamp(10.0, 100.0);
+
+    let mut momentum = base_momentum;
+    if !zendesk_signals.is_empty() {
+        let mut zendesk_velocity = 50.0;
+        let cadence_boost = (zendesk_signals.len().min(4) as f64) * 6.0;
+        zendesk_velocity += cadence_boost;
+
+        if let Some((latest_value, latest_confidence, latest_created_at)) = zendesk_signals.first() {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(latest_value) {
+                let trend = parsed
+                    .get("trend")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_lowercase();
+                if matches!(trend.as_str(), "declining" | "worsening" | "negative") {
+                    zendesk_velocity -= 18.0;
+                    evidence.push("Zendesk velocity trending worse".to_string());
+                } else if matches!(trend.as_str(), "improving" | "better" | "positive") {
+                    zendesk_velocity += 12.0;
+                    evidence.push("Zendesk velocity trending better".to_string());
+                }
+
+                let critical = parsed
+                    .get("criticalTickets")
+                    .or_else(|| parsed.get("critical_tickets"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let open = parsed
+                    .get("openTickets")
+                    .or_else(|| parsed.get("open_tickets"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let csat = parsed.get("csat").and_then(|v| v.as_f64());
+
+                if critical > 0 {
+                    zendesk_velocity -= 20.0;
+                    evidence.push(format!("Zendesk has {critical} critical ticket(s)"));
+                } else if open >= 8 {
+                    zendesk_velocity -= 8.0;
+                    evidence.push(format!("Zendesk backlog elevated ({open} open tickets)"));
+                }
+
+                if let Some(csat) = csat {
+                    if csat >= 90.0 {
+                        zendesk_velocity += 8.0;
+                    } else if csat <= 70.0 {
+                        zendesk_velocity -= 10.0;
+                    }
+                    evidence.push(format!("Zendesk CSAT {:.0}%", csat));
+                }
+            }
+
+            let age_days = chrono::DateTime::parse_from_rfc3339(latest_created_at)
+                .map(|d| (now - d.with_timezone(&chrono::Utc)).num_days())
+                .unwrap_or(30);
+            evidence.push(format!(
+                "Zendesk velocity signal {}d ago ({:.0}% confidence)",
+                age_days,
+                latest_confidence * 100.0
+            ));
+        }
+
+        momentum = (base_momentum * 0.65 + zendesk_velocity.clamp(10.0, 100.0) * 0.35)
+            .clamp(10.0, 100.0);
+    }
 
     DimensionScore {
         score: momentum,
         weight: 1.0,
-        evidence: vec![format!("{} signals in 30d", signals.len())],
+        evidence,
         trend: if momentum > 60.0 {
             "improving".to_string()
         } else if momentum < 40.0 {

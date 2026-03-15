@@ -110,6 +110,21 @@ interface PrepReadyPayload {
   meetingId: string;
 }
 
+interface TranscriptProgressPayload {
+  meetingId: string;
+  phase: string;
+  completed: number;
+  total: number;
+  summaryReady: boolean;
+  outcomesReady: boolean;
+  postIntelReady: boolean;
+  actionsCount: number;
+  winsCount: number;
+  risksCount: number;
+  decisionsCount: number;
+  commitmentsCount: number;
+}
+
 type TranscriptProcessedPayload = MeetingOutcomeData | string;
 
 export default function MeetingDetailPage() {
@@ -468,6 +483,13 @@ export default function MeetingDetailPage() {
   }, [meetingId, loadMeetingIntelligence]);
 
   useTauriEvent<TranscriptProcessedPayload>("transcript-processed", handleTranscriptProcessed);
+
+  const handleTranscriptProgress = useCallback((payload: TranscriptProgressPayload) => {
+    if (!meetingId || payload.meetingId !== meetingId) return;
+    void loadMeetingIntelligence();
+  }, [meetingId, loadMeetingIntelligence]);
+
+  useTauriEvent<TranscriptProgressPayload>("transcript-progress", handleTranscriptProgress);
 
   // Safety timeout: clear updating banner after 15s if prep-ready never arrives (I477)
   useEffect(() => {

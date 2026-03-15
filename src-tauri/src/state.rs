@@ -253,6 +253,8 @@ pub struct AppState {
     /// Determines where entity context is gathered (local DB vs. Glean).
     /// Wrapped in RwLock to allow hot-swap without app restart.
     context_provider: std::sync::RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
+    /// Shared app handle for service-layer Tauri event emission.
+    app_handle: std::sync::RwLock<Option<tauri::AppHandle>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -521,6 +523,7 @@ impl AppState {
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
             permits: ResourcePermits::new(),
             context_provider: std::sync::RwLock::new(context_provider),
+            app_handle: std::sync::RwLock::new(None),
         }
     }
 
@@ -563,6 +566,18 @@ impl AppState {
         let mut guard = self.context_provider.write().expect("context_provider lock poisoned");
         *guard = new;
         log::info!("Context provider swapped to: {}", guard.provider_name());
+    }
+
+    pub fn set_app_handle(&self, handle: tauri::AppHandle) {
+        let mut guard = self.app_handle.write().expect("app_handle lock poisoned");
+        *guard = Some(handle);
+    }
+
+    pub fn app_handle(&self) -> Option<tauri::AppHandle> {
+        self.app_handle
+            .read()
+            .expect("app_handle lock poisoned")
+            .clone()
     }
 
     /// Build a context provider for the given mode, using this state's config and embedding model.
