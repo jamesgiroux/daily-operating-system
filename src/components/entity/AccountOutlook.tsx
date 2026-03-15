@@ -9,6 +9,7 @@ import { X } from "lucide-react";
 import type { EntityIntelligence } from "@/types";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
 import { formatArr } from "@/lib/utils";
 import css from "./AccountOutlook.module.css";
 
@@ -222,6 +223,7 @@ export function AccountOutlook({
                         +${formatArr(signal.arrImpact)} ARR
                       </span>
                     )}
+                    <ProvenanceTag itemSource={signal.itemSource} discrepancy={signal.discrepancy} />
                   </div>
                 </div>
                 {(onUpdateField || onItemFeedback) && (

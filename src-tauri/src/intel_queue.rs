@@ -961,6 +961,7 @@ async fn run_glean_enrichment_with_fallback(
                     &input.entity_name,
                     ctx,
                     input.relationship.as_deref(),
+                    Some(app_handle),
                 )
                 .await
             {
@@ -1289,33 +1290,17 @@ fn write_progressive_dimension(
         }
     };
 
-    // Read existing intelligence and merge the progressive state on top
+    // I576: Source-aware reconciliation for progressive PTY writes
     let existing = db.get_entity_intelligence(entity_id).ok().flatten();
-    let mut merged = combined.clone();
-
-    if let Some(existing) = existing {
-        // Preserve fields the progressive state hasn't populated yet
-        // (e.g. user_edits, fields from prior enrichment that this partial hasn't touched)
-        if merged.executive_assessment.is_none() {
-            merged.executive_assessment = existing.executive_assessment;
-        }
-        if merged.risks.is_empty() {
-            merged.risks = existing.risks;
-        }
-        if merged.recent_wins.is_empty() {
-            merged.recent_wins = existing.recent_wins;
-        }
-        if merged.stakeholder_insights.is_empty() {
-            merged.stakeholder_insights = existing.stakeholder_insights;
-        }
-        if merged.value_delivered.is_empty() {
-            merged.value_delivered = existing.value_delivered;
-        }
-        // Always preserve user edits
-        if merged.user_edits.is_empty() && !existing.user_edits.is_empty() {
-            merged.user_edits = existing.user_edits;
-        }
-    }
+    let mut merged = if let Some(existing) = existing {
+        crate::intelligence::glean_provider::reconcile_enrichment(
+            existing,
+            combined.clone(),
+            &["pty_synthesis"],
+        )
+    } else {
+        combined.clone()
+    };
 
     // Set entity metadata for the DB write
     merged.entity_id = entity_id.to_string();
@@ -1420,12 +1405,21 @@ pub fn write_enrichment_results(
     intel: &IntelligenceJson,
     ai_config: Option<&AiModelConfig>,
 ) -> Result<IntelligenceJson, String> {
-    // Preserve user-edited fields from existing intelligence (I261)
+    // I576: Source-aware reconciliation + preserve user-edited fields (I261)
     let mut final_intel = intel.clone();
     let existing_intel = crate::db::ActionDb::open()
         .ok()
         .and_then(|db| db.get_entity_intelligence(&input.entity_id).ok().flatten());
     if let Some(existing) = existing_intel.as_ref() {
+        // I576: Apply source-aware reconciliation (preserves user corrections,
+        // non-refreshed source items, and dismissed tombstones)
+        final_intel = crate::intelligence::glean_provider::reconcile_enrichment(
+            existing.clone(),
+            final_intel,
+            &["pty_synthesis"],
+        );
+
+        // I261: Also preserve field-level user edits (granular JSON-path edits)
         if !existing.user_edits.is_empty() {
             crate::intelligence::preserve_user_edits(&mut final_intel, existing);
             log::info!(
