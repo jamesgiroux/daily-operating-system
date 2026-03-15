@@ -223,6 +223,38 @@ fn build_json_schema(entity_type: &str) -> String {
     schema
 }
 
+/// Build an ephemeral account query prompt for a named account.
+///
+/// Used by I495 to produce a one-shot briefing about an account that may not
+/// be in the local database yet. Returns prose-friendly structured JSON.
+pub fn build_ephemeral_query_prompt(name: &str) -> String {
+    format!(
+        r#"Tell me everything you know about the company or account "{name}" from ALL available data sources (Salesforce, Zendesk, Gong, Slack, internal documents, org directory).
+
+Return ONLY a JSON object (no markdown, no commentary):
+{{
+  "summary": "2-3 paragraph comprehensive overview of this account — who they are, what they do, and our relationship with them",
+  "sections": [
+    {{
+      "title": "section title (e.g. Relationship Overview, Support History, Recent Activity, Key Contacts, Product Usage)",
+      "content": "detailed content for this section",
+      "source": "primary data source for this section (salesforce, zendesk, gong, slack, docs, or null)"
+    }}
+  ],
+  "sourceCount": 3
+}}
+
+Instructions:
+- Include as many sections as you have data for — group by topic, not by source
+- The summary should be readable as a standalone briefing
+- For each section, cite which data source the information primarily came from
+- sourceCount = how many distinct data sources contributed information
+- If you have no data about this account, return {{"summary": "No information found for {name} across available data sources.", "sections": [], "sourceCount": 0}}
+- Omit sections where you have no real data — do not fabricate
+- Return ONLY valid JSON. No markdown fences, no commentary before or after."#,
+    )
+}
+
 /// Build the account discovery prompt for a user email.
 pub fn build_account_discovery_prompt(user_email: &str, user_name: &str) -> String {
     format!(

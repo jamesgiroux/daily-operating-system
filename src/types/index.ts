@@ -1137,6 +1137,35 @@ export type AccountHealth = "green" | "yellow" | "red";
 /** Account classification: customer, internal org, or partner (I382). */
 export type AccountType = "customer" | "internal" | "partner";
 
+/** I494: Account discovered from Glean search. */
+export interface DiscoveredAccount {
+  name: string;
+  myRole: string | null;
+  evidence: string | null;
+  source: string | null;
+  domain: string | null;
+  industry: string | null;
+  contextPreview: string | null;
+  alreadyInDailyos: boolean;
+}
+
+/** I495: A single section within an ephemeral briefing. */
+export interface BriefingSection {
+  title: string;
+  content: string;
+  source: string | null;
+}
+
+/** I495: One-shot briefing about an account from Glean. */
+export interface EphemeralBriefing {
+  name: string;
+  summary: string;
+  sections: BriefingSection[];
+  sourceCount: number;
+  /** Entity ID if the account already exists in DailyOS. */
+  alreadyExists: string | null;
+}
+
 /** Summary item for the accounts list page. */
 export interface AccountListItem {
   id: string;
