@@ -910,7 +910,7 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
 ///
 /// Uses brace counting to find the correct closing `}` that matches
 /// the first `{`, handling nested objects correctly.
-fn extract_json_object(text: &str) -> Option<&str> {
+pub fn extract_json_object(text: &str) -> Option<&str> {
     let start = text.find('{')?;
     let mut depth = 0i32;
     let mut in_string = false;
