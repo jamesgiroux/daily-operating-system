@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { RiskCover } from "@/components/risk-briefing/RiskCover";
@@ -58,6 +60,9 @@ export default function RiskBriefingPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Slide-level feedback (matches AccountHealthPage/SwotPage pattern)
+  const feedback = useIntelligenceFeedback(accountId ?? undefined, "account");
 
   // Debounced save — persists edited briefing to disk
   const debouncedSave = useCallback(
@@ -335,6 +340,10 @@ export default function RiskBriefingPage() {
           data={briefing!.bottomLine}
           onUpdate={(v: RiskBottomLine) => updateSlide("bottomLine", v)}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("bottom_line")}
+          onFeedback={(type) => feedback.submitFeedback("bottom_line", type)}
+        />
       </div>
 
       {/* Slide 3: What Happened */}
@@ -342,6 +351,10 @@ export default function RiskBriefingPage() {
         <WhatHappenedSlide
           data={briefing!.whatHappened}
           onUpdate={(v: RiskWhatHappened) => updateSlide("whatHappened", v)}
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("what_happened")}
+          onFeedback={(type) => feedback.submitFeedback("what_happened", type)}
         />
       </div>
 
@@ -351,6 +364,10 @@ export default function RiskBriefingPage() {
           data={briefing!.stakes}
           onUpdate={(v: RiskStakes) => updateSlide("stakes", v)}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("stakes")}
+          onFeedback={(type) => feedback.submitFeedback("stakes", type)}
+        />
       </div>
 
       {/* Slide 5: The Plan */}
@@ -359,6 +376,10 @@ export default function RiskBriefingPage() {
           data={briefing!.thePlan}
           onUpdate={(v: RiskThePlan) => updateSlide("thePlan", v)}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("the_plan")}
+          onFeedback={(type) => feedback.submitFeedback("the_plan", type)}
+        />
       </div>
 
       {/* Slide 6: The Ask */}
@@ -366,6 +387,10 @@ export default function RiskBriefingPage() {
         <TheAskSlide
           data={briefing!.theAsk}
           onUpdate={(v: RiskTheAsk) => updateSlide("theAsk", v)}
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("the_ask")}
+          onFeedback={(type) => feedback.submitFeedback("the_ask", type)}
         />
       </div>
 
