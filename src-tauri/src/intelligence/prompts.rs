@@ -2060,6 +2060,9 @@ fn build_intelligence_prompt_inner(
 struct AiIntelResponse {
     #[serde(default)]
     executive_assessment: Option<String>,
+    /// I576: Concise editorial pull quote.
+    #[serde(default)]
+    pull_quote: Option<String>,
     #[serde(default)]
     sources: Vec<String>,
     #[serde(default)]
@@ -2627,6 +2630,7 @@ fn try_parse_json_response(
         source_file_count,
         source_manifest: manifest.to_vec(),
         executive_assessment: ai_resp.executive_assessment,
+        pull_quote: ai_resp.pull_quote,
         risks: ai_resp
             .risks
             .into_iter()
