@@ -394,10 +394,11 @@ pub async fn delete_person(
 /// Uses split-lock pattern (I173) — DB lock held only briefly during gather/write.
 #[tauri::command]
 pub async fn enrich_person(
+    app_handle: tauri::AppHandle,
     person_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    crate::services::intelligence::enrich_entity(person_id, "person".to_string(), &state).await
+    crate::services::intelligence::enrich_entity(person_id, "person".to_string(), &state, Some(&app_handle)).await
 }
 
 // =========================================================================

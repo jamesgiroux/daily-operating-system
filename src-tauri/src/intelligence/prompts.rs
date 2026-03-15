@@ -1614,7 +1614,8 @@ fn build_intelligence_prompt_inner(
 
     // File manifest (always shown so Claude knows what exists)
     if !ctx.file_manifest.is_empty() {
-        prompt.push_str("## Workspace Files\n");
+        prompt.push_str("## Workspace Files [source: local_file, confidence: 0.85]\n");
+        prompt.push_str("Items derived from these files MUST use itemSource.source = \"local_file\" with confidence 0.85.\n");
         for f in &ctx.file_manifest {
             let ct = f.content_type.as_deref().unwrap_or("general");
             prompt.push_str(&format!(

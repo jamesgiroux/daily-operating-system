@@ -10,7 +10,6 @@
 
 use std::time::{Duration, Instant};
 
-use futures::stream::{FuturesUnordered, StreamExt};
 use tauri::{AppHandle, Emitter};
 
 use crate::context_provider::glean::GleanMcpClient;
@@ -145,8 +144,9 @@ impl GleanIntelligenceProvider {
         let entity_type_owned = entity_type.to_string();
         let entity_name_owned = entity_name.to_string();
 
-        // Spawn 6 concurrent tasks into FuturesUnordered for progressive processing
-        let mut futures = FuturesUnordered::new();
+        // I575: Use tokio::sync::mpsc channel to receive dimension results as they
+        // complete, enabling progressive DB writes and event emission.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(6);
         let mut wrote_debug_file = false;
 
         for (dim_name, prompt) in prompts {
@@ -156,8 +156,9 @@ impl GleanIntelligenceProvider {
             let ename = entity_name_owned.clone();
             let is_first = !wrote_debug_file;
             wrote_debug_file = true;
+            let sender = tx.clone();
 
-            futures.push(tokio::spawn(async move {
+            tokio::spawn(async move {
                 let start = Instant::now();
                 let client = GleanMcpClient::new(&ep);
 
@@ -176,14 +177,16 @@ impl GleanIntelligenceProvider {
                             "[I574] Glean dimension {} for {} — failed in {}ms: {}",
                             dim_name, ename, elapsed_ms, e
                         );
-                        return (dim_name, Err(format!("chat failed: {}", e)));
+                        let _ = sender.send((dim_name, Err(format!("chat failed: {}", e)))).await;
+                        return;
                     }
                     Err(_) => {
                         log::warn!(
                             "[I574] Glean dimension {} for {} — timed out after {}ms",
                             dim_name, ename, elapsed_ms
                         );
-                        return (dim_name, Err("timed out after 30s".to_string()));
+                        let _ = sender.send((dim_name, Err("timed out after 30s".to_string()))).await;
+                        return;
                     }
                 };
 
@@ -224,7 +227,7 @@ impl GleanIntelligenceProvider {
                     manifest,
                 );
 
-                match parse_result {
+                let result = match parse_result {
                     Ok(intel) => (dim_name, Ok(intel)),
                     Err(e) => {
                         log::warn!(
@@ -233,18 +236,23 @@ impl GleanIntelligenceProvider {
                         );
                         (dim_name, Err(format!("parse failed: {}", e)))
                     }
-                }
-            }));
+                };
+
+                let _ = sender.send(result).await;
+            });
         }
+
+        // Drop our sender so the channel closes after all spawned tasks finish
+        drop(tx);
 
         // Process results progressively as each dimension completes
         let mut combined = IntelligenceJson::default();
         let mut succeeded = 0u32;
         let mut failed_dims = Vec::new();
 
-        while let Some(join_result) = futures.next().await {
-            match join_result {
-                Ok((dim_name, Ok(partial))) => {
+        while let Some((dim_name, result)) = rx.recv().await {
+            match result {
+                Ok(partial) => {
                     if let Err(e) =
                         dimension_prompts::merge_dimension_into(&mut combined, &dim_name, &partial)
                     {
@@ -273,11 +281,8 @@ impl GleanIntelligenceProvider {
                         }
                     }
                 }
-                Ok((dim_name, Err(_))) => {
+                Err(_) => {
                     failed_dims.push(dim_name);
-                }
-                Err(e) => {
-                    log::warn!("[I574] Dimension task panicked: {}", e);
                 }
             }
         }
@@ -327,13 +332,17 @@ impl GleanIntelligenceProvider {
             });
         }
 
-        // Merge with existing DB intelligence (same pattern as legacy)
+        // I576: Source-aware reconciliation with existing DB intelligence
         let intel = {
             let existing = crate::db::ActionDb::open()
                 .ok()
                 .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
             match existing {
-                Some(existing) => merge_glean_into_existing(existing, combined),
+                Some(existing) => reconcile_enrichment(
+                    existing,
+                    combined,
+                    &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
+                ),
                 None => combined,
             }
         };
@@ -425,16 +434,18 @@ impl GleanIntelligenceProvider {
             manifest,
         )?;
 
-        // Merge Glean results into existing intelligence — only overwrite fields
-        // that Glean actually populated. Glean returns sparse JSON (omits fields
-        // it has no data for), so a wholesale replace would wipe PTY-populated data.
-        // Read existing intel from DB (not the truncated context field) for full fidelity.
+        // I576: Source-aware reconciliation with existing intelligence.
+        // Preserves user corrections, transcript items, and dismissed tombstones.
         let intel = {
             let existing = crate::db::ActionDb::open()
                 .ok()
                 .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
             match existing {
-                Some(existing) => merge_glean_into_existing(existing, glean_intel),
+                Some(existing) => reconcile_enrichment(
+                    existing,
+                    glean_intel,
+                    &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
+                ),
                 None => glean_intel,
             }
         };
@@ -515,28 +526,16 @@ fn write_progressive_glean_dimension(
     };
 
     let existing = db.get_entity_intelligence(entity_id).ok().flatten();
-    let mut merged = combined.clone();
-
-    if let Some(existing) = existing {
-        if merged.executive_assessment.is_none() {
-            merged.executive_assessment = existing.executive_assessment;
-        }
-        if merged.risks.is_empty() {
-            merged.risks = existing.risks;
-        }
-        if merged.recent_wins.is_empty() {
-            merged.recent_wins = existing.recent_wins;
-        }
-        if merged.stakeholder_insights.is_empty() {
-            merged.stakeholder_insights = existing.stakeholder_insights;
-        }
-        if merged.value_delivered.is_empty() {
-            merged.value_delivered = existing.value_delivered;
-        }
-        if merged.user_edits.is_empty() && !existing.user_edits.is_empty() {
-            merged.user_edits = existing.user_edits;
-        }
-    }
+    let mut merged = if let Some(existing) = existing {
+        // I576: Use source-aware reconciliation even for progressive writes
+        reconcile_enrichment(
+            existing,
+            combined.clone(),
+            &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
+        )
+    } else {
+        combined.clone()
+    };
 
     merged.entity_id = entity_id.to_string();
     merged.entity_type = entity_type.to_string();
@@ -637,6 +636,26 @@ pub fn emit_glean_signals(
         }
     }
 
+    // Gong call summaries at 0.8 — engagement patterns from recorded calls
+    if !intel.gong_call_summaries.is_empty() {
+        if let Ok(value) = serde_json::to_string(&intel.gong_call_summaries) {
+            let _ = emit_signal_and_propagate(
+                db,
+                engine,
+                entity_type,
+                entity_id,
+                "gong_engagement_updated",
+                "glean_gong",
+                Some(&value),
+                0.8,
+            );
+        }
+    }
+
+    // TODO: Slack signals at 0.5 (ADR-0100 tier) deferred until Glean exposes
+    // Slack data as a separate structured field. Currently Slack content is mixed
+    // into the AI synthesis and emitted under "glean_chat" at 0.7.
+
     // Champion health at 0.8 — if champion is weak or lost, emit risk signal
     if let Some(ref health) = intel.health {
         let dims = &health.dimensions;
@@ -661,80 +680,213 @@ pub fn emit_glean_signals(
     }
 }
 
-/// Merge Glean-produced intelligence into existing intelligence.
+/// I576: Source-aware reconciliation of enrichment output with existing intelligence.
 ///
-/// Rule: Glean wins for any field it actually populated. Existing data is
-/// preserved for fields Glean omitted (returned empty/None/default).
-/// This prevents sparse Glean responses from wiping PTY-populated data.
-fn merge_glean_into_existing(
-    mut existing: IntelligenceJson,
-    glean: IntelligenceJson,
+/// Rules:
+/// 1. User corrections (source "user_correction") — ALWAYS preserved
+/// 2. Items from non-refreshed sources survive (transcript risk persists across Glean refresh)
+/// 3. When new + existing have similar items from different sources, keep both
+/// 4. Conflicts flagged with discrepancy: true
+/// 5. Dismissed items (tombstones) prevent re-creation
+pub fn reconcile_enrichment(
+    existing: IntelligenceJson,
+    new_output: IntelligenceJson,
+    refreshed_sources: &[&str],
 ) -> IntelligenceJson {
-    // Helper macros for the repetitive merge pattern
-    macro_rules! merge_option {
-        ($field:ident) => {
-            if glean.$field.is_some() {
-                existing.$field = glean.$field;
+    let mut result = existing.clone();
+    let dismissed = &existing.dismissed_items;
+
+    // --- Vec fields: source-aware item reconciliation ---
+
+    result.risks = reconcile_vec_items(
+        &existing.risks,
+        &new_output.risks,
+        refreshed_sources,
+        dismissed,
+        "risks",
+        |r| &r.text,
+    );
+
+    result.recent_wins = reconcile_vec_items(
+        &existing.recent_wins,
+        &new_output.recent_wins,
+        refreshed_sources,
+        dismissed,
+        "recentWins",
+        |w| &w.text,
+    );
+
+    result.stakeholder_insights = reconcile_vec_items(
+        &existing.stakeholder_insights,
+        &new_output.stakeholder_insights,
+        refreshed_sources,
+        dismissed,
+        "stakeholderInsights",
+        |s| &s.name,
+    );
+
+    result.value_delivered = reconcile_vec_items(
+        &existing.value_delivered,
+        &new_output.value_delivered,
+        refreshed_sources,
+        dismissed,
+        "valueDelivered",
+        |v| &v.statement,
+    );
+
+    result.competitive_context = reconcile_vec_items(
+        &existing.competitive_context,
+        &new_output.competitive_context,
+        refreshed_sources,
+        dismissed,
+        "competitiveContext",
+        |c| &c.competitor,
+    );
+
+    result.organizational_changes = reconcile_vec_items(
+        &existing.organizational_changes,
+        &new_output.organizational_changes,
+        refreshed_sources,
+        dismissed,
+        "organizationalChanges",
+        |o| &o.person,
+    );
+
+    result.expansion_signals = reconcile_vec_items(
+        &existing.expansion_signals,
+        &new_output.expansion_signals,
+        refreshed_sources,
+        dismissed,
+        "expansionSignals",
+        |e| &e.opportunity,
+    );
+
+    // open_commitments is Option<Vec<...>>
+    if let (Some(existing_oc), Some(new_oc)) = (&existing.open_commitments, &new_output.open_commitments) {
+        let reconciled = reconcile_vec_items(
+            existing_oc,
+            new_oc,
+            refreshed_sources,
+            dismissed,
+            "openCommitments",
+            |c| &c.description,
+        );
+        result.open_commitments = Some(reconciled);
+    } else if new_output.open_commitments.is_some() {
+        result.open_commitments = new_output.open_commitments;
+    }
+
+    // --- Option fields: fresh data wins, except user-edited fields ---
+    macro_rules! reconcile_option {
+        ($field:ident, $field_name:expr) => {
+            if new_output.$field.is_some() {
+                // Check if user edited this field — if so, keep existing
+                if existing.user_edits.iter().any(|e| e.field_path == $field_name) {
+                    // User-edited — keep existing
+                } else {
+                    result.$field = new_output.$field;
+                }
             }
         };
     }
-    macro_rules! merge_vec {
-        ($field:ident) => {
-            if !glean.$field.is_empty() {
-                existing.$field = glean.$field;
-            }
-        };
+
+    reconcile_option!(executive_assessment, "executiveAssessment");
+    reconcile_option!(current_state, "currentState");
+    reconcile_option!(next_meeting_readiness, "nextMeetingReadiness");
+    reconcile_option!(company_context, "companyContext");
+    reconcile_option!(network, "network");
+    reconcile_option!(health, "health");
+    reconcile_option!(org_health, "orgHealth");
+    reconcile_option!(success_metrics, "successMetrics");
+    reconcile_option!(relationship_depth, "relationshipDepth");
+    reconcile_option!(coverage_assessment, "coverageAssessment");
+    reconcile_option!(meeting_cadence, "meetingCadence");
+    reconcile_option!(email_responsiveness, "emailResponsiveness");
+    reconcile_option!(contract_context, "contractContext");
+    reconcile_option!(renewal_outlook, "renewalOutlook");
+    reconcile_option!(support_health, "supportHealth");
+    reconcile_option!(product_adoption, "productAdoption");
+    reconcile_option!(nps_csat, "npsCsat");
+    reconcile_option!(source_attribution, "sourceAttribution");
+    reconcile_option!(success_plan_signals, "successPlanSignals");
+
+    // Non-source-attributed vecs: strategic_priorities, internal_team, blockers, gong_call_summaries
+    if !new_output.strategic_priorities.is_empty() {
+        result.strategic_priorities = new_output.strategic_priorities;
+    }
+    if !new_output.internal_team.is_empty() {
+        result.internal_team = new_output.internal_team;
+    }
+    if !new_output.blockers.is_empty() {
+        result.blockers = new_output.blockers;
+    }
+    if !new_output.gong_call_summaries.is_empty() {
+        result.gong_call_summaries = new_output.gong_call_summaries;
     }
 
-    // Core fields
-    merge_option!(executive_assessment);
-    merge_vec!(risks);
-    merge_vec!(recent_wins);
-    merge_option!(current_state);
-    merge_vec!(stakeholder_insights);
-    merge_vec!(value_delivered);
-    merge_option!(next_meeting_readiness);
-    merge_option!(company_context);
-    merge_option!(network);
-    merge_option!(health);
-    merge_option!(org_health);
-    merge_option!(success_metrics);
-    merge_option!(open_commitments);
-    merge_option!(relationship_depth);
-
-    // I508a dimension fields
-    merge_vec!(competitive_context);
-    merge_vec!(strategic_priorities);
-    merge_option!(coverage_assessment);
-    merge_vec!(organizational_changes);
-    merge_vec!(internal_team);
-    merge_option!(meeting_cadence);
-    merge_option!(email_responsiveness);
-    merge_vec!(blockers);
-    merge_option!(contract_context);
-    merge_vec!(expansion_signals);
-    merge_option!(renewal_outlook);
-    merge_option!(support_health);
-    merge_option!(product_adoption);
-    merge_option!(nps_csat);
-    merge_option!(source_attribution);
-    merge_option!(success_plan_signals);
-
-    // Glean-specific fields
-    merge_vec!(gong_call_summaries);
+    // Carry forward user_edits and dismissed_items from existing
+    result.user_edits = existing.user_edits;
+    result.dismissed_items = existing.dismissed_items;
 
     // Update metadata
-    existing.enriched_at = glean.enriched_at;
-    if !glean.source_manifest.is_empty() {
-        // Append Glean source to existing manifest rather than replacing
-        for entry in glean.source_manifest {
-            if !existing.source_manifest.iter().any(|e| e.filename == entry.filename) {
-                existing.source_manifest.push(entry);
+    result.enriched_at = new_output.enriched_at;
+    if !new_output.source_manifest.is_empty() {
+        for entry in new_output.source_manifest {
+            if !result.source_manifest.iter().any(|e| e.filename == entry.filename) {
+                result.source_manifest.push(entry);
             }
         }
     }
 
-    existing
+    result
+}
+
+/// I576: Reconcile a Vec of source-attributed items.
+///
+/// 1. Keep all existing items whose source is NOT in `refreshed_sources`
+/// 2. Always keep items with source == "user_correction"
+/// 3. Add all new items
+/// 4. Drop new items that match dismissed tombstones
+fn reconcile_vec_items<T: super::io::HasSource + Clone>(
+    existing_items: &[T],
+    new_items: &[T],
+    refreshed_sources: &[&str],
+    dismissed: &[super::io::DismissedItem],
+    field_name: &str,
+    get_text: fn(&T) -> &str,
+) -> Vec<T> {
+    let mut result: Vec<T> = Vec::new();
+
+    // 1. Keep existing items from non-refreshed sources + all user corrections
+    for item in existing_items {
+        let source = item.item_source()
+            .map(|s| s.source.as_str())
+            .unwrap_or("pty_synthesis");
+
+        if source == "user_correction" {
+            // Sacred — always keep
+            result.push(item.clone());
+        } else if !refreshed_sources.contains(&source) {
+            // Not refreshed — survive unconditionally
+            result.push(item.clone());
+        }
+        // Items from refreshed sources are replaced by new_items
+    }
+
+    // 2. Add new items, filtering against dismissed tombstones
+    for item in new_items {
+        let item_text = get_text(item).to_lowercase();
+
+        let is_dismissed = dismissed.iter().any(|d| {
+            d.field == field_name && item_text.contains(&d.content.to_lowercase())
+        });
+
+        if !is_dismissed {
+            result.push(item.clone());
+        }
+    }
+
+    result
 }
 
 /// Extract the first balanced JSON object from a text response.
