@@ -80,29 +80,32 @@
 }
 
 /* ==========================================================================
-   COMPETITIVE CONTEXT — threat matrix (3-column grid)
+   COMPETITIVE CONTEXT — row layout (matches Strategic Priorities pattern)
    ========================================================================== */
 
-.threatMatrix {
-  display: grid;
-  grid-template-columns: 140px 1fr auto;
-  gap: 16px;
-}
-
-.threatRow {
-  display: contents;
-}
-
-.threatRow > * {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--color-rule-light);
-  align-self: center;
-}
-
-.competitorCell {
+.competitorRow {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.competitorRow:last-child {
+  border-bottom: none;
+}
+
+.competitorBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.competitorHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
 }
 
 .competitorName {
@@ -120,35 +123,15 @@
   margin: 0;
 }
 
-.threatActions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-/* Grid rows use display:contents so hover must target grandparent */
-.threatMatrix:has(.threatRow:hover) .threatActions {
-  opacity: 0;
-}
-
-/* Each threat row: hover any cell in the row to reveal its actions */
-.threatRow:hover > .threatActions,
-.threatActions:focus-within {
-  opacity: 1;
-}
-
 /* ==========================================================================
    ORGANIZATIONAL CHANGES — compact timeline
    ========================================================================== */
 
 .changeRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 12px 0;
+  padding: 16px 0;
   border-bottom: 1px solid var(--color-rule-light);
   font-size: 14px;
 }
@@ -166,6 +149,7 @@
   justify-content: center;
   font-size: 13px;
   flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .changeIconDeparture {
@@ -186,6 +170,12 @@
   color: var(--color-spice-turmeric);
 }
 
+.changeIconReorg {
+  composes: changeIcon;
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
+}
+
 .changeIconDefault {
   composes: changeIcon;
   background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
@@ -197,21 +187,44 @@
   min-width: 0;
 }
 
+.changeHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .changeName {
   font-weight: 500;
   color: var(--color-text-primary);
 }
 
-.changeDetail {
-  color: var(--color-text-secondary);
+.changeTypeBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
 }
 
-.changeDate {
+.changeTransition {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 4px 0 0;
+}
+
+.changeMeta {
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--color-text-tertiary);
   letter-spacing: 0.04em;
-  flex-shrink: 0;
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 /* ==========================================================================
@@ -315,6 +328,7 @@
 }
 
 .priorityRow:hover .itemActions,
+.competitorRow:hover .itemActions,
 .changeRow:hover .itemActions,
 .blockerItem:hover .itemActions,
 .itemActions:focus-within {
