@@ -99,6 +99,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [gleanConnected, setGleanConnected] = useState(false);
   const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [importedAccountNames, setImportedAccountNames] = useState<string[]>([]);
 
   // Fetch feature flags on mount
   useEffect(() => {
@@ -354,6 +355,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             gleanConnected={gleanConnected}
             discoveredAccounts={discoveredAccounts}
             discoveryLoading={discoveryLoading}
+            onImported={setImportedAccountNames}
             onNext={async () => {
               if (rolePresetsEnabled) {
                 goToChapter("role");
@@ -389,6 +391,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "prime" && (
           <PrimeBriefing
+            importedAccountNames={importedAccountNames}
             onComplete={() => handleWizardComplete("both")}
           />
         )}
