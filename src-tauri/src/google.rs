@@ -1160,14 +1160,15 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             // Serialize expensive poller enrichment/scoring work so wake/unlock
                             // paths don't compete with other heavy queues.
                             let _heavy_work_permit = match state
-                                .heavy_work_semaphore
+                                .permits
+                                .pty
                                 .acquire()
                                 .await
                             {
                                 Ok(permit) => permit,
                                 Err(e) => {
                                     log::warn!(
-                                        "Email poll: heavy_work_semaphore closed, skipping enrichment: {}",
+                                        "Email poll: PTY permit closed, skipping enrichment: {}",
                                         e
                                     );
                                     continue;
