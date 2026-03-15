@@ -545,6 +545,7 @@ Execution model: umbrella branch `codex/v1-phase3` + short-lived issue branches,
 | **I573** | Mutex poisoning recovery for critical state — re-create audit_log/config/db resources instead of permanent session failure | P2 | Backend / Stability |
 | **I574** | Parallel dimension enrichment — decompose ALL monolithic AI calls (PTY + Glean) into parallel focused calls. 12 call sites audited, no single call > 30s | P0 | Backend / Performance / Intelligence |
 | **I576** | Source-aware intelligence reconciliation — Glean chat as reconciliation engine, local context injected with source tags + confidence, source-attributed output items | P0 | Backend / Intelligence / Architecture |
+| **I598** | Reactive health recomputation on signal arrival — close the Signals→Health Scoring loop arrow. Spec: `.docs/issues/i598.md` | P0 | Backend / Intelligence Loop / Health Scoring |
 | **I575** | Progressive enrichment everywhere — write partial results as they complete, emit frontend events, show data filling in incrementally across all surfaces | P1 | Backend + Frontend / UX / Intelligence |
 | I560 | Glean mode connector optimization + token lifecycle + data governance — remove Additive/Governed, auto-connector management, token health monitoring with pre-expiry notifications, in-app re-auth without restart, purge gap fixes (entity_assessment/emails/gravatar on revocation), data residency clarity. Spec: `.docs/issues/i560.md` | P0 | Backend / Connectors / Auth / Data Governance |
 | I561 | Onboarding flow for Glean-connected users — wizard branches: Glean auth → auto-discover accounts → confirm → background enrichment → "Your book is ready." Profile pre-fill from org directory. No Claude Code needed. Spec: `.docs/issues/i561.md` | P0 | Frontend + Backend / Onboarding |
@@ -572,6 +573,7 @@ Final pass before tagging v1.0.0. No beach balls, no silent failures, no securit
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
+| I596 | Email mock data foundation — seed 15-20 emails, signals, cadence, relevance scores for dev/verification | P0 | Backend / Dev Tools |
 | I577 | Reply debt surface — unanswered customer emails as first-class signal | P1 | Backend + Frontend / Email |
 | I578 | Render `repliesNeeded` from existing `EmailBriefingData` | P1 | Frontend / Email |
 | I579 | Per-email triage actions — archive, open in Gmail, pin | P1 | Frontend + Backend / Email |
@@ -583,6 +585,7 @@ Final pass before tagging v1.0.0. No beach balls, no silent failures, no securit
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
+| I597 | Action & success plan mock data expansion — 30+ actions across all states, value_delivered, recommendations, rejection patterns | P0 | Backend / Dev Tools |
 | I583 | Action aging & zero-guilt cleanup — wire stale archive to scheduler, aging prompts, auto-archive proposed | P0 | Backend + Frontend / Actions |
 | I584 | Action completion feeds health scoring — propagation rules, velocity metrics, engagement + momentum dimensions | P0 | Backend / Intelligence / Actions |
 | I585 | Persist value delivered — store in entity_assessment, user edits survive re-enrichment, feed meeting prep + health scoring | P0 | Backend + Frontend / Intelligence |
