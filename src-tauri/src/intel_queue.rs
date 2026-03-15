@@ -19,12 +19,10 @@ use crate::intelligence::{
     parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
     SourceManifestEntry,
 };
+use crate::intelligence::dimension_prompts::{self, DIMENSION_NAMES};
 use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::AiModelConfig;
-
-/// Maximum number of entities to batch in a single PTY call (I289).
-const MAX_BATCH_SIZE: usize = 3;
 
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
@@ -392,25 +390,24 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 // I535/ADR-0100: Glean-first path — use chat MCP tool for enrichment.
                 // Falls back to PTY on failure (per entity).
                 run_glean_enrichment_with_fallback(inputs, &ai_config, &state).await
-            } else if inputs.len() == 1 {
-                // Single entity — use existing direct path (no batching overhead)
-                let (request, input) = inputs.pop().unwrap();
-                match run_enrichment(&input, &ai_config) {
-                    Ok(parsed) => vec![(request, input, parsed)],
-                    Err(e) => {
-                        let category = categorize_enrichment_error(&e);
-                        error_categories.insert(request.entity_id.clone(), category);
-                        log::warn!(
-                            "IntelProcessor: enrichment failed for {}: {}",
-                            request.entity_id,
-                            e
-                        );
-                        Vec::new()
+            } else {
+                // I574: Per-entity enrichment (tries parallel fan-out, falls back to legacy)
+                let mut entity_results = Vec::new();
+                for (request, input) in inputs {
+                    match run_enrichment(&input, &ai_config) {
+                        Ok(parsed) => entity_results.push((request, input, parsed)),
+                        Err(e) => {
+                            let category = categorize_enrichment_error(&e);
+                            error_categories.insert(request.entity_id.clone(), category);
+                            log::warn!(
+                                "IntelProcessor: enrichment failed for {}: {}",
+                                request.entity_id,
+                                e
+                            );
+                        }
                     }
                 }
-            } else {
-                // Multi-entity batch — combined prompt with delimiters (I289)
-                run_batch_enrichment(inputs, &ai_config)
+                entity_results
             };
         let enrichment_duration_ms = enrichment_start.elapsed().as_millis() as u64;
 
@@ -862,9 +859,9 @@ pub fn gather_enrichment_input(
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
 
-    // I535: Preserve context for Glean-first enrichment path
-    let is_remote = state.context_provider().is_remote();
-    let glean_ctx = if is_remote { Some(ctx) } else { None };
+    // I574: Always preserve context — needed for parallel dimension fan-out (local)
+    // and Glean-first enrichment (remote).
+    let preserved_ctx = Some(ctx);
 
     // Own DB connection drops here when db goes out of scope
     Ok(EnrichmentInput {
@@ -878,7 +875,7 @@ pub fn gather_enrichment_input(
         computed_health,
         entity_name: entity_name.clone(),
         relationship: relationship.map(|s| s.to_string()),
-        intelligence_context: glean_ctx,
+        intelligence_context: preserved_ctx,
     })
 }
 
@@ -888,7 +885,7 @@ pub fn gather_enrichment_input(
 /// (timeout, auth, parse error), falls back to the PTY path for that entity.
 /// Entities without a Glean context (local-only) go straight to PTY.
 async fn run_glean_enrichment_with_fallback(
-    mut inputs: Vec<(IntelRequest, EnrichmentInput)>,
+    inputs: Vec<(IntelRequest, EnrichmentInput)>,
     ai_config: &AiModelConfig,
     state: &AppState,
 ) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
@@ -902,18 +899,16 @@ async fn run_glean_enrichment_with_fallback(
         Some(ep) => ep,
         None => {
             log::warn!("[I535] Glean mode active but no endpoint found, falling back to PTY");
-            return if inputs.len() == 1 {
-                let (request, input) = inputs.pop().unwrap();
+            let mut fallback_results = Vec::new();
+            for (request, input) in inputs {
                 match run_enrichment(&input, ai_config) {
-                    Ok(parsed) => vec![(request, input, parsed)],
+                    Ok(parsed) => fallback_results.push((request, input, parsed)),
                     Err(e) => {
                         log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
-                        Vec::new()
                     }
                 }
-            } else {
-                run_batch_enrichment(inputs, ai_config)
-            };
+            }
+            return fallback_results;
         }
     };
 
@@ -996,16 +991,13 @@ async fn run_glean_enrichment_with_fallback(
             "[I535] Running PTY fallback for {} entities",
             pty_fallback_inputs.len()
         );
-        if pty_fallback_inputs.len() == 1 {
-            let (request, input) = pty_fallback_inputs.pop().unwrap();
+        for (request, input) in pty_fallback_inputs {
             match run_enrichment(&input, ai_config) {
                 Ok(parsed) => results.push((request, input, parsed)),
                 Err(e) => {
                     log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
                 }
             }
-        } else {
-            results.extend(run_batch_enrichment(pty_fallback_inputs, ai_config));
         }
     }
 
@@ -1029,7 +1021,170 @@ fn categorize_enrichment_error(error: &str) -> &'static str {
 
 /// Phase 2: Run PTY enrichment (no DB lock held).
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+///
+/// I574: Tries parallel per-dimension fan-out first (if `intelligence_context` is available),
+/// then falls back to the legacy monolithic prompt path.
 pub fn run_enrichment(
+    input: &EnrichmentInput,
+    ai_config: &AiModelConfig,
+) -> Result<EnrichmentParseResult, String> {
+    if input.intelligence_context.is_some() {
+        match run_parallel_enrichment(input, ai_config) {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                log::warn!(
+                    "[I574] Parallel enrichment failed for {}, falling back to legacy: {}",
+                    input.entity_id,
+                    e
+                );
+            }
+        }
+    }
+    run_enrichment_legacy(input, ai_config)
+}
+
+/// I574: Parallel per-dimension enrichment engine.
+///
+/// Fans out 6 dimension-specific PTY calls in parallel threads (30s each),
+/// then merges successful dimension results into a single `IntelligenceJson`.
+/// Returns Err only if ALL 6 dimensions fail (caller falls back to legacy).
+fn run_parallel_enrichment(
+    input: &EnrichmentInput,
+    ai_config: &AiModelConfig,
+) -> Result<EnrichmentParseResult, String> {
+    let ctx = input
+        .intelligence_context
+        .as_ref()
+        .ok_or("No intelligence context for parallel enrichment")?;
+
+    let is_incremental = ctx.prior_intelligence.is_some();
+    let overall_start = Instant::now();
+
+    // Spawn one thread per dimension
+    let mut handles = Vec::with_capacity(DIMENSION_NAMES.len());
+
+    for &dimension in DIMENSION_NAMES {
+        let dim_prompt = dimension_prompts::build_dimension_prompt(
+            dimension,
+            &input.entity_name,
+            &input.entity_type,
+            input.relationship.as_deref(),
+            ctx,
+            is_incremental,
+        );
+
+        let workspace = input.workspace.clone();
+        let ai_cfg = ai_config.clone();
+        let entity_id = input.entity_id.clone();
+        let entity_type = input.entity_type.clone();
+        let file_count = input.file_count;
+        let file_manifest = input.file_manifest.clone();
+        let dim_name = dimension.to_string();
+
+        let handle = std::thread::spawn(move || {
+            let dim_start = Instant::now();
+
+            let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
+                .with_timeout(30)
+                .with_nice_priority(10);
+
+            let output = pty
+                .spawn_claude(&workspace, &dim_prompt)
+                .map_err(|e| format!("PTY error for dimension {}: {}", dim_name, e))?;
+
+            let intel = parse_intelligence_response(
+                &output.stdout,
+                &entity_id,
+                &entity_type,
+                file_count,
+                file_manifest,
+            )
+            .map_err(|e| format!("Parse error for dimension {}: {}", dim_name, e))?;
+
+            let elapsed_ms = dim_start.elapsed().as_millis();
+            log::info!(
+                "[I574] Dimension {} completed in {}ms",
+                dim_name,
+                elapsed_ms
+            );
+
+            Ok::<(String, IntelligenceJson, String), String>((dim_name, intel, output.stdout))
+        });
+
+        handles.push(handle);
+    }
+
+    // Collect results
+    let mut combined = IntelligenceJson::default();
+    let mut succeeded: usize = 0;
+    let mut all_raw_output = String::new();
+
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok((dim_name, partial_intel, raw_output))) => {
+                if let Err(e) =
+                    dimension_prompts::merge_dimension_into(&mut combined, &dim_name, &partial_intel)
+                {
+                    log::warn!("[I574] Merge failed for dimension {}: {}", dim_name, e);
+                } else {
+                    succeeded += 1;
+                    all_raw_output.push_str(&raw_output);
+                    all_raw_output.push('\n');
+                }
+            }
+            Ok(Err(e)) => {
+                log::warn!("[I574] Dimension thread returned error: {}", e);
+            }
+            Err(_) => {
+                log::warn!("[I574] Dimension thread panicked");
+            }
+        }
+    }
+
+    let total_ms = overall_start.elapsed().as_millis();
+    log::info!(
+        "[I574] Parallel enrichment: {}/6 dimensions succeeded in {}ms",
+        succeeded,
+        total_ms
+    );
+
+    if succeeded == 0 {
+        return Err("All 6 dimensions failed".to_string());
+    }
+
+    // Extract inferred relationships from the combined raw output
+    let inferred_relationships = extract_inferred_relationships(&all_raw_output);
+
+    // I305: Extract and persist keywords from the combined raw output
+    if let Some(keywords_json) =
+        crate::intelligence::extract_keywords_from_response(&all_raw_output)
+    {
+        if let Ok(db) = crate::db::ActionDb::open() {
+            if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &db,
+                &input.entity_type,
+                &input.entity_id,
+                &keywords_json,
+            ) {
+                log::warn!(
+                    "[I574] keyword persistence failed for {} {}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    err
+                );
+            }
+        }
+    }
+
+    Ok(EnrichmentParseResult {
+        intel: combined,
+        inferred_relationships,
+    })
+}
+
+/// Legacy monolithic PTY enrichment — single prompt, 180s timeout.
+/// Kept as fallback when parallel enrichment is unavailable or fails.
+fn run_enrichment_legacy(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
 ) -> Result<EnrichmentParseResult, String> {
@@ -1101,212 +1256,6 @@ fn run_consistency_repair_retry(
     )
 }
 
-/// Run batched enrichment for multiple entities in a single PTY call (I289).
-///
-/// Builds a combined prompt with per-entity delimiters, makes one PTY call,
-/// and parses the response back into per-entity results. Falls back to
-/// individual processing for any entity whose result cannot be parsed.
-fn run_batch_enrichment(
-    inputs: Vec<(IntelRequest, EnrichmentInput)>,
-    ai_config: &AiModelConfig,
-) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
-    let entity_names: Vec<&str> = inputs.iter().map(|(_, i)| i.entity_id.as_str()).collect();
-    log::info!(
-        "IntelProcessor: running batch enrichment for {} entities: {:?}",
-        inputs.len(),
-        entity_names,
-    );
-
-    // Use the first input's workspace for the PTY call
-    let workspace = inputs[0].1.workspace.clone();
-
-    // Build combined prompt
-    let batch_prompt = build_batch_prompt(&inputs);
-
-    // Scale timeout linearly with batch size (180s base per entity)
-    let timeout_secs = 180 * inputs.len() as u64;
-
-    let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
-        .with_timeout(timeout_secs)
-        .with_nice_priority(10);
-
-    let output = match pty.spawn_claude(&workspace, &batch_prompt) {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!(
-                "IntelProcessor: batch PTY call failed, falling back to individual: {}",
-                e
-            );
-            return run_individual_fallback(inputs, ai_config);
-        }
-    };
-
-    // Parse combined response into per-entity results
-    let parsed = parse_batch_response(&output.stdout, &inputs);
-
-    // Collect successful parses and entities that need individual fallback
-    let mut results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> = Vec::new();
-    let mut fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
-
-    // Match parsed results back to inputs by entity_id
-    let mut parsed_map: HashMap<String, EnrichmentParseResult> = parsed.into_iter().collect();
-
-    for (request, input) in inputs {
-        if let Some(parsed_output) = parsed_map.remove(&input.entity_id) {
-            results.push((request, input, parsed_output));
-        } else {
-            log::warn!(
-                "IntelProcessor: batch parse failed for {}, will retry individually",
-                input.entity_id,
-            );
-            fallback_inputs.push((request, input));
-        }
-    }
-
-    // Run individual fallback for unparsed entities
-    if !fallback_inputs.is_empty() {
-        log::info!(
-            "IntelProcessor: running individual fallback for {} entities",
-            fallback_inputs.len(),
-        );
-        results.extend(run_individual_fallback(fallback_inputs, ai_config));
-    }
-
-    results
-}
-
-/// Build a combined prompt for multiple entities (I289).
-///
-/// Structure:
-/// - Shared preamble (instructions for batch mode)
-/// - Per-entity sections delimited by `=== ENTITY: {entity_id} ===`
-/// - Instructions to produce output delimited by `=== RESULT: {entity_id} ===`
-fn build_batch_prompt(inputs: &[(IntelRequest, EnrichmentInput)]) -> String {
-    let entity_ids: Vec<&str> = inputs.iter().map(|(_, i)| i.entity_id.as_str()).collect();
-
-    let mut prompt = String::with_capacity(inputs.len() * 4096);
-
-    // Shared preamble
-    prompt.push_str(
-        "You are running intelligence assessments for MULTIPLE entities in a single pass.\n\
-         Process each entity independently. Do NOT cross-reference information between entities.\n\n\
-         For each entity below, produce the EXACT same JSON output format as you would for a single entity.\n\
-         Separate each result with the delimiter shown below.\n\n\
-         OUTPUT FORMAT:\n\
-         For each entity, output:\n",
-    );
-
-    for id in &entity_ids {
-        prompt.push_str(&format!(
-            "=== RESULT: {} ===\n<JSON for this entity>\n\n",
-            id
-        ));
-    }
-
-    prompt.push_str(
-        "Each JSON block must be a complete, valid JSON object on its own.\n\
-         Do NOT output anything before the first === RESULT delimiter or after the last JSON block.\n\n",
-    );
-
-    // Per-entity sections
-    for (_, input) in inputs {
-        prompt.push_str(&format!(
-            "=== ENTITY: {} ===\n{}\n\n",
-            input.entity_id, input.prompt,
-        ));
-    }
-
-    prompt
-}
-
-/// Parse a batched PTY response back into per-entity results (I289).
-///
-/// Splits on `=== RESULT: {entity_id} ===` delimiters and parses each section
-/// independently. Returns a vec of (entity_id, parsed output) pairs for
-/// successfully parsed entities.
-fn parse_batch_response(
-    response: &str,
-    inputs: &[(IntelRequest, EnrichmentInput)],
-) -> Vec<(String, EnrichmentParseResult)> {
-    let mut results = Vec::new();
-
-    for (_, input) in inputs {
-        let delimiter = format!("=== RESULT: {} ===", input.entity_id);
-
-        // Find the section for this entity
-        let section = if let Some(start) = response.find(&delimiter) {
-            let after_delimiter = start + delimiter.len();
-            let remaining = &response[after_delimiter..];
-
-            // Find end: next === RESULT delimiter or end of string
-            let end = remaining.find("=== RESULT:").unwrap_or(remaining.len());
-
-            remaining[..end].trim()
-        } else {
-            log::warn!(
-                "IntelProcessor: no result delimiter found for {} in batch response",
-                input.entity_id,
-            );
-            continue;
-        };
-
-        if section.is_empty() {
-            log::warn!(
-                "IntelProcessor: empty result section for {} in batch response",
-                input.entity_id,
-            );
-            continue;
-        }
-
-        match parse_intelligence_response(
-            section,
-            &input.entity_id,
-            &input.entity_type,
-            input.file_count,
-            input.file_manifest.clone(),
-        ) {
-            Ok(intel) => results.push((
-                input.entity_id.clone(),
-                EnrichmentParseResult {
-                    inferred_relationships: extract_inferred_relationships(section),
-                    intel,
-                },
-            )),
-            Err(e) => {
-                log::warn!(
-                    "IntelProcessor: failed to parse batch result for {}: {}",
-                    input.entity_id,
-                    e,
-                );
-            }
-        }
-    }
-
-    results
-}
-
-/// Fallback: process entities individually when batch parsing fails (I289).
-fn run_individual_fallback(
-    inputs: Vec<(IntelRequest, EnrichmentInput)>,
-    ai_config: &AiModelConfig,
-) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
-    let mut results = Vec::new();
-
-    for (request, input) in inputs {
-        match run_enrichment(&input, ai_config) {
-            Ok(parsed) => results.push((request, input, parsed)),
-            Err(e) => {
-                log::warn!(
-                    "IntelProcessor: individual fallback failed for {}: {}",
-                    request.entity_id,
-                    e,
-                );
-            }
-        }
-    }
-
-    results
-}
 
 /// Phase 3: Write enrichment results to disk and DB.
 /// Opens own DB connection to avoid blocking foreground IPC commands.
@@ -2117,192 +2066,6 @@ mod tests {
         assert_eq!(batch.len(), 1);
         assert_eq!(batch[0].entity_id, "only-one");
         assert!(queue.is_empty());
-    }
-
-    // =========================================================================
-    // Batch prompt/response parsing tests (I289)
-    // =========================================================================
-
-    #[test]
-    fn test_parse_batch_response_splits_by_delimiter() {
-        use std::path::PathBuf;
-
-        let inputs = vec![
-            (
-                IntelRequest {
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/acme"),
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    prompt: String::new(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                    computed_health: None,
-                    entity_name: String::new(),
-                    relationship: None,
-                    intelligence_context: None,
-                },
-            ),
-            (
-                IntelRequest {
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/beta"),
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    prompt: String::new(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                    computed_health: None,
-                    entity_name: String::new(),
-                    relationship: None,
-                    intelligence_context: None,
-                },
-            ),
-        ];
-
-        // Simulate a batch response with two valid JSON results
-        let response = r#"=== RESULT: acme ===
-{
-  "executiveAssessment": "Acme is on track.",
-  "risks": [],
-  "recentWins": [],
-  "currentState": {"working": [], "notWorking": [], "unknowns": []},
-  "stakeholderInsights": [],
-  "valueDelivered": [],
-  "nextMeetingReadiness": {"prepItems": []}
-}
-
-=== RESULT: beta ===
-{
-  "executiveAssessment": "Beta project progressing.",
-  "risks": [{"text": "Timeline risk", "urgency": "watch"}],
-  "recentWins": [],
-  "currentState": {"working": ["Good velocity"], "notWorking": [], "unknowns": []},
-  "stakeholderInsights": [],
-  "valueDelivered": [],
-  "nextMeetingReadiness": {"prepItems": []}
-}
-"#;
-
-        let results = parse_batch_response(response, &inputs);
-        assert_eq!(results.len(), 2, "Should parse both entities");
-        assert_eq!(results[0].0, "acme");
-        assert_eq!(results[1].0, "beta");
-        assert_eq!(results[1].1.intel.risks.len(), 1);
-        assert!(results[0].1.inferred_relationships.is_empty());
-    }
-
-    #[test]
-    fn test_parse_batch_response_handles_missing_delimiter() {
-        use std::path::PathBuf;
-
-        let inputs = vec![(
-            IntelRequest {
-                entity_id: "missing".to_string(),
-                entity_type: "account".to_string(),
-                priority: IntelPriority::ContentChange,
-                requested_at: Instant::now(),
-                retry_count: 0,
-            },
-            EnrichmentInput {
-                workspace: PathBuf::from("/tmp"),
-                entity_dir: PathBuf::from("/tmp/missing"),
-                entity_id: "missing".to_string(),
-                entity_type: "account".to_string(),
-                prompt: String::new(),
-                file_manifest: vec![],
-                file_count: 0,
-                computed_health: None,
-                entity_name: String::new(),
-                relationship: None,
-                intelligence_context: None,
-            },
-        )];
-
-        // Response with wrong delimiter
-        let response = "=== RESULT: wrong-entity ===\n{}\n";
-
-        let results = parse_batch_response(response, &inputs);
-        assert!(
-            results.is_empty(),
-            "Should return empty for missing delimiter"
-        );
-    }
-
-    #[test]
-    fn test_build_batch_prompt_contains_delimiters() {
-        use std::path::PathBuf;
-
-        let inputs = vec![
-            (
-                IntelRequest {
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/acme"),
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    prompt: "Prompt for acme".to_string(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                    computed_health: None,
-                    entity_name: String::new(),
-                    relationship: None,
-                    intelligence_context: None,
-                },
-            ),
-            (
-                IntelRequest {
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/beta"),
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    prompt: "Prompt for beta".to_string(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                    computed_health: None,
-                    entity_name: String::new(),
-                    relationship: None,
-                    intelligence_context: None,
-                },
-            ),
-        ];
-
-        let prompt = build_batch_prompt(&inputs);
-
-        assert!(prompt.contains("=== ENTITY: acme ==="));
-        assert!(prompt.contains("=== ENTITY: beta ==="));
-        assert!(prompt.contains("=== RESULT: acme ==="));
-        assert!(prompt.contains("=== RESULT: beta ==="));
-        assert!(prompt.contains("Prompt for acme"));
-        assert!(prompt.contains("Prompt for beta"));
-        assert!(prompt.contains("MULTIPLE entities"));
     }
 
     // =========================================================================

@@ -8,7 +8,10 @@
 //! The provider is called from `intel_queue.rs` when `context_provider.is_remote()`.
 //! On failure, the caller falls back to the PTY path transparently.
 
+use std::time::{Duration, Instant};
+
 use crate::context_provider::glean::GleanMcpClient;
+use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
 use super::prompts::{parse_intelligence_response, IntelligenceContext};
 
@@ -52,11 +55,260 @@ impl GleanIntelligenceProvider {
         }
     }
 
-    /// Full entity intelligence enrichment via Glean `chat`.
+    /// Full entity intelligence enrichment via Glean — tries parallel first, legacy fallback.
     ///
     /// Returns `IntelligenceJson` on success, or an error string for fallback.
     /// The caller (`intel_queue.rs`) falls back to PTY on any error.
     pub async fn enrich_entity(
+        &self,
+        entity_id: &str,
+        entity_type: &str,
+        entity_name: &str,
+        ctx: &IntelligenceContext,
+        relationship: Option<&str>,
+    ) -> Result<IntelligenceJson, String> {
+        // Try parallel dimension fan-out first
+        match self
+            .enrich_entity_parallel(entity_id, entity_type, entity_name, ctx, relationship)
+            .await
+        {
+            Ok(intel) => Ok(intel),
+            Err(e) => {
+                log::warn!(
+                    "[I574] Parallel Glean enrichment failed for {}, falling back to legacy: {}",
+                    entity_name,
+                    e
+                );
+                self.enrich_entity_legacy(entity_id, entity_type, entity_name, ctx, relationship)
+                    .await
+            }
+        }
+    }
+
+    /// I574: Parallel per-dimension Glean enrichment.
+    ///
+    /// Spawns 6 concurrent Glean `chat` calls (one per dimension group),
+    /// each with a 30s timeout. Merges successful dimensions into a single
+    /// `IntelligenceJson`. Falls back to legacy if 0 dimensions succeed.
+    pub async fn enrich_entity_parallel(
+        &self,
+        entity_id: &str,
+        entity_type: &str,
+        entity_name: &str,
+        ctx: &IntelligenceContext,
+        relationship: Option<&str>,
+    ) -> Result<IntelligenceJson, String> {
+        let overall_start = Instant::now();
+        let is_incremental = ctx.prior_intelligence.is_some();
+
+        // Build 6 dimension prompts
+        let prompts: Vec<(String, String)> = DIMENSION_NAMES
+            .iter()
+            .map(|dim| {
+                let prompt = dimension_prompts::build_glean_dimension_prompt(
+                    dim,
+                    entity_name,
+                    entity_type,
+                    relationship,
+                    ctx,
+                    is_incremental,
+                );
+                (dim.to_string(), prompt)
+            })
+            .collect();
+
+        log::info!(
+            "[I574] Glean parallel enrichment for {} ({}) — {} dimensions, incremental={}",
+            entity_name,
+            entity_type,
+            prompts.len(),
+            is_incremental,
+        );
+
+        // Clone values needed by spawned tasks (must be 'static)
+        let endpoint = self.endpoint.clone();
+        let entity_id_owned = entity_id.to_string();
+        let entity_type_owned = entity_type.to_string();
+        let entity_name_owned = entity_name.to_string();
+
+        // Spawn 6 concurrent tasks
+        let mut handles = Vec::with_capacity(6);
+        let mut wrote_debug_file = false;
+
+        for (dim_name, prompt) in prompts {
+            let ep = endpoint.clone();
+            let eid = entity_id_owned.clone();
+            let etype = entity_type_owned.clone();
+            let ename = entity_name_owned.clone();
+            let is_first = !wrote_debug_file;
+            wrote_debug_file = true;
+
+            let handle = tokio::spawn(async move {
+                let start = Instant::now();
+                let client = GleanMcpClient::new(&ep);
+
+                let response_result = tokio::time::timeout(
+                    Duration::from_secs(30),
+                    client.chat(&prompt, None),
+                )
+                .await;
+
+                let elapsed_ms = start.elapsed().as_millis();
+
+                let response_text = match response_result {
+                    Ok(Ok(text)) => text,
+                    Ok(Err(e)) => {
+                        log::warn!(
+                            "[I574] Glean dimension {} for {} — failed in {}ms: {}",
+                            dim_name, ename, elapsed_ms, e
+                        );
+                        return (dim_name, Err(format!("chat failed: {}", e)));
+                    }
+                    Err(_) => {
+                        log::warn!(
+                            "[I574] Glean dimension {} for {} — timed out after {}ms",
+                            dim_name, ename, elapsed_ms
+                        );
+                        return (dim_name, Err("timed out after 30s".to_string()));
+                    }
+                };
+
+                log::info!(
+                    "[I574] Glean dimension {} for {} — {}ms, {} chars",
+                    dim_name, ename, elapsed_ms, response_text.len()
+                );
+
+                // Write debug file for the first dimension only
+                if is_first {
+                    let debug_path =
+                        std::env::temp_dir().join("dailyos-glean-response.txt");
+                    if let Err(e) = std::fs::write(&debug_path, &response_text) {
+                        log::warn!("[I574] Failed to write debug response: {}", e);
+                    } else {
+                        log::info!(
+                            "[I574] Glean dimension response written to {}",
+                            debug_path.display()
+                        );
+                    }
+                }
+
+                // Build a minimal manifest for parsing
+                let manifest = vec![SourceManifestEntry {
+                    filename: format!("glean_chat_{}", dim_name),
+                    content_type: Some("glean_synthesis".to_string()),
+                    format: Some("json".to_string()),
+                    modified_at: chrono::Utc::now().to_rfc3339(),
+                    selected: true,
+                    skip_reason: None,
+                }];
+
+                let parse_result = parse_intelligence_response(
+                    &response_text,
+                    &eid,
+                    &etype,
+                    1,
+                    manifest,
+                );
+
+                match parse_result {
+                    Ok(intel) => (dim_name, Ok(intel)),
+                    Err(e) => {
+                        log::warn!(
+                            "[I574] Glean dimension {} for {} — parse failed: {}",
+                            dim_name, ename, e
+                        );
+                        (dim_name, Err(format!("parse failed: {}", e)))
+                    }
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        // Collect results
+        let mut combined = IntelligenceJson::default();
+        let mut succeeded = 0u32;
+        let mut failed_dims = Vec::new();
+
+        for handle in handles {
+            match handle.await {
+                Ok((dim_name, Ok(partial))) => {
+                    if let Err(e) =
+                        dimension_prompts::merge_dimension_into(&mut combined, &dim_name, &partial)
+                    {
+                        log::warn!("[I574] Failed to merge dimension {}: {}", dim_name, e);
+                        failed_dims.push(dim_name);
+                    } else {
+                        succeeded += 1;
+                    }
+                }
+                Ok((dim_name, Err(_))) => {
+                    failed_dims.push(dim_name);
+                }
+                Err(e) => {
+                    log::warn!("[I574] Dimension task panicked: {}", e);
+                }
+            }
+        }
+
+        let total_ms = overall_start.elapsed().as_millis();
+        log::info!(
+            "[I574] Glean parallel: {}/6 dimensions succeeded for {} in {}ms (failed: {:?})",
+            succeeded,
+            entity_name,
+            total_ms,
+            failed_dims,
+        );
+
+        if succeeded == 0 {
+            return Err(format!(
+                "All 6 Glean dimensions failed for {}",
+                entity_name
+            ));
+        }
+
+        // Set metadata on combined result
+        combined.enriched_at = chrono::Utc::now().to_rfc3339();
+        // Build source manifest with a single glean_chat entry
+        if combined.source_manifest.is_empty() {
+            combined.source_manifest.push(SourceManifestEntry {
+                filename: "glean_chat".to_string(),
+                content_type: Some("glean_synthesis".to_string()),
+                format: Some("json".to_string()),
+                modified_at: chrono::Utc::now().to_rfc3339(),
+                selected: true,
+                skip_reason: None,
+            });
+        }
+
+        // Merge with existing DB intelligence (same pattern as legacy)
+        let intel = {
+            let existing = crate::db::ActionDb::open()
+                .ok()
+                .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
+            match existing {
+                Some(existing) => merge_glean_into_existing(existing, combined),
+                None => combined,
+            }
+        };
+
+        log::info!(
+            "[I574] Glean parallel enrichment parsed for {} — assessment: {}, risks: {}, wins: {}, stakeholders: {}",
+            entity_name,
+            intel.executive_assessment.is_some(),
+            intel.risks.len(),
+            intel.recent_wins.len(),
+            intel.stakeholder_insights.len(),
+        );
+
+        Ok(intel)
+    }
+
+    /// Legacy monolithic Glean enrichment (single chat call).
+    ///
+    /// Kept as fallback for when parallel dimension fan-out fails.
+    /// Returns `IntelligenceJson` on success, or an error string for fallback.
+    pub async fn enrich_entity_legacy(
         &self,
         entity_id: &str,
         entity_type: &str,
