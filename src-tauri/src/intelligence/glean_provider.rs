@@ -678,6 +678,14 @@ pub fn emit_glean_signals(
             }
         }
     }
+
+    // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
+    // data flows immediately into the 6 health dimensions.
+    if entity_type == "account" {
+        if let Err(e) = crate::services::intelligence::recompute_entity_health(db, entity_id, "account") {
+            log::warn!("Health recompute failed for {} after Glean signals: {}", entity_id, e);
+        }
+    }
 }
 
 /// I576: Source-aware reconciliation of enrichment output with existing intelligence.
