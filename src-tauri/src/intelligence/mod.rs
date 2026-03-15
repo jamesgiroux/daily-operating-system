@@ -1,5 +1,6 @@
 pub mod compute;
 pub mod consistency;
+pub mod dimension_prompts;
 pub mod glean_prompts;
 pub mod glean_provider;
 pub mod health_scoring;
