@@ -652,6 +652,7 @@ pub fn run() {
             commands::save_report,
             // I261: Intelligence Field Editing
             commands::update_intelligence_field,
+            commands::dismiss_intelligence_item,
             commands::update_stakeholders,
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
