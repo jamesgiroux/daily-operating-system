@@ -68,29 +68,58 @@ function threatBadge(level?: string): { label: string; cls: string } {
   }
 }
 
+function normalizeChangeType(changeType: string): string {
+  return changeType.toLowerCase().replace(/[_\s-]/g, "");
+}
+
 function changeIconClass(changeType: string): string {
-  switch (changeType.toLowerCase().replace(/[_\s-]/g, "")) {
+  switch (normalizeChangeType(changeType)) {
     case "departure":
       return css.changeIconDeparture;
     case "hire":
       return css.changeIconHire;
     case "promotion":
+    case "rolechange":
       return css.changeIconPromotion;
+    case "reorg":
+      return css.changeIconReorg;
     default:
       return css.changeIconDefault;
   }
 }
 
 function changeIconChar(changeType: string): string {
-  switch (changeType.toLowerCase().replace(/[_\s-]/g, "")) {
+  switch (normalizeChangeType(changeType)) {
     case "departure":
       return "\u2197"; // ↗
     case "hire":
       return "+";
     case "promotion":
       return "\u2191"; // ↑
+    case "rolechange":
+      return "\u21c4"; // ⇄
+    case "reorg":
+      return "\u2725"; // ✥
     default:
       return "\u2022"; // bullet
+  }
+}
+
+function changeTypeLabel(changeType: string): string {
+  switch (normalizeChangeType(changeType)) {
+    case "departure":
+      return "Departure";
+    case "hire":
+      return "New Hire";
+    case "promotion":
+      return "Promotion";
+    case "rolechange":
+      return "Role Change";
+    case "reorg":
+      return "Reorganization";
+    default:
+      // Title-case the raw value
+      return changeType.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }
 
@@ -193,60 +222,56 @@ export function StrategicLandscape({
       {hasCompetitors && (
         <div className={css.subsection}>
           <h3 className={css.subsectionLabel}>Competitive Landscape</h3>
-          <div className={css.threatMatrix}>
-            {competitors.map((c, i) => {
-              const badge = c.threatLevel ? threatBadge(c.threatLevel) : null;
-              const path = `competitiveContext[${i}].context`;
-              return (
-                <div key={i} className={css.threatRow}>
-                  <div className={css.competitorCell}>
+          {competitors.map((c, i) => {
+            const badge = c.threatLevel ? threatBadge(c.threatLevel) : null;
+            const path = `competitiveContext[${i}].context`;
+            return (
+              <div key={i} className={css.competitorRow}>
+                <div className={css.competitorBody}>
+                  <div className={css.competitorHeader}>
                     <span className={css.competitorName}>{c.competitor}</span>
                     {badge && (
                       <span className={`${css.badge} ${badge.cls}`}>{badge.label}</span>
                     )}
                   </div>
-                  <div>
-                    {c.context && (
-                      onUpdateField ? (
-                        <EditableText
-                          value={c.context}
-                          onChange={(v) => onUpdateField(path, v)}
-                          as="p"
-                          multiline
-                          className={css.threatContext}
-                        />
-                      ) : (
-                        <p className={css.threatContext}>{c.context}</p>
-                      )
-                    )}
-                    <ProvenanceTag itemSource={c.itemSource} discrepancy={c.discrepancy} />
-                  </div>
-                  {showActions ? (
-                    <div className={css.threatActions}>
-                      {onItemFeedback && (
-                        <IntelligenceFeedback
-                          value={getItemFeedback?.(path) ?? null}
-                          onFeedback={(type) => onItemFeedback(path, type)}
-                        />
-                      )}
-                      {onUpdateField && (
-                        <button
-                          type="button"
-                          className={css.dismissButton}
-                          onClick={() => onUpdateField(path, "")}
-                          title="Dismiss"
-                        >
-                          <X size={13} />
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div />
+                  {c.context && (
+                    onUpdateField ? (
+                      <EditableText
+                        value={c.context}
+                        onChange={(v) => onUpdateField(path, v)}
+                        as="p"
+                        multiline
+                        className={css.threatContext}
+                      />
+                    ) : (
+                      <p className={css.threatContext}>{c.context}</p>
+                    )
                   )}
+                  <ProvenanceTag itemSource={c.itemSource} discrepancy={c.discrepancy} />
                 </div>
-              );
-            })}
-          </div>
+                {showActions && (
+                  <span className={css.itemActions}>
+                    {onItemFeedback && (
+                      <IntelligenceFeedback
+                        value={getItemFeedback?.(path) ?? null}
+                        onFeedback={(type) => onItemFeedback(path, type)}
+                      />
+                    )}
+                    {onUpdateField && (
+                      <button
+                        type="button"
+                        className={css.dismissButton}
+                        onClick={() => onUpdateField(path, "")}
+                        title="Dismiss"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -256,25 +281,32 @@ export function StrategicLandscape({
           <h3 className={css.subsectionLabel}>Organizational Changes</h3>
           {orgChanges.map((change, i) => {
             const path = `organizationalChanges[${i}].person`;
-            const detail = [change.from, change.to].filter(Boolean).join(" \u2192 ");
+            const transition = [change.from, change.to].filter(Boolean);
+            const hasTransition = transition.length > 0;
             return (
               <div key={i} className={css.changeRow}>
                 <div className={changeIconClass(change.changeType)}>
                   {changeIconChar(change.changeType)}
                 </div>
                 <div className={css.changeBody}>
-                  <div>
+                  <div className={css.changeHeader}>
                     <span className={css.changeName}>{change.person}</span>
-                    {detail && (
-                      <span className={css.changeDetail}>{` \u2014 ${detail}`}</span>
+                    <span className={css.changeTypeBadge}>
+                      {changeTypeLabel(change.changeType)}
+                    </span>
+                  </div>
+                  {hasTransition && (
+                    <p className={css.changeTransition}>
+                      {transition.join(" \u2192 ")}
+                    </p>
+                  )}
+                  <div className={css.changeMeta}>
+                    {change.detectedAt && (
+                      <span>Detected {formatDate(change.detectedAt)}</span>
                     )}
+                    <ProvenanceTag itemSource={change.itemSource} discrepancy={change.discrepancy} />
                   </div>
                 </div>
-                {change.detectedAt && (
-                  <span className={css.changeDate}>
-                    Detected {formatDate(change.detectedAt)}
-                  </span>
-                )}
                 {onItemFeedback && (
                   <span className={css.itemActions}>
                     <IntelligenceFeedback
