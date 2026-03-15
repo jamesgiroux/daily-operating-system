@@ -3020,3 +3020,69 @@ pub async fn dev_explore_glean_tools(
 
     Ok(report)
 }
+
+// ---------------------------------------------------------------------------
+// I535 Step 9 — Discover accounts from Glean
+// ---------------------------------------------------------------------------
+
+/// Use Glean's MCP chat tool to discover accounts the user is involved with.
+///
+/// Returns a list of `DiscoveredAccount` items with `already_in_dailyos` set
+/// to `true` for any account whose name (case-insensitive) already exists in
+/// the local database.
+#[tauri::command]
+pub async fn discover_accounts_from_glean(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::intelligence::glean_provider::DiscoveredAccount>, String> {
+    use crate::intelligence::glean_provider::GleanIntelligenceProvider;
+
+    // 1. Require a Glean endpoint
+    let provider = state.context_provider();
+    let endpoint = provider
+        .remote_endpoint()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Glean not connected".to_string())?;
+
+    // 2. Resolve user identity from config + Google token
+    let user_name = {
+        let guard = state.config.read().map_err(|_| "Config lock poisoned".to_string())?;
+        guard
+            .as_ref()
+            .and_then(|cfg| cfg.user_name.clone())
+            .unwrap_or_default()
+    };
+    let user_email = crate::google_api::token_store::peek_account_email()
+        .unwrap_or_default();
+
+    if user_email.is_empty() {
+        return Err("No user email available — sign in to Google first".to_string());
+    }
+
+    // 3. Call Glean discovery
+    let glean = GleanIntelligenceProvider::new(&endpoint);
+    let mut accounts = glean
+        .discover_accounts(&user_email, &user_name)
+        .await
+        .map_err(|e| format!("Glean discovery failed: {e}"))?;
+
+    // 4. Check each discovered account against existing DB accounts
+    let existing_names: Vec<String> = state.with_db_read(|db| {
+        let all = db.get_all_accounts().map_err(|e| e.to_string())?;
+        Ok(all.into_iter().map(|a| a.name.to_lowercase()).collect())
+    })?;
+
+    for account in &mut accounts {
+        let lower = account.name.to_lowercase();
+        if existing_names.iter().any(|n| n == &lower) {
+            account.already_in_dailyos = true;
+        }
+    }
+
+    log::info!(
+        "[I535] Discovered {} accounts from Glean ({} already in DailyOS)",
+        accounts.len(),
+        accounts.iter().filter(|a| a.already_in_dailyos).count()
+    );
+
+    Ok(accounts)
+}

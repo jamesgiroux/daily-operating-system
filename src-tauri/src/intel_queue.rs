@@ -1439,6 +1439,11 @@ pub fn write_enrichment_results(
     // Invalidate cached reports when entity intelligence is refreshed (I397)
     let _ = crate::reports::invalidation::mark_reports_stale(&db, &input.entity_id);
 
+    // I535 Step 11: Dual-write commitments from Glean enrichment to captured_commitments
+    if input.entity_type == "account" {
+        dual_write_enrichment_commitments(&db, &input.entity_id, &final_intel);
+    }
+
     // I338: Regenerate person files after intelligence enrichment
     if input.entity_type == "person" {
         if let Ok(Some(person)) = db.get_person(&input.entity_id) {
@@ -1673,6 +1678,89 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
         meeting_ids.len(),
         entity_id,
     );
+}
+
+/// I535 Step 11: Dual-write commitments from Glean enrichment to `captured_commitments`.
+///
+/// Writes `open_commitments` and `success_plan_signals.stated_objectives` from the
+/// intelligence output, mirroring the pattern in `transcript.rs:556-598`.
+/// Uses INSERT OR IGNORE to avoid duplicates.
+fn dual_write_enrichment_commitments(
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    intel: &IntelligenceJson,
+) {
+    let now = Utc::now().to_rfc3339();
+    let source_label = format!("glean_enrichment:{}", account_id);
+
+    // 1. Write open_commitments
+    if let Some(ref commitments) = intel.open_commitments {
+        for commitment in commitments {
+            let commit_id = uuid::Uuid::new_v4().to_string();
+            let owner = commitment.owner.as_deref().unwrap_or("joint");
+            if let Err(e) = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
+                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, 'medium', ?6, 0, ?7)",
+                rusqlite::params![
+                    commit_id,
+                    account_id,
+                    commitment.description,
+                    owner,
+                    commitment.due_date,
+                    source_label,
+                    now,
+                ],
+            ) {
+                log::warn!("Failed to insert captured_commitment from Glean enrichment: {}", e);
+            }
+        }
+    }
+
+    // 2. Write stated_objectives from success_plan_signals
+    if let Some(ref signals) = intel.success_plan_signals {
+        for objective in &signals.stated_objectives {
+            let commit_id = uuid::Uuid::new_v4().to_string();
+            let owner = objective.owner.as_deref().unwrap_or("joint");
+            if let Err(e) = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
+                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+                rusqlite::params![
+                    commit_id,
+                    account_id,
+                    objective.objective,
+                    owner,
+                    objective.target_date,
+                    objective.confidence,
+                    source_label,
+                    now,
+                ],
+            ) {
+                log::warn!("Failed to insert stated_objective from Glean enrichment: {}", e);
+            }
+        }
+    }
+
+    // 3. Emit signal for the dual-write
+    let commitment_count = intel.open_commitments.as_ref().map_or(0, |c| c.len())
+        + intel.success_plan_signals.as_ref().map_or(0, |s| s.stated_objectives.len());
+    if commitment_count > 0 {
+        let value = serde_json::json!({
+            "count": commitment_count,
+            "source": "glean_enrichment",
+        })
+        .to_string();
+        if let Err(e) = crate::signals::bus::emit_signal(
+            db,
+            "account",
+            account_id,
+            "commitment_captured",
+            "glean",
+            Some(&value),
+            0.7,
+        ) {
+            log::warn!("Failed to emit commitment_captured signal: {}", e);
+        }
+    }
 }
 
 // =============================================================================

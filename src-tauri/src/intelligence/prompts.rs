@@ -2745,6 +2745,7 @@ fn try_parse_json_response(
         product_adoption: ai_resp.product_adoption,
         nps_csat: ai_resp.nps_csat,
         source_attribution: ai_resp.source_attribution,
+        gong_call_summaries: Vec::new(),
         success_plan_signals: ai_resp.success_plan_signals,
     })
 }

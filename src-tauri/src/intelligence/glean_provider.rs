@@ -360,8 +360,7 @@ fn merge_glean_into_existing(
     merge_option!(success_plan_signals);
 
     // Glean-specific fields
-    // (salesforce_context, gong_call_summaries, org_chart_changes are Glean-only
-    //  and parsed into the existing I508 fields above, not separate fields)
+    merge_vec!(gong_call_summaries);
 
     // Update metadata
     existing.enriched_at = glean.enriched_at;

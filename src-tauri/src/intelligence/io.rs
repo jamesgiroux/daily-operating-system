@@ -619,6 +619,23 @@ pub struct SatisfactionData {
     pub source: Option<String>,
 }
 
+/// A Gong call summary produced by Glean enrichment (I535).
+///
+/// Contains key metadata from a recorded call — title, date, participants,
+/// topic summary, and overall sentiment. Used as supplementary context
+/// during transcript processing to connect prior call history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GongCallSummary {
+    pub title: String,
+    pub date: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub participants: Vec<String>,
+    pub key_topics: String,
+    /// "positive" | "neutral" | "negative"
+    pub sentiment: String,
+}
+
 /// Top-level intelligence file (intelligence.json).
 ///
 /// Entity-generic — same schema for accounts, projects, and people per ADR-0057.
@@ -763,6 +780,10 @@ pub struct IntelligenceJson {
     // Cross-cutting: source attribution (I507)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
+
+    // I535: Gong call summaries from Glean enrichment (Glean-only field)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gong_call_summaries: Vec<GongCallSummary>,
 
     // I554: Success plan signals synthesized from aggregate context
     #[serde(default, skip_serializing_if = "Option::is_none")]
