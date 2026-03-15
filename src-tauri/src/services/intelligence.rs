@@ -18,6 +18,13 @@ pub async fn enrich_entity(
         IntelRequest,
     };
 
+    log::warn!(
+        "[I535] enrich_entity ENTERED: entity_id={}, type={}, provider={}",
+        entity_id,
+        entity_type,
+        state.context_provider().provider_name(),
+    );
+
     let request = IntelRequest::new(entity_id, entity_type, IntelPriority::Manual);
 
     // Manual refresh: clear circuit breaker so enrichment proceeds (I410)
@@ -29,7 +36,17 @@ pub async fn enrich_entity(
         })
         .await;
 
-    let input = gather_enrichment_input(state, &request)?;
+    let input = match gather_enrichment_input(state, &request) {
+        Ok(input) => input,
+        Err(e) => {
+            log::warn!(
+                "[I535] gather_enrichment_input FAILED for {}: {}",
+                request.entity_id,
+                e
+            );
+            return Err(e);
+        }
+    };
 
     let ai_config = state
         .config
@@ -38,20 +55,90 @@ pub async fn enrich_entity(
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
 
-    // Run PTY enrichment on a blocking thread and gate heavy work so UI-facing
-    // manual refreshes cannot monopolize the async runtime.
+    // I535/ADR-0100: Glean-first enrichment for manual refresh.
+    // Try Glean chat if connected, fall back to PTY on failure.
     let _permit = state
         .heavy_work_semaphore
         .acquire()
         .await
         .map_err(|_| "Heavy work semaphore closed".to_string())?;
-    let input_for_enrichment = input.clone();
-    let ai_config_for_enrichment = ai_config.clone();
-    let parsed = tauri::async_runtime::spawn_blocking(move || {
-        run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
-    })
-    .await
-    .map_err(|e| format!("Enrichment task panicked: {}", e))??;
+
+    let provider = state.context_provider();
+    let is_remote = provider.is_remote();
+    let glean_endpoint = provider.remote_endpoint().map(|s| s.to_string());
+    log::warn!(
+        "[I535] enrich_entity: provider={}, is_remote={}, endpoint={:?}, has_ctx={}, entity={} ({})",
+        provider.provider_name(),
+        is_remote,
+        glean_endpoint.is_some(),
+        input.intelligence_context.is_some(),
+        input.entity_name,
+        input.entity_type,
+    );
+    let parsed = if is_remote {
+        // Try Glean-first path
+        let mut glean_result = None;
+        if let (Some(ref endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context) {
+            let provider =
+                crate::intelligence::glean_provider::GleanIntelligenceProvider::new(endpoint);
+            match provider
+                .enrich_entity(
+                    &input.entity_id,
+                    &input.entity_type,
+                    &input.entity_name,
+                    ctx,
+                    input.relationship.as_deref(),
+                )
+                .await
+            {
+                Ok(intel) => {
+                    log::info!(
+                        "[I535] Manual Glean enrichment succeeded for {}",
+                        input.entity_name
+                    );
+                    let inferred = if let Ok(raw) = serde_json::to_string(&intel) {
+                        crate::intelligence::extract_inferred_relationships(&raw)
+                    } else {
+                        Vec::new()
+                    };
+                    glean_result = Some(crate::intel_queue::EnrichmentParseResult {
+                        intel,
+                        inferred_relationships: inferred,
+                    });
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[I535] Manual Glean enrichment failed for {}, falling back to PTY: {}",
+                        input.entity_name,
+                        e
+                    );
+                }
+            }
+        }
+
+        match glean_result {
+            Some(parsed) => parsed,
+            None => {
+                // Fallback to PTY
+                let input_for_enrichment = input.clone();
+                let ai_config_for_enrichment = ai_config.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
+                })
+                .await
+                .map_err(|e| format!("Enrichment task panicked: {}", e))??
+            }
+        }
+    } else {
+        // Local-only: direct PTY path
+        let input_for_enrichment = input.clone();
+        let ai_config_for_enrichment = ai_config.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            run_enrichment(&input_for_enrichment, &ai_config_for_enrichment)
+        })
+        .await
+        .map_err(|e| format!("Enrichment task panicked: {}", e))??
+    };
 
     let final_intel = write_enrichment_results(state, &input, &parsed.intel, Some(&ai_config))?;
     if !parsed.inferred_relationships.is_empty() {
@@ -497,7 +584,7 @@ pub async fn generate_risk_briefing(
                 &account_id,
                 config.user_name.clone(),
                 config.ai_models.clone(),
-                app_state.context_provider.as_ref(),
+                &*app_state.context_provider(),
             )?
         };
 
@@ -977,6 +1064,9 @@ mod live_acceptance_tests {
             file_manifest: Vec::new(),
             file_count: 0,
             computed_health: None,
+            entity_name: String::new(),
+            relationship: None,
+            intelligence_context: None,
         };
 
         let first = write_enrichment_results(&state, &input, &contradictory, None)

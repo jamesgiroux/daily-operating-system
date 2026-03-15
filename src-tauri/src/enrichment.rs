@@ -66,7 +66,7 @@ pub async fn run_enrichment_processor(state: Arc<AppState>) {
 /// Check if we're in Glean mode (any strategy). In Glean mode, Clay and
 /// Gravatar enrichment are disabled — Glean replaces these data sources.
 fn is_glean_mode(state: &AppState) -> bool {
-    state.context_provider.provider_name() == "glean"
+    state.context_provider().provider_name() == "glean"
 }
 
 /// Run one sweep: Clay enrichment first (higher priority), then Gravatar.
