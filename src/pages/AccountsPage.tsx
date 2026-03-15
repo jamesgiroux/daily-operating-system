@@ -150,7 +150,7 @@ export default function AccountsPage() {
   // I494: Check Glean connection status on mount
   useEffect(() => {
     invoke<{ status: string }>("get_glean_auth_status")
-      .then((result) => setGleanConnected(result.status === "Authenticated"))
+      .then((result) => setGleanConnected(result.status === "authenticated"))
       .catch(() => setGleanConnected(false));
   }, []);
 
@@ -172,10 +172,18 @@ export default function AccountsPage() {
   // I494: Add a discovered account
   async function handleAddDiscovered(account: DiscoveredAccount) {
     try {
-      await invoke<string>("create_account", {
-        name: account.name,
-        accountType: "customer",
-        parentId: null,
+      await invoke<string>("import_account_from_glean", {
+        request: {
+          name: account.name,
+          myRole: account.myRole,
+          evidence: account.evidence,
+          source: account.source,
+          domain: account.domain,
+          industry: account.industry,
+          contextPreview: account.contextPreview,
+          sections: [],
+          summary: null,
+        },
       });
       setAddedNames((prev) => new Set(prev).add(account.name.toLowerCase()));
       await loadAccounts();
@@ -207,10 +215,18 @@ export default function AccountsPage() {
   async function handleAddFromBriefing() {
     if (!ephemeralBriefing) return;
     try {
-      await invoke<string>("create_account", {
-        name: ephemeralBriefing.name,
-        accountType: "customer",
-        parentId: null,
+      await invoke<string>("import_account_from_glean", {
+        request: {
+          name: ephemeralBriefing.name,
+          summary: ephemeralBriefing.summary,
+          sections: ephemeralBriefing.sections,
+          contextPreview: ephemeralBriefing.summary,
+          myRole: null,
+          evidence: null,
+          source: "Glean briefing",
+          domain: null,
+          industry: null,
+        },
       });
       setEphemeralAdded(true);
       await loadAccounts();
@@ -645,6 +661,7 @@ export default function AccountsPage() {
                       (a.industry ?? "").toLowerCase().includes(q)
                     );
                   })
+                  .slice(0, 50)
                   .map((account, i, arr) => {
                     const isAdded = account.alreadyInDailyos || addedNames.has(account.name.toLowerCase());
                     return (
@@ -746,6 +763,26 @@ export default function AccountsPage() {
                     );
                   })}
               </div>
+              {discoveredAccounts.filter((a) => {
+                if (!discoveryFilter) return true;
+                const q = discoveryFilter.toLowerCase();
+                return (
+                  a.name.toLowerCase().includes(q) ||
+                  (a.domain ?? "").toLowerCase().includes(q) ||
+                  (a.industry ?? "").toLowerCase().includes(q)
+                );
+              }).length > 50 && (
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    margin: "10px 0 0 0",
+                  }}
+                >
+                  Showing first 50. Use search to narrow the list.
+                </p>
+              )}
             </>
           )}
 

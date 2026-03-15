@@ -64,6 +64,7 @@ function resolveStatus(id: string, result: unknown): { connected: boolean; label
 export default function ConnectorsGrid() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<Record<string, ConnectionStatus>>({});
+  const [gleanMode, setGleanMode] = useState(false);
 
   const refreshConnector = useCallback((id: string, statusCommand: string) => {
     invoke(statusCommand)
@@ -87,6 +88,10 @@ export default function ConnectorsGrid() {
       refreshConnector(conn.id, conn.statusCommand);
     }
 
+    invoke<{ mode: string }>("get_context_mode")
+      .then((result) => setGleanMode(result.mode === "Glean"))
+      .catch(() => setGleanMode(false));
+
     // Listen for Google auth changes so the header dot updates live
     const unlisten = listen("google-auth-changed", () => {
       const google = connectors.find((c) => c.id === "google");
@@ -102,6 +107,20 @@ export default function ConnectorsGrid() {
 
   return (
     <div>
+      {gleanMode && (
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 13,
+            lineHeight: 1.6,
+            color: "var(--color-text-secondary)",
+            margin: "0 0 16px 0",
+          }}
+        >
+          Salesforce, Zendesk, Gong, and directory context are currently managed through Glean.
+          The connectors below still control local-device sources and optional enrichers.
+        </p>
+      )}
       {connectors.map((conn) => {
         const status = statuses[conn.id];
         const isExpanded = expandedId === conn.id;
