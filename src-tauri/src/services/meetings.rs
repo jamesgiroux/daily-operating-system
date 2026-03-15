@@ -2608,6 +2608,7 @@ pub async fn attach_meeting_transcript(
     let meeting_id = meeting.id.clone();
     let meeting_clone = meeting.clone();
     let file_path_for_record = file_path.clone();
+    let progress_handle = app_handle.clone();
 
     let result = match tauri::async_runtime::spawn_blocking(move || {
         let workspace = std::path::Path::new(&workspace_path);
@@ -2618,6 +2619,7 @@ pub async fn attach_meeting_transcript(
             workspace,
             &file_path,
             &meeting_clone,
+            Some(&progress_handle),
             db.as_ref(),
             &profile,
             Some(&ai_config),
