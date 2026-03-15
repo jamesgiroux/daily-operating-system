@@ -35,6 +35,20 @@
   padding: 0;
 }
 
+.bannerDismiss {
+  font-size: 16px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 12px;
+  line-height: 1;
+}
+
+.bannerDismiss:hover {
+  color: var(--color-text-secondary);
+}
+
 /* ── Hero ── */
 
 .hero {
@@ -139,6 +153,40 @@
 
 .claudeCodeWrapper {
   margin-bottom: 32px;
+}
+
+.systemAction {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.systemActionButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.systemActionButton:hover {
+  background: var(--color-spice-turmeric-12, rgba(201, 162, 39, 0.08));
+}
+
+.systemActionHint {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
 }
 
 /* ── Icon utilities ── */

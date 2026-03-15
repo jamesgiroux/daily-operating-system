@@ -27,6 +27,8 @@ interface AppStateContext {
   completeTour: () => Promise<void>;
   /** Trigger onboarding re-entry from Settings */
   resumeOnboarding: () => void;
+  /** Dismiss the setup banner — marks wizard as completed */
+  dismissSetupBanner: () => Promise<void>;
 }
 
 const defaultAppState: AppState = {
@@ -45,6 +47,7 @@ const AppStateCtx = createContext<AppStateContext>({
   clearDemo: async () => {},
   completeTour: async () => {},
   resumeOnboarding: () => {},
+  dismissSetupBanner: async () => {},
 });
 
 export function useAppState() {
@@ -106,6 +109,15 @@ export function useAppStateProvider(): AppStateContext {
     setForceOnboarding(true);
   }, []);
 
+  const dismissSetupBanner = useCallback(async () => {
+    try {
+      await invoke("set_wizard_completed");
+      setAppState((prev) => ({ ...prev, wizardCompletedAt: new Date().toISOString() }));
+    } catch (err) {
+      console.error("set_wizard_completed failed:", err);
+    }
+  }, []);
+
   return {
     appState,
     loading,
@@ -115,5 +127,6 @@ export function useAppStateProvider(): AppStateContext {
     clearDemo,
     completeTour,
     resumeOnboarding,
+    dismissSetupBanner,
   };
 }
