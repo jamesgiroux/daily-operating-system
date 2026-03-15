@@ -525,14 +525,18 @@ fn write_progressive_glean_dimension(
         }
     };
 
+    // Progressive writes within a single enrichment cycle use simple dimension
+    // merge, NOT reconciliation. Reconciliation is for cross-cycle merges
+    // (e.g., Glean refresh on top of existing PTY data). Within one cycle,
+    // the combined state is authoritative — just overlay it on existing.
     let existing = db.get_entity_intelligence(entity_id).ok().flatten();
-    let mut merged = if let Some(existing) = existing {
-        // I576: Use source-aware reconciliation even for progressive writes
-        reconcile_enrichment(
-            existing,
-            combined.clone(),
-            &["glean_crm", "glean_zendesk", "glean_gong", "glean_chat"],
-        )
+    let mut merged = if let Some(mut existing) = existing {
+        for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
+            let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
+                &mut existing, dim, combined,
+            );
+        }
+        existing
     } else {
         combined.clone()
     };
