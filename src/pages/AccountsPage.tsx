@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useNavigate } from "@tanstack/react-router";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
 import {
@@ -17,11 +18,12 @@ import {
 import { EntityRow } from "@/components/entity/EntityRow";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EmptyState } from "@/components/editorial/EmptyState";
+import { EphemeralBriefing } from "@/components/editorial/EphemeralBriefing";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatArr } from "@/lib/utils";
-import type { AccountListItem } from "@/types";
+import type { AccountListItem, DiscoveredAccount, EphemeralBriefing as EphemeralBriefingType } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 
@@ -55,6 +57,7 @@ const ACCOUNT_SECTIONS: {
 
 export default function AccountsPage() {
   const { personality } = usePersonality();
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +73,18 @@ export default function AccountsPage() {
   const [archivedAccounts, setArchivedAccounts] = useState<ArchivedAccount[]>([]);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkValue, setBulkValue] = useState("");
+
+  // I494/I495: Glean discovery and ephemeral query state
+  const [gleanConnected, setGleanConnected] = useState(false);
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
+  const [discoveryFilter, setDiscoveryFilter] = useState("");
+  const [addedNames, setAddedNames] = useState<Set<string>>(new Set());
+  const [ephemeralQuery, setEphemeralQuery] = useState("");
+  const [ephemeralLoading, setEphemeralLoading] = useState(false);
+  const [ephemeralBriefing, setEphemeralBriefing] = useState<EphemeralBriefingType | null>(null);
+  const [ephemeralAdded, setEphemeralAdded] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -131,6 +146,78 @@ export default function AccountsPage() {
       loadArchivedAccounts();
     }
   }, [archiveTab, loadAccounts, loadArchivedAccounts]);
+
+  // I494: Check Glean connection status on mount
+  useEffect(() => {
+    invoke<{ status: string }>("get_glean_auth_status")
+      .then((result) => setGleanConnected(result.status === "Authenticated"))
+      .catch(() => setGleanConnected(false));
+  }, []);
+
+  // I494: Discover accounts from Glean
+  async function handleDiscoverAccounts() {
+    setDiscoveryOpen(true);
+    setDiscoveryLoading(true);
+    setDiscoveredAccounts([]);
+    try {
+      const result = await invoke<DiscoveredAccount[]>("discover_accounts_from_glean");
+      setDiscoveredAccounts(result);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  }
+
+  // I494: Add a discovered account
+  async function handleAddDiscovered(account: DiscoveredAccount) {
+    try {
+      await invoke<string>("create_account", {
+        name: account.name,
+        accountType: "customer",
+        parentId: null,
+      });
+      setAddedNames((prev) => new Set(prev).add(account.name.toLowerCase()));
+      await loadAccounts();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // I495: Ephemeral account query
+  async function handleEphemeralQuery(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ephemeralQuery.trim()) return;
+    setEphemeralLoading(true);
+    setEphemeralBriefing(null);
+    setEphemeralAdded(false);
+    try {
+      const result = await invoke<EphemeralBriefingType>("query_ephemeral_account", {
+        name: ephemeralQuery.trim(),
+      });
+      setEphemeralBriefing(result);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setEphemeralLoading(false);
+    }
+  }
+
+  // I495: Add account from ephemeral briefing
+  async function handleAddFromBriefing() {
+    if (!ephemeralBriefing) return;
+    try {
+      await invoke<string>("create_account", {
+        name: ephemeralBriefing.name,
+        accountType: "customer",
+        parentId: null,
+      });
+      setEphemeralAdded(true);
+      await loadAccounts();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   // Load role preset for portfolio report label
 
@@ -309,7 +396,7 @@ export default function AccountsPage() {
     return stats;
   }, [activeCount]);
 
-  // Folio actions: archive toggle + new button
+  // Folio actions: archive toggle + new button + Glean buttons
   const folioActions = useMemo(() => {
     const archiveButtonStyle = {
       fontFamily: "var(--font-mono)",
@@ -333,6 +420,24 @@ export default function AccountsPage() {
         >
           {isArchived ? "\u2190 Active" : "Archive"}
         </button>
+        {!isArchived && gleanConnected && (
+          <button
+            onClick={handleDiscoverAccounts}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 500,
+              letterSpacing: "0.06em",
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+            }}
+          >
+            Discover
+          </button>
+        )}
         {!isArchived && (
           <button
             onClick={() => setCreating(true)}
@@ -355,7 +460,7 @@ export default function AccountsPage() {
         )}
       </>
     );
-  }, [isArchived]);
+  }, [isArchived, gleanConnected]);
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -454,6 +559,258 @@ export default function AccountsPage() {
           />
         )}
       </EntityListHeader>
+
+      {/* I494: Discovery panel */}
+      {discoveryOpen && !isArchived && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <h3
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: 20,
+                fontWeight: 400,
+                color: "var(--color-text-primary)",
+                margin: 0,
+              }}
+            >
+              Discovered Accounts
+            </h3>
+            <button
+              onClick={() => { setDiscoveryOpen(false); setDiscoveredAccounts([]); setDiscoveryFilter(""); }}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              Close
+            </button>
+          </div>
+
+          {discoveryLoading ? (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                color: "var(--color-text-tertiary)",
+                fontStyle: "italic",
+              }}
+            >
+              Searching your organization...
+            </p>
+          ) : discoveredAccounts.length === 0 ? (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              No accounts discovered. Try the search below for a specific account.
+            </p>
+          ) : (
+            <>
+              {/* Filter input */}
+              <input
+                type="text"
+                value={discoveryFilter}
+                onChange={(e) => setDiscoveryFilter(e.target.value)}
+                placeholder="Filter discovered accounts..."
+                style={{
+                  width: "100%",
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 13,
+                  color: "var(--color-text-primary)",
+                  background: "var(--color-paper-warm-white)",
+                  border: "1px solid var(--color-paper-linen)",
+                  borderRadius: 4,
+                  padding: "6px 10px",
+                  marginBottom: 12,
+                  boxSizing: "border-box",
+                  outline: "none",
+                }}
+              />
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {discoveredAccounts
+                  .filter((a) => {
+                    if (!discoveryFilter) return true;
+                    const q = discoveryFilter.toLowerCase();
+                    return (
+                      a.name.toLowerCase().includes(q) ||
+                      (a.domain ?? "").toLowerCase().includes(q) ||
+                      (a.industry ?? "").toLowerCase().includes(q)
+                    );
+                  })
+                  .map((account, i, arr) => {
+                    const isAdded = account.alreadyInDailyos || addedNames.has(account.name.toLowerCase());
+                    return (
+                      <div
+                        key={account.name + i}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "10px 0",
+                          borderBottom: i < arr.length - 1 ? "1px solid var(--color-rule-light)" : "none",
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                            <span
+                              style={{
+                                fontFamily: "var(--font-sans)",
+                                fontSize: 14,
+                                fontWeight: 500,
+                                color: "var(--color-text-primary)",
+                              }}
+                            >
+                              {account.name}
+                            </span>
+                            {account.domain && (
+                              <span
+                                style={{
+                                  fontFamily: "var(--font-mono)",
+                                  fontSize: 11,
+                                  color: "var(--color-text-tertiary)",
+                                }}
+                              >
+                                {account.domain}
+                              </span>
+                            )}
+                            {account.industry && (
+                              <span
+                                style={{
+                                  fontFamily: "var(--font-mono)",
+                                  fontSize: 10,
+                                  letterSpacing: "0.06em",
+                                  textTransform: "uppercase",
+                                  color: "var(--color-text-tertiary)",
+                                }}
+                              >
+                                {account.industry}
+                              </span>
+                            )}
+                          </div>
+                          {account.contextPreview && (
+                            <p
+                              style={{
+                                fontFamily: "var(--font-sans)",
+                                fontSize: 13,
+                                lineHeight: 1.5,
+                                color: "var(--color-text-secondary)",
+                                margin: "4px 0 0 0",
+                              }}
+                            >
+                              {account.contextPreview}
+                            </p>
+                          )}
+                        </div>
+                        <div style={{ marginLeft: 16, flexShrink: 0 }}>
+                          {isAdded ? (
+                            <span
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 11,
+                                fontWeight: 500,
+                                color: "var(--color-garden-sage)",
+                              }}
+                            >
+                              Added
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleAddDiscovered(account)}
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                letterSpacing: "0.06em",
+                                textTransform: "uppercase",
+                                color: "var(--color-spice-turmeric)",
+                                background: "none",
+                                border: "1px solid var(--color-spice-turmeric)",
+                                borderRadius: 4,
+                                padding: "3px 10px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Add
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          )}
+
+          <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-heavy)", margin: "20px 0" }} />
+        </div>
+      )}
+
+      {/* I495: Ephemeral account query */}
+      {gleanConnected && !isArchived && (
+        <div style={{ marginBottom: 20 }}>
+          <form onSubmit={handleEphemeralQuery} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              value={ephemeralQuery}
+              onChange={(e) => setEphemeralQuery(e.target.value)}
+              placeholder="Tell me about..."
+              style={{
+                flex: 1,
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                color: "var(--color-text-primary)",
+                background: "var(--color-paper-warm-white)",
+                border: "1px solid var(--color-paper-linen)",
+                borderRadius: 4,
+                padding: "6px 10px",
+                outline: "none",
+              }}
+            />
+            <button
+              type="submit"
+              disabled={ephemeralLoading || !ephemeralQuery.trim()}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: ephemeralLoading || !ephemeralQuery.trim() ? "var(--color-text-tertiary)" : "var(--color-spice-turmeric)",
+                background: "none",
+                border: "1px solid",
+                borderColor: ephemeralLoading || !ephemeralQuery.trim() ? "var(--color-paper-linen)" : "var(--color-spice-turmeric)",
+                borderRadius: 4,
+                padding: "5px 12px",
+                cursor: ephemeralLoading || !ephemeralQuery.trim() ? "default" : "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {ephemeralLoading ? "Searching..." : "Look up"}
+            </button>
+          </form>
+
+          {/* Ephemeral briefing result */}
+          {ephemeralBriefing && (
+            <EphemeralBriefing
+              briefing={ephemeralBriefing}
+              onAdd={ephemeralAdded ? undefined : handleAddFromBriefing}
+              onNavigate={(entityId) => navigate({ to: "/accounts/$accountId", params: { accountId: entityId } })}
+            />
+          )}
+
+          {ephemeralBriefing && (
+            <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-heavy)", margin: "0 0 16px 0" }} />
+          )}
+        </div>
+      )}
 
       {/* Create form */}
       {creating && !isArchived && (
