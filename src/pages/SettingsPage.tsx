@@ -155,7 +155,7 @@ export default function SettingsPage() {
   const search = useSearch({ from: "/settings" });
   const scrolledRef = useRef(false);
   const claudeCodeRef = useRef<HTMLDivElement>(null);
-  const { appState, resumeOnboarding } = useAppState();
+  const { appState, resumeOnboarding, dismissSetupBanner } = useAppState();
   const { status: claudeStatus, aiUnavailable } = useClaudeStatus();
 
   // Chapters: include diagnostics only in dev mode
@@ -201,6 +201,9 @@ export default function SettingsPage() {
           </span>
           <button onClick={resumeOnboarding} className={s.bannerAction}>
             Resume setup &rarr;
+          </button>
+          <button onClick={dismissSetupBanner} className={s.bannerDismiss} title="Dismiss">
+            &times;
           </button>
         </div>
       )}
@@ -268,6 +271,14 @@ export default function SettingsPage() {
           <ClaudeCodeSection />
         </div>
         <SystemStatus />
+        {appState.wizardCompletedAt && (
+          <div className={s.systemAction}>
+            <button onClick={resumeOnboarding} className={s.systemActionButton}>
+              Run Setup Again
+            </button>
+            <span className={s.systemActionHint}>Re-run the onboarding wizard to update your profile and connectors.</span>
+          </div>
+        )}
       </section>
 
       {/* ═══ DIAGNOSTICS (dev only) ═══ */}
