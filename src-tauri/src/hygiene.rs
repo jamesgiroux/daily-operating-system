@@ -1630,7 +1630,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
         // Hygiene is lowest priority — skip if heavy work is in progress.
         // Uses try_acquire to avoid blocking: if the semaphore is held by
         // intel queue PTY or embedding inference, hygiene defers to next cycle.
-        let permit = state.heavy_work_semaphore.try_acquire();
+        let permit = state.permits.pty.try_acquire();
         if permit.is_err() {
             log::debug!("HygieneLoop: skipping scan — heavy work in progress");
             state
