@@ -231,15 +231,17 @@ export default function MonthlyWrappedPage() {
 
   // Empty state
   if (!content && !generating) {
-    const monthGuess = new Date().toLocaleString("default", { month: "long", year: "numeric" });
+    const priorMonth = new Date();
+    priorMonth.setMonth(priorMonth.getMonth() - 1);
+    const monthGuess = priorMonth.toLocaleString("default", { month: "long", year: "numeric" });
     return (
       <div className={styles.emptyState}>
         <div className={styles.emptyOverline}>Monthly Wrapped</div>
         <h2 className={styles.emptyTitle}>
-          Your {monthGuess} Wrapped isn&apos;t ready yet
+          Your {monthGuess} Wrapped hasn&apos;t been generated yet
         </h2>
         <p className={styles.emptyDescription}>
-          Generate it to see how your month looked — personality type, biggest moments, hidden
+          Generate it to see how your last full month looked — personality type, biggest moments, hidden
           patterns, and more.
         </p>
         {error && (
