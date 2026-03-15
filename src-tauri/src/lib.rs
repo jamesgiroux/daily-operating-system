@@ -756,6 +756,8 @@ pub fn run() {
             commands::disconnect_glean,
             // I559: Glean Agent Validation Spike (temporary dev exploration)
             commands::dev_explore_glean_tools,
+            // I535 Step 9: Discover accounts from Glean
+            commands::discover_accounts_from_glean,
             // I427: Global Search
             commands::search_global,
             commands::rebuild_search_index,
