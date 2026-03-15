@@ -1076,7 +1076,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
     // ADR-0095: In Glean Governed mode, Gmail poller is disabled.
     // Glean indexes Gmail directly — no need for DailyOS to poll.
-    if state.context_provider.provider_name() == "glean" {
+    if state.context_provider().provider_name() == "glean" {
         let is_governed = state
             .with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))
             .map(|mode| {
