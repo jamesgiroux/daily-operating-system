@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import styles from "../onboarding.module.css";
-import type { CopyToInboxReport } from "@/types";
+import type { CopyToInboxReport, EnrichmentProgress } from "@/types";
 
 interface PrimeBriefingProps {
+  importedAccountNames?: string[];
   onComplete: () => void;
 }
 
@@ -20,10 +21,11 @@ function hasValidExtension(path: string): boolean {
   return VALID_EXTENSIONS.some(ext => lower.endsWith(`.${ext}`));
 }
 
-export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
+export function PrimeBriefing({ importedAccountNames = [], onComplete }: PrimeBriefingProps) {
   const [processing, setProcessing] = useState(false);
   const [filesAdded, setFilesAdded] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
+  const [enrichmentProgress, setEnrichmentProgress] = useState<EnrichmentProgress[]>([]);
 
   // Tauri native drag-drop listener (provides real file paths)
   useEffect(() => {
@@ -92,12 +94,80 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
     }
   }, [handleFilePaths]);
 
+  useEffect(() => {
+    if (importedAccountNames.length === 0) {
+      setEnrichmentProgress([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadStatus() {
+      try {
+        const progress = await invoke<EnrichmentProgress[]>("onboarding_enrichment_status", {
+          accountNames: importedAccountNames,
+        });
+        if (!cancelled) {
+          setEnrichmentProgress(progress);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load onboarding enrichment status:", err);
+        }
+      }
+    }
+
+    loadStatus();
+    const interval = window.setInterval(loadStatus, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [importedAccountNames]);
+
+  const completedAccounts = enrichmentProgress.filter((item) => item.status === "complete");
+  const stakeholderCount = completedAccounts.reduce((sum, item) => sum + item.stakeholderCount, 0);
+  const riskCount = completedAccounts.reduce((sum, item) => sum + item.riskCount, 0);
+  const bookReady = importedAccountNames.length > 0 && enrichmentProgress.length > 0;
+
   return (
     <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
-        title="Prime Your Briefings"
-        epigraph="Give DailyOS context about your work — the more it knows, the better your briefings."
+        title={bookReady ? "Your book is getting ready" : "Prime Your Briefings"}
+        epigraph={
+          bookReady
+            ? "Keep going now. Account enrichment continues in the background and your briefings will sharpen as it lands."
+            : "Give DailyOS context about your work — the more it knows, the better your briefings."
+        }
       />
+
+      {bookReady && (
+        <div className={styles.ruleSection}>
+          <div className={`${styles.flexCol} ${styles.gap8}`}>
+            {enrichmentProgress.map((item) => {
+              const percentage =
+                item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
+              return (
+                <div key={item.entityId} className={styles.discoveryRow}>
+                  <span className={styles.bodyText}>{item.name}</span>
+                  <span className={styles.tertiaryText}>
+                    {item.status === "complete"
+                      ? "Ready"
+                      : item.status === "analyzing"
+                        ? `Analyzing ${percentage}%`
+                        : "Queued"}
+                  </span>
+                </div>
+              );
+            })}
+            <p className={styles.bodyText}>
+              {completedAccounts.length === enrichmentProgress.length
+                ? `Your book is ready: ${completedAccounts.length} account${completedAccounts.length === 1 ? "" : "s"}, ${stakeholderCount} stakeholder${stakeholderCount === 1 ? "" : "s"}, ${riskCount} risk${riskCount === 1 ? "" : "s"}.`
+                : `Already usable now: ${completedAccounts.length}/${enrichmentProgress.length} account${enrichmentProgress.length === 1 ? "" : "s"} finished.`}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Path A: Drop zone */}
       <div
@@ -182,10 +252,10 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
           onClick={onComplete}
           className={styles.skipLink}
         >
-          Skip — I'll feed it manually later
+          Continue to DailyOS
         </button>
         <Button onClick={onComplete}>
-          Go to Dashboard
+          Continue to DailyOS
           <ArrowRight className="ml-2 size-4" />
         </Button>
       </div>
