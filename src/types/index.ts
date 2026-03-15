@@ -669,6 +669,25 @@ export type GleanAuthStatus =
   | { status: "notconfigured" }
   | { status: "authenticated"; email: string; name?: string };
 
+// I561 — Onboarding: Three Connectors
+export interface OnboardingImportResult {
+  created: number;
+  failed: string[];
+}
+
+export interface UserProfileSuggestion {
+  name: string | null;
+  title: string | null;
+  department: string | null;
+  company: string | null;
+}
+
+export interface EnrichmentProgress {
+  entityId: string;
+  name: string;
+  status: "queued" | "complete" | "failed";
+}
+
 export interface HygieneFixView {
   key: string;
   label: string;
