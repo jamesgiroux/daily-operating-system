@@ -608,13 +608,40 @@ async fn mutate_meeting_entities_and_refresh_briefing(
         state.integrations.intel_queue_wake.notify_one();
     }
 
-    let prep_rebuilt_sync = match tokio::task::block_in_place(|| {
-        crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_s)
-    }) {
-        Ok(_) => true,
+    let prep_rebuilt_sync = match crate::meeting_prep_queue::meeting_prep_blocking_inputs(state) {
+        Ok((workspace, embedding_model)) => match tauri::async_runtime::spawn_blocking({
+            let meeting_id = meeting_id_s.clone();
+            move || {
+                crate::meeting_prep_queue::generate_mechanical_prep_now_blocking(
+                    workspace,
+                    embedding_model,
+                    meeting_id,
+                )
+            }
+        })
+        .await
+        {
+            Ok(Ok(())) => true,
+            Ok(Err(err)) => {
+                log::warn!(
+                    "mutate_meeting_entities_and_refresh_briefing: immediate prep rebuild failed for {}: {}",
+                    meeting_id_s,
+                    err
+                );
+                false
+            }
+            Err(err) => {
+                log::warn!(
+                    "mutate_meeting_entities_and_refresh_briefing: prep rebuild task panicked for {}: {}",
+                    meeting_id_s,
+                    err
+                );
+                false
+            }
+        },
         Err(err) => {
             log::warn!(
-                "mutate_meeting_entities_and_refresh_briefing: immediate prep rebuild failed for {}: {}",
+                "mutate_meeting_entities_and_refresh_briefing: prep rebuild inputs failed for {}: {}",
                 meeting_id_s,
                 err
             );
@@ -2329,13 +2356,40 @@ pub async fn refresh_meeting_briefing_full(
         },
     );
 
-    let prep_rebuilt_sync = match tokio::task::block_in_place(|| {
-        crate::meeting_prep_queue::regenerate_mechanical_prep_now(state, &meeting_id_owned)
-    }) {
-        Ok(wrote) => wrote,
+    let prep_rebuilt_sync = match crate::meeting_prep_queue::meeting_prep_blocking_inputs(state) {
+        Ok((workspace, embedding_model)) => match tauri::async_runtime::spawn_blocking({
+            let meeting_id = meeting_id_owned.clone();
+            move || {
+                crate::meeting_prep_queue::regenerate_mechanical_prep_now_blocking(
+                    workspace,
+                    embedding_model,
+                    meeting_id,
+                )
+            }
+        })
+        .await
+        {
+            Ok(Ok(wrote)) => wrote,
+            Ok(Err(err)) => {
+                log::warn!(
+                    "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
+                    meeting_id_owned,
+                    err
+                );
+                false
+            }
+            Err(err) => {
+                log::warn!(
+                    "refresh_meeting_briefing_full: prep rebuild task panicked for {}: {}",
+                    meeting_id_owned,
+                    err
+                );
+                false
+            }
+        },
         Err(err) => {
             log::warn!(
-                "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
+                "refresh_meeting_briefing_full: prep rebuild inputs failed for {}: {}",
                 meeting_id_owned,
                 err
             );

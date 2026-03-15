@@ -929,13 +929,10 @@ Thanks!`;
               {intelligenceQuality?.hasNewSignals && (
                 <div className={styles.newSignalsBanner}>
                   <span>New information available since your last view</span>
-                  <button
+                  <FolioRefreshButton
                     onClick={handleRefreshIntelligence}
-                    disabled={refreshingIntel}
-                    className={clsx(styles.newSignalsRefreshBtn, refreshingIntel && styles.newSignalsRefreshBtnDisabled)}
-                  >
-                    {refreshingIntel ? "Refreshing…" : "Refresh"}
-                  </button>
+                    loading={refreshingIntel}
+                  />
                 </div>
               )}
 

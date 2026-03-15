@@ -162,29 +162,33 @@ pub async fn restore_database_from_backup(
     backup_path: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let _permit = state
-        .heavy_work_semaphore
-        .acquire()
-        .await
-        .map_err(|_| "Failed to acquire restore lock".to_string())?;
+    // I566: Timeout on user-facing permit acquisition.
+    let _permit = match tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        state.permits.user_initiated.acquire(),
+    )
+    .await
+    {
+        Ok(Ok(permit)) => permit,
+        Ok(Err(_)) => return Err("PTY permit closed".to_string()),
+        Err(_) => {
+            return Err(
+                "Background work in progress — please try again shortly".to_string(),
+            )
+        }
+    };
 
     // Drop existing DB handles before swapping files on disk.
     {
         let mut db_service_guard = state.db_service.write().await;
         *db_service_guard = None;
-        let mut db_guard = state
-            .db
-            .lock()
-            .map_err(|_| "DB lock poisoned".to_string())?;
-        *db_guard = None;
+        state.replace_sync_db(None)?;
     }
 
     if let Err(e) = crate::db_backup::restore_database_from_backup(Path::new(&backup_path)) {
         // Best-effort recovery: re-open original DB handles if restore failed.
         if let Ok(db) = crate::db::ActionDb::open() {
-            if let Ok(mut db_guard) = state.db.lock() {
-                *db_guard = Some(db);
-            }
+            let _ = state.replace_sync_db(Some(db));
             let _ = state.init_db_service().await;
         } else {
             state.set_database_recovery_required(
@@ -203,13 +207,7 @@ pub async fn restore_database_from_backup(
             return Err(detail);
         }
     };
-    {
-        let mut db_guard = state
-            .db
-            .lock()
-            .map_err(|_| "DB lock poisoned".to_string())?;
-        *db_guard = Some(reopened);
-    }
+    state.replace_sync_db(Some(reopened))?;
 
     if let Err(e) = state.init_db_service().await {
         state.set_database_recovery_required("restore_reopen_failed", e.clone());
@@ -228,11 +226,7 @@ pub async fn start_fresh_database(state: tauri::State<'_, Arc<AppState>>) -> Res
     {
         let mut db_service_guard = state.db_service.write().await;
         *db_service_guard = None;
-        let mut db_guard = state
-            .db
-            .lock()
-            .map_err(|_| "DB lock poisoned".to_string())?;
-        *db_guard = None;
+        state.replace_sync_db(None)?;
     }
     crate::db_backup::start_fresh_database()
 }

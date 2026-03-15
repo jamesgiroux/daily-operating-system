@@ -472,8 +472,9 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
 /// Generate mechanical prep for a single meeting.
 ///
 /// Uses own DB connection (split-lock pattern) to avoid blocking UI.
-fn generate_mechanical_prep(
-    state: &AppState,
+fn generate_mechanical_prep_with_inputs(
+    workspace: std::path::PathBuf,
+    embedding_model: Arc<crate::embeddings::EmbeddingModel>,
     meeting_id: &str,
     overwrite_existing: bool,
 ) -> Result<bool, String> {
@@ -495,12 +496,6 @@ fn generate_mechanical_prep(
     }
 
     // Resolve workspace path for context gathering
-    let workspace = {
-        let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
-        let config = config_guard.as_ref().ok_or("No config")?;
-        std::path::PathBuf::from(&config.workspace_path)
-    };
-
     // Phase 3: Build classified meeting JSON for gather_meeting_context
     let classified = json!({
         "id": meeting.id,
@@ -511,8 +506,8 @@ fn generate_mechanical_prep(
     });
 
     // Phase 4: Gather context (mechanical — no AI)
-    let embedding_model = if state.embedding_model.is_ready() {
-        Some(state.embedding_model.as_ref())
+    let embedding_model = if embedding_model.is_ready() {
+        Some(embedding_model.as_ref())
     } else {
         None
     };
@@ -594,6 +589,25 @@ fn generate_mechanical_prep(
     Ok(true)
 }
 
+fn generate_mechanical_prep(
+    state: &AppState,
+    meeting_id: &str,
+    overwrite_existing: bool,
+) -> Result<bool, String> {
+    let workspace = {
+        let config_guard = state.config_read_or_recover()?;
+        let config = config_guard.as_ref().ok_or("No config")?;
+        std::path::PathBuf::from(&config.workspace_path)
+    };
+
+    generate_mechanical_prep_with_inputs(
+        workspace,
+        Arc::clone(&state.embedding_model),
+        meeting_id,
+        overwrite_existing,
+    )
+}
+
 /// Generate mechanical prep immediately for a single meeting.
 ///
 /// Used by manual refresh flows that need deterministic completion before
@@ -608,6 +622,34 @@ pub fn generate_mechanical_prep_now(state: &AppState, meeting_id: &str) -> Resul
 /// the old prep visible until a replacement is successfully written.
 pub fn regenerate_mechanical_prep_now(state: &AppState, meeting_id: &str) -> Result<bool, String> {
     generate_mechanical_prep(state, meeting_id, true)
+}
+
+/// Gather the owned inputs needed to regenerate meeting prep on a blocking thread.
+pub fn meeting_prep_blocking_inputs(
+    state: &AppState,
+) -> Result<(std::path::PathBuf, Arc<crate::embeddings::EmbeddingModel>), String> {
+    let workspace = {
+        let config_guard = state.config_read_or_recover()?;
+        let config = config_guard.as_ref().ok_or("No config")?;
+        std::path::PathBuf::from(&config.workspace_path)
+    };
+    Ok((workspace, Arc::clone(&state.embedding_model)))
+}
+
+pub fn generate_mechanical_prep_now_blocking(
+    workspace: std::path::PathBuf,
+    embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    meeting_id: String,
+) -> Result<(), String> {
+    generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, false).map(|_| ())
+}
+
+pub fn regenerate_mechanical_prep_now_blocking(
+    workspace: std::path::PathBuf,
+    embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    meeting_id: String,
+) -> Result<bool, String> {
+    generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, true)
 }
 
 // =============================================================================
