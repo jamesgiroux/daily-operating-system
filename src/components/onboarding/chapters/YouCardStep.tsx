@@ -27,12 +27,14 @@ interface YouCardStepProps {
   onFormChange: (data: YouCardFormData) => void;
   onNext: () => void;
   onSkip: () => void;
+  gleanConnected?: boolean;
 }
 
-export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardStepProps) {
+export function YouCardStep({ formData, onFormChange, onNext, onSkip, gleanConnected }: YouCardStepProps) {
   const { email } = useGoogleAuth();
   const [domainInput, setDomainInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
 
   const { name, company, title, domains } = formData;
 
@@ -43,6 +45,32 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardS
       // The real name comes from Google profile — handled by set_user_profile
     }
   }, [email, name]);
+
+  // Glean pre-fill: fetch profile from org directory
+  useEffect(() => {
+    if (!gleanConnected || prefilled) return;
+    // Only pre-fill if form is mostly empty
+    if (name || company || title) return;
+
+    let cancelled = false;
+    invoke<{ name: string | null; title: string | null; department: string | null; company: string | null } | null>(
+      "onboarding_prefill_profile"
+    )
+      .then((suggestion) => {
+        if (cancelled || !suggestion) return;
+        const updates: Partial<YouCardFormData> = {};
+        if (suggestion.name && !name) updates.name = suggestion.name;
+        if (suggestion.company && !company) updates.company = suggestion.company;
+        if (suggestion.title && !title) updates.title = suggestion.title;
+        if (Object.keys(updates).length > 0) {
+          onFormChange({ ...formData, ...updates });
+          setPrefilled(true);
+        }
+      })
+      .catch(() => {}); // Non-fatal
+
+    return () => { cancelled = true; };
+  }, [gleanConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-fill first domain from Google email
   useEffect(() => {
@@ -108,6 +136,12 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardS
         title="About you"
         epigraph="A little context helps tailor your briefings. Everything here is optional."
       />
+
+      {prefilled && (
+        <p className={styles.helperText}>
+          Pre-filled from your company directory. Edit anything that needs updating.
+        </p>
+      )}
 
       <div className={`${styles.flexCol} ${styles.gap20}`}>
         {/* Name */}

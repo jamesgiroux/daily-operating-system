@@ -12,6 +12,7 @@ import styles from "../onboarding.module.css";
 interface ClaudeCodeProps {
   workspacePath: string;
   onNext: (installed: boolean) => void;
+  onSkip?: () => void;
 }
 
 interface ClaudeStatus {
@@ -20,7 +21,7 @@ interface ClaudeStatus {
   nodeInstalled: boolean;
 }
 
-export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
+export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [isDevMode, setIsDevMode] = useState(false);
@@ -198,14 +199,19 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
         </div>
       )}
 
-      {/* Continue — skip only available in dev sandbox */}
+      {/* Continue / Skip */}
       <div className={`${styles.flexEnd} ${styles.gap8}`}>
-        {isDevMode && !isReady && (
+        {!isReady && (onSkip ? (
+          <Button variant="outline" onClick={onSkip}>
+            Skip — connect later in Settings
+            <ArrowRight className="ml-2 size-4" />
+          </Button>
+        ) : isDevMode ? (
           <Button variant="outline" onClick={() => onNext(false)}>
             Skip (Dev Mode)
             <ArrowRight className="ml-2 size-4" />
           </Button>
-        )}
+        ) : null)}
         <Button onClick={() => onNext(isReady ?? false)} disabled={!isReady || (checking && !status)}>
           Continue
           <ArrowRight className="ml-2 size-4" />
