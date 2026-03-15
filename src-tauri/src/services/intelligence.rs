@@ -419,6 +419,32 @@ pub async fn update_stakeholders(
                         .ok(); // Non-fatal — don't fail the whole update
                 }
 
+                // Recompute health immediately so stakeholder changes reflect
+                // in champion_health + stakeholder_coverage dimensions without
+                // waiting for a full enrichment cycle.
+                if entity_type == "account" && !scoring_roles.is_empty() {
+                    if let Some(acct) = account.as_ref() {
+                        let health = crate::intelligence::health_scoring::compute_account_health(tx, acct, None);
+                        let health_json = serde_json::to_string(&health).ok();
+                        tx.conn.execute(
+                            "UPDATE entity_assessment SET health_json = ?1 WHERE entity_id = ?2",
+                            rusqlite::params![health_json, entity_id],
+                        ).ok();
+                        tx.conn.execute(
+                            "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
+                             VALUES (?1, 'account', ?2, ?3)
+                             ON CONFLICT(entity_id) DO UPDATE SET
+                                 health_score = excluded.health_score,
+                                 health_trend = excluded.health_trend",
+                            rusqlite::params![
+                                entity_id,
+                                health.score,
+                                serde_json::to_string(&health.trend).ok(),
+                            ],
+                        ).ok();
+                    }
+                }
+
                 crate::services::signals::emit_and_propagate(
                     tx,
                     &engine,
