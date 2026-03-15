@@ -263,6 +263,15 @@ export default function AccountDetailEditorial() {
       folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: (
         <div className={shared.folioActions}>
+          {acct.detail && !acct.detail.archived && (
+            <button
+              className={styles.refreshButton}
+              onClick={acct.handleEnrich}
+              disabled={acct.enriching}
+            >
+              {acct.enriching ? `Refreshing\u2026 ${acct.enrichSeconds ?? 0}s` : "Refresh"}
+            </button>
+          )}
           <div className={styles.reportsDropdownWrapper}>
             <button
               onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
@@ -304,16 +313,6 @@ export default function AccountDetailEditorial() {
             </button>
             {toolsOpen && (
               <div className={styles.toolsDropdown}>
-                {acct.detail && !acct.detail.archived && (
-                  <button
-                    className={styles.toolsDropdownItem}
-                    onClick={() => { setToolsOpen(false); acct.handleEnrich(); }}
-                    disabled={acct.enriching}
-                  >
-                    {acct.enriching ? `Refreshing\u2026 ${acct.enrichSeconds ?? 0}s` : "Refresh"}
-                  </button>
-                )}
-                <div className={styles.toolsDropdownSeparator} />
                 {acct.detail && (
                   <button
                     className={styles.toolsDropdownItem}
