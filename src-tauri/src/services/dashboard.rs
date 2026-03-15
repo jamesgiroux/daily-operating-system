@@ -936,7 +936,9 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     }
     overview.summary = parts.join(" with ");
 
-    // DB-based freshness: check app_state_kv for briefing timestamp
+    // DB-based freshness: check app_state_kv for briefing timestamp, fall back to meeting existence
+    let freshness_today = tf.date.clone();
+    let freshness_tomorrow = tf.next_date.clone();
     let freshness = match state
         .db_read(move |db| {
             let conn = db.conn_ref();
@@ -965,10 +967,21 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                     }
                 }
             }
-            // Fallback: no briefing_freshness key means the workflow hasn't
-            // completed yet. Return Unknown so the frontend can show the
-            // generating progress screen instead of flashing raw calendar data.
-            Ok(DataFreshness::Unknown)
+            // Fallback: if meetings exist for today, consider it fresh
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM meetings WHERE start_time >= ?1 AND start_time < ?2",
+                    rusqlite::params![freshness_today, freshness_tomorrow],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if count > 0 {
+                Ok(DataFreshness::Fresh {
+                    generated_at: chrono::Utc::now().to_rfc3339(),
+                })
+            } else {
+                Ok(DataFreshness::Unknown)
+            }
         })
         .await
     {
