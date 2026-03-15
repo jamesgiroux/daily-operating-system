@@ -566,8 +566,6 @@ fn parse_org_health_data(
 pub struct GleanContextProvider {
     /// Glean MCP server endpoint.
     endpoint: String,
-    /// Whether to suppress local connectors (Governed) or merge (Additive).
-    strategy: super::GleanStrategy,
     /// In-memory + DB cache for Glean responses.
     cache: Arc<GleanCache>,
     /// Fallback: local provider for always-local data and Glean outages.
@@ -577,13 +575,11 @@ pub struct GleanContextProvider {
 impl GleanContextProvider {
     pub fn new(
         endpoint: String,
-        strategy: super::GleanStrategy,
         cache: Arc<GleanCache>,
         local_fallback: super::local::LocalContextProvider,
     ) -> Self {
         Self {
             endpoint,
-            strategy,
             cache,
             local_fallback,
         }
@@ -1106,24 +1102,15 @@ impl ContextProvider for GleanContextProvider {
 
         // Merge Glean data into the context
         if let Some(glean) = glean_data {
-            // Replace file_contents with Glean documents (Additive: merge, Governed: replace)
-            match self.strategy {
-                super::GleanStrategy::Governed => {
-                    if !glean.file_contents.is_empty() {
-                        ctx.file_contents = glean.file_contents;
-                    }
-                }
-                super::GleanStrategy::Additive => {
-                    if !glean.file_contents.is_empty() {
-                        if ctx.file_contents.is_empty() {
-                            ctx.file_contents = glean.file_contents;
-                        } else {
-                            ctx.file_contents = format!(
-                                "{}\n\n--- Glean Documents ---\n\n{}",
-                                ctx.file_contents, glean.file_contents
-                            );
-                        }
-                    }
+            // Merge Glean documents with local file contents (always additive)
+            if !glean.file_contents.is_empty() {
+                if ctx.file_contents.is_empty() {
+                    ctx.file_contents = glean.file_contents;
+                } else {
+                    ctx.file_contents = format!(
+                        "{}\n\n--- Glean Documents ---\n\n{}",
+                        ctx.file_contents, glean.file_contents
+                    );
                 }
             }
 
