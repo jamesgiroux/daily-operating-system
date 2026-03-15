@@ -303,39 +303,6 @@
 
 /* ── Engagement Cadence (I557) ── */
 
-.engagementCadence {
-  margin-top: var(--space-xl);
-  padding-top: 16px;
-  border-top: 1px solid var(--color-rule-light);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.cadenceItem {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.cadenceLabel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-tertiary);
-}
-
-.cadenceText {
-  font-family: var(--font-serif);
-  font-size: 15px;
-  line-height: 1.55;
-  color: var(--color-text-secondary);
-  margin: 0;
-  max-width: 540px;
-}
-
 /* ── Tools dropdown ── */
 
 .toolsButton {

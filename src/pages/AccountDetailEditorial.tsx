@@ -740,22 +740,6 @@ export default function AccountDetailEditorial() {
               <DimensionBar dimensions={intelligence.health.dimensions} />
             </div>
             {/* I557: Engagement cadence context below dimension bars */}
-            {(intelligence.meetingCadence?.assessment || intelligence.emailResponsiveness?.assessment) && (
-              <div className={styles.engagementCadence}>
-                {intelligence.meetingCadence?.assessment && (
-                  <div className={styles.cadenceItem}>
-                    <span className={styles.cadenceLabel}>Meeting Cadence</span>
-                    <p className={styles.cadenceText}>{intelligence.meetingCadence.assessment}</p>
-                  </div>
-                )}
-                {intelligence.emailResponsiveness?.assessment && (
-                  <div className={styles.cadenceItem}>
-                    <span className={styles.cadenceLabel}>Email Responsiveness</span>
-                    <p className={styles.cadenceText}>{intelligence.emailResponsiveness.assessment}</p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}
