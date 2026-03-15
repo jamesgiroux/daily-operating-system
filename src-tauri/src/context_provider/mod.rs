@@ -32,21 +32,10 @@ pub enum ContextMode {
     Local,
     /// Enterprise: Glean as primary context source.
     /// DCR handles client registration — no user-provided client_id needed.
+    /// Always additive: Glean primary + local signals merged (Gmail/Linear/Calendar still active).
     Glean {
         endpoint: String,
-        strategy: GleanStrategy,
     },
-}
-
-/// How Glean mode interacts with local connectors.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub enum GleanStrategy {
-    /// Glean primary + local signals merged. Gmail/Linear/Calendar still active.
-    #[default]
-    Additive,
-    /// Glean only — suppress local file-reading and connector queries
-    /// (except Calendar and transcript pollers which are always active).
-    Governed,
 }
 
 // ---------------------------------------------------------------------------

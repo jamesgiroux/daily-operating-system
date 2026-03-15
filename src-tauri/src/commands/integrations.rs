@@ -2557,7 +2557,6 @@ pub async fn start_glean_auth(
             // Auto-set context mode to Glean (Blockers 1 & 3).
             let glean_mode = crate::context_provider::ContextMode::Glean {
                 endpoint: endpoint.clone(),
-                strategy: crate::context_provider::GleanStrategy::Additive,
             };
             if let Err(e) = state.with_db_write(|db| {
                 crate::context_provider::save_context_mode(db, &glean_mode)

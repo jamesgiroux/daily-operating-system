@@ -15,28 +15,7 @@ use crate::state::AppState;
 pub async fn run_drive_poller(state: Arc<AppState>) {
     log::info!("GoogleDrivePoller: started");
 
-    // In Glean Governed mode, Drive polling is replaced by Glean-sourced documents.
-    // Sleep indefinitely — the app must restart to change modes.
-    if matches!(state.context_provider().provider_name(), "glean") {
-        // Check if it's Governed strategy specifically
-        let is_governed = state
-            .with_db_read(|db| {
-                Ok(matches!(
-                    crate::context_provider::read_context_mode(db),
-                    crate::context_provider::ContextMode::Glean {
-                        strategy: crate::context_provider::GleanStrategy::Governed,
-                        ..
-                    }
-                ))
-            })
-            .unwrap_or(false);
-
-        if is_governed {
-            log::info!("GoogleDrivePoller: Glean Governed mode active, Drive polling disabled");
-            std::future::pending::<()>().await;
-            return;
-        }
-    }
+    // Drive always polls in Glean mode — additive strategy merges local + Glean signals.
 
     loop {
         // Dev mode isolation: pause background processing while dev sandbox is active
