@@ -109,39 +109,18 @@ function groupByMeeting(actions: DbAction[]): ActionGroup[] {
     });
   }
 
-  // "Everything Else" — sub-grouped by time-band
+  // "Everything Else" — single group, sorted by due date ascending.
+  // Overdue items naturally surface to the top without a guilt-inducing header.
+  // Proper overdue handling (aging, zero-guilt prompts) deferred to v1.0.2 I583.
   if (everythingElse.length > 0) {
-    const now = new Date();
-    const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-    const overdue: DbAction[] = [];
-    const thisWeek: DbAction[] = [];
-    const later: DbAction[] = [];
-
-    for (const a of everythingElse) {
-      if (a.dueDate && new Date(a.dueDate) < now) {
-        overdue.push(a);
-      } else if (a.dueDate && new Date(a.dueDate) <= sevenDaysOut) {
-        thisWeek.push(a);
-      } else {
-        later.push(a);
-      }
-    }
-
-    const sortByDue = (x: DbAction, y: DbAction) => {
+    everythingElse.sort((x, y) => {
       if (!x.dueDate && !y.dueDate) return 0;
       if (!x.dueDate) return 1;
       if (!y.dueDate) return -1;
       return new Date(x.dueDate).getTime() - new Date(y.dueDate).getTime();
-    };
+    });
 
-    overdue.sort(sortByDue);
-    thisWeek.sort(sortByDue);
-    later.sort(sortByDue);
-
-    if (overdue.length > 0) groups.push({ label: "Overdue", kind: "time-band", actions: overdue });
-    if (thisWeek.length > 0) groups.push({ label: "This Week", kind: "time-band", actions: thisWeek });
-    if (later.length > 0) groups.push({ label: "Later", kind: "time-band", actions: later });
+    groups.push({ label: "Everything Else", kind: "time-band", actions: everythingElse });
   }
 
   return groups;
@@ -385,19 +364,10 @@ function PendingGroupedView({
 }) {
   const groups = useMemo(() => groupByMeeting(actions), [actions]);
 
-  // Track when we transition from meeting groups to time-band (Everything Else)
-  const firstTimeBandIdx = groups.findIndex((g) => g.kind === "time-band");
-  const hasTimeBands = firstTimeBandIdx !== -1;
-  const hasMeetingGroups = groups.some((g) => g.kind === "meeting");
-
   return (
     <div>
-      {/* "Everything Else" section header — only if we have both meeting and time-band groups */}
-      {groups.map((group, idx) => (
+      {groups.map((group) => (
         <div key={group.label}>
-          {hasTimeBands && hasMeetingGroups && idx === firstTimeBandIdx && (
-            <ChapterHeading title="Everything Else" />
-          )}
           <div className={s.groupBlock}>
             <ChapterHeading title={group.label} epigraph={`${group.actions.length} action${group.actions.length !== 1 ? "s" : ""}`} />
             <div className={s.actionColumn}>
