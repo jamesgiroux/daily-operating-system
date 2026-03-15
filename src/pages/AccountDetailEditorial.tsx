@@ -326,7 +326,7 @@ export default function AccountDetailEditorial() {
                   className={styles.toolsDropdownItem}
                   onClick={() => { setToolsOpen(false); setMergeDialogOpen(true); }}
                 >
-                  Merge Into\u2026
+                  Merge Into...
                 </button>
                 <button
                   className={styles.toolsDropdownItem}
