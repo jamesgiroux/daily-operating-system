@@ -59,11 +59,17 @@ pub fn compute_account_health(
             weight_total += weights[i];
         }
     }
-    let computed_avg = if weight_total > 0.0 {
+    let raw_avg = if weight_total > 0.0 {
         weighted_sum / weight_total
     } else {
         50.0
     };
+
+    // Confidence-weighted regression to neutral: with sparse data (low confidence),
+    // pull the score toward 50 instead of letting 1-2 dimensions dominate.
+    // At 0.9 confidence → 90% computed, 10% neutral.
+    // At 0.3 confidence → 30% computed, 70% neutral.
+    let computed_avg = confidence * raw_avg + (1.0 - confidence) * 50.0;
 
     // Blend with org health baseline if available
     let org_baseline = org_health.and_then(|oh| oh.health_band.as_deref().map(band_to_score));
@@ -76,6 +82,20 @@ pub fn compute_account_health(
 
     let band = score_to_band(score);
     let divergence = detect_divergence(org_health, score);
+
+    // Build recommended actions from dimension evidence
+    let mut recommended_actions = Vec::new();
+    for ev in &dims.champion_health.evidence {
+        if ev.contains("Consider tagging") || ev.contains("champion candidate") {
+            recommended_actions.push(ev.clone());
+        }
+    }
+    for ev in &dims.stakeholder_coverage.evidence {
+        if ev.starts_with("Missing:") {
+            recommended_actions
+                .push(format!("Map a {} stakeholder for this account", ev.trim_start_matches("Missing: ")));
+        }
+    }
 
     AccountHealth {
         score,
@@ -90,7 +110,7 @@ pub fn compute_account_health(
         },
         dimensions: dims,
         narrative: None,
-        recommended_actions: Vec::new(),
+        recommended_actions,
         divergence,
     }
 }
@@ -404,6 +424,114 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
     }
 }
 
+/// When no champion is explicitly tagged, look at meeting attendance patterns
+/// to infer engagement quality. Someone attending 70%+ of account meetings in
+/// the last 90 days is champion-territory; 50%+ is strong engagement.
+fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionScore {
+    // Count total account meetings in last 90 days
+    let total_meetings: i64 = db
+        .conn
+        .query_row(
+            "SELECT COUNT(DISTINCT m.id) FROM meetings m
+             JOIN meeting_entities me ON me.meeting_id = m.id
+             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+               AND m.start_time >= datetime('now', '-90 days')",
+            rusqlite::params![account_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if total_meetings < 2 {
+        // Not enough meetings to judge attendance patterns
+        return null_dimension("No champion identified, insufficient meeting data");
+    }
+
+    // Find the person with the highest attendance rate on this account's meetings
+    #[derive(Debug)]
+    struct AttendeeStats {
+        person_id: String,
+        person_name: String,
+        attended: i64,
+        pct: f64,
+    }
+
+    let top_attendee: Option<AttendeeStats> = db
+        .conn
+        .prepare(
+            "SELECT ma.person_id, COALESCE(p.name, ma.email, 'Unknown'),
+                    COUNT(DISTINCT ma.meeting_id) as attended
+             FROM meeting_attendees ma
+             JOIN meetings m ON m.id = ma.meeting_id
+             JOIN meeting_entities me ON me.meeting_id = m.id
+               AND me.entity_id = ?1 AND me.entity_type = 'account'
+             LEFT JOIN people p ON p.id = ma.person_id
+             WHERE m.start_time >= datetime('now', '-90 days')
+               AND ma.person_id IS NOT NULL
+               AND ma.is_organizer = 0
+             GROUP BY ma.person_id
+             ORDER BY attended DESC
+             LIMIT 1",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_row(rusqlite::params![account_id], |row| {
+                let attended: i64 = row.get(2)?;
+                Ok(AttendeeStats {
+                    person_id: row.get(0)?,
+                    person_name: row.get(1)?,
+                    attended,
+                    pct: attended as f64 / total_meetings as f64,
+                })
+            })
+        })
+        .ok();
+
+    match top_attendee {
+        Some(att) if att.pct >= 0.70 => {
+            // 70%+ attendance → champion-level engagement
+            DimensionScore {
+                score: 55.0,
+                weight: 1.0,
+                evidence: vec![
+                    format!(
+                        "No named champion — {} attended {}/{} meetings ({:.0}%)",
+                        att.person_name, att.attended, total_meetings, att.pct * 100.0,
+                    ),
+                    format!("Consider tagging {} as champion", att.person_name),
+                ],
+                trend: "stable".to_string(),
+            }
+        }
+        Some(att) if att.pct >= 0.50 => {
+            // 50-69% attendance → strong engagement, not quite champion
+            DimensionScore {
+                score: 40.0,
+                weight: 1.0,
+                evidence: vec![
+                    format!(
+                        "No named champion — {} attended {}/{} meetings ({:.0}%)",
+                        att.person_name, att.attended, total_meetings, att.pct * 100.0,
+                    ),
+                    format!("Strong engagement from {} — consider as champion candidate", att.person_name),
+                ],
+                trend: "stable".to_string(),
+            }
+        }
+        Some(att) if att.attended >= 2 => {
+            // Some attendance but below 50% — partial credit
+            DimensionScore {
+                score: 25.0,
+                weight: 0.5, // Reduced weight — we're less sure
+                evidence: vec![format!(
+                    "No named champion — best attendee {} at {}/{} meetings ({:.0}%)",
+                    att.person_name, att.attended, total_meetings, att.pct * 100.0,
+                )],
+                trend: String::new(),
+            }
+        }
+        _ => null_dimension("No champion identified, no consistent meeting attendees"),
+    }
+}
+
 fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     let team = db.get_account_team(account_id).unwrap_or_default();
     let champion = team
@@ -411,7 +539,9 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
         .find(|t| t.role.to_lowercase().contains("champion"));
 
     if champion.is_none() {
-        return null_dimension("No champion identified");
+        // No explicit champion — infer engagement from meeting attendance patterns.
+        // Check if any person on this account attends a high % of meetings.
+        return infer_champion_from_attendance(db, account_id);
     }
 
     // I555: Query per-champion meeting engagement from meeting_champion_health
