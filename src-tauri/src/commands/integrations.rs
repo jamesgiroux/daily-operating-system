@@ -2501,9 +2501,11 @@ pub fn set_context_mode(
     }) {
         use crate::intel_queue::{IntelPriority, IntelRequest};
         for (id, typ) in &targets {
-            state
-                .intel_queue
-                .enqueue(IntelRequest::new(id.clone(), typ.clone(), IntelPriority::ProactiveHygiene));
+            state.intel_queue.enqueue(IntelRequest::new(
+                id.clone(),
+                typ.clone(),
+                IntelPriority::ProactiveHygiene,
+            ));
         }
         if !targets.is_empty() {
             log::info!(
@@ -2548,9 +2550,9 @@ pub async fn start_glean_auth(
             let glean_mode = crate::context_provider::ContextMode::Glean {
                 endpoint: endpoint.clone(),
             };
-            if let Err(e) = state.with_db_write(|db| {
-                crate::context_provider::save_context_mode(db, &glean_mode)
-            }) {
+            if let Err(e) = state
+                .with_db_write(|db| crate::context_provider::save_context_mode(db, &glean_mode))
+            {
                 log::error!("Failed to save Glean context mode: {}", e);
             }
 
@@ -2590,7 +2592,9 @@ pub async fn start_glean_auth(
                     let count = entities_to_enqueue.len();
                     for (entity_id, entity_type) in entities_to_enqueue {
                         state.intel_queue.enqueue(IntelRequest::new(
-                            entity_id, entity_type, IntelPriority::ProactiveHygiene,
+                            entity_id,
+                            entity_type,
+                            IntelPriority::ProactiveHygiene,
                         ));
                     }
                     log::info!("Glean auth: enqueued {} entities for re-enrichment", count);
@@ -2644,9 +2648,9 @@ pub fn disconnect_glean(
 
     // Revert context mode to Local and hot-swap provider.
     let local_mode = crate::context_provider::ContextMode::Local;
-    if let Err(e) = state.with_db_write(|db| {
-        crate::context_provider::save_context_mode(db, &local_mode)
-    }) {
+    if let Err(e) =
+        state.with_db_write(|db| crate::context_provider::save_context_mode(db, &local_mode))
+    {
         log::error!("Failed to save Local context mode on disconnect: {}", e);
     }
     let new_provider = state.build_context_provider(&local_mode);
@@ -2687,13 +2691,16 @@ pub async fn dev_explore_glean_tools(
     use crate::context_provider::{self, ContextMode};
     use std::time::Instant;
 
-    let mode = state.with_db_read(|db| Ok(context_provider::read_context_mode(db)))
+    let mode = state
+        .with_db_read(|db| Ok(context_provider::read_context_mode(db)))
         .map_err(|e| format!("DB error: {e}"))?;
 
     let endpoint = match &mode {
         ContextMode::Glean { endpoint, .. } => endpoint.clone(),
         ContextMode::Local => {
-            return Err("Glean not configured. Set context mode to Glean in Settings first.".into());
+            return Err(
+                "Glean not configured. Set context mode to Glean in Settings first.".into(),
+            );
         }
     };
 
@@ -2746,7 +2753,11 @@ pub async fn dev_explore_glean_tools(
                 "latency_ms": list_latency_ms,
                 "response": body,
             });
-            log::info!("[I559] tools/list returned {} in {}ms", status, list_latency_ms);
+            log::info!(
+                "[I559] tools/list returned {} in {}ms",
+                status,
+                list_latency_ms
+            );
         }
         Err(e) => {
             report["sections"]["tools_list"] = serde_json::json!({
@@ -2773,7 +2784,10 @@ pub async fn dev_explore_glean_tools(
         );
 
         // 2a. Test via search tool (what we already have)
-        log::info!("[I559] Testing structured query via 'search' tool for {}", acct);
+        log::info!(
+            "[I559] Testing structured query via 'search' tool for {}",
+            acct
+        );
         let search_body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 2,
@@ -2820,17 +2834,24 @@ pub async fn dev_explore_glean_tools(
         // 2b. Test via any discovered tools that look like they accept natural language
         // We'll try calling tools named "ask", "chat", "query", or any agent-like tool
         // if tools/list revealed them
-        let interesting_tools: Vec<String> = report["sections"]["tools_list"]["response"]["result"]["tools"]
+        let interesting_tools: Vec<String> = report["sections"]["tools_list"]["response"]["result"]
+            ["tools"]
             .as_array()
             .map(|tools| {
-                tools.iter()
+                tools
+                    .iter()
                     .filter_map(|t| t["name"].as_str())
                     .filter(|name| {
                         let n = name.to_lowercase();
-                        n != "search" && n != "read_document"
-                            && (n.contains("ask") || n.contains("chat") || n.contains("query")
-                                || n.contains("agent") || n.contains("answer")
-                                || n.contains("analyze") || n.contains("run"))
+                        n != "search"
+                            && n != "read_document"
+                            && (n.contains("ask")
+                                || n.contains("chat")
+                                || n.contains("query")
+                                || n.contains("agent")
+                                || n.contains("answer")
+                                || n.contains("analyze")
+                                || n.contains("run"))
                     })
                     .map(String::from)
                     .collect()
@@ -2839,7 +2860,10 @@ pub async fn dev_explore_glean_tools(
 
         if !interesting_tools.is_empty() {
             for tool_name in interesting_tools.iter().take(3) {
-                log::info!("[I559] Testing discovered tool '{}' with structured query", tool_name);
+                log::info!(
+                    "[I559] Testing discovered tool '{}' with structured query",
+                    tool_name
+                );
 
                 let tool_body = serde_json::json!({
                     "jsonrpc": "2.0",
@@ -2868,7 +2892,8 @@ pub async fn dev_explore_glean_tools(
                 match tool_result {
                     Ok(resp) => {
                         let status = resp.status().as_u16();
-                        let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::json!(null));
+                        let body: serde_json::Value =
+                            resp.json().await.unwrap_or(serde_json::json!(null));
 
                         // Check if the response contains parseable JSON
                         let has_json = body["result"]["content"]
@@ -2879,9 +2904,16 @@ pub async fn dev_explore_glean_tools(
                                 // Try to find JSON in the response text
                                 if let Some(start) = text.find('{') {
                                     if let Some(end) = text.rfind('}') {
-                                        serde_json::from_str::<serde_json::Value>(&text[start..=end]).is_ok()
-                                    } else { false }
-                                } else { false }
+                                        serde_json::from_str::<serde_json::Value>(
+                                            &text[start..=end],
+                                        )
+                                        .is_ok()
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
                             })
                             .unwrap_or(false);
 
@@ -2986,7 +3018,11 @@ pub async fn dev_explore_glean_tools(
                     body
                 },
             });
-            log::info!("[I559] Agents API returned {} (auth_compatible: {})", status, status != 401 && status != 403);
+            log::info!(
+                "[I559] Agents API returned {} (auth_compatible: {})",
+                status,
+                status != 401 && status != 403
+            );
         }
         Err(e) => {
             report["sections"]["agents_api_probe"] = serde_json::json!({
@@ -3009,7 +3045,10 @@ pub async fn dev_explore_glean_tools(
     let tool_names: Vec<String> = report["sections"]["tools_list"]["response"]["result"]["tools"]
         .as_array()
         .map(|tools| {
-            tools.iter().filter_map(|t| t["name"].as_str().map(String::from)).collect()
+            tools
+                .iter()
+                .filter_map(|t| t["name"].as_str().map(String::from))
+                .collect()
         })
         .unwrap_or_default();
 
@@ -3026,7 +3065,9 @@ pub async fn dev_explore_glean_tools(
 
     log::info!(
         "[I559] Exploration complete: {} MCP tools found, agents API auth={}, tools={:?}",
-        tool_count, agents_auth, tool_names
+        tool_count,
+        agents_auth,
+        tool_names
     );
 
     Ok(report)
@@ -3076,7 +3117,11 @@ pub struct ImportAccountRequest {
 fn build_seeded_account_context(request: &ImportAccountRequest) -> Option<String> {
     let mut lines = Vec::new();
 
-    if let Some(summary) = request.summary.as_ref().filter(|value| !value.trim().is_empty()) {
+    if let Some(summary) = request
+        .summary
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(summary.trim().to_string());
     }
 
@@ -3090,7 +3135,11 @@ fn build_seeded_account_context(request: &ImportAccountRequest) -> Option<String
         }
     }
 
-    if let Some(role) = request.my_role.as_ref().filter(|value| !value.trim().is_empty()) {
+    if let Some(role) = request
+        .my_role
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(format!("My role: {}", role.trim()));
     }
 
@@ -3102,22 +3151,40 @@ fn build_seeded_account_context(request: &ImportAccountRequest) -> Option<String
         lines.push(format!("Industry: {}", industry.trim()));
     }
 
-    if let Some(domain) = request.domain.as_ref().filter(|value| !value.trim().is_empty()) {
+    if let Some(domain) = request
+        .domain
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(format!("Domain: {}", domain.trim().to_lowercase()));
     }
 
-    if let Some(evidence) = request.evidence.as_ref().filter(|value| !value.trim().is_empty()) {
+    if let Some(evidence) = request
+        .evidence
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(format!("Evidence: {}", evidence.trim()));
     }
 
-    if let Some(source) = request.source.as_ref().filter(|value| !value.trim().is_empty()) {
+    if let Some(source) = request
+        .source
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         lines.push(format!("Source: {}", source.trim()));
     }
 
-    for section in request.sections.iter().filter(|section| {
-        !section.title.trim().is_empty() && !section.content.trim().is_empty()
-    }) {
-        if let Some(source) = section.source.as_ref().filter(|value| !value.trim().is_empty()) {
+    for section in request
+        .sections
+        .iter()
+        .filter(|section| !section.title.trim().is_empty() && !section.content.trim().is_empty())
+    {
+        if let Some(source) = section
+            .source
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+        {
             lines.push(format!(
                 "{} ({}): {}",
                 section.title.trim(),
@@ -3125,7 +3192,11 @@ fn build_seeded_account_context(request: &ImportAccountRequest) -> Option<String
                 section.content.trim()
             ));
         } else {
-            lines.push(format!("{}: {}", section.title.trim(), section.content.trim()));
+            lines.push(format!(
+                "{}: {}",
+                section.title.trim(),
+                section.content.trim()
+            ));
         }
     }
 
@@ -3145,7 +3216,10 @@ async fn import_account_from_glean_internal(
     let state_for_db = state.clone();
     let (account_id, created_new) = state
         .db_write(move |db| {
-            if let Some(existing) = db.get_account_by_name(&request_for_db.name).map_err(|e| e.to_string())? {
+            if let Some(existing) = db
+                .get_account_by_name(&request_for_db.name)
+                .map_err(|e| e.to_string())?
+            {
                 return Ok((existing.id, false));
             }
 
@@ -3163,8 +3237,7 @@ async fn import_account_from_glean_internal(
                 .map(|value| value.trim().to_lowercase())
                 .filter(|value| !value.is_empty())
             {
-                db.set_account_domains(&account_id, &[domain])
-                    .map_err(|e| e.to_string())?;
+                crate::services::accounts::set_account_domains(db, &account_id, &[domain])?;
             }
 
             let signal_payload = serde_json::json!({
@@ -3194,7 +3267,11 @@ async fn import_account_from_glean_internal(
 
     if created_new {
         if let Some(seed_context) = build_seeded_account_context(&request) {
-            let title = if request.summary.as_ref().is_some_and(|value| !value.trim().is_empty()) {
+            let title = if request
+                .summary
+                .as_ref()
+                .is_some_and(|value| !value.trim().is_empty())
+            {
                 "Glean briefing"
             } else {
                 "Glean discovery"
@@ -3211,11 +3288,13 @@ async fn import_account_from_glean_internal(
         }
     }
 
-    state.intel_queue.enqueue(crate::intel_queue::IntelRequest::new(
-        account_id.clone(),
-        "account".to_string(),
-        priority,
-    ));
+    state
+        .intel_queue
+        .enqueue(crate::intel_queue::IntelRequest::new(
+            account_id.clone(),
+            "account".to_string(),
+            priority,
+        ));
 
     Ok(account_id)
 }
@@ -3241,13 +3320,8 @@ pub async fn query_ephemeral_account(
         .ok_or_else(|| "Glean not connected".to_string())?;
 
     // 2. Check if account already exists
-    let already_exists: Option<String> = state.with_db_read(|db| {
-        Ok(db
-            .get_account_by_name(&name)
-            .ok()
-            .flatten()
-            .map(|a| a.id))
-    })?;
+    let already_exists: Option<String> =
+        state.with_db_read(|db| Ok(db.get_account_by_name(&name).ok().flatten().map(|a| a.id)))?;
 
     // 3. Build prompt and call Glean
     let prompt = build_ephemeral_query_prompt(&name);
@@ -3401,14 +3475,16 @@ pub async fn discover_accounts_from_glean(
 
     // 2. Resolve user identity from config + Google token
     let user_name = {
-        let guard = state.config.read().map_err(|_| "Config lock poisoned".to_string())?;
+        let guard = state
+            .config
+            .read()
+            .map_err(|_| "Config lock poisoned".to_string())?;
         guard
             .as_ref()
             .and_then(|cfg| cfg.user_name.clone())
             .unwrap_or_default()
     };
-    let user_email = crate::google_api::token_store::peek_account_email()
-        .unwrap_or_default();
+    let user_email = crate::google_api::token_store::peek_account_email().unwrap_or_default();
 
     if user_email.is_empty() {
         return Err("No user email available — sign in to Google first".to_string());
@@ -3423,7 +3499,8 @@ pub async fn discover_accounts_from_glean(
 
     // 4. Check each discovered account against existing DB accounts
     let existing_accounts: Vec<(crate::db::DbAccount, Vec<String>)> = state.with_db_read(|db| {
-        db.get_all_accounts_with_domains(false).map_err(|e| e.to_string())
+        db.get_all_accounts_with_domains(false)
+            .map_err(|e| e.to_string())
     })?;
 
     for account in &mut accounts {
@@ -3438,7 +3515,14 @@ pub async fn discover_accounts_from_glean(
                     .any(|existing_domain| existing_domain.eq_ignore_ascii_case(domain))
             });
 
-            domain_matches || (name_matches && discovered_domain.is_none()) || (name_matches && domains.is_empty()) || (name_matches && domains.iter().any(|existing_domain| existing_domain.eq_ignore_ascii_case(discovered_domain.as_deref().unwrap_or_default())))
+            domain_matches
+                || (name_matches && discovered_domain.is_none())
+                || (name_matches && domains.is_empty())
+                || (name_matches
+                    && domains.iter().any(|existing_domain| {
+                        existing_domain
+                            .eq_ignore_ascii_case(discovered_domain.as_deref().unwrap_or_default())
+                    }))
         }) || existing_accounts.iter().any(|(_, domains)| {
             discovered_domain.as_ref().is_some_and(|domain| {
                 !discovered_name.is_empty()
@@ -3496,8 +3580,14 @@ fn completed_onboarding_dimensions(intel: &crate::intelligence::IntelligenceJson
     }
 
     if !intel.value_delivered.is_empty()
-        || intel.success_metrics.as_ref().is_some_and(|items| !items.is_empty())
-        || intel.open_commitments.as_ref().is_some_and(|items| !items.is_empty())
+        || intel
+            .success_metrics
+            .as_ref()
+            .is_some_and(|items| !items.is_empty())
+        || intel
+            .open_commitments
+            .as_ref()
+            .is_some_and(|items| !items.is_empty())
         || !intel.blockers.is_empty()
     {
         completed += 1;
@@ -3677,19 +3767,14 @@ pub async fn onboarding_enrichment_status(
 
             for account in all_accounts {
                 let name_lower = account.name.to_lowercase();
-                if !account_names
-                    .iter()
-                    .any(|n| n.to_lowercase() == name_lower)
-                {
+                if !account_names.iter().any(|n| n.to_lowercase() == name_lower) {
                     continue;
                 }
 
-                let intel = db
-                    .get_entity_intelligence(&account.id)
-                    .ok()
-                    .flatten();
+                let intel = db.get_entity_intelligence(&account.id).ok().flatten();
 
-                let (status, completed, stakeholder_count, risk_count) = if let Some(intel) = intel {
+                let (status, completed, stakeholder_count, risk_count) = if let Some(intel) = intel
+                {
                     let completed = completed_onboarding_dimensions(&intel);
                     let status = if completed >= 6 || !intel.enriched_at.trim().is_empty() {
                         "complete"

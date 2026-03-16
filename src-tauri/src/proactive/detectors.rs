@@ -17,18 +17,42 @@ use crate::helpers;
 
 /// Account with renewal ≤60d + no QBR scheduled + last exec contact >30d.
 pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
-    let accounts = match db.get_renewal_alerts(60) {
-        Ok(a) => a,
-        Err(_) => return Vec::new(),
-    };
+    let renewal_start = ctx.today.format("%Y-%m-%d").to_string();
+    let renewal_end = (ctx.today + Duration::days(60))
+        .format("%Y-%m-%d")
+        .to_string();
+    let recent_start = (ctx.today - Duration::days(30))
+        .format("%Y-%m-%d")
+        .to_string();
+    let recent_end = (ctx.today + Duration::days(1))
+        .format("%Y-%m-%d")
+        .to_string();
+
+    let accounts: Vec<(String, String, String)> = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, name, contract_end
+             FROM accounts
+             WHERE contract_end IS NOT NULL
+               AND contract_end >= ?1
+               AND contract_end <= ?2
+               AND archived = 0
+               AND is_internal = 0",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(params![renewal_start, renewal_end], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
 
     let mut insights = Vec::new();
-    for acct in accounts {
-        let contract_end = match &acct.contract_end {
-            Some(d) => d.clone(),
-            None => continue,
-        };
-
+    for (account_id, account_name, contract_end) in accounts {
         // Check if there's been a meeting with this account in the last 30 days
         let recent_meeting_count: i32 = db
             .conn_ref()
@@ -36,8 +60,9 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
                 "SELECT COUNT(*) FROM meetings mh
                  JOIN meeting_entities me ON me.meeting_id = mh.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'account'
-                 AND mh.start_time >= datetime('now', '-30 days')",
-                params![acct.id],
+                 AND mh.start_time >= ?2
+                 AND mh.start_time < ?3",
+                params![account_id, recent_start, recent_end],
                 |row| row.get(0),
             )
             .unwrap_or(0);
@@ -53,9 +78,9 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
                 60
             };
 
-        let fp = fingerprint(&["account", &acct.id, "renewal_gap"]);
+        let fp = fingerprint(&["account", &account_id, "renewal_gap"]);
         let context_json = serde_json::json!({
-            "account_name": acct.name,
+            "account_name": account_name,
             "renewal_date": contract_end,
             "days_until_renewal": days_until,
             "last_contact_days": 30
@@ -65,12 +90,12 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
             detector_name: "detect_renewal_gap".to_string(),
             fingerprint: fp,
             entity_type: "account".to_string(),
-            entity_id: acct.id.clone(),
+            entity_id: account_id.clone(),
             signal_type: "proactive_renewal_gap".to_string(),
-            headline: format!("{} renewal in {}d with no recent contact", acct.name, days_until),
+            headline: format!("{} renewal in {}d with no recent contact", account_name, days_until),
             detail: format!(
                 "Account {} has a renewal on {} ({} days away) but no meetings in the last 30 days.",
-                acct.name, contract_end, days_until
+                account_name, contract_end, days_until
             ),
             confidence: 0.90,
             context_json: Some(context_json.to_string()),
@@ -666,24 +691,31 @@ pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<R
 /// Skips accounts that already have a churn event recorded.
 pub fn detect_renewal_proximity(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
     let conn = db.conn_ref();
+    let renewal_start = ctx.today.format("%Y-%m-%d").to_string();
+    let renewal_end = (ctx.today + Duration::days(90))
+        .format("%Y-%m-%d")
+        .to_string();
 
     // Get accounts with renewal within 90 days
     let accounts: Vec<(String, String, String)> = conn
         .prepare(
             "SELECT a.id, a.name, a.contract_end FROM accounts a
              WHERE a.contract_end IS NOT NULL
-               AND a.contract_end >= date('now')
-               AND a.contract_end <= date('now', '+90 days')
+               AND a.contract_end >= ?1
+               AND a.contract_end <= ?2
                AND a.archived = 0
-               AND a.account_type = 'customer'
+               AND a.is_internal = 0
+               AND COALESCE(a.account_type, 'customer') = 'customer'
                AND NOT EXISTS (
                    SELECT 1 FROM account_events ae
                    WHERE ae.account_id = a.id AND ae.event_type = 'churn'
                )",
         )
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            stmt.query_map(params![renewal_start, renewal_end], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default();
 

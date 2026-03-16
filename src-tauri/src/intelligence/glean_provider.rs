@@ -14,10 +14,10 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter};
 
-use crate::context_provider::glean::GleanMcpClient;
 use super::dimension_prompts::{self, DIMENSION_NAMES};
 use super::io::{IntelligenceJson, SourceManifestEntry};
 use super::prompts::{parse_intelligence_response, IntelligenceContext};
+use crate::context_provider::glean::GleanMcpClient;
 
 use serde::{Deserialize, Serialize};
 
@@ -90,7 +90,14 @@ impl GleanIntelligenceProvider {
     ) -> Result<IntelligenceJson, String> {
         // Try parallel dimension fan-out first
         match self
-            .enrich_entity_parallel(entity_id, entity_type, entity_name, ctx, relationship, app_handle)
+            .enrich_entity_parallel(
+                entity_id,
+                entity_type,
+                entity_name,
+                ctx,
+                relationship,
+                app_handle,
+            )
             .await
         {
             Ok(intel) => Ok(intel),
@@ -162,7 +169,8 @@ impl GleanIntelligenceProvider {
 
         // I575: Use tokio::sync::mpsc channel to receive dimension results as they
         // complete, enabling progressive DB writes and event emission.
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(6);
+        let (tx, mut rx) =
+            tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(6);
         let mut wrote_debug_file = false;
 
         for (dim_name, prompt) in prompts {
@@ -178,11 +186,8 @@ impl GleanIntelligenceProvider {
                 let start = Instant::now();
                 let client = GleanMcpClient::new(&ep);
 
-                let response_result = tokio::time::timeout(
-                    Duration::from_secs(30),
-                    client.chat(&prompt, None),
-                )
-                .await;
+                let response_result =
+                    tokio::time::timeout(Duration::from_secs(30), client.chat(&prompt, None)).await;
 
                 let elapsed_ms = start.elapsed().as_millis();
 
@@ -191,30 +196,41 @@ impl GleanIntelligenceProvider {
                     Ok(Err(e)) => {
                         log::warn!(
                             "[I574] Glean dimension {} for {} — failed in {}ms: {}",
-                            dim_name, ename, elapsed_ms, e
+                            dim_name,
+                            ename,
+                            elapsed_ms,
+                            e
                         );
-                        let _ = sender.send((dim_name, Err(format!("chat failed: {}", e)))).await;
+                        let _ = sender
+                            .send((dim_name, Err(format!("chat failed: {}", e))))
+                            .await;
                         return;
                     }
                     Err(_) => {
                         log::warn!(
                             "[I574] Glean dimension {} for {} — timed out after {}ms",
-                            dim_name, ename, elapsed_ms
+                            dim_name,
+                            ename,
+                            elapsed_ms
                         );
-                        let _ = sender.send((dim_name, Err("timed out after 30s".to_string()))).await;
+                        let _ = sender
+                            .send((dim_name, Err("timed out after 30s".to_string())))
+                            .await;
                         return;
                     }
                 };
 
                 log::info!(
                     "[I574] Glean dimension {} for {} — {}ms, {} chars",
-                    dim_name, ename, elapsed_ms, response_text.len()
+                    dim_name,
+                    ename,
+                    elapsed_ms,
+                    response_text.len()
                 );
 
                 // Write debug file for the first dimension only
                 if is_first {
-                    let debug_path =
-                        std::env::temp_dir().join("dailyos-glean-response.txt");
+                    let debug_path = std::env::temp_dir().join("dailyos-glean-response.txt");
                     if let Err(e) = std::fs::write(&debug_path, &response_text) {
                         log::warn!("[I574] Failed to write debug response: {}", e);
                     } else {
@@ -235,20 +251,17 @@ impl GleanIntelligenceProvider {
                     skip_reason: None,
                 }];
 
-                let parse_result = parse_intelligence_response(
-                    &response_text,
-                    &eid,
-                    &etype,
-                    1,
-                    manifest,
-                );
+                let parse_result =
+                    parse_intelligence_response(&response_text, &eid, &etype, 1, manifest);
 
                 let result = match parse_result {
                     Ok(intel) => (dim_name, Ok(intel)),
                     Err(e) => {
                         log::warn!(
                             "[I574] Glean dimension {} for {} — parse failed: {}",
-                            dim_name, ename, e
+                            dim_name,
+                            ename,
+                            e
                         );
                         (dim_name, Err(format!("parse failed: {}", e)))
                     }
@@ -279,11 +292,7 @@ impl GleanIntelligenceProvider {
 
                         // I575: Progressive DB write + event emission
                         if let Some(handle) = app_handle {
-                            write_progressive_glean_dimension(
-                                entity_id,
-                                entity_type,
-                                &combined,
-                            );
+                            write_progressive_glean_dimension(entity_id, entity_type, &combined);
                             let _ = handle.emit(
                                 "enrichment-progress",
                                 EnrichmentProgress {
@@ -328,10 +337,7 @@ impl GleanIntelligenceProvider {
         }
 
         if succeeded == 0 {
-            return Err(format!(
-                "All 6 Glean dimensions failed for {}",
-                entity_name
-            ));
+            return Err(format!("All 6 Glean dimensions failed for {}", entity_name));
         }
 
         // Set metadata on combined result
@@ -501,8 +507,7 @@ impl GleanIntelligenceProvider {
             }
         }
 
-        let prompt =
-            super::glean_prompts::build_account_discovery_prompt(user_email, user_name);
+        let prompt = super::glean_prompts::build_account_discovery_prompt(user_email, user_name);
 
         let client = GleanMcpClient::new(&self.endpoint);
         let response_text = client
@@ -514,10 +519,8 @@ impl GleanIntelligenceProvider {
         let json_text = extract_json_object(&response_text)
             .ok_or_else(|| "Glean discovery response contained no JSON object".to_string())?;
 
-        let discovery: DiscoveryResponse =
-            serde_json::from_str(json_text).map_err(|e| {
-                format!("Failed to parse Glean discovery response: {}", e)
-            })?;
+        let discovery: DiscoveryResponse = serde_json::from_str(json_text)
+            .map_err(|e| format!("Failed to parse Glean discovery response: {}", e))?;
 
         log::info!(
             "[I535] Glean discovered {} accounts for {}",
@@ -573,7 +576,9 @@ fn write_progressive_glean_dimension(
     let mut merged = if let Some(mut existing) = existing {
         for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
             let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
-                &mut existing, dim, combined,
+                &mut existing,
+                dim,
+                combined,
             );
         }
         existing
@@ -585,17 +590,14 @@ fn write_progressive_glean_dimension(
     merged.entity_type = entity_type.to_string();
     merged.enriched_at = chrono::Utc::now().to_rfc3339();
 
-    if let Err(e) = db.upsert_entity_intelligence(&merged) {
+    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&db, &merged) {
         log::warn!(
             "[I575] Glean progressive write failed for {}: {}",
             entity_id,
             e
         );
     } else {
-        log::debug!(
-            "[I575] Glean progressive write succeeded for {}",
-            entity_id,
-        );
+        log::debug!("[I575] Glean progressive write succeeded for {}", entity_id,);
     }
 }
 
@@ -671,7 +673,8 @@ pub fn emit_glean_signals(
             );
         }
         slack_context.extend(
-            intel.competitive_context
+            intel
+                .competitive_context
                 .iter()
                 .filter(|item| {
                     source_mentions_slack(item.source.as_deref())
@@ -699,7 +702,8 @@ pub fn emit_glean_signals(
             );
         }
         slack_context.extend(
-            intel.organizational_changes
+            intel
+                .organizational_changes
                 .iter()
                 .filter(|item| {
                     source_mentions_slack(item.source.as_deref())
@@ -729,7 +733,8 @@ pub fn emit_glean_signals(
     }
 
     slack_context.extend(
-        intel.risks
+        intel
+            .risks
             .iter()
             .filter(|item| {
                 source_mentions_slack(item.source.as_deref())
@@ -741,7 +746,8 @@ pub fn emit_glean_signals(
             .map(|item| format!("risk: {}", item.text)),
     );
     slack_context.extend(
-        intel.recent_wins
+        intel
+            .recent_wins
             .iter()
             .filter(|item| {
                 source_mentions_slack(item.source.as_deref())
@@ -753,7 +759,8 @@ pub fn emit_glean_signals(
             .map(|item| format!("win: {}", item.text)),
     );
     slack_context.extend(
-        intel.stakeholder_insights
+        intel
+            .stakeholder_insights
             .iter()
             .filter(|item| {
                 source_mentions_slack(item.source.as_deref())
@@ -779,7 +786,8 @@ pub fn emit_glean_signals(
         );
     }
     slack_context.extend(
-        intel.expansion_signals
+        intel
+            .expansion_signals
             .iter()
             .filter(|item| {
                 source_mentions_slack(item.source.as_deref())
@@ -822,10 +830,13 @@ pub fn emit_glean_signals(
                     entity_id,
                     "glean_champion_departed",
                     "glean_chat",
-                    Some(&serde_json::json!({
-                        "score": dims.champion_health.score,
-                        "evidence": dims.champion_health.evidence,
-                    }).to_string()),
+                    Some(
+                        &serde_json::json!({
+                            "score": dims.champion_health.score,
+                            "evidence": dims.champion_health.evidence,
+                        })
+                        .to_string(),
+                    ),
                     0.8,
                 );
             }
@@ -835,8 +846,14 @@ pub fn emit_glean_signals(
     // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
     // data flows immediately into the 6 health dimensions.
     if entity_type == "account" {
-        if let Err(e) = crate::services::intelligence::recompute_entity_health(db, entity_id, "account") {
-            log::warn!("Health recompute failed for {} after Glean signals: {}", entity_id, e);
+        if let Err(e) =
+            crate::services::intelligence::recompute_entity_health(db, entity_id, "account")
+        {
+            log::warn!(
+                "Health recompute failed for {} after Glean signals: {}",
+                entity_id,
+                e
+            );
         }
     }
 }
@@ -923,7 +940,9 @@ pub fn reconcile_enrichment(
     );
 
     // open_commitments is Option<Vec<...>>
-    if let (Some(existing_oc), Some(new_oc)) = (&existing.open_commitments, &new_output.open_commitments) {
+    if let (Some(existing_oc), Some(new_oc)) =
+        (&existing.open_commitments, &new_output.open_commitments)
+    {
         let reconciled = reconcile_vec_items(
             existing_oc,
             new_oc,
@@ -942,7 +961,11 @@ pub fn reconcile_enrichment(
         ($field:ident, $field_name:expr) => {
             if new_output.$field.is_some() {
                 // Check if user edited this field — if so, keep existing
-                if existing.user_edits.iter().any(|e| e.field_path == $field_name) {
+                if existing
+                    .user_edits
+                    .iter()
+                    .any(|e| e.field_path == $field_name)
+                {
                     // User-edited — keep existing
                 } else {
                     result.$field = new_output.$field;
@@ -993,7 +1016,11 @@ pub fn reconcile_enrichment(
     result.enriched_at = new_output.enriched_at;
     if !new_output.source_manifest.is_empty() {
         for entry in new_output.source_manifest {
-            if !result.source_manifest.iter().any(|e| e.filename == entry.filename) {
+            if !result
+                .source_manifest
+                .iter()
+                .any(|e| e.filename == entry.filename)
+            {
                 result.source_manifest.push(entry);
             }
         }
@@ -1020,7 +1047,8 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
 
     // 1. Keep existing items from non-refreshed sources + all user corrections
     for item in existing_items {
-        let source = item.item_source()
+        let source = item
+            .item_source()
             .map(|s| s.source.as_str())
             .unwrap_or("pty_synthesis");
 
@@ -1038,14 +1066,14 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
     for item in new_items {
         let item_text = get_text(item).to_lowercase();
 
-        let is_dismissed = dismissed.iter().any(|d| {
-            d.field == field_name && item_text.contains(&d.content.to_lowercase())
-        });
+        let is_dismissed = dismissed
+            .iter()
+            .any(|d| d.field == field_name && item_text.contains(&d.content.to_lowercase()));
 
         // Dedup: skip if an item with the same text already exists in result
-        let is_duplicate = result.iter().any(|existing| {
-            get_text(existing).to_lowercase() == item_text
-        });
+        let is_duplicate = result
+            .iter()
+            .any(|existing| get_text(existing).to_lowercase() == item_text);
 
         if !is_dismissed && !is_duplicate {
             result.push(item.clone());

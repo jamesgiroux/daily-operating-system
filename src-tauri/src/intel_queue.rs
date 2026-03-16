@@ -14,12 +14,12 @@ use chrono::Utc;
 
 use tauri::{AppHandle, Emitter};
 
+use crate::intelligence::dimension_prompts::{self, DIMENSION_NAMES};
 use crate::intelligence::{
     build_intelligence_prompt_with_preset, extract_inferred_relationships,
     parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
     SourceManifestEntry,
 };
-use crate::intelligence::dimension_prompts::{self, DIMENSION_NAMES};
 use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::AiModelConfig;
@@ -987,8 +987,7 @@ async fn run_glean_enrichment_with_fallback(
         }
     };
 
-    let provider =
-        crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+    let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
 
     let mut results = Vec::new();
     let mut pty_fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
@@ -1024,8 +1023,7 @@ async fn run_glean_enrichment_with_fallback(
 
                     // Extract inferred relationships from the Glean output
                     // (Glean may include inferredRelationships in its JSON)
-                    let inferred_relationships = if let Ok(raw_json) =
-                        serde_json::to_string(&intel)
+                    let inferred_relationships = if let Ok(raw_json) = serde_json::to_string(&intel)
                     {
                         extract_inferred_relationships(&raw_json)
                     } else {
@@ -1226,9 +1224,11 @@ fn run_parallel_enrichment(
     for result in rx {
         match result {
             Ok((dim_name, partial_intel, raw_output)) => {
-                if let Err(e) =
-                    dimension_prompts::merge_dimension_into(&mut combined, &dim_name, &partial_intel)
-                {
+                if let Err(e) = dimension_prompts::merge_dimension_into(
+                    &mut combined,
+                    &dim_name,
+                    &partial_intel,
+                ) {
                     log::warn!("[I574] Merge failed for dimension {}: {}", dim_name, e);
                     failed_dims.push(dim_name);
                 } else {
@@ -1331,11 +1331,7 @@ fn run_parallel_enrichment(
 /// Opens a short-lived DB connection, reads existing entity_assessment, merges the
 /// new combined state, and writes back. Non-fatal on error — the final write in
 /// `write_enrichment_results` is the authoritative write.
-fn write_progressive_dimension(
-    entity_id: &str,
-    entity_type: &str,
-    combined: &IntelligenceJson,
-) {
+fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &IntelligenceJson) {
     let db = match crate::db::ActionDb::open() {
         Ok(db) => db,
         Err(e) => {
@@ -1354,7 +1350,9 @@ fn write_progressive_dimension(
     let mut merged = if let Some(mut existing) = existing {
         for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
             let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
-                &mut existing, dim, combined,
+                &mut existing,
+                dim,
+                combined,
             );
         }
         existing
@@ -1367,17 +1365,10 @@ fn write_progressive_dimension(
     merged.entity_type = entity_type.to_string();
     merged.enriched_at = chrono::Utc::now().to_rfc3339();
 
-    if let Err(e) = db.upsert_entity_intelligence(&merged) {
-        log::warn!(
-            "[I575] Progressive write failed for {}: {}",
-            entity_id,
-            e
-        );
+    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&db, &merged) {
+        log::warn!("[I575] Progressive write failed for {}: {}", entity_id, e);
     } else {
-        log::debug!(
-            "[I575] Progressive write succeeded for {}",
-            entity_id,
-        );
+        log::debug!("[I575] Progressive write succeeded for {}", entity_id,);
     }
 }
 
@@ -1454,7 +1445,6 @@ fn run_consistency_repair_retry(
         input.file_manifest.clone(),
     )
 }
-
 
 /// Phase 3: Write enrichment results to disk and DB.
 /// Opens own DB connection to avoid blocking foreground IPC commands.
@@ -1588,7 +1578,9 @@ pub fn write_enrichment_results(
     if input.entity_type == "account" {
         if let Ok(Some(account)) = db.get_account(&input.entity_id) {
             if let Some(user_arr) = account.arr {
-                let cc = final_intel.contract_context.get_or_insert_with(Default::default);
+                let cc = final_intel
+                    .contract_context
+                    .get_or_insert_with(Default::default);
                 if cc.current_arr != Some(user_arr) {
                     log::info!(
                         "[intel_queue] Overriding AI currentArr ({:?}) with user ARR ({}) for {}",
@@ -1918,7 +1910,10 @@ fn dual_write_enrichment_commitments(
 
     // 3. Emit signal for the dual-write
     let commitment_count = intel.open_commitments.as_ref().map_or(0, |c| c.len())
-        + intel.success_plan_signals.as_ref().map_or(0, |s| s.stated_objectives.len());
+        + intel
+            .success_plan_signals
+            .as_ref()
+            .map_or(0, |s| s.stated_objectives.len());
     if commitment_count > 0 {
         let value = serde_json::json!({
             "count": commitment_count,

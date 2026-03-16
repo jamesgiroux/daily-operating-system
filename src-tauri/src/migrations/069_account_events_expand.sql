@@ -1,6 +1,17 @@
 -- Expand account_events CHECK constraint from 4 to 16 event types.
 -- SQLite requires a full table rebuild to modify CHECK constraints.
 
+CREATE TABLE IF NOT EXISTS account_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('renewal', 'expansion', 'churn', 'downgrade')),
+    event_date TEXT NOT NULL,
+    arr_impact REAL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
 -- Step 1: Rebuild account_events with expanded CHECK
 CREATE TABLE account_events_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
