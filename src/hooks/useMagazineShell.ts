@@ -67,7 +67,13 @@ export function useMagazineShellProvider() {
   const [folioPaintCount, setFolioPaintCount] = useState(0);
 
   const register = useCallback((c: MagazineShellConfig) => setConfig(c), []);
-  const unregister = useCallback(() => { setConfig(null); volatileRef.current = {}; }, []);
+  // I563: unregister clears config only. Volatile ref is NOT wiped here because
+  // during same-route navigation (Account A → B), React's effect cleanup ordering
+  // means the old page's cleanup runs AFTER the new render's synchronous ref write.
+  // Wiping volatile in cleanup would destroy the new page's already-written actions.
+  // The volatile ref is overwritten synchronously by useUpdateFolioVolatile on each
+  // render, so stale data is never a concern — the new page always wins.
+  const unregister = useCallback(() => { setConfig(null); }, []);
   const requestFolioRepaint = useCallback(() => setFolioPaintCount(n => n + 1), []);
 
   return { config, register, unregister, volatileRef, requestFolioRepaint, folioPaintCount };

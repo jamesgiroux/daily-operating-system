@@ -105,6 +105,14 @@ function getCommitmentStatusLabel(status?: string): string {
   }
 }
 
+/** Heuristic: is this a short, display-worthy metric value (number, percentage, grade)?
+ *  If not, it's narrative text that shouldn't render at 28px serif. */
+function isShortValue(value?: string): boolean {
+  if (!value) return true;
+  // Short enough to display large (≤20 chars covers "$639,148", "9", "85%", "A+", "Q2 2026")
+  return value.length <= 20;
+}
+
 /** Rough progress percent from current/target strings (best-effort numeric extraction). */
 function estimateProgress(current?: string, target?: string): number | null {
   if (!current || !target) return null;
@@ -235,7 +243,7 @@ export function ValueCommitments({
               return (
                 <div key={i} className={css.metricCell}>
                   <div className={css.metricName}>{metric.name}</div>
-                  <div className={css.metricValue}>
+                  <div className={isShortValue(metric.current) ? css.metricValue : css.metricValueLong}>
                     {metric.current ?? "\u2014"}
                   </div>
                   {metric.target && (

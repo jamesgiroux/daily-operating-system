@@ -23,7 +23,7 @@ import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatArr } from "@/lib/utils";
-import type { AccountListItem, DiscoveredAccount, EphemeralBriefing as EphemeralBriefingType } from "@/types";
+import type { AccountListItem, DiscoveredAccount, EphemeralBriefing as EphemeralBriefingType, FeatureFlags } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 
@@ -147,11 +147,19 @@ export default function AccountsPage() {
     }
   }, [archiveTab, loadAccounts, loadArchivedAccounts]);
 
-  // I494: Check Glean connection status on mount
+  // I494: Check Glean connection status + feature flag on mount
+  const [discoveryEnabled, setDiscoveryEnabled] = useState(false);
   useEffect(() => {
-    invoke<{ status: string }>("get_glean_auth_status")
-      .then((result) => setGleanConnected(result.status === "authenticated"))
-      .catch(() => setGleanConnected(false));
+    invoke<FeatureFlags>("get_feature_flags")
+      .then((flags) => {
+        if (flags.glean_discovery_enabled) {
+          setDiscoveryEnabled(true);
+          invoke<{ status: string }>("get_glean_auth_status")
+            .then((result) => setGleanConnected(result.status === "authenticated"))
+            .catch(() => setGleanConnected(false));
+        }
+      })
+      .catch(() => setDiscoveryEnabled(false));
   }, []);
 
   // I494: Discover accounts from Glean
@@ -436,7 +444,7 @@ export default function AccountsPage() {
         >
           {isArchived ? "\u2190 Active" : "Archive"}
         </button>
-        {!isArchived && gleanConnected && (
+        {!isArchived && discoveryEnabled && gleanConnected && (
           <button
             onClick={handleDiscoverAccounts}
             style={{
@@ -791,7 +799,7 @@ export default function AccountsPage() {
       )}
 
       {/* I495: Ephemeral account query */}
-      {gleanConnected && !isArchived && (
+      {discoveryEnabled && gleanConnected && !isArchived && (
         <div style={{ marginBottom: 20 }}>
           <form onSubmit={handleEphemeralQuery} style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input

@@ -137,6 +137,21 @@
   margin-bottom: 4px;
 }
 
+/* When the AI returns narrative text instead of a short value,
+   drop to body font size so the card doesn't blow out. */
+.metricValueLong {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .metricTarget {
   font-family: var(--font-mono);
   font-size: 10px;

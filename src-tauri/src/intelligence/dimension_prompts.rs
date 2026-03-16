@@ -747,7 +747,7 @@ fn dimension_json_schema(
         "value_success" => {
             s.push_str(
                 r#"  "valueDelivered": [{"date": "ISO date", "statement": "quantified outcome — must include a number", "source": "meeting|email|capture", "impact": "revenue|cost|risk|speed", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
-  "successMetrics": [{"name": "KPI name", "target": "target value", "current": "current value", "status": "on_track|at_risk|behind|achieved", "owner": "who owns this metric"}],
+  "successMetrics": [{"name": "short KPI label (max 5 words)", "target": "short target (e.g. 95%, $500K, 8+)", "current": "short current value — max 15 chars, number/grade only, NEVER a sentence", "status": "on_track|at_risk|behind|achieved", "owner": "who owns this metric"}],
   "successPlanSignals": {
     "statedObjectives": [{"objective": "...", "source": "meeting|email|file", "owner": "...", "targetDate": "ISO or null", "confidence": "high|medium|low"}],
     "mutualSuccessCriteria": [{"criterion": "...", "ownedBy": "us|them|joint", "status": "not_started|in_progress|achieved|at_risk"}],

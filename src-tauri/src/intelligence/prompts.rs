@@ -1943,8 +1943,9 @@ fn build_intelligence_prompt_inner(
          // GOOD: \"Onboarded 500 users in 2 weeks vs previous 6 weeks\"\n\
          {\"date\": \"ISO date\", \"statement\": \"quantified outcome\", \
          \"source\": \"meeting|email|capture\", \"impact\": \"revenue|cost|risk|speed\"}],\n\
-           \"successMetrics\": [{\"name\": \"KPI name\", \"target\": \"target value\", \
-         \"current\": \"current value\", \"status\": \"on_track|at_risk|behind|achieved\", \
+           \"successMetrics\": [{\"name\": \"short KPI label (max 5 words)\", \"target\": \"short target (e.g. 95%, $500K, 8+)\", \
+         \"current\": \"short current value (e.g. $639K, 9, 85%) — max 15 chars, number or grade only, NEVER a sentence\", \
+         \"status\": \"on_track|at_risk|behind|achieved\", \
          \"owner\": \"who owns this metric\"}],\n\
            \"openCommitments\": [{\"description\": \"what was committed\", \"owner\": \"who owns it\", \
          \"dueDate\": \"ISO date or null\", \"source\": \"meeting/email where committed\", \
