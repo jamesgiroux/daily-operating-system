@@ -188,19 +188,7 @@ jobs:
           # Build the full GitHub Release body (notes + install instructions)
           DMG_NAME="${{ steps.artifacts.outputs.dmg_name }}"
           cat /tmp/release_notes.md > /tmp/release_body.md
-          cat >> /tmp/release_body.md << INSTALL_EOF
-
----
-
-## Installation
-
-**New users:**
-1. Download \`${DMG_NAME}\`
-2. Drag DailyOS to Applications
-3. Open DailyOS — the app is signed and notarized, no workarounds needed
-
-**Existing users:** DailyOS will update automatically. Check Settings for details.
-INSTALL_EOF
+          printf '\n---\n\n## Installation\n\n**New users:**\n1. Download the DMG from this release\n2. Drag DailyOS to Applications\n3. Open DailyOS — the app is signed and notarized, no workarounds needed\n\n**Existing users:** DailyOS will update automatically. Check Settings for details.\n' >> /tmp/release_body.md
 
           echo "Release notes extracted:"
           cat /tmp/release_notes.md
