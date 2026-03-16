@@ -2,6 +2,7 @@
  * SpotlightSlide — One account deep dive per slide.
  * Each notable account gets a full-viewport editorial treatment.
  */
+import { useState } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import { formatArr } from "@/lib/utils";
 import type { AccountDeepDive, BookOfBusinessContent } from "@/types/reports";
@@ -16,6 +17,8 @@ interface SpotlightSlideProps {
 
 export function SpotlightSlide({ dive, index, total, content, onUpdate }: SpotlightSlideProps) {
   const di = content.deepDives.findIndex((d) => d.accountId === dive.accountId);
+  const [hoveredWs, setHoveredWs] = useState<number | null>(null);
+  const [hoveredRg, setHoveredRg] = useState<number | null>(null);
 
   return (
     <section
@@ -177,6 +180,8 @@ export function SpotlightSlide({ dive, index, total, content, onUpdate }: Spotli
             {dive.activeWorkstreams.map((ws, wi) => (
               <div
                 key={wi}
+                onMouseEnter={() => setHoveredWs(wi)}
+                onMouseLeave={() => setHoveredWs(null)}
                 style={{
                   display: "flex",
                   alignItems: "baseline",
@@ -209,8 +214,34 @@ export function SpotlightSlide({ dive, index, total, content, onUpdate }: Spotli
                     fontFamily: "var(--font-sans)",
                     fontSize: 15,
                     color: "var(--color-text-primary)",
+                    flex: 1,
                   }}
                 />
+                {dive.activeWorkstreams.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (di < 0) return;
+                      const next = [...content.deepDives];
+                      next[di] = { ...next[di], activeWorkstreams: next[di].activeWorkstreams.filter((_, j) => j !== wi) };
+                      onUpdate({ ...content, deepDives: next });
+                    }}
+                    style={{
+                      opacity: hoveredWs === wi ? 0.6 : 0,
+                      transition: "opacity 0.15s",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "2px 4px",
+                      fontSize: 12,
+                      color: "var(--color-text-tertiary)",
+                      flexShrink: 0,
+                    }}
+                    aria-label="Remove"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -234,6 +265,8 @@ export function SpotlightSlide({ dive, index, total, content, onUpdate }: Spotli
             {dive.risksAndGaps.map((rg, ri) => (
               <div
                 key={ri}
+                onMouseEnter={() => setHoveredRg(ri)}
+                onMouseLeave={() => setHoveredRg(null)}
                 style={{
                   display: "flex",
                   alignItems: "baseline",
@@ -266,8 +299,34 @@ export function SpotlightSlide({ dive, index, total, content, onUpdate }: Spotli
                     fontFamily: "var(--font-sans)",
                     fontSize: 15,
                     color: "var(--color-text-primary)",
+                    flex: 1,
                   }}
                 />
+                {dive.risksAndGaps.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (di < 0) return;
+                      const next = [...content.deepDives];
+                      next[di] = { ...next[di], risksAndGaps: next[di].risksAndGaps.filter((_, j) => j !== ri) };
+                      onUpdate({ ...content, deepDives: next });
+                    }}
+                    style={{
+                      opacity: hoveredRg === ri ? 0.6 : 0,
+                      transition: "opacity 0.15s",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "2px 4px",
+                      fontSize: 12,
+                      color: "var(--color-text-tertiary)",
+                      flexShrink: 0,
+                    }}
+                    aria-label="Remove"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             ))}
           </div>

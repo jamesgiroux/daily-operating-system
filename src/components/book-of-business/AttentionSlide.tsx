@@ -2,6 +2,7 @@
  * AttentionSlide — Portfolio risks and opportunities.
  * Slide 2: what needs attention, presented as editorial callouts.
  */
+import { useState } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import { formatArr } from "@/lib/utils";
 import type { BookOfBusinessContent, BookRiskItem, BookOpportunityItem } from "@/types/reports";
@@ -61,10 +62,14 @@ export function AttentionSlide({ content, onUpdate }: AttentionSlideProps) {
               key={i}
               index={i + 1}
               item={item}
+              canRemove={content.topRisks.length > 1}
               onUpdate={(updated) => {
                 const next = [...content.topRisks];
                 next[i] = updated;
                 onUpdate({ ...content, topRisks: next });
+              }}
+              onRemove={() => {
+                onUpdate({ ...content, topRisks: content.topRisks.filter((_, j) => j !== i) });
               }}
             />
           ))}
@@ -95,10 +100,14 @@ export function AttentionSlide({ content, onUpdate }: AttentionSlideProps) {
               key={i}
               index={i + 1}
               item={item}
+              canRemove={content.topOpportunities.length > 1}
               onUpdate={(updated) => {
                 const next = [...content.topOpportunities];
                 next[i] = updated;
                 onUpdate({ ...content, topOpportunities: next });
+              }}
+              onRemove={() => {
+                onUpdate({ ...content, topOpportunities: content.topOpportunities.filter((_, j) => j !== i) });
               }}
             />
           ))}
@@ -116,14 +125,22 @@ export function AttentionSlide({ content, onUpdate }: AttentionSlideProps) {
 function RiskItem({
   index,
   item,
+  canRemove,
   onUpdate,
+  onRemove,
 }: {
   index: number;
   item: BookRiskItem;
+  canRemove: boolean;
   onUpdate: (item: BookRiskItem) => void;
+  onRemove: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         display: "flex",
         alignItems: "baseline",
@@ -172,6 +189,25 @@ function RiskItem({
           }}
         />
       </div>
+      {canRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          style={{
+            opacity: hovered ? 0.6 : 0,
+            transition: "opacity 0.15s",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "4px 6px",
+            fontSize: 14,
+            color: "var(--color-text-tertiary)",
+            flexShrink: 0,
+          }}
+          aria-label="Remove"
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 }
@@ -179,14 +215,22 @@ function RiskItem({
 function OppItem({
   index,
   item,
+  canRemove,
   onUpdate,
+  onRemove,
 }: {
   index: number;
   item: BookOpportunityItem;
+  canRemove: boolean;
   onUpdate: (item: BookOpportunityItem) => void;
+  onRemove: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         display: "flex",
         alignItems: "baseline",
@@ -235,6 +279,25 @@ function OppItem({
           }}
         />
       </div>
+      {canRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          style={{
+            opacity: hovered ? 0.6 : 0,
+            transition: "opacity 0.15s",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "4px 6px",
+            fontSize: 14,
+            color: "var(--color-text-tertiary)",
+            flexShrink: 0,
+          }}
+          aria-label="Remove"
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 }

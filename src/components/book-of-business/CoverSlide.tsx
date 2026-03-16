@@ -1,7 +1,9 @@
 /**
  * CoverSlide — Full-viewport hero with title, vitals strip, executive summary.
  * Slide 1 of the Book of Business presentation.
+ * All vitals are editable for internal presentation correction.
  */
+import { useState, useCallback } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import { formatArr } from "@/lib/utils";
 import type { BookOfBusinessContent } from "@/types/reports";
@@ -98,7 +100,7 @@ export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdat
         </div>
       )}
 
-      {/* Vitals strip */}
+      {/* Vitals strip — all editable */}
       <div
         style={{
           display: "flex",
@@ -106,20 +108,40 @@ export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdat
           marginBottom: 40,
         }}
       >
-        <VitalStat label="Accounts" value={String(content.totalAccounts)} />
-        <VitalStat
+        <EditableVitalStat
+          label="Accounts"
+          value={String(content.totalAccounts)}
+          onChange={(v) => {
+            const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
+            if (!isNaN(n)) onUpdate({ ...content, totalAccounts: n });
+          }}
+        />
+        <EditableVitalStat
           label="Total ARR"
           value={content.totalArr != null ? `$${formatArr(content.totalArr)}` : "\u2014"}
+          onChange={(v) => {
+            const n = parseFloat(v.replace(/[^0-9.]/g, ""));
+            if (!isNaN(n)) onUpdate({ ...content, totalArr: n });
+          }}
         />
-        <VitalStat
+        <EditableVitalStat
           label="At-Risk ARR"
           value={content.atRiskArr != null ? `$${formatArr(content.atRiskArr)}` : "\u2014"}
           danger={(content.atRiskArr ?? 0) > 0}
+          onChange={(v) => {
+            const n = parseFloat(v.replace(/[^0-9.]/g, ""));
+            if (!isNaN(n)) onUpdate({ ...content, atRiskArr: n });
+          }}
         />
-        <VitalStat
+        <EditableVitalStat
           label="Upcoming Renewals"
           value={`${content.upcomingRenewals}${content.upcomingRenewalsArr != null ? ` ($${formatArr(content.upcomingRenewalsArr)})` : ""}`}
           small
+          onChange={(v) => {
+            // Parse "N ($XYk)" format — extract the count
+            const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
+            if (!isNaN(n)) onUpdate({ ...content, upcomingRenewals: n });
+          }}
         />
       </div>
 
@@ -145,17 +167,44 @@ export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdat
   );
 }
 
-function VitalStat({
+function EditableVitalStat({
   label,
   value,
   danger,
   small,
+  onChange,
 }: {
   label: string;
   value: string;
   danger?: boolean;
   small?: boolean;
+  onChange: (value: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  const startEdit = useCallback(() => {
+    setDraft(value);
+    setEditing(true);
+  }, [value]);
+
+  const commitEdit = useCallback(() => {
+    setEditing(false);
+    if (draft.trim() !== value) {
+      onChange(draft.trim());
+    }
+  }, [draft, value, onChange]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitEdit();
+    } else if (e.key === "Escape") {
+      setEditing(false);
+      setDraft(value);
+    }
+  }, [commitEdit, value]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <span
@@ -170,17 +219,48 @@ function VitalStat({
       >
         {label}
       </span>
-      <span
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: small ? 22 : 28,
-          fontWeight: 400,
-          color: danger ? "var(--color-spice-terracotta)" : "var(--color-text-primary)",
-          letterSpacing: "-0.02em",
-        }}
-      >
-        {value}
-      </span>
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={handleKeyDown}
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: small ? 22 : 28,
+            fontWeight: 400,
+            color: danger ? "var(--color-spice-terracotta)" : "var(--color-text-primary)",
+            letterSpacing: "-0.02em",
+            background: "none",
+            border: "none",
+            borderBottom: "1px solid var(--color-spice-turmeric)",
+            outline: "none",
+            padding: 0,
+            width: "100%",
+            minWidth: 60,
+          }}
+        />
+      ) : (
+        <span
+          onClick={startEdit}
+          title="Click to edit"
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: small ? 22 : 28,
+            fontWeight: 400,
+            color: danger ? "var(--color-spice-terracotta)" : "var(--color-text-primary)",
+            letterSpacing: "-0.02em",
+            cursor: "text",
+            borderBottom: "1px solid transparent",
+            transition: "border-color 0.15s",
+          }}
+          onMouseEnter={(e) => { (e.target as HTMLElement).style.borderBottomColor = "var(--color-rule-light)"; }}
+          onMouseLeave={(e) => { (e.target as HTMLElement).style.borderBottomColor = "transparent"; }}
+        >
+          {value}
+        </span>
+      )}
     </div>
   );
 }
