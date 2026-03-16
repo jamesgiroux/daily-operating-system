@@ -13,6 +13,7 @@ interface ProposedActionRowProps {
     id: string;
     title: string;
     priority?: string;
+    context?: string | null;
     sourceLabel?: string | null;
     accountName?: string | null;
     accountId?: string | null;
@@ -105,13 +106,27 @@ export function ProposedActionRow({
         >
           {stripMarkdown(action.title)}
         </div>
+        {action.context && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: compact ? 12 : 14,
+              fontWeight: 400,
+              color: "var(--color-text-secondary)",
+              marginTop: compact ? 2 : 4,
+              lineHeight: 1.45,
+            }}
+          >
+            {stripMarkdown(action.context)}
+          </div>
+        )}
         {compact && action.sourceLabel && (
           <div
             style={{
               fontFamily: "var(--font-mono)",
               fontSize: 11,
               color: "var(--color-text-tertiary)",
-              marginTop: 1,
+              marginTop: action.context ? 4 : 1,
             }}
           >
             {action.sourceLabel}
@@ -124,7 +139,7 @@ export function ProposedActionRow({
               fontSize: 13,
               fontWeight: 300,
               color: "var(--color-text-tertiary)",
-              marginTop: 2,
+              marginTop: action.context ? 6 : 2,
             }}
           >
             {contextParts.join(" \u00B7 ")}
@@ -161,7 +176,7 @@ export function ProposedActionRow({
         </button>
         <button
           onClick={onReject}
-          title={compact ? "Dismiss" : "Reject"}
+          title="Dismiss"
           style={{
             width: btnSize,
             height: btnSize,

@@ -1,0 +1,139 @@
+/* DimensionBar — 6-dimension relationship health visualization */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ─── Single dimension row ─────────────────────────────────────────────── */
+
+.dimension {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dimensionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dimensionLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dimensionScore {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+}
+
+.dimensionWeight {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+/* ─── Bar ───────────────────────────────────────────────────────────────── */
+
+.barTrack {
+  width: 100%;
+  height: 6px;
+  background: var(--color-rule-light);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition-normal);
+}
+
+.barFillGreen {
+  background: var(--color-garden-sage);
+}
+
+.barFillYellow {
+  background: var(--color-spice-saffron);
+}
+
+.barFillRed {
+  background: var(--color-spice-terracotta);
+}
+
+/* ─── Trend indicator ──────────────────────────────────────────────────── */
+
+.trend {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.trendImproving {
+  color: var(--color-garden-sage);
+}
+
+.trendStable {
+  color: var(--color-text-tertiary);
+}
+
+.trendDeclining {
+  color: var(--color-spice-terracotta);
+}
+
+/* ─── Evidence ─────────────────────────────────────────────────────────── */
+
+.evidenceToggle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0 0;
+}
+
+.evidenceToggle:hover {
+  color: var(--color-text-secondary);
+}
+
+.evidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 0 0;
+}
+
+.evidenceItem {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  padding-left: 12px;
+  position: relative;
+}
+
+.evidenceItem::before {
+  content: "\2022";
+  position: absolute;
+  left: 0;
+  color: var(--color-text-tertiary);
+}

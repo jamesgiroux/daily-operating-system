@@ -16,8 +16,8 @@ Patterns to avoid across all content types. These are detected by `scripts/detec
 
 | Contrast framing | Direct statement |
 |-----------------|------------------|
-| "They're not treating WordPress VIP as a vendor. They're treating us as strategic partners." | "The Salesforce team is treating WordPress VIP as a strategic partner." |
-| "This isn't just about one opportunity." | "Salesforce is building the infrastructure..." |
+| "They're not treating WordPress VIP as a vendor. They're treating us as strategic partners." | "The Globex team is treating WordPress VIP as a strategic partner." |
+| "This isn't just about one opportunity." | "Globex is building the infrastructure..." |
 | "What we're seeing isn't speculative interest. It's commercial traction." | "We're seeing commercial traction." |
 
 ### 2. Negative Parallels
@@ -109,14 +109,14 @@ Good writing has natural rhythm variation:
 |-------|----------|
 | "Significant traction" | "Three enterprise deals in pipeline totaling $400K" |
 | "Strong momentum" | "Partnership formalization moving to legal review" |
-| "Positive feedback" | "Keith from Salesforce said: '[specific quote]'" |
+| "Positive feedback" | "Keith from Globex said: '[specific quote]'" |
 
 ### Orphan Claims
 
 Claims that sit in the document without supporting evidence nearby.
 
 **Bad**: "Our positioning is resonating with the market."
-**Good**: "Our positioning is resonating. In the NXP deal, Salesforce AEs brought us in within 24 hours of learning about the requirement."
+**Good**: "Our positioning is resonating. In the Vertex deal, Globex AEs brought us in within 24 hours of learning about the requirement."
 
 ### Evidence Dumping
 

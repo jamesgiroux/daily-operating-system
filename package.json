@@ -1,6 +1,6 @@
 {
   "name": "dailyos",
-  "version": "0.16.0",
+  "version": "1.0.0",
   "description": "Operational intelligence for your workday. Open the app, your day is ready.",
   "type": "module",
   "pnpm": {
@@ -17,6 +17,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:parity": "vitest run src/parity/phase3ParityGate.test.ts",
     "build:mcp": "bash src-tauri/scripts/build-mcp.sh"
   },
   "keywords": [],

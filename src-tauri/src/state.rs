@@ -124,6 +124,75 @@ pub struct SignalState {
     pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
 }
 
+/// Startup database recovery status for migration/integrity failures (I539).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseRecoveryStatus {
+    pub required: bool,
+    pub reason: String,
+    pub detail: String,
+    pub db_path: String,
+}
+
+impl DatabaseRecoveryStatus {
+    pub fn not_required() -> Self {
+        Self {
+            required: false,
+            reason: String::new(),
+            detail: String::new(),
+            db_path: String::new(),
+        }
+    }
+
+    pub fn required(reason: impl Into<String>, detail: impl Into<String>) -> Self {
+        let db_path = crate::db::ActionDb::db_path_public()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        Self {
+            required: true,
+            reason: reason.into(),
+            detail: detail.into(),
+            db_path,
+        }
+    }
+}
+
+/// Typed resource permits for concurrent background work (I565).
+///
+/// Replaces the single `heavy_work_semaphore` with per-resource permits so
+/// independent workloads (e.g. embedding inference vs. Gmail fetch) can run
+/// concurrently while still serializing within each resource class.
+pub struct ResourcePermits {
+    /// PTY subprocess — Claude Code intelligence enrichment.
+    pub pty: Arc<tokio::sync::Semaphore>,
+    /// User-triggered operations that should not queue behind background PTY work.
+    pub user_initiated: Arc<tokio::sync::Semaphore>,
+    /// Embedding model inference — CPU-intensive.
+    pub embeddings: Arc<tokio::sync::Semaphore>,
+    /// Gmail API pipeline — email fetch + enrichment.
+    pub email: Arc<tokio::sync::Semaphore>,
+    /// Daily briefing orchestration pipeline.
+    pub orchestration: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for ResourcePermits {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ResourcePermits {
+    pub fn new() -> Self {
+        Self {
+            pty: Arc::new(tokio::sync::Semaphore::new(1)),
+            user_initiated: Arc::new(tokio::sync::Semaphore::new(1)),
+            embeddings: Arc::new(tokio::sync::Semaphore::new(1)),
+            email: Arc::new(tokio::sync::Semaphore::new(1)),
+            orchestration: Arc::new(tokio::sync::Semaphore::new(1)),
+        }
+    }
+}
+
 /// Application state managed by Tauri
 pub struct AppState {
     pub config: RwLock<Option<Config>>,
@@ -170,19 +239,22 @@ pub struct AppState {
     /// True if the encryption key was not found in the Keychain on startup (I462).
     /// When set, the frontend shows a recovery screen instead of normal UI.
     pub encryption_key_missing: AtomicBool,
+    /// DB recovery state when migrations/schema integrity fail on startup (I539).
+    pub database_recovery_status: Mutex<DatabaseRecoveryStatus>,
     /// Tamper-evident audit log for enterprise observability (I471).
     pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
     /// Active role preset loaded from config (I309).
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
-    /// Semaphore limiting concurrent heavy operations (PTY subprocess,
-    /// embedding inference) to one at a time. Prevents resource contention
-    /// between background processors.
-    pub heavy_work_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Typed resource permits for concurrent background work (I565).
+    pub permits: ResourcePermits,
     /// Context provider for intelligence enrichment (ADR-0095).
     /// Determines where entity context is gathered (local DB vs. Glean).
-    pub context_provider: Arc<dyn crate::context_provider::ContextProvider>,
+    /// Wrapped in RwLock to allow hot-swap without app restart.
+    context_provider: std::sync::RwLock<Arc<dyn crate::context_provider::ContextProvider>>,
+    /// Shared app handle for service-layer Tauri event emission.
+    app_handle: std::sync::RwLock<Option<tauri::AppHandle>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -191,6 +263,27 @@ pub enum DbTryRead<T> {
     Busy,
     Unavailable,
     Poisoned,
+}
+
+fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoveryStatus {
+    match err {
+        crate::db::DbError::Migration(message) => {
+            DatabaseRecoveryStatus::required("migration_failed", message.clone())
+        }
+        crate::db::DbError::Sqlite(message) => {
+            DatabaseRecoveryStatus::required("database_open_failed", message.to_string())
+        }
+        crate::db::DbError::Encryption(message) => {
+            DatabaseRecoveryStatus::required("database_encryption_error", message.clone())
+        }
+        crate::db::DbError::CreateDir(message) => {
+            DatabaseRecoveryStatus::required("database_path_error", message.to_string())
+        }
+        crate::db::DbError::HomeDirNotFound => {
+            DatabaseRecoveryStatus::required("database_path_error", "Home directory not found")
+        }
+        crate::db::DbError::KeyMissing { .. } => DatabaseRecoveryStatus::not_required(),
+    }
 }
 
 impl AppState {
@@ -219,6 +312,7 @@ impl AppState {
         );
 
         let mut encryption_key_missing = false;
+        let mut database_recovery_status = DatabaseRecoveryStatus::not_required();
         let db = match crate::db::ActionDb::open() {
             Ok(db) => {
                 // Distinguish key generation (fresh install) from access (existing DB)
@@ -263,6 +357,18 @@ impl AppState {
             }
             Err(e) => {
                 log::warn!("Failed to open actions database: {e}. DB features disabled.");
+                let status = recovery_status_from_db_error(&e);
+                if status.required {
+                    let _ = audit_logger.append(
+                        "security",
+                        "db_recovery_required",
+                        serde_json::json!({
+                            "reason": status.reason.clone(),
+                            "detail": status.detail.clone(),
+                        }),
+                    );
+                    database_recovery_status = status;
+                }
                 None
             }
         };
@@ -294,6 +400,7 @@ impl AppState {
             serde_json::json!({
                 "version": env!("CARGO_PKG_VERSION"),
                 "db_encrypted": !encryption_key_missing && db.is_some(),
+                "db_recovery_required": database_recovery_status.required,
             }),
         );
         let audit_log = Arc::new(Mutex::new(audit_logger));
@@ -327,17 +434,25 @@ impl AppState {
 
         let context_provider: Arc<dyn crate::context_provider::ContextProvider> = match context_mode
         {
-            Some(crate::context_provider::ContextMode::Glean { endpoint, strategy }) => {
-                log::info!("Context mode: Glean ({:?}) endpoint={}", strategy, endpoint);
+            Some(crate::context_provider::ContextMode::Glean { endpoint }) => {
+                log::info!("Context mode: Glean endpoint={}", endpoint);
                 let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
                 Arc::new(crate::context_provider::glean::GleanContextProvider::new(
                     endpoint,
-                    strategy,
                     cache,
                     local_provider,
                 ))
             }
             _ => {
+                // Belt-and-suspenders: if mode is Local but Keychain has a Glean token,
+                // log a warning. With auto-set on auth (Step 3), this should be rare.
+                if crate::glean::token_store::load_token().is_ok() {
+                    log::warn!(
+                        "Context mode is Local but Glean token found in Keychain. \
+                         This may indicate a previous auth that didn't save the mode. \
+                         Connect Glean in Settings to activate Glean mode."
+                    );
+                }
                 log::info!("Context mode: Local");
                 Arc::new(local_provider)
             }
@@ -402,11 +517,95 @@ impl AppState {
             last_failed_unlock: Mutex::new(None),
             failed_unlock_count: AtomicU32::new(0),
             encryption_key_missing: AtomicBool::new(encryption_key_missing),
+            database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
             active_preset: RwLock::new(active_preset),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
-            heavy_work_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-            context_provider,
+            permits: ResourcePermits::new(),
+            context_provider: std::sync::RwLock::new(context_provider),
+            app_handle: std::sync::RwLock::new(None),
+        }
+    }
+
+    /// I573: Lock DB with poison recovery. Returns the MutexGuard or an error if
+    /// the DB is None. If the mutex was poisoned by a panicked thread, recovers
+    /// by clearing the poison and returns the inner data (with a logged warning).
+    /// Does NOT recover audit_log — integrity > availability for audit chains.
+    pub fn db_lock_or_recover(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, Option<crate::db::ActionDb>>, String> {
+        match self.db.lock() {
+            Ok(guard) => Ok(guard),
+            Err(poisoned) => {
+                log::warn!("I573: DB mutex poisoned, recovering inner data");
+                Ok(poisoned.into_inner())
+            }
+        }
+    }
+
+    /// I573: Read config with poison recovery.
+    pub fn config_read_or_recover(
+        &self,
+    ) -> Result<std::sync::RwLockReadGuard<'_, Option<Config>>, String> {
+        match self.config.read() {
+            Ok(guard) => Ok(guard),
+            Err(poisoned) => {
+                log::warn!("I573: Config RwLock poisoned, recovering inner data");
+                Ok(poisoned.into_inner())
+            }
+        }
+    }
+
+    /// Get a snapshot of the current context provider (cheap Arc clone).
+    pub fn context_provider(&self) -> Arc<dyn crate::context_provider::ContextProvider> {
+        Arc::clone(&self.context_provider.read().expect("context_provider lock poisoned"))
+    }
+
+    /// Hot-swap the context provider at runtime (ADR-0095 dynamic mode switch).
+    pub fn swap_context_provider(&self, new: Arc<dyn crate::context_provider::ContextProvider>) {
+        let mut guard = self.context_provider.write().expect("context_provider lock poisoned");
+        *guard = new;
+        log::info!("Context provider swapped to: {}", guard.provider_name());
+    }
+
+    pub fn set_app_handle(&self, handle: tauri::AppHandle) {
+        let mut guard = self.app_handle.write().expect("app_handle lock poisoned");
+        *guard = Some(handle);
+    }
+
+    pub fn app_handle(&self) -> Option<tauri::AppHandle> {
+        self.app_handle
+            .read()
+            .expect("app_handle lock poisoned")
+            .clone()
+    }
+
+    /// Build a context provider for the given mode, using this state's config and embedding model.
+    pub fn build_context_provider(
+        &self,
+        mode: &crate::context_provider::ContextMode,
+    ) -> Arc<dyn crate::context_provider::ContextProvider> {
+        let workspace_path = self
+            .config_read_or_recover()
+            .ok()
+            .and_then(|c| c.as_ref().map(|cfg| std::path::PathBuf::from(&cfg.workspace_path)))
+            .unwrap_or_default();
+
+        let local_provider = crate::context_provider::local::LocalContextProvider::new(
+            workspace_path,
+            Arc::clone(&self.embedding_model),
+        );
+
+        match mode {
+            crate::context_provider::ContextMode::Glean { endpoint } => {
+                let cache = Arc::new(crate::context_provider::cache::GleanCache::new());
+                Arc::new(crate::context_provider::glean::GleanContextProvider::new(
+                    endpoint.clone(),
+                    cache,
+                    local_provider,
+                ))
+            }
+            crate::context_provider::ContextMode::Local => Arc::new(local_provider),
         }
     }
 
@@ -506,7 +705,7 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let guard = self.db_lock_or_recover()?;
         let db = guard
             .as_ref()
             .ok_or_else(|| "Database unavailable".to_string())?;
@@ -520,11 +719,69 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let guard = self.db_lock_or_recover()?;
         let db = guard
             .as_ref()
             .ok_or_else(|| "Database unavailable".to_string())?;
         f(db)
+    }
+
+    /// Replace the legacy sync DB handle. Used by lifecycle commands that must
+    /// swap or clear the on-disk database without leaking the mutex outside.
+    pub fn replace_sync_db(
+        &self,
+        db: Option<crate::db::ActionDb>,
+    ) -> Result<(), String> {
+        let mut guard = self.db_lock_or_recover()?;
+        *guard = db;
+        Ok(())
+    }
+
+    /// Read the on-disk database path from the legacy sync DB handle.
+    pub fn current_sync_db_path(&self) -> Result<Option<String>, String> {
+        let guard = self.db_lock_or_recover()?;
+        let Some(action_db) = guard.as_ref() else {
+            return Ok(None);
+        };
+        let path: String = action_db
+            .conn_ref()
+            .query_row("PRAGMA database_list", [], |row| row.get(2))
+            .map_err(|e| e.to_string())?;
+        Ok(Some(path))
+    }
+
+    /// Get startup database recovery status for the UI.
+    pub fn get_database_recovery_status(&self) -> DatabaseRecoveryStatus {
+        self.database_recovery_status
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|_| DatabaseRecoveryStatus::not_required())
+    }
+
+    /// Mark database recovery as required with a reason/detail payload.
+    pub fn set_database_recovery_required(
+        &self,
+        reason: impl Into<String>,
+        detail: impl Into<String>,
+    ) {
+        if let Ok(mut guard) = self.database_recovery_status.lock() {
+            *guard = DatabaseRecoveryStatus::required(reason, detail);
+        }
+    }
+
+    /// Clear database recovery-required state after successful restore.
+    pub fn clear_database_recovery_required(&self) {
+        if let Ok(mut guard) = self.database_recovery_status.lock() {
+            *guard = DatabaseRecoveryStatus::not_required();
+        }
+    }
+
+    /// True when startup should show DB recovery UI instead of the app.
+    pub fn is_database_recovery_required(&self) -> bool {
+        self.database_recovery_status
+            .lock()
+            .map(|guard| guard.required)
+            .unwrap_or(false)
     }
 
     // -------------------------------------------------------------------------
@@ -589,7 +846,7 @@ impl AppState {
         // Startup fallback: DbService initialization runs in background.
         // Keep commands working by using the legacy sync connection until
         // DbService is ready.
-        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let mut guard = self.db_lock_or_recover()?;
         if guard.is_none() {
             match crate::db::ActionDb::open() {
                 Ok(db) => {
@@ -639,7 +896,7 @@ impl AppState {
         }
 
         // Startup fallback: DbService initialization runs in background.
-        let mut guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let mut guard = self.db_lock_or_recover()?;
         if guard.is_none() {
             match crate::db::ActionDb::open() {
                 Ok(db) => {
@@ -688,6 +945,11 @@ impl Default for AppState {
 /// Uses a fresh DB connection to avoid blocking UI reads on the global DB mutex
 /// during startup.
 pub fn run_startup_sync(state: &AppState) {
+    if state.is_database_recovery_required() {
+        log::warn!("Startup sync skipped: database recovery required");
+        return;
+    }
+
     let config = match state.config.read().ok().and_then(|g| g.clone()) {
         Some(cfg) => cfg,
         None => {
@@ -768,6 +1030,15 @@ pub fn run_startup_sync(state: &AppState) {
         Ok(n) if n > 0 => log::info!("Startup sync: migrated {} legacy notes", n),
         Ok(_) => {}
         Err(e) => log::warn!("Startup sync: legacy notes migration failed: {}", e),
+    }
+
+    // Rebuild search index (I427)
+    {
+        use crate::db::search::SearchDb;
+        match db.conn_ref().rebuild_search_index() {
+            Ok(count) => log::info!("Search index rebuilt: {} entries", count),
+            Err(e) => log::warn!("Search index rebuild failed: {}", e),
+        }
     }
 
     // One-off: import master-task-list.md into SQLite (DELETE after confirmed)

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use rusqlite::params;
 use tauri::{AppHandle, Emitter};
 
 use crate::db::DbQuillSyncState;
@@ -360,12 +361,13 @@ async fn process_sync_row(
 
                     // Write captures (wins, risks, decisions) that were extracted by AI
                     // but couldn't be written during pipeline (db was None).
+                    let meeting_account_id = resolve_meeting_account_id(db, &calendar_event.id);
                     let account = calendar_event.account.as_deref();
                     for win in &tr.wins {
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
-                            account,
+                            meeting_account_id.as_deref(),
                             "win",
                             win,
                         );
@@ -374,7 +376,7 @@ async fn process_sync_row(
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
-                            account,
+                            meeting_account_id.as_deref(),
                             "risk",
                             risk,
                         );
@@ -383,7 +385,7 @@ async fn process_sync_row(
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
-                            account,
+                            meeting_account_id.as_deref(),
                             "decision",
                             decision,
                         );
@@ -400,16 +402,11 @@ async fn process_sync_row(
                             created_at: now.clone(),
                             due_date: action.due_date.clone(),
                             completed_at: None,
-                            account_id: account
-                                .map(|a| {
-                                    // Try to resolve account name to ID
-                                    db.get_account_by_name(a)
-                                        .ok()
-                                        .flatten()
-                                        .map(|acc| acc.id)
-                                        .unwrap_or_default()
+                            account_id: meeting_account_id.clone().or_else(|| {
+                                account.and_then(|a| {
+                                    db.get_account_by_name(a).ok().flatten().map(|acc| acc.id)
                                 })
-                                .filter(|s| !s.is_empty()),
+                            }),
                             project_id: None,
                             source_type: Some("transcript".to_string()),
                             source_id: Some(calendar_event.id.clone()),
@@ -515,6 +512,24 @@ fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_i
             let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
         }
     }
+}
+
+/// Resolve the primary account_id for a meeting.
+///
+/// Uses explicit account links in `meeting_entities`.
+fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Option<String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT me.entity_id
+             FROM meeting_entities me
+             WHERE me.meeting_id = ?1
+               AND me.entity_type = 'account'
+             ORDER BY me.rowid ASC
+             LIMIT 1",
+            params![meeting_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
 }
 
 /// Check recently-ended meetings and create Quill sync rows for eligible ones.

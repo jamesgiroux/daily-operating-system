@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import styles from "./onboarding.module.css";
 
 interface TourHighlightProps {
   active: boolean;
@@ -10,15 +11,7 @@ export const TourHighlight = forwardRef<HTMLDivElement, TourHighlightProps>(
     return (
       <div
         ref={ref}
-        style={{
-          position: "relative",
-          borderLeft: active
-            ? "3px solid var(--color-spice-turmeric)"
-            : "3px solid transparent",
-          paddingLeft: active ? 16 : 16,
-          opacity: active ? 1 : 0.4,
-          transition: "all 0.3s ease",
-        }}
+        className={`${styles.tourHighlight} ${active ? styles.tourHighlightActive : styles.tourHighlightInactive}`}
       >
         <div className="pointer-events-none">{children}</div>
       </div>

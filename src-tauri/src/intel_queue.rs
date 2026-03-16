@@ -6,7 +6,7 @@
 //! during the 30-120s PTY operation.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -14,16 +14,15 @@ use chrono::Utc;
 
 use tauri::{AppHandle, Emitter};
 
+use crate::intelligence::dimension_prompts::{self, DIMENSION_NAMES};
 use crate::intelligence::{
-    build_intelligence_prompt_with_preset, parse_intelligence_response, read_intelligence_json,
-    write_intelligence_json, IntelligenceJson, SourceManifestEntry,
+    build_intelligence_prompt_with_preset, extract_inferred_relationships,
+    parse_intelligence_response, write_intelligence_json, InferredRelationship, IntelligenceJson,
+    SourceManifestEntry,
 };
 use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::AiModelConfig;
-
-/// Maximum number of entities to batch in a single PTY call (I289).
-const MAX_BATCH_SIZE: usize = 3;
 
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
@@ -47,8 +46,10 @@ pub enum IntelPriority {
     ContentChange = 1,
     /// Triggered by calendar changes affecting this entity's meetings.
     CalendarChange = 2,
+    /// Onboarding batch import — higher than content, lower than manual (I561).
+    Onboarding = 3,
     /// User clicked "Refresh Intelligence" manually.
-    Manual = 3,
+    Manual = 4,
 }
 
 /// A request to enrich an entity's intelligence.
@@ -233,6 +234,32 @@ pub struct IntelligenceUpdatedPayload {
     pub entity_type: String,
 }
 
+/// I575: Progressive enrichment progress event payload.
+///
+/// Emitted after each dimension completes and is written to DB,
+/// so the frontend can show incremental progress and refresh data.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentProgress {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub completed: u32,
+    pub total: u32,
+    pub last_dimension: String,
+}
+
+/// I575: Progressive enrichment completion event payload.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentComplete {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub succeeded: u32,
+    pub failed: u32,
+    pub failed_dimensions: Vec<String>,
+    pub wall_clock_ms: u64,
+}
+
 /// Context gathered from the DB (held briefly, then released before PTY).
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
 #[derive(Clone)]
@@ -244,6 +271,22 @@ pub struct EnrichmentInput {
     pub prompt: String,
     pub file_manifest: Vec<SourceManifestEntry>,
     pub file_count: usize,
+    /// I499: Pre-computed algorithmic health for accounts.
+    pub computed_health: Option<crate::intelligence::io::AccountHealth>,
+    /// I535: Entity name for Glean-first enrichment.
+    pub entity_name: String,
+    /// I535: Relationship type for Glean prompt (e.g., "customer", "partner").
+    pub relationship: Option<String>,
+    /// I535: Intelligence context for Glean-first enrichment.
+    /// Preserved from gather phase so Glean can inject local context into its prompt.
+    pub intelligence_context: Option<crate::intelligence::prompts::IntelligenceContext>,
+}
+
+/// Parsed enrichment output from one model response section.
+#[derive(Debug, Clone)]
+pub struct EnrichmentParseResult {
+    pub intel: IntelligenceJson,
+    pub inferred_relationships: Vec<InferredRelationship>,
 }
 
 /// Background intelligence processor.
@@ -299,6 +342,16 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             entity_names,
         );
 
+        // I571: Emit background work status for frontend indicator
+        let _ = app.emit(
+            "background-work-status",
+            serde_json::json!({
+                "phase": "started",
+                "message": "Updating insights…",
+                "count": batch.len(),
+            }),
+        );
+
         // Audit: entity enrichment started
         if let Ok(mut audit) = state.audit_log.lock() {
             let _ = audit.append(
@@ -348,10 +401,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // Phase 2: Run PTY enrichment (no DB lock held)
         // Acquire heavy-work semaphore — limits concurrent expensive operations
         // (PTY subprocess, embedding inference) to one at a time.
-        let _permit = match state.heavy_work_semaphore.acquire().await {
+        let _permit = match state.permits.pty.acquire().await {
             Ok(permit) => permit,
             Err(_) => {
-                log::warn!("IntelProcessor: heavy_work_semaphore closed, stopping");
+                log::warn!("IntelProcessor: pty permit closed, stopping");
                 return;
             }
         };
@@ -370,26 +423,46 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         let mut error_categories: HashMap<String, &str> = HashMap::new();
 
         let enrichment_start = Instant::now();
-        let results: Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> = if inputs.len() == 1 {
-            // Single entity — use existing direct path (no batching overhead)
-            let (request, input) = inputs.pop().unwrap();
-            match run_enrichment(&input, &ai_config) {
-                Ok(intel) => vec![(request, input, intel)],
-                Err(e) => {
-                    let category = categorize_enrichment_error(&e);
-                    error_categories.insert(request.entity_id.clone(), category);
-                    log::warn!(
-                        "IntelProcessor: enrichment failed for {}: {}",
-                        request.entity_id,
-                        e
-                    );
-                    Vec::new()
+        let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> =
+            if state.context_provider().is_remote() {
+                // I535/ADR-0100: Glean-first path — use chat MCP tool for enrichment.
+                // Falls back to PTY on failure (per entity).
+                run_glean_enrichment_with_fallback(inputs, &ai_config, &state, &app).await
+            } else {
+                // I574: Per-entity enrichment (tries parallel fan-out, falls back to legacy)
+                // I564: Run PTY enrichment on blocking threads to avoid stalling Tokio workers.
+                let mut entity_results = Vec::new();
+                for (request, input) in inputs {
+                    let ai_cfg = ai_config.clone();
+                    let input_clone = input.clone();
+                    let app_clone = app.clone();
+                    match tauri::async_runtime::spawn_blocking(move || {
+                        run_enrichment(&input_clone, &ai_cfg, Some(&app_clone))
+                    })
+                    .await
+                    {
+                        Ok(Ok(parsed)) => entity_results.push((request, input, parsed)),
+                        Ok(Err(e)) => {
+                            let category = categorize_enrichment_error(&e);
+                            error_categories.insert(request.entity_id.clone(), category);
+                            log::warn!(
+                                "IntelProcessor: enrichment failed for {}: {}",
+                                request.entity_id,
+                                e
+                            );
+                        }
+                        Err(e) => {
+                            error_categories.insert(request.entity_id.clone(), "panic");
+                            log::error!(
+                                "IntelProcessor: enrichment task panicked for {}: {}",
+                                request.entity_id,
+                                e
+                            );
+                        }
+                    }
                 }
-            }
-        } else {
-            // Multi-entity batch — combined prompt with delimiters (I289)
-            run_batch_enrichment(inputs, &ai_config)
-        };
+                entity_results
+            };
         let enrichment_duration_ms = enrichment_start.elapsed().as_millis() as u64;
 
         // I470: Re-enqueue entities that failed validation (up to MAX_VALIDATION_RETRIES)
@@ -417,6 +490,19 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         retry_count: original.retry_count + 1,
                     });
                 } else if !succeeded.contains(original.entity_id.as_str()) {
+                    // I428: Record claude_code sync failure
+                    if let Ok(db_guard) = state.db.lock() {
+                        if let Some(db) = db_guard.as_ref() {
+                            let _ = crate::connectivity::record_sync_failure(
+                                db.conn_ref(),
+                                "claude_code",
+                                &format!(
+                                    "Enrichment failed after {} retries for {}",
+                                    original.retry_count, original.entity_id
+                                ),
+                            );
+                        }
+                    }
                     log::warn!(
                         "IntelProcessor: {} failed after {} retries, dropping from queue",
                         original.entity_id,
@@ -473,7 +559,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         drop(_permit);
 
         // Phase 3 + 4: Write results and emit events for each entity
-        for (request, input, intel) in &results {
+        for (request, input, parsed) in &results {
+            let intel = &parsed.intel;
             // Check for anomalies in the enrichment output (I472)
             if let Ok(serialized) = serde_json::to_string(intel) {
                 let anomalies = crate::intelligence::validation::detect_anomalies(&serialized);
@@ -491,13 +578,60 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            if let Err(e) = write_enrichment_results(&state, input, intel) {
-                log::warn!(
-                    "IntelProcessor: failed to write results for {}: {}",
-                    request.entity_id,
-                    e
-                );
-                continue;
+            let written_intel =
+                match write_enrichment_results(&state, input, intel, Some(&ai_config)) {
+                    Ok(intel) => intel,
+                    Err(e) => {
+                        log::warn!(
+                            "IntelProcessor: failed to write results for {}: {}",
+                            request.entity_id,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+            // I535: Emit tiered Glean signals after successful enrichment
+            if state.context_provider().is_remote() {
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    crate::intelligence::glean_provider::emit_glean_signals(
+                        &db,
+                        &state.signals.engine,
+                        &request.entity_type,
+                        &request.entity_id,
+                        &written_intel,
+                    );
+                }
+            }
+
+            if !parsed.inferred_relationships.is_empty() {
+                let db = match crate::db::ActionDb::open() {
+                    Ok(db) => db,
+                    Err(e) => {
+                        log::warn!(
+                            "IntelProcessor: failed to open DB for inferred relationship persistence on {}: {}",
+                            request.entity_id,
+                            e
+                        );
+                        continue;
+                    }
+                };
+                if let Err(e) =
+                    crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
+                        &db,
+                        state.signals.engine.as_ref(),
+                        &request.entity_type,
+                        &request.entity_id,
+                        &parsed.inferred_relationships,
+                    )
+                {
+                    log::warn!(
+                        "IntelProcessor: failed to persist inferred relationships for {}: {}",
+                        request.entity_id,
+                        e
+                    );
+                    continue;
+                }
             }
 
             let _ = app.emit(
@@ -532,13 +666,30 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
+            // I428: Record successful claude_code sync
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
+                }
+            }
+
             log::info!(
                 "IntelProcessor: completed {} ({} risks, {} wins)",
                 request.entity_id,
-                intel.risks.len(),
-                intel.recent_wins.len(),
+                written_intel.risks.len(),
+                written_intel.recent_wins.len(),
             );
         }
+
+        // I571: Emit completion status for frontend indicator
+        let _ = app.emit(
+            "background-work-status",
+            serde_json::json!({
+                "phase": "completed",
+                "message": "Insights updated",
+                "count": results.len(),
+            }),
+        );
     }
 }
 
@@ -571,41 +722,18 @@ fn enrichment_age_check(enriched_at: &str, entity_id: &str) -> Option<String> {
 /// Resolves the entity directory and reads `intelligence.json` to check the
 /// `enriched_at` timestamp. Returns `Some(message)` if the entity should be
 /// skipped, `None` if it should proceed.
-fn check_enrichment_ttl(state: &AppState, request: &IntelRequest) -> Option<String> {
-    let workspace = {
-        let config_guard = state.config.read().ok()?;
-        let config = config_guard.as_ref()?;
-        PathBuf::from(&config.workspace_path)
-    };
-
-    let entity_dir = resolve_entity_dir(&workspace, request)?;
-    let intel = read_intelligence_json(&entity_dir).ok()?;
+fn check_enrichment_ttl(_state: &AppState, request: &IntelRequest) -> Option<String> {
+    let db = crate::db::ActionDb::open().ok()?;
+    let intel = db
+        .get_entity_intelligence(&request.entity_id)
+        .ok()
+        .flatten()?;
 
     enrichment_age_check(&intel.enriched_at, &request.entity_id)
 }
 
 /// Resolve an entity's directory from its request metadata.
 /// Lightweight helper that opens a short-lived DB connection.
-fn resolve_entity_dir(workspace: &Path, request: &IntelRequest) -> Option<PathBuf> {
-    let db = crate::db::ActionDb::open().ok()?;
-
-    match request.entity_type.as_str() {
-        "account" => {
-            let acct = db.get_account(&request.entity_id).ok()??;
-            Some(crate::accounts::resolve_account_dir(workspace, &acct))
-        }
-        "project" => {
-            let proj = db.get_project(&request.entity_id).ok()??;
-            Some(crate::projects::project_dir(workspace, &proj.name))
-        }
-        "person" => {
-            let person = db.get_person(&request.entity_id).ok()??;
-            Some(crate::people::person_dir(workspace, &person.name))
-        }
-        _ => None,
-    }
-}
-
 /// Phase 1: Open own DB connection to gather all context needed for enrichment.
 /// Uses `ActionDb::open()` instead of `state.db.lock()` to avoid blocking
 /// foreground IPC commands while background enrichment runs.
@@ -663,15 +791,18 @@ pub fn gather_enrichment_input(
         _ => return Err(format!("Unsupported entity type: {}", request.entity_type)),
     };
 
-    // Read prior intelligence
-    let prior = read_intelligence_json(&entity_dir).ok();
+    // Read prior intelligence from DB (I513)
+    let prior = db
+        .get_entity_intelligence(&request.entity_id)
+        .ok()
+        .flatten();
 
     // Build context via the context provider (ADR-0095).
     // In Local mode this delegates to build_intelligence_context() — same behavior.
     // In Glean mode, context is gathered from Glean search API instead.
     let gather_start = Instant::now();
     let ctx = state
-        .context_provider
+        .context_provider()
         .gather_entity_context(
             &db,
             &request.entity_id,
@@ -680,7 +811,7 @@ pub fn gather_enrichment_input(
         )
         .map_err(|e| {
             // Audit Glean-specific failures
-            if state.context_provider.is_remote() {
+            if state.context_provider().is_remote() {
                 let error_category = match &e {
                     crate::context_provider::ContextError::Timeout(_) => "timeout",
                     crate::context_provider::ContextError::Auth(_) => "auth",
@@ -702,7 +833,7 @@ pub fn gather_enrichment_input(
         })?;
 
     // Audit successful Glean context gather
-    if state.context_provider.is_remote() {
+    if state.context_provider().is_remote() {
         let gather_ms = gather_start.elapsed().as_millis() as u64;
         if let Ok(mut audit) = state.audit_log.lock() {
             let _ = audit.append(
@@ -714,6 +845,58 @@ pub fn gather_enrichment_input(
                     "duration_ms": gather_ms,
                 }),
             );
+        }
+    }
+
+    // I499: Compute algorithmic health for accounts before prompt building.
+    // This populates ctx.computed_health so the prompt uses narrative-only health schema.
+    let mut ctx = ctx;
+    let computed_health = if request.entity_type == "account" {
+        account.as_ref().map(|acct| {
+            crate::intelligence::health_scoring::compute_account_health(
+                &db,
+                acct,
+                ctx.org_health.as_ref(),
+            )
+        })
+    } else {
+        None
+    };
+    ctx.computed_health = computed_health.clone();
+
+    // I506: Compute and persist co-attendance relationships for account entities
+    if request.entity_type == "account" {
+        match crate::intelligence::relationships::compute_co_attendance(
+            &db,
+            &request.entity_id,
+            90,
+            3,
+        ) {
+            Ok(pairs) => {
+                if !pairs.is_empty() {
+                    match crate::intelligence::relationships::persist_co_attendance(&db, &pairs) {
+                        Ok(count) => {
+                            if count > 0 {
+                                log::info!(
+                                    "I506: Persisted {} co-attendance relationships for {}",
+                                    count,
+                                    request.entity_id
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("I506: Failed to persist co-attendance: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "I506: Co-attendance query failed for {}: {}",
+                    request.entity_id,
+                    e
+                );
+            }
         }
     }
 
@@ -740,6 +923,10 @@ pub fn gather_enrichment_input(
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
 
+    // I574: Always preserve context — needed for parallel dimension fan-out (local)
+    // and Glean-first enrichment (remote).
+    let preserved_ctx = Some(ctx);
+
     // Own DB connection drops here when db goes out of scope
     Ok(EnrichmentInput {
         workspace,
@@ -749,7 +936,156 @@ pub fn gather_enrichment_input(
         prompt,
         file_manifest,
         file_count,
+        computed_health,
+        entity_name: entity_name.clone(),
+        relationship: relationship.map(|s| s.to_string()),
+        intelligence_context: preserved_ctx,
     })
+}
+
+/// I535/ADR-0100: Glean-first enrichment with PTY fallback.
+///
+/// For each entity, tries the Glean `chat` MCP tool first. If that fails
+/// (timeout, auth, parse error), falls back to the PTY path for that entity.
+/// Entities without a Glean context (local-only) go straight to PTY.
+async fn run_glean_enrichment_with_fallback(
+    inputs: Vec<(IntelRequest, EnrichmentInput)>,
+    ai_config: &AiModelConfig,
+    state: &AppState,
+    app_handle: &AppHandle,
+) -> Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> {
+    // Get the Glean endpoint from the context provider (not DB — avoids lock contention)
+    let glean_endpoint = state
+        .context_provider()
+        .remote_endpoint()
+        .map(|s| s.to_string());
+
+    let endpoint = match glean_endpoint {
+        Some(ep) => ep,
+        None => {
+            log::warn!("[I535] Glean mode active but no endpoint found, falling back to PTY");
+            let mut fallback_results = Vec::new();
+            for (request, input) in inputs {
+                // I564: PTY calls on blocking threads
+                let ai_cfg = ai_config.clone();
+                let input_clone = input.clone();
+                match tauri::async_runtime::spawn_blocking(move || {
+                    run_enrichment(&input_clone, &ai_cfg, None)
+                })
+                .await
+                {
+                    Ok(Ok(parsed)) => fallback_results.push((request, input, parsed)),
+                    Ok(Err(e)) => {
+                        log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
+                    }
+                    Err(e) => {
+                        log::error!("PTY fallback panicked for {}: {}", request.entity_id, e);
+                    }
+                }
+            }
+            return fallback_results;
+        }
+    };
+
+    let provider = crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint);
+
+    let mut results = Vec::new();
+    let mut pty_fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
+
+    for (request, input) in inputs {
+        // Only try Glean if we have the intelligence context (populated for remote providers)
+        if let Some(ref ctx) = input.intelligence_context {
+            log::info!(
+                "[I535] Attempting Glean enrichment for {} ({})",
+                input.entity_name,
+                input.entity_type
+            );
+
+            match provider
+                .enrich_entity(
+                    &input.entity_id,
+                    &input.entity_type,
+                    &input.entity_name,
+                    ctx,
+                    input.relationship.as_deref(),
+                    Some(app_handle),
+                )
+                .await
+            {
+                Ok(intel) => {
+                    log::info!(
+                        "[I535] Glean enrichment succeeded for {} — assessment: {}, risks: {}, wins: {}",
+                        input.entity_name,
+                        intel.executive_assessment.is_some(),
+                        intel.risks.len(),
+                        intel.recent_wins.len(),
+                    );
+
+                    // Extract inferred relationships from the Glean output
+                    // (Glean may include inferredRelationships in its JSON)
+                    let inferred_relationships = if let Ok(raw_json) = serde_json::to_string(&intel)
+                    {
+                        extract_inferred_relationships(&raw_json)
+                    } else {
+                        Vec::new()
+                    };
+
+                    results.push((
+                        request,
+                        input,
+                        EnrichmentParseResult {
+                            intel,
+                            inferred_relationships,
+                        },
+                    ));
+                    continue;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[I535] Glean enrichment failed for {}, falling back to PTY: {}",
+                        input.entity_name,
+                        e
+                    );
+                }
+            }
+        } else {
+            log::info!(
+                "[I535] No intelligence context for {}, using PTY directly",
+                input.entity_id
+            );
+        }
+
+        // Fall back to PTY for this entity
+        pty_fallback_inputs.push((request, input));
+    }
+
+    // Run PTY enrichment for all entities that Glean failed on
+    // I564: PTY calls on blocking threads
+    if !pty_fallback_inputs.is_empty() {
+        log::info!(
+            "[I535] Running PTY fallback for {} entities",
+            pty_fallback_inputs.len()
+        );
+        for (request, input) in pty_fallback_inputs {
+            let ai_cfg = ai_config.clone();
+            let input_clone = input.clone();
+            match tauri::async_runtime::spawn_blocking(move || {
+                run_enrichment(&input_clone, &ai_cfg, None)
+            })
+            .await
+            {
+                Ok(Ok(parsed)) => results.push((request, input, parsed)),
+                Ok(Err(e)) => {
+                    log::warn!("PTY fallback failed for {}: {}", request.entity_id, e);
+                }
+                Err(e) => {
+                    log::error!("PTY fallback panicked for {}: {}", request.entity_id, e);
+                }
+            }
+        }
+    }
+
+    results
 }
 
 /// Categorize an enrichment error for audit logging (I472).
@@ -769,12 +1105,281 @@ fn categorize_enrichment_error(error: &str) -> &'static str {
 
 /// Phase 2: Run PTY enrichment (no DB lock held).
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+///
+/// I574: Tries parallel per-dimension fan-out first (if `intelligence_context` is available),
+/// then falls back to the legacy monolithic prompt path.
+///
+/// I575: When `app_handle` is provided, emits `enrichment-progress` and
+/// `enrichment-complete` events for progressive frontend updates.
 pub fn run_enrichment(
     input: &EnrichmentInput,
     ai_config: &AiModelConfig,
-) -> Result<IntelligenceJson, String> {
+    app_handle: Option<&AppHandle>,
+) -> Result<EnrichmentParseResult, String> {
+    if input.intelligence_context.is_some() {
+        match run_parallel_enrichment(input, ai_config, app_handle) {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                log::warn!(
+                    "[I574] Parallel enrichment failed for {}, falling back to legacy: {}",
+                    input.entity_id,
+                    e
+                );
+            }
+        }
+    }
+    run_enrichment_legacy(input, ai_config)
+}
+
+/// I574: Parallel per-dimension enrichment engine.
+///
+/// Fans out 6 dimension-specific PTY calls in parallel threads (30s each),
+/// then merges successful dimension results into a single `IntelligenceJson`.
+/// Returns Err only if ALL 6 dimensions fail (caller falls back to legacy).
+///
+/// I575: Uses a channel pattern so each dimension result is written to DB and
+/// emitted as a progress event as soon as it completes, rather than waiting
+/// for all 6 to finish. This enables progressive frontend updates.
+fn run_parallel_enrichment(
+    input: &EnrichmentInput,
+    ai_config: &AiModelConfig,
+    app_handle: Option<&AppHandle>,
+) -> Result<EnrichmentParseResult, String> {
+    let ctx = input
+        .intelligence_context
+        .as_ref()
+        .ok_or("No intelligence context for parallel enrichment")?;
+
+    let is_incremental = ctx.prior_intelligence.is_some();
+    let overall_start = Instant::now();
+    let total_dimensions = DIMENSION_NAMES.len() as u32;
+
+    // Channel for receiving dimension results as they complete
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    // Spawn one thread per dimension
+    for &dimension in DIMENSION_NAMES {
+        let dim_prompt = dimension_prompts::build_dimension_prompt(
+            dimension,
+            &input.entity_name,
+            &input.entity_type,
+            input.relationship.as_deref(),
+            ctx,
+            is_incremental,
+        );
+
+        let workspace = input.workspace.clone();
+        let ai_cfg = ai_config.clone();
+        let entity_id = input.entity_id.clone();
+        let entity_type = input.entity_type.clone();
+        let file_count = input.file_count;
+        let file_manifest = input.file_manifest.clone();
+        let dim_name = dimension.to_string();
+        let sender = tx.clone();
+
+        std::thread::spawn(move || {
+            let dim_start = Instant::now();
+
+            let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
+                .with_timeout(30)
+                .with_nice_priority(10);
+
+            let result = pty
+                .spawn_claude(&workspace, &dim_prompt)
+                .map_err(|e| format!("PTY error for dimension {}: {}", dim_name, e))
+                .and_then(|output| {
+                    let intel = parse_intelligence_response(
+                        &output.stdout,
+                        &entity_id,
+                        &entity_type,
+                        file_count,
+                        file_manifest,
+                    )
+                    .map_err(|e| format!("Parse error for dimension {}: {}", dim_name, e))?;
+
+                    let elapsed_ms = dim_start.elapsed().as_millis();
+                    log::info!(
+                        "[I574] Dimension {} completed in {}ms",
+                        dim_name,
+                        elapsed_ms
+                    );
+
+                    Ok((dim_name, intel, output.stdout))
+                });
+
+            // Send result through channel; ignore error if receiver dropped
+            let _ = sender.send(result);
+        });
+    }
+
+    // Drop our copy of the sender so rx iterator ends after all threads finish
+    drop(tx);
+
+    // Process dimension results as they arrive
+    let mut combined = IntelligenceJson::default();
+    let mut succeeded: u32 = 0;
+    let mut failed_dims: Vec<String> = Vec::new();
+    let mut all_raw_output = String::new();
+
+    for result in rx {
+        match result {
+            Ok((dim_name, partial_intel, raw_output)) => {
+                if let Err(e) = dimension_prompts::merge_dimension_into(
+                    &mut combined,
+                    &dim_name,
+                    &partial_intel,
+                ) {
+                    log::warn!("[I574] Merge failed for dimension {}: {}", dim_name, e);
+                    failed_dims.push(dim_name);
+                } else {
+                    succeeded += 1;
+                    all_raw_output.push_str(&raw_output);
+                    all_raw_output.push('\n');
+
+                    // I575: Per-dimension DB write + event emission
+                    if let Some(handle) = app_handle {
+                        write_progressive_dimension(
+                            &input.entity_id,
+                            &input.entity_type,
+                            &combined,
+                        );
+                        let _ = handle.emit(
+                            "enrichment-progress",
+                            EnrichmentProgress {
+                                entity_id: input.entity_id.clone(),
+                                entity_type: input.entity_type.clone(),
+                                completed: succeeded,
+                                total: total_dimensions,
+                                last_dimension: dim_name,
+                            },
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                // Extract dimension name from error message for tracking
+                let dim = e
+                    .split("dimension ")
+                    .nth(1)
+                    .and_then(|s| s.split(':').next())
+                    .unwrap_or("unknown")
+                    .to_string();
+                log::warn!("[I574] Dimension thread returned error: {}", e);
+                failed_dims.push(dim);
+            }
+        }
+    }
+
+    let total_ms = overall_start.elapsed().as_millis();
+    log::info!(
+        "[I574] Parallel enrichment: {}/6 dimensions succeeded in {}ms",
+        succeeded,
+        total_ms
+    );
+
+    // I575: Emit completion event
+    if let Some(handle) = app_handle {
+        let _ = handle.emit(
+            "enrichment-complete",
+            EnrichmentComplete {
+                entity_id: input.entity_id.clone(),
+                entity_type: input.entity_type.clone(),
+                succeeded,
+                failed: failed_dims.len() as u32,
+                failed_dimensions: failed_dims,
+                wall_clock_ms: total_ms as u64,
+            },
+        );
+    }
+
+    if succeeded == 0 {
+        return Err("All 6 dimensions failed".to_string());
+    }
+
+    // Extract inferred relationships from the combined raw output
+    let inferred_relationships = extract_inferred_relationships(&all_raw_output);
+
+    // I305: Extract and persist keywords from the combined raw output
+    if let Some(keywords_json) =
+        crate::intelligence::extract_keywords_from_response(&all_raw_output)
+    {
+        if let Ok(db) = crate::db::ActionDb::open() {
+            if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &db,
+                &input.entity_type,
+                &input.entity_id,
+                &keywords_json,
+            ) {
+                log::warn!(
+                    "[I574] keyword persistence failed for {} {}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    err
+                );
+            }
+        }
+    }
+
+    Ok(EnrichmentParseResult {
+        intel: combined,
+        inferred_relationships,
+    })
+}
+
+/// I575: Write the current progressive state of intelligence to DB after a dimension completes.
+///
+/// Opens a short-lived DB connection, reads existing entity_assessment, merges the
+/// new combined state, and writes back. Non-fatal on error — the final write in
+/// `write_enrichment_results` is the authoritative write.
+fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &IntelligenceJson) {
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            log::warn!(
+                "[I575] Progressive write: failed to open DB for {}: {}",
+                entity_id,
+                e
+            );
+            return;
+        }
+    };
+
+    // Progressive writes within a single enrichment cycle use simple dimension
+    // merge, NOT reconciliation. Reconciliation happens at the final write.
+    let existing = db.get_entity_intelligence(entity_id).ok().flatten();
+    let mut merged = if let Some(mut existing) = existing {
+        for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
+            let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
+                &mut existing,
+                dim,
+                combined,
+            );
+        }
+        existing
+    } else {
+        combined.clone()
+    };
+
+    // Set entity metadata for the DB write
+    merged.entity_id = entity_id.to_string();
+    merged.entity_type = entity_type.to_string();
+    merged.enriched_at = chrono::Utc::now().to_rfc3339();
+
+    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&db, &merged) {
+        log::warn!("[I575] Progressive write failed for {}: {}", entity_id, e);
+    } else {
+        log::debug!("[I575] Progressive write succeeded for {}", entity_id,);
+    }
+}
+
+/// Legacy monolithic PTY enrichment — single prompt, 30s timeout.
+/// Kept as fallback when parallel enrichment is unavailable or fails.
+fn run_enrichment_legacy(
+    input: &EnrichmentInput,
+    ai_config: &AiModelConfig,
+) -> Result<EnrichmentParseResult, String> {
     let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
-        .with_timeout(180)
+        .with_timeout(30)
         .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &input.prompt)
@@ -784,27 +1389,53 @@ pub fn run_enrichment(
     if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
-            match input.entity_type.as_str() {
-                "account" => {
-                    let _ = db.update_account_keywords(&input.entity_id, &keywords_json);
-                }
-                "project" => {
-                    let _ = db.update_project_keywords(&input.entity_id, &keywords_json);
-                }
-                _ => {
-                    log::debug!(
-                        "intel_queue: keyword persistence not implemented for entity_type={}",
-                        input.entity_type
-                    );
-                }
+            if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &db,
+                &input.entity_type,
+                &input.entity_id,
+                &keywords_json,
+            ) {
+                log::warn!(
+                    "intel_queue: keyword persistence failed for {} {}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    err
+                );
             }
         }
     }
 
-    // NOTE: I391 inferred edge extraction deferred — requires name→ID resolution
-    // to produce valid person_relationships rows (FK constraint on to_person_id).
-    // The AI prompt still requests inferredRelationships for future use once
-    // co-attendee person rosters are included in the prompt context.
+    let inferred_relationships = extract_inferred_relationships(&output.stdout);
+    let intel = parse_intelligence_response(
+        &output.stdout,
+        &input.entity_id,
+        &input.entity_type,
+        input.file_count,
+        input.file_manifest.clone(),
+    )?;
+
+    Ok(EnrichmentParseResult {
+        intel,
+        inferred_relationships,
+    })
+}
+
+/// I527: One-shot repair retry when deterministic checks still report
+/// high-severity contradictions after local repairs.
+fn run_consistency_repair_retry(
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+    report: &crate::intelligence::ConsistencyReport,
+    facts: &crate::intelligence::FactContext,
+    ai_config: &AiModelConfig,
+) -> Result<IntelligenceJson, String> {
+    let prompt = crate::intelligence::build_repair_prompt(intel, report, facts);
+    let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
+        .with_timeout(30)
+        .with_nice_priority(10);
+    let output = pty
+        .spawn_claude(&input.workspace, &prompt)
+        .map_err(|e| format!("Consistency repair retry failed: {}", e))?;
 
     parse_intelligence_response(
         &output.stdout,
@@ -815,207 +1446,6 @@ pub fn run_enrichment(
     )
 }
 
-/// Run batched enrichment for multiple entities in a single PTY call (I289).
-///
-/// Builds a combined prompt with per-entity delimiters, makes one PTY call,
-/// and parses the response back into per-entity results. Falls back to
-/// individual processing for any entity whose result cannot be parsed.
-fn run_batch_enrichment(
-    inputs: Vec<(IntelRequest, EnrichmentInput)>,
-    ai_config: &AiModelConfig,
-) -> Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> {
-    let entity_names: Vec<&str> = inputs.iter().map(|(_, i)| i.entity_id.as_str()).collect();
-    log::info!(
-        "IntelProcessor: running batch enrichment for {} entities: {:?}",
-        inputs.len(),
-        entity_names,
-    );
-
-    // Use the first input's workspace for the PTY call
-    let workspace = inputs[0].1.workspace.clone();
-
-    // Build combined prompt
-    let batch_prompt = build_batch_prompt(&inputs);
-
-    // Scale timeout linearly with batch size (180s base per entity)
-    let timeout_secs = 180 * inputs.len() as u64;
-
-    let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
-        .with_timeout(timeout_secs)
-        .with_nice_priority(10);
-
-    let output = match pty.spawn_claude(&workspace, &batch_prompt) {
-        Ok(o) => o,
-        Err(e) => {
-            log::warn!(
-                "IntelProcessor: batch PTY call failed, falling back to individual: {}",
-                e
-            );
-            return run_individual_fallback(inputs, ai_config);
-        }
-    };
-
-    // Parse combined response into per-entity results
-    let parsed = parse_batch_response(&output.stdout, &inputs);
-
-    // Collect successful parses and entities that need individual fallback
-    let mut results: Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> = Vec::new();
-    let mut fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
-
-    // Match parsed results back to inputs by entity_id
-    let mut parsed_map: HashMap<String, IntelligenceJson> = parsed.into_iter().collect();
-
-    for (request, input) in inputs {
-        if let Some(intel) = parsed_map.remove(&input.entity_id) {
-            results.push((request, input, intel));
-        } else {
-            log::warn!(
-                "IntelProcessor: batch parse failed for {}, will retry individually",
-                input.entity_id,
-            );
-            fallback_inputs.push((request, input));
-        }
-    }
-
-    // Run individual fallback for unparsed entities
-    if !fallback_inputs.is_empty() {
-        log::info!(
-            "IntelProcessor: running individual fallback for {} entities",
-            fallback_inputs.len(),
-        );
-        results.extend(run_individual_fallback(fallback_inputs, ai_config));
-    }
-
-    results
-}
-
-/// Build a combined prompt for multiple entities (I289).
-///
-/// Structure:
-/// - Shared preamble (instructions for batch mode)
-/// - Per-entity sections delimited by `=== ENTITY: {entity_id} ===`
-/// - Instructions to produce output delimited by `=== RESULT: {entity_id} ===`
-fn build_batch_prompt(inputs: &[(IntelRequest, EnrichmentInput)]) -> String {
-    let entity_ids: Vec<&str> = inputs.iter().map(|(_, i)| i.entity_id.as_str()).collect();
-
-    let mut prompt = String::with_capacity(inputs.len() * 4096);
-
-    // Shared preamble
-    prompt.push_str(
-        "You are running intelligence assessments for MULTIPLE entities in a single pass.\n\
-         Process each entity independently. Do NOT cross-reference information between entities.\n\n\
-         For each entity below, produce the EXACT same JSON output format as you would for a single entity.\n\
-         Separate each result with the delimiter shown below.\n\n\
-         OUTPUT FORMAT:\n\
-         For each entity, output:\n",
-    );
-
-    for id in &entity_ids {
-        prompt.push_str(&format!(
-            "=== RESULT: {} ===\n<JSON for this entity>\n\n",
-            id
-        ));
-    }
-
-    prompt.push_str(
-        "Each JSON block must be a complete, valid JSON object on its own.\n\
-         Do NOT output anything before the first === RESULT delimiter or after the last JSON block.\n\n",
-    );
-
-    // Per-entity sections
-    for (_, input) in inputs {
-        prompt.push_str(&format!(
-            "=== ENTITY: {} ===\n{}\n\n",
-            input.entity_id, input.prompt,
-        ));
-    }
-
-    prompt
-}
-
-/// Parse a batched PTY response back into per-entity results (I289).
-///
-/// Splits on `=== RESULT: {entity_id} ===` delimiters and parses each section
-/// independently. Returns a vec of (entity_id, IntelligenceJson) pairs for
-/// successfully parsed entities.
-fn parse_batch_response(
-    response: &str,
-    inputs: &[(IntelRequest, EnrichmentInput)],
-) -> Vec<(String, IntelligenceJson)> {
-    let mut results = Vec::new();
-
-    for (_, input) in inputs {
-        let delimiter = format!("=== RESULT: {} ===", input.entity_id);
-
-        // Find the section for this entity
-        let section = if let Some(start) = response.find(&delimiter) {
-            let after_delimiter = start + delimiter.len();
-            let remaining = &response[after_delimiter..];
-
-            // Find end: next === RESULT delimiter or end of string
-            let end = remaining.find("=== RESULT:").unwrap_or(remaining.len());
-
-            remaining[..end].trim()
-        } else {
-            log::warn!(
-                "IntelProcessor: no result delimiter found for {} in batch response",
-                input.entity_id,
-            );
-            continue;
-        };
-
-        if section.is_empty() {
-            log::warn!(
-                "IntelProcessor: empty result section for {} in batch response",
-                input.entity_id,
-            );
-            continue;
-        }
-
-        match parse_intelligence_response(
-            section,
-            &input.entity_id,
-            &input.entity_type,
-            input.file_count,
-            input.file_manifest.clone(),
-        ) {
-            Ok(intel) => results.push((input.entity_id.clone(), intel)),
-            Err(e) => {
-                log::warn!(
-                    "IntelProcessor: failed to parse batch result for {}: {}",
-                    input.entity_id,
-                    e,
-                );
-            }
-        }
-    }
-
-    results
-}
-
-/// Fallback: process entities individually when batch parsing fails (I289).
-fn run_individual_fallback(
-    inputs: Vec<(IntelRequest, EnrichmentInput)>,
-    ai_config: &AiModelConfig,
-) -> Vec<(IntelRequest, EnrichmentInput, IntelligenceJson)> {
-    let mut results = Vec::new();
-
-    for (request, input) in inputs {
-        match run_enrichment(&input, ai_config) {
-            Ok(intel) => results.push((request, input, intel)),
-            Err(e) => {
-                log::warn!(
-                    "IntelProcessor: individual fallback failed for {}: {}",
-                    request.entity_id,
-                    e,
-                );
-            }
-        }
-    }
-
-    results
-}
-
 /// Phase 3: Write enrichment results to disk and DB.
 /// Opens own DB connection to avoid blocking foreground IPC commands.
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
@@ -1023,12 +1453,25 @@ pub fn write_enrichment_results(
     _state: &AppState,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
-) -> Result<(), String> {
-    // Preserve user-edited fields from existing intelligence (I261)
+    ai_config: Option<&AiModelConfig>,
+) -> Result<IntelligenceJson, String> {
+    // I576: Source-aware reconciliation + preserve user-edited fields (I261)
     let mut final_intel = intel.clone();
-    if let Ok(existing) = read_intelligence_json(&input.entity_dir) {
+    let existing_intel = crate::db::ActionDb::open()
+        .ok()
+        .and_then(|db| db.get_entity_intelligence(&input.entity_id).ok().flatten());
+    if let Some(existing) = existing_intel.as_ref() {
+        // I576: Apply source-aware reconciliation (preserves user corrections,
+        // non-refreshed source items, and dismissed tombstones)
+        final_intel = crate::intelligence::glean_provider::reconcile_enrichment(
+            existing.clone(),
+            final_intel,
+            &["pty_synthesis"],
+        );
+
+        // I261: Also preserve field-level user edits (granular JSON-path edits)
         if !existing.user_edits.is_empty() {
-            crate::intelligence::preserve_user_edits(&mut final_intel, &existing);
+            crate::intelligence::preserve_user_edits(&mut final_intel, existing);
             log::info!(
                 "IntelProcessor: preserved {} user edits for {}",
                 existing.user_edits.len(),
@@ -1053,15 +1496,121 @@ pub fn write_enrichment_results(
         }
     }
 
-    // Write intelligence.json to disk (no DB needed)
-    write_intelligence_json(&input.entity_dir, &final_intel)?;
+    // Prevent sparse refreshes from wiping narrative intelligence.
+    // If the new response is structurally valid JSON but contains little/no
+    // usable narrative, keep prior core fields until enrichment recovers.
+    merge_missing_core_fields_from_existing(&mut final_intel, existing_intel.as_ref());
 
-    // Own DB connection for cache update
+    // I527: Deterministic contradiction checks + balanced repair pass.
+    if input.entity_type == "account" || input.entity_type == "project" {
+        if let Ok(db_for_consistency) = crate::db::ActionDb::open() {
+            if let Ok(facts) = crate::intelligence::build_fact_context(
+                &db_for_consistency,
+                &input.entity_id,
+                &input.entity_type,
+            ) {
+                let initial_report = crate::intelligence::check_consistency(&final_intel, &facts);
+                let repaired_intel = crate::intelligence::apply_deterministic_repairs(
+                    &final_intel,
+                    &initial_report,
+                    &facts,
+                );
+                let mut unresolved_report =
+                    crate::intelligence::check_consistency(&repaired_intel, &facts);
+                let mut post_repair_intel = repaired_intel;
+
+                // Balanced mode: one retry for unresolved high-severity findings.
+                if unresolved_report.has_high() {
+                    if let Some(cfg) = ai_config {
+                        if let Ok(retry_intel) = run_consistency_repair_retry(
+                            input,
+                            &post_repair_intel,
+                            &unresolved_report,
+                            &facts,
+                            cfg,
+                        ) {
+                            let retry_unresolved =
+                                crate::intelligence::check_consistency(&retry_intel, &facts);
+                            if retry_unresolved.findings.len() <= unresolved_report.findings.len() {
+                                post_repair_intel = retry_intel;
+                                unresolved_report = retry_unresolved;
+                            }
+                        }
+                    }
+                }
+
+                post_repair_intel.consistency_status = Some(
+                    crate::intelligence::status_from_reports(&initial_report, &unresolved_report),
+                );
+                post_repair_intel.consistency_findings =
+                    crate::intelligence::merge_fixed_flags(&initial_report, &unresolved_report);
+                post_repair_intel.consistency_checked_at = Some(Utc::now().to_rfc3339());
+                final_intel = post_repair_intel;
+            }
+        }
+    }
+
+    // I499: Merge computed health dimensions with LLM narrative.
+    // The algorithmic engine provides score/band/dimensions/confidence;
+    // the LLM provides only narrative + recommended_actions.
+    if let Some(ref computed) = input.computed_health {
+        let llm_narrative = final_intel
+            .health
+            .as_ref()
+            .and_then(|h| h.narrative.clone());
+        let llm_actions = final_intel
+            .health
+            .as_ref()
+            .map(|h| h.recommended_actions.clone())
+            .unwrap_or_default();
+        final_intel.health = Some(crate::intelligence::io::AccountHealth {
+            narrative: llm_narrative,
+            recommended_actions: llm_actions,
+            ..computed.clone()
+        });
+    }
+
+    // Own DB connection for cache update + user-fact reconciliation
     let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
-    let _ = db.upsert_entity_intelligence(&final_intel);
+
+    // Reconcile user-entered facts with AI-inferred values.
+    // User-edited fields (source weight 1.0) override AI guesses.
+    if input.entity_type == "account" {
+        if let Ok(Some(account)) = db.get_account(&input.entity_id) {
+            if let Some(user_arr) = account.arr {
+                let cc = final_intel
+                    .contract_context
+                    .get_or_insert_with(Default::default);
+                if cc.current_arr != Some(user_arr) {
+                    log::info!(
+                        "[intel_queue] Overriding AI currentArr ({:?}) with user ARR ({}) for {}",
+                        cc.current_arr,
+                        user_arr,
+                        input.entity_id,
+                    );
+                    cc.current_arr = Some(user_arr);
+                }
+            }
+        }
+    }
+
+    // Write intelligence.json to disk
+    write_intelligence_json(&input.entity_dir, &final_intel)?;
+    crate::services::intelligence::upsert_assessment_from_enrichment(
+        &db,
+        &_state.signals.engine,
+        &input.entity_type,
+        &input.entity_id,
+        &final_intel,
+    )?;
 
     // Invalidate cached reports when entity intelligence is refreshed (I397)
     let _ = crate::reports::invalidation::mark_reports_stale(&db, &input.entity_id);
+
+    // I535 Step 11: Dual-write commitments from Glean enrichment to captured_commitments
+    if input.entity_type == "account" {
+        dual_write_enrichment_commitments(&db, &input.entity_id, &final_intel);
+    }
 
     // I338: Regenerate person files after intelligence enrichment
     if input.entity_type == "person" {
@@ -1118,7 +1667,118 @@ pub fn write_enrichment_results(
         input.entity_id,
     );
 
-    Ok(())
+    Ok(final_intel)
+}
+
+/// Return true when the intelligence payload lacks meaningful narrative signal.
+fn is_sparse_intelligence(intel: &IntelligenceJson) -> bool {
+    let has_assessment = intel
+        .executive_assessment
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty());
+    let has_risks = !intel.risks.is_empty();
+    let has_wins = !intel.recent_wins.is_empty();
+    let has_value = !intel.value_delivered.is_empty();
+    let has_readiness = intel
+        .next_meeting_readiness
+        .as_ref()
+        .is_some_and(|r| !r.prep_items.is_empty());
+    let has_state = intel.current_state.as_ref().is_some_and(|s| {
+        !s.working.is_empty() || !s.not_working.is_empty() || !s.unknowns.is_empty()
+    });
+    let has_health = intel.health.is_some();
+    let has_metrics = intel
+        .success_metrics
+        .as_ref()
+        .is_some_and(|m| !m.is_empty())
+        || intel
+            .open_commitments
+            .as_ref()
+            .is_some_and(|c| !c.is_empty());
+
+    !(has_assessment
+        || has_risks
+        || has_wins
+        || has_value
+        || has_readiness
+        || has_state
+        || has_health
+        || has_metrics)
+}
+
+/// Keep prior core intelligence fields when a fresh refresh returns sparse output.
+fn merge_missing_core_fields_from_existing(
+    final_intel: &mut IntelligenceJson,
+    existing: Option<&IntelligenceJson>,
+) {
+    let Some(existing) = existing else {
+        return;
+    };
+
+    // Always backfill executive assessment when missing.
+    if final_intel
+        .executive_assessment
+        .as_deref()
+        .is_none_or(|s| s.trim().is_empty())
+        && existing
+            .executive_assessment
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
+    {
+        final_intel.executive_assessment = existing.executive_assessment.clone();
+    }
+
+    // Preserve persisted org-health baseline unless the new payload explicitly
+    // provides one. This field is computed outside the LLM response path.
+    if final_intel.org_health.is_none() && existing.org_health.is_some() {
+        final_intel.org_health = existing.org_health.clone();
+    }
+
+    // If the new payload is sparse, preserve prior narrative-bearing fields.
+    if !is_sparse_intelligence(final_intel) {
+        return;
+    }
+
+    if final_intel.risks.is_empty() && !existing.risks.is_empty() {
+        final_intel.risks = existing.risks.clone();
+    }
+    if final_intel.recent_wins.is_empty() && !existing.recent_wins.is_empty() {
+        final_intel.recent_wins = existing.recent_wins.clone();
+    }
+    if final_intel.value_delivered.is_empty() && !existing.value_delivered.is_empty() {
+        final_intel.value_delivered = existing.value_delivered.clone();
+    }
+    if final_intel.current_state.is_none() && existing.current_state.is_some() {
+        final_intel.current_state = existing.current_state.clone();
+    }
+    if final_intel.next_meeting_readiness.is_none() && existing.next_meeting_readiness.is_some() {
+        final_intel.next_meeting_readiness = existing.next_meeting_readiness.clone();
+    }
+    if final_intel.health.is_none() && existing.health.is_some() {
+        final_intel.health = existing.health.clone();
+    }
+    if final_intel
+        .success_metrics
+        .as_ref()
+        .is_none_or(|m| m.is_empty())
+        && existing
+            .success_metrics
+            .as_ref()
+            .is_some_and(|m| !m.is_empty())
+    {
+        final_intel.success_metrics = existing.success_metrics.clone();
+    }
+    if final_intel
+        .open_commitments
+        .as_ref()
+        .is_none_or(|c| c.is_empty())
+        && existing
+            .open_commitments
+            .as_ref()
+            .is_some_and(|c| !c.is_empty())
+    {
+        final_intel.open_commitments = existing.open_commitments.clone();
+    }
 }
 
 /// After entity intelligence is refreshed, invalidate and requeue meeting preps
@@ -1145,7 +1805,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     let meeting_ids: Vec<String> = db
         .conn_ref()
         .prepare(
-            "SELECT m.id FROM meetings_history m
+            "SELECT m.id FROM meetings m
              JOIN meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1
                AND m.start_time > ?2
@@ -1165,21 +1825,17 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
 
     // Clear prep_frozen_json so the queue processor regenerates them
     for mid in &meeting_ids {
-        let _ = db.conn_ref().execute(
-            "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
-            rusqlite::params![mid],
-        );
+        let _ = crate::services::meetings::clear_meeting_prep_frozen(&db, mid);
     }
 
     // Enqueue for regeneration at Background priority
     for mid in &meeting_ids {
         state
             .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: mid.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::Background,
-                requested_at: std::time::Instant::now(),
-            });
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                mid.clone(),
+                crate::meeting_prep_queue::PrepPriority::Background,
+            ));
     }
     if !meeting_ids.is_empty() {
         state.integrations.prep_queue_wake.notify_one();
@@ -1192,6 +1848,92 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     );
 }
 
+/// I535 Step 11: Dual-write commitments from Glean enrichment to `captured_commitments`.
+///
+/// Writes `open_commitments` and `success_plan_signals.stated_objectives` from the
+/// intelligence output, mirroring the pattern in `transcript.rs:556-598`.
+/// Uses INSERT OR IGNORE to avoid duplicates.
+fn dual_write_enrichment_commitments(
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    intel: &IntelligenceJson,
+) {
+    let now = Utc::now().to_rfc3339();
+    let source_label = format!("glean_enrichment:{}", account_id);
+
+    // 1. Write open_commitments
+    if let Some(ref commitments) = intel.open_commitments {
+        for commitment in commitments {
+            let commit_id = uuid::Uuid::new_v4().to_string();
+            let owner = commitment.owner.as_deref().unwrap_or("joint");
+            if let Err(e) = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
+                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, 'medium', ?6, 0, ?7)",
+                rusqlite::params![
+                    commit_id,
+                    account_id,
+                    commitment.description,
+                    owner,
+                    commitment.due_date,
+                    source_label,
+                    now,
+                ],
+            ) {
+                log::warn!("Failed to insert captured_commitment from Glean enrichment: {}", e);
+            }
+        }
+    }
+
+    // 2. Write stated_objectives from success_plan_signals
+    if let Some(ref signals) = intel.success_plan_signals {
+        for objective in &signals.stated_objectives {
+            let commit_id = uuid::Uuid::new_v4().to_string();
+            let owner = objective.owner.as_deref().unwrap_or("joint");
+            if let Err(e) = db.conn_ref().execute(
+                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
+                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+                rusqlite::params![
+                    commit_id,
+                    account_id,
+                    objective.objective,
+                    owner,
+                    objective.target_date,
+                    objective.confidence,
+                    source_label,
+                    now,
+                ],
+            ) {
+                log::warn!("Failed to insert stated_objective from Glean enrichment: {}", e);
+            }
+        }
+    }
+
+    // 3. Emit signal for the dual-write
+    let commitment_count = intel.open_commitments.as_ref().map_or(0, |c| c.len())
+        + intel
+            .success_plan_signals
+            .as_ref()
+            .map_or(0, |s| s.stated_objectives.len());
+    if commitment_count > 0 {
+        let value = serde_json::json!({
+            "count": commitment_count,
+            "source": "glean_enrichment",
+        })
+        .to_string();
+        if let Err(e) = crate::signals::bus::emit_signal(
+            db,
+            "account",
+            account_id,
+            "commitment_captured",
+            "glean",
+            Some(&value),
+            0.7,
+        ) {
+            log::warn!("Failed to emit commitment_captured signal: {}", e);
+        }
+    }
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -1199,6 +1941,46 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_merge_missing_core_fields_preserves_existing_assessment() {
+        let mut fresh = IntelligenceJson {
+            entity_id: "acme-corp".to_string(),
+            entity_type: "account".to_string(),
+            executive_assessment: None,
+            ..Default::default()
+        };
+        let existing = IntelligenceJson {
+            entity_id: "acme-corp".to_string(),
+            entity_type: "account".to_string(),
+            executive_assessment: Some("Prior narrative".to_string()),
+            risks: vec![crate::intelligence::IntelRisk {
+                text: "Renewal owner unresolved".to_string(),
+                source: None,
+                urgency: "high".to_string(),
+                item_source: None,
+                discrepancy: None,
+            }],
+            ..Default::default()
+        };
+
+        merge_missing_core_fields_from_existing(&mut fresh, Some(&existing));
+
+        assert_eq!(
+            fresh.executive_assessment.as_deref(),
+            Some("Prior narrative")
+        );
+        assert!(fresh.risks.is_empty());
+    }
+
+    #[test]
+    fn test_is_sparse_intelligence_detects_non_sparse_when_assessment_present() {
+        let intel = IntelligenceJson {
+            executive_assessment: Some("Non-empty summary".to_string()),
+            ..Default::default()
+        };
+        assert!(!is_sparse_intelligence(&intel));
+    }
 
     #[test]
     fn test_intel_queue_enqueue_dequeue() {
@@ -1506,171 +2288,6 @@ mod tests {
         assert_eq!(batch.len(), 1);
         assert_eq!(batch[0].entity_id, "only-one");
         assert!(queue.is_empty());
-    }
-
-    // =========================================================================
-    // Batch prompt/response parsing tests (I289)
-    // =========================================================================
-
-    #[test]
-    fn test_parse_batch_response_splits_by_delimiter() {
-        use std::path::PathBuf;
-
-        let inputs = vec![
-            (
-                IntelRequest {
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/acme"),
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    prompt: String::new(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                },
-            ),
-            (
-                IntelRequest {
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/beta"),
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    prompt: String::new(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                },
-            ),
-        ];
-
-        // Simulate a batch response with two valid JSON results
-        let response = r#"=== RESULT: acme ===
-{
-  "executiveAssessment": "Acme is on track.",
-  "risks": [],
-  "recentWins": [],
-  "currentState": {"working": [], "notWorking": [], "unknowns": []},
-  "stakeholderInsights": [],
-  "valueDelivered": [],
-  "nextMeetingReadiness": {"prepItems": []}
-}
-
-=== RESULT: beta ===
-{
-  "executiveAssessment": "Beta project progressing.",
-  "risks": [{"text": "Timeline risk", "urgency": "watch"}],
-  "recentWins": [],
-  "currentState": {"working": ["Good velocity"], "notWorking": [], "unknowns": []},
-  "stakeholderInsights": [],
-  "valueDelivered": [],
-  "nextMeetingReadiness": {"prepItems": []}
-}
-"#;
-
-        let results = parse_batch_response(response, &inputs);
-        assert_eq!(results.len(), 2, "Should parse both entities");
-        assert_eq!(results[0].0, "acme");
-        assert_eq!(results[1].0, "beta");
-        assert_eq!(results[1].1.risks.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_batch_response_handles_missing_delimiter() {
-        use std::path::PathBuf;
-
-        let inputs = vec![(
-            IntelRequest {
-                entity_id: "missing".to_string(),
-                entity_type: "account".to_string(),
-                priority: IntelPriority::ContentChange,
-                requested_at: Instant::now(),
-                retry_count: 0,
-            },
-            EnrichmentInput {
-                workspace: PathBuf::from("/tmp"),
-                entity_dir: PathBuf::from("/tmp/missing"),
-                entity_id: "missing".to_string(),
-                entity_type: "account".to_string(),
-                prompt: String::new(),
-                file_manifest: vec![],
-                file_count: 0,
-            },
-        )];
-
-        // Response with wrong delimiter
-        let response = "=== RESULT: wrong-entity ===\n{}\n";
-
-        let results = parse_batch_response(response, &inputs);
-        assert!(
-            results.is_empty(),
-            "Should return empty for missing delimiter"
-        );
-    }
-
-    #[test]
-    fn test_build_batch_prompt_contains_delimiters() {
-        use std::path::PathBuf;
-
-        let inputs = vec![
-            (
-                IntelRequest {
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/acme"),
-                    entity_id: "acme".to_string(),
-                    entity_type: "account".to_string(),
-                    prompt: "Prompt for acme".to_string(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                },
-            ),
-            (
-                IntelRequest {
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    priority: IntelPriority::ContentChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                },
-                EnrichmentInput {
-                    workspace: PathBuf::from("/tmp"),
-                    entity_dir: PathBuf::from("/tmp/beta"),
-                    entity_id: "beta".to_string(),
-                    entity_type: "project".to_string(),
-                    prompt: "Prompt for beta".to_string(),
-                    file_manifest: vec![],
-                    file_count: 0,
-                },
-            ),
-        ];
-
-        let prompt = build_batch_prompt(&inputs);
-
-        assert!(prompt.contains("=== ENTITY: acme ==="));
-        assert!(prompt.contains("=== ENTITY: beta ==="));
-        assert!(prompt.contains("=== RESULT: acme ==="));
-        assert!(prompt.contains("=== RESULT: beta ==="));
-        assert!(prompt.contains("Prompt for acme"));
-        assert!(prompt.contains("Prompt for beta"));
-        assert!(prompt.contains("MULTIPLE entities"));
     }
 
     // =========================================================================

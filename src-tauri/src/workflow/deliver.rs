@@ -1746,6 +1746,14 @@ fn build_prep_json(
                     obj.insert("recentEmailSignals".to_string(), json!(signals));
                 }
             }
+            if let Some(ref status) = ctx.consistency_status {
+                obj.insert("consistencyStatus".to_string(), json!(status));
+            }
+            if let Some(ref findings) = ctx.consistency_findings {
+                if !findings.is_empty() {
+                    obj.insert("consistencyFindings".to_string(), json!(findings));
+                }
+            }
 
             // I317: Pre-meeting email context → emailDigest
             if let Some(ref email_ctx) = ctx.pre_meeting_email_context {
@@ -1755,6 +1763,18 @@ fn build_prep_json(
                     if !digest.is_null() {
                         obj.insert("emailDigest".to_string(), digest);
                     }
+                }
+            }
+
+            // Never ship an empty key-insight surface: if intelligence summary is
+            // missing, synthesize a deterministic fallback from existing prep data.
+            let has_intel_summary = obj
+                .get("intelligenceSummary")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty());
+            if !has_intel_summary {
+                if let Some(fallback) = synthesize_prep_intelligence_summary(obj) {
+                    obj.insert("intelligenceSummary".to_string(), json!(fallback));
                 }
             }
         }
@@ -1770,6 +1790,74 @@ fn build_prep_json(
     }
 
     prep
+}
+
+/// Build a concise deterministic intelligence summary from existing prep fields.
+///
+/// This is an assembly-time fallback (not persisted to intelligence.json), used
+/// when enrichment returns sparse output so meeting briefings still have a
+/// key insight instead of an empty placeholder.
+fn synthesize_prep_intelligence_summary(
+    prep_obj: &serde_json::Map<String, Value>,
+) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(risk) = prep_obj
+        .get("entityRisks")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("text"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        parts.push(format!("Primary risk: {}.", risk.trim_end_matches('.')));
+    }
+
+    if let Some(win) = prep_obj
+        .get("recentWins")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        parts.push(format!("Recent win: {}.", win.trim_end_matches('.')));
+    }
+
+    if let Some(item) = prep_obj
+        .get("entityReadiness")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        parts.push(format!(
+            "Before this meeting: {}.",
+            item.trim_end_matches('.')
+        ));
+    }
+
+    if parts.is_empty() {
+        if let Some(stakeholders) = prep_obj
+            .get("stakeholderInsights")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.len())
+            .filter(|count| *count > 0)
+        {
+            parts.push(format!(
+                "Relationship context loaded across {} stakeholders.",
+                stakeholders
+            ));
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
 }
 
 /// I317: Build a structured email digest from pre-meeting email context.
@@ -3743,6 +3831,17 @@ pub fn deliver_manifest(
     }
 
     write_json(&data_dir.join("manifest.json"), &manifest)?;
+
+    // I513: Also store manifest in app_state_kv for DB-based freshness checks
+    if let Ok(db) = crate::db::ActionDb::open() {
+        let manifest_str = serde_json::to_string(&manifest).unwrap_or_default();
+        let _ = crate::services::mutations::upsert_app_state_kv_json(
+            &db,
+            "briefing_freshness",
+            &manifest_str,
+        );
+    }
+
     log::info!(
         "deliver_manifest: partial={}, {} meetings, {} actions due, {} emails",
         partial,
@@ -4293,7 +4392,7 @@ pub fn enrich_week(
          Respond with exactly three sections:\n\n\
          1. WEEK_NARRATIVE — Two sentences maximum. First sentence: the shape of the week \
          (e.g. \"Five customer meetings in three days, back-loaded toward Thursday.\"). \
-         Second sentence: the single most important thing to know (e.g. \"Nexus Analytics is the \
+         Second sentence: the single most important thing to know (e.g. \"Acme is the \
          priority — the monthly is Wednesday and the account just went yellow.\"). \
          Never use words like \"pivotal\", \"high-stakes\", \"stewardship\", or \"landscape\". \
          Write like a newsroom editor, not a consultant.\n\n\
@@ -4656,21 +4755,21 @@ mod tests {
     fn test_find_meeting_context_prefers_event_id_over_account() {
         let contexts = vec![
             DirectiveMeetingContext {
-                event_id: Some("evt-slack".to_string()),
-                account: Some("Slack".to_string()),
+                event_id: Some("evt-globex".to_string()),
+                account: Some("Globex".to_string()),
                 ..Default::default()
             },
             DirectiveMeetingContext {
-                event_id: Some("evt-salesforce".to_string()),
+                event_id: Some("evt-initech".to_string()),
                 account: Some("Digital-Marketing-Technology".to_string()),
                 ..Default::default()
             },
         ];
 
-        let found = find_meeting_context(Some("Slack"), Some("evt-salesforce"), &contexts)
+        let found = find_meeting_context(Some("Globex"), Some("evt-initech"), &contexts)
             .expect("expected a context match");
 
-        assert_eq!(found.event_id.as_deref(), Some("evt-salesforce"));
+        assert_eq!(found.event_id.as_deref(), Some("evt-initech"));
         assert_eq!(
             found.account.as_deref(),
             Some("Digital-Marketing-Technology")
@@ -4682,7 +4781,7 @@ mod tests {
         let meeting = DirectiveMeeting {
             event_id: Some("evt-1".to_string()),
             title: Some("BU Sync".to_string()),
-            account: Some("Slack".to_string()),
+            account: Some("Globex".to_string()),
             start_display: Some("9:00 AM".to_string()),
             end_display: Some("9:30 AM".to_string()),
             ..Default::default()
@@ -4694,6 +4793,32 @@ mod tests {
 
         let prep = build_prep_json(&meeting, "customer", "evt-1", Some(&ctx));
         assert_eq!(prep["account"], "Digital-Marketing-Technology");
+    }
+
+    #[test]
+    fn test_build_prep_json_synthesizes_intelligence_summary_when_missing() {
+        let meeting = DirectiveMeeting {
+            event_id: Some("evt-acme".to_string()),
+            title: Some("Acme Sync".to_string()),
+            ..Default::default()
+        };
+        let ctx = DirectiveMeetingContext {
+            entity_risks: Some(vec![json!({
+                "text": "Renewal ownership still unresolved",
+                "urgency": "high"
+            })]),
+            entity_readiness: Some(vec!["Confirm TAM owner before call".to_string()]),
+            recent_email_signals: Some(vec![json!({"subject":"Prep doc missing"})]),
+            ..Default::default()
+        };
+
+        let prep = build_prep_json(&meeting, "customer", "evt-acme", Some(&ctx));
+        let summary = prep
+            .get("intelligenceSummary")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+
+        assert!(summary.contains("Primary risk:"));
     }
 
     #[test]
@@ -4723,7 +4848,7 @@ mod tests {
                         id: Some("evt-1".to_string()),
                         event_id: Some("evt-1".to_string()),
                         summary: Some("Customer Sync".to_string()),
-                        account: Some("Slack".to_string()),
+                        account: Some("Globex".to_string()),
                         ..Default::default()
                     }],
                 );
@@ -5355,13 +5480,13 @@ END_AGENDA
 
     #[test]
     fn test_extract_heres_the_planned_agenda() {
-        // The exact Salesforce DMT format that triggered this fix.
+        // The exact Globex DMT format that triggered this fix.
         let prep = json!({
-            "calendarNotes": "Here's the planned agenda:\n1. Salesforce DMT overview and current status\n2. Review Q1 pipeline coverage\n3. Discuss expansion into Enterprise segment\n4. Action items and next steps",
+            "calendarNotes": "Here's the planned agenda:\n1. Globex DMT overview and current status\n2. Review Q1 pipeline coverage\n3. Discuss expansion into Enterprise segment\n4. Action items and next steps",
         });
         let agenda = extract_calendar_agenda_items(&prep);
         assert_eq!(agenda.len(), 4);
-        assert_eq!(agenda[0], "Salesforce DMT overview and current status");
+        assert_eq!(agenda[0], "Globex DMT overview and current status");
         assert_eq!(agenda[1], "Review Q1 pipeline coverage");
         assert_eq!(agenda[2], "Discuss expansion into Enterprise segment");
         assert_eq!(agenda[3], "Action items and next steps");
@@ -5455,11 +5580,11 @@ END_AGENDA
     fn test_extract_full_real_world_invite() {
         // Realistic calendar invite: agenda + Zoom + discussion context.
         let prep = json!({
-            "calendarNotes": "Hi team,\n\nHere's the planned agenda:\n1. Salesforce DMT overview and current status\n2. Review Q1 pipeline coverage\n3. Discuss expansion into Enterprise segment\n4. Action items and next steps\n\nPlease review the attached deck before the call.\n\nJoin Zoom Meeting\nhttps://zoom.us/j/98765432\nMeeting ID: 987 6543 2100\nPasscode: DmT2024\n\nOne tap mobile\n+16465588656,,98765432#,,,,*123456# US (New York)\n+13017158592,,98765432#,,,,*123456# US (Washington DC)\n\nFind your local number: https://zoom.us/u/abc123",
+            "calendarNotes": "Hi team,\n\nHere's the planned agenda:\n1. Globex DMT overview and current status\n2. Review Q1 pipeline coverage\n3. Discuss expansion into Enterprise segment\n4. Action items and next steps\n\nPlease review the attached deck before the call.\n\nJoin Zoom Meeting\nhttps://zoom.us/j/98765432\nMeeting ID: 987 6543 2100\nPasscode: DmT2024\n\nOne tap mobile\n+16465588656,,98765432#,,,,*123456# US (New York)\n+13017158592,,98765432#,,,,*123456# US (Washington DC)\n\nFind your local number: https://zoom.us/u/abc123",
         });
         let agenda = extract_calendar_agenda_items(&prep);
         assert_eq!(agenda.len(), 4);
-        assert_eq!(agenda[0], "Salesforce DMT overview and current status");
+        assert_eq!(agenda[0], "Globex DMT overview and current status");
         assert_eq!(agenda[1], "Review Q1 pipeline coverage");
         assert_eq!(agenda[2], "Discuss expansion into Enterprise segment");
         assert_eq!(agenda[3], "Action items and next steps");

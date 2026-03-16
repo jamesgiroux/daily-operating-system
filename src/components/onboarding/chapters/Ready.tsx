@@ -4,6 +4,7 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import type { GoogleAuthStatus } from "@/types";
 import type { InboxProcessingState } from "./InboxTraining";
+import styles from "../onboarding.module.css";
 
 interface ReadyProps {
   entityMode: string;
@@ -36,22 +37,14 @@ export function Ready({
   const hasInboxResults = inboxProcessing && inboxProcessing.results.length > 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="Tomorrow morning, your day will be ready."
         epigraph="Everything is set. Here's what we configured."
       />
 
       {/* Config summary */}
-      <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
+      <div className={styles.configSummary}>
         <ConfigRow
           done
           label={`${entityModeLabel(entityMode)} workspace`}
@@ -69,18 +62,10 @@ export function Ready({
 
       {/* Inbox processing summary */}
       {hasInboxResults && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-light)",
-            paddingTop: 20,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-          }}
-        >
-          <Sparkles size={16} style={{ flexShrink: 0, marginTop: 2, color: "var(--color-spice-turmeric)" }} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <p style={{ fontSize: 14, color: "var(--color-text-primary)", margin: 0 }}>
+        <div className={styles.inboxSummary}>
+          <Sparkles size={16} className={`${styles.flexShrink0} ${styles.mt2} ${styles.accentColor}`} />
+          <div className={`${styles.flexCol} ${styles.gap4}`}>
+            <p className={styles.resultText}>
               Processed {inboxProcessing.filesProcessed} file{inboxProcessing.filesProcessed !== 1 ? "s" : ""}
               {inboxProcessing.results
                 .filter((r) => r.classification)
@@ -99,7 +84,7 @@ export function Ready({
               )}
             </p>
             {inboxProcessing.processingInProgress && (
-              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>
+              <p className={styles.backgroundHint}>
                 AI analysis is still running — check your Inbox page in a few minutes.
               </p>
             )}
@@ -108,24 +93,16 @@ export function Ready({
       )}
 
       {/* What happens next */}
-      <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-          fontSize: 14,
-          lineHeight: 1.6,
-          color: "var(--color-text-secondary)",
-        }}
-      >
-        <p style={{ margin: 0 }}>
+      <div className={`${styles.ruleSection} ${styles.nextStepSection}`}>
+        <p className={`${styles.secondaryText} ${styles.noMargin}`}>
           Your first real briefing generates at{" "}
-          <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>6:00 AM</span> tomorrow.
+          <span className={styles.accentText}>6:00 AM</span> tomorrow.
           Your meetings will have context from the accounts and projects you just added.
           Each day, the system learns more — prep gets richer, patterns sharpen, nothing falls through.
         </p>
 
         {!isGoogleConnected && (
-          <p style={{ marginTop: 12, marginBottom: 0 }}>
+          <p className={`${styles.secondaryText} ${styles.nextStepReminder}`}>
             Connect Google anytime from Settings to unlock calendar prep and email triage.
           </p>
         )}
@@ -133,25 +110,11 @@ export function Ready({
 
       {/* Inbox reminder — only show if they didn't already use inbox training */}
       {!hasInboxResults && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-light)",
-            paddingTop: 20,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-          }}
-        >
-          <Inbox size={16} style={{ flexShrink: 0, marginTop: 2, color: "var(--color-text-tertiary)" }} />
-          <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: 0 }}>
+        <div className={styles.inboxReminder}>
+          <Inbox size={16} className={`${styles.flexShrink0} ${styles.mt2} ${styles.tertiaryText}`} />
+          <p className={styles.inboxReminderText}>
             Drop transcripts, notes, or documents into your{" "}
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
+            <span className={styles.inboxFolder}>
               _inbox/
             </span>{" "}
             folder anytime. DailyOS processes them automatically.
@@ -159,7 +122,7 @@ export function Ready({
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
+      <div className={styles.ctaCenter}>
         <Button size="lg" onClick={onComplete}>
           Go to Dashboard
           <ArrowRight className="ml-2 size-4" />
@@ -173,32 +136,15 @@ export function Ready({
 
 function ConfigRow({ done, label }: { done: boolean; label: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div className={styles.configRow}>
       {done ? (
-        <Check size={14} style={{ flexShrink: 0, color: "var(--color-garden-sage)" }} />
+        <Check size={14} className={`${styles.flexShrink0} ${styles.sageColor}`} />
       ) : (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 14,
-            color: "var(--color-text-tertiary)",
-            flexShrink: 0,
-            width: 14,
-            textAlign: "center",
-          }}
-        >
+        <span className={styles.configDash}>
           —
         </span>
       )}
-      <span
-        style={{
-          fontSize: 14,
-          color: done ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
+      <span className={`${styles.configLabel} ${done ? styles.configLabelDone : styles.configLabelPending}`}>
         {label}
       </span>
     </div>

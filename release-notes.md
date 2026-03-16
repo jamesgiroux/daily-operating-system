@@ -10,6 +10,30 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.0.0 — Your chief of staff is ready
+
+DailyOS is a personal chief of staff that runs entirely on your Mac. Connect your Google Calendar and Gmail, and it prepares your workday before you open the app — daily briefings, meeting prep, account insights, and action tracking. No servers, no subscriptions beyond Claude. Your data never leaves your machine.
+
+This is the 1.0 release. The architecture is solid, the intelligence is real, and the experience is designed for Customer Success professionals who manage a book of business.
+
+**Every account gets a health score.** Six dimensions — champion health, stakeholder coverage, engagement patterns, meeting cadence, signal momentum, and financial proximity — combine into one number with a trend arrow. Sparse accounts get an honest confidence qualifier instead of a misleading score. Open any account to see the full breakdown, with the evidence behind every dimension.
+
+**Your meetings know what happened last time.** When you process a transcript, DailyOS extracts categorized wins (not just "things went well" — specific adoption milestones, expansion signals, advocacy moments), risks with urgency levels, champion health changes, and commitments made. All of this flows into the next meeting's briefing automatically. Walk into every meeting knowing what matters.
+
+**Success Plans keep your accounts on track.** Set objectives and milestones for any account. Choose from four templates (onboarding, growth, renewal, at-risk) or build your own. When a lifecycle event happens — like a renewal closing — related milestones auto-complete. AI suggests new objectives based on what it hears in your meetings.
+
+**Search everything.** Press Cmd+K to find any account, person, project, meeting, or action. Results appear in under 300 milliseconds.
+
+**Works offline.** Disconnect from the internet — your briefings and account context are all cached locally. A status indicator shows what's current and what's stale. No blank screens, ever.
+
+**Your data, explained and exportable.** Settings tells you exactly what's stored and for how long. Export everything as a ZIP. Clear your data or delete everything with one click. This is your brain — you own it completely.
+
+**Glean integration (for enterprise teams).** If your company uses Glean, DailyOS pulls from Salesforce, Zendesk, Gong, Slack, and your org directory — producing richer context than local-only analysis. Everything still runs on your Mac; Glean just gives it more to work with. Connect during onboarding or in Settings.
+
+**Built to stay out of your way.** Background work runs on dedicated threads — no beach balls during updates. If something fails in the background, it restarts automatically. The app launches to a branded welcome screen instantly, not a blank window. Errors tell you what happened instead of failing silently.
+
+---
+
 ## v0.16.0 — A better start
 
 Before today, opening DailyOS for the first time meant staring at an empty screen. No guidance, no demonstration of what's possible, no clear path to getting value. You had to know what to connect and what to fill in — without any indication of whether it was worth the effort.
@@ -26,17 +50,17 @@ That's fixed.
 
 ---
 
-## v0.15.2 — Observability & Enterprise Context
+## v0.15.2 — Observability & Company Knowledge
 
 Now you can see what DailyOS does — and connect it to your company's knowledge.
 
 Every action DailyOS takes is now recorded in a tamper-evident activity log: calendar syncs, briefing updates, security events, and anything unusual. You can browse it, export it, and verify it hasn't been tampered with. It's the kind of transparency a chief of staff should have — you trust it because you can audit it.
 
-**Activity Log** — Go to **Settings → Data → Activity Log** to see what the app has been doing. Events are grouped by day, color-coded by category, and written in plain English ("Calendar synced (47 events)", "Intelligence updated", "Database opened"). Click any entry to see the raw details. Use the category filters to focus on what matters — Security, Data, AI, or Anomalies.
+**Activity Log** — Go to **Settings → Data → Activity Log** to see what the app has been doing. Events are grouped by day, color-coded by category, and written in plain English ("Calendar synced (47 events)", "Briefing updated", "Database opened"). Click any entry to see the raw details. Use the category filters to focus on what matters — Security, Data, AI, or Anomalies.
 
 **Export & Verify** — Hit *Export Log* to save a copy of the full audit trail as a JSON file. Hit *Verify Integrity* to confirm the hash chain is intact — if anyone (or anything) has modified a record, you'll know.
 
-**Enterprise Context (Glean)** — If your company uses Glean, DailyOS can now pull from your organization's knowledge graph to enrich briefings and reports. Go to **Settings → Context Source**, switch to Glean mode, and enter your endpoint. Choose Additive (Glean supplements local data) or Governed (Glean replaces local connectors). When Glean is unavailable, everything falls back to local data seamlessly.
+**Company Knowledge (Glean)** — If your company uses Glean, DailyOS can now pull from your organization's knowledge to improve briefings and reports. Go to **Settings → Context Source**, switch to Glean mode, and enter your endpoint. Choose whether Glean supplements your local data or replaces Google Calendar and Gmail as the primary source. When Glean is unavailable, everything falls back to local data seamlessly.
 
 **Touch ID (improved)** — App unlock is now native and instant. The old approach could occasionally stall — the new one won't.
 
@@ -62,7 +86,7 @@ DailyOS now encrypts everything on disk. Your database, your briefings, your rel
 
 Your work, made presentable.
 
-DailyOS now generates reports — slide decks you can actually share. Account Health Reviews for your internal team, EBR/QBRs for your customers, SWOT analyses, and personal impact reports for yourself. All generated from the intelligence DailyOS has already been building. Every report is a live document: click any field to edit it, and your changes save automatically.
+DailyOS now generates reports — slide decks you can actually share. Account Health Reviews for your internal team, EBR/QBRs for your customers, SWOT analyses, and personal impact reports for yourself. All generated from the context DailyOS has already been building. Every report is a live document: click any field to edit it, and your changes save automatically.
 
 **Account Reports** — open any account and click the **Reports ▾** button in the top bar.
 
@@ -98,7 +122,7 @@ Every role preset — Customer Success, Sales, Partnerships, Product, Leadership
 - **Role-aware language** — Meeting prep, actions, and notifications now use your role's vocabulary. If you haven't set your role yet, go to **Settings → You** and pick the preset that fits.
 - **Stakeholder and team roles** — Role badges on stakeholder cards now come from your preset's role definitions. Open any account and check the stakeholder section to see the updated options.
 - **Preset-driven account sorting** — Accounts now sort by what matters to your role: renewal proximity for CS, deal stage for Sales, ARR for Leadership. You can still override the sort manually.
-- **1:1 meeting intelligence** — When you have a one-on-one, the briefing now focuses on that person — their history, notes, and open actions — not just the account.
+- **1:1 meeting briefings** — When you have a one-on-one, the briefing now focuses on that person — their history, notes, and open actions — not just the account.
 - **Background task throttling** — The app is significantly quieter when you're actively working. No action needed; this just happens.
 
 ---

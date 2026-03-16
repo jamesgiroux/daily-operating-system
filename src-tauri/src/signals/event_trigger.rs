@@ -197,7 +197,7 @@ impl crate::db::ActionDb {
         let since_param = format!("-{} minutes", since_minutes);
         let mut stmt = self.conn_ref().prepare(
             "SELECT mh.id, mh.title, mh.attendees
-             FROM meetings_history mh
+             FROM meetings mh
              WHERE mh.created_at >= datetime('now', ?1)
                AND NOT EXISTS (
                    SELECT 1 FROM signal_events se

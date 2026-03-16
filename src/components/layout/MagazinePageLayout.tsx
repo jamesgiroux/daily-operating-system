@@ -19,7 +19,7 @@ import AtmosphereLayer from './AtmosphereLayer';
 import FolioBar from './FolioBar';
 import FloatingNavIsland from './FloatingNavIsland';
 import { UpdateBanner } from '@/components/notifications/UpdateBanner';
-import { useMagazineShellConfig } from '@/hooks/useMagazineShell';
+import { useMagazineShellConfig, useFolioVolatile } from '@/hooks/useMagazineShell';
 import { useChapterObserver } from '@/hooks/useChapterObserver';
 import { useTauriEvent } from '@/hooks/useTauriEvent';
 import { useAppState } from '@/hooks/useAppState';
@@ -91,7 +91,9 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   const folioLabel = pageConfig?.folioLabel ?? 'Daily Briefing';
   const backLink = pageConfig?.backLink;
   const chapters = pageConfig?.chapters;
-  const folioActions = pageConfig?.folioActions;
+  // I563: Read volatile folio state from ref — falls back to config for backwards compat.
+  const volatile = useFolioVolatile();
+  const folioActions = volatile.folioActions ?? pageConfig?.folioActions;
   const { appState, clearDemo } = useAppState();
 
   // Demo mode badge — renders in folio bar actions slot
@@ -128,6 +130,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   const chapterIds = useMemo(() => chapters?.map((c) => c.id) ?? [], [chapters]);
   const [activeChapterId, setActiveChapterId] = useChapterObserver(chapterIds, chapterIds.length > 0);
 
+
   return (
     <div className={styles.magazinePage}>
       {/* Atmospheric background wash */}
@@ -137,8 +140,8 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
       <FolioBar
         publicationLabel={folioLabel}
         dateText={pageConfig?.folioDateText}
-        readinessStats={pageConfig?.folioReadinessStats}
-        statusText={pageConfig?.folioStatusText}
+        readinessStats={volatile.folioReadinessStats ?? pageConfig?.folioReadinessStats}
+        statusText={volatile.folioStatusText ?? pageConfig?.folioStatusText}
         onSearchClick={onFolioSearch}
         backLink={backLink}
         actions={combinedActions}

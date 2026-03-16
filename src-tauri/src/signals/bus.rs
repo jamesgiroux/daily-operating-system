@@ -1,4 +1,21 @@
 //! Signal event CRUD and source tier weights (ADR-0080).
+//!
+//! ## Signal Taxonomy (I530)
+//!
+//! User-facing actions emit these signal types:
+//!
+//! | Signal Type              | Source           | Weight Change       | Trigger                |
+//! |--------------------------|------------------|---------------------|------------------------|
+//! | `intelligence_confirmed` | `user_feedback`  | alpha += 1          | Thumbs up (I529)       |
+//! | `intelligence_rejected`  | `user_feedback`  | beta  += 1          | Thumbs down (I529)     |
+//! | `user_correction`        | `user_edit`      | beta  += 1          | Edit intelligence field |
+//! | `intelligence_curated`   | `user_curation`  | (no weight change)  | Delete / remove item   |
+//! | `email_signal_dismissed` | `user_correction`| (no weight change)  | Dismiss email signal   |
+//! | `email_item_dismissed`   | (item_type)      | (no weight change)  | Dismiss email item     |
+//!
+//! Corrections (edit, thumbs-down) penalize the wrong source. Curation (delete,
+//! dismiss) records user preference without penalizing—the AI wasn't necessarily
+//! wrong, the user just doesn't need that item.
 
 use chrono::Utc;
 use rusqlite::params;
@@ -42,12 +59,19 @@ pub struct SignalEvent {
 /// Tier 4 (lowest): keyword heuristics, AI inference
 pub fn source_base_weight(source: &str) -> f64 {
     match source {
-        "user_correction" | "explicit" => 1.0,
+        "user_correction" | "user_feedback" | "explicit" => 1.0,
+        "user_curation" => 0.9, // I530: curation signals — no weight penalty but high trust
         "transcript" | "notes" => 0.9,
         "attendee" | "attendee_vote" | "email_thread" | "junction" => 0.8,
         "group_pattern" => 0.75,
         "proactive" => 0.7,
+        // I535/ADR-0100: Tiered Glean source confidence
+        "glean_crm" | "glean_salesforce" => 0.9, // Salesforce — system of record
+        "glean_zendesk" | "glean_support" => 0.85, // Zendesk — ticket data is factual
+        "glean_gong" => 0.8, // Gong — recorded calls, AI summaries synthesized
         "glean" | "glean_search" | "glean_org" => 0.7,
+        "glean_chat" | "glean_synthesis" => 0.7, // Glean AI synthesis — same tier as PTY
+        "glean_slack" => 0.5, // Slack — context signal, noisy
         "clay" | "gravatar" => 0.6,
         "keyword" | "keyword_fuzzy" | "heuristic" | "embedding" => 0.4,
         _ => 0.5,
@@ -57,12 +81,19 @@ pub fn source_base_weight(source: &str) -> f64 {
 /// Default half-life in days for a signal source.
 pub fn default_half_life(source: &str) -> i32 {
     match source {
-        "user_correction" | "explicit" => 365,
+        "user_correction" | "user_feedback" | "explicit" => 365,
+        "user_curation" => 180, // I530: curation decays faster than corrections
         "transcript" | "notes" => 60,
         "attendee" | "attendee_vote" | "junction" => 30,
         "group_pattern" => 60,
         "proactive" => 3,
+        // I535/ADR-0100: Tiered Glean half-lives
+        "glean_crm" | "glean_salesforce" => 90, // CRM data refreshes on enrichment cycle
+        "glean_zendesk" | "glean_support" => 30, // Support health is dynamic
+        "glean_gong" => 60,                       // Call patterns are stable-ish
         "glean" | "glean_search" | "glean_org" => 60,
+        "glean_chat" | "glean_synthesis" => 60, // AI synthesis stable
+        "glean_slack" => 14,                      // Slack context decays fast
         "clay" | "gravatar" => 90,
         "keyword" | "keyword_fuzzy" | "heuristic" | "embedding" => 7,
         _ => 30,
@@ -116,13 +147,14 @@ pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError
 
     // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
     let _ = db.conn_ref().execute(
-        "UPDATE meetings_history SET has_new_signals = 1
-         WHERE id IN (
+        "UPDATE meeting_transcripts SET has_new_signals = 1
+         WHERE meeting_id IN (
              SELECT me.meeting_id FROM meeting_entities me
+             INNER JOIN meetings m ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
-         )
-         AND julianday(start_time) > julianday('now')
-         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+             AND julianday(m.start_time) > julianday('now')
+             AND (meeting_transcripts.intelligence_state IS NULL OR meeting_transcripts.intelligence_state != 'archived')
+         )",
         rusqlite::params![signal.entity_id, signal.entity_type],
     );
 
@@ -161,13 +193,14 @@ pub fn emit_signal(
     // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
     // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
     let _ = db.conn_ref().execute(
-        "UPDATE meetings_history SET has_new_signals = 1
-         WHERE id IN (
+        "UPDATE meeting_transcripts SET has_new_signals = 1
+         WHERE meeting_id IN (
              SELECT me.meeting_id FROM meeting_entities me
+             INNER JOIN meetings m ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
-         )
-         AND julianday(start_time) > julianday('now')
-         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+             AND julianday(m.start_time) > julianday('now')
+             AND (meeting_transcripts.intelligence_state IS NULL OR meeting_transcripts.intelligence_state != 'archived')
+         )",
         rusqlite::params![entity_id, entity_type],
     );
 
@@ -262,10 +295,11 @@ pub fn propagate_signal_to_meetings(db: &ActionDb, entity_id: &str) -> Result<us
     let conn = db.conn_ref();
     let mut stmt = conn.prepare(
         "SELECT me.meeting_id FROM meeting_entities me
-         INNER JOIN meetings_history mh ON mh.id = me.meeting_id
+         INNER JOIN meetings m ON m.id = me.meeting_id
+         LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
          WHERE me.entity_id = ?1
-         AND mh.start_time > datetime('now')
-         AND mh.intelligence_state != 'archived'",
+         AND m.start_time > datetime('now')
+         AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
     )?;
 
     let meeting_ids: Vec<String> = stmt
@@ -502,6 +536,8 @@ mod tests {
     #[test]
     fn test_source_base_weights() {
         assert_eq!(source_base_weight("user_correction"), 1.0);
+        assert_eq!(source_base_weight("user_feedback"), 1.0); // I529
+        assert_eq!(source_base_weight("user_curation"), 0.9); // I530
         assert_eq!(source_base_weight("transcript"), 0.9);
         assert_eq!(source_base_weight("attendee_vote"), 0.8);
         assert_eq!(source_base_weight("clay"), 0.6);
@@ -512,6 +548,8 @@ mod tests {
     #[test]
     fn test_default_half_lives() {
         assert_eq!(default_half_life("user_correction"), 365);
+        assert_eq!(default_half_life("user_feedback"), 365); // I529
+        assert_eq!(default_half_life("user_curation"), 180); // I530
         assert_eq!(default_half_life("transcript"), 60);
         assert_eq!(default_half_life("clay"), 90);
         assert_eq!(default_half_life("heuristic"), 7);
