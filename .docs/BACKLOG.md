@@ -14,6 +14,17 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 |----|-------|----------|------|
 | **I56** | Onboarding: educational redesign — demo data, guided tour | P0 | Onboarding |
 | **I600** | Migrate RiskBriefingPage to reports framework — unified route, renderer, feedback | P2 | Frontend / Reports |
+| **I615** | Migration schema integrity checks + 068 rebuild | P0 | Backend / Migrations |
+| **I616** | Background task restart wrapper with backoff | P0 | Backend / Infrastructure |
+| **I617** | Top 20 console.error → toast.error for user-facing actions | P1 | Frontend / UX |
+| **I618** | Smoke tests for top 5 mutation services | P1 | Backend / Testing |
+| **I619** | Prompt evaluation suite — golden fixture tests | P1 | Backend / Testing / Intelligence |
+| **I609** | Retire sync DB path from AppState — remove legacy Mutex<Option<ActionDb>> | P2 | Code Quality / Backend |
+| **I610** | Consolidate AppLockState — 4 fields into single struct | P2 | Code Quality / Backend |
+| **I611** | Full console.error → toast sweep — remaining ~136 instances | P1 | Frontend / UX |
+| **I612** | InboxPage + AccountsPage inline style migration to CSS modules | P2 | Frontend / Code Quality |
+| **I613** | hygiene.rs decomposition — 3,463 lines into 4 sub-modules | P2 | Code Quality / Backend |
+| **I614** | DB growth monitoring + age-based purge scheduler | P2 | Backend / Data Lifecycle |
 | **I57** | Onboarding: add accounts/projects + user domain configuration | P0 | Onboarding |
 | **I199** | Archived account recovery UX — restore + relink | P2 | Entity |
 | **I258** | Report Mode — export account detail as leadership-ready deck/PDF | P2 | UX |
@@ -113,9 +124,11 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I534** | Portfolio reader — read published intelligence from Shared Drive for cross-IC portfolio synthesis. JSON sidecar parsing. Spec: `.docs/issues/i534.md` | P1 | Backend + Frontend |
 | **I535** | Glean Agent integration — call purpose-built Glean Agents via REST API for org-level analysis during enrichment. Spec: `.docs/issues/i535.md` — Steps 1-8 implemented, blocked on testing | P1 | Backend / Connectors |
 | **I563** | shellConfig render loop on AccountDetailEditorial — `useRegisterMagazineShell` re-register cycle causes max update depth warning | P2 | Frontend / Architecture |
-| **I601** | Report animation foundation — shared primitives (AnimatedCounter, Sparkline, ProgressRing, useSlideReveal) for both reports | P1 | Frontend / Reports |
-| **I602** | Weekly Impact v2 — parallelized generation, DB intelligence, comparative narrative, animation polish | P1 | Backend + Frontend / Reports |
-| **I603** | Monthly Wrapped v2 — parallelized generation, DB intelligence, personality archetypes, achievements, visual transformation | P1 | Backend + Frontend / Reports |
+| **I604** | Report engine foundation — schema (3 cols + 3 tables), assembly engine, enrichment extensions, animation primitives, dead code cleanup. Spec: `.docs/issues/i604.md` | P0 | Backend + Frontend / Reports |
+| **I605** | Account reports → display-only — Account Health, SWOT, EBR/QBR assembly from entity_assessment. Spec: `.docs/issues/i605.md` | P0 | Backend / Reports |
+| **I606** | Book of Business rebuild — portfolio_assessment background task, mechanical + stored narrative, re-enable. Spec: `.docs/issues/i606.md` | P1 | Backend + Frontend / Reports |
+| **I607** | Weekly Impact v2 — user_weekly_summary rollover, comparative framing, animation polish. Spec: `.docs/issues/i607.md` | P1 | Backend + Frontend / Reports |
+| **I608** | Monthly Wrapped v2 — user_monthly_summary rollover, archetypes, achievements, visual transformation. Spec: `.docs/issues/i608.md` | P1 | Backend + Frontend / Reports |
 
 ---
 

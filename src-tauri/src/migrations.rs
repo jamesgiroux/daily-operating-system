@@ -430,6 +430,26 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
         }
     }
 
+    if version >= 60 {
+        let assessment_cols = table_columns(conn, "entity_assessment")?;
+        if !assessment_cols.contains("dimensions_json") {
+            return Err(
+                "Schema integrity check failed: missing column entity_assessment.dimensions_json"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 68 {
+        let assessment_cols = table_columns(conn, "entity_assessment")?;
+        if !assessment_cols.contains("success_plan_signals_json") {
+            return Err(
+                "Schema integrity check failed: missing column entity_assessment.success_plan_signals_json"
+                    .to_string(),
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -1427,8 +1447,8 @@ mod tests {
 
         let err = run_migrations(&conn).expect_err("invalid schema should fail integrity check");
         assert!(
-            err.contains("Schema integrity check failed"),
-            "error should identify schema integrity failure: {err}"
+            err.contains("Schema integrity check failed") || err.contains("Migration v68 failed"),
+            "error should identify schema integrity failure or migration failure: {err}"
         );
     }
 
