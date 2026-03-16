@@ -57,6 +57,7 @@ struct TranscriptProgressPayload {
     commitments_count: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_transcript_progress(
     app_handle: Option<&AppHandle>,
     meeting_id: &str,
@@ -120,6 +121,7 @@ pub fn process_transcript(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn process_transcript_with_kind(
     workspace: &Path,
     file_path: &str,
@@ -295,6 +297,8 @@ pub fn process_transcript_with_kind(
     if let Some(db) = db {
         let processed_at = Utc::now().to_rfc3339();
         let summary_ref = (!summary.trim().is_empty()).then_some(summary.as_str());
+        // DIRECT_DB_ALLOWED: Transcript processing persists derived metadata before
+        // any user-facing surfaces reload; this write is part of the processor pipeline.
         if let Err(e) = db.update_meeting_transcript_metadata(
             &meeting.id,
             &destination.display().to_string(),
@@ -362,10 +366,10 @@ pub fn process_transcript_with_kind(
             }
             Err(e) => {
                 log::warn!(
-                    "Phase 2 (intelligence extraction) failed for '{}': {} — Phase 1 results preserved",
-                    meeting.title,
-                    e
-                );
+                "Phase 2 (intelligence extraction) failed for '{}': {} — Phase 1 results preserved",
+                meeting.title,
+                e
+            );
                 (Vec::new(), Vec::new(), Vec::new(), None, None)
             }
         };
@@ -414,6 +418,8 @@ pub fn process_transcript_with_kind(
                 champion_evidence: health.champion_evidence.clone(),
                 champion_risk: health.champion_risk.clone(),
             };
+            // DIRECT_DB_ALLOWED: Transcript extraction owns persistence of per-meeting
+            // champion health artifacts before downstream signal propagation runs.
             if let Err(e) = db.upsert_champion_health(&meeting.id, &db_health) {
                 log::warn!(
                     "Failed to persist champion health for {}: {}",
@@ -517,8 +523,14 @@ pub fn process_transcript_with_kind(
 
         if let Some((eid, etype)) = transcript_entity_id {
             if etype == "account" {
-                if let Err(e) = crate::services::intelligence::recompute_entity_health(db, eid, "account") {
-                    log::warn!("Health recompute failed for {} after transcript: {}", eid, e);
+                if let Err(e) =
+                    crate::services::intelligence::recompute_entity_health(db, eid, "account")
+                {
+                    log::warn!(
+                        "Health recompute failed for {} after transcript: {}",
+                        eid,
+                        e
+                    );
                 }
             }
         }
@@ -758,8 +770,14 @@ fn persist_enriched_transcript_data(
     // Persist interaction dynamics
     if let Some(dynamics) = interaction_dynamics {
         let db_dynamics = convert_dynamics_to_db(meeting_id, dynamics);
+        // DIRECT_DB_ALLOWED: Background transcript processing writes meeting-level
+        // dynamics directly in the processor pipeline.
         if let Err(e) = db.upsert_interaction_dynamics(meeting_id, &db_dynamics) {
-            log::warn!("Failed to persist interaction dynamics for {}: {}", meeting_id, e);
+            log::warn!(
+                "Failed to persist interaction dynamics for {}: {}",
+                meeting_id,
+                e
+            );
         }
     }
 
@@ -772,8 +790,14 @@ fn persist_enriched_transcript_data(
             champion_evidence: health.champion_evidence.clone(),
             champion_risk: health.champion_risk.clone(),
         };
+        // DIRECT_DB_ALLOWED: Background transcript processing writes meeting-level
+        // champion health directly in the processor pipeline.
         if let Err(e) = db.upsert_champion_health(meeting_id, &db_health) {
-            log::warn!("Failed to persist champion health for {}: {}", meeting_id, e);
+            log::warn!(
+                "Failed to persist champion health for {}: {}",
+                meeting_id,
+                e
+            );
         }
     }
 
@@ -790,6 +814,8 @@ fn persist_enriched_transcript_data(
                 evidence_quote: rc.evidence.clone(),
             })
             .collect();
+        // DIRECT_DB_ALLOWED: Transcript extraction owns persistence of structured
+        // role-change artifacts before downstream enrichment consumes them.
         if let Err(e) = db.insert_role_changes(meeting_id, &db_changes) {
             log::warn!("Failed to persist role changes for {}: {}", meeting_id, e);
         }
@@ -804,6 +830,8 @@ fn persist_enriched_transcript_data(
                 let now = chrono::Utc::now().to_rfc3339();
                 let source_label = format!("transcript:{}", meeting_title);
                 let owned_by = commitment.owned_by.as_deref().unwrap_or("joint");
+                // DIRECT_DB_ALLOWED: Transcript extraction dual-writes commitments as
+                // structured artifacts for the success-plan suggestion pipeline.
                 if let Err(e) = db.conn_ref().execute(
                     "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'medium', ?7, 0, ?8)",
@@ -824,6 +852,8 @@ fn persist_enriched_transcript_data(
 
             // Also write to captures table with capture_type='commitment' for automatic
             // flow into intel context and meeting prep via existing queries
+            // DIRECT_DB_ALLOWED: Transcript extraction dual-writes commitments into
+            // captures so existing prep/intelligence queries can consume them immediately.
             if let Err(e) = db.insert_capture_enriched(
                 meeting_id,
                 meeting_title,
@@ -1943,15 +1973,9 @@ pub fn parse_role_changes_block(response: &str) -> Vec<RoleChange> {
                 let role_change = role_change.trim();
                 let (old_status, new_status) =
                     if let Some((old, new)) = role_change.split_once("->") {
-                        (
-                            Some(old.trim().to_string()),
-                            Some(new.trim().to_string()),
-                        )
+                        (Some(old.trim().to_string()), Some(new.trim().to_string()))
                     } else if let Some((old, new)) = role_change.split_once("→") {
-                        (
-                            Some(old.trim().to_string()),
-                            Some(new.trim().to_string()),
-                        )
+                        (Some(old.trim().to_string()), Some(new.trim().to_string()))
                     } else {
                         (None, Some(role_change.to_string()))
                     };
@@ -2049,7 +2073,8 @@ fn extract_inline_field(text: &str, field_prefix: &str) -> Option<String> {
     let idx = if field_prefix.len() <= 3 {
         // Look for ` by:` (space-prefixed) to avoid matching inside `owned_by:`
         let space_prefix = format!(" {}", field_prefix);
-        text.find(&space_prefix).map(|i| i + 1) // skip the space to get to "by:"
+        text.find(&space_prefix)
+            .map(|i| i + 1) // skip the space to get to "by:"
             .or_else(|| {
                 // Also match at start of text
                 if text.starts_with(field_prefix) {
@@ -2064,11 +2089,7 @@ fn extract_inline_field(text: &str, field_prefix: &str) -> Option<String> {
 
     let idx = idx?;
     let after = &text[idx + field_prefix.len()..];
-    let value = after
-        .split_whitespace()
-        .next()?
-        .trim()
-        .to_string();
+    let value = after.split_whitespace().next()?.trim().to_string();
     if value.is_empty() {
         None
     } else {
@@ -2140,9 +2161,8 @@ fn build_gong_pre_context(db: Option<&ActionDb>, meeting: &CalendarEvent) -> Opt
     summaries.sort_by(|a, b| b.date.cmp(&a.date));
     summaries.truncate(5);
 
-    let mut block = String::from(
-        "SUPPLEMENTARY CONTEXT (prior calls with this account from Gong):\n",
-    );
+    let mut block =
+        String::from("SUPPLEMENTARY CONTEXT (prior calls with this account from Gong):\n");
     for s in &summaries {
         block.push_str(&format!(
             "- [{}] \"{}\": {}, sentiment: {}\n",
@@ -2655,20 +2675,14 @@ END_COMMITMENTS";
 
         let result = parse_commitments_block(input);
         assert_eq!(result.len(), 2);
-        assert_eq!(
-            result[0].commitment,
-            "Achieve 50% adoption across 3 teams"
-        );
+        assert_eq!(result[0].commitment, "Achieve 50% adoption across 3 teams");
         assert_eq!(result[0].target_date.as_deref(), Some("2026-06-01"));
         assert_eq!(result[0].owned_by.as_deref(), Some("joint"));
         assert_eq!(
             result[0].success_criteria.as_deref(),
             Some("primary success criterion")
         );
-        assert_eq!(
-            result[1].commitment,
-            "Deliver ROI report before renewal"
-        );
+        assert_eq!(result[1].commitment, "Deliver ROI report before renewal");
         assert_eq!(result[1].owned_by.as_deref(), Some("us"));
         assert!(result[1].target_date.is_none());
     }
