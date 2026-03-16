@@ -7,7 +7,7 @@
 import { useState, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Check } from "lucide-react";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import {
   Select,
@@ -154,6 +154,36 @@ export function PersonRelationships({
     }
   }, [onRelationshipsChanged]);
 
+  const handleConfirm = useCallback(async (rel: PersonRelationshipEdge, choiceIdx: number) => {
+    const choice = RELATIONSHIP_CHOICES[choiceIdx];
+    const isFrom = rel.fromPersonId === personId;
+    const otherId = isFrom ? rel.toPersonId : rel.fromPersonId;
+    try {
+      await invoke("upsert_person_relationship", {
+        payload: {
+          fromPersonId: choice.inverse ? otherId : personId,
+          toPersonId: choice.inverse ? personId : otherId,
+          relationshipType: choice.type,
+          direction: "symmetric",
+          confidence: 1.0,
+          source: "user_confirmed",
+          contextEntityId: rel.contextEntityId ?? null,
+          contextEntityType: rel.contextEntityType ?? null,
+        },
+      });
+      // Delete the original suggested edge if it's a different ID
+      // (upsert may have created a new row instead of updating the AI one)
+      try {
+        await invoke("delete_person_relationship", { id: rel.id });
+      } catch {
+        // May already be replaced by upsert — that's fine
+      }
+      onRelationshipsChanged?.();
+    } catch (err) {
+      console.error("Failed to confirm relationship:", err);
+    }
+  }, [personId, onRelationshipsChanged]);
+
   const handleCancel = useCallback(() => {
     setAdding(false);
     setSelectedPerson(null);
@@ -208,7 +238,7 @@ export function PersonRelationships({
       {ungrouped.length > 0 && (
         <div className={s.edgeGroup}>
           {ungrouped.map((rel) => (
-            <EdgeRow key={rel.id} rel={rel} personId={personId} preset={preset} onDelete={handleDelete} />
+            <EdgeRow key={rel.id} rel={rel} personId={personId} preset={preset} onDelete={handleDelete} onConfirm={handleConfirm} />
           ))}
         </div>
       )}
@@ -219,7 +249,7 @@ export function PersonRelationships({
             {group.type}: {group.name ?? contextId}
           </div>
           {group.edges.map((rel) => (
-            <EdgeRow key={rel.id} rel={rel} personId={personId} preset={preset} onDelete={handleDelete} />
+            <EdgeRow key={rel.id} rel={rel} personId={personId} preset={preset} onDelete={handleDelete} onConfirm={handleConfirm} />
           ))}
         </div>
       ))}
@@ -340,19 +370,91 @@ function EdgeRow({
   personId,
   preset,
   onDelete,
+  onConfirm,
 }: {
   rel: PersonRelationshipEdge;
   personId: string;
   preset?: RolePreset;
   onDelete?: (id: string) => void;
+  onConfirm?: (rel: PersonRelationshipEdge, choiceIdx: number) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const [choiceIdx, setChoiceIdx] = useState(() => {
+    // Pre-select the AI-suggested relationship type in the dropdown
+    const idx = RELATIONSHIP_CHOICES.findIndex(
+      (c) => c.type === rel.relationshipType && !c.inverse,
+    );
+    return idx >= 0 ? idx : 0;
+  });
+
   const isFrom = rel.fromPersonId === personId;
   const otherId = isFrom ? rel.toPersonId : rel.fromPersonId;
   const otherName = isFrom
     ? (rel.toPersonName ?? otherId)
     : (rel.fromPersonName ?? otherId);
   const label = resolveRelationshipLabel(rel.relationshipType, preset, !isFrom);
-  const isSuggested = rel.source === "ai_enrichment";
+  const isSuggested = rel.source === "ai_enrichment" || rel.source === "co_attendance";
+
+  if (confirming && onConfirm) {
+    return (
+      <div className={s.edgeRow} style={{ flexWrap: "wrap", gap: "6px 8px" }}>
+        <span className={s.edgeLink} style={{ cursor: "default" }}>{otherName}</span>
+        <Select value={String(choiceIdx)} onValueChange={(v) => setChoiceIdx(Number(v))}>
+          <SelectTrigger
+            className=""
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 12,
+              color: "var(--color-text-primary)",
+              background: "var(--color-paper-warm-white)",
+              border: "1px solid var(--color-paper-linen)",
+              borderRadius: 4,
+              padding: "3px 8px",
+              height: "auto",
+              boxShadow: "none",
+              width: "auto",
+              minWidth: 120,
+            }}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent
+            position="popper"
+            style={{
+              background: "var(--color-paper-warm-white)",
+              border: "1px solid var(--color-paper-linen)",
+              borderRadius: 6,
+              fontFamily: "var(--font-sans)",
+              fontSize: 12,
+              maxHeight: 240,
+            }}
+          >
+            {RELATIONSHIP_CHOICES.map((choice, i) => (
+              <SelectItem
+                key={`${choice.type}-${choice.inverse}`}
+                value={String(i)}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+              >
+                {choice.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <button
+          className={s.confirmBtn}
+          onClick={() => {
+            onConfirm(rel, choiceIdx);
+            setConfirming(false);
+          }}
+        >
+          Confirm
+        </button>
+        <button className={s.cancelBtn} onClick={() => setConfirming(false)} style={{ padding: "3px 8px" }}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className={s.edgeRow}>
@@ -396,6 +498,12 @@ function EdgeRow({
           </span>
         )}
       </span>
+
+      {isSuggested && onConfirm && (
+        <button className={s.acceptBtn} onClick={() => setConfirming(true)} title="Accept suggestion">
+          <Check size={13} />
+        </button>
+      )}
 
       {onDelete && (
         <button className={s.deleteBtn} onClick={() => onDelete(rel.id)} title="Remove connection">
