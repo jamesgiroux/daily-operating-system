@@ -48,16 +48,22 @@ pub struct BookOfBusinessContent {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookRiskItem {
+    #[serde(default)]
     pub account_name: String,
+    #[serde(default)]
     pub risk: String,
+    #[serde(default)]
     pub arr: Option<f64>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookOpportunityItem {
+    #[serde(default)]
     pub account_name: String,
+    #[serde(default)]
     pub opportunity: String,
+    #[serde(default)]
     pub estimated_value: Option<String>,
 }
 
@@ -85,39 +91,58 @@ pub struct AccountSnapshotRow {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountDeepDive {
+    #[serde(default)]
     pub account_name: String,
+    #[serde(default)]
     pub account_id: String,
+    #[serde(default)]
     pub arr: Option<f64>,
+    #[serde(default)]
     pub renewal_date: Option<String>,
+    #[serde(default)]
     pub status_narrative: String,
+    #[serde(default)]
     pub renewal_or_growth_impact: String,
+    #[serde(default)]
     pub active_workstreams: Vec<String>,
+    #[serde(default)]
     pub risks_and_gaps: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValueDeliveredRow {
+    #[serde(default)]
     pub account_name: String,
+    #[serde(default)]
     pub headline_outcome: String,
+    #[serde(default)]
     pub why_it_matters: String,
+    #[serde(default)]
     pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookTheme {
+    #[serde(default)]
     pub title: String,
+    #[serde(default)]
     pub narrative: String,
+    #[serde(default)]
     pub cited_accounts: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LeadershipAsk {
+    #[serde(default)]
     pub ask: String,
+    #[serde(default)]
     pub context: String,
+    #[serde(default)]
     pub impacted_accounts: Vec<String>,
+    #[serde(default)]
     pub status: Option<String>,
 }
 
@@ -251,6 +276,7 @@ fn first_paragraph(s: &str, max_chars: usize) -> String {
 // =============================================================================
 
 /// Internal struct to hold raw account data from the DB before building snapshot rows.
+/// Pulls rich intelligence from entity_assessment — the output of the Intelligence Loop.
 #[derive(Clone)]
 pub struct RawAccountRow {
     pub id: String,
@@ -264,6 +290,13 @@ pub struct RawAccountRow {
     pub parent_id: Option<String>,
     /// User-set health RAG: "green", "yellow", "red" (primary at-risk indicator)
     pub manual_health: Option<String>,
+    // Rich intelligence fields from entity_assessment (Intelligence Loop output)
+    pub risks_json: Option<String>,
+    pub recent_wins_json: Option<String>,
+    pub stakeholder_insights_json: Option<String>,
+    pub value_delivered: Option<String>,
+    pub open_commitments: Option<String>,
+    pub current_state_json: Option<String>,
 }
 
 /// I547: Gather raw portfolio data from DB. Returns structured output
@@ -275,13 +308,15 @@ pub fn gather_book_of_business_data(
     active_preset: &str,
     spotlight_account_ids: Option<&[String]>,
 ) -> Result<BookGatherOutput, String> {
-    // 1. All active customer accounts with health/ARR/renewal
+    // 1. All active customer accounts with health/ARR/renewal + rich intelligence
     let mut stmt = db
         .conn_ref()
         .prepare(
             "SELECT a.id, a.name, a.arr, a.contract_end, a.lifecycle,
                     ea.executive_assessment, eq.health_score, eq.health_trend,
-                    a.parent_id, a.health
+                    a.parent_id, a.health,
+                    ea.risks_json, ea.recent_wins_json, ea.stakeholder_insights_json,
+                    ea.value_delivered, ea.open_commitments, ea.current_state_json
              FROM accounts a
              LEFT JOIN entity_assessment ea ON ea.entity_id = a.id
              LEFT JOIN entity_quality eq ON eq.entity_id = a.id
@@ -304,6 +339,12 @@ pub fn gather_book_of_business_data(
                 health_trend: row.get(7)?,
                 parent_id: row.get(8)?,
                 manual_health: row.get(9)?,
+                risks_json: row.get(10)?,
+                recent_wins_json: row.get(11)?,
+                stakeholder_insights_json: row.get(12)?,
+                value_delivered: row.get(13)?,
+                open_commitments: row.get(14)?,
+                current_state_json: row.get(15)?,
             })
         })
         .map_err(|e| format!("Failed to query accounts: {}", e))?
@@ -632,29 +673,25 @@ fn build_portfolio_context_block(gather: &BookGatherOutput) -> String {
     prompt
 }
 
-/// Build the account data block for prompts. For deepDives, filters to
-/// spotlight accounts only; for cross-cutting sections, includes all.
+/// Build the account data block for prompts. Includes all portfolio accounts
+/// with tiered detail (top 10 full intelligence, 11-20 condensed, 20+ minimal).
 fn build_account_data_block(
     raw_accounts: &[RawAccountRow],
     snapshot: &[AccountSnapshotRow],
-    filter_ids: Option<&[String]>,
 ) -> String {
     let mut prompt = String::new();
     prompt.push_str("## Account Details\n\n");
 
-    let accounts_to_emit: Vec<&AccountSnapshotRow> = if let Some(ids) = filter_ids {
-        snapshot.iter().filter(|s| ids.contains(&s.account_id)).collect()
-    } else {
-        snapshot.iter().collect()
-    };
+    let accounts_to_emit: Vec<&AccountSnapshotRow> = snapshot.iter().collect();
 
     let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut tier_idx = 0usize;
 
     let emit_account = |prompt: &mut String, snap: &AccountSnapshotRow, tier: usize, indent: &str| {
-        let assessment = raw_accounts
+        let raw = raw_accounts
             .iter()
-            .find(|r| r.id == snap.account_id)
+            .find(|r| r.id == snap.account_id);
+        let assessment = raw
             .and_then(|r| r.executive_assessment.as_deref())
             .unwrap_or("");
 
@@ -665,7 +702,7 @@ fn build_account_data_block(
         let band_str = snap.health_band.as_deref().unwrap_or("unknown");
 
         if tier < 10 {
-            let excerpt = truncate(assessment, 500);
+            // Tier 1: Full intelligence context from the Intelligence Loop
             prompt.push_str(&format!(
                 "{}### {} ({})\n",
                 indent,
@@ -676,25 +713,72 @@ fn build_account_data_block(
                 "{}ARR: {} | Lifecycle: {} | Renewal: {} | Meetings (90d): {} | Contact: {}\n",
                 indent, arr_str, lifecycle_str, renewal_str, snap.meeting_count_90d, contact_str,
             ));
+
+            // Executive assessment
+            let excerpt = truncate(assessment, 400);
             if !excerpt.is_empty() {
+                prompt.push_str(&format!("{}Assessment: ", indent));
                 prompt.push_str(&crate::util::wrap_user_data(&excerpt));
                 prompt.push('\n');
             }
+
+            // Rich intelligence from entity_assessment (already computed by Intelligence Loop)
+            if let Some(r) = raw {
+                if let Some(ref risks) = r.risks_json {
+                    if risks.len() > 2 { // not empty "[]"
+                        prompt.push_str(&format!("{}Known risks: {}\n", indent, truncate(risks, 300)));
+                    }
+                }
+                if let Some(ref wins) = r.recent_wins_json {
+                    if wins.len() > 2 {
+                        prompt.push_str(&format!("{}Recent wins: {}\n", indent, truncate(wins, 300)));
+                    }
+                }
+                if let Some(ref val) = r.value_delivered {
+                    if !val.is_empty() {
+                        prompt.push_str(&format!("{}Value delivered: {}\n", indent, truncate(val, 200)));
+                    }
+                }
+                if let Some(ref commits) = r.open_commitments {
+                    if !commits.is_empty() {
+                        prompt.push_str(&format!("{}Open commitments: {}\n", indent, truncate(commits, 200)));
+                    }
+                }
+                if let Some(ref stakeholders) = r.stakeholder_insights_json {
+                    if stakeholders.len() > 2 {
+                        prompt.push_str(&format!("{}Stakeholder insights: {}\n", indent, truncate(stakeholders, 300)));
+                    }
+                }
+            }
             prompt.push('\n');
         } else if tier < 20 {
-            let para = first_paragraph(assessment, 200);
+            // Tier 2: Assessment + key risks/wins only
             prompt.push_str(&format!(
                 "{}**{}** ({}) | ARR: {} | Renewal: {} | Meetings: {}\n",
                 indent,
                 crate::util::sanitize_external_field(&snap.account_name),
                 band_str, arr_str, renewal_str, snap.meeting_count_90d,
             ));
+            let para = first_paragraph(assessment, 200);
             if !para.is_empty() {
                 prompt.push_str(&crate::util::wrap_user_data(&para));
                 prompt.push('\n');
             }
+            if let Some(r) = raw {
+                if let Some(ref risks) = r.risks_json {
+                    if risks.len() > 2 {
+                        prompt.push_str(&format!("{}Risks: {}\n", indent, truncate(risks, 150)));
+                    }
+                }
+                if let Some(ref wins) = r.recent_wins_json {
+                    if wins.len() > 2 {
+                        prompt.push_str(&format!("{}Wins: {}\n", indent, truncate(wins, 150)));
+                    }
+                }
+            }
             prompt.push('\n');
         } else {
+            // Tier 3: Minimal — name, health, ARR
             prompt.push_str(&format!(
                 "{}- {} | {} | ARR: {}\n",
                 indent,
@@ -753,6 +837,100 @@ fn build_account_data_block(
         tier_idx += 1;
     }
     prompt.push('\n');
+
+    prompt
+}
+
+/// Build a focused deep-dive context block for spotlight accounts.
+/// Gives the AI the full pre-computed intelligence for each account so it can
+/// synthesize a narrative without re-analyzing from scratch. Much smaller than
+/// the full portfolio block — prevents timeouts on 10+ account portfolios.
+fn build_spotlight_detail_block(
+    raw_accounts: &[RawAccountRow],
+    snapshot: &[AccountSnapshotRow],
+    spotlight_ids: &[String],
+) -> String {
+    let mut prompt = String::new();
+    prompt.push_str("## Spotlight Account Details\n\n");
+    prompt.push_str("Below is the full intelligence context for each account that needs a deep dive.\n");
+    prompt.push_str("Use this data to write the statusNarrative, renewalOrGrowthImpact, activeWorkstreams, and risksAndGaps.\n\n");
+
+    for id in spotlight_ids {
+        let snap = match snapshot.iter().find(|s| s.account_id == *id) {
+            Some(s) => s,
+            None => continue,
+        };
+        let raw = raw_accounts.iter().find(|r| r.id == *id);
+
+        let arr_str = snap.arr.map(|a| format!("${:.0}", a)).unwrap_or_else(|| "N/A".to_string());
+        let band_str = snap.health_band.as_deref().unwrap_or("unknown");
+        let renewal_str = snap.renewal_date.as_deref().unwrap_or("N/A");
+        let lifecycle_str = snap.lifecycle.as_deref().unwrap_or("N/A");
+        let contact_str = snap.key_contact.as_deref().unwrap_or("N/A");
+
+        prompt.push_str(&format!(
+            "### {} (ID: {})\n",
+            crate::util::sanitize_external_field(&snap.account_name),
+            id,
+        ));
+        prompt.push_str(&format!(
+            "Health: {} | ARR: {} | Lifecycle: {} | Renewal: {} | Meetings (90d): {} | Contact: {}\n",
+            band_str, arr_str, lifecycle_str, renewal_str, snap.meeting_count_90d, contact_str,
+        ));
+
+        if let Some(r) = raw {
+            if let Some(ref assessment) = r.executive_assessment {
+                if !assessment.is_empty() {
+                    prompt.push_str("Executive assessment: ");
+                    prompt.push_str(&crate::util::wrap_user_data(&truncate(assessment, 600)));
+                    prompt.push('\n');
+                }
+            }
+            if let Some(ref risks) = r.risks_json {
+                if risks.len() > 2 {
+                    prompt.push_str("Known risks: ");
+                    prompt.push_str(&crate::util::wrap_user_data(&truncate(risks, 500)));
+                    prompt.push('\n');
+                }
+            }
+            if let Some(ref wins) = r.recent_wins_json {
+                if wins.len() > 2 {
+                    prompt.push_str("Recent wins: ");
+                    prompt.push_str(&crate::util::wrap_user_data(&truncate(wins, 500)));
+                    prompt.push('\n');
+                }
+            }
+            if let Some(ref val) = r.value_delivered {
+                if !val.is_empty() {
+                    prompt.push_str("Value delivered: ");
+                    prompt.push_str(&crate::util::wrap_user_data(&truncate(val, 300)));
+                    prompt.push('\n');
+                }
+            }
+            if let Some(ref commits) = r.open_commitments {
+                if !commits.is_empty() {
+                    prompt.push_str("Open commitments: ");
+                    prompt.push_str(&crate::util::wrap_user_data(&truncate(commits, 300)));
+                    prompt.push('\n');
+                }
+            }
+            if let Some(ref stakeholders) = r.stakeholder_insights_json {
+                if stakeholders.len() > 2 {
+                    prompt.push_str("Stakeholder insights: ");
+                    prompt.push_str(&crate::util::wrap_user_data(&truncate(stakeholders, 400)));
+                    prompt.push('\n');
+                }
+            }
+            if let Some(ref state) = r.current_state_json {
+                if state.len() > 2 {
+                    prompt.push_str("Current state: ");
+                    prompt.push_str(&crate::util::wrap_user_data(&truncate(state, 400)));
+                    prompt.push('\n');
+                }
+            }
+        }
+        prompt.push('\n');
+    }
 
     prompt
 }
@@ -823,11 +1001,11 @@ fn append_spotlight_instructions(prompt: &mut String, gather: &BookGatherOutput,
 // I547: Per-section prompt builders (Step 2)
 // =============================================================================
 
-/// Wave 1 section names (generated in parallel).
+/// Wave 1 cross-cutting section names (generated in parallel).
+/// deepDives is handled separately — one PTY call per spotlight account.
 const WAVE1_SECTIONS: &[&str] = &[
     "topRisks",
     "topOpportunities",
-    "deepDives",
     "valueDelivered",
     "keyThemes",
     "leadershipAsks",
@@ -841,20 +1019,26 @@ fn build_bob_section_prompt(
 ) -> String {
     let mut prompt = build_portfolio_context_block(gather);
 
-    // Account data: deepDives gets spotlight-only, others get full portfolio
-    let filter = if section == "deepDives" && !gather.spotlight_ids.is_empty() {
-        Some(gather.spotlight_ids.as_slice())
+    if section == "deepDives" && !gather.spotlight_ids.is_empty() {
+        // DeepDives with spotlights: focused context for spotlight accounts only.
+        // Full portfolio context causes timeouts — deepDives needs deep detail on
+        // fewer accounts, not shallow detail on all accounts.
+        prompt.push_str(&build_spotlight_detail_block(
+            &gather.raw_accounts,
+            &gather.snapshot,
+            &gather.spotlight_ids,
+        ));
     } else {
-        None
-    };
-    prompt.push_str(&build_account_data_block(
-        &gather.raw_accounts,
-        &gather.snapshot,
-        filter,
-    ));
+        prompt.push_str(&build_account_data_block(
+            &gather.raw_accounts,
+            &gather.snapshot,
+        ));
+    }
 
-    // Activity context
-    append_activity_context(&mut prompt, gather);
+    // Activity context (skip for deepDives — it has focused account context instead)
+    if section != "deepDives" {
+        append_activity_context(&mut prompt, gather);
+    }
 
     // Spotlight instructions
     append_spotlight_instructions(&mut prompt, gather, section);
@@ -1004,6 +1188,126 @@ fn build_bob_section_prompt(
     prompt
 }
 
+/// Build a per-account deep dive prompt. Uses the pre-computed intelligence
+/// for one account — small, focused prompt that completes in ~10-20s.
+fn build_single_deep_dive_prompt(
+    gather: &BookGatherOutput,
+    account_id: &str,
+    glean_ctx: &GleanPortfolioContext,
+) -> Option<String> {
+    let snap = gather.snapshot.iter().find(|s| s.account_id == account_id)?;
+    let raw = gather.raw_accounts.iter().find(|r| r.id == account_id);
+
+    let mut prompt = String::with_capacity(4096);
+    prompt.push_str("You are a senior customer success strategist preparing a deep dive slide for a leadership presentation.\n");
+    prompt.push_str("Ground every claim in the data provided. Use executive-ready language.\n\n");
+
+    let arr_str = snap.arr.map(|a| format!("${:.0}", a)).unwrap_or_else(|| "N/A".to_string());
+    let band_str = snap.health_band.as_deref().unwrap_or("unknown");
+    let renewal_str = snap.renewal_date.as_deref().unwrap_or("N/A");
+    let lifecycle_str = snap.lifecycle.as_deref().unwrap_or("N/A");
+    let contact_str = snap.key_contact.as_deref().unwrap_or("N/A");
+
+    prompt.push_str(&format!(
+        "# {} (ID: {})\n\n",
+        crate::util::sanitize_external_field(&snap.account_name),
+        account_id,
+    ));
+    prompt.push_str(&format!(
+        "Health: {} | ARR: {} | Lifecycle: {} | Renewal: {} | Meetings (90d): {} | Contact: {}\n\n",
+        band_str, arr_str, lifecycle_str, renewal_str, snap.meeting_count_90d, contact_str,
+    ));
+
+    // Feed pre-computed intelligence
+    if let Some(r) = raw {
+        if let Some(ref assessment) = r.executive_assessment {
+            if !assessment.is_empty() {
+                prompt.push_str("## Executive Assessment\n");
+                prompt.push_str(&crate::util::wrap_user_data(assessment));
+                prompt.push_str("\n\n");
+            }
+        }
+        if let Some(ref state) = r.current_state_json {
+            if state.len() > 2 {
+                prompt.push_str("## Current State\n");
+                prompt.push_str(&crate::util::wrap_user_data(state));
+                prompt.push_str("\n\n");
+            }
+        }
+        if let Some(ref risks) = r.risks_json {
+            if risks.len() > 2 {
+                prompt.push_str("## Known Risks\n");
+                prompt.push_str(&crate::util::wrap_user_data(risks));
+                prompt.push_str("\n\n");
+            }
+        }
+        if let Some(ref wins) = r.recent_wins_json {
+            if wins.len() > 2 {
+                prompt.push_str("## Recent Wins\n");
+                prompt.push_str(&crate::util::wrap_user_data(wins));
+                prompt.push_str("\n\n");
+            }
+        }
+        if let Some(ref val) = r.value_delivered {
+            if !val.is_empty() {
+                prompt.push_str("## Value Delivered\n");
+                prompt.push_str(&crate::util::wrap_user_data(val));
+                prompt.push_str("\n\n");
+            }
+        }
+        if let Some(ref commits) = r.open_commitments {
+            if !commits.is_empty() {
+                prompt.push_str("## Open Commitments\n");
+                prompt.push_str(&crate::util::wrap_user_data(commits));
+                prompt.push_str("\n\n");
+            }
+        }
+        if let Some(ref stakeholders) = r.stakeholder_insights_json {
+            if stakeholders.len() > 2 {
+                prompt.push_str("## Stakeholder Insights\n");
+                prompt.push_str(&crate::util::wrap_user_data(stakeholders));
+                prompt.push_str("\n\n");
+            }
+        }
+    }
+
+    // Glean supplement for deep dives
+    let glean_parts: Vec<&str> = [
+        glean_ctx.risk_pulse.as_deref(),
+        glean_ctx.pipeline_signals.as_deref(),
+    ].iter().copied().flatten().collect();
+    if !glean_parts.is_empty() {
+        prompt.push_str("## Enterprise Context (Glean)\n");
+        for part in glean_parts {
+            prompt.push_str(&crate::util::wrap_user_data(part));
+            prompt.push('\n');
+        }
+        prompt.push('\n');
+    }
+
+    prompt.push_str("## Output Format\n\n");
+    prompt.push_str("Respond with ONLY valid JSON (no markdown fences):\n\n");
+    prompt.push_str(&format!(
+        r#"{{ "accountName": "{}", "accountId": "{}", "arr": {}, "renewalDate": {}, "statusNarrative": "2-3 sentences", "renewalOrGrowthImpact": "One sentence", "activeWorkstreams": ["..."], "risksAndGaps": ["..."] }}"#,
+        crate::util::sanitize_external_field(&snap.account_name),
+        account_id,
+        snap.arr.map(|a| format!("{:.1}", a)).unwrap_or_else(|| "null".to_string()),
+        snap.renewal_date.as_ref().map(|d| format!("\"{}\"", d)).unwrap_or_else(|| "null".to_string()),
+    ));
+
+    prompt.push_str("\n\n## Rules\n\n");
+    prompt.push_str(
+        "- statusNarrative: 2-3 sentences you could say out loud — the story of this account right now.\n\
+         - renewalOrGrowthImpact: one sentence on what this means for revenue.\n\
+         - activeWorkstreams and risksAndGaps: short bullet phrases, not sentences.\n\
+         - Ground everything in the data above. Do NOT fabricate dates or commitments.\n\
+         - Do NOT mention AI, enrichment, signals, or internal mechanics.\n\
+         - Write for the ear, not the page. Short sentences. Active voice.\n",
+    );
+
+    Some(prompt)
+}
+
 /// Build the executiveSummary prompt using Wave 1 results as context.
 fn build_executive_summary_prompt(
     gather: &BookGatherOutput,
@@ -1062,7 +1366,10 @@ fn build_executive_summary_prompt(
 // I547: Parallel execution engine (Step 3)
 // =============================================================================
 
-/// Run parallel BoB generation: 6 Wave 1 sections + sequential executiveSummary.
+/// Run parallel BoB generation:
+/// - 5 cross-cutting sections in parallel (topRisks, topOpportunities, valueDelivered, keyThemes, leadershipAsks)
+/// - N per-account deep dive calls in parallel (one per spotlight account)
+/// - Sequential executiveSummary using all Wave 1 results
 /// Emits progressive `bob-section-progress` events via AppHandle.
 pub fn run_parallel_bob_generation(
     gather: &BookGatherOutput,
@@ -1071,12 +1378,12 @@ pub fn run_parallel_bob_generation(
     app_handle: Option<&AppHandle>,
 ) -> Result<AiBookResponse, String> {
     let overall_start = Instant::now();
-    let total_sections = 7u32; // 6 Wave 1 + 1 executiveSummary
+    let total_sections = WAVE1_SECTIONS.len() as u32 + 1 + 1; // 5 cross-cutting + deepDives + executiveSummary
 
     // Channel for receiving section results
     let (tx, rx) = std::sync::mpsc::channel();
 
-    // Spawn one thread per Wave 1 section
+    // Spawn one thread per cross-cutting section
     for &section in WAVE1_SECTIONS {
         let section_prompt = build_bob_section_prompt(section, gather, glean_ctx);
         let workspace = gather.workspace.clone();
@@ -1087,8 +1394,9 @@ pub fn run_parallel_bob_generation(
         std::thread::spawn(move || {
             let sec_start = Instant::now();
 
-            let pty = PtyManager::for_tier(ModelTier::Extraction, &ai_cfg)
-                .with_timeout(30)
+            // Synthesis tier — BoB sections require narrative reasoning, not extraction.
+            let pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_cfg)
+                .with_timeout(60)
                 .with_nice_priority(10);
 
             let result = pty
@@ -1119,6 +1427,107 @@ pub fn run_parallel_bob_generation(
                 });
 
             let _ = sender.send(result);
+        });
+    }
+
+    // Spawn per-account deep dive threads (one per spotlight account).
+    // If no spotlights selected, fall back to a single deepDives section call.
+    if gather.spotlight_ids.is_empty() {
+        // No spotlights — use the standard section prompt for deepDives
+        let section_prompt = build_bob_section_prompt("deepDives", gather, glean_ctx);
+        let workspace = gather.workspace.clone();
+        let ai_cfg = gather.ai_models.clone();
+        let sender = tx.clone();
+
+        std::thread::spawn(move || {
+            let sec_start = Instant::now();
+            let pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_cfg)
+                .with_timeout(90)
+                .with_nice_priority(10);
+
+            let result = pty
+                .spawn_claude(&workspace, &section_prompt)
+                .map_err(|e| format!("PTY error for section deepDives: {}", e))
+                .and_then(|output| {
+                    let json_str = crate::risk_briefing::extract_json_object(&output.stdout)
+                        .ok_or_else(|| format!("No JSON in deepDives response ({}ms)", sec_start.elapsed().as_millis()))?;
+                    let value: serde_json::Value = serde_json::from_str(&json_str)
+                        .map_err(|e| format!("Parse error for section deepDives: {}", e))?;
+                    log::info!("[I547] Section deepDives completed in {}ms", sec_start.elapsed().as_millis());
+                    Ok(("deepDives".to_string(), value))
+                });
+
+            let _ = sender.send(result);
+        });
+    } else {
+        // Per-account deep dive calls — small focused prompts, trivially parallel
+        let deep_dive_tx = tx.clone();
+        let workspace = gather.workspace.clone();
+        let ai_cfg = gather.ai_models.clone();
+        let spotlight_ids = gather.spotlight_ids.clone();
+
+        // Collect all per-account prompts upfront (before moving into thread)
+        let account_prompts: Vec<(String, String)> = spotlight_ids
+            .iter()
+            .filter_map(|id| {
+                build_single_deep_dive_prompt(gather, id, glean_ctx)
+                    .map(|prompt| (id.clone(), prompt))
+            })
+            .collect();
+
+        // Spawn a coordinator thread that fans out per-account calls
+        std::thread::spawn(move || {
+            let (acct_tx, acct_rx) = std::sync::mpsc::channel();
+
+            for (acct_id, prompt) in account_prompts {
+                let ws = workspace.clone();
+                let cfg = ai_cfg.clone();
+                let sender = acct_tx.clone();
+
+                std::thread::spawn(move || {
+                    let start = Instant::now();
+                    let pty = PtyManager::for_tier(ModelTier::Synthesis, &cfg)
+                        .with_timeout(45)
+                        .with_nice_priority(10);
+
+                    let result = pty.spawn_claude(&ws, &prompt);
+                    match result {
+                        Ok(output) => {
+                            if let Some(json_str) = crate::risk_briefing::extract_json_object(&output.stdout) {
+                                if let Ok(dive) = serde_json::from_str::<AccountDeepDive>(&json_str) {
+                                    log::info!("[I547] Deep dive for {} completed in {}ms", acct_id, start.elapsed().as_millis());
+                                    let _ = sender.send(Ok(dive));
+                                    return;
+                                } else {
+                                    log::warn!("[I547] Deep dive parse failed for {}: {}", acct_id,
+                                        json_str.chars().take(200).collect::<String>());
+                                }
+                            }
+                            log::warn!("[I547] No JSON in deep dive for {} ({}ms)", acct_id, start.elapsed().as_millis());
+                            let _ = sender.send(Err(format!("No JSON for {}", acct_id)));
+                        }
+                        Err(e) => {
+                            log::warn!("[I547] Deep dive PTY error for {}: {} ({}ms)", acct_id, e, start.elapsed().as_millis());
+                            let _ = sender.send(Err(format!("PTY error for {}: {}", acct_id, e)));
+                        }
+                    }
+                });
+            }
+
+            drop(acct_tx);
+
+            // Collect all per-account results into a single deepDives array
+            let mut dives = Vec::new();
+            for result in acct_rx {
+                if let Ok(dive) = result {
+                    dives.push(dive);
+                }
+            }
+
+            // Send as a combined deepDives section result
+            let combined = serde_json::json!({ "deepDives": dives });
+            log::info!("[I547] All deep dives collected: {} accounts", dives.len());
+            let _ = deep_dive_tx.send(Ok(("deepDives".to_string(), combined)));
         });
     }
 
@@ -1182,8 +1591,8 @@ pub fn run_parallel_bob_generation(
     let exec_start = Instant::now();
     let exec_prompt = build_executive_summary_prompt(gather, glean_ctx, &wave1_json);
 
-    let pty = PtyManager::for_tier(ModelTier::Extraction, &gather.ai_models)
-        .with_timeout(30)
+    let pty = PtyManager::for_tier(ModelTier::Synthesis, &gather.ai_models)
+        .with_timeout(60)
         .with_nice_priority(10);
 
     match pty.spawn_claude(&gather.workspace, &exec_prompt) {
@@ -1239,47 +1648,61 @@ pub fn run_parallel_bob_generation(
 
 /// Merge a parsed section value into the combined response.
 fn merge_section_into(response: &mut AiBookResponse, section: &str, value: &serde_json::Value) {
+    // Helper: extract + deserialize a section array with logging
+    fn extract_section<T: serde::de::DeserializeOwned>(
+        value: &serde_json::Value,
+        key: &str,
+    ) -> Option<Vec<T>> {
+        match value.get(key) {
+            Some(arr) => match serde_json::from_value::<Vec<T>>(arr.clone()) {
+                Ok(items) => {
+                    log::info!("[I547] Merged {} — {} items", key, items.len());
+                    Some(items)
+                }
+                Err(e) => {
+                    log::warn!("[I547] Failed to deserialize {}: {} — raw: {}", key, e,
+                        serde_json::to_string(arr).unwrap_or_default().chars().take(200).collect::<String>());
+                    None
+                }
+            },
+            None => {
+                log::warn!("[I547] Section {} missing key '{}' in response: {}",
+                    key, key,
+                    serde_json::to_string(value).unwrap_or_default().chars().take(200).collect::<String>());
+                None
+            }
+        }
+    }
+
     match section {
         "topRisks" => {
-            if let Some(arr) = value.get("topRisks") {
-                if let Ok(items) = serde_json::from_value::<Vec<BookRiskItem>>(arr.clone()) {
-                    response.top_risks = items;
-                }
+            if let Some(items) = extract_section::<BookRiskItem>(value, "topRisks") {
+                response.top_risks = items;
             }
         }
         "topOpportunities" => {
-            if let Some(arr) = value.get("topOpportunities") {
-                if let Ok(items) = serde_json::from_value::<Vec<BookOpportunityItem>>(arr.clone()) {
-                    response.top_opportunities = items;
-                }
+            if let Some(items) = extract_section::<BookOpportunityItem>(value, "topOpportunities") {
+                response.top_opportunities = items;
             }
         }
         "deepDives" => {
-            if let Some(arr) = value.get("deepDives") {
-                if let Ok(items) = serde_json::from_value::<Vec<AccountDeepDive>>(arr.clone()) {
-                    response.deep_dives = items;
-                }
+            if let Some(items) = extract_section::<AccountDeepDive>(value, "deepDives") {
+                response.deep_dives = items;
             }
         }
         "valueDelivered" => {
-            if let Some(arr) = value.get("valueDelivered") {
-                if let Ok(items) = serde_json::from_value::<Vec<ValueDeliveredRow>>(arr.clone()) {
-                    response.value_delivered = items;
-                }
+            if let Some(items) = extract_section::<ValueDeliveredRow>(value, "valueDelivered") {
+                response.value_delivered = items;
             }
         }
         "keyThemes" => {
-            if let Some(arr) = value.get("keyThemes") {
-                if let Ok(items) = serde_json::from_value::<Vec<BookTheme>>(arr.clone()) {
-                    response.key_themes = items;
-                }
+            if let Some(items) = extract_section::<BookTheme>(value, "keyThemes") {
+                response.key_themes = items;
             }
         }
         "leadershipAsks" => {
-            if let Some(arr) = value.get("leadershipAsks") {
-                if let Ok(items) = serde_json::from_value::<Vec<LeadershipAsk>>(arr.clone()) {
-                    response.leadership_asks = items;
-                }
+            if let Some(items) = extract_section::<LeadershipAsk>(value, "leadershipAsks") {
+                response.leadership_asks = items;
             }
         }
         _ => {}
@@ -1443,7 +1866,7 @@ fn build_book_of_business_prompt(
     ));
 
     // Per-account data
-    prompt.push_str(&build_account_data_block(raw_accounts, snapshot, None));
+    prompt.push_str(&build_account_data_block(raw_accounts, snapshot));
 
     // Activity summary
     if !open_actions.is_empty() {

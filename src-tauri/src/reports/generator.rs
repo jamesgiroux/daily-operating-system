@@ -28,11 +28,11 @@ pub struct ReportGeneratorInput {
 /// No DB lock held — this is the long-running operation.
 pub fn run_report_generation(input: &ReportGeneratorInput) -> Result<String, String> {
     let timeout_secs = match input.report_type.as_str() {
-        // These report types still use monolithic prompts for now.
-        // Keep a larger timeout until they are decomposed like BoB/SWOT.
         "monthly_wrapped" | "weekly_impact" | "ebr_qbr" => 180,
         "account_health" => 120,
-        _ => 30,
+        // BoB monolithic fallback needs time for large portfolios (10+ accounts)
+        "book_of_business" => 180,
+        _ => 60,
     };
     let pty = PtyManager::for_tier(ModelTier::Synthesis, &input.ai_models)
         .with_timeout(timeout_secs)
