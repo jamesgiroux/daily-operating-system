@@ -34,6 +34,8 @@ export type MeetingType =
 /** Feature flags for gating incomplete features (I537). */
 export interface FeatureFlags {
   role_presets_enabled: boolean;
+  book_of_business_enabled: boolean;
+  glean_discovery_enabled: boolean;
 }
 
 export interface DatabaseRecoveryStatus {
