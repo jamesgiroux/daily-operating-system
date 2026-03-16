@@ -75,7 +75,10 @@ function UpdateSection() {
   const [state, setState] = useState<UpdateState>({ phase: "idle" });
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch((err) => console.error("getVersion failed:", err));
+    getVersion().then(setAppVersion).catch((err) => {
+      console.error("getVersion failed:", err);
+      toast.error("Could not check app version");
+    });
   }, []);
 
   async function handleCheck() {
@@ -824,6 +827,7 @@ function CaptureSection() {
       setCaptureConfig({ ...captureConfig, enabled: newEnabled });
     } catch (err) {
       console.error("Failed to toggle capture:", err);
+      toast.error("Failed to update capture settings");
     }
   }
 
@@ -834,6 +838,7 @@ function CaptureSection() {
       setCaptureConfig({ ...captureConfig, delayMinutes: minutes });
     } catch (err) {
       console.error("Failed to update delay:", err);
+      toast.error("Failed to update capture delay");
     }
   }
 

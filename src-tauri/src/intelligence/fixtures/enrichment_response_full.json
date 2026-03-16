@@ -1,0 +1,129 @@
+{
+  "executiveAssessment": "Acme Corp is a healthy mid-market account with strong product adoption and an engaged champion in Sarah Chen.\n\nThe primary risk is a competitor evaluation with Competitor X, driven by the incoming CTO who has prior relationships there. This requires immediate attention from the account team.\n\nThe biggest opportunity is the Q3 EMEA expansion, which could double seat count and increase ARR by 40%. Sarah has already secured internal buy-in from the EMEA director.\n\nKey unknown: the new CTO's technology strategy and whether our roadmap aligns with their vision.",
+  "pullQuote": "Competitor evaluation underway — but EMEA expansion could double the account if we move fast.",
+  "risks": [
+    {"text": "Active competitor evaluation with Competitor X, driven by new CTO David Park who has prior relationship", "urgency": "critical", "source": "QBR meeting 2026-03-10"},
+    {"text": "Budget review in Q2 could reduce discretionary spend by 20%", "urgency": "watch", "source": "Email from CFO 2026-03-05"},
+    {"text": "APAC team adoption declining — only 30% utilization last month", "urgency": "low", "source": "Usage data"}
+  ],
+  "recentWins": [
+    {"text": "Expanded from 2 teams to 5 teams in NA region", "impact": "high"},
+    {"text": "Customer presented ROI at internal leadership meeting: 65% reduction in troubleshooting time", "impact": "high"},
+    {"text": "Sarah Chen joined customer advisory board", "impact": "medium"}
+  ],
+  "currentState": {
+    "working": [
+      "Strong product adoption in NA (85% utilization)",
+      "Executive sponsor actively engaged in quarterly reviews",
+      "Support tickets trending down 40% QoQ"
+    ],
+    "notWorking": [
+      "APAC deployment stalled — missing regional admin",
+      "Integration with Salesforce delayed by 3 weeks"
+    ],
+    "unknowns": [
+      "New CTO's technology strategy and vendor consolidation plans",
+      "Q2 budget allocation for expansion licenses"
+    ]
+  },
+  "stakeholderInsights": [
+    {"name": "Sarah Chen", "role": "VP Engineering", "assessment": "Primary champion. Highly engaged, drives adoption across teams.", "engagement": "high"},
+    {"name": "David Park", "role": "CTO", "assessment": "New hire. Reviewing all vendor relationships. Has prior relationship with Competitor X.", "engagement": "medium"},
+    {"name": "Lisa Wong", "role": "CFO", "assessment": "Budget gatekeeper. Supportive but wants ROI data before approving expansion.", "engagement": "low"}
+  ],
+  "valueDelivered": [
+    {"date": "2026-02-15", "statement": "Reduced troubleshooting time by 65%, saving approximately $30K/month", "source": "QBR presentation", "impact": "cost"},
+    {"date": "2026-01-20", "statement": "Onboarded 500 users in 2 weeks vs previous 6-week average", "source": "Implementation review", "impact": "speed"}
+  ],
+  "nextMeetingReadiness": {
+    "prepItems": [
+      "Prepare competitive differentiation deck for CTO David Park",
+      "Gather EMEA expansion ROI projections for CFO approval",
+      "Review APAC adoption blockers with regional team"
+    ]
+  },
+  "companyContext": {
+    "description": "Acme Corp is a mid-market SaaS company providing project management solutions to enterprise teams.",
+    "industry": "Enterprise SaaS",
+    "size": "500-1000 employees",
+    "headquarters": "San Francisco, CA"
+  },
+  "health": {
+    "score": 72,
+    "band": "green",
+    "source": "computed",
+    "confidence": 0.75,
+    "trend": {
+      "direction": "stable",
+      "rationale": "Strong adoption offset by competitive threat",
+      "timeframe": "30d",
+      "confidence": 0.7
+    },
+    "dimensions": {
+      "meetingCadence": {"score": 80, "weight": 0.15, "evidence": ["Regular bi-weekly syncs maintained"], "trend": "stable"},
+      "emailEngagement": {"score": 70, "weight": 0.15, "evidence": ["Responsive within 24h on most threads"], "trend": "stable"},
+      "stakeholderCoverage": {"score": 65, "weight": 0.20, "evidence": ["Strong VP contact, weak CTO relationship"], "trend": "declining"},
+      "championHealth": {"score": 85, "weight": 0.20, "evidence": ["Sarah Chen actively advocating"], "trend": "improving"},
+      "financialProximity": {"score": 60, "weight": 0.15, "evidence": ["Budget review pending"], "trend": "stable"},
+      "signalMomentum": {"score": 70, "weight": 0.15, "evidence": ["Mixed signals"], "trend": "stable"}
+    },
+    "recommendedActions": [
+      "Schedule 1:1 with CTO David Park to understand technology vision",
+      "Prepare competitive battle card for Competitor X",
+      "Accelerate EMEA expansion proposal to lock in before budget review"
+    ]
+  },
+  "competitiveContext": [
+    {"competitor": "Competitor X", "threatLevel": "evaluation", "context": "New CTO David Park has prior relationship. Active evaluation in progress.", "source": "meeting", "detectedAt": "2026-03-10"}
+  ],
+  "strategicPriorities": [
+    {"priority": "EMEA expansion to 3 additional teams", "status": "active", "owner": "Sarah Chen", "source": "qbr"},
+    {"priority": "Reduce vendor count by 30%", "status": "active", "owner": "David Park", "source": "meeting"}
+  ],
+  "coverageAssessment": {
+    "roleFillRate": 0.6,
+    "gaps": ["CTO relationship building needed", "No procurement contact identified"],
+    "covered": ["VP Engineering", "CFO"],
+    "level": "adequate"
+  },
+  "organizationalChanges": [
+    {"changeType": "hire", "person": "David Park", "from": null, "to": "CTO", "detectedAt": "2026-01-15", "source": "meeting"}
+  ],
+  "expansionSignals": [
+    {"opportunity": "EMEA team deployment across 3 teams", "arrImpact": 80000, "source": "QBR 2026-03-10", "stage": "exploring", "strength": "strong"}
+  ],
+  "renewalOutlook": {
+    "confidence": "medium",
+    "riskFactors": ["CTO vendor consolidation review", "Q2 budget constraints"],
+    "expansionPotential": "EMEA expansion could add $80K ARR"
+  },
+  "successPlanSignals": {
+    "statedObjectives": [
+      {"objective": "Achieve 80% adoption across all regions", "source": "QBR 2026-03-10", "owner": "Sarah Chen", "targetDate": "2026-09-30", "confidence": "high"}
+    ],
+    "mutualSuccessCriteria": [
+      {"criterion": "65% reduction in troubleshooting time sustained for 2 quarters", "ownedBy": "joint", "status": "achieved"}
+    ],
+    "milestoneCandidates": [
+      {"milestone": "EMEA pilot launch", "expectedBy": "2026-07-01", "detectedFrom": "QBR discussion", "autoDetectEvent": null}
+    ]
+  },
+  "successMetrics": [
+    {"name": "NA Utilization", "target": "90%", "current": "85%", "status": "on_track"},
+    {"name": "Support Tickets", "target": "<10/mo", "current": "7", "status": "achieved"}
+  ],
+  "openCommitments": [
+    {"description": "Deliver EMEA rollout plan", "owner": "us", "dueDate": "2026-06-30", "status": "open"}
+  ],
+  "relationshipDepth": {
+    "championStrength": "strong",
+    "executiveAccess": "limited",
+    "stakeholderCoverage": "VP-level strong, C-suite weak",
+    "coverageGaps": ["CTO relationship", "Procurement contact"]
+  },
+  "supportHealth": {
+    "openTickets": 3,
+    "trend": "improving"
+  },
+  "keywords": ["Acme", "Acme Corp", "EMEA expansion", "Sarah Chen", "David Park"]
+}
