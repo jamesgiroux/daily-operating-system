@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import type { DriveStatusData, DriveWatchedSource } from "@/types";
 import { styles } from "../styles";
@@ -59,6 +60,7 @@ export default function GoogleConnection() {
       }, 2000);
     } catch (err) {
       console.error("Drive sync failed:", err);
+      toast.error("Drive sync failed");
       setDriveSyncing(false);
     }
   }

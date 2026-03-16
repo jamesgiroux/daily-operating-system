@@ -47,6 +47,7 @@ export default function ClayConnection() {
       setStatus({ ...status, enabled: newEnabled });
     } catch (err) {
       console.error("Failed to toggle Clay:", err);
+      toast.error("Failed to update contact enrichment");
     }
   }
 

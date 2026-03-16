@@ -1,33 +1,7 @@
 -- I551/I553: Success plan data model + template support
+-- Rebuild entity_assessment to add success_plan_signals_json column.
 
-CREATE TABLE IF NOT EXISTS entity_assessment (
-    entity_id TEXT PRIMARY KEY,
-    entity_type TEXT NOT NULL DEFAULT 'account',
-    enriched_at TEXT,
-    source_file_count INTEGER DEFAULT 0,
-    executive_assessment TEXT,
-    risks_json TEXT,
-    recent_wins_json TEXT,
-    current_state_json TEXT,
-    stakeholder_insights_json TEXT,
-    next_meeting_readiness_json TEXT,
-    company_context_json TEXT,
-    value_delivered TEXT,
-    success_metrics TEXT,
-    open_commitments TEXT,
-    relationship_depth TEXT,
-    health_json TEXT,
-    org_health_json TEXT,
-    user_relevance_weight REAL DEFAULT 1.0,
-    consistency_status TEXT,
-    consistency_findings_json TEXT,
-    consistency_checked_at TEXT,
-    portfolio_json TEXT,
-    network_json TEXT,
-    user_edits_json TEXT,
-    source_manifest_json TEXT,
-    dimensions_json TEXT
-);
+BEGIN IMMEDIATE;
 
 DROP TABLE IF EXISTS entity_assessment_new;
 CREATE TABLE entity_assessment_new (
@@ -86,7 +60,8 @@ INSERT OR REPLACE INTO entity_assessment_new (
     network_json,
     user_edits_json,
     source_manifest_json,
-    dimensions_json
+    dimensions_json,
+    success_plan_signals_json
 )
 SELECT
     entity_id,
@@ -114,11 +89,15 @@ SELECT
     network_json,
     user_edits_json,
     source_manifest_json,
-    dimensions_json
+    dimensions_json,
+    NULL
 FROM entity_assessment;
 
 DROP TABLE entity_assessment;
 ALTER TABLE entity_assessment_new RENAME TO entity_assessment;
+CREATE INDEX IF NOT EXISTS idx_entity_assessment_type ON entity_assessment(entity_type);
+
+COMMIT;
 
 CREATE TABLE IF NOT EXISTS account_objectives (
     id TEXT PRIMARY KEY,
