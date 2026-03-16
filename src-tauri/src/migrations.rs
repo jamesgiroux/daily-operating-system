@@ -1312,16 +1312,16 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v63.
+        // Run migrations — should bootstrap v1 and apply v2 through the latest migration.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 66,
-            "bootstrap should mark v1, then apply 66 pending migrations (v2-v67)"
+            applied, 69,
+            "bootstrap should mark v1, then apply 69 pending migrations (v2-v70)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 67);
+        assert_eq!(version, 70);
 
         // Verify existing data is untouched
         let title: String = conn
