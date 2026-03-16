@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import styles from "../onboarding.module.css";
+import type { CopyToInboxReport } from "@/types";
 
 export interface InboxProcessingState {
   filesDropped: number;
@@ -77,12 +79,9 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
   const handleFileDrop = useCallback(async (paths: string[]) => {
     try {
-      const count = await invoke<number>("copy_to_inbox", { paths });
-      if (count > 0) {
-        const filenames = paths
-          .map((p) => p.split("/").pop() ?? p)
-          .slice(0, count);
-        processFiles(filenames);
+      const report = await invoke<CopyToInboxReport>("copy_to_inbox", { paths });
+      if (report.copiedCount > 0) {
+        processFiles(report.copiedFilenames);
       }
     } catch {
       // silently handle
@@ -199,20 +198,12 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
   // Phase A: Introduction
   if (phase === "intro") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div className={`${styles.flexCol} ${styles.gap24}`}>
         <ChapterHeading
-          title="Drop things in, intelligence comes out."
+          title="Drop things in, context comes out."
         />
 
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: "var(--color-text-secondary)",
-            margin: 0,
-          }}
-        >
+        <p className={styles.bodyText}>
           Every productivity app teaches you to manage. DailyOS flips the script.
           Drop meeting notes, transcripts, or documents into your inbox — the system
           classifies, extracts actions, and routes them automatically. This is the core behavior.
@@ -220,33 +211,16 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
         {/* Drop zone — editorial rules, no dashed border */}
         <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
-            borderTop: "1px solid var(--color-rule-light)",
-            borderBottom: "1px solid var(--color-rule-light)",
-            padding: "32px 0",
-            transition: "all 0.15s ease",
-            ...(isDragging
-              ? {
-                  borderTopColor: "var(--color-spice-turmeric)",
-                  borderBottomColor: "var(--color-spice-turmeric)",
-                  background: "var(--color-paper-warm-white)",
-                }
-              : {}),
-          }}
+          className={`${styles.dropArea} ${isDragging ? styles.dropAreaActive : ""}`}
         >
-          <Inbox size={32} style={{ color: "var(--color-text-tertiary)", opacity: 0.4 }} />
-          <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
+          <Inbox size={32} className={styles.dropAreaIcon} />
+          <p className={styles.dropAreaText}>
             Drag a file here to try it
           </p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
-          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>or</span>
+        <div className={styles.flexCenter}>
+          <span className={styles.hintText}>or</span>
         </div>
 
         <Button
@@ -259,17 +233,9 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
         </Button>
 
         {/* Skip */}
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div className={styles.flexEnd}>
           <button
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              letterSpacing: "0.04em",
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-            }}
+            className={styles.skipButton}
             onClick={() =>
               onNext({
                 filesDropped: 0,
@@ -288,41 +254,26 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
   // Phase B / C: Processing / Done
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title={phase === "done" ? "Processing complete" : "Processing your file..."}
       />
 
       {/* File progress */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className={`${styles.flexCol} ${styles.gap12}`}>
         {files.map((file) => (
           <div
             key={file.filename}
-            style={{
-              borderTop: "1px solid var(--color-rule-light)",
-              paddingTop: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
+            className={styles.fileProgressItem}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <FileText size={16} style={{ flexShrink: 0, color: "var(--color-text-tertiary)" }} />
-              <span
-                style={{
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: "var(--color-text-primary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
+            <div className={`${styles.flexRow} ${styles.gap8}`}>
+              <FileText size={16} className={`${styles.flexShrink0} ${styles.tertiaryText}`} />
+              <span className={styles.fileName}>
                 {file.filename}
               </span>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 24 }}>
+            <div className={`${styles.flexCol} ${styles.gap6} ${styles.pl24}`}>
               <StepIndicator label="File received" status={file.step === "received" ? "current" : "done"} />
               {file.step !== "received" && (
                 <StepIndicator
@@ -358,9 +309,9 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
       {/* Continue */}
       {phase === "done" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
           {files.some((f) => f.step === "enriching") && (
-            <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", textAlign: "center" }}>
+            <p className={`${styles.hintText} ${styles.textCenter}`}>
               AI analysis continues in the background — check your Inbox page in a minute.
             </p>
           )}
@@ -382,36 +333,27 @@ function StepIndicator({
   status: "pending" | "current" | "done" | "error";
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+    <div className={styles.stepIndicator}>
       {status === "done" && (
-        <Check size={12} style={{ flexShrink: 0, color: "var(--color-garden-sage)" }} />
+        <Check size={12} className={`${styles.flexShrink0} ${styles.sageColor}`} />
       )}
       {status === "current" && (
-        <Loader2 size={12} className="animate-spin" style={{ flexShrink: 0, color: "var(--color-spice-turmeric)" }} />
+        <Loader2 size={12} className={`animate-spin ${styles.flexShrink0} ${styles.accentColor}`} />
       )}
       {status === "pending" && (
-        <div
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: "50%",
-            border: "1px solid var(--color-rule-heavy)",
-            flexShrink: 0,
-          }}
-        />
+        <div className={styles.pendingDot} />
       )}
       {status === "error" && (
-        <Sparkles size={12} style={{ flexShrink: 0, color: "var(--color-spice-terracotta)" }} />
+        <Sparkles size={12} className={`${styles.flexShrink0} ${styles.dangerColor}`} />
       )}
       <span
-        style={{
-          color:
-            status === "done"
-              ? "var(--color-text-primary)"
-              : status === "error"
-                ? "var(--color-spice-terracotta)"
-                : "var(--color-text-tertiary)",
-        }}
+        className={
+          status === "done"
+            ? styles.primaryText
+            : status === "error"
+              ? styles.dangerColor
+              : styles.tertiaryText
+        }
       >
         {label}
       </span>

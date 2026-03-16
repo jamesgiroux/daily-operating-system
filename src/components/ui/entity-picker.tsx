@@ -40,7 +40,7 @@ export function EntityPicker({
   value,
   onChange,
   entityType = "all",
-  placeholder = "Link entity...",
+  placeholder = "Link to account or project...",
   locked = false,
   className,
   excludeIds,
@@ -166,7 +166,7 @@ export function EntityPicker({
         <Command>
           <CommandInput placeholder="Search..." />
           <CommandList>
-            <CommandEmpty>No entities found.</CommandEmpty>
+            <CommandEmpty>No results found.</CommandEmpty>
             {internalAccounts.length > 0 && (
               <CommandGroup heading="Internal Teams">
                 {internalAccounts.map((a) => (

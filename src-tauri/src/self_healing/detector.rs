@@ -1,6 +1,6 @@
-//! Coherence detection for entity intelligence (I407).
+//! Coherence detection for entity assessment (I407).
 //!
-//! Validates that entity intelligence is semantically coherent with
+//! Validates that entity assessment is semantically coherent with
 //! the entity's actual meeting history using embedding similarity.
 
 use crate::db::ActionDb;
@@ -26,11 +26,11 @@ pub fn coherence_check(
     embedding_model: &EmbeddingModel,
     entity_id: &str,
 ) -> Result<f64, String> {
-    // Get executive assessment from entity_intelligence
+    // Get executive assessment from entity_assessment
     let assessment: Option<String> = db
         .conn_ref()
         .query_row(
-            "SELECT executive_assessment FROM entity_intelligence WHERE entity_id = ?1",
+            "SELECT executive_assessment FROM entity_assessment WHERE entity_id = ?1",
             rusqlite::params![entity_id],
             |row| row.get(0),
         )
@@ -46,7 +46,8 @@ pub fn coherence_check(
     let mut stmt = db
         .conn_ref()
         .prepare(
-            "SELECT mh.title, mh.summary FROM meetings_history mh
+            "SELECT mh.title, mt.summary FROM meetings mh
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = mh.id
              INNER JOIN meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1
                AND mh.start_time > datetime('now', '-90 days')
@@ -103,9 +104,14 @@ pub fn run_coherence_check(
     let score = coherence_check(db, model, entity_id)?;
     let passed = score >= COHERENCE_THRESHOLD;
 
-    // Update entity_intelligence with coherence results
+    // Update entity_quality with coherence results
     let _ = db.conn_ref().execute(
-        "UPDATE entity_intelligence SET coherence_score = ?1, coherence_flagged = ?2
+        "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type)
+         SELECT entity_id, entity_type FROM entity_assessment WHERE entity_id = ?1",
+        rusqlite::params![entity_id],
+    );
+    let _ = db.conn_ref().execute(
+        "UPDATE entity_quality SET coherence_score = ?1, coherence_flagged = ?2
          WHERE entity_id = ?3",
         rusqlite::params![score, if passed { 0 } else { 1 }, entity_id],
     );

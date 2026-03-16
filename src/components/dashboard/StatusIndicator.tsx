@@ -127,7 +127,7 @@ function StatusTooltip({
           </p>
           {aiUnavailable && status.phase === "enriching" && (
             <p className="text-muted-foreground text-xs">
-              AI may be limited. Core schedule, actions, and prep still deliver.
+              AI may be limited. Core schedule, actions, and briefings still deliver.
             </p>
           )}
         </div>
@@ -142,7 +142,7 @@ function StatusTooltip({
           </p>
           {aiUnavailable && (
             <p className="text-muted-foreground text-xs">
-              Delivered in base prep mode.
+              Delivered in base mode.
             </p>
           )}
         </div>

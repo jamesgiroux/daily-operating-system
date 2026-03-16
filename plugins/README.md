@@ -18,7 +18,7 @@ workspace                       │
 The workspace gets smarter every time the loop completes.
 ```
 
-DailyOS maintains your operational memory — entity intelligence, meeting history, stakeholder context, action trails. The plugins give Claude Code full fluency in that workspace, so when you say "put together a risk report on Nexus Analytics," Claude already knows everything DailyOS knows. No startup tax. No context development.
+DailyOS maintains your operational memory — entity intelligence, meeting history, stakeholder context, action trails. The plugins give Claude Code full fluency in that workspace, so when you say "put together a risk report on Acme Corp," Claude already knows everything DailyOS knows. No startup tax. No context development.
 
 ## Plugins
 

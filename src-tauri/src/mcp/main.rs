@@ -363,12 +363,17 @@ impl DailyOsMcp {
         let limit = params.limit.unwrap_or(20).min(50) as i64;
 
         let mut stmt = match db.conn_ref().prepare(
-            "SELECT id, title, meeting_type, start_time, account_id, summary, prep_context_json
-             FROM meetings_history
-             WHERE title LIKE ?1
-                OR summary LIKE ?1
-                OR prep_context_json LIKE ?1
-             ORDER BY start_time DESC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time,
+                    (SELECT me.entity_id FROM meeting_entities me
+                     WHERE me.meeting_id = m.id AND me.entity_type = 'account' LIMIT 1) AS account_id,
+                    mt.summary, mp.prep_context_json
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+             WHERE m.title LIKE ?1
+                OR mt.summary LIKE ?1
+                OR mp.prep_context_json LIKE ?1
+             ORDER BY m.start_time DESC
              LIMIT ?2",
         ) {
             Ok(s) => s,

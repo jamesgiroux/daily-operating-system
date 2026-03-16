@@ -45,7 +45,7 @@
 /* --- Temporal states --- */
 
 .active {
-  background: rgba(201, 162, 39, 0.05);
+  background: var(--color-spice-turmeric-5);
   margin: 0 -20px;
   padding: 14px 20px;
   border-bottom-color: transparent;
@@ -70,11 +70,11 @@
 }
 
 .clickable:hover {
-  background: rgba(30, 37, 48, 0.015);
+  background: var(--color-desk-charcoal-15);
 }
 
 .active.clickable:hover {
-  background: rgba(201, 162, 39, 0.07);
+  background: var(--color-spice-turmeric-7);
 }
 
 .navigable {
@@ -83,7 +83,7 @@
 }
 
 .navigable:hover {
-  background: rgba(30, 37, 48, 0.015);
+  background: var(--color-desk-charcoal-15);
 }
 
 .pastNavigate {
@@ -154,7 +154,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 2px 8px;
-  background: rgba(201, 162, 39, 0.18);
+  background: var(--color-spice-turmeric-18);
   color: var(--color-spice-turmeric);
   flex-shrink: 0;
 }

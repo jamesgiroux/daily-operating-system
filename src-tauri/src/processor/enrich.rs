@@ -371,14 +371,14 @@ fn build_enrichment_prompt(
     let entity_noun_plural = vocabulary
         .map(|v| v.entity_noun_plural.as_str())
         .unwrap_or("customers/accounts");
-    let primary_metric = vocabulary
+    let _primary_metric = vocabulary
         .map(|v| v.primary_metric.as_str())
         .unwrap_or("revenue");
     let health_label = vocabulary
         .map(|v| v.health_label.as_str())
         .unwrap_or("health");
     let risk_label = vocabulary.map(|v| v.risk_label.as_str()).unwrap_or("risk");
-    let success_verb = vocabulary
+    let _success_verb = vocabulary
         .map(|v| v.success_verb.as_str())
         .unwrap_or("customer win");
     let cadence_noun = vocabulary
@@ -402,14 +402,54 @@ ACTIONS:
 - <concise action title> P1/P2/P3 @Account due: YYYY-MM-DD #"context sentence"
 END_ACTIONS
 WINS:
-- <{success_verb}, positive outcome, or success signal>
+Extract only verifiable positive outcomes — not vague sentiment. Each win MUST include
+a specific, observable event. "Customer seems happy" is NOT a win.
+
+Sub-types (tag each):
+- ADOPTION: milestone crossed, feature activated, user activation target met, integration completed
+- EXPANSION: interest in additional scope, new department/team, usage ceiling hit, cross-functional mention
+- VALUE_REALIZED: customer articulates ROI in their own words, KPI improvement attributed to product, results shared with leadership
+- RELATIONSHIP: executive sponsor actively engaged, new champion identified, reference/case study agreement, advisory board join
+- COMMERCIAL: renewal confirmed (especially early), upsell/cross-sell, multi-year commitment, budget increase
+- ADVOCACY: public endorsement, referral, conference speaking, internal win-sharing to leadership
+
+Format: - [SUB_TYPE] <specific win with evidence> #"verbatim quote if available"
 END_WINS
 RISKS:
-- <risk, concern, or potential issue>
+Categorize each risk by urgency. Be specific — name the person, the competitor, the timeline.
+
+RED (critical — requires immediate action):
+- Champion departure or executive sponsor disengagement
+- Active competitor evaluation or piloting
+- Severe usage collapse (<50% utilization mentioned)
+- Active escalation (unresolved critical issue)
+- Budget elimination or review
+- Explicit renewal doubt
+
+YELLOW (moderate — needs a recovery plan):
+- Usage decline mentioned but not severe
+- Champion role change (internal move)
+- Delayed implementation or milestone pushback
+- Organizational restructuring affecting ownership
+- Repeated feature complaints without resolution
+- Reduced meeting attendance by key stakeholders
+
+GREEN_WATCH (early warning — monitor):
+- Vague dissatisfaction without specific cause
+- New leadership reviewing vendor relationships
+- Industry/company headwinds (layoffs, funding concerns)
+- Reduced energy or engagement without stated reason
+
+Format: - [RED|YELLOW|GREEN_WATCH] <specific risk with named people/timelines> #"verbatim quote"
 END_RISKS
 DECISIONS:
-- <key decision made during discussion>
+- [CUSTOMER_COMMITMENT|INTERNAL_DECISION|JOINT_AGREEMENT] <decision> @owner #"verbatim quote"
 END_DECISIONS
+COMMITMENTS:
+Mutual agreements, stated goals, success criteria, or outcome targets discussed.
+Focus on strategic commitments (not individual action items).
+- <commitment> by: YYYY-MM-DD owned_by: us|them|joint #"success criteria"
+END_COMMITMENTS
 
 Rules for actions:
 - TITLE MUST be concise and imperative: verb + object, max 10 words. Not a sentence — a task.
@@ -425,19 +465,33 @@ Rules for actions:
 - If no metadata can be inferred, just write the action text plainly
 - Example: Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2"
 
-Rules for wins/risks:
+Rules for wins:
 - Only include if the file relates to a {entity_noun}
-- Wins: successful launches, expanded usage, positive feedback, {success_verb} signals, {primary_metric} improvements
-- Risks ({risk_label}): churn signals, budget cuts, champion leaving, low adoption, declining {primary_metric}, complaints
-- Frame wins/risks in terms of {health_label} impact on {entity_noun_plural}
-- Keep each item to one concise sentence
+- Evidence threshold: only extract if specific evidence exists
+- Tag each win with its sub-type ([ADOPTION], [EXPANSION], [VALUE_REALIZED], [RELATIONSHIP], [COMMERCIAL], [ADVOCACY])
+- Include verbatim quotes via #"..." suffix when available
+- Frame in terms of {health_label} impact on {entity_noun_plural}
+- If none are apparent, leave the section empty (just the markers)
+
+Rules for risks ({risk_label}):
+- Only include if the file relates to a {entity_noun}
+- Tag each risk with urgency: [RED], [YELLOW], or [GREEN_WATCH]
+- Name the specific person, competitor, or timeline
+- Include verbatim quotes via #"..." suffix when available
+- Frame in terms of {health_label} impact on {entity_noun_plural}
 - If none are apparent, leave the section empty (just the markers)
 - When timing is relevant, note impact on {cadence_noun} cadence
 
 Rules for decisions:
 - Only include if clear decisions or commitments were made
-- Each item should state what was decided and who is responsible (if clear)
+- Tag each with [CUSTOMER_COMMITMENT], [INTERNAL_DECISION], or [JOINT_AGREEMENT]
+- Include the decision owner and verbatim quote when available
 - If no decisions are apparent, leave the section empty (just the markers)
+
+Rules for commitments:
+- Focus on strategic commitments, not individual action items
+- Include target date and ownership when available
+- If no commitments are apparent, leave the section empty (just the markers)
 "#,
         preamble = INJECTION_PREAMBLE,
         filename = sanitize_external_field(filename),
@@ -546,9 +600,23 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     let mut in_wins = false;
     let mut in_risks = false;
     let mut in_decisions = false;
+    let mut in_commitments = false;
 
     for line in output.lines() {
         let line = line.trim();
+
+        // Skip prompt instruction lines that appear inside sections (I554 sub-type guidance)
+        if (in_wins || in_risks || in_commitments) && !line.starts_with("- ") && !line.starts_with("END_") && !line.is_empty() {
+            // Check if this is a section header that should transition state
+            let is_section_header = line == "WINS:" || line == "RISKS:" || line == "DECISIONS:"
+                || line == "COMMITMENTS:" || line == "ACTIONS:" || line == "DISCUSSION:"
+                || line.starts_with("FILE_TYPE:") || line.starts_with("ACCOUNT:")
+                || line.starts_with("SUMMARY:") || line.starts_with("ANALYSIS:")
+                || line.starts_with("MEETING:");
+            if !is_section_header {
+                continue; // Skip non-entry lines (e.g., sub-type definitions, format instructions)
+            }
+        }
 
         if let Some(rest) = line.strip_prefix("FILE_TYPE:") {
             file_type = rest.trim().to_lowercase();
@@ -575,6 +643,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             in_wins = false;
             in_risks = false;
             in_decisions = false;
+            in_commitments = false;
         } else if line == "END_DISCUSSION" {
             in_discussion = false;
         } else if line == "ACTIONS:" {
@@ -583,6 +652,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             in_wins = false;
             in_risks = false;
             in_decisions = false;
+            in_commitments = false;
         } else if line == "END_ACTIONS" {
             in_actions = false;
             if !actions_buf.is_empty() {
@@ -594,6 +664,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             in_discussion = false;
             in_risks = false;
             in_decisions = false;
+            in_commitments = false;
         } else if line == "END_WINS" {
             in_wins = false;
         } else if line == "RISKS:" {
@@ -602,6 +673,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             in_discussion = false;
             in_wins = false;
             in_decisions = false;
+            in_commitments = false;
         } else if line == "END_RISKS" {
             in_risks = false;
         } else if line == "DECISIONS:" {
@@ -610,8 +682,18 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             in_discussion = false;
             in_wins = false;
             in_risks = false;
+            in_commitments = false;
         } else if line == "END_DECISIONS" {
             in_decisions = false;
+        } else if line == "COMMITMENTS:" {
+            in_commitments = true;
+            in_actions = false;
+            in_discussion = false;
+            in_wins = false;
+            in_risks = false;
+            in_decisions = false;
+        } else if line == "END_COMMITMENTS" {
+            in_commitments = false;
         } else if in_discussion && line.starts_with("- ") {
             discussion.push(line.strip_prefix("- ").unwrap().to_string());
         } else if in_actions && line.starts_with("- ") {
@@ -624,6 +706,9 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         } else if in_risks && line.starts_with("- ") {
             risks.push(line.strip_prefix("- ").unwrap().to_string());
         } else if in_decisions && line.starts_with("- ") {
+            decisions.push(line.strip_prefix("- ").unwrap().to_string());
+        } else if in_commitments && line.starts_with("- ") {
+            // Commitments are parsed but stored as decisions for now (I555 will persist separately)
             decisions.push(line.strip_prefix("- ").unwrap().to_string());
         }
     }
@@ -988,5 +1073,71 @@ END_RISKS";
         let parsed = parse_enrichment_response(output);
         assert!(parsed.discussion.is_empty());
         assert_eq!(parsed.summary, "A simple document");
+    }
+
+    // =========================================================================
+    // I554 — COMMITMENTS section parsing
+    // =========================================================================
+
+    #[test]
+    fn test_parse_enrichment_with_commitments() {
+        let output = "\
+FILE_TYPE: meeting_notes
+ACCOUNT: Acme Corp
+MEETING: QBR
+SUMMARY: Quarterly review
+ACTIONS:
+END_ACTIONS
+WINS:
+- [ADOPTION] Deployed to 3 teams
+END_WINS
+RISKS:
+- [YELLOW] Usage declining in APAC
+END_RISKS
+DECISIONS:
+- [JOINT_AGREEMENT] Expand pilot to EMEA
+END_DECISIONS
+COMMITMENTS:
+- Achieve 50% adoption by: 2026-06-01 owned_by: joint
+END_COMMITMENTS";
+
+        let parsed = parse_enrichment_response(output);
+        assert_eq!(parsed.wins.len(), 1);
+        assert!(parsed.wins[0].starts_with("[ADOPTION]"));
+        assert_eq!(parsed.risks.len(), 1);
+        assert!(parsed.risks[0].starts_with("[YELLOW]"));
+        // Commitments are appended to decisions for now
+        assert_eq!(parsed.decisions.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_enrichment_prompt_includes_commitments() {
+        let prompt = build_enrichment_prompt(
+            "acme-transcript.md",
+            "Alice: Hi\nBob: Hello\nAlice: Let's discuss the project.",
+            None,
+            None,
+        );
+        assert!(prompt.contains("COMMITMENTS:"));
+        assert!(prompt.contains("END_COMMITMENTS"));
+        assert!(prompt.contains("owned_by: us|them|joint"));
+    }
+
+    #[test]
+    fn test_parse_enrichment_prompt_includes_subtypes() {
+        let prompt = build_enrichment_prompt(
+            "acme-update.md",
+            "# Account update\nAll good.",
+            None,
+            None,
+        );
+        // Win sub-types
+        assert!(prompt.contains("ADOPTION:"));
+        assert!(prompt.contains("EXPANSION:"));
+        assert!(prompt.contains("VALUE_REALIZED:"));
+        // Risk urgency tiers
+        assert!(prompt.contains("RED (critical"));
+        assert!(prompt.contains("YELLOW (moderate"));
+        assert!(prompt.contains("GREEN_WATCH (early"));
     }
 }

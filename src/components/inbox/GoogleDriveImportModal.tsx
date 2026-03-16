@@ -247,7 +247,7 @@ export function GoogleDriveImportModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0, 0, 0, 0.4)",
+        background: "var(--color-overlay-light)",
         backdropFilter: "blur(2px)",
       }}
     >
