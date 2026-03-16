@@ -306,43 +306,28 @@ fn generate_book_of_business(
         }
     };
 
-    // Phase 3+4: Parallel generation with fallback
-    let ai_response = match run_parallel_bob_generation(
+    // Phase 3: Mechanical builders + single synthesis call
+    let ai_response = run_bob_generation(
         &gather,
         &glean_ctx,
         &gather.metrics,
         app_handle,
-    ) {
-        Ok(response) => response,
-        Err(e) => {
-            log::warn!(
-                "[I547] Parallel BoB failed, falling back to monolithic: {}",
-                e
-            );
+    )?;
 
-            // Monolithic fallback
-            let mut input = gather_to_report_input(&gather)?;
+    // Phase 4: Assemble mechanical + synthesis into final content
+    let health_overview = build_health_overview(&gather.snapshot);
+    let risk_accounts = build_risk_accounts(&gather.snapshot, &gather.raw_accounts);
+    let expansion_accounts = build_expansion_accounts(&gather.snapshot, &gather.raw_accounts);
+    let year_end_outlook = build_year_end_outlook(gather.metrics.total_arr, gather.metrics.at_risk_arr);
 
-            // Inject user context
-            if let Ok(db_ctx) = crate::db::ActionDb::open() {
-                crate::reports::prompts::append_user_context(
-                    &mut input.prompt,
-                    &db_ctx,
-                    Some(state.embedding_model.as_ref()),
-                    &input.entity_name,
-                );
-            }
-
-            let stdout = run_report_generation(&input)?;
-            let json_str = crate::risk_briefing::extract_json_object(&stdout)
-                .ok_or_else(|| "No JSON in monolithic BoB response".to_string())?;
-            serde_json::from_str::<AiBookResponse>(&json_str)
-                .map_err(|e| format!("Failed to parse monolithic BoB: {}", e))?
-        }
-    };
-
-    // Phase 5: Merge with metrics + write to DB
-    let content = assemble_book_content(ai_response, gather.metrics.clone());
+    let content = assemble_book_content(
+        ai_response,
+        gather.metrics.clone(),
+        health_overview,
+        risk_accounts,
+        expansion_accounts,
+        year_end_outlook,
+    );
     let content_json = serde_json::to_string(&content)
         .map_err(|e| format!("Failed to serialize BoB content: {}", e))?;
 
