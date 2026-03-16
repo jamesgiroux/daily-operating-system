@@ -6,7 +6,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DailyOS</title>
   </head>
-  <body>
+  <body style="background-color: #f5f2ef; margin: 0;">
+    <!-- I599: Pre-React welcome screen — eliminates white flash before JS mounts.
+         Styled inline so it renders immediately with the HTML, no CSS/JS needed.
+         React hides this by replacing #root content. -->
+    <div id="welcome-screen" style="
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background-color: #f5f2ef;
+      transition: opacity 300ms ease-out;
+    ">
+      <!-- Thin rule above mark -->
+      <div style="width: 48px; height: 1px; background: rgba(30,37,48,0.12); margin-bottom: 32px;"></div>
+      <!-- BrandMark asterisk in turmeric -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="36" height="36" aria-hidden="true" style="color: #c9a227;">
+        <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+      </svg>
+      <!-- Logotype -->
+      <div style="
+        font-family: 'Newsreader', Georgia, serif;
+        font-size: 22px; font-weight: 400; letter-spacing: 0.06em;
+        color: #1e2530; margin-top: 20px;
+      ">DailyOS</div>
+      <!-- Subtitle -->
+      <div style="
+        font-family: 'DM Sans', -apple-system, sans-serif;
+        font-size: 11px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase;
+        color: #6b7280; margin-top: 8px;
+      ">Your morning briefing</div>
+      <!-- Thin rule below -->
+      <div style="width: 48px; height: 1px; background: rgba(30,37,48,0.12); margin-top: 32px;"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

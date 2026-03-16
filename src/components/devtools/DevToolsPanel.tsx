@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2, UserX, KeyRound, AlertTriangle } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Zap, Sun, Calendar, Sparkles, Undo2, Trash2, UserX, KeyRound, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -43,23 +43,6 @@ interface DevState {
   hasDevWorkspace: boolean;
 }
 
-interface LatencyCommandRollup {
-  command: string;
-  sampleCount: number;
-  p50Ms: number;
-  p95Ms: number;
-  maxMs: number;
-  budgetMs: number;
-  budgetViolations: number;
-  degradedCount: number;
-  lastRecordedAt?: string;
-}
-
-interface LatencyRollupsPayload {
-  generatedAt: string;
-  commands: LatencyCommandRollup[];
-}
-
 export function DevToolsPanel() {
   const [enabled, setEnabled] = useState(false);
 
@@ -88,17 +71,12 @@ export function DevToolsPanel() {
 function DevToolsPanelInner() {
   const [open, setOpen] = useState(false);
   const [devState, setDevState] = useState<DevState | null>(null);
-  const [rollups, setRollups] = useState<LatencyRollupsPayload | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
 
   const refreshState = useCallback(async () => {
     try {
-      const [state, latency] = await Promise.all([
-        invoke<DevState>("dev_get_state"),
-        invoke<LatencyRollupsPayload>("get_latency_rollups"),
-      ]);
+      const state = await invoke<DevState>("dev_get_state");
       setDevState(state);
-      setRollups(latency);
     } catch {
       // Silently fail — devtools not critical
     }
@@ -231,45 +209,15 @@ function DevToolsPanelInner() {
                   ok={devState?.hasDatabase ?? false}
                   detail={
                     devState
-                      ? `${devState.actionCount} actions, ${devState.accountCount} accounts, ${devState.projectCount} projects, ${devState.meetingCount} meetings`
+                      ? `${devState.accountCount} accounts, ${devState.peopleCount} people, ${devState.meetingCount} meetings, ${devState.actionCount} actions`
                       : "—"
                   }
-                />
-                <StateRow
-                  label="Today data"
-                  ok={devState?.hasTodayData ?? false}
                 />
                 <StateRow
                   label="Google"
                   ok={devState?.googleAuthStatus?.startsWith("authenticated") ?? false}
                   detail={devState?.googleAuthStatus ?? "unknown"}
                 />
-              </div>
-            </section>
-
-            <section>
-              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Latency Rollups
-              </h3>
-              <div className="space-y-2">
-                {rollups?.commands?.length ? (
-                  rollups.commands.slice(0, 8).map((r) => (
-                    <div key={r.command} className="rounded-md border px-3 py-2 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <code className="truncate">{r.command}</code>
-                        <span className="text-muted-foreground">{r.sampleCount} samples</span>
-                      </div>
-                      <div className="mt-1 text-muted-foreground">
-                        p50 {r.p50Ms}ms · p95 {r.p95Ms}ms · max {r.maxMs}ms · budget {r.budgetMs}ms
-                      </div>
-                      <div className="text-muted-foreground">
-                        violations {r.budgetViolations} · degraded {r.degradedCount}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-muted-foreground">No latency samples yet.</p>
-                )}
               </div>
             </section>
 
@@ -291,47 +239,29 @@ function DevToolsPanelInner() {
                 <ScenarioButton
                   icon={Database}
                   label="Full Mock Data"
-                  description="Dashboard with 5 meetings, emails, actions"
+                  description="DB + intelligence + signals + health scores (all 6 dimensions)"
                   variant="default"
-                  loading={loading === "mock_full"}
+                  loading={loading === "full"}
                   disabled={loading !== null}
-                  onClick={() => applyScenario("mock_full")}
-                />
-                <ScenarioButton
-                  icon={Brain}
-                  label="Enriched Mock (Intelligence)"
-                  description="Full mock + decisions, delegations, portfolio alerts, skip-today"
-                  variant="default"
-                  loading={loading === "mock_enriched"}
-                  disabled={loading !== null}
-                  onClick={() => applyScenario("mock_enriched")}
+                  onClick={() => applyScenario("full")}
                 />
                 <ScenarioButton
                   icon={Shield}
-                  label="Mock — No Google"
-                  description="Same data, no Google auth"
+                  label="No Connectors"
+                  description="Full DB data, no Google auth"
                   variant="outline"
-                  loading={loading === "mock_no_auth"}
+                  loading={loading === "no_connectors"}
                   disabled={loading !== null}
-                  onClick={() => applyScenario("mock_no_auth")}
-                />
-                <ScenarioButton
-                  icon={Inbox}
-                  label="Empty State"
-                  description="Config + workspace, no briefing data"
-                  variant="outline"
-                  loading={loading === "mock_empty"}
-                  disabled={loading !== null}
-                  onClick={() => applyScenario("mock_empty")}
+                  onClick={() => applyScenario("no_connectors")}
                 />
                 <ScenarioButton
                   icon={Zap}
-                  label="Simulate Briefing"
-                  description="Full mock + workspace markdown + directive JSONs"
+                  label="Pipeline Test"
+                  description="Full data + directive fixtures for delivery testing"
                   variant="default"
-                  loading={loading === "simulate_briefing"}
+                  loading={loading === "pipeline"}
                   disabled={loading !== null}
-                  onClick={() => applyScenario("simulate_briefing")}
+                  onClick={() => applyScenario("pipeline")}
                 />
               </div>
             </section>
@@ -435,31 +365,6 @@ function DevToolsPanelInner() {
               </div>
             </section>
 
-            <section>
-              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-                Weekly Prep
-              </h3>
-              <div className="space-y-2">
-                <ScenarioButton
-                  icon={Calendar}
-                  label="Week — Mechanical"
-                  description="Deliver week-overview.json from directive"
-                  variant="outline"
-                  loading={loading === "week_mechanical"}
-                  disabled={loading !== null}
-                  onClick={() => runCommand("week_mechanical", "dev_run_week_mechanical")}
-                />
-                <ScenarioButton
-                  icon={Sparkles}
-                  label="Week — Full + AI"
-                  description="Claude /week enrichment + week-overview delivery"
-                  variant="outline"
-                  loading={loading === "week_full"}
-                  disabled={loading !== null}
-                  onClick={() => runCommand("week_full", "dev_run_week_full")}
-                />
-              </div>
-            </section>
 
             {/* Cleanup — visible when dev artifacts exist */}
             {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (

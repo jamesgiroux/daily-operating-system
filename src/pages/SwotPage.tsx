@@ -7,16 +7,22 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { Compass, TrendingUp, AlertTriangle, Lightbulb, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { SwotCover } from "@/components/swot/SwotCover";
 import { QuadrantSlide } from "@/components/swot/QuadrantSlide";
 import type { SwotContent, SwotItem, ReportRow } from "@/types/reports";
+import slides from "./report-slides.module.css";
 
 // =============================================================================
 // Normalization — guards against schema changes between report versions
@@ -52,7 +58,7 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering account data",
-    detail: "Reading meeting history, signals, and stakeholder data",
+    detail: "Reading meeting history, stakeholder data, and recent activity",
   },
   {
     key: "analyzing",
@@ -93,6 +99,7 @@ export default function SwotPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [genSeconds, setGenSeconds] = useState(0);
+  const [currentPhaseKey, setCurrentPhaseKey] = useState<string>("gathering");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -116,7 +123,10 @@ export default function SwotPage() {
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save SWOT report:", e));
+          .catch((e) => {
+            console.error("Failed to save SWOT report:", e);
+            toast.error("Failed to save");
+          });
       }, 500);
     },
     [accountId],
@@ -129,6 +139,8 @@ export default function SwotPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(accountId, "account");
 
   useRevealObserver(!loading && !!content);
 
@@ -195,6 +207,39 @@ export default function SwotPage() {
     }
   }, [accountId, generating]);
 
+  useEffect(() => {
+    if (!generating) return;
+    let unlistenContent: UnlistenFn | null = null;
+    listen<{ entityId: string; content: Record<string, unknown> }>("swot-content", (event) => {
+      if (!accountId || event.payload.entityId !== accountId) return;
+      setContent(normalizeSwot(event.payload.content));
+    }).then((fn) => {
+      unlistenContent = fn;
+    });
+    return () => {
+      if (unlistenContent) unlistenContent();
+    };
+  }, [generating]);
+
+  const handleSwotProgress = useCallback((payload: {
+    entityId: string;
+    completed: number;
+    total: number;
+    sectionName: string;
+  }) => {
+    if (!accountId || payload.entityId !== accountId) return;
+    const phaseMap: Record<string, string> = {
+      strengths: "analyzing",
+      weaknesses: "analyzing",
+      opportunities: "scanning",
+      threats: "scanning",
+      summary: "finalizing",
+    };
+    setCurrentPhaseKey(phaseMap[payload.sectionName] ?? "gathering");
+  }, [accountId]);
+
+  useTauriEvent("swot-progress", handleSwotProgress);
+
   // Register magazine shell
   const shellConfig = useMemo(
     () => ({
@@ -212,27 +257,13 @@ export default function SwotPage() {
               }),
       },
       chapters: content ? SLIDES : undefined,
-      folioStatusText: saveStatus === "saved" ? "✓ Saved" : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: content ? (
         <button
           onClick={handleGenerate}
           disabled={generating}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: generating
-              ? "var(--color-text-tertiary)"
-              : "var(--color-garden-sage)",
-            background: "none",
-            border: `1px solid ${generating ? "var(--color-rule-light)" : "var(--color-garden-sage)"}`,
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: generating ? "not-allowed" : "pointer",
-            opacity: generating ? 0.5 : 1,
-          }}
+          className={`${slides.folioAction} ${generating ? slides.folioActionDisabled : ""}`}
+          style={{ "--report-accent": "var(--color-garden-sage)" } as React.CSSProperties}
         >
           {generating ? "Generating..." : "Regenerate"}
         </button>
@@ -292,13 +323,10 @@ export default function SwotPage() {
   // Loading state
   if (loading) {
     return (
-      <div style={{ padding: "120px 120px 80px" }}>
-        <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-2 h-12 w-96" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton
-          className="mb-8 h-5 w-full max-w-2xl"
-          style={{ background: "var(--color-rule-light)" }}
-        />
+      <div className={slides.loadingSkeleton}>
+        <Skeleton className={`mb-4 h-4 w-24 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-2 h-12 w-96 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-8 h-5 w-full max-w-2xl ${slides.skeletonBg}`} />
       </div>
     );
   }
@@ -307,62 +335,21 @@ export default function SwotPage() {
   if (!content && !generating) {
     return (
       <div
-        style={{
-          padding: "120px 120px 80px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "60vh",
-          textAlign: "center",
-        }}
+        className={slides.emptyState}
+        style={{ "--report-accent": "var(--color-garden-sage)" } as React.CSSProperties}
       >
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--color-garden-sage)",
-            marginBottom: 24,
-          }}
-        >
+        <div className={slides.emptyOverline}>
           SWOT Analysis
         </div>
-        <h2
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 32,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            margin: "0 0 16px",
-          }}
-        >
+        <h2 className={slides.emptyTitle}>
           No analysis generated yet
         </h2>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            color: "var(--color-text-secondary)",
-            maxWidth: 420,
-            lineHeight: 1.6,
-            marginBottom: 32,
-          }}
-        >
+        <p className={slides.emptyDescription}>
           Generate a 5-slide SWOT analysis. This will analyze meeting history, stakeholder data,
-          signals, and relationship context to map strengths, weaknesses, opportunities, and threats.
+          recent activity, and relationship context to map strengths, weaknesses, opportunities, and threats.
         </p>
         {error && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-spice-terracotta)",
-              marginBottom: 16,
-            }}
-          >
+          <p className={slides.emptyError}>
             {error}
           </p>
         )}
@@ -374,15 +361,13 @@ export default function SwotPage() {
   }
 
   // Generating state
-  if (generating) {
+  if (generating && !content) {
     return (
       <GeneratingProgress
         title="Building SWOT Analysis"
         accentColor="var(--color-garden-sage)"
         phases={ANALYSIS_PHASES}
-        currentPhaseKey={
-          ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key
-        }
+        currentPhaseKey={currentPhaseKey || ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key}
         quotes={EDITORIAL_QUOTES}
         elapsed={genSeconds}
       />
@@ -391,14 +376,18 @@ export default function SwotPage() {
 
   // Render the 5-slide analysis with scroll-snap
   return (
-    <div style={{ scrollSnapType: "y proximity" }}>
+    <div className={slides.slideContainer}>
       {/* Slide 1: Cover */}
-      <section id="cover" style={{ scrollMarginTop: 60 }}>
+      <section id="cover" className={slides.slideSection}>
         <SwotCover
           accountName={accountName}
           content={content!}
           onUpdate={updateContent}
           generatedAt={report?.generatedAt}
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("summary")}
+          onFeedback={(type) => feedback.submitFeedback("summary", type)}
         />
       </section>
 
@@ -412,6 +401,10 @@ export default function SwotPage() {
           onUpdate={(items) => updateContent({ ...content!, strengths: items })}
           emptyLabel="No strengths identified."
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("strengths")}
+          onFeedback={(type) => feedback.submitFeedback("strengths", type)}
+        />
       </div>
 
       {/* Slide 3: Weaknesses */}
@@ -423,6 +416,10 @@ export default function SwotPage() {
           items={content!.weaknesses}
           onUpdate={(items) => updateContent({ ...content!, weaknesses: items })}
           emptyLabel="No weaknesses identified."
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("weaknesses")}
+          onFeedback={(type) => feedback.submitFeedback("weaknesses", type)}
         />
       </div>
 
@@ -436,6 +433,10 @@ export default function SwotPage() {
           onUpdate={(items) => updateContent({ ...content!, opportunities: items })}
           emptyLabel="No opportunities identified."
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("opportunities")}
+          onFeedback={(type) => feedback.submitFeedback("opportunities", type)}
+        />
       </div>
 
       {/* Slide 5: Threats */}
@@ -447,6 +448,10 @@ export default function SwotPage() {
           items={content!.threats}
           onUpdate={(items) => updateContent({ ...content!, threats: items })}
           emptyLabel="No threats identified."
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("threats")}
+          onFeedback={(type) => feedback.submitFeedback("threats", type)}
         />
       </div>
 

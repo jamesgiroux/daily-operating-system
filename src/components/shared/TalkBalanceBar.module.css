@@ -1,0 +1,46 @@
+/* =============================================================================
+   TalkBalanceBar — Visual bar showing customer vs internal talk ratio (I558)
+   ============================================================================= */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--color-rule-light);
+}
+
+.segmentCustomer {
+  width: var(--talk-customer-pct, 50%);
+  background: var(--color-garden-sage);
+  transition: width 0.3s ease;
+}
+
+.segmentInternal {
+  width: var(--talk-internal-pct, 50%);
+  background: var(--color-spice-turmeric);
+  transition: width 0.3s ease;
+}
+
+.labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.labelCustomer {
+  color: var(--color-garden-sage);
+}
+
+.labelInternal {
+  color: var(--color-spice-turmeric);
+}

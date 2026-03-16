@@ -34,7 +34,7 @@ export function FinisMarker({ enrichedAt }: FinisMarkerProps) {
             marginTop: 16,
           }}
         >
-          Last enriched: {enrichedAt}
+          Last updated: {enrichedAt}
         </div>
       )}
     </div>

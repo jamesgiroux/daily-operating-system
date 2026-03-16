@@ -1,0 +1,7 @@
+/* Book of Business — minimal shared styles.
+   Slide components use inline styles (matching risk-briefing pattern).
+   This file exists only for the turmeric accent class used by the folio bar. */
+
+.turmericAccent {
+  --report-accent: var(--color-spice-turmeric);
+}

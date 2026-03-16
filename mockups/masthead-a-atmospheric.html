@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DailyOS — Masthead Variant A: Atmospheric Photography</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f5f2ef;
+    --linen: #e8e2d9;
+    --warm-white: #faf8f6;
+    --charcoal: #1e2530;
+    --ink: #2a2b3d;
+    --turmeric: #c9a227;
+    --saffron: #deb841;
+    --terracotta: #c4654a;
+    --sage: #7eaa7b;
+    --olive: #6b7c52;
+    --larkspur: #8fa3c4;
+    --text-primary: #1e2530;
+    --text-secondary: #5a6370;
+    --text-tertiary: #8a919a;
+    --rule-heavy: rgba(30, 37, 48, 0.12);
+    --rule-light: rgba(30, 37, 48, 0.06);
+    --font-serif: 'Newsreader', Georgia, serif;
+    --font-sans: 'DM Sans', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-brand: 'Montserrat', sans-serif;
+  }
+
+  *, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: var(--cream);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+  }
+
+  /* ── Folio Bar (App Chrome) ── */
+  .folio-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: rgba(245, 242, 239, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--rule-light);
+  }
+
+  .folio-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .folio-mark {
+    font-family: var(--font-brand);
+    font-weight: 800;
+    font-size: 18px;
+    color: var(--turmeric);
+    line-height: 1;
+  }
+
+  .folio-name {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.01em;
+  }
+
+  .folio-date {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.02em;
+  }
+
+  .folio-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  .folio-refresh {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .folio-refresh:hover {
+    background: var(--rule-light);
+    color: var(--text-secondary);
+  }
+
+  .folio-refresh svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  /* ── Magazine Spread ── */
+  .spread {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    min-height: 100vh;
+    padding-top: 40px; /* clear folio bar */
+  }
+
+  /* ── Left Panel: Schedule Timeline ── */
+  .schedule-panel {
+    background: var(--warm-white);
+    border-right: 1px solid var(--rule-heavy);
+    padding: 32px 24px 40px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .schedule-header {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-tertiary);
+    margin-bottom: 28px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule-heavy);
+  }
+
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    flex: 1;
+  }
+
+  .timeline-item {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 0;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule-light);
+    position: relative;
+    transition: opacity 0.2s;
+  }
+
+  .timeline-item.past {
+    opacity: 0.4;
+  }
+
+  .timeline-item.selected {
+    background: linear-gradient(90deg, rgba(201, 162, 39, 0.06) 0%, transparent 100%);
+    margin: 0 -24px;
+    padding: 14px 24px;
+    border-radius: 0;
+  }
+
+  .timeline-item.selected .meeting-content {
+    padding-left: 0;
+  }
+
+  .meeting-time {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    padding-top: 2px;
+  }
+
+  .meeting-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 12px;
+    border-left: 3px solid transparent;
+  }
+
+  .meeting-content.type-customer { border-left-color: var(--turmeric); }
+  .meeting-content.type-personal { border-left-color: var(--sage); }
+  .meeting-content.type-oneone   { border-left-color: var(--larkspur); }
+  .meeting-content.type-internal { border-left-color: var(--linen); }
+
+  .meeting-title {
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  .meeting-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+  }
+
+  /* NOW indicator */
+  .now-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 0;
+  }
+
+  .now-line {
+    flex: 1;
+    height: 1px;
+    background: var(--terracotta);
+    opacity: 0.5;
+  }
+
+  .now-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--terracotta);
+    flex-shrink: 0;
+  }
+
+  .schedule-footer {
+    margin-top: auto;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule-light);
+  }
+
+  .schedule-footer p {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--text-tertiary);
+  }
+
+  /* ── Right Panel: Masthead ── */
+  .masthead-panel {
+    position: relative;
+    min-height: calc(100vh - 40px);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+
+  .masthead-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 0;
+  }
+
+  .masthead-bg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 40%;
+    display: block;
+  }
+
+  /* Gradient overlay: subtle image visibility */
+  .masthead-bg::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background:
+      linear-gradient(
+        180deg,
+        rgba(245, 242, 239, 0.55) 0%,
+        rgba(245, 242, 239, 0.45) 20%,
+        rgba(245, 242, 239, 0.60) 50%,
+        rgba(245, 242, 239, 0.82) 75%,
+        rgba(245, 242, 239, 0.96) 90%,
+        rgba(245, 242, 239, 1.00) 100%
+      ),
+      linear-gradient(
+        90deg,
+        rgba(245, 242, 239, 0.80) 0%,
+        rgba(245, 242, 239, 0.35) 30%,
+        rgba(245, 242, 239, 0.35) 70%,
+        rgba(245, 242, 239, 0.70) 100%
+      );
+  }
+
+  .masthead-content {
+    position: relative;
+    z-index: 1;
+    padding: 0 64px 56px;
+    max-width: 720px;
+  }
+
+  .masthead-kicker {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    margin-bottom: 16px;
+  }
+
+  .masthead-headline {
+    font-family: var(--font-serif);
+    font-size: 64px;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+    color: var(--text-primary);
+    margin-bottom: 20px;
+  }
+
+  .masthead-deck {
+    font-family: var(--font-serif);
+    font-size: 19px;
+    font-weight: 300;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+    max-width: 560px;
+  }
+
+  .masthead-stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.02em;
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  .masthead-stats span {
+    display: inline;
+  }
+
+  .stat-sep {
+    display: inline-block;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+    margin: 0 10px;
+    vertical-align: middle;
+    opacity: 0.6;
+  }
+
+  .masthead-pullquote {
+    border-left: 3px solid var(--turmeric);
+    padding-left: 20px;
+    max-width: 520px;
+  }
+
+  .masthead-pullquote p {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1.55;
+    color: var(--text-primary);
+  }
+
+  /* ── Responsive: Stack on narrow viewports ── */
+  @media (max-width: 900px) {
+    .spread {
+      grid-template-columns: 1fr;
+    }
+
+    .schedule-panel {
+      border-right: none;
+      border-bottom: 1px solid var(--rule-heavy);
+      padding: 24px 20px 28px;
+      min-height: auto;
+    }
+
+    .masthead-panel {
+      min-height: 80vh;
+    }
+
+    .masthead-content {
+      padding: 0 28px 40px;
+    }
+
+    .masthead-headline {
+      font-size: 42px;
+    }
+
+    .masthead-deck {
+      font-size: 17px;
+    }
+
+    .masthead-pullquote p {
+      font-size: 17px;
+    }
+
+    .timeline-item.selected {
+      margin: 0 -20px;
+      padding: 14px 20px;
+    }
+  }
+
+  @media (max-width: 500px) {
+    .masthead-headline {
+      font-size: 32px;
+    }
+
+    .masthead-content {
+      padding: 0 20px 32px;
+    }
+
+    .folio-date {
+      display: none;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Folio Bar -->
+<header class="folio-bar">
+  <div class="folio-brand">
+    <span class="folio-mark">*</span>
+    <span class="folio-name">DailyOS</span>
+  </div>
+  <span class="folio-date">Monday, March 3, 2026</span>
+  <div class="folio-actions">
+    <button class="folio-refresh" title="Refresh">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13.5 2.5v4h-4"/>
+        <path d="M2.5 13.5v-4h4"/>
+        <path d="M3.2 6a5.5 5.5 0 0 1 9.3-1.5l1 1.5"/>
+        <path d="M12.8 10a5.5 5.5 0 0 1-9.3 1.5l-1-1.5"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<!-- Magazine Spread -->
+<main class="spread">
+
+  <!-- Left Panel: Schedule Timeline -->
+  <aside class="schedule-panel">
+    <div class="schedule-header">Today's Schedule</div>
+
+    <div class="timeline">
+
+      <!-- 9:00 AM — past -->
+      <div class="timeline-item past">
+        <div class="meeting-time">9:00 AM</div>
+        <div class="meeting-content type-internal">
+          <div class="meeting-title">Engineering Standup</div>
+          <div class="meeting-label">Internal</div>
+        </div>
+      </div>
+
+      <!-- 10:30 AM — selected -->
+      <div class="timeline-item selected">
+        <div class="meeting-time">10:30 AM</div>
+        <div class="meeting-content type-customer">
+          <div class="meeting-title">Acme Corp QBR</div>
+          <div class="meeting-label">Customer</div>
+        </div>
+      </div>
+
+      <!-- 11:15 AM -->
+      <div class="timeline-item">
+        <div class="meeting-time">11:15 AM</div>
+        <div class="meeting-content type-oneone">
+          <div class="meeting-title">1:1 with Sarah Chen</div>
+          <div class="meeting-label">1:1</div>
+        </div>
+      </div>
+
+      <!-- NOW indicator -->
+      <div class="now-indicator">
+        <div class="now-line"></div>
+        <span class="now-label">Now</span>
+        <div class="now-line"></div>
+      </div>
+
+      <!-- 2:00 PM -->
+      <div class="timeline-item">
+        <div class="meeting-time">2:00 PM</div>
+        <div class="meeting-content type-customer">
+          <div class="meeting-title">CloudCorp Status</div>
+          <div class="meeting-label">Customer</div>
+        </div>
+      </div>
+
+      <!-- 3:30 PM -->
+      <div class="timeline-item">
+        <div class="meeting-time">3:30 PM</div>
+        <div class="meeting-content type-internal">
+          <div class="meeting-title">Sprint Retro</div>
+          <div class="meeting-label">Internal</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="schedule-footer">
+      <p>Clear until 2:00 PM</p>
+    </div>
+  </aside>
+
+  <!-- Right Panel: Masthead -->
+  <section class="masthead-panel">
+    <div class="masthead-bg">
+      <img
+        src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1200&q=80"
+        alt=""
+        loading="eager"
+        onerror="this.parentElement.style.background='linear-gradient(135deg, rgba(201,162,39,0.08) 0%, rgba(245,242,239,1) 60%)'"
+      >
+    </div>
+
+    <div class="masthead-content">
+      <div class="masthead-kicker">Monday, March 3</div>
+      <h1 class="masthead-headline">The Acme Conversation</h1>
+      <p class="masthead-deck">Your quarterly review is the day's centerpiece. CloudCorp's escalation needs containment before Thursday.</p>
+      <div class="masthead-stats">
+        <span>6 meetings</span>
+        <span class="stat-sep"></span>
+        <span>4h 30m open</span>
+        <span class="stat-sep"></span>
+        <span>2 deep work blocks</span>
+      </div>
+      <blockquote class="masthead-pullquote">
+        <p>The renewal conversation is everything today. Prep is ready — review the pricing proposal before 10:30.</p>
+      </blockquote>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

@@ -1,17 +1,19 @@
 /**
- * OnboardingFlow.tsx — First-run wizard (I57 refactor)
+ * OnboardingFlow.tsx — First-run wizard (I57 refactor, I561 three connectors)
  *
- * Trimmed from 11 chapters to 4 essential steps:
- * Landing → Claude Code → Google → YouCard → Role Preset → Dashboard
+ * Step sequence:
+ * Welcome → Google → Claude Code → Glean → YouCard → FirstAccount → Role → Prime
  *
- * The Claude Code step is required (no skip). All others are skippable.
+ * Google moves first (provides email identity for Glean discovery).
+ * Claude Code is skippable (recommended, not blocking).
+ * Glean is new and optional — enables account discovery + profile pre-fill.
  * Each step persists immediately via Tauri commands.
  */
 
 import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
-import type { EntityMode } from "@/types";
+import type { EntityMode, FeatureFlags, DiscoveredAccount, GleanAuthStatus } from "@/types";
 
 import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
 import { FolioBar } from "@/components/layout/FolioBar";
@@ -20,6 +22,7 @@ import {
   Sparkles,
   Mail,
   Terminal,
+  Globe,
   User,
   Briefcase,
   Building,
@@ -28,9 +31,12 @@ import {
 import { Welcome } from "./chapters/Welcome";
 import { GoogleConnect } from "./chapters/GoogleConnect";
 import { ClaudeCode } from "./chapters/ClaudeCode";
+import { GleanConnect } from "./chapters/GleanConnect";
 import { YouCardStep, type YouCardFormData } from "./chapters/YouCardStep";
 import { FirstAccountStep } from "./chapters/FirstAccountStep";
 import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
+import { PrimeBriefing } from "./chapters/PrimeBriefing";
+import styles from "./onboarding.module.css";
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -38,31 +44,37 @@ interface OnboardingFlowProps {
 
 const CHAPTERS = [
   "welcome",
-  "claude-code",
   "google",
+  "claude-code",
+  "glean",
   "youcard",
   "first-account",
   "role",
+  "prime",
 ] as const;
 
 type Chapter = (typeof CHAPTERS)[number];
 
 const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
   "welcome": <Sparkles size={16} strokeWidth={1.8} />,
-  "claude-code": <Terminal size={16} strokeWidth={1.8} />,
   "google": <Mail size={16} strokeWidth={1.8} />,
+  "claude-code": <Terminal size={16} strokeWidth={1.8} />,
+  "glean": <Globe size={16} strokeWidth={1.8} />,
   "youcard": <User size={16} strokeWidth={1.8} />,
   "first-account": <Building size={16} strokeWidth={1.8} />,
   "role": <Briefcase size={16} strokeWidth={1.8} />,
+  "prime": <Sparkles size={16} strokeWidth={1.8} />,
 };
 
 const CHAPTER_LABELS: Record<Chapter, string> = {
   "welcome": "Welcome",
-  "claude-code": "Claude",
   "google": "Google",
+  "claude-code": "Claude",
+  "glean": "Glean",
   "youcard": "About You",
   "first-account": "Account",
   "role": "Your Role",
+  "prime": "Prime",
 };
 
 const DEFAULT_WORKSPACE = "~/Documents/DailyOS";
@@ -81,15 +93,41 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [chapter, setChapter] = useState<Chapter>(CHAPTERS[0]);
   const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
   const [resumeChecked, setResumeChecked] = useState(false);
+  const [rolePresetsEnabled, setRolePresetsEnabled] = useState(false);
+
+  // I561: Glean state
+  const [gleanConnected, setGleanConnected] = useState(false);
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [importedAccountNames, setImportedAccountNames] = useState<string[]>([]);
+
+  // Fetch feature flags on mount
+  useEffect(() => {
+    invoke<FeatureFlags>("get_feature_flags")
+      .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
+      .catch(() => setRolePresetsEnabled(false));
+  }, []);
 
   // Resume from last completed step on mount
   useEffect(() => {
     if (resumeChecked) return;
-    invoke<{ wizardLastStep?: string | null }>("get_app_state")
-      .then((state) => {
+
+    const doResume = async () => {
+      try {
+        const state = await invoke<{ wizardLastStep?: string | null }>("get_app_state");
         const resumeTo = resolveResumeChapter(state.wizardLastStep);
+
+        // Re-check Glean auth on resume to restore gleanConnected state
+        try {
+          const gleanStatus = await invoke<GleanAuthStatus>("get_glean_auth_status");
+          if (gleanStatus.status === "authenticated") {
+            setGleanConnected(true);
+          }
+        } catch {
+          // Non-fatal
+        }
+
         if (resumeTo !== "welcome") {
-          // Mark all prior chapters as visited
           const visited = new Set<Chapter>();
           for (const c of CHAPTERS) {
             visited.add(c);
@@ -98,9 +136,14 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           setChapter(resumeTo);
           setVisitedChapters(visited);
         }
-      })
-      .catch(() => {}) // Non-fatal — just start from beginning
-      .finally(() => setResumeChecked(true));
+      } catch {
+        // Non-fatal — just start from beginning
+      } finally {
+        setResumeChecked(true);
+      }
+    };
+
+    doResume();
   }, [resumeChecked]);
 
   // Lifted form state
@@ -164,12 +207,25 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     onComplete();
   }
 
+  // Fire Glean account discovery in background
+  async function triggerGleanDiscovery() {
+    setDiscoveryLoading(true);
+    try {
+      const accounts = await invoke<DiscoveredAccount[]>("discover_accounts_from_glean");
+      setDiscoveredAccounts(accounts);
+    } catch (e) {
+      console.error("Glean discovery failed:", e);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  }
+
   // Complete wizard — mark done, trigger calendar poll if connected
   async function handleWizardComplete(_mode: EntityMode) {
     try {
       // Ensure workspace exists — required for the post-reload config check
       await autoCreateWorkspace();
-      await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+      await invoke("set_wizard_step", { step: "prime" }).catch(() => {});
       await invoke("set_wizard_completed");
       // Trigger immediate calendar poll if Google is connected
       try {
@@ -187,21 +243,18 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     onComplete();
   }
 
-  // Build chapter items for FloatingNavIsland (4 step dots, not labels)
-  const navChapters: ChapterItem[] = CHAPTERS.filter((c) => c !== "welcome").map((c) => ({
-    id: c,
-    label: CHAPTER_LABELS[c],
-    icon: CHAPTER_ICONS[c],
-  }));
+  // Build chapter items for FloatingNavIsland (step dots, not labels)
+  // Hide "role" chapter when role presets are gated off (I537)
+  const navChapters: ChapterItem[] = CHAPTERS
+    .filter((c) => c !== "welcome" && (c !== "role" || rolePresetsEnabled))
+    .map((c) => ({
+      id: c,
+      label: CHAPTER_LABELS[c],
+      icon: CHAPTER_ICONS[c],
+    }));
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--color-paper-cream)",
-        position: "relative",
-      }}
-    >
+    <div className={styles.wrapper}>
       <AtmosphereLayer color="turmeric" />
       <FolioBar publicationLabel="Setup" />
 
@@ -221,24 +274,22 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       )}
 
       {/* Content column */}
-      <div
-        style={{
-          maxWidth: 1080,
-          margin: "0 auto",
-          paddingTop: 80,
-          paddingBottom: 120,
-          paddingLeft: "var(--page-padding-horizontal)",
-          paddingRight: "var(--page-padding-horizontal)",
-          position: "relative",
-          zIndex: "var(--z-page-content)",
-        }}
-      >
+      <div className={styles.contentColumn}>
         {/* Step content */}
         {chapter === "welcome" && (
           <Welcome
-            onNext={() => goToChapter("claude-code")}
+            onNext={() => goToChapter("google")}
             onDemoMode={handleDemoMode}
             onSkipSetup={handleSkipSetup}
+          />
+        )}
+
+        {chapter === "google" && (
+          <GoogleConnect
+            onNext={async () => {
+              await invoke("set_wizard_step", { step: "google" }).catch(() => {});
+              goToChapter("claude-code");
+            }}
           />
         )}
 
@@ -260,15 +311,30 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 // Non-fatal
               }
               await invoke("set_wizard_step", { step: "claude-code" }).catch(() => {});
-              goToChapter("google");
+              goToChapter("glean");
+            }}
+            onSkip={async () => {
+              await autoCreateWorkspace();
+              await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
+              await invoke("set_wizard_step", { step: "claude-code" }).catch(() => {});
+              goToChapter("glean");
             }}
           />
         )}
 
-        {chapter === "google" && (
-          <GoogleConnect
-            onNext={async () => {
-              await invoke("set_wizard_step", { step: "google" }).catch(() => {});
+        {chapter === "glean" && (
+          <GleanConnect
+            onNext={async (connected) => {
+              setGleanConnected(connected);
+              await invoke("set_wizard_step", { step: "glean" }).catch(() => {});
+              if (connected) {
+                // Fire discovery in background — results appear on FirstAccountStep
+                triggerGleanDiscovery();
+              }
+              goToChapter("youcard");
+            }}
+            onSkip={async () => {
+              await invoke("set_wizard_step", { step: "glean" }).catch(() => {});
               goToChapter("youcard");
             }}
           />
@@ -280,19 +346,53 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             onFormChange={setYouCardData}
             onNext={() => goToChapter("first-account")}
             onSkip={() => goToChapter("first-account")}
+            gleanConnected={gleanConnected}
           />
         )}
 
         {chapter === "first-account" && (
           <FirstAccountStep
-            onNext={() => goToChapter("role")}
-            onSkip={() => goToChapter("role")}
+            gleanConnected={gleanConnected}
+            discoveredAccounts={discoveredAccounts}
+            discoveryLoading={discoveryLoading}
+            onImported={setImportedAccountNames}
+            onNext={async () => {
+              if (rolePresetsEnabled) {
+                goToChapter("role");
+              } else {
+                // Auto-set CS preset and "both" entity mode as defaults
+                await invoke("set_role", { role: "customer-success" }).catch(() => {});
+                await invoke("set_entity_mode", { mode: "both" }).catch(() => {});
+                await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+                goToChapter("prime");
+              }
+            }}
+            onSkip={async () => {
+              if (rolePresetsEnabled) {
+                goToChapter("role");
+              } else {
+                await invoke("set_role", { role: "customer-success" }).catch(() => {});
+                await invoke("set_entity_mode", { mode: "both" }).catch(() => {});
+                await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+                goToChapter("prime");
+              }
+            }}
           />
         )}
 
-        {chapter === "role" && (
+        {chapter === "role" && rolePresetsEnabled && (
           <EntityModeChapter
-            onNext={handleWizardComplete}
+            onNext={async (_mode) => {
+              await invoke("set_wizard_step", { step: "role" }).catch(() => {});
+              goToChapter("prime");
+            }}
+          />
+        )}
+
+        {chapter === "prime" && (
+          <PrimeBriefing
+            importedAccountNames={importedAccountNames}
+            onComplete={() => handleWizardComplete("both")}
           />
         )}
       </div>

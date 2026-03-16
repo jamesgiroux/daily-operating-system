@@ -15,13 +15,13 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     (SELECT m.title FROM meeting_entities me
-                     JOIN meetings_history m ON me.meeting_id = m.id
+                     JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
                        AND m.start_time < date('now', '+3 days')
                      ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_title,
                     (SELECT m.start_time FROM meeting_entities me
-                     JOIN meetings_history m ON me.meeting_id = m.id
+                     JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
                        AND m.start_time < date('now', '+3 days')
@@ -129,7 +129,7 @@ impl ActionDb {
                  OR (
                    a.source_type IN ('post_meeting', 'transcript')
                    AND a.source_id IN (
-                     SELECT m.id FROM meetings_history m
+                     SELECT m.id FROM meetings m
                      LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
                      LEFT JOIN meeting_entities me ON m.id = me.meeting_id
                      WHERE (ma.person_id = ?1
@@ -164,9 +164,10 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
                     m.calendar_event_id
-             FROM meetings_history m
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
              LEFT JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE (
@@ -302,30 +303,54 @@ impl ActionDb {
     /// Insert or update an action, but never overwrite a user-set `completed` status.
     ///
     /// Checks two conditions before inserting:
-    /// 1. **Title-based guard**: If a matching action (same title + account) is already
-    ///    completed under *any* ID, skip the insert. This catches cross-source duplicates
-    ///    where the same action arrives from briefing vs inbox vs post-meeting capture
-    ///    with different ID schemes.
+    /// 1. **Title-based guard**:
+    ///    - For transcript/post-meeting actions, dedup within the same source
+    ///      (`source_type` + `source_id`) so one meeting doesn't suppress another.
+    ///    - For all other actions, dedup by title + account across sources.
     /// 2. **ID-based guard**: If an action with this exact ID is already completed, skip.
     ///
     /// This ensures that daily briefing syncs don't resurrect completed actions (I23).
-    pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
-        // Guard 1: Title-based cross-source dedup — skip if ANY action with the
-        // same title+account already exists (pending, waiting, or completed).
-        let title_exists: bool = self
-            .conn
-            .query_row(
-                "SELECT 1 FROM actions
-                 WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
-                   AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
-                 LIMIT 1",
-                params![action.title, action.account_id],
-                |_row| Ok(true),
-            )
-            .unwrap_or(false);
+    pub fn upsert_action_if_not_completed_with_status(
+        &self,
+        action: &DbAction,
+    ) -> Result<bool, DbError> {
+        let is_meeting_scoped_source = matches!(
+            action.source_type.as_deref(),
+            Some("transcript") | Some("post_meeting")
+        ) && action
+            .source_id
+            .as_deref()
+            .is_some_and(|source_id| !source_id.trim().is_empty());
+
+        // Guard 1: Title-based dedup.
+        // Meeting-scoped sources dedup per meeting/source; all others dedup by title+account.
+        let title_exists = if is_meeting_scoped_source {
+            self.conn
+                .query_row(
+                    "SELECT 1 FROM actions
+                     WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
+                       AND source_type = ?2
+                       AND source_id = ?3
+                     LIMIT 1",
+                    params![action.title, action.source_type, action.source_id],
+                    |_row| Ok(true),
+                )
+                .unwrap_or(false)
+        } else {
+            self.conn
+                .query_row(
+                    "SELECT 1 FROM actions
+                     WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
+                       AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                     LIMIT 1",
+                    params![action.title, action.account_id],
+                    |_row| Ok(true),
+                )
+                .unwrap_or(false)
+        };
 
         if title_exists {
-            return Ok(());
+            return Ok(false);
         }
 
         // Guard 2: ID-based check — don't overwrite a completed action
@@ -339,10 +364,16 @@ impl ActionDb {
             .ok();
 
         if existing_status.as_deref() == Some("completed") {
-            return Ok(());
+            return Ok(false);
         }
 
-        self.upsert_action(action)
+        self.upsert_action(action)?;
+        Ok(true)
+    }
+
+    pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
+        self.upsert_action_if_not_completed_with_status(action)
+            .map(|_| ())
     }
 
     /// Insert or update an action. Uses SQLite `ON CONFLICT` (upsert).
@@ -414,6 +445,45 @@ impl ActionDb {
             actions.push(row?);
         }
         Ok(actions)
+    }
+
+    /// Get counts of pending actions by priority (I513: for DB-built WeekOverview).
+    ///
+    /// Returns (total_pending, p1_count, p2_count, overdue_count).
+    pub fn get_pending_action_counts(&self) -> Result<(i64, i64, i64, i64), DbError> {
+        let total: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let p1: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let p2: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND priority = 'P2'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let overdue: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE status = 'pending' AND due_date < date('now')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok((total, p1, p2, overdue))
     }
 
     /// Get all action titles from the database (for dedup in Rust delivery).
@@ -512,7 +582,11 @@ impl ActionDb {
             "UPDATE actions SET status = 'archived', updated_at = ?1
              WHERE status = 'pending'
                AND completed_at IS NULL
-               AND created_at < datetime('now', ?2)",
+               AND (
+                   (due_date IS NOT NULL AND due_date <= date('now', ?2))
+                   OR
+                   (due_date IS NULL AND created_at < datetime('now', ?2))
+               )",
             params![now, cutoff_param],
         )?;
         Ok(changed)
@@ -710,5 +784,123 @@ impl ActionDb {
             next_meeting_title: None,
             next_meeting_start: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::test_utils::test_db;
+    use rusqlite::params;
+
+    #[test]
+    fn archive_stale_actions_archives_past_due_pending_actions() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, due_date, updated_at
+                 ) VALUES (
+                    ?1, ?2, 'P2', 'pending', datetime('now'), date('now', '-40 days'), datetime('now')
+                 )",
+                params!["action-past-due", "Old follow-up"],
+            )
+            .expect("insert pending action");
+
+        let archived = db.archive_stale_actions(30).expect("archive stale actions");
+        assert_eq!(archived, 1);
+
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM actions WHERE id = ?1",
+                params!["action-past-due"],
+                |row| row.get(0),
+            )
+            .expect("read action");
+        assert_eq!(status, "archived");
+    }
+
+    #[test]
+    fn archive_stale_actions_archives_old_undated_pending_actions() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, updated_at
+                 ) VALUES (
+                    ?1, ?2, 'P2', 'pending', datetime('now', '-40 days'), datetime('now', '-40 days')
+                 )",
+                params!["action-undated", "Eventually follow up"],
+            )
+            .expect("insert undated action");
+
+        let archived = db.archive_stale_actions(30).expect("archive stale actions");
+        assert_eq!(archived, 1);
+
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM actions WHERE id = ?1",
+                params!["action-undated"],
+                |row| row.get(0),
+            )
+            .expect("read action");
+        assert_eq!(status, "archived");
+    }
+
+    #[test]
+    fn archive_stale_actions_keeps_recent_pending_actions_active() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, due_date, updated_at
+                 ) VALUES (
+                    ?1, ?2, 'P2', 'pending', datetime('now', '-5 days'), date('now', '+2 days'), datetime('now', '-5 days')
+                 )",
+                params!["action-fresh", "Upcoming follow-up"],
+            )
+            .expect("insert fresh action");
+
+        let archived = db.archive_stale_actions(30).expect("archive stale actions");
+        assert_eq!(archived, 0);
+
+        let status: String = db
+            .conn
+            .query_row(
+                "SELECT status FROM actions WHERE id = ?1",
+                params!["action-fresh"],
+                |row| row.get(0),
+            )
+            .expect("read action");
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn reject_proposed_action_with_source_persists_surface() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, updated_at
+                 ) VALUES (?1, ?2, 'P2', 'proposed', datetime('now'), datetime('now'))",
+                params!["action-1", "Follow up"],
+            )
+            .expect("insert action");
+
+        db.reject_proposed_action_with_source("action-1", "daily_briefing")
+            .expect("reject action");
+
+        let row: (String, Option<String>) = db
+            .conn
+            .query_row(
+                "SELECT status, rejection_source FROM actions WHERE id = ?1",
+                params!["action-1"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read action");
+
+        assert_eq!(row.0, "archived");
+        assert_eq!(row.1.as_deref(), Some("daily_briefing"));
     }
 }

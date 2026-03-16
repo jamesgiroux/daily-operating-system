@@ -166,36 +166,36 @@ A win story is only valuable if others can learn from it. Focus on what made thi
 ## Example
 
 ```markdown
-# Competitive Win: NXP Chooses WordPress VIP Over Contentful
+# Competitive Win: Vertex Chooses WordPress VIP Over Contentful
 
-**The Win**: NXP selected WordPress VIP for their enterprise content platform over Contentful, citing integration flexibility and total cost of ownership—$400K initial contract with expansion potential.
+**The Win**: Vertex selected WordPress VIP for their enterprise content platform over Contentful, citing integration flexibility and total cost of ownership—$400K initial contract with expansion potential.
 
 ---
 
 ## The Situation
 
-NXP was consolidating fragmented content systems across 12 regional marketing teams. Their Salesforce investment (Data Cloud, Agentforce) created requirements for native integration that became the deciding factor.
+Vertex was consolidating fragmented content systems across 12 regional marketing teams. Their Globex investment (Data Cloud, Agentforce) created requirements for native integration that became the deciding factor.
 
-They evaluated WordPress VIP, Contentful, and Sitecore. Decision criteria were: Salesforce integration, global scalability, time-to-value, and 5-year TCO.
+They evaluated WordPress VIP, Contentful, and Sitecore. Decision criteria were: Globex integration, global scalability, time-to-value, and 5-year TCO.
 
 ## Why We Won
 
 ### Key Differentiators
-- **Salesforce native integration**: Our Agentforce connector was the only solution that didn't require custom middleware. Contentful would have needed $150K+ in integration work.
+- **Globex native integration**: Our Agentforce connector was the only solution that didn't require custom middleware. Contentful would have needed $150K+ in integration work.
 - **Total cost of ownership**: Contentful's headless approach required more frontend development. 5-year TCO was 30% higher.
 - **Flexibility with guardrails**: They wanted editorial freedom with enterprise governance. Headless was too much freedom; Sitecore was too rigid.
 
-NXP's VP of Digital said: "We need a platform that grows with our Salesforce investment, not one we have to work around."
+Vertex's VP of Digital said: "We need a platform that grows with our Globex investment, not one we have to work around."
 
 ## Competitor Analysis
 
-Contentful competed hard on modern architecture and developer experience. They were strong on API-first positioning but couldn't answer the Salesforce integration question without adding cost and complexity.
+Contentful competed hard on modern architecture and developer experience. They were strong on API-first positioning but couldn't answer the Globex integration question without adding cost and complexity.
 
-**Pattern to note**: In accounts with significant Salesforce investment, native integration is becoming a table-stakes requirement. Contentful (and other headless players) don't have a good answer.
+**Pattern to note**: In accounts with significant Globex investment, native integration is becoming a table-stakes requirement. Contentful (and other headless players) don't have a good answer.
 
 ---
 
 ## The Takeaway
 
-Salesforce integration is emerging as a differentiator in enterprise content platform decisions. Sales should probe early for Salesforce ecosystem commitments—these accounts are strong targets for our Agentforce positioning.
+Globex integration is emerging as a differentiator in enterprise content platform decisions. Sales should probe early for Globex ecosystem commitments—these accounts are strong targets for our Agentforce positioning.
 ```

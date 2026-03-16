@@ -98,9 +98,9 @@ fn get_existing_meeting_paths(db: &ActionDb) -> Result<HashSet<String>, String> 
     let conn = db.conn_ref();
     let mut stmt = conn
         .prepare(
-            "SELECT notes_path FROM meetings_history WHERE notes_path IS NOT NULL
+            "SELECT notes_path FROM meetings WHERE notes_path IS NOT NULL
              UNION
-             SELECT transcript_path FROM meetings_history WHERE transcript_path IS NOT NULL",
+             SELECT transcript_path FROM meeting_transcripts WHERE transcript_path IS NOT NULL",
         )
         .map_err(|e| e.to_string())?;
 
@@ -236,7 +236,7 @@ fn extract_entity_id(path: &Path, entity_type: &str) -> Option<String> {
             // The next part is the entity slug
             let slug = parts[i + 1];
 
-            // Handle nested accounts (e.g., Harbor Group/Corporate)
+            // Handle nested accounts (e.g., Globex/Corporate)
             // For now, use the immediate child as entity_id
             // This matches the directory-based entity ID convention
 
@@ -318,7 +318,7 @@ fn create_meeting_record(db: &ActionDb, meeting: &DiscoveredMeeting) -> Result<(
     // Check if meeting ID already exists
     let exists: bool = conn
         .query_row(
-            "SELECT 1 FROM meetings_history WHERE id = ?1",
+            "SELECT 1 FROM meetings WHERE id = ?1",
             params![&meeting_id],
             |_| Ok(true),
         )
@@ -358,10 +358,10 @@ fn create_meeting_record(db: &ActionDb, meeting: &DiscoveredMeeting) -> Result<(
 
     // Insert meeting record
     conn.execute(
-        "INSERT INTO meetings_history (
+        "INSERT INTO meetings (
             id, title, meeting_type, start_time, created_at,
-            notes_path, transcript_path
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            notes_path
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             &meeting_id,
             &meeting.title,
@@ -369,8 +369,20 @@ fn create_meeting_record(db: &ActionDb, meeting: &DiscoveredMeeting) -> Result<(
             &start_time,
             &created_at_str,
             &notes_path,
-            &transcript_path,
         ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Ensure child table rows exist (3-table schema invariant)
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+        params![&meeting_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR IGNORE INTO meeting_transcripts (meeting_id, transcript_path)
+         VALUES (?1, ?2)",
+        params![&meeting_id, &transcript_path],
     )
     .map_err(|e| e.to_string())?;
 
@@ -403,45 +415,42 @@ mod tests {
 
         assert_eq!(
             extract_title_from_filename(
-                "2025-07-23-summary-airbnb-wordpress-vip-introduction.md",
+                "2025-07-23-summary-acme-platform-vip-introduction.md",
                 &date_re
             ),
-            "Aperture Media Wordpress Vip Introduction"
+            "Acme Platform Vip Introduction"
         );
 
         assert_eq!(
             extract_title_from_filename(
-                "2025-06-23-strategy-shobha-airbnb-account-strategy-discussion.md",
+                "2025-06-23-strategy-dana-acme-account-strategy-discussion.md",
                 &date_re
             ),
-            "Shobha Aperture Media Account Strategy Discussion"
+            "Dana Acme Account Strategy Discussion"
         );
 
         assert_eq!(
-            extract_title_from_filename("2026-02-05 SlackWPVIP-sync_-transcript.md", &date_re),
-            "Slackwpvip Sync Transcript"
+            extract_title_from_filename("2026-02-05 GlobexVIP-sync_-transcript.md", &date_re),
+            "Globexvip Sync Transcript"
         );
     }
 
     #[test]
     fn test_slug_to_entity_id() {
+        assert_eq!(slug_to_entity_id("Acme-Motors", "account"), "acme-motors");
         assert_eq!(
-            slug_to_entity_id("Bring-a-Trailer", "account"),
-            "bring-a-trailer"
+            slug_to_entity_id("Acme-Motors-(am)", "account"),
+            "acme-motors-am"
         );
+        assert_eq!(slug_to_entity_id("Globex", "account"), "globex");
         assert_eq!(
-            slug_to_entity_id("Bring-A-Trailer-(bat)", "account"),
-            "bring-a-trailer-bat"
-        );
-        assert_eq!(slug_to_entity_id("Harbor Group", "account"), "hilton");
-        assert_eq!(
-            slug_to_entity_id("Jane-Software", "account"),
-            "jane-software"
+            slug_to_entity_id("Initech-Software", "account"),
+            "initech-software"
         );
         // Parentheses and special chars become hyphens, then deduplicated
         assert_eq!(
-            slug_to_entity_id("Salesforce (Digital Marketing)", "account"),
-            "salesforce-digital-marketing"
+            slug_to_entity_id("Globex (Digital Marketing)", "account"),
+            "globex-digital-marketing"
         );
     }
 }

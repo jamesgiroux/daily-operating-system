@@ -138,7 +138,7 @@ export function EditableList({
               padding: "6px 0",
               borderBottom: idx < items.length - 1 ? "1px solid var(--color-rule-light)" : "none",
               opacity: dragIndex === idx ? 0.4 : 1,
-              background: dragOverIndex === idx && dragIndex !== idx ? "rgba(228, 172, 60, 0.06)" : "transparent",
+              background: dragOverIndex === idx && dragIndex !== idx ? "var(--color-spice-turmeric-6)" : "transparent",
               transition: "opacity 0.15s ease, background 0.15s ease",
             }}
           >

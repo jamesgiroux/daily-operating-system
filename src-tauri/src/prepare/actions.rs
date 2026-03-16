@@ -254,7 +254,7 @@ fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
 
     // Fetch all non-completed actions with due dates
     let mut stmt = match conn.prepare(
-        "SELECT id, title, priority, status, due_date, account_id, source_context
+        "SELECT id, title, priority, status, due_date, account_id, context
          FROM actions
          WHERE status != 'completed'
            AND due_date IS NOT NULL
@@ -432,6 +432,7 @@ pub fn fetch_actions_from_db(db: &crate::db::ActionDb) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
 
     #[test]
     fn test_parse_empty_workspace() {
@@ -503,5 +504,34 @@ mod tests {
         assert!(val["due_today"].is_array());
         assert!(val["due_this_week"].is_array());
         assert!(val["waiting_on"].is_array());
+    }
+
+    #[test]
+    fn test_fetch_categorized_actions_reads_context_column() {
+        let db = test_db();
+        let today = Utc::now().date_naive().to_string();
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions (
+                    id, title, priority, status, created_at, due_date, context, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, datetime('now'), ?5, ?6, datetime('now'))",
+                rusqlite::params![
+                    "action-1",
+                    "Follow up on renewal",
+                    "P1",
+                    "pending",
+                    today,
+                    "CFO mentioned budget pressure",
+                ],
+            )
+            .expect("insert action");
+
+        let result = fetch_categorized_actions(&db);
+        assert_eq!(result.due_today.len(), 1);
+        assert_eq!(
+            result.due_today[0]["context"],
+            "CFO mentioned budget pressure"
+        );
     }
 }

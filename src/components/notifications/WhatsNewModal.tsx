@@ -64,7 +64,7 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "rgba(30, 37, 48, 0.4)",
+        backgroundColor: "var(--color-desk-charcoal-40)",
         backdropFilter: "blur(4px)",
       }}
       onClick={onClose}
@@ -74,7 +74,7 @@ export function WhatsNewModal({ open, onClose }: WhatsNewModalProps) {
         style={{
           backgroundColor: "var(--color-paper-cream)",
           borderRadius: 0,
-          boxShadow: "0 20px 60px rgba(30, 37, 48, 0.15)",
+          boxShadow: "var(--shadow-modal)",
           width: "100%",
           maxWidth: 640,
           maxHeight: "80vh",

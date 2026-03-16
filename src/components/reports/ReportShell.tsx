@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import type { ReportRow, ReportType } from "@/types/reports";
+import styles from "./report-shell.module.css";
 
 interface ReportShellProps {
   report: ReportRow | null;
@@ -17,7 +18,7 @@ interface ReportShellProps {
 }
 
 const GENERATING_PHASES = [
-  { key: "gathering", label: "Gathering intelligence", detail: "Reading entity data, signals, and meeting history" },
+  { key: "gathering", label: "Gathering context", detail: "Reading account data, updates, and meeting history" },
   { key: "analyzing", label: "Analyzing context", detail: "Synthesizing insights across connected data" },
   { key: "writing", label: "Writing report", detail: "Producing structured output" },
 ];
@@ -98,66 +99,30 @@ export function ReportShell({
   return (
     <div className="report-shell">
       {report?.isStale && (
-        <div
-          className="report-stale-banner"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            padding: "0.5rem 1rem",
-            background: "var(--color-spice-turmeric)",
-            color: "white",
-            fontSize: "0.85rem",
-            borderBottom: "1px solid var(--color-paper-linen)",
-          }}
-        >
+        <div className={styles.staleBanner}>
           <AlertTriangle size={14} />
-          <span>Intelligence has updated — this report may be outdated.</span>
+          <span>Context has updated — this report may be outdated.</span>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleGenerate}
-            style={{ marginLeft: "auto", color: "white" }}
+            className={styles.staleBannerButton}
           >
-            <RefreshCw size={12} style={{ marginRight: "0.25rem" }} />
+            <RefreshCw size={12} className={styles.refreshIcon} />
             Regenerate
           </Button>
         </div>
       )}
 
       {error && (
-        <div
-          style={{
-            padding: "1rem",
-            background: "#fff5f5",
-            color: "var(--color-spice-terracotta)",
-            fontSize: "0.875rem",
-            borderBottom: "1px solid var(--color-paper-linen)",
-          }}
-        >
+        <div className={styles.errorBanner}>
           Error: {error}
         </div>
       )}
 
       {!report && !generating && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "4rem",
-            gap: "1rem",
-            color: "var(--color-desk-charcoal)",
-            opacity: 0.7,
-          }}
-        >
-          <p
-            style={{
-              fontFamily: "var(--font-editorial)",
-              fontSize: "1.25rem",
-            }}
-          >
+        <div className={styles.emptyState}>
+          <p className={styles.emptyTitle}>
             No {title} yet.
           </p>
           <Button onClick={handleGenerate}>Generate {title}</Button>
@@ -167,24 +132,13 @@ export function ReportShell({
       {report && children}
 
       {report && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            padding: "1rem 2rem",
-            borderTop: "1px solid var(--color-paper-linen)",
-            fontSize: "0.75rem",
-            color: "var(--color-desk-charcoal)",
-            opacity: 0.6,
-          }}
-        >
+        <div className={styles.footer}>
           <span>
             Generated {new Date(report.generatedAt).toLocaleDateString()}
           </span>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
+          <div className={styles.footerActions}>
             <Button variant="ghost" size="sm" onClick={handleGenerate}>
-              <RefreshCw size={12} style={{ marginRight: "0.25rem" }} />
+              <RefreshCw size={12} className={styles.refreshIcon} />
               Regenerate
             </Button>
             <Button
