@@ -1,0 +1,52 @@
+FILE_TYPE: transcript
+ACCOUNT: Acme Corp
+MEETING: Q1 Renewal Review
+SUMMARY: Productive renewal discussion with Acme Corp. Champion Sarah Chen confirmed commitment to expand EMEA deployment. CTO David Park raised concerns about competitor evaluation. Key risk: budget review in Q2 could delay expansion. Three action items identified around EMEA planning, competitive response, and integration timeline.
+ANALYSIS: The account is at a critical juncture — strong operational adoption but strategic risk from new CTO reviewing vendor landscape. The champion is actively advocating but needs executive air cover.
+DISCUSSION:
+- Sarah Chen presented Q4 adoption metrics showing 85% utilization in NA
+- David Park asked about integration roadmap and competitive differentiation
+- Lisa Wong requested updated ROI analysis before approving EMEA budget
+- Team agreed to accelerate Salesforce integration timeline
+- EMEA pilot scope discussed — targeting 3 teams in UK and Germany
+END_DISCUSSION
+ACTIONS:
+- [P1] Prepare competitive battle card for CTO meeting @account_team by: 2026-03-20
+- [P1] Draft EMEA expansion ROI deck for CFO review @account_team by: 2026-03-25
+- [P2] Schedule 1:1 with David Park to discuss technology vision @csm
+END_ACTIONS
+WINS:
+- [ADOPTION] 85% utilization across NA teams — up from 60% last quarter #"We've really embedded this into our daily workflow now"
+- [VALUE_REALIZED] Customer reported 65% reduction in troubleshooting time, saving approximately $30K/month #"The ROI has been clear since month three"
+- [RELATIONSHIP] Sarah Chen joined customer advisory board
+- [ADVOCACY] Sarah presented product ROI at internal leadership meeting
+END_WINS
+RISKS:
+- [RED] Active competitor evaluation with Competitor X — CTO David Park has prior relationship and is reviewing all vendors #"I want to make sure we're getting the best value across our stack"
+- [YELLOW] Q2 budget review could reduce discretionary spend by 20% — CFO Lisa Wong flagged this explicitly #"We need to see hard numbers before I can approve new licenses"
+- [GREEN_WATCH] APAC team adoption declining — only 30% utilization, no regional admin assigned
+END_RISKS
+DECISIONS:
+- [JOINT_AGREEMENT] Accelerate Salesforce integration to April deadline @engineering
+- [CUSTOMER_COMMITMENT] Sarah to present expansion case to board by end of March @sarah_chen
+END_DECISIONS
+CHAMPION_HEALTH:
+- champion_name: Sarah Chen
+- champion_status: strong
+- champion_evidence: Led the roadmap discussion, asked detailed questions about integration capabilities, actively promoting product to EMEA leadership
+- champion_risk:
+END_CHAMPION_HEALTH
+SENTIMENT:
+- overall: mixed
+- customer: positive
+- engagement: high
+- forward_looking: yes
+- competitor_mentions: Competitor X
+- champion_present: yes
+- champion_engaged: yes
+- ownership_language: customer
+- past_tense_references: no
+- data_export_interest: no
+- internal_advocacy_visible: yes
+- roadmap_interest: yes
+END_SENTIMENT

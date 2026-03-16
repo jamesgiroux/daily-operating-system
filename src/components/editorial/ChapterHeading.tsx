@@ -2,19 +2,25 @@
  * ChapterHeading — heavy rule + serif title.
  * Used at the top of each editorial chapter section.
  * No chapter number shown — just rule + title.
+ *
+ * I529: Optional feedbackSlot renders inline feedback controls next to the title.
  */
+import type { ReactNode } from "react";
+
 interface ChapterHeadingProps {
   title: string;
   epigraph?: string;
+  /** I529: Optional inline feedback controls rendered after the title */
+  feedbackSlot?: ReactNode;
 }
 
-export function ChapterHeading({ title, epigraph }: ChapterHeadingProps) {
+export function ChapterHeading({ title, epigraph, feedbackSlot }: ChapterHeadingProps) {
   return (
     <div style={{ marginBottom: 32 }}>
       <hr
         style={{
           border: "none",
-          borderTop: "1px solid rgba(30, 37, 48, 0.12)",
+          borderTop: "1px solid var(--color-rule-heavy)",
           marginBottom: 16,
         }}
       />
@@ -27,9 +33,13 @@ export function ChapterHeading({ title, epigraph }: ChapterHeadingProps) {
           letterSpacing: "-0.01em",
           color: "var(--color-text-primary)",
           margin: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
         }}
       >
         {title}
+        {feedbackSlot}
       </h2>
       {epigraph && (
         <p

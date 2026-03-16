@@ -1,7 +1,7 @@
 // Actions service — extracted from commands.rs
 // Business logic for action status transitions with signal emission.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::commands::{ActionDetail, ActionListItem, CreateActionRequest, UpdateActionRequest};
 use crate::db::ActionDb;
@@ -113,9 +113,11 @@ pub fn reject_proposed_action(
     db: &ActionDb,
     engine: &crate::signals::propagation::PropagationEngine,
     id: &str,
+    source: &str,
 ) -> Result<(), String> {
     let action = db.get_action_by_id(id).ok().flatten();
-    db.reject_proposed_action(id).map_err(|e| e.to_string())?;
+    db.reject_proposed_action_with_source(id, source)
+        .map_err(|e| e.to_string())?;
 
     // Emit rejection signal for correction learning (I307)
     if let Some(ref action) = action {
@@ -180,64 +182,37 @@ pub enum ActionsResult {
     Error { message: String },
 }
 
-/// Get all actions with full context (merges briefing JSON + SQLite).
+/// Get all actions with full context from SQLite (I513 — DB is sole source).
 pub async fn get_all_actions(state: &AppState) -> ActionsResult {
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return ActionsResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
-            return ActionsResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
-            }
-        }
-    };
-
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    let mut actions = crate::json_loader::load_actions_json(&today_dir).unwrap_or_default();
-
-    // Merge non-briefing actions from SQLite (same logic as dashboard)
-    let db_actions_result = state
+    // Load all pending actions from DB
+    let actions: Vec<Action> = state
         .db_read(|db| {
             db.get_non_briefing_pending_actions()
                 .map_err(|e| e.to_string())
         })
-        .await;
-
-    if let Ok(db_actions) = db_actions_result {
-        let json_titles: HashSet<String> = actions
-            .iter()
-            .map(|a| a.title.to_lowercase().trim().to_string())
-            .collect();
-        for dba in db_actions {
-            if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                let priority = match dba.priority.as_str() {
-                    "P1" => Priority::P1,
-                    "P3" => Priority::P3,
-                    _ => Priority::P2,
-                };
-                actions.push(Action {
-                    id: dba.id,
-                    title: dba.title,
-                    account: dba.account_id,
-                    due_date: dba.due_date,
-                    priority,
-                    status: crate::types::ActionStatus::Pending,
-                    is_overdue: None,
-                    context: dba.context,
-                    source: dba.source_label,
-                    days_overdue: None,
-                });
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|dba| {
+            let priority = match dba.priority.as_str() {
+                "P1" => Priority::P1,
+                "P3" => Priority::P3,
+                _ => Priority::P2,
+            };
+            Action {
+                id: dba.id,
+                title: dba.title,
+                account: dba.account_id,
+                due_date: dba.due_date,
+                priority,
+                status: crate::types::ActionStatus::Pending,
+                is_overdue: None,
+                context: dba.context,
+                source: dba.source_label,
+                days_overdue: None,
             }
-        }
-    }
+        })
+        .collect();
 
     if actions.is_empty() {
         ActionsResult::Empty {

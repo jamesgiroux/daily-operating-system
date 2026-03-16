@@ -1,5 +1,7 @@
 use super::test_utils::test_db;
 use super::*;
+use crate::entity::{DbEntity, EntityType};
+use chrono::Utc;
 
 fn sample_action(id: &str, title: &str) -> DbAction {
     let now = Utc::now().to_rfc3339();
@@ -44,10 +46,8 @@ fn test_open_creates_tables() {
 
     let count: i32 = db
         .conn
-        .query_row("SELECT COUNT(*) FROM meetings_history", [], |row| {
-            row.get(0)
-        })
-        .expect("meetings_history table should exist");
+        .query_row("SELECT COUNT(*) FROM meetings", [], |row| row.get(0))
+        .expect("meetings table should exist");
     assert_eq!(count, 0);
 }
 
@@ -491,6 +491,53 @@ fn test_upsert_action_title_dedup_pending() {
     assert!(
         result.is_none(),
         "Title-based dedup should prevent duplicate pending actions"
+    );
+}
+
+#[test]
+fn test_upsert_action_transcript_dedup_is_meeting_scoped() {
+    let db = test_db();
+
+    let mut first = sample_action("transcript-m1-0", "Send recap");
+    first.source_type = Some("transcript".to_string());
+    first.source_id = Some("meeting-1".to_string());
+    first.status = "proposed".to_string();
+    first.account_id = None;
+    db.upsert_action_if_not_completed(&first)
+        .expect("insert first transcript action");
+
+    // Same title in a different meeting should NOT be suppressed.
+    let mut second = sample_action("transcript-m2-0", "Send recap");
+    second.source_type = Some("transcript".to_string());
+    second.source_id = Some("meeting-2".to_string());
+    second.status = "proposed".to_string();
+    second.account_id = None;
+    db.upsert_action_if_not_completed(&second)
+        .expect("insert second transcript action");
+
+    let second_row = db
+        .get_action_by_id("transcript-m2-0")
+        .expect("query second transcript action");
+    assert!(
+        second_row.is_some(),
+        "Transcript dedup must not suppress actions from other meetings"
+    );
+
+    // Same title in the same meeting/source should be suppressed.
+    let mut duplicate_same_meeting = sample_action("transcript-m1-1", "Send recap");
+    duplicate_same_meeting.source_type = Some("transcript".to_string());
+    duplicate_same_meeting.source_id = Some("meeting-1".to_string());
+    duplicate_same_meeting.status = "proposed".to_string();
+    duplicate_same_meeting.account_id = None;
+    db.upsert_action_if_not_completed(&duplicate_same_meeting)
+        .expect("attempt duplicate transcript action");
+
+    let duplicate_row = db
+        .get_action_by_id("transcript-m1-1")
+        .expect("query duplicate transcript action");
+    assert!(
+        duplicate_row.is_none(),
+        "Transcript dedup should still suppress duplicates within the same meeting"
     );
 }
 
@@ -1360,19 +1407,19 @@ fn test_get_person_by_email_or_alias() {
 #[test]
 fn test_find_person_by_domain_alias() {
     let db = test_db();
-    let person = sample_person("renan@a8c.com");
+    let person = sample_person("renan@globex.com");
     db.upsert_person(&person).expect("upsert");
 
     // Search for the same local part at a sibling domain
     let result = db
-        .find_person_by_domain_alias("renan@wpvip.com", &["a8c.com".to_string()])
+        .find_person_by_domain_alias("renan@globex-labs.com", &["globex.com".to_string()])
         .expect("domain alias search");
     assert!(result.is_some());
     assert_eq!(result.unwrap().id, person.id);
 
     // No match when sibling domains don't contain the person
     let result = db
-        .find_person_by_domain_alias("renan@wpvip.com", &["unknown.com".to_string()])
+        .find_person_by_domain_alias("renan@globex-labs.com", &["unknown.com".to_string()])
         .expect("no match");
     assert!(result.is_none());
 }
@@ -1382,16 +1429,19 @@ fn test_get_sibling_domains_for_email() {
     let db = test_db();
 
     // Set up an account with multiple domains
-    setup_account(&db, "acc1", "Automattic");
-    db.set_account_domains("acc1", &["a8c.com".to_string(), "wpvip.com".to_string()])
-        .expect("set domains");
+    setup_account(&db, "acc1", "Globex");
+    db.set_account_domains(
+        "acc1",
+        &["globex.com".to_string(), "globex-labs.com".to_string()],
+    )
+    .expect("set domains");
 
-    // Email at a8c.com should return wpvip.com as sibling
+    // Email at globex.com should return globex-labs.com as sibling
     let siblings = db
-        .get_sibling_domains_for_email("renan@a8c.com", &[])
+        .get_sibling_domains_for_email("renan@globex.com", &[])
         .expect("siblings");
-    assert!(siblings.contains(&"wpvip.com".to_string()));
-    assert!(!siblings.contains(&"a8c.com".to_string())); // self excluded
+    assert!(siblings.contains(&"globex-labs.com".to_string()));
+    assert!(!siblings.contains(&"globex.com".to_string())); // self excluded
 
     // Personal email domains should return no siblings
     let siblings = db
@@ -1461,16 +1511,19 @@ fn test_alias_aware_person_resolution_integration() {
     let db = test_db();
 
     // Set up account with two domains
-    setup_account(&db, "acc1", "Automattic");
-    db.set_account_domains("acc1", &["a8c.com".to_string(), "wpvip.com".to_string()])
-        .expect("set domains");
+    setup_account(&db, "acc1", "Globex");
+    db.set_account_domains(
+        "acc1",
+        &["globex.com".to_string(), "globex-labs.com".to_string()],
+    )
+    .expect("set domains");
 
     // Create person from domain A
-    let person = sample_person("renan@a8c.com");
+    let person = sample_person("renan@globex.com");
     db.upsert_person(&person).expect("upsert");
 
-    // Simulate: calendar event arrives with renan@wpvip.com
-    let email = "renan@wpvip.com";
+    // Simulate: calendar event arrives with renan@globex-labs.com
+    let email = "renan@globex-labs.com";
     let found = db.get_person_by_email_or_alias(email).ok().flatten();
     assert!(found.is_none(), "no direct match yet");
 
@@ -1834,8 +1887,16 @@ fn test_update_person_field() {
 
     db.update_person_field(&person.id, "role", "VP Engineering")
         .expect("update role");
+    db.set_person_field_source(&person.id, "role", "user")
+        .expect("set field source");
     let updated = db.get_person(&person.id).expect("get").unwrap();
     assert_eq!(updated.role, Some("VP Engineering".to_string()));
+    let sources_json = updated
+        .enrichment_sources
+        .expect("enrichment_sources should exist");
+    let sources: serde_json::Value =
+        serde_json::from_str(&sources_json).expect("parse enrichment_sources");
+    assert_eq!(sources["role"]["source"].as_str(), Some("user"));
 
     // Invalid field should error
     let err = db.update_person_field(&person.id, "invalid_field", "val");
@@ -1873,8 +1934,16 @@ fn test_people_table_created() {
 
     let count: i32 = db
         .conn
-        .query_row("SELECT COUNT(*) FROM entity_people", [], |row| row.get(0))
-        .expect("entity_people table should exist");
+        .query_row("SELECT COUNT(*) FROM account_stakeholders", [], |row| {
+            row.get(0)
+        })
+        .expect("account_stakeholders table should exist");
+    assert_eq!(count, 0);
+
+    let count: i32 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM entity_members", [], |row| row.get(0))
+        .expect("entity_members table should exist");
     assert_eq!(count, 0);
 
     let count: i32 = db
@@ -2417,11 +2486,23 @@ fn test_link_meeting_to_project_and_query() {
     // Insert a meeting directly
     db.conn
         .execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
             params!["mtg-proj-001", "Sprint Review", "internal", &now, &now],
         )
         .expect("insert meeting");
+    db.conn
+        .execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+            params!["mtg-proj-001"],
+        )
+        .expect("insert meeting_prep");
+    db.conn
+        .execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+            params!["mtg-proj-001"],
+        )
+        .expect("insert meeting_transcripts");
 
     // Link it
     db.link_meeting_to_project("mtg-proj-001", "proj-mtg")
@@ -2462,11 +2543,23 @@ fn test_generic_link_unlink_meeting_entity() {
 
     db.conn
         .execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
             params!["mtg-j1", "Acme QBR", "customer", &now, &now],
         )
         .expect("insert meeting");
+    db.conn
+        .execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+            params!["mtg-j1"],
+        )
+        .expect("insert meeting_prep");
+    db.conn
+        .execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+            params!["mtg-j1"],
+        )
+        .expect("insert meeting_transcripts");
 
     // Link
     db.link_meeting_entity("mtg-j1", "acme-ent", "account")
@@ -2514,11 +2607,23 @@ fn test_meeting_multi_entity_link() {
 
     db.conn
         .execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
             params!["mtg-m2m", "Migration Review", "customer", &now, &now],
         )
         .expect("insert meeting");
+    db.conn
+        .execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+            params!["mtg-m2m"],
+        )
+        .expect("insert meeting_prep");
+    db.conn
+        .execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+            params!["mtg-m2m"],
+        )
+        .expect("insert meeting_transcripts");
 
     // Link to both account and project
     db.link_meeting_entity("mtg-m2m", "acme-m2m", "account")
@@ -3335,7 +3440,7 @@ fn test_reclassify_meeting_types_from_attendees() {
     // Meeting was classified as 'customer' because alice was external
     db.conn
         .execute(
-            "UPDATE meetings_history SET meeting_type = 'customer' WHERE id = 'm1'",
+            "UPDATE meetings SET meeting_type = 'customer' WHERE id = 'm1'",
             [],
         )
         .expect("set type");
@@ -3354,7 +3459,7 @@ fn test_reclassify_meeting_types_from_attendees() {
     let meeting: String = db
         .conn
         .query_row(
-            "SELECT meeting_type FROM meetings_history WHERE id = 'm1'",
+            "SELECT meeting_type FROM meetings WHERE id = 'm1'",
             [],
             |row| row.get(0),
         )
@@ -3370,7 +3475,7 @@ fn test_reclassify_preserves_title_based_types() {
     // Even with attendee changes, all_hands should not be touched
     db.conn
         .execute(
-            "UPDATE meetings_history SET meeting_type = 'all_hands' WHERE id = 'm1'",
+            "UPDATE meetings SET meeting_type = 'all_hands' WHERE id = 'm1'",
             [],
         )
         .expect("set type");
@@ -3383,7 +3488,7 @@ fn test_reclassify_preserves_title_based_types() {
     let meeting_type: String = db
         .conn
         .query_row(
-            "SELECT meeting_type FROM meetings_history WHERE id = 'm1'",
+            "SELECT meeting_type FROM meetings WHERE id = 'm1'",
             [],
             |row| row.get(0),
         )
@@ -3522,6 +3627,76 @@ fn test_insert_and_query_email_signals() {
     assert_eq!(signals.len(), 1);
     assert_eq!(signals[0].signal_type, "timeline");
     assert!(signals[0].signal_text.contains("launch date"));
+    assert_eq!(signals[0].source, "email_enrichment");
+}
+
+#[test]
+fn test_email_signal_source_attribution_roundtrip() {
+    let db = test_db();
+    setup_account(&db, "acc1", "Acme Corp");
+
+    db.upsert_email_signal_with_source(
+        "email-source",
+        Some("owner@acme.com"),
+        None,
+        "acc1",
+        "account",
+        "timeline",
+        "Updated timeline requested",
+        Some(0.8),
+        Some("neutral"),
+        Some("medium"),
+        Some("2026-02-20T10:00:00Z"),
+        Some("ai_classification"),
+    )
+    .expect("insert signal with source");
+
+    let source = db
+        .get_email_signal_source_for_feedback("email-source")
+        .expect("lookup source");
+    assert_eq!(source.as_deref(), Some("ai_classification"));
+}
+
+#[test]
+fn test_email_signal_source_lookup_ignores_feedback_rows() {
+    let db = test_db();
+    setup_account(&db, "acc1", "Acme Corp");
+
+    db.upsert_email_signal_with_source(
+        "email-feedback",
+        Some("owner@acme.com"),
+        None,
+        "acc1",
+        "account",
+        "timeline",
+        "Original signal",
+        Some(0.8),
+        Some("neutral"),
+        Some("medium"),
+        Some("2026-02-20T10:00:00Z"),
+        Some("ai_classification"),
+    )
+    .expect("insert original signal");
+    db.upsert_email_signal_with_source(
+        "email-feedback",
+        None,
+        None,
+        "system",
+        "account",
+        "feedback",
+        "User corrected priority",
+        Some(1.0),
+        None,
+        None,
+        Some("2026-02-20T11:00:00Z"),
+        Some("user_feedback"),
+    )
+    .expect("insert feedback row");
+
+    let source = db
+        .get_email_signal_source_for_feedback("email-feedback")
+        .expect("lookup source");
+    assert_eq!(source.as_deref(), Some("ai_classification"));
 }
 
 #[test]

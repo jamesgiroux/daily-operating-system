@@ -232,8 +232,10 @@ pub fn run_hygiene_scan(
 
     // --- Phase 3: AI-budgeted gap filling (self-healing portfolio evaluation) ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
-        report.fixes.ai_enrichments_enqueued =
-            crate::self_healing::evaluate_portfolio(db, budget, queue, embedding_model);
+        let (risk_gap_count, details) = enqueue_glean_risk_gap_fills(db, budget, queue);
+        all_details.extend(details);
+        report.fixes.ai_enrichments_enqueued = risk_gap_count
+            + crate::self_healing::evaluate_portfolio(db, budget, queue, embedding_model);
     }
 
     // Truncate details to max and store on report
@@ -279,7 +281,10 @@ fn fix_unknown_relationships(
     let mut details = Vec::new();
     for person in &people {
         let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
-        if new_rel != "unknown" && db.update_person_relationship(&person.id, &new_rel).is_ok() {
+        if new_rel != "unknown"
+            && crate::services::hygiene::update_person_relationship(db, &person.id, &new_rel)
+                .is_ok()
+        {
             details.push(HygieneFixDetail {
                 fix_type: "relationship_reclassified".to_string(),
                 entity_name: Some(person.name.clone()),
@@ -316,9 +321,11 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
 
         if !path.exists() {
             // File was deleted since indexing — mark so it exits the unsummarized pool
-            let _ = db.conn_ref().execute(
-                "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-                rusqlite::params![&now, "[file not found]", file.id],
+            let _ = crate::services::hygiene::mark_content_index_summary(
+                db,
+                &file.id,
+                &now,
+                "[file not found]",
             );
             continue;
         }
@@ -326,9 +333,8 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
         let (extracted_at, summary) = crate::intelligence::extract_and_summarize(path);
         match (extracted_at, summary) {
             (Some(ext_at), Some(summ)) => {
-                let _ = db.conn_ref().execute(
-                    "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-                    rusqlite::params![ext_at, summ, file.id],
+                let _ = crate::services::hygiene::mark_content_index_summary(
+                    db, &file.id, &ext_at, &summ,
                 );
                 if details.len() < 5 {
                     details.push(HygieneFixDetail {
@@ -342,9 +348,11 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             _ => {
                 // Extraction failed or returned empty — mark as attempted so the file
                 // doesn't reappear as an unsummarized gap on every scan forever.
-                let _ = db.conn_ref().execute(
-                    "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-                    rusqlite::params![&now, "[extraction failed]", file.id],
+                let _ = crate::services::hygiene::mark_content_index_summary(
+                    db,
+                    &file.id,
+                    &now,
+                    "[extraction failed]",
                 );
             }
         }
@@ -381,7 +389,7 @@ fn fix_meeting_counts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let mut fixed = 0;
     let mut details = Vec::new();
     for (person_id, name, old_count, new_count) in &mismatched {
-        if db.recompute_person_meeting_count(person_id).is_ok() {
+        if crate::services::hygiene::recompute_person_meeting_count(db, person_id).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "meeting_count_updated".to_string(),
                 entity_name: Some(name.clone()),
@@ -430,27 +438,21 @@ fn fix_renewal_rollovers(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             Err(_) => continue,
         };
 
-        // Record the implicit renewal event
-        if db
-            .record_account_event(
-                &account.id,
-                "renewal",
-                renewal_date,
-                account.arr,
-                Some("Auto-renewed (no churn recorded)"),
-            )
-            .is_err()
-        {
-            continue;
-        }
-
         // Advance contract_end by 12 months
         let next = parsed + chrono::Months::new(12);
         let next_str = next.format("%Y-%m-%d").to_string();
-        let _ = db.conn_ref().execute(
-            "UPDATE accounts SET contract_end = ?1 WHERE id = ?2",
-            rusqlite::params![next_str, account.id],
-        );
+        if crate::services::hygiene::rollover_account_renewal(
+            db,
+            &account.id,
+            &account.name,
+            renewal_date,
+            account.arr,
+            &next_str,
+        )
+        .is_err()
+        {
+            continue;
+        }
         details.push(HygieneFixDetail {
             fix_type: "renewal_rolled_over".to_string(),
             entity_name: Some(account.name.clone()),
@@ -475,7 +477,7 @@ fn retry_abandoned_quill_syncs(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) 
     let mut retried = 0;
     let mut details = Vec::new();
     for sync_row in &syncs {
-        if db.reset_quill_sync_for_retry(&sync_row.id).is_ok() {
+        if crate::services::hygiene::reset_quill_sync_for_retry(db, &sync_row.id).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "quill_sync_retried".to_string(),
                 entity_name: Some(sync_row.meeting_id.clone()),
@@ -512,7 +514,7 @@ fn archive_phantom_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
                AND a.archived = 0
                AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)",
+               AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)",
         )
         .and_then(|mut stmt| {
             stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -609,7 +611,7 @@ fn archive_empty_shell_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>)
                AND a.updated_at <= datetime('now', '-30 days')
                AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account' AND es.deactivated_at IS NULL)",
         )
@@ -654,7 +656,7 @@ fn count_empty_shell_accounts(db: &ActionDb) -> usize {
                AND a.updated_at <= datetime('now', '-30 days')
                AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
-               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account' AND es.deactivated_at IS NULL)",
             [],
@@ -663,29 +665,77 @@ fn count_empty_shell_accounts(db: &ActionDb) -> usize {
         .unwrap_or(0)
 }
 
+fn enqueue_glean_risk_gap_fills(
+    db: &ActionDb,
+    budget: &crate::state::HygieneBudget,
+    queue: &crate::intel_queue::IntelligenceQueue,
+) -> (usize, Vec<HygieneFixDetail>) {
+    if !matches!(
+        crate::context_provider::read_context_mode(db),
+        crate::context_provider::ContextMode::Glean { .. }
+    ) {
+        return (0, Vec::new());
+    }
+
+    let mut stmt = match db.conn_ref().prepare(
+        "SELECT a.id, a.name
+         FROM accounts a
+         INNER JOIN entity_assessment ea ON ea.entity_id = a.id AND ea.entity_type = 'account'
+         WHERE a.archived = 0
+           AND (
+               ea.risks_json IS NULL
+               OR TRIM(ea.risks_json) = ''
+               OR TRIM(ea.risks_json) = '[]'
+           )
+         ORDER BY a.updated_at DESC",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return (0, Vec::new()),
+    };
+
+    let candidates: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map(|rows| rows.filter_map(|row| row.ok()).collect())
+        .unwrap_or_default();
+
+    let mut enqueued = 0usize;
+    let mut details = Vec::new();
+
+    for (entity_id, name) in candidates {
+        if !budget.try_consume() {
+            break;
+        }
+
+        queue.enqueue(crate::intel_queue::IntelRequest::new(
+            entity_id,
+            "account".to_string(),
+            crate::intel_queue::IntelPriority::ProactiveHygiene,
+        ));
+        details.push(HygieneFixDetail {
+            fix_type: "glean_risk_gap_fill".to_string(),
+            entity_name: Some(name.clone()),
+            description: format!(
+                "Queued targeted Glean gap-fill for '{}' because risks were empty",
+                name
+            ),
+        });
+        enqueued += 1;
+    }
+
+    (enqueued, details)
+}
+
 // =============================================================================
 // Phase 2: Email Name Resolution + Domain Linking (I146)
 // =============================================================================
 
-/// Resolve unnamed people from email From headers in emails.json.
+/// Resolve unnamed people from sender names stored in the emails table.
 ///
-/// Reads `_today/data/emails.json` (created by daily briefing), extracts display
-/// names from From headers, and updates people who only have email-derived names.
+/// Uses SQLite as the single source of truth and never depends on `_today/data/emails.json`.
 pub fn resolve_names_from_emails(
     db: &ActionDb,
-    workspace: &Path,
+    _workspace: &Path,
 ) -> (usize, Vec<HygieneFixDetail>) {
-    let emails_path = workspace.join("_today").join("data").join("emails.json");
-    let raw = match std::fs::read_to_string(&emails_path) {
-        Ok(r) => r,
-        Err(_) => return (0, Vec::new()),
-    };
-
-    let data: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(d) => d,
-        Err(_) => return (0, Vec::new()),
-    };
-
     // Get unnamed people to match against
     let unnamed = match db.get_unnamed_people() {
         Ok(p) if !p.is_empty() => p,
@@ -697,38 +747,44 @@ pub fn resolve_names_from_emails(
     let mut resolved = 0;
     let mut details = Vec::new();
 
-    // Scan all email categories
-    for key in &["highPriority", "mediumPriority", "lowPriority"] {
-        if let Some(emails) = data.get(key).and_then(|v| v.as_array()) {
-            for email in emails {
-                let from = match email.get("from").and_then(|v| v.as_str()) {
-                    Some(f) => f,
-                    None => continue,
-                };
+    let mut stmt = match db.conn_ref().prepare(
+        "SELECT DISTINCT sender_email, sender_name
+         FROM emails
+         WHERE sender_email IS NOT NULL
+           AND sender_name IS NOT NULL
+           AND TRIM(sender_name) != ''",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return (0, Vec::new()),
+    };
 
-                // Extract display name and email address
-                let display_name = match crate::prepare::email_classify::extract_display_name(from)
-                {
-                    Some(n) => n,
-                    None => continue,
-                };
-                let addr = crate::prepare::email_classify::extract_email_address(from);
+    let rows = match stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return (0, Vec::new()),
+    };
 
-                // Only update if this person is in our unnamed set
-                if !unnamed_emails.contains(&addr) {
-                    continue;
-                }
+    for row in rows.flatten() {
+        let (addr, display_name) = row;
+        let addr = addr.to_lowercase();
+        if !unnamed_emails.contains(&addr) {
+            continue;
+        }
 
-                let person_id = crate::util::person_id_from_email(&addr);
-                if db.update_person_name(&person_id, &display_name).is_ok() {
-                    details.push(HygieneFixDetail {
-                        fix_type: "name_resolved".to_string(),
-                        entity_name: Some(display_name.clone()),
-                        description: format!("Resolved {}'s name from {}", display_name, addr),
-                    });
-                    resolved += 1;
-                }
-            }
+        let cleaned_name = display_name.trim();
+        if cleaned_name.is_empty() {
+            continue;
+        }
+
+        let person_id = crate::util::person_id_from_email(&addr);
+        if crate::services::hygiene::update_person_name(db, &person_id, cleaned_name).is_ok() {
+            details.push(HygieneFixDetail {
+                fix_type: "name_resolved".to_string(),
+                entity_name: Some(cleaned_name.to_string()),
+                description: format!("Resolved {}'s name from {}", cleaned_name, addr),
+            });
+            resolved += 1;
         }
     }
 
@@ -738,7 +794,7 @@ pub fn resolve_names_from_emails(
 /// Auto-link people to entities by matching email domain to account names.
 ///
 /// If `schen@acme.com` is a person and there's an account whose name contains
-/// "acme", link them via the entity_people junction table.
+/// "acme", link them via account_stakeholders.
 pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let accounts = match db.get_all_accounts() {
         Ok(a) => a,
@@ -799,9 +855,15 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail
         // Match against account hints
         for (hint, account_id, account_name) in &account_hints {
             if (&domain_base == hint || (hint.len() >= 4 && domain_base.contains(hint.as_str())))
-                && db
-                    .link_person_to_entity(&person.id, account_id, "associated")
-                    .is_ok()
+                && crate::services::hygiene::link_person_to_entity(
+                    db,
+                    &person.id,
+                    account_id,
+                    "associated",
+                    0.75,
+                    &format!("domain:{} account:{}", domain, account_name),
+                )
+                .is_ok()
             {
                 details.push(HygieneFixDetail {
                     fix_type: "person_linked_by_domain".to_string(),
@@ -909,7 +971,9 @@ fn dedup_people_by_domain_alias(
 
         let keep = sorted[0];
         for &remove in &sorted[1..] {
-            if db.merge_people(&keep.id, &remove.id).is_ok() {
+            if crate::services::hygiene::merge_people(db, &keep.id, &remove.id, "hygiene_alias")
+                .is_ok()
+            {
                 if details.len() < 5 {
                     details.push(HygieneFixDetail {
                         fix_type: "people_deduped_by_alias".to_string(),
@@ -935,7 +999,7 @@ fn dedup_people_by_domain_alias(
 /// Auto-merge duplicate people with confidence >= 0.95.
 ///
 /// Uses `detect_duplicate_people()` to find candidates, then merges each pair
-/// via `db.merge_people()`. Keeps the person with the higher meeting count.
+/// via the people-merge persistence path. Keeps the person with the higher meeting count.
 /// Capped at 10 merges per scan to prevent cascades.
 fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let candidates = match detect_duplicate_people(db) {
@@ -979,9 +1043,11 @@ fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
             }
         };
 
-        if db.merge_people(&keep_id, &remove_id).is_ok() {
+        if crate::services::hygiene::merge_people(db, &keep_id, &remove_id, "hygiene_auto_merge")
+            .is_ok()
+        {
             // Emit audit signal on the kept person
-            let _ = crate::services::signals::emit(
+            if let Err(err) = crate::services::signals::emit(
                 db,
                 "person",
                 &keep_id,
@@ -989,7 +1055,9 @@ fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
                 "hygiene",
                 Some(&format!("merged {} into {}", remove_name, keep_name)),
                 candidate.confidence as f64,
-            );
+            ) {
+                log::warn!("hygiene auto-merged signal failed for {}: {}", keep_id, err);
+            }
 
             already_merged.insert(remove_id.clone());
             already_merged.insert(keep_id.clone());
@@ -1014,11 +1082,11 @@ fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
 /// Link people to accounts based on meeting co-attendance patterns.
 ///
 /// If a person attends 3+ meetings that are linked to an account (via
-/// `meeting_entities`) but has no `entity_people` link to that account,
+/// `meeting_entities`) but has no `account_stakeholders` link to that account,
 /// create the link automatically.
 fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     // Find (person_id, entity_id, shared_meeting_count) where the person
-    // co-attends meetings linked to an account but has no entity_people link.
+    // co-attends meetings linked to an account but has no account_stakeholders link.
     let candidates: Vec<(String, String, String, String, i64)> = db
         .conn_ref()
         .prepare(
@@ -1028,8 +1096,8 @@ fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
              JOIN people p ON p.id = ma.person_id AND p.archived = 0
              JOIN accounts a ON a.id = me.entity_id AND a.archived = 0
              WHERE NOT EXISTS (
-                 SELECT 1 FROM entity_people ep
-                 WHERE ep.person_id = ma.person_id AND ep.entity_id = me.entity_id
+                 SELECT 1 FROM account_stakeholders as_
+                 WHERE as_.person_id = ma.person_id AND as_.account_id = me.entity_id
              )
              GROUP BY ma.person_id, me.entity_id
              HAVING shared >= 3
@@ -1053,26 +1121,20 @@ fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let mut details = Vec::new();
 
     for (person_id, person_name, entity_id, account_name, shared_count) in &candidates {
-        if db
-            .link_person_to_entity(person_id, entity_id, "co-attendee")
-            .is_ok()
-        {
-            let confidence = match *shared_count {
+        if crate::services::hygiene::link_person_to_entity(
+            db,
+            person_id,
+            entity_id,
+            "co-attendee",
+            match *shared_count {
                 3..=4 => 0.75,
                 5..=9 => 0.85,
                 _ => 0.95,
-            };
-
-            let _ = crate::services::signals::emit(
-                db,
-                "person",
-                person_id,
-                "account_linked",
-                "hygiene",
-                Some(&format!("{} meetings with {}", shared_count, account_name)),
-                confidence,
-            );
-
+            },
+            &format!("{} meetings with {}", shared_count, account_name),
+        )
+        .is_ok()
+        {
             if details.len() < 5 {
                 details.push(HygieneFixDetail {
                     fix_type: "person_linked_co_attendance".to_string(),
@@ -1126,7 +1188,7 @@ fn resolve_names_from_calendar(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) 
     let mut details = Vec::new();
 
     for (person_id, email, display_name) in &candidates {
-        if db.update_person_name(person_id, display_name).is_ok() {
+        if crate::services::hygiene::update_person_name(db, person_id, display_name).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "name_resolved_calendar".to_string(),
                 entity_name: Some(display_name.clone()),
@@ -1340,7 +1402,6 @@ fn enqueue_ai_enrichments(
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> usize {
     use crate::intel_queue::{IntelPriority, IntelRequest};
-    use std::time::Instant;
 
     let mut enqueued = 0;
 
@@ -1354,13 +1415,11 @@ fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            queue.enqueue(IntelRequest {
+            queue.enqueue(IntelRequest::new(
                 entity_id,
                 entity_type,
-                priority: IntelPriority::ProactiveHygiene,
-                requested_at: Instant::now(),
-                retry_count: 0,
-            });
+                IntelPriority::ProactiveHygiene,
+            ));
             enqueued += 1;
         }
     }
@@ -1375,13 +1434,11 @@ fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            queue.enqueue(IntelRequest {
+            queue.enqueue(IntelRequest::new(
                 entity_id,
                 entity_type,
-                priority: IntelPriority::ProactiveHygiene,
-                requested_at: Instant::now(),
-                retry_count: 0,
-            });
+                IntelPriority::ProactiveHygiene,
+            ));
             enqueued += 1;
         }
     }
@@ -1413,7 +1470,6 @@ pub fn check_upcoming_meeting_readiness(
     config: Option<&Config>,
 ) -> Vec<String> {
     use crate::intel_queue::{IntelPriority, IntelRequest};
-    use std::time::Instant;
 
     let window_hours = config
         .map(|c| c.hygiene_pre_meeting_hours as i64)
@@ -1424,13 +1480,14 @@ pub fn check_upcoming_meeting_readiness(
     let upcoming: Vec<crate::db::DbMeeting> = db
         .conn_ref()
         .prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    attendees, notes_path, summary,
-                    created_at, calendar_event_id
-             FROM meetings_history
-             WHERE start_time > datetime('now')
-               AND start_time <= ?1
-             ORDER BY start_time ASC",
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.attendees, m.notes_path, mt.summary,
+                    m.created_at, m.calendar_event_id
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE m.start_time > datetime('now')
+               AND m.start_time <= ?1
+             ORDER BY m.start_time ASC",
         )
         .and_then(|mut stmt| {
             let rows = stmt.query_map(rusqlite::params![window_end.to_rfc3339()], |row| {
@@ -1489,13 +1546,11 @@ pub fn check_upcoming_meeting_readiness(
             // Pre-meeting window: enqueue if trigger score >= 0.4 (lower than the
             // signal-driven 0.7 threshold because we're in a time-critical window)
             if trigger_score >= 0.4 {
-                queue.enqueue(IntelRequest {
-                    entity_id: entity.id.clone(),
+                queue.enqueue(IntelRequest::new(
+                    entity.id.clone(),
                     entity_type,
-                    priority: IntelPriority::CalendarChange,
-                    requested_at: Instant::now(),
-                    retry_count: 0,
-                });
+                    IntelPriority::CalendarChange,
+                ));
                 enqueued_ids.push(entity.id.clone());
                 log::debug!(
                     "PreMeeting: enqueued {} (trigger_score={:.2})",
@@ -1528,7 +1583,6 @@ pub struct OvernightReport {
 }
 
 /// Run an expanded overnight scan with higher AI budget.
-/// Writes maintenance.json for the morning briefing to reference.
 pub fn run_overnight_scan(
     db: &ActionDb,
     config: &Config,
@@ -1552,24 +1606,13 @@ pub fn run_overnight_scan(
         None,
     );
 
-    let overnight = OvernightReport {
+    OvernightReport {
         ran_at: Utc::now().to_rfc3339(),
         entities_refreshed: report.fixes.ai_enrichments_enqueued,
         names_resolved: report.fixes.names_resolved,
         summaries_extracted: report.fixes.summaries_extracted,
         relationships_reclassified: report.fixes.relationships_reclassified,
-    };
-
-    // Write maintenance.json for morning briefing
-    let maintenance_path = workspace
-        .join("_today")
-        .join("data")
-        .join("maintenance.json");
-    if let Ok(json) = serde_json::to_string_pretty(&overnight) {
-        let _ = crate::util::atomic_write_str(&maintenance_path, &json);
     }
-
-    overnight
 }
 
 /// Check if current time is in the overnight window (2-3 AM local time).
@@ -1629,7 +1672,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
         // Hygiene is lowest priority — skip if heavy work is in progress.
         // Uses try_acquire to avoid blocking: if the semaphore is held by
         // intel queue PTY or embedding inference, hygiene defers to next cycle.
-        let permit = state.heavy_work_semaphore.try_acquire();
+        let permit = state.permits.pty.try_acquire();
         if permit.is_err() {
             log::debug!("HygieneLoop: skipping scan — heavy work in progress");
             state
@@ -2378,13 +2421,11 @@ fn detect_low_confidence_matches(
                     "source": entity.source,
                 })
                 .to_string();
-                let _ = crate::services::signals::emit(
+                let _ = crate::services::hygiene::emit_low_confidence_match(
                     db,
                     entity.entity_type.as_str(),
                     &entity.entity_id,
-                    "low_confidence_match",
-                    "heuristic",
-                    Some(&value),
+                    &value,
                     entity.confidence,
                 );
 
@@ -2656,17 +2697,13 @@ mod tests {
             "external",
         );
 
-        // Create workspace with emails.json
-        let workspace = tempfile::tempdir().unwrap();
-        let data_dir = workspace.path().join("_today").join("data");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        std::fs::write(
-            data_dir.join("emails.json"),
-            r#"{"highPriority": [{"from": "Jane Doe <jane@customer.com>", "subject": "Hi"}]}"#,
-        )
-        .unwrap();
+        db.conn_ref().execute(
+            "INSERT INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, created_at, updated_at)
+             VALUES ('em-1', 'th-1', 'jane@customer.com', 'Jane Doe', 'Hi', '', 'high_priority', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            [],
+        ).unwrap();
 
-        let (resolved, _) = resolve_names_from_emails(&db, workspace.path());
+        let (resolved, _) = resolve_names_from_emails(&db, Path::new("/unused"));
         assert_eq!(resolved, 1);
 
         let person = db.get_person("jane-customer-com").unwrap().unwrap();
@@ -2691,17 +2728,14 @@ mod tests {
             "external",
         );
 
-        let workspace = tempfile::tempdir().unwrap();
-        let data_dir = workspace.path().join("_today").join("data");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        std::fs::write(
-            data_dir.join("emails.json"),
-            r#"{"highPriority": [{"from": "Jane Doe <jane@customer.com>", "subject": "Hi"}]}"#,
-        )
-        .unwrap();
+        db.conn_ref().execute(
+            "INSERT INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, created_at, updated_at)
+             VALUES ('em-2', 'th-2', 'jane@customer.com', 'Jane Doe', 'Hi', '', 'high_priority', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            [],
+        ).unwrap();
 
         // "Jane Doe" has spaces so not in unnamed set
-        let (resolved, _) = resolve_names_from_emails(&db, workspace.path());
+        let (resolved, _) = resolve_names_from_emails(&db, Path::new("/unused"));
         assert_eq!(resolved, 0);
     }
 
@@ -2791,9 +2825,21 @@ mod tests {
         let start = Utc::now() + chrono::Duration::hours(hours_from_now);
         db.conn_ref()
             .execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
                  VALUES (?1, 'Test Meeting', 'customer', ?2, ?2)",
                 rusqlite::params![meeting_id, start.to_rfc3339()],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                rusqlite::params![meeting_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                rusqlite::params![meeting_id],
             )
             .unwrap();
     }
@@ -2811,7 +2857,7 @@ mod tests {
     fn seed_entity_intelligence(db: &ActionDb, entity_id: &str, enriched_at: &str) {
         db.conn_ref()
             .execute(
-                "INSERT OR REPLACE INTO entity_intelligence (entity_id, entity_type, enriched_at)
+                "INSERT OR REPLACE INTO entity_assessment (entity_id, entity_type, enriched_at)
                  VALUES (?1, 'account', ?2)",
                 rusqlite::params![entity_id, enriched_at],
             )
@@ -2898,14 +2944,10 @@ mod tests {
     }
 
     #[test]
-    fn test_overnight_scan_produces_maintenance_json() {
+    fn test_overnight_scan_returns_report_without_writing_filesystem_artifact() {
         let db = test_db();
         let queue = crate::intel_queue::IntelligenceQueue::new();
         let workspace = tempfile::tempdir().unwrap();
-
-        // Create _today/data dir
-        let data_dir = workspace.path().join("_today").join("data");
-        std::fs::create_dir_all(&data_dir).unwrap();
 
         let config = Config {
             workspace_path: workspace.path().to_string_lossy().to_string(),
@@ -2917,15 +2959,12 @@ mod tests {
 
         // Report should have a timestamp
         assert!(!report.ran_at.is_empty());
-
-        // maintenance.json should exist
-        let maint_path = data_dir.join("maintenance.json");
-        assert!(maint_path.exists());
-
-        // Should be valid JSON
-        let content = std::fs::read_to_string(&maint_path).unwrap();
-        let parsed: OvernightReport = serde_json::from_str(&content).unwrap();
-        assert!(!parsed.ran_at.is_empty());
+        let maint_path = workspace
+            .path()
+            .join("_today")
+            .join("data")
+            .join("maintenance.json");
+        assert!(!maint_path.exists());
     }
 
     #[test]

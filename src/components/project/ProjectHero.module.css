@@ -58,27 +58,27 @@
 }
 
 .statusActive {
-  background: rgba(126, 170, 123, 0.15);
+  background: var(--color-garden-sage-15);
   color: var(--color-garden-sage);
 }
 
 .statusOnHold {
-  background: rgba(201, 162, 39, 0.15);
+  background: var(--color-spice-turmeric-15);
   color: var(--color-spice-turmeric);
 }
 
 .statusCompleted {
-  background: rgba(143, 163, 196, 0.15);
+  background: var(--color-garden-larkspur-15);
   color: var(--color-garden-larkspur);
 }
 
 .statusDefault {
-  background: rgba(30, 37, 48, 0.06);
+  background: var(--color-rule-light);
   color: var(--color-text-secondary);
 }
 
 .ownerBadge {
-  background: rgba(30, 37, 48, 0.06);
+  background: var(--color-rule-light);
   color: var(--color-text-secondary);
 }
 

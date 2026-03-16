@@ -347,11 +347,34 @@ impl ActionDb {
     /// Get account team members with person details.
     pub fn get_account_team(&self, account_id: &str) -> Result<Vec<DbAccountTeamMember>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT at.account_id, at.person_id, p.name, p.email, at.role, at.created_at
-             FROM account_team at
-             JOIN people p ON p.id = at.person_id
-             WHERE at.account_id = ?1
-             ORDER BY at.role, p.name",
+            "SELECT as_.account_id, as_.person_id, p.name, p.email, as_.role, as_.created_at
+             FROM account_stakeholders as_
+             JOIN people p ON p.id = as_.person_id
+             WHERE as_.account_id = ?1
+             ORDER BY as_.role, p.name",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountTeamMember {
+                account_id: row.get(0)?,
+                person_id: row.get(1)?,
+                person_name: row.get(2)?,
+                person_email: row.get(3)?,
+                role: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get account team members filtered to internal people only (for UI display).
+    /// Health scoring uses `get_account_team` which includes all stakeholders.
+    pub fn get_account_team_internal(&self, account_id: &str) -> Result<Vec<DbAccountTeamMember>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT as_.account_id, as_.person_id, p.name, p.email, as_.role, as_.created_at
+             FROM account_stakeholders as_
+             JOIN people p ON p.id = as_.person_id
+             WHERE as_.account_id = ?1 AND p.relationship = 'internal'
+             ORDER BY as_.role, p.name",
         )?;
         let rows = stmt.query_map(params![account_id], |row| {
             Ok(DbAccountTeamMember {
@@ -375,48 +398,51 @@ impl ActionDb {
     ) -> Result<(), DbError> {
         let role = role.trim().to_lowercase();
         self.conn.execute(
-            "INSERT OR IGNORE INTO account_team (account_id, person_id, role, created_at)
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type, created_at)
+             VALUES (?1, ?2, ?3, 'associated', ?4)
+             ON CONFLICT(account_id, person_id) DO UPDATE SET
+                role = excluded.role",
             params![account_id, person_id, role, Utc::now().to_rfc3339()],
-        )?;
-        self.conn.execute(
-            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
-             VALUES (?1, ?2, 'associated')",
-            params![account_id, person_id],
         )?;
         Ok(())
     }
 
-    /// Remove an account team role link.
-    /// If no roles remain for this person on this account, also removes the entity_people link.
-    pub fn remove_account_team_member(
+    /// Link a person to an account with explicit data source (I505).
+    ///
+    /// Sets `last_seen_in_glean` on insert/update. Does NOT overwrite `data_source`
+    /// or `role` if the existing row was user-owned (`data_source = 'user'`).
+    pub fn link_person_to_account_with_source(
         &self,
         account_id: &str,
         person_id: &str,
         role: &str,
+        data_source: &str,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type, data_source, last_seen_in_glean, created_at)
+             VALUES (?1, ?2, ?3, 'associated', ?4, ?5, ?5)
+             ON CONFLICT(account_id, person_id) DO UPDATE SET
+                last_seen_in_glean = excluded.last_seen_in_glean,
+                role = CASE WHEN account_stakeholders.data_source = 'user' THEN account_stakeholders.role ELSE excluded.role END,
+                data_source = CASE WHEN account_stakeholders.data_source = 'user' THEN account_stakeholders.data_source ELSE excluded.data_source END",
+            params![account_id, person_id, role, data_source, now],
+        )?;
+        Ok(())
+    }
+
+    /// Remove an account team member link.
+    pub fn remove_account_team_member(
+        &self,
+        account_id: &str,
+        person_id: &str,
+        _role: &str,
     ) -> Result<(), DbError> {
         self.conn.execute(
-            "DELETE FROM account_team
-             WHERE account_id = ?1 AND person_id = ?2 AND LOWER(role) = LOWER(?3)",
-            params![account_id, person_id, role.trim()],
-        )?;
-
-        // Clean up entity_people link if no roles remain
-        let remaining_roles: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM account_team
+            "DELETE FROM account_stakeholders
              WHERE account_id = ?1 AND person_id = ?2",
             params![account_id, person_id],
-            |row| row.get(0),
         )?;
-
-        if remaining_roles == 0 {
-            self.conn.execute(
-                "DELETE FROM entity_people
-                 WHERE entity_id = ?1 AND person_id = ?2",
-                params![account_id, person_id],
-            )?;
-        }
-
         Ok(())
     }
 
@@ -486,9 +512,10 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
-                    m.calendar_event_id, m.transcript_path
-             FROM meetings_history m
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
+                    m.calendar_event_id, mt.transcript_path
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
              ORDER BY m.start_time DESC
@@ -536,9 +563,11 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
-                    m.calendar_event_id, m.prep_context_json
-             FROM meetings_history m
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
+                    m.calendar_event_id, mp.prep_context_json
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
              ORDER BY m.start_time DESC
@@ -585,9 +614,10 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
                     m.calendar_event_id, m.description
-             FROM meetings_history m
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
                AND julianday(m.start_time) >= julianday('now')
@@ -797,7 +827,7 @@ impl ActionDb {
 
         // Meetings classified as customer/external/one_on_one but ALL attendees are now internal → internal
         total += self.conn.execute(
-            "UPDATE meetings_history SET meeting_type = 'internal'
+            "UPDATE meetings SET meeting_type = 'internal'
              WHERE meeting_type IN ('customer', 'external', 'one_on_one')
                AND id IN (
                    SELECT ma.meeting_id
@@ -811,7 +841,7 @@ impl ActionDb {
 
         // Meetings classified as internal but ANY attendee is now external → customer
         total += self.conn.execute(
-            "UPDATE meetings_history SET meeting_type = 'customer'
+            "UPDATE meetings SET meeting_type = 'customer'
              WHERE meeting_type = 'internal'
                AND id IN (
                    SELECT DISTINCT ma.meeting_id
@@ -833,9 +863,10 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
                     m.calendar_event_id
-             FROM meetings_history m
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              JOIN meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1
              ORDER BY m.start_time DESC
@@ -880,7 +911,7 @@ impl ActionDb {
         let count_30d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
+                "SELECT COUNT(*) FROM meetings m
                  JOIN meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'project'
                    AND m.start_time >= date('now', '-30 days')",
@@ -892,7 +923,7 @@ impl ActionDb {
         let count_90d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
+                "SELECT COUNT(*) FROM meetings m
                  JOIN meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'project'
                    AND m.start_time >= date('now', '-90 days')",
@@ -904,7 +935,7 @@ impl ActionDb {
         let last_meeting: Option<String> = self
             .conn
             .query_row(
-                "SELECT MAX(m.start_time) FROM meetings_history m
+                "SELECT MAX(m.start_time) FROM meetings m
                  JOIN meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'project'",
                 params![project_id],
@@ -1098,32 +1129,19 @@ impl ActionDb {
                 )
                 .map_err(|e| e.to_string())?;
 
-            // Reassign entity_people (ignore dupes)
+            // Reassign account_stakeholders (ignore dupes)
             conn.execute(
-                "UPDATE OR IGNORE entity_people SET entity_id = ?2
-                 WHERE entity_id = ?1",
+                "UPDATE OR IGNORE account_stakeholders SET account_id = ?2
+                 WHERE account_id = ?1",
                 params![from_id, into_id],
             )
             .map_err(|e| e.to_string())?;
             let people_moved = conn
                 .execute(
-                    "DELETE FROM entity_people WHERE entity_id = ?1",
+                    "DELETE FROM account_stakeholders WHERE account_id = ?1",
                     params![from_id],
                 )
                 .map_err(|e| e.to_string())?;
-
-            // Reassign account_team (ignore dupes)
-            conn.execute(
-                "UPDATE OR IGNORE account_team SET account_id = ?2
-                 WHERE account_id = ?1",
-                params![from_id, into_id],
-            )
-            .map_err(|e| e.to_string())?;
-            conn.execute(
-                "DELETE FROM account_team WHERE account_id = ?1",
-                params![from_id],
-            )
-            .map_err(|e| e.to_string())?;
 
             // Reassign account_events
             let events_moved = conn
@@ -1234,22 +1252,22 @@ impl ActionDb {
              LEFT JOIN (
                  SELECT person_id, COUNT(*) as cnt
                  FROM meeting_attendees ma
-                 JOIN meetings_history mh ON ma.meeting_id = mh.id
+                 JOIN meetings mh ON ma.meeting_id = mh.id
                  WHERE mh.start_time >= datetime('now', '-30 days')
                  GROUP BY person_id
              ) m30 ON m30.person_id = p.id
              LEFT JOIN (
                  SELECT person_id, COUNT(*) as cnt
                  FROM meeting_attendees ma
-                 JOIN meetings_history mh ON ma.meeting_id = mh.id
+                 JOIN meetings mh ON ma.meeting_id = mh.id
                  WHERE mh.start_time >= datetime('now', '-90 days')
                  GROUP BY person_id
              ) m90 ON m90.person_id = p.id
              LEFT JOIN (
-                 SELECT ep.person_id, GROUP_CONCAT(e.name, ', ') AS names
-                 FROM entity_people ep
-                 JOIN entities e ON e.id = ep.entity_id AND e.entity_type = 'account'
-                 GROUP BY ep.person_id
+                 SELECT as_.person_id, GROUP_CONCAT(a.name, ', ') AS names
+                 FROM account_stakeholders as_
+                 JOIN accounts a ON a.id = as_.account_id
+                 GROUP BY as_.person_id
              ) acct_names ON acct_names.person_id = p.id
              WHERE p.archived = 1
              ORDER BY p.name",

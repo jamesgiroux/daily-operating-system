@@ -7,6 +7,10 @@
 //! detects the presence of known tables and marks migration 001 as applied
 //! so the baseline SQL never runs against an already-populated database.
 
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+use chrono::Utc;
 use rusqlite::Connection;
 
 struct Migration {
@@ -227,6 +231,74 @@ const MIGRATIONS: &[Migration] = &[
         version: 53,
         sql: include_str!("migrations/053_app_state_demo.sql"),
     },
+    Migration {
+        version: 54,
+        sql: include_str!("migrations/054_intelligence_consistency_metadata.sql"),
+    },
+    Migration {
+        version: 55,
+        sql: include_str!("migrations/055_schema_decomposition.sql"),
+    },
+    Migration {
+        version: 56,
+        sql: include_str!("migrations/056_account_stakeholders_data_source.sql"),
+    },
+    Migration {
+        version: 57,
+        sql: include_str!("migrations/057_intelligence_db_columns.sql"),
+    },
+    Migration {
+        version: 58,
+        sql: include_str!("migrations/058_health_schema_evolution.sql"),
+    },
+    Migration {
+        version: 59,
+        sql: include_str!("migrations/059_person_relationships_rationale.sql"),
+    },
+    Migration {
+        version: 60,
+        sql: include_str!("migrations/060_intelligence_dimensions.sql"),
+    },
+    Migration {
+        version: 61,
+        sql: include_str!("migrations/061_stakeholder_glean_staleness.sql"),
+    },
+    Migration {
+        version: 62,
+        sql: include_str!("migrations/062_intelligence_feedback.sql"),
+    },
+    Migration {
+        version: 63,
+        sql: include_str!("migrations/063_email_signals_source.sql"),
+    },
+    Migration {
+        version: 64,
+        sql: include_str!("migrations/064_pipeline_failures.sql"),
+    },
+    Migration {
+        version: 65,
+        sql: include_str!("migrations/065_search_fts5.sql"),
+    },
+    Migration {
+        version: 66,
+        sql: include_str!("migrations/066_sync_metadata.sql"),
+    },
+    Migration {
+        version: 67,
+        sql: include_str!("migrations/067_feedback_unique_constraint.sql"),
+    },
+    Migration {
+        version: 68,
+        sql: include_str!("migrations/068_success_plans.sql"),
+    },
+    Migration {
+        version: 69,
+        sql: include_str!("migrations/069_account_events_expand.sql"),
+    },
+    Migration {
+        version: 70,
+        sql: include_str!("migrations/070_captures_metadata.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -248,6 +320,228 @@ fn current_version(conn: &Connection) -> Result<i32, String> {
         |row| row.get(0),
     )
     .map_err(|e| format!("Failed to read schema version: {}", e))
+}
+
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?1
+        )",
+        [table_name],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|v| v != 0)
+    .map_err(|e| format!("Failed to check table '{}': {e}", table_name))
+}
+
+fn table_columns(conn: &Connection, table_name: &str) -> Result<HashSet<String>, String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table_name})"))
+        .map_err(|e| format!("Failed to inspect table '{}': {e}", table_name))?;
+    let cols = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("Failed to inspect columns for '{}': {e}", table_name))?;
+    let mut out = HashSet::new();
+    for col in cols {
+        out.insert(col.map_err(|e| format!("Failed reading column metadata: {e}"))?);
+    }
+    Ok(out)
+}
+
+fn verify_required_schema(conn: &Connection) -> Result<(), String> {
+    let version = current_version(conn)?;
+    if version < 55 {
+        return Ok(());
+    }
+
+    for table in [
+        "meetings",
+        "meeting_prep",
+        "meeting_transcripts",
+        "entity_assessment",
+        "entity_quality",
+        "account_stakeholders",
+    ] {
+        if !table_exists(conn, table)? {
+            return Err(format!(
+                "Schema integrity check failed: missing required table '{table}'"
+            ));
+        }
+    }
+
+    let quality_cols = table_columns(conn, "entity_quality")?;
+    for col in [
+        "health_score",
+        "health_trend",
+        "coherence_score",
+        "coherence_flagged",
+    ] {
+        if !quality_cols.contains(col) {
+            return Err(format!(
+                "Schema integrity check failed: missing column entity_quality.{col}"
+            ));
+        }
+    }
+
+    if version >= 56 {
+        let stakeholder_cols = table_columns(conn, "account_stakeholders")?;
+        if !stakeholder_cols.contains("data_source") {
+            return Err(
+                "Schema integrity check failed: missing column account_stakeholders.data_source"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 58 {
+        let assessment_cols = table_columns(conn, "entity_assessment")?;
+        for col in ["health_json", "org_health_json"] {
+            if !assessment_cols.contains(col) {
+                return Err(format!(
+                    "Schema integrity check failed: missing column entity_assessment.{col}"
+                ));
+            }
+        }
+    }
+
+    if version >= 59 {
+        let relationship_cols = table_columns(conn, "person_relationships")?;
+        if !relationship_cols.contains("rationale") {
+            return Err(
+                "Schema integrity check failed: missing column person_relationships.rationale"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 63 {
+        if !table_exists(conn, "email_signals")? {
+            return Err(
+                "Schema integrity check failed: missing required table 'email_signals'".to_string(),
+            );
+        }
+        let email_signal_cols = table_columns(conn, "email_signals")?;
+        if !email_signal_cols.contains("source") {
+            return Err(
+                "Schema integrity check failed: missing column email_signals.source".to_string(),
+            );
+        }
+    }
+
+    if version >= 60 {
+        let assessment_cols = table_columns(conn, "entity_assessment")?;
+        if !assessment_cols.contains("dimensions_json") {
+            return Err(
+                "Schema integrity check failed: missing column entity_assessment.dimensions_json"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 68 {
+        let assessment_cols = table_columns(conn, "entity_assessment")?;
+        if !assessment_cols.contains("success_plan_signals_json") {
+            return Err(
+                "Schema integrity check failed: missing column entity_assessment.success_plan_signals_json"
+                    .to_string(),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn migration_backup_path(db_path: &Path) -> PathBuf {
+    let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
+    let file_name = format!(
+        "{}.pre-migration.{}.bak",
+        db_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("dailyos.db"),
+        timestamp
+    );
+    db_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(file_name)
+}
+
+fn is_migration_backup_file(db_path: &Path, candidate: &Path) -> bool {
+    let base = db_path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("dailyos.db");
+    let name = candidate.file_name().and_then(|f| f.to_str()).unwrap_or("");
+    name.starts_with(&format!("{base}.pre-migration.")) && name.ends_with(".bak")
+}
+
+fn prune_old_migration_backups(db_path: &Path, keep: usize) -> Result<(), String> {
+    let parent = db_path
+        .parent()
+        .ok_or_else(|| "Database path has no parent directory".to_string())?;
+    let mut backups: Vec<PathBuf> = std::fs::read_dir(parent)
+        .map_err(|e| format!("Failed to read backup directory: {e}"))?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| is_migration_backup_file(db_path, p))
+        .collect();
+
+    // Timestamp is part of the filename, so lexical order is chronological.
+    backups.sort();
+    if backups.len() <= keep {
+        return Ok(());
+    }
+    let to_delete = backups.len() - keep;
+    for path in backups.into_iter().take(to_delete) {
+        let _ = std::fs::remove_file(path);
+    }
+    Ok(())
+}
+
+fn create_backup_via_api(
+    conn: &Connection,
+    backup_path: &Path,
+    destination_key: Option<&str>,
+) -> Result<(), String> {
+    let mut backup_conn = rusqlite::Connection::open(backup_path)
+        .map_err(|e| format!("Failed to open backup file: {e}"))?;
+    if let Some(hex_key) = destination_key {
+        backup_conn
+            .execute_batch(&crate::db::encryption::key_to_pragma(hex_key))
+            .map_err(|e| format!("Failed to set pre-migration backup encryption key: {e}"))?;
+    }
+    let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)
+        .map_err(|e| format!("Failed to initialize pre-migration backup: {e}"))?;
+    backup
+        .step(-1)
+        .map_err(|e| format!("Pre-migration backup failed: {e}"))?;
+    Ok(())
+}
+
+fn create_backup_via_sqlcipher_export(
+    conn: &Connection,
+    backup_path: &Path,
+    hex_key: &str,
+) -> Result<(), String> {
+    let backup_path_s = backup_path.to_string_lossy().replace('\'', "''");
+    conn.execute_batch(&format!(
+        "ATTACH DATABASE '{backup_path_s}' AS premigration KEY \"x'{hex_key}'\";"
+    ))
+    .map_err(|e| format!("Failed to attach fallback pre-migration backup DB: {e}"))?;
+    conn.execute_batch("SELECT sqlcipher_export('premigration');")
+        .map_err(|e| format!("Fallback pre-migration backup export failed: {e}"))?;
+    conn.execute_batch("DETACH DATABASE premigration;")
+        .map_err(|e| format!("Failed to detach fallback pre-migration backup DB: {e}"))?;
+    Ok(())
+}
+
+fn should_try_encrypted_backup_fallback(encrypted: bool, err: &str) -> bool {
+    encrypted
+        && (err.contains("backup is not supported with encrypted databases")
+            || err.contains("encrypted databases"))
 }
 
 /// Detect a pre-framework database and mark the baseline as applied.
@@ -287,45 +581,49 @@ fn bootstrap_existing_db(conn: &Connection) -> Result<bool, String> {
 ///
 /// Uses SQLite's online backup API to create a hot copy at
 /// `<db_path>.pre-migration.bak`. Only called when there are pending migrations.
-fn backup_before_migration(conn: &Connection) -> Result<(), String> {
+fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
     let db_path: String = conn
         .query_row("PRAGMA database_list", [], |row| row.get(2))
         .map_err(|e| format!("Failed to get database path: {}", e))?;
 
     if db_path.is_empty() || db_path == ":memory:" {
         // In-memory or temp database — skip backup
-        return Ok(());
+        return Ok(PathBuf::from(":memory:"));
     }
 
-    let backup_path = format!("{}.pre-migration.bak", db_path);
-    let mut backup_conn = rusqlite::Connection::open(&backup_path)
-        .map_err(|e| format!("Failed to open backup file: {}", e))?;
+    let db_path = PathBuf::from(db_path);
+    let backup_path = migration_backup_path(&db_path);
+    let _ = std::fs::remove_file(&backup_path);
 
-    let backup = match rusqlite::backup::Backup::new(conn, &mut backup_conn) {
-        Ok(backup) => backup,
-        Err(e) => {
-            let msg = e.to_string();
-            // SQLCipher builds can disable SQLite's backup API for encrypted
-            // connections. In that case, skip backup but still run migrations.
-            if msg.contains("backup is not supported with encrypted databases")
-                || msg.contains("encrypted databases")
-            {
-                log::warn!(
-                    "Pre-migration backup skipped (encrypted DB backup API unsupported): {}",
-                    msg
-                );
-                return Ok(());
-            }
-            return Err(format!("Failed to initialize pre-migration backup: {}", e));
-        }
+    let encrypted = db_path.exists() && !crate::db::encryption::is_database_plaintext(&db_path);
+    let encryption_key = if encrypted {
+        Some(
+            crate::db::encryption::get_or_create_db_key(&db_path)
+                .map_err(|e| format!("Failed to get DB encryption key for backup: {e}"))?,
+        )
+    } else {
+        None
     };
 
-    backup
-        .step(-1)
-        .map_err(|e| format!("Pre-migration backup failed: {}", e))?;
+    let backup_result = create_backup_via_api(conn, &backup_path, encryption_key.as_deref());
+    if let Err(err) = backup_result {
+        if should_try_encrypted_backup_fallback(encrypted, &err) {
+            let key = encryption_key
+                .as_deref()
+                .ok_or_else(|| "Missing encryption key for fallback backup".to_string())?;
+            create_backup_via_sqlcipher_export(conn, &backup_path, key)?;
+        } else {
+            return Err(err);
+        }
+    }
 
-    log::info!("Pre-migration backup created at {}", backup_path);
-    Ok(())
+    crate::db::hardening::set_file_permissions(&backup_path);
+    prune_old_migration_backups(&db_path, 10)?;
+    log::info!(
+        "Pre-migration backup created at {}",
+        backup_path.to_string_lossy()
+    );
+    Ok(backup_path)
 }
 
 /// Run all pending migrations.
@@ -354,28 +652,45 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     let pending: Vec<&Migration> = MIGRATIONS.iter().filter(|m| m.version > current).collect();
 
     if pending.is_empty() {
+        verify_required_schema(conn)?;
         return Ok(0);
     }
 
     // Backup before applying any migrations
-    backup_before_migration(conn)?;
+    let backup_path = backup_before_migration(conn)?;
+    if backup_path.to_string_lossy() != ":memory:" {
+        log::info!(
+            "Migration safety backup ready at {}",
+            backup_path.to_string_lossy()
+        );
+    }
 
     // Apply each pending migration in order
     for migration in &pending {
-        if let Err(e) = conn.execute_batch(migration.sql) {
-            let msg = e.to_string();
-            // Tolerate benign schema-mismatch errors:
-            // - "duplicate column name": ALTER TABLE ADD already applied out-of-band
-            // - "no such column": ALTER TABLE RENAME targets a column that was
-            //   already created with the correct name (fresh install)
-            if msg.contains("duplicate column name") || msg.contains("no such column") {
-                log::info!(
-                    "Migration v{}: benign schema conflict ({}), continuing",
-                    migration.version,
-                    msg
-                );
-            } else {
-                return Err(format!("Migration v{} failed: {}", migration.version, e));
+        match conn.execute_batch(migration.sql) {
+            Ok(()) => {}
+            Err(e) => {
+                let msg = e.to_string();
+                // SQLite DDL statements like ALTER TABLE ADD COLUMN and RENAME COLUMN
+                // are not idempotent (no IF NOT EXISTS / IF EXISTS variants).
+                // Tolerate these specific benign errors ONLY for single-statement
+                // ALTER TABLE migrations (no BEGIN/COMMIT transactions):
+                // - "duplicate column name": ADD COLUMN when column already exists
+                // - "no such column": RENAME COLUMN when column was already renamed
+                // Migrations with explicit transactions must NOT be tolerated — a
+                // swallowed error leaves the transaction open, corrupting later migrations.
+                let is_single_alter = !migration.sql.contains("BEGIN");
+                let is_benign =
+                    msg.contains("duplicate column name") || msg.contains("no such column");
+                if is_single_alter && is_benign {
+                    log::warn!(
+                        "Migration v{}: benign schema conflict ({}), continuing",
+                        migration.version,
+                        msg.split('\n').next().unwrap_or(&msg)
+                    );
+                } else {
+                    return Err(format!("Migration v{} failed: {}", migration.version, e));
+                }
             }
         }
 
@@ -388,6 +703,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
         log::info!("Applied migration v{}", migration.version);
     }
 
+    verify_required_schema(conn)?;
     Ok(pending.len())
 }
 
@@ -406,13 +722,14 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 53,
-            "should apply all migrations including app state demo"
+            applied,
+            MIGRATIONS.len(),
+            "should apply all known migrations on a fresh database"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 53);
+        assert_eq!(version, MIGRATIONS.last().unwrap().version);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -428,18 +745,28 @@ mod tests {
         )
         .expect("needs_decision column should exist");
 
-        // Verify meetings_history has all migrated columns
+        // Verify decomposed meeting tables have all columns
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at,
-             calendar_event_id, prep_context_json, description, user_agenda_json, user_notes,
-             prep_frozen_json, prep_frozen_at, prep_snapshot_path, prep_snapshot_hash,
-             transcript_path, transcript_processed_at)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at,
+             calendar_event_id, description)
              VALUES ('m1', 'Test', 'customer', '2025-01-01', '2025-01-01',
-             'cal1', '{}', 'desc', '[]', 'notes', '{}', '2025-01-01',
-             '/path', 'abc123', '/transcript', '2025-01-01')",
+             'cal1', 'desc')",
             [],
         )
-        .expect("meetings_history should have all columns");
+        .expect("meetings table should have all columns");
+        conn.execute(
+            "INSERT INTO meeting_prep (meeting_id, prep_context_json, user_agenda_json,
+             user_notes, prep_frozen_json, prep_frozen_at, prep_snapshot_path, prep_snapshot_hash)
+             VALUES ('m1', '{}', '[]', 'notes', '{}', '2025-01-01', '/path', 'abc123')",
+            [],
+        )
+        .expect("meeting_prep table should have all columns");
+        conn.execute(
+            "INSERT INTO meeting_transcripts (meeting_id, transcript_path, transcript_processed_at)
+             VALUES ('m1', '/transcript', '2025-01-01')",
+            [],
+        )
+        .expect("meeting_transcripts table should have all columns");
 
         // Verify captures has project_id and decision type
         conn.execute(
@@ -468,10 +795,10 @@ mod tests {
         .expect("accounts should include is_internal");
 
         conn.execute(
-            "INSERT INTO account_team (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
+            "INSERT INTO account_stakeholders (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
             [],
         )
-        .expect("account_team table should exist");
+        .expect("account_stakeholders table should exist");
 
         conn.execute(
             "INSERT INTO account_team_import_notes (account_id, legacy_field, legacy_value, note)
@@ -760,6 +1087,13 @@ mod tests {
         )
         .expect("email_signals should have deactivated_at column");
 
+        // Verify source column on email_signals (migration 063)
+        conn.execute(
+            "UPDATE email_signals SET source = 'email_enrichment' WHERE email_id = 'em-1'",
+            [],
+        )
+        .expect("email_signals should have source column");
+
         // Verify account_type column exists with correct default (migration 036)
         let acct_type: String = conn
             .query_row(
@@ -890,7 +1224,13 @@ mod tests {
                 prep_snapshot_path TEXT,
                 prep_snapshot_hash TEXT,
                 transcript_path TEXT,
-                transcript_processed_at TEXT
+                transcript_processed_at TEXT,
+                intelligence_state TEXT NOT NULL DEFAULT 'detected',
+                intelligence_quality TEXT NOT NULL DEFAULT 'sparse',
+                last_enriched_at TEXT,
+                signal_count INTEGER NOT NULL DEFAULT 0,
+                has_new_signals INTEGER NOT NULL DEFAULT 0,
+                last_viewed_at TEXT
              );
              CREATE TABLE people (
                 id TEXT PRIMARY KEY,
@@ -948,21 +1288,60 @@ mod tests {
                 entity_type TEXT NOT NULL DEFAULT 'account',
                 enriched_at TEXT,
                 source_file_count INTEGER DEFAULT 0,
-                executive_assessment TEXT
+                executive_assessment TEXT,
+                risks_json TEXT,
+                recent_wins_json TEXT,
+                current_state_json TEXT,
+                stakeholder_insights_json TEXT,
+                next_meeting_readiness_json TEXT,
+                company_context_json TEXT,
+                health_score REAL,
+                health_trend TEXT,
+                coherence_score REAL,
+                coherence_flagged INTEGER DEFAULT 0,
+                value_delivered TEXT,
+                success_metrics TEXT,
+                open_commitments TEXT,
+                relationship_depth TEXT,
+                user_relevance_weight REAL DEFAULT 1.0,
+                consistency_status TEXT,
+                consistency_findings_json TEXT,
+                consistency_checked_at TEXT
+             );
+             CREATE TABLE account_team (
+                account_id TEXT NOT NULL,
+                person_id TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'associated',
+                created_at TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (account_id, person_id)
+             );
+             CREATE TABLE entity_quality (
+                entity_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                quality_alpha REAL NOT NULL DEFAULT 1.0,
+                quality_beta REAL NOT NULL DEFAULT 1.0,
+                quality_score REAL NOT NULL DEFAULT 0.5,
+                last_enrichment_at TEXT,
+                correction_count INTEGER NOT NULL DEFAULT 0,
+                coherence_retry_count INTEGER NOT NULL DEFAULT 0,
+                coherence_window_start TEXT,
+                coherence_blocked INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
              );",
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v50 (49 pending migrations)
+        // Run migrations — should bootstrap v1 and apply v2 through the latest migration.
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 52,
-            "bootstrap should mark v1, then apply 52 pending migrations (v2-v53)"
+            applied, 69,
+            "bootstrap should mark v1, then apply 69 pending migrations (v2-v70)"
         );
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 53);
+        assert_eq!(version, 70);
 
         // Verify existing data is untouched
         let title: String = conn
@@ -1023,12 +1402,73 @@ mod tests {
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(applied, MIGRATIONS.len());
 
-        // Verify backup file was created
-        let backup_path = dir.path().join("test_backup.db.pre-migration.bak");
+        // Verify timestamped backup file was created
+        let backup_files: Vec<_> = std::fs::read_dir(dir.path())
+            .expect("read tempdir")
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| is_migration_backup_file(&db_path, p))
+            .collect();
         assert!(
-            backup_path.exists(),
-            "pre-migration backup should be created at {}",
-            backup_path.display()
+            !backup_files.is_empty(),
+            "pre-migration timestamped backup should exist"
         );
+    }
+
+    #[test]
+    fn test_migration_failure_is_not_marked_applied() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("failed_migration.db");
+        let conn = Connection::open(&db_path).expect("open db");
+        ensure_schema_version_table(&conn).expect("schema version table");
+        conn.execute("INSERT INTO schema_version (version) VALUES (54)", [])
+            .expect("seed version");
+
+        // Break migration 055 prerequisites.
+        let result = run_migrations(&conn);
+        assert!(
+            result.is_err(),
+            "migration should fail on missing prerequisites"
+        );
+
+        let version = current_version(&conn).expect("version query");
+        assert_eq!(
+            version, 54,
+            "failed migration must not be recorded as applied"
+        );
+    }
+
+    #[test]
+    fn test_schema_integrity_check_blocks_invalid_v60_state() {
+        let conn = mem_db();
+        ensure_schema_version_table(&conn).expect("schema_version table");
+        conn.execute("INSERT INTO schema_version (version) VALUES (61)", [])
+            .expect("seed schema version");
+
+        let err = run_migrations(&conn).expect_err("invalid schema should fail integrity check");
+        assert!(
+            err.contains("Schema integrity check failed") || err.contains("Migration v68 failed"),
+            "error should identify schema integrity failure or migration failure: {err}"
+        );
+    }
+
+    #[test]
+    fn test_should_try_encrypted_backup_fallback_matches_expected_errors() {
+        assert!(should_try_encrypted_backup_fallback(
+            true,
+            "backup is not supported with encrypted databases"
+        ));
+        assert!(should_try_encrypted_backup_fallback(
+            true,
+            "sqlite error: encrypted databases"
+        ));
+        assert!(!should_try_encrypted_backup_fallback(
+            false,
+            "backup is not supported with encrypted databases"
+        ));
+        assert!(!should_try_encrypted_backup_fallback(
+            true,
+            "disk I/O error"
+        ));
     }
 }

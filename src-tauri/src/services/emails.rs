@@ -130,11 +130,28 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         }
     }
 
-    // Load replies_needed from directive (I355).
-    // I448: The directive narrative is baked into the file at generation time with
-    // counts that go stale as emails are archived. Build it dynamically from real data.
-    let replies_needed = crate::json_loader::load_directive(&today_dir)
-        .map(|d| d.emails.replies_needed)
+    // I513: Build replies_needed from DB instead of directive file.
+    let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
+        .db_read(|db| {
+            let now = chrono::Utc::now();
+            Ok(db
+                .get_threads_awaiting_reply()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(thread_id, subject, from, date)| {
+                    let wait_duration =
+                        crate::prepare::orchestrate::compute_wait_duration_public(&date, &now);
+                    crate::json_loader::DirectiveReplyNeeded {
+                        thread_id,
+                        subject,
+                        from,
+                        date: Some(date),
+                        wait_duration: Some(wait_duration),
+                    }
+                })
+                .collect())
+        })
+        .await
         .unwrap_or_default();
 
     // Collect email IDs for batch signal lookup
@@ -275,20 +292,27 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         0usize
     } else {
         let ids: Vec<String> = email_entity_ids.into_iter().collect();
+        let email_tz: chrono_tz::Tz = state
+            .config
+            .read()
+            .ok()
+            .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(chrono_tz::America::New_York);
+        let tf_em = crate::helpers::today_meeting_filter(&email_tz);
+        let em_start = tf_em.date;
+        let em_end = tf_em.next_date;
         state
             .db_read(move |db| {
-                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                let start = format!("{}T00:00:00", today);
-                let end = format!("{}T23:59:59", today);
                 let count = ids
                     .iter()
                     .filter(|eid| {
                         db.conn_ref()
                             .query_row(
                                 "SELECT COUNT(*) FROM meeting_entities me
-                         JOIN meetings_history mh ON me.meeting_id = mh.id
-                         WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
-                                rusqlite::params![eid, start, end],
+                         JOIN meetings mh ON me.meeting_id = mh.id
+                         WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time < ?3",
+                                rusqlite::params![eid, em_start, em_end],
                                 |row| row.get::<_, i64>(0),
                             )
                             .unwrap_or(0)
@@ -361,8 +385,8 @@ pub(crate) fn best_account_for_person(
 ) -> Option<String> {
     let mut stmt = match db.conn_ref().prepare(
         "SELECT a.id, a.name, a.keywords FROM accounts a
-         JOIN entity_people ep ON a.id = ep.entity_id
-         WHERE ep.person_id = ?1",
+         JOIN account_stakeholders as_ ON a.id = as_.account_id
+         WHERE as_.person_id = ?1",
     ) {
         Ok(s) => s,
         Err(_) => return None,
@@ -486,9 +510,9 @@ pub fn get_entity_emails(
         let mut stmt = db
             .conn_ref()
             .prepare(
-                "SELECT DISTINCT pe.email FROM entity_people ep
-                 JOIN person_emails pe ON ep.person_id = pe.person_id
-                 WHERE ep.entity_id = ?1",
+                "SELECT DISTINCT pe.email FROM account_stakeholders as_
+                 JOIN person_emails pe ON as_.person_id = pe.person_id
+                 WHERE as_.account_id = ?1",
             )
             .map_err(|e| format!("query error: {e}"))?;
         let emails_list: Vec<String> = stmt

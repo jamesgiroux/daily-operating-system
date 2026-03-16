@@ -1,62 +1,38 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { EditableInline } from "@/components/ui/editable-inline";
+import { EditableTextarea } from "@/components/ui/editable-textarea";
+import { EditableDate } from "@/components/ui/editable-date";
+import { EditableText } from "@/components/ui/EditableText";
 import { formatFullDate } from "@/lib/utils";
 import { classifyAction } from "@/lib/entity-utils";
 import { Check, Circle } from "lucide-react";
 import type { ActionDetail } from "@/types";
+import s from "./ActionDetailPage.module.css";
 
 // =============================================================================
-// Priority accent colors (matches meetingTypeBadgeStyle pattern)
+// Priority accent colors
 // =============================================================================
 
-const PRIORITY_STYLE: Record<string, { bg: string; text: string }> = {
-  P1: { bg: "rgba(196,101,74,0.10)", text: "var(--color-spice-terracotta)" },
-  P2: { bg: "rgba(201,162,39,0.10)", text: "var(--color-spice-turmeric)" },
-  P3: { bg: "rgba(143,163,196,0.12)", text: "var(--color-garden-larkspur)" },
+const PRIORITY_CLASS: Record<string, string> = {
+  P1: s.priorityP1,
+  P2: s.priorityP2,
+  P3: s.priorityP3,
 };
 
 function priorityAccent(priority: string): string {
-  return PRIORITY_STYLE[priority]?.text ?? "var(--color-text-tertiary)";
+  const map: Record<string, string> = {
+    P1: "var(--color-spice-terracotta)",
+    P2: "var(--color-spice-turmeric)",
+    P3: "var(--color-garden-larkspur)",
+  };
+  return map[priority] ?? "var(--color-text-tertiary)";
 }
-
-// =============================================================================
-// Shared inline styles
-// =============================================================================
-
-const monoLabel: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
-  fontWeight: 500,
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
-  color: "var(--color-text-tertiary)",
-};
-
-const refKey: React.CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: 10,
-  fontWeight: 500,
-  textTransform: "uppercase",
-  letterSpacing: "0.06em",
-  color: "var(--color-text-tertiary)",
-  width: 100,
-  flexShrink: 0,
-  paddingTop: 3,
-};
-
-const refValue: React.CSSProperties = {
-  fontFamily: "var(--font-sans)",
-  fontSize: 14,
-  color: "var(--color-text-primary)",
-  flex: 1,
-  minWidth: 0,
-};
 
 // =============================================================================
 // Main component
@@ -133,7 +109,9 @@ export default function ActionDetailPage() {
       await load();
       setSaveStatus("saved");
       saveTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
-    } catch {
+    } catch (e) {
+      console.error("Failed to save action:", e);
+      toast.error("Failed to save");
       setSaveStatus("idle");
     }
   }
@@ -142,14 +120,14 @@ export default function ActionDetailPage() {
 
   if (loading) {
     return (
-      <div className="editorial-loading" style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto" }}>
-        <div style={{ height: 16, width: 96, marginBottom: 16, background: "var(--color-rule-light)", borderRadius: 2 }} />
-        <div style={{ height: 40, width: 384, marginBottom: 8, background: "var(--color-rule-light)", borderRadius: 2 }} />
-        <div style={{ height: 16, width: 192, marginBottom: 24, background: "var(--color-rule-light)", borderRadius: 2 }} />
-        <div style={{ height: 1, width: "100%", background: "var(--color-rule-heavy)" }} />
-        <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 24 }}>
-          <div style={{ height: 80, width: "100%", background: "var(--color-rule-light)", borderRadius: 2 }} />
-          <div style={{ height: 128, width: "100%", background: "var(--color-rule-light)", borderRadius: 2 }} />
+      <div className={`editorial-loading ${s.loadingSkeleton}`}>
+        <div className={`${s.skeletonBar} ${s.skeletonTitle}`} />
+        <div className={`${s.skeletonBar} ${s.skeletonHeadline}`} />
+        <div className={`${s.skeletonBar} ${s.skeletonSubhead}`} />
+        <div className={s.skeletonRule} />
+        <div className={s.skeletonBody}>
+          <div className={`${s.skeletonBlock} ${s.skeletonBlockSmall}`} />
+          <div className={`${s.skeletonBlock} ${s.skeletonBlockLarge}`} />
         </div>
       </div>
     );
@@ -159,29 +137,14 @@ export default function ActionDetailPage() {
 
   if (error || !detail) {
     return (
-      <div style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto", textAlign: "center" }}>
-        <p style={{ fontFamily: "var(--font-serif)", fontSize: 24, color: "var(--color-text-primary)", marginBottom: 16 }}>
+      <div className={s.errorState}>
+        <p className={s.errorTitle}>
           Something went wrong
         </p>
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 24 }}>
+        <p className={s.errorMessage}>
           {error ?? "Action not found"}
         </p>
-        <button
-          onClick={load}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            padding: "8px 20px",
-            border: "1px solid var(--color-rule-light)",
-            borderRadius: 4,
-            background: "none",
-            color: "var(--color-text-primary)",
-            cursor: "pointer",
-          }}
-        >
+        <button onClick={load} className={s.retryButton}>
           Try again
         </button>
       </div>
@@ -192,7 +155,7 @@ export default function ActionDetailPage() {
   const hasSource = detail.sourceId && detail.sourceMeetingTitle;
   const isAutoGenerated = detail.sourceType && detail.sourceType !== "manual";
   const accent = priorityAccent(detail.priority);
-  const pStyle = PRIORITY_STYLE[detail.priority];
+  const priorityCls = PRIORITY_CLASS[detail.priority];
 
   // Due date urgency
   const dueUrgency = classifyAction(detail, new Date());
@@ -204,24 +167,19 @@ export default function ActionDetailPage() {
         : undefined;
 
   return (
-    <div style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto" }}>
+    <div className={s.container}>
 
         {/* ── Title band ── */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 8 }}>
+        <div className={s.titleBand}>
           {/* Status toggle circle */}
           <button
             onClick={toggleStatus}
             disabled={toggling}
+            className={s.toggleButton}
             style={{
-              marginTop: 6,
-              flexShrink: 0,
-              background: "none",
-              border: "none",
               cursor: toggling ? "wait" : "pointer",
-              padding: 0,
               color: isCompleted ? "var(--color-text-tertiary)" : accent,
               opacity: toggling ? 0.5 : 1,
-              transition: "color 0.15s, opacity 0.15s",
             }}
             title={isCompleted ? "Reopen action" : "Complete action"}
           >
@@ -233,76 +191,34 @@ export default function ActionDetailPage() {
           </button>
 
           {/* Editable title */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className={s.titleWrapper}>
             <EditableText
               value={detail.title}
-              onSave={(title) => saveField({ title })}
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 28,
-                fontWeight: 400,
-                lineHeight: 1.2,
-                color: "var(--color-text-primary)",
-                opacity: isCompleted ? 0.5 : 1,
-                textDecoration: isCompleted ? "line-through" : "none",
-              }}
+              onChange={(title) => saveField({ title })}
+              as="span"
+              multiline={false}
+              className={`${s.titleEditable} ${isCompleted ? s.titleCompleted : ""}`}
             />
           </div>
         </div>
 
         {/* Priority + Status strip */}
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 24,
-          paddingLeft: 36, // align with title (past circle)
-          flexWrap: "wrap",
-        }}>
+        <div className={s.statusStrip}>
           {/* Priority pill */}
-          {pStyle && (
-            <span style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 9,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              padding: "2px 7px",
-              borderRadius: 3,
-              background: pStyle.bg,
-              color: pStyle.text,
-              whiteSpace: "nowrap",
-            }}>
+          {priorityCls && (
+            <span className={`${s.priorityPill} ${priorityCls}`}>
               {detail.priority}
             </span>
           )}
 
           {/* Status text */}
-          <span style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: "var(--color-text-tertiary)",
-          }}>
+          <span className={s.statusText}>
             {isCompleted ? "Completed" : "Open"}
           </span>
 
           {/* Waiting on */}
           {detail.waitingOn && (
-            <span style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 9,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              padding: "2px 7px",
-              borderRadius: 3,
-              background: "rgba(30,37,48,0.06)",
-              color: "var(--color-text-tertiary)",
-              whiteSpace: "nowrap",
-            }}>
+            <span className={s.monoBadge}>
               Waiting: {detail.waitingOn}
             </span>
           )}
@@ -312,19 +228,7 @@ export default function ActionDetailPage() {
             <Link
               to="/meeting/$meetingId"
               params={{ meetingId: detail.sourceId! }}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 9,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                padding: "2px 7px",
-                borderRadius: 3,
-                background: "rgba(30,37,48,0.06)",
-                color: "var(--color-text-tertiary)",
-                textDecoration: "none",
-                whiteSpace: "nowrap",
-              }}
+              className={s.monoBadgeLink}
             >
               From meeting
             </Link>
@@ -332,7 +236,7 @@ export default function ActionDetailPage() {
         </div>
 
         {/* PriorityPicker (click row to change) */}
-        <div style={{ paddingLeft: 36, marginBottom: 24 }}>
+        <div className={s.priorityPickerRow}>
           <PriorityPicker
             value={detail.priority}
             onChange={(p) => saveField({ priority: p })}
@@ -340,15 +244,11 @@ export default function ActionDetailPage() {
         </div>
 
         {/* Separator */}
-        <div style={{
-          height: 1,
-          background: "var(--color-rule-light)",
-          marginBottom: 40,
-        }} />
+        <div className={s.separator} />
 
         {/* ── 3. Context section ── */}
-        <div style={{ marginBottom: 40 }}>
-          <div style={{ ...monoLabel, marginBottom: 12 }}>Context</div>
+        <div className={s.section}>
+          <div className={s.sectionLabel}>Context</div>
           <EditableTextarea
             value={detail.context ?? ""}
             onSave={(context) =>
@@ -359,59 +259,34 @@ export default function ActionDetailPage() {
             placeholder="Add context..."
           />
           {isAutoGenerated && detail.context && (
-            <p style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 12,
-              fontStyle: "italic",
-              color: "var(--color-text-tertiary)",
-              marginTop: 8,
-            }}>
+            <p className={s.autoNote}>
               Auto-generated — may be updated by next briefing
             </p>
           )}
         </div>
 
         {/* ── 4. Reference section ── */}
-        <div style={{ marginBottom: 40 }}>
-          <div style={{ ...monoLabel, marginBottom: 16 }}>Reference</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className={s.section}>
+          <div className={s.sectionLabelWide}>Reference</div>
+          <div className={s.refSection}>
 
             {/* Account */}
-            <div style={{ display: "flex", alignItems: "flex-start" }}>
-              <span style={refKey}>Account</span>
-              <div style={refValue}>
+            <div className={s.refRow}>
+              <span className={s.refKey}>Account</span>
+              <div className={s.refValue}>
                 {detail.accountId && detail.accountName ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: "var(--color-spice-turmeric)",
-                      flexShrink: 0,
-                    }} />
+                  <span className={s.accountChip}>
+                    <span className={s.accountDot} />
                     <Link
                       to="/accounts/$accountId"
                       params={{ accountId: detail.accountId }}
-                      style={{
-                        color: "var(--color-text-primary)",
-                        textDecoration: "none",
-                        borderBottom: "1px solid var(--color-rule-light)",
-                      }}
+                      className={s.accountLink}
                     >
                       {detail.accountName}
                     </Link>
                     <button
                       onClick={() => saveField({ clearAccount: true })}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        color: "var(--color-text-tertiary)",
-                        padding: "0 2px",
-                        lineHeight: 1,
-                      }}
+                      className={s.removeButton}
                       title="Remove account"
                     >
                       ×
@@ -431,9 +306,9 @@ export default function ActionDetailPage() {
             </div>
 
             {/* Due */}
-            <div style={{ display: "flex", alignItems: "flex-start" }}>
-              <span style={refKey}>Due</span>
-              <div style={{ ...refValue, color: dueColor ?? refValue.color }}>
+            <div className={s.refRow}>
+              <span className={s.refKey}>Due</span>
+              <div className={s.refValue} style={dueColor ? { color: dueColor } : undefined}>
                 <EditableDate
                   value={detail.dueDate ?? ""}
                   onSave={(v) =>
@@ -447,41 +322,37 @@ export default function ActionDetailPage() {
             </div>
 
             {/* Created (read-only) */}
-            <div style={{ display: "flex", alignItems: "flex-start" }}>
-              <span style={refKey}>Created</span>
-              <span style={refValue}>{formatFullDate(detail.createdAt)}</span>
+            <div className={s.refRow}>
+              <span className={s.refKey}>Created</span>
+              <span className={s.refValue}>{formatFullDate(detail.createdAt)}</span>
             </div>
 
             {/* Completed (read-only, only when completed) */}
             {detail.completedAt && (
-              <div style={{ display: "flex", alignItems: "flex-start" }}>
-                <span style={refKey}>Completed</span>
-                <span style={refValue}>{formatFullDate(detail.completedAt)}</span>
+              <div className={s.refRow}>
+                <span className={s.refKey}>Completed</span>
+                <span className={s.refValue}>{formatFullDate(detail.completedAt)}</span>
               </div>
             )}
 
             {/* Source — meeting link (if not already shown in strip) or editable label */}
             {hasSource ? (
-              <div style={{ display: "flex", alignItems: "flex-start" }}>
-                <span style={refKey}>Source</span>
-                <div style={refValue}>
+              <div className={s.refRow}>
+                <span className={s.refKey}>Source</span>
+                <div className={s.refValue}>
                   <Link
                     to="/meeting/$meetingId"
                     params={{ meetingId: detail.sourceId! }}
-                    style={{
-                      color: "var(--color-text-primary)",
-                      textDecoration: "none",
-                      borderBottom: "1px solid var(--color-rule-light)",
-                    }}
+                    className={s.accountLink}
                   >
                     {detail.sourceMeetingTitle}
                   </Link>
                 </div>
               </div>
             ) : (
-              <div style={{ display: "flex", alignItems: "flex-start" }}>
-                <span style={refKey}>Source</span>
-                <div style={refValue}>
+              <div className={s.refRow}>
+                <span className={s.refKey}>Source</span>
+                <div className={s.refValue}>
                   <EditableInline
                     value={detail.sourceLabel ?? ""}
                     onSave={(v) =>
@@ -498,38 +369,22 @@ export default function ActionDetailPage() {
         </div>
 
         {/* ── 5. Action bar ── */}
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+        <div className={s.actionBar}>
           {saveStatus !== "idle" && (
-            <span style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 9,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              color: "var(--color-text-tertiary)",
-              opacity: saveStatus === "saved" ? 1 : 0.6,
-              transition: "opacity 0.3s",
-            }}>
+            <span
+              className={s.saveStatus}
+              style={{ opacity: saveStatus === "saved" ? 1 : 0.6 }}
+            >
               {saveStatus === "saving" ? "Saving…" : "Saved"}
             </span>
           )}
           <button
             onClick={toggleStatus}
             disabled={toggling}
+            className={s.actionButton}
             style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              padding: "8px 20px",
-              border: "1px solid var(--color-rule-light)",
-              borderRadius: 4,
-              background: "none",
-              color: "var(--color-text-primary)",
               cursor: toggling ? "wait" : "pointer",
               opacity: toggling ? 0.5 : 1,
-              transition: "opacity 0.15s",
             }}
           >
             {isCompleted ? "Reopen" : "Mark Complete"}
@@ -539,317 +394,3 @@ export default function ActionDetailPage() {
   );
 }
 
-// =============================================================================
-// Inline Editable Components (editorial styling)
-// =============================================================================
-
-/** Click-to-edit single-line text (for title). */
-function EditableText({
-  value,
-  onSave,
-  style: baseStyle,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  style?: React.CSSProperties;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.select();
-  }, [editing]);
-
-  function commit() {
-    setEditing(false);
-    if (draft.trim() && draft.trim() !== value) {
-      onSave(draft.trim());
-    } else {
-      setDraft(value);
-    }
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") {
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-        style={{
-          ...baseStyle,
-          width: "100%",
-          background: "none",
-          border: "none",
-          borderBottom: "1px solid var(--color-rule-light)",
-          outline: "none",
-          padding: 0,
-        }}
-      />
-    );
-  }
-
-  return (
-    <span
-      onClick={() => setEditing(true)}
-      style={{ ...baseStyle, cursor: "pointer" }}
-    >
-      {value || (
-        <span style={{ color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-          Click to edit
-        </span>
-      )}
-    </span>
-  );
-}
-
-/** Click-to-edit short inline text. */
-function EditableInline({
-  value,
-  onSave,
-  placeholder,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  placeholder?: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-  }, [editing]);
-
-  function commit() {
-    setEditing(false);
-    if (draft.trim() !== value) {
-      onSave(draft.trim());
-    }
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commit();
-          if (e.key === "Escape") {
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-        placeholder={placeholder}
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          color: "var(--color-text-primary)",
-          background: "none",
-          border: "none",
-          borderBottom: "1px solid var(--color-rule-light)",
-          outline: "none",
-          padding: 0,
-        }}
-      />
-    );
-  }
-
-  return (
-    <span
-      onClick={() => setEditing(true)}
-      style={{ cursor: "pointer" }}
-    >
-      {value ? (
-        <span>{value}</span>
-      ) : (
-        <span style={{ color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-          {placeholder ?? "Add"}
-        </span>
-      )}
-    </span>
-  );
-}
-
-/** Click-to-edit multiline text. */
-function EditableTextarea({
-  value,
-  onSave,
-  placeholder,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  placeholder?: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  useEffect(() => {
-    if (editing) textareaRef.current?.focus();
-  }, [editing]);
-
-  function commit() {
-    setEditing(false);
-    if (draft.trim() !== value) {
-      onSave(draft.trim());
-    }
-  }
-
-  const proseStyle: React.CSSProperties = {
-    fontFamily: "var(--font-sans)",
-    fontSize: 15,
-    lineHeight: 1.65,
-    color: "var(--color-text-primary)",
-    maxWidth: 620,
-  };
-
-  if (editing) {
-    return (
-      <textarea
-        ref={textareaRef}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-        placeholder={placeholder}
-        rows={4}
-        style={{
-          ...proseStyle,
-          width: "100%",
-          resize: "none",
-          background: "none",
-          border: "none",
-          borderBottom: "1px solid var(--color-rule-light)",
-          outline: "none",
-          padding: 0,
-        }}
-      />
-    );
-  }
-
-  return (
-    <div
-      onClick={() => setEditing(true)}
-      style={{ ...proseStyle, cursor: "pointer" }}
-    >
-      {value ? (
-        <p style={{ margin: 0, whiteSpace: "pre-line" }}>{value}</p>
-      ) : (
-        <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-          {placeholder ?? "Click to add..."}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** Date picker using shadcn Popover + Calendar. */
-function EditableDate({
-  value,
-  onSave,
-  urgencyColor,
-}: {
-  value: string;
-  onSave: (v: string) => void;
-  urgencyColor?: string;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const dateValue = value ? value.split("T")[0] : "";
-  // Parse to Date for Calendar's selected prop (noon to avoid timezone shift)
-  const selected = dateValue ? new Date(dateValue + "T12:00:00") : undefined;
-
-  function handleSelect(day: Date | undefined) {
-    if (!day) return;
-    const yyyy = day.getFullYear();
-    const mm = String(day.getMonth() + 1).padStart(2, "0");
-    const dd = String(day.getDate()).padStart(2, "0");
-    onSave(`${yyyy}-${mm}-${dd}`);
-    setOpen(false);
-  }
-
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            style={{
-              cursor: "pointer",
-              color: urgencyColor,
-              background: "none",
-              border: "none",
-              padding: 0,
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-            }}
-          >
-            {dateValue ? (
-              <span>{formatFullDate(dateValue)}</span>
-            ) : (
-              <span style={{ color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-                Add due date
-              </span>
-            )}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-0">
-          <Calendar
-            mode="single"
-            selected={selected}
-            onSelect={handleSelect}
-            defaultMonth={selected}
-          />
-        </PopoverContent>
-      </Popover>
-      {dateValue && (
-        <button
-          onClick={() => onSave("")}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
-          Clear
-        </button>
-      )}
-    </span>
-  );
-}

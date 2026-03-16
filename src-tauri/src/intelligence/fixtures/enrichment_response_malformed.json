@@ -1,0 +1,6 @@
+{
+  "executiveAssessment": "This response has malformed fields that should cause parsing issues.",
+  "risks": "this should be an array not a string",
+  "recentWins": [{"wrong_field": "missing text field"}],
+  "health": {"score": 200, "band": "purple"}
+}

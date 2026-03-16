@@ -14,6 +14,7 @@ mod calendar_merge;
 mod capture;
 pub mod clay;
 mod commands;
+mod connectivity;
 pub mod context_provider;
 pub mod db;
 mod db_backup;
@@ -26,6 +27,7 @@ pub mod entity;
 pub mod entity_io;
 mod error;
 mod executor;
+mod export;
 mod focus_capacity;
 mod focus_prioritization;
 pub mod glean;
@@ -49,6 +51,7 @@ mod parser;
 pub mod people;
 pub mod prepare;
 pub mod presets;
+mod privacy;
 pub mod proactive;
 mod processor;
 pub mod projects;
@@ -62,6 +65,7 @@ pub mod self_healing;
 pub mod services;
 pub mod signals;
 pub mod state;
+mod task_supervisor;
 pub mod types;
 pub mod util;
 mod watcher;
@@ -101,6 +105,7 @@ pub fn run() {
         .setup(|app| {
             // Create shared state
             let state = Arc::new(AppState::new());
+            state.set_app_handle(app.handle().clone());
 
             // One-time filesystem hardening: permissions + Time Machine exclusion (I463)
             if let Some(home) = dirs::home_dir() {
@@ -111,8 +116,11 @@ pub fn run() {
             }
 
             // Initialize async DbService (read/write separated connections).
-            // Runs in background — command handlers fall back to the sync mutex
-            // until this completes (typically <100ms).
+            // Skip when startup recovery screens are active.
+            if !state
+                .encryption_key_missing
+                .load(std::sync::atomic::Ordering::Relaxed)
+                && !state.is_database_recovery_required()
             {
                 let init_state = state.clone();
                 tauri::async_runtime::spawn(async move {
@@ -122,6 +130,8 @@ pub fn run() {
                         log::info!("DbService initialized (1 writer + 2 readers)");
                     }
                 });
+            } else {
+                log::warn!("DbService init skipped: startup recovery required");
             }
 
             // Initialize embedding model asynchronously (nomic-embed-text-v1.5).
@@ -152,6 +162,7 @@ pub fn run() {
 
             // Manage the state
             app.manage(state.clone());
+            app.manage(crate::services::ServiceLayer::new(state.clone()));
 
             // Defer startup workspace sync/indexing so app setup stays responsive.
             let startup_state = state.clone();
@@ -180,92 +191,115 @@ pub fn run() {
             // Start inbox file watcher
             watcher::start_watcher(state.clone(), app.handle().clone());
 
-            // Spawn calendar poller (Phase 3A)
+            // Spawn calendar poller (Phase 3A) — supervised (I616)
             let poller_state = state.clone();
             let poller_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                google::run_calendar_poller(poller_state, poller_handle).await;
+            task_supervisor::spawn_supervised("CalendarPoller", move || {
+                let s = poller_state.clone();
+                let h = poller_handle.clone();
+                async move { google::run_calendar_poller(s, h).await }
             });
 
-            // Spawn email poller
+            // Spawn email poller — supervised (I616)
             let email_poller_state = state.clone();
             let email_poller_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                google::run_email_poller(email_poller_state, email_poller_handle).await;
+            task_supervisor::spawn_supervised("EmailPoller", move || {
+                let s = email_poller_state.clone();
+                let h = email_poller_handle.clone();
+                async move { google::run_email_poller(s, h).await }
             });
 
-            // Spawn capture detection loop (Phase 3B)
+            // Spawn capture detection loop (Phase 3B) — supervised (I616)
             let capture_state = state.clone();
             let capture_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                capture::run_capture_loop(capture_state, capture_handle).await;
+            task_supervisor::spawn_supervised("CaptureLoop", move || {
+                let s = capture_state.clone();
+                let h = capture_handle.clone();
+                async move { capture::run_capture_loop(s, h).await }
             });
 
-            // Spawn intelligence enrichment processor (I132)
+            // Spawn intelligence enrichment processor (I132) — supervised (I616)
             let intel_state = state.clone();
             let intel_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                intel_queue::run_intel_processor(intel_state, intel_handle).await;
+            task_supervisor::spawn_supervised("IntelProcessor", move || {
+                let s = intel_state.clone();
+                let h = intel_handle.clone();
+                async move { intel_queue::run_intel_processor(s, h).await }
             });
 
-            // Spawn meeting prep queue processor
+            // Spawn meeting prep queue processor — supervised (I616)
             let prep_state = state.clone();
             let prep_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                meeting_prep_queue::run_meeting_prep_processor(prep_state, prep_handle).await;
+            task_supervisor::spawn_supervised("MeetingPrepProcessor", move || {
+                let s = prep_state.clone();
+                let h = prep_handle.clone();
+                async move { meeting_prep_queue::run_meeting_prep_processor(s, h).await }
             });
 
-            // Spawn background embedding processor (Sprint 26)
+            // Spawn background embedding processor (Sprint 26) — supervised (I616)
             let embedding_state = state.clone();
             let embedding_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                processor::embeddings::run_embedding_processor(embedding_state, embedding_handle)
-                    .await;
+            task_supervisor::spawn_supervised("EmbeddingProcessor", move || {
+                let s = embedding_state.clone();
+                let h = embedding_handle.clone();
+                async move {
+                    processor::embeddings::run_embedding_processor(s, h).await;
+                }
             });
 
-            // Spawn hygiene scanner loop (I145 — ADR-0058)
+            // Spawn hygiene scanner loop (I145 — ADR-0058) — supervised (I616)
             let hygiene_state = state.clone();
             let hygiene_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                hygiene::run_hygiene_loop(hygiene_state, hygiene_handle).await;
+            task_supervisor::spawn_supervised("HygieneLoop", move || {
+                let s = hygiene_state.clone();
+                let h = hygiene_handle.clone();
+                async move { hygiene::run_hygiene_loop(s, h).await }
             });
 
-            // Spawn Quill transcript poller
+            // Spawn Quill transcript poller — supervised (I616)
             let quill_state = state.clone();
             let quill_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                quill::poller::run_quill_poller(quill_state, quill_handle).await;
+            task_supervisor::spawn_supervised("QuillPoller", move || {
+                let s = quill_state.clone();
+                let h = quill_handle.clone();
+                async move { quill::poller::run_quill_poller(s, h).await }
             });
 
-            // Spawn Granola transcript poller (I226)
+            // Spawn Granola transcript poller (I226) — supervised (I616)
             let granola_state = state.clone();
             let granola_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                granola::poller::run_granola_poller(granola_state, granola_handle).await;
+            task_supervisor::spawn_supervised("GranolaPoller", move || {
+                let s = granola_state.clone();
+                let h = granola_handle.clone();
+                async move { granola::poller::run_granola_poller(s, h).await }
             });
 
-            // Spawn unified enrichment processor (Clay + Gravatar)
+            // Spawn unified enrichment processor (Clay + Gravatar) — supervised (I616)
             let enrichment_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                enrichment::run_enrichment_processor(enrichment_state).await;
+            task_supervisor::spawn_supervised("EnrichmentProcessor", move || {
+                let s = enrichment_state.clone();
+                async move { enrichment::run_enrichment_processor(s).await }
             });
 
-            // Spawn Linear sync poller (I346)
+            // Spawn Linear sync poller (I346) — supervised (I616)
             let linear_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                linear::poller::run_linear_poller(linear_state).await;
+            task_supervisor::spawn_supervised("LinearPoller", move || {
+                let s = linear_state.clone();
+                async move { linear::poller::run_linear_poller(s).await }
             });
 
-            // Spawn Google Drive poller (I426)
+            // Spawn Google Drive poller (I426) — supervised (I616)
             let drive_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                google_drive::poller::run_drive_poller(drive_state).await;
+            task_supervisor::spawn_supervised("DrivePoller", move || {
+                let s = drive_state.clone();
+                async move { google_drive::poller::run_drive_poller(s).await }
             });
 
-            // Spawn event-driven entity resolution trigger (I308)
+            // Spawn event-driven entity resolution trigger (I308) — supervised (I616)
             let entity_res_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                signals::event_trigger::run_entity_resolution_trigger(entity_res_state).await;
+            task_supervisor::spawn_supervised("EntityResolutionTrigger", move || {
+                let s = entity_res_state.clone();
+                async move { signals::event_trigger::run_entity_resolution_trigger(s).await }
             });
 
             // Create tray menu
@@ -456,6 +490,7 @@ pub fn run() {
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
             commands::get_meeting_outcomes,
+            commands::get_meeting_post_intelligence,
             commands::update_capture,
             commands::update_action_priority,
             // I127/I128: Manual Action CRUD
@@ -496,6 +531,7 @@ pub fn run() {
             commands::get_onboarding_priming_context,
             commands::check_claude_status,
             commands::launch_claude_login,
+            commands::clear_claude_status_cache,
             commands::get_latency_rollups,
             commands::install_inbox_sample,
             commands::get_frequent_correspondents,
@@ -504,8 +540,6 @@ pub fn run() {
             commands::dev_get_state,
             commands::dev_run_today_mechanical,
             commands::dev_run_today_full,
-            commands::dev_run_week_mechanical,
-            commands::dev_run_week_full,
             commands::dev_restore_live,
             commands::dev_purge_mock_data,
             commands::dev_clean_artifacts,
@@ -576,6 +610,12 @@ pub fn run() {
             // I76: Database Backup & Rebuild
             commands::backup_database,
             commands::rebuild_database,
+            commands::get_database_recovery_status,
+            commands::list_database_backups,
+            commands::restore_database_from_backup,
+            commands::start_fresh_database,
+            commands::export_database_copy,
+            commands::get_database_info,
             // I148: Hygiene
             commands::get_hygiene_report,
             commands::get_intelligence_hygiene_status,
@@ -603,15 +643,33 @@ pub fn run() {
             // I143: Account Events
             commands::record_account_event,
             commands::get_account_events,
+            commands::create_objective,
+            commands::update_objective,
+            commands::complete_objective,
+            commands::abandon_objective,
+            commands::delete_objective,
+            commands::create_milestone,
+            commands::update_milestone,
+            commands::complete_milestone,
+            commands::skip_milestone,
+            commands::delete_milestone,
+            commands::link_action_to_objective,
+            commands::unlink_action_from_objective,
+            commands::reorder_objectives,
+            commands::reorder_milestones,
+            commands::get_objective_suggestions,
+            commands::create_objective_from_suggestion,
+            commands::list_success_plan_templates,
+            commands::apply_success_plan_template,
             // I194: User Agenda + Notes (ADR-0065)
             commands::apply_meeting_prep_prefill,
             commands::generate_meeting_agenda_message_draft,
             commands::update_meeting_user_agenda,
             commands::update_meeting_user_notes,
+            commands::update_meeting_prep_field,
             // Risk Briefing
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
-            commands::save_risk_briefing,
             // Reports (v0.15.0)
             commands::generate_report,
             commands::get_report,
@@ -619,6 +677,7 @@ pub fn run() {
             commands::save_report,
             // I261: Intelligence Field Editing
             commands::update_intelligence_field,
+            commands::dismiss_intelligence_item,
             commands::update_stakeholders,
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
@@ -720,7 +779,35 @@ pub fn run() {
             commands::set_context_mode,
             commands::start_glean_auth,
             commands::get_glean_auth_status,
+            commands::get_glean_token_health,
             commands::disconnect_glean,
+            // I559: Glean Agent Validation Spike (temporary dev exploration)
+            commands::dev_explore_glean_tools,
+            // I535 Step 9: Discover accounts from Glean
+            commands::discover_accounts_from_glean,
+            commands::import_account_from_glean,
+            // I561: Onboarding — Three Connectors
+            commands::onboarding_import_accounts,
+            commands::onboarding_prefill_profile,
+            commands::onboarding_enrichment_status,
+            // I495: Ephemeral Account Query via Glean
+            commands::query_ephemeral_account,
+            // I427: Global Search
+            commands::search_global,
+            commands::rebuild_search_index,
+            // I428: Connectivity
+            commands::get_sync_freshness,
+            // I429: Data Export
+            commands::export_all_data,
+            // I430: Privacy Controls
+            commands::get_data_summary,
+            commands::clear_intelligence,
+            commands::delete_all_data,
+            // I537: Feature Flags
+            commands::get_feature_flags,
+            // I529: Intelligence Quality Feedback
+            commands::submit_intelligence_feedback,
+            commands::get_entity_feedback,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

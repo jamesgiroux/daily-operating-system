@@ -1,0 +1,36 @@
+/* EditableTextarea — click-to-edit multiline text */
+
+.display {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  max-width: 620px;
+  cursor: pointer;
+}
+
+.displayText {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.placeholder {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.textarea {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  max-width: 620px;
+  width: 100%;
+  resize: none;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: 0;
+}

@@ -10,6 +10,16 @@ use crate::db::types::DbEmail;
 use crate::db::ActionDb;
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
+use tauri::Emitter;
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EmailEnrichmentProgressPayload {
+    completed: usize,
+    total: usize,
+    last_email_id: String,
+    last_email_subject: String,
+}
 
 /// Result of enriching a single email.
 pub struct EnrichmentResult {
@@ -271,6 +281,7 @@ pub fn enrich_pending_emails_two_phase(
 
     log::info!("email_enrich: {} emails pending enrichment", pending.len());
     let mut enriched_count = 0usize;
+    let total_pending = pending.len();
 
     // Phase 2: AI enrichment via PTY (no DB lock held)
     for (email, entity_id, entity_type) in &pending {
@@ -303,7 +314,7 @@ pub fn enrich_pending_emails_two_phase(
         }; // DB lock released before PTY call
 
         let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
-            .with_timeout(60)
+            .with_timeout(30)
             .with_nice_priority(10);
 
         let ai_result = match pty.spawn_claude(workspace, &prompt) {
@@ -333,6 +344,17 @@ pub fn enrich_pending_emails_two_phase(
                         );
                     } else {
                         enriched_count += 1;
+                        if let Some(app_handle) = state.app_handle() {
+                            let _ = app_handle.emit(
+                                "email-enrichment-progress",
+                                EmailEnrichmentProgressPayload {
+                                    completed: enriched_count,
+                                    total: total_pending,
+                                    last_email_id: email.email_id.clone(),
+                                    last_email_subject: email.subject.clone().unwrap_or_default(),
+                                },
+                            );
+                        }
                     }
                 }
                 Err(e) => {
@@ -345,6 +367,17 @@ pub fn enrich_pending_emails_two_phase(
                         urgency: None,
                     };
                     let _ = db.set_enrichment_state(&email.email_id, "failed", empty);
+                    if let Some(app_handle) = state.app_handle() {
+                        let _ = app_handle.emit(
+                            "email-enrichment-progress",
+                            EmailEnrichmentProgressPayload {
+                                completed: enriched_count,
+                                total: total_pending,
+                                last_email_id: email.email_id.clone(),
+                                last_email_subject: email.subject.clone().unwrap_or_default(),
+                            },
+                        );
+                    }
                 }
             }
         }

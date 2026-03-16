@@ -1,0 +1,30 @@
+COMMITMENTS:
+- Achieve 80% adoption across all NA teams by: 2026-06-30 owned_by: joint #"both sides need to invest in training"
+- Deliver updated ROI report before renewal discussion by: 2026-05-15 owned_by: us #"we need hard numbers for the board"
+- Complete data migration from legacy system by: 2026-04-30 owned_by: them
+END_COMMITMENTS
+ROLE_CHANGES:
+- Sarah Chen: VP Engineering -> SVP Engineering #"promoted last quarter"
+- Mike Ross: Account Manager -> Departed #"leaving at end of March"
+END_ROLE_CHANGES
+INTERACTION_DYNAMICS:
+TALK_BALANCE: 60/40
+SPEAKER_SENTIMENT:
+- Sarah Chen: positive — enthusiastic about expansion, asked detailed questions
+- David Park: cautious — raised competitive concerns, asked about roadmap
+- Lisa Wong: neutral — focused on budget and ROI
+END_SPEAKER_SENTIMENT
+ENGAGEMENT_SIGNALS:
+- question_density: high
+- decision_maker_active: yes
+- forward_looking: high
+- monologue_risk: no
+END_ENGAGEMENT_SIGNALS
+COMPETITOR_MENTIONS:
+- Competitor X: CTO mentioned prior experience, evaluating for data pipeline
+- Competitor Y: Brief mention as alternative for APAC region
+END_COMPETITOR_MENTIONS
+ESCALATION_LANGUAGE:
+- "I need to see results before the board meeting" — Lisa Wong
+END_ESCALATION_LANGUAGE
+END_INTERACTION_DYNAMICS

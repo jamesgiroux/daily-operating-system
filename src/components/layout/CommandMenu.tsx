@@ -11,8 +11,8 @@ import {
   Mail,
   Play,
   RefreshCw,
-  Search,
   Settings,
+  UserCircle,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,40 +25,58 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import type { MeetingSearchResult } from "@/types";
+import type { GlobalSearchResult } from "@/types";
 
 interface CommandMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+const ENTITY_TYPE_ICON: Record<string, React.ElementType> = {
+  account: Building2,
+  person: Users,
+  project: FolderKanban,
+  meeting: CalendarDays,
+  action: CheckSquare,
+  email: Mail,
+};
+
+const ENTITY_TYPE_LABEL: Record<string, string> = {
+  account: "Accounts",
+  person: "People",
+  project: "Projects",
+  meeting: "Meetings",
+  action: "Actions",
+  email: "Emails",
+};
+
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [meetingResults, setMeetingResults] = React.useState<
-    MeetingSearchResult[]
+  const [searchResults, setSearchResults] = React.useState<
+    GlobalSearchResult[]
   >([]);
 
-  // Debounced meeting search
+  // Debounced global search
   React.useEffect(() => {
     if (!open) {
       setSearchQuery("");
-      setMeetingResults([]);
+      setSearchResults([]);
       return;
     }
     if (searchQuery.trim().length < 2) {
-      setMeetingResults([]);
+      setSearchResults([]);
       return;
     }
 
     const timer = setTimeout(async () => {
       try {
-        const results = await invoke<MeetingSearchResult[]>("search_meetings", {
+        const results = await invoke<GlobalSearchResult[]>("search_global", {
           query: searchQuery.trim(),
         });
-        setMeetingResults(results);
+        setSearchResults(results);
       } catch {
-        setMeetingResults([]);
+        setSearchResults([]);
       }
     }, 250);
 
@@ -70,6 +88,20 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     navigate({ to: path });
   };
 
+  // Group results by entity type
+  const groupedResults = React.useMemo(() => {
+    const groups: Record<string, GlobalSearchResult[]> = {};
+    for (const result of searchResults) {
+      if (!groups[result.entityType]) {
+        groups[result.entityType] = [];
+      }
+      groups[result.entityType].push(result);
+    }
+    return groups;
+  }, [searchResults]);
+
+  const hasResults = searchResults.length > 0;
+
   return (
     <CommandDialog
       open={open}
@@ -78,33 +110,40 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
       description="Search for commands and navigate"
     >
       <CommandInput
-        placeholder="Type a command or search meetings..."
+        placeholder="Search everything..."
         value={searchQuery}
         onValueChange={setSearchQuery}
       />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
 
-        {meetingResults.length > 0 && (
+        {hasResults && (
           <>
-            <CommandGroup heading="Meetings">
-              {meetingResults.map((m) => (
-                <CommandItem
-                  key={m.id}
-                  value={`meeting-${m.id}-${m.title}`}
-                  onSelect={() => go(`/meeting/${m.id}`)}
-                >
-                  <Search className="mr-2 size-4 shrink-0" />
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate">{m.title}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {formatSearchDate(m.startTime)}
-                      {m.accountName && ` \u00b7 ${m.accountName}`}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+            {Object.entries(groupedResults).map(([entityType, results]) => {
+              const Icon = ENTITY_TYPE_ICON[entityType] ?? CalendarDays;
+              const heading = ENTITY_TYPE_LABEL[entityType] ?? entityType;
+              return (
+                <CommandGroup key={entityType} heading={heading}>
+                  {results.map((r) => (
+                    <CommandItem
+                      key={`${r.entityType}-${r.entityId}`}
+                      value={`${r.entityType}-${r.entityId}-${r.name}`}
+                      onSelect={() => go(r.route)}
+                    >
+                      <Icon className="mr-2 size-4 shrink-0" />
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate">{r.name}</span>
+                        {r.secondaryText && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {r.secondaryText}
+                          </span>
+                        )}
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              );
+            })}
             <CommandSeparator />
           </>
         )}
@@ -112,27 +151,27 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         <CommandGroup heading="Navigate">
           <CommandItem onSelect={() => go("/")}>
             <LayoutDashboard className="mr-2 size-4" />
-            <span>Overview</span>
-          </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
-            <Inbox className="mr-2 size-4" />
-            <span>Inbox</span>
+            <span>Today</span>
           </CommandItem>
           <CommandItem onSelect={() => go("/week")}>
             <CalendarDays className="mr-2 size-4" />
-            <span>Calendar</span>
+            <span>This Week</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/emails")}>
+            <Mail className="mr-2 size-4" />
+            <span>Mail</span>
           </CommandItem>
           <CommandItem onSelect={() => go("/actions")}>
             <CheckSquare className="mr-2 size-4" />
             <span>Actions</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/emails")}>
-            <Mail className="mr-2 size-4" />
-            <span>The Correspondent</span>
+          <CommandItem onSelect={() => go("/me")}>
+            <UserCircle className="mr-2 size-4" />
+            <span>Me</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/settings")}>
-            <Settings className="mr-2 size-4" />
-            <span>Settings</span>
+          <CommandItem onSelect={() => go("/people")}>
+            <Users className="mr-2 size-4" />
+            <span>People</span>
           </CommandItem>
           <CommandItem onSelect={() => go("/accounts")}>
             <Building2 className="mr-2 size-4" />
@@ -142,9 +181,13 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
             <FolderKanban className="mr-2 size-4" />
             <span>Projects</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/people")}>
-            <Users className="mr-2 size-4" />
-            <span>People</span>
+          <CommandItem onSelect={() => go("/inbox")}>
+            <Inbox className="mr-2 size-4" />
+            <span>Inbox</span>
+          </CommandItem>
+          <CommandItem onSelect={() => go("/settings")}>
+            <Settings className="mr-2 size-4" />
+            <span>Settings</span>
           </CommandItem>
         </CommandGroup>
 
@@ -189,17 +232,4 @@ export function useCommandMenu() {
   }, []);
 
   return { open, setOpen };
-}
-
-function formatSearchDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
 }

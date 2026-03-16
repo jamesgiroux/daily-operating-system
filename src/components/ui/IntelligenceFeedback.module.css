@@ -1,0 +1,61 @@
+/* I529: Intelligence quality feedback — hover-reveal thumbs up/down */
+
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.container {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  vertical-align: middle;
+}
+
+/* When a vote is active, keep visible even outside hover */
+.visible {
+  opacity: 1;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.button:hover {
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 1px;
+}
+
+.positive {
+  color: var(--color-garden-sage);
+}
+
+.positive:hover {
+  background: var(--color-garden-sage-12);
+  color: var(--color-garden-sage);
+}
+
+.negative {
+  color: var(--color-spice-terracotta);
+}
+
+.negative:hover {
+  background: var(--color-spice-terracotta-8);
+  color: var(--color-spice-terracotta);
+}

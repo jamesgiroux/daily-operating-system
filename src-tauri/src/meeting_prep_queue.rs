@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use std::sync::Arc;
 
@@ -24,6 +24,7 @@ const POLL_INTERVAL_SECS: u64 = 5;
 
 /// Debounce window — skip re-queueing the same meeting within this window.
 const DEBOUNCE_SECS: u64 = 60;
+const MAX_RETRY_ATTEMPTS: u8 = 2;
 
 /// Priority levels for meeting prep generation.
 /// Higher numeric value = higher priority.
@@ -43,6 +44,73 @@ pub struct PrepRequest {
     pub meeting_id: String,
     pub priority: PrepPriority,
     pub requested_at: Instant,
+    pub attempt: u8,
+    pub retry_after: Option<Instant>,
+    pub last_error: Option<String>,
+    pub overwrite_existing: bool,
+}
+
+impl PrepRequest {
+    pub fn new(meeting_id: String, priority: PrepPriority) -> Self {
+        Self {
+            meeting_id,
+            priority,
+            requested_at: Instant::now(),
+            attempt: 0,
+            retry_after: None,
+            last_error: None,
+            overwrite_existing: false,
+        }
+    }
+
+    pub fn overwrite_existing(meeting_id: String, priority: PrepPriority) -> Self {
+        Self {
+            overwrite_existing: true,
+            ..Self::new(meeting_id, priority)
+        }
+    }
+
+    fn retry_from(request: &PrepRequest, error: String) -> Option<Self> {
+        if !is_retryable_prep_error(&error) || request.attempt >= MAX_RETRY_ATTEMPTS {
+            return None;
+        }
+
+        let attempt = request.attempt + 1;
+        Some(Self {
+            meeting_id: request.meeting_id.clone(),
+            priority: request.priority,
+            requested_at: Instant::now(),
+            attempt,
+            retry_after: Some(Instant::now() + Duration::from_secs(retry_delay_secs(attempt))),
+            last_error: Some(error),
+            overwrite_existing: request.overwrite_existing,
+        })
+    }
+}
+
+fn retry_delay_secs(attempt: u8) -> u64 {
+    match attempt {
+        1 => 1,
+        2 => 30,
+        _ => 900,
+    }
+}
+
+fn is_retryable_prep_error(error: &str) -> bool {
+    error.contains("Failed to open DB")
+        || error.contains("Failed to write prep")
+        || error.contains("Config lock poisoned")
+        || error.contains("No config")
+}
+
+fn classify_prep_error(error: &str) -> &'static str {
+    if error.contains("Failed to write prep") {
+        "db_write"
+    } else if error.contains("Failed to open DB") || error.contains("lock poisoned") {
+        "db_lock"
+    } else {
+        "context_gather"
+    }
 }
 
 /// Thread-safe meeting prep queue with deduplication and debounce.
@@ -71,8 +139,9 @@ impl MeetingPrepQueue {
     /// Debounces Background/PageLoad requests within `DEBOUNCE_SECS`.
     pub fn enqueue(&self, request: PrepRequest) {
         // Debounce low-priority triggers
-        if request.priority == PrepPriority::Background
-            || request.priority == PrepPriority::PageLoad
+        if request.attempt == 0
+            && (request.priority == PrepPriority::Background
+                || request.priority == PrepPriority::PageLoad)
         {
             if let Ok(last) = self.last_enqueued.lock() {
                 if let Some(last_time) = last.get(&request.meeting_id) {
@@ -106,6 +175,12 @@ impl MeetingPrepQueue {
                     request.priority
                 );
             }
+            if request.attempt > existing.attempt {
+                existing.attempt = request.attempt;
+                existing.retry_after = request.retry_after;
+                existing.last_error = request.last_error.clone();
+            }
+            existing.overwrite_existing |= request.overwrite_existing;
             return;
         }
 
@@ -130,9 +205,14 @@ impl MeetingPrepQueue {
             return None;
         }
 
+        let now = Instant::now();
         let best_idx = queue
             .iter()
             .enumerate()
+            .filter(|(_, r)| match r.retry_after {
+                Some(retry_after) => retry_after <= now,
+                None => true,
+            })
             .max_by_key(|(_, r)| r.priority)
             .map(|(i, _)| i)?;
 
@@ -195,12 +275,14 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
     };
 
     // Find future meetings that have at least one linked entity but no prep
-    let sql = "SELECT DISTINCT mh.id
-               FROM meetings_history mh
-               INNER JOIN meeting_entities me ON mh.id = me.meeting_id
-               WHERE julianday(mh.start_time) > julianday('now')
-                 AND mh.prep_frozen_json IS NULL
-                 AND (mh.intelligence_state IS NULL OR mh.intelligence_state != 'archived')";
+    let sql = "SELECT DISTINCT m.id
+               FROM meetings m
+               INNER JOIN meeting_entities me ON m.id = me.meeting_id
+               LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+               LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+               WHERE julianday(m.start_time) > julianday('now')
+                 AND mp.prep_frozen_json IS NULL
+                 AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')";
 
     let meeting_ids: Vec<String> = {
         let conn = db.conn_ref();
@@ -231,11 +313,9 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
     drop(db_guard);
 
     for mid in &meeting_ids {
-        state.meeting_prep_queue.enqueue(PrepRequest {
-            meeting_id: mid.clone(),
-            priority: PrepPriority::Background,
-            requested_at: Instant::now(),
-        });
+        state
+            .meeting_prep_queue
+            .enqueue(PrepRequest::new(mid.clone(), PrepPriority::Background));
     }
     if !meeting_ids.is_empty() {
         state.integrations.prep_queue_wake.notify_one();
@@ -295,12 +375,24 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
         let meeting_id = request.meeting_id.clone();
 
         let result = tokio::task::spawn_blocking(move || {
-            generate_mechanical_prep(&state_clone, &meeting_id)
+            generate_mechanical_prep(&state_clone, &meeting_id, request.overwrite_existing)
         })
         .await;
 
         match result {
-            Ok(Ok(())) => {
+            Ok(Ok(true)) => {
+                let meeting_id = request.meeting_id.clone();
+                let _ = state
+                    .db_write(move |db| {
+                        crate::services::mutations::resolve_pipeline_failures(
+                            db,
+                            "meeting_prep",
+                            Some(&meeting_id),
+                            Some("meeting"),
+                        )
+                    })
+                    .await;
+
                 // Audit: meeting prep generated
                 if let Ok(mut audit) = state.audit_log.lock() {
                     let _ = audit.append(
@@ -317,12 +409,54 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                 );
                 log::info!("MeetingPrepProcessor: completed {}", request.meeting_id);
             }
-            Ok(Err(e)) => {
-                log::warn!(
-                    "MeetingPrepProcessor: failed for {}: {}",
-                    request.meeting_id,
-                    e
+            Ok(Ok(false)) => {
+                log::debug!(
+                    "MeetingPrepProcessor: skipped {} because prep already exists",
+                    request.meeting_id
                 );
+            }
+            Ok(Err(e)) => {
+                if let Some(retry_request) = PrepRequest::retry_from(&request, e.clone()) {
+                    let retry_after_secs = retry_request
+                        .retry_after
+                        .map(|retry_after| {
+                            retry_after
+                                .saturating_duration_since(Instant::now())
+                                .as_secs()
+                        })
+                        .unwrap_or_default();
+                    state.meeting_prep_queue.enqueue(retry_request);
+                    state.integrations.prep_queue_wake.notify_one();
+                    log::warn!(
+                        "MeetingPrepProcessor: failed for {}: {} (retrying in {}s)",
+                        request.meeting_id,
+                        e,
+                        retry_after_secs
+                    );
+                } else {
+                    let meeting_id = request.meeting_id.clone();
+                    let attempt = i32::from(request.attempt) + 1;
+                    let error_type = classify_prep_error(&e).to_string();
+                    let error_message = e.clone();
+                    let _ = state
+                        .db_write(move |db| {
+                            crate::services::mutations::record_pipeline_failure(
+                                db,
+                                "meeting_prep",
+                                Some(&meeting_id),
+                                Some("meeting"),
+                                &error_type,
+                                Some(&error_message),
+                                attempt,
+                            )
+                        })
+                        .await;
+                    log::warn!(
+                        "MeetingPrepProcessor: failed for {}: {}",
+                        request.meeting_id,
+                        e
+                    );
+                }
             }
             Err(e) => {
                 log::warn!(
@@ -338,7 +472,12 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
 /// Generate mechanical prep for a single meeting.
 ///
 /// Uses own DB connection (split-lock pattern) to avoid blocking UI.
-fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), String> {
+fn generate_mechanical_prep_with_inputs(
+    workspace: std::path::PathBuf,
+    embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    meeting_id: &str,
+    overwrite_existing: bool,
+) -> Result<bool, String> {
     // Phase 1: Load meeting from DB (own connection)
     let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
 
@@ -348,21 +487,15 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
     // Phase 2: Check if prep already exists and is fresh
-    if meeting.prep_frozen_json.is_some() {
+    if meeting.prep_frozen_json.is_some() && !overwrite_existing {
         log::debug!(
             "MeetingPrepQueue: {} already has prep_frozen_json, skipping",
             meeting_id
         );
-        return Ok(());
+        return Ok(false);
     }
 
     // Resolve workspace path for context gathering
-    let workspace = {
-        let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
-        let config = config_guard.as_ref().ok_or("No config")?;
-        std::path::PathBuf::from(&config.workspace_path)
-    };
-
     // Phase 3: Build classified meeting JSON for gather_meeting_context
     let classified = json!({
         "id": meeting.id,
@@ -373,8 +506,8 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
     });
 
     // Phase 4: Gather context (mechanical — no AI)
-    let embedding_model = if state.embedding_model.is_ready() {
-        Some(state.embedding_model.as_ref())
+    let embedding_model = if embedding_model.is_ready() {
+        Some(embedding_model.as_ref())
     } else {
         None
     };
@@ -434,7 +567,7 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
 
     db.conn_ref()
         .execute(
-            "UPDATE meetings_history SET prep_frozen_json = ?1 WHERE id = ?2",
+            "UPDATE meeting_prep SET prep_frozen_json = ?1 WHERE meeting_id = ?2",
             rusqlite::params![frozen_str, meeting_id],
         )
         .map_err(|e| format!("Failed to write prep: {}", e))?;
@@ -453,7 +586,26 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
         frozen_str.len()
     );
 
-    Ok(())
+    Ok(true)
+}
+
+fn generate_mechanical_prep(
+    state: &AppState,
+    meeting_id: &str,
+    overwrite_existing: bool,
+) -> Result<bool, String> {
+    let workspace = {
+        let config_guard = state.config_read_or_recover()?;
+        let config = config_guard.as_ref().ok_or("No config")?;
+        std::path::PathBuf::from(&config.workspace_path)
+    };
+
+    generate_mechanical_prep_with_inputs(
+        workspace,
+        Arc::clone(&state.embedding_model),
+        meeting_id,
+        overwrite_existing,
+    )
 }
 
 /// Generate mechanical prep immediately for a single meeting.
@@ -461,7 +613,43 @@ fn generate_mechanical_prep(state: &AppState, meeting_id: &str) -> Result<(), St
 /// Used by manual refresh flows that need deterministic completion before
 /// returning control to the UI.
 pub fn generate_mechanical_prep_now(state: &AppState, meeting_id: &str) -> Result<(), String> {
-    generate_mechanical_prep(state, meeting_id)
+    generate_mechanical_prep(state, meeting_id, false).map(|_| ())
+}
+
+/// Regenerate mechanical prep immediately, overwriting any existing snapshot.
+///
+/// Used by manual refresh flows that need snapshot-then-swap semantics: keep
+/// the old prep visible until a replacement is successfully written.
+pub fn regenerate_mechanical_prep_now(state: &AppState, meeting_id: &str) -> Result<bool, String> {
+    generate_mechanical_prep(state, meeting_id, true)
+}
+
+/// Gather the owned inputs needed to regenerate meeting prep on a blocking thread.
+pub fn meeting_prep_blocking_inputs(
+    state: &AppState,
+) -> Result<(std::path::PathBuf, Arc<crate::embeddings::EmbeddingModel>), String> {
+    let workspace = {
+        let config_guard = state.config_read_or_recover()?;
+        let config = config_guard.as_ref().ok_or("No config")?;
+        std::path::PathBuf::from(&config.workspace_path)
+    };
+    Ok((workspace, Arc::clone(&state.embedding_model)))
+}
+
+pub fn generate_mechanical_prep_now_blocking(
+    workspace: std::path::PathBuf,
+    embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    meeting_id: String,
+) -> Result<(), String> {
+    generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, false).map(|_| ())
+}
+
+pub fn regenerate_mechanical_prep_now_blocking(
+    workspace: std::path::PathBuf,
+    embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    meeting_id: String,
+) -> Result<bool, String> {
+    generate_mechanical_prep_with_inputs(workspace, embedding_model, &meeting_id, true)
 }
 
 // =============================================================================
@@ -476,11 +664,10 @@ mod tests {
     fn test_prep_queue_enqueue_dequeue() {
         let queue = MeetingPrepQueue::new();
 
-        queue.enqueue(PrepRequest {
-            meeting_id: "mtg-1".to_string(),
-            priority: PrepPriority::PageLoad,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new(
+            "mtg-1".to_string(),
+            PrepPriority::PageLoad,
+        ));
 
         assert_eq!(queue.len(), 1);
 
@@ -494,18 +681,13 @@ mod tests {
     fn test_prep_queue_dedup_keeps_higher_priority() {
         let queue = MeetingPrepQueue::new();
 
-        queue.enqueue(PrepRequest {
-            meeting_id: "mtg-1".to_string(),
-            priority: PrepPriority::PageLoad,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new(
+            "mtg-1".to_string(),
+            PrepPriority::PageLoad,
+        ));
 
         // Same meeting, higher priority → should upgrade
-        queue.enqueue(PrepRequest {
-            meeting_id: "mtg-1".to_string(),
-            priority: PrepPriority::Manual,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new("mtg-1".to_string(), PrepPriority::Manual));
 
         assert_eq!(queue.len(), 1);
         let req = queue.dequeue().unwrap();
@@ -516,23 +698,17 @@ mod tests {
     fn test_prep_queue_priority_ordering() {
         let queue = MeetingPrepQueue::new();
 
-        queue.enqueue(PrepRequest {
-            meeting_id: "alpha".to_string(),
-            priority: PrepPriority::Background,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new(
+            "alpha".to_string(),
+            PrepPriority::Background,
+        ));
 
-        queue.enqueue(PrepRequest {
-            meeting_id: "beta".to_string(),
-            priority: PrepPriority::Manual,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new("beta".to_string(), PrepPriority::Manual));
 
-        queue.enqueue(PrepRequest {
-            meeting_id: "gamma".to_string(),
-            priority: PrepPriority::PageLoad,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new(
+            "gamma".to_string(),
+            PrepPriority::PageLoad,
+        ));
 
         // Should dequeue in priority order: Manual > PageLoad > Background
         let first = queue.dequeue().unwrap();
@@ -550,21 +726,16 @@ mod tests {
         let queue = MeetingPrepQueue::new();
 
         // First: page load
-        queue.enqueue(PrepRequest {
-            meeting_id: "mtg-1".to_string(),
-            priority: PrepPriority::PageLoad,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new(
+            "mtg-1".to_string(),
+            PrepPriority::PageLoad,
+        ));
 
         // Dequeue it
         let _ = queue.dequeue();
 
         // Manual request should bypass debounce
-        queue.enqueue(PrepRequest {
-            meeting_id: "mtg-1".to_string(),
-            priority: PrepPriority::Manual,
-            requested_at: Instant::now(),
-        });
+        queue.enqueue(PrepRequest::new("mtg-1".to_string(), PrepPriority::Manual));
 
         assert_eq!(queue.len(), 1);
     }
@@ -591,5 +762,32 @@ mod tests {
             last.contains_key("fresh"),
             "fresh entry should survive pruning"
         );
+    }
+
+    #[test]
+    fn test_retry_request_preserves_manual_overwrite() {
+        let request = PrepRequest::overwrite_existing("mtg-1".to_string(), PrepPriority::Manual);
+
+        let retry = PrepRequest::retry_from(&request, "Failed to write prep".to_string())
+            .expect("retryable request");
+
+        assert_eq!(retry.attempt, 1);
+        assert!(retry.overwrite_existing);
+        assert!(retry.retry_after.is_some());
+    }
+
+    #[test]
+    fn test_dequeue_skips_retry_not_ready() {
+        let queue = MeetingPrepQueue::new();
+        let mut delayed = PrepRequest::new("delayed".to_string(), PrepPriority::Manual);
+        delayed.retry_after = Some(Instant::now() + Duration::from_secs(30));
+        queue.enqueue(delayed);
+        queue.enqueue(PrepRequest::new(
+            "ready".to_string(),
+            PrepPriority::PageLoad,
+        ));
+
+        let req = queue.dequeue().expect("ready request");
+        assert_eq!(req.meeting_id, "ready");
     }
 }

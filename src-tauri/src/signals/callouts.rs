@@ -51,6 +51,12 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "proactive_prep_gap",
     "proactive_no_contact",
     "cadence_anomaly",
+    "risk_detected",
+    // I535/ADR-0100: Glean-sourced signal types
+    "renewal_data_updated",
+    "support_health_updated",
+    "glean_org_change",
+    "glean_champion_departed",
 ];
 
 // ---------------------------------------------------------------------------
@@ -93,7 +99,7 @@ pub fn generate_callouts(
         signals.iter().map(|s| (s.clone(), 0.0)).collect()
     };
 
-    // I414: Apply user-context relevance weighting and persist to entity_intelligence
+    // I414: Apply user-context relevance weighting and persist to entity_assessment
     if user_entity.is_some() {
         for (signal, relevance) in &mut scored_signals {
             let entity_name =
@@ -105,10 +111,10 @@ pub fn generate_callouts(
             );
             *relevance *= weight;
 
-            // Persist non-default weights to entity_intelligence (I414 AC4)
+            // Persist non-default weights to entity_assessment (I414 AC4)
             if (weight - 1.0).abs() > f64::EPSILON {
                 let _ = db.conn_ref().execute(
-                    "UPDATE entity_intelligence SET user_relevance_weight = ?1 WHERE entity_id = ?2",
+                    "UPDATE entity_assessment SET user_relevance_weight = ?1 WHERE entity_id = ?2",
                     params![weight, signal.entity_id],
                 );
             }
@@ -397,6 +403,22 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 format!("No meetings in {} days near renewal window", days),
             )
         }
+        "risk_detected" => {
+            let urgency = parsed
+                .get("urgency")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let content = parsed
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Risk identified in recent meeting");
+            let headline = match urgency {
+                "red" => "Critical risk detected".to_string(),
+                "yellow" => "Risk flagged".to_string(),
+                _ => "Risk signal".to_string(),
+            };
+            (headline, content.to_string())
+        }
         "cadence_anomaly" => {
             // I319: value is the anomaly type string ("gone_quiet" or "activity_spike")
             let anomaly_type = signal.value.as_deref().unwrap_or("unknown");
@@ -417,6 +439,73 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                     format!("Unusual email pattern for {}", signal.entity_id),
                 ),
             }
+        }
+        // I535/ADR-0100: Glean-sourced callout text handlers
+        "renewal_data_updated" => {
+            let likelihood = parsed
+                .get("renewal_likelihood")
+                .or_else(|| parsed.get("renewalProbability"))
+                .and_then(|v| v.as_str().or_else(|| v.as_f64().map(|_| "see details")))
+                .unwrap_or("updated");
+            let detail = parsed
+                .get("detail")
+                .or_else(|| parsed.get("dealStage"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Renewal data changed in CRM");
+            (
+                format!("Renewal update: {}", likelihood),
+                detail.to_string(),
+            )
+        }
+        "support_health_updated" => {
+            let ticket_count = parsed
+                .get("openTickets")
+                .and_then(|v| v.as_u64())
+                .map(|n| format!("{} open", n))
+                .unwrap_or_else(|| "tickets updated".to_string());
+            let trend = parsed
+                .get("recentTrend")
+                .or_else(|| parsed.get("trend"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("updated");
+            let summary = parsed
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Support health data updated from Zendesk");
+            (
+                format!("Support health: {} ({})", ticket_count, trend),
+                summary.to_string(),
+            )
+        }
+        "glean_org_change" => {
+            let person = parsed
+                .get("person")
+                .and_then(|v| v.as_str())
+                .unwrap_or("A stakeholder");
+            let change = parsed
+                .get("change")
+                .and_then(|v| v.as_str())
+                .unwrap_or("changed role");
+            (
+                format!("{} — org change", person),
+                change.to_string(),
+            )
+        }
+        "glean_champion_departed" => {
+            let name = parsed
+                .get("name")
+                .or_else(|| parsed.get("champion_name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Champion");
+            let detail = parsed
+                .get("detail")
+                .or_else(|| parsed.get("evidence"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("No longer at the company per org directory");
+            (
+                format!("Champion departure: {}", name),
+                detail.to_string(),
+            )
         }
         _ => (
             format!("Signal: {}", signal.signal_type),

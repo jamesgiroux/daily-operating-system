@@ -1,0 +1,399 @@
+/* =============================================================================
+   ACCOUNT DETAIL — Page-specific styles
+   ============================================================================= */
+
+/* ── Breadcrumb ancestor link (turmeric) ── */
+
+.breadcrumbAncestorLink {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--color-spice-turmeric);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+/* ── Refresh button ── */
+
+.refreshButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.refreshButton:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-text-tertiary);
+}
+
+.refreshButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Reports dropdown ── */
+
+.reportsButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.reportsDropdownWrapper {
+  position: relative;
+}
+
+.reportsDropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: 6px;
+  box-shadow: var(--shadow-xl);
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.reportsDropdownItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-desk-charcoal);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-paper-linen);
+  cursor: pointer;
+}
+
+.reportsDropdownItem:hover {
+  background: var(--color-paper-linen);
+}
+
+/* ── Rollover Prompt ── */
+
+.rolloverPrompt {
+  margin: var(--space-lg) 0;
+  padding: var(--space-md) 20px;
+  background: var(--color-spice-saffron-8);
+  border-left: 3px solid var(--color-spice-saffron);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.rolloverActions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.rolloverButton {
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+
+.rolloverDismiss {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Portfolio: hotspot link (turmeric) ── */
+
+.hotspotLinkTurmeric {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+/* ── Health color variants ── */
+
+.healthGreen {
+  color: var(--color-garden-sage);
+}
+
+.healthRed {
+  color: var(--color-spice-terracotta);
+}
+
+.healthYellow {
+  color: var(--color-spice-saffron);
+}
+
+.healthDotGreen {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+
+.healthDotRed {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-terracotta);
+}
+
+.healthDotYellow {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-saffron);
+}
+
+/* ── Reports Chapter ── */
+
+.reportsChapter {
+  display: flex;
+  flex-direction: column;
+}
+
+.reportRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.reportRow:last-child {
+  border-bottom: none;
+}
+
+.reportRow:hover .reportAction {
+  color: var(--color-spice-turmeric);
+}
+
+.reportIcon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.reportName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.reportAction {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease;
+}
+
+/* ── Pull Quote (I550) ── */
+
+.pullQuote {
+  padding: 100px 0;
+  text-align: center;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.pullQuoteText {
+  font-family: var(--font-serif);
+  font-size: 38px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  margin: 0 0 24px;
+}
+
+.pullQuoteAttribution {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  font-style: normal;
+}
+
+/* ── Relationship Health Hero (I550) ── */
+
+.healthHero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 32px;
+  align-items: start;
+  margin-bottom: 48px;
+}
+
+.healthScoreNumber {
+  font-family: var(--font-serif);
+  font-size: 100px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+
+.healthMeta {
+  padding-top: 20px;
+}
+
+.healthBand {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.healthBandGreen {
+  composes: healthBand;
+  color: var(--color-garden-sage);
+}
+
+.healthBandYellow {
+  composes: healthBand;
+  color: var(--color-spice-saffron);
+}
+
+.healthBandRed {
+  composes: healthBand;
+  color: var(--color-spice-terracotta);
+}
+
+.healthNarrative {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+  max-width: 480px;
+}
+
+.healthTrendLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Engagement Cadence (I557) ── */
+
+/* ── Tools dropdown ── */
+
+.toolsButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.toolsDropdownWrapper {
+  position: relative;
+}
+
+.toolsDropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: 6px;
+  box-shadow: var(--shadow-xl);
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.toolsDropdownItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-desk-charcoal);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-paper-linen);
+  cursor: pointer;
+}
+
+.toolsDropdownItem:hover {
+  background: var(--color-paper-linen);
+}
+
+.toolsDropdownItem:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolsDropdownItem:last-child {
+  border-bottom: none;
+}
+
+.toolsDropdownSeparator {
+  height: 1px;
+  background: var(--color-rule-light);
+  margin: 0;
+}

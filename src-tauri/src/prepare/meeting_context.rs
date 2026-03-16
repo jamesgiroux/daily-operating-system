@@ -438,25 +438,8 @@ fn gather_person_context(
         }
     }
 
-    // Open actions mentioning this person (filter from all pending)
-    let all_actions = get_all_pending_actions(db, 50);
-    let person_name_lower = entity_match.name.to_lowercase();
-    if let Some(arr) = all_actions.as_array() {
-        let person_actions: Vec<_> = arr
-            .iter()
-            .filter(|a| {
-                a.get("title")
-                    .and_then(|t| t.as_str())
-                    .map(|t| t.to_lowercase().contains(&person_name_lower))
-                    .unwrap_or(false)
-            })
-            .take(5)
-            .cloned()
-            .collect();
-        if !person_actions.is_empty() {
-            ctx["open_actions"] = json!(person_actions);
-        }
-    }
+    // Open actions linked to this person (by person_id or shared account)
+    ctx["open_actions"] = get_person_actions(db, &entity_match.entity_id);
 
     // Archive summaries
     let archive_dir = workspace.join("_archive");
@@ -570,8 +553,8 @@ fn gather_meeting_context(
             inject_linear_issues(db, &em.entity_id, &mut ctx);
         }
 
-        // I135: Entity-generic intelligence injection
-        inject_entity_intelligence(&em.workspace_path, &mut ctx);
+        // I135: Entity-generic intelligence injection (I513: DB-first)
+        inject_entity_intelligence(db, Some(&em.entity_id), &mut ctx);
     } else {
         // No entity resolved — type-based fallbacks
 
@@ -609,7 +592,7 @@ fn gather_meeting_context(
                             ctx["account_data"] = data;
                         }
                     }
-                    inject_entity_intelligence(&account_path, &mut ctx);
+                    inject_entity_intelligence(db, None, &mut ctx);
                 }
             }
         }
@@ -721,12 +704,22 @@ fn gather_meeting_context(
 // Entity intelligence injection (I135)
 // ---------------------------------------------------------------------------
 
-/// Read intelligence.json from an entity directory and inject relevant
+/// Read entity intelligence from DB (I513) and inject relevant
 /// fields into the meeting context for prep enrichment.
-fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
-    let intel = match crate::intelligence::read_intelligence_json(entity_dir) {
-        Ok(intel) => intel,
-        Err(_) => return,
+fn inject_entity_intelligence(
+    db: Option<&crate::db::ActionDb>,
+    entity_id: Option<&str>,
+    ctx: &mut Value,
+) {
+    // I513: DB is the sole source for entity intelligence — no file fallback.
+    let intel = if let (Some(db), Some(eid)) = (db, entity_id) {
+        db.get_entity_intelligence(eid).ok().flatten()
+    } else {
+        None
+    };
+    let intel = match intel {
+        Some(intel) => intel,
+        None => return,
     };
 
     if let Some(ref assessment) = intel.executive_assessment {
@@ -766,6 +759,13 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
                 })
             })
             .collect::<Vec<_>>());
+    }
+
+    if let Some(status) = intel.consistency_status.as_ref() {
+        ctx["consistency_status"] = json!(status);
+    }
+    if !intel.consistency_findings.is_empty() {
+        ctx["consistency_findings"] = json!(intel.consistency_findings);
     }
 }
 
@@ -879,7 +879,7 @@ fn inject_recent_email_signals(db: &crate::db::ActionDb, entity_id: &str, ctx: &
 
 /// Try resolving an account from an ID hint that encodes parent/child slugs.
 ///
-/// Example: `salesforce--digital-marketing-technology` -> `Salesforce/Digital-Marketing-Technology`.
+/// Example: `globex--digital-marketing-technology` -> `Globex/Digital-Marketing-Technology`.
 fn find_account_dir_by_id_hint(account_ref: &str, accounts_dir: &Path) -> Option<AccountMatch> {
     let (parent_hint, child_hint) = account_ref.split_once("--")?;
     let parent_key = normalize_account_key(parent_hint);
@@ -1514,6 +1514,43 @@ fn get_captures_for_account(db: &crate::db::ActionDb, account_id: &str, days_bac
     json!(result)
 }
 
+/// Get pending/waiting actions linked to a person — by `person_id` directly,
+/// or by shared accounts (via `account_stakeholders`). Up to 10 results.
+fn get_person_actions(db: &crate::db::ActionDb, person_id: &str) -> Value {
+    let result: Vec<Value> = (|| {
+        let conn = db.conn_ref();
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT a.id, a.title, a.priority, a.status, a.due_date
+                 FROM actions a
+                 WHERE a.status IN ('pending', 'waiting')
+                   AND (
+                     a.person_id = ?1
+                     OR a.account_id IN (
+                       SELECT account_id FROM account_stakeholders WHERE person_id = ?1
+                     )
+                   )
+                 ORDER BY a.priority, a.due_date
+                 LIMIT 10",
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map([person_id], |row: &rusqlite::Row| {
+                Ok(json!({
+                    "id": row.get::<_, Option<String>>(0)?,
+                    "title": row.get::<_, Option<String>>(1)?,
+                    "priority": row.get::<_, Option<String>>(2)?,
+                    "status": row.get::<_, Option<String>>(3)?,
+                    "due_date": row.get::<_, Option<String>>(4)?,
+                }))
+            })
+            .ok()?;
+        Some(rows.flatten().collect())
+    })()
+    .unwrap_or_default();
+    json!(result)
+}
+
 fn get_account_actions(db: &crate::db::ActionDb, account_id: &str) -> Value {
     let result: Vec<Value> = (|| {
         let conn = db.conn_ref();
@@ -1553,8 +1590,9 @@ fn get_meeting_history(
         let conn = db.conn_ref();
         let mut stmt = conn
             .prepare(
-                "SELECT m.id, m.title, m.meeting_type, m.start_time, m.summary
-             FROM meetings_history m
+                "SELECT m.id, m.title, m.meeting_type, m.start_time, mt.summary
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND m.start_time >= date('now', ?2)
@@ -1592,11 +1630,12 @@ fn get_meeting_history_by_title(
         let conn = db.conn_ref();
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, meeting_type, start_time, summary
-             FROM meetings_history
-             WHERE LOWER(title) = LOWER(?1)
-               AND start_time >= date('now', ?2)
-             ORDER BY start_time DESC
+                "SELECT m.id, m.title, m.meeting_type, m.start_time, mt.summary
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE LOWER(m.title) = LOWER(?1)
+               AND m.start_time >= date('now', ?2)
+             ORDER BY m.start_time DESC
              LIMIT ?3",
             )
             .ok()?;
@@ -1764,8 +1803,7 @@ mod tests {
     #[test]
     fn test_guess_account_name_child_by_title_normalized() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         // Title uses spaces while directory uses hyphens.
         let meeting = json!({
@@ -1774,75 +1812,60 @@ mod tests {
         });
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]
     fn test_guess_account_name_child_by_domain() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Engineering")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Engineering")).unwrap();
 
         let meeting = json!({
             "title": "Weekly Sync",
-            "external_domains": ["engineering.salesforce.com"],
+            "external_domains": ["engineering.globex.com"],
         });
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
         assert_eq!(matched.name, "Engineering");
-        assert_eq!(matched.relative_path, "Salesforce/Engineering");
+        assert_eq!(matched.relative_path, "Globex/Engineering");
     }
 
     #[test]
     fn test_find_account_dir_by_name_normalized() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         let matched = find_account_dir_by_name("Digital Marketing Technology", dir.path())
             .expect("should match normalized BU name");
 
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]
     fn test_find_account_dir_by_name_prefers_child_over_top_level_duplicate() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         let matched = find_account_dir_by_name("Digital-Marketing-Technology", dir.path())
             .expect("should match child BU dir first");
 
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]
     fn test_find_account_dir_by_id_hint_prefers_parent_child_path() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
-        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
-            .unwrap();
+        std::fs::create_dir_all(dir.path().join("Globex/Digital-Marketing-Technology")).unwrap();
 
         let matched =
-            find_account_dir_by_id_hint("salesforce--digital-marketing-technology", dir.path())
+            find_account_dir_by_id_hint("globex--digital-marketing-technology", dir.path())
                 .expect("should resolve parent/child from id hint");
 
         assert_eq!(matched.name, "Digital-Marketing-Technology");
-        assert_eq!(
-            matched.relative_path,
-            "Salesforce/Digital-Marketing-Technology"
-        );
+        assert_eq!(matched.relative_path, "Globex/Digital-Marketing-Technology");
     }
 
     #[test]

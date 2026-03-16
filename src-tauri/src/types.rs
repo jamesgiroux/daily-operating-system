@@ -1506,6 +1506,12 @@ pub struct FullMeetingPrep {
     /// Recent email signals linked to this meeting's entity context.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
+    /// I527: Consistency status derived from deterministic contradiction checks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
+    /// I527: Findings retained for transparency in prep surfaces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consistency_findings: Vec<crate::intelligence::ConsistencyFinding>,
 }
 
 /// Unified meeting detail payload (ADR-0066).
@@ -1783,11 +1789,166 @@ pub struct CapturedAction {
     pub owner: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 // =============================================================================
 // Transcript Processing Types (I44 / ADR-0044)
 // =============================================================================
+
+/// Sentiment analysis from transcript processing (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSentiment {
+    /// Overall meeting sentiment: positive, neutral, negative, mixed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overall: Option<String>,
+    /// Customer-specific sentiment: positive, neutral, negative, mixed, n/a
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customer: Option<String>,
+    /// Engagement level: high, moderate, low, disengaged
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engagement: Option<String>,
+    /// Whether discussion was forward-looking
+    #[serde(default)]
+    pub forward_looking: bool,
+    /// Competitors mentioned during the call
+    #[serde(default)]
+    pub competitor_mentions: Vec<String>,
+    /// Whether a champion was present
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_present: Option<bool>,
+    /// Whether the champion was actively engaged
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_engaged: Option<bool>,
+    /// I554: Ownership language — customer|vendor|mixed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ownership_language: Option<String>,
+    /// I554: Whether customer refers to product in past tense (churn predictor)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub past_tense_references: Option<bool>,
+    /// I554: Whether customer asked about data export/portability (churn predictor)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_export_interest: Option<bool>,
+    /// I554: Whether customer mentioned promoting product internally
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub internal_advocacy_visible: Option<bool>,
+    /// I554: Whether customer asked about roadmap or future features
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roadmap_interest: Option<bool>,
+}
+
+/// Per-speaker sentiment from a transcript (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerSentiment {
+    pub name: String,
+    pub sentiment: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+}
+
+/// Engagement quality signals from a transcript (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngagementSignals {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question_density: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_maker_active: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forward_looking: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub monologue_risk: Option<bool>,
+}
+
+/// A competitor mentioned during a meeting (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompetitorMention {
+    pub competitor: String,
+    pub context: String,
+}
+
+/// An escalation signal detected in meeting language (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EscalationSignal {
+    pub quote: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+}
+
+/// I554: Champion health assessment from transcript analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionHealth {
+    /// Name of the primary champion/advocate
+    pub champion_name: String,
+    /// strong|weak|lost|none
+    pub champion_status: String,
+    /// Specific behavioral evidence from the interaction
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_evidence: Option<String>,
+    /// Risk if status is weak or lost
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub champion_risk: Option<String>,
+}
+
+/// I554: Stakeholder role change detected in transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleChange {
+    /// Person affected
+    pub person_name: String,
+    /// Previous role or status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_status: Option<String>,
+    /// New role or status
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_status: Option<String>,
+    /// Evidence quote
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+}
+
+/// I554: Strategic commitment extracted from transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptCommitment {
+    /// What was committed to
+    pub commitment: String,
+    /// Target date (YYYY-MM-DD)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    /// us|them|joint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owned_by: Option<String>,
+    /// Success criteria
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_criteria: Option<String>,
+}
+
+/// Interaction dynamics extracted from transcript analysis (I509).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionDynamics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub talk_balance: Option<String>,
+    #[serde(default)]
+    pub speaker_sentiment: Vec<SpeakerSentiment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engagement_signals: Option<EngagementSignals>,
+    #[serde(default)]
+    pub competitor_mentions: Vec<CompetitorMention>,
+    #[serde(default)]
+    pub escalation_signals: Vec<EscalationSignal>,
+}
 
 /// Result of transcript processing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1812,6 +1973,21 @@ pub struct TranscriptResult {
     pub analysis: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Sentiment analysis from transcript (I509)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sentiment: Option<TranscriptSentiment>,
+    /// Interaction dynamics from transcript (I509)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interaction_dynamics: Option<InteractionDynamics>,
+    /// I554: Champion health assessment
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub champion_health: Option<ChampionHealth>,
+    /// I554: Stakeholder role changes detected
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub role_changes: Vec<RoleChange>,
+    /// I554: Strategic commitments extracted
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commitments: Vec<TranscriptCommitment>,
 }
 
 /// Outcomes for a meeting (query response)
@@ -1986,6 +2162,154 @@ pub struct EntityContextEntry {
     pub content: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+// =============================================================================
+// Success Plans (I551-I553)
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountObjective {
+    pub id: String,
+    pub account_id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub source: String,
+    pub sort_order: i32,
+    #[serde(default)]
+    pub milestones: Vec<AccountMilestone>,
+    #[serde(default)]
+    pub linked_actions: Vec<crate::db::DbAction>,
+    pub linked_action_count: i32,
+    pub completed_milestone_count: i32,
+    pub total_milestone_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountMilestone {
+    pub id: String,
+    pub objective_id: String,
+    pub account_id: String,
+    pub title: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_signal: Option<String>,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedMilestone {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_event: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedObjective {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub confidence: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_evidence: Option<String>,
+    #[serde(default)]
+    pub milestones: Vec<SuggestedMilestone>,
+    #[serde(default)]
+    pub source_commitment_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessPlanSignals {
+    #[serde(default)]
+    pub stated_objectives: Vec<StatedObjective>,
+    #[serde(default)]
+    pub mutual_success_criteria: Vec<MutualSuccessCriterion>,
+    #[serde(default)]
+    pub milestone_candidates: Vec<MilestoneCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatedObjective {
+    pub objective: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_date: Option<String>,
+    pub confidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MutualSuccessCriterion {
+    pub criterion: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owned_by: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MilestoneCandidate {
+    pub milestone: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_event: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessPlanTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub lifecycle_trigger: String,
+    #[serde(default)]
+    pub objectives: Vec<TemplateObjective>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateObjective {
+    pub title: String,
+    pub description: String,
+    #[serde(default)]
+    pub milestones: Vec<TemplateMilestone>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateMilestone {
+    pub title: String,
+    pub offset_days: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_detect_signal: Option<String>,
 }
 
 /// An annual priority (year-level bet).
@@ -2204,6 +2528,22 @@ pub struct TimelineMeeting {
     /// Whether a meeting briefing exists (prep_frozen_json or disk file).
     #[serde(default)]
     pub has_prep: bool,
+}
+
+/// Feature flags for gating incomplete features behind compile/runtime switches.
+/// Currently used to hide role presets (not GA-ready) from the UI.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureFlags {
+    /// When false, role preset selection is hidden from onboarding and settings.
+    /// Defaults to false (bool's Default).
+    pub role_presets_enabled: bool,
+    /// When false, Book of Business report is hidden from the Me page.
+    /// Defaults to false — the template-aligned rebuild is not yet validated.
+    pub book_of_business_enabled: bool,
+    /// When false, Glean account discovery and ephemeral lookup are hidden
+    /// from the Accounts page. Defaults to false.
+    pub glean_discovery_enabled: bool,
 }
 
 #[cfg(test)]

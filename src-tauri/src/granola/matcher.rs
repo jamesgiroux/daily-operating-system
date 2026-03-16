@@ -1,10 +1,10 @@
 //! Granola → DailyOS meeting matching.
 //!
 //! Primary: match Google Calendar event ID from Granola document to
-//! meetings_history.id (both originate from Google Calendar).
+//! meetings.id (both originate from Google Calendar).
 //! Fallback: reuse the Quill matcher's title + time correlation algorithm.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 
 use super::cache::GranolaDocument;
 
@@ -28,7 +28,7 @@ pub enum MatchMethod {
 ///
 /// Strategy:
 /// 1. If the Granola document has a `google_calendar_event.id`, look it up
-///    directly in meetings_history (the `id` column stores the calendar event ID).
+///    directly in meetings (the `id` column stores the calendar event ID).
 /// 2. Fallback: match by title + time proximity using the Quill matcher algorithm.
 pub fn match_to_meeting(
     doc: &GranolaDocument,
@@ -38,8 +38,9 @@ pub fn match_to_meeting(
     if let Some(ref cal_event) = doc.google_calendar_event {
         if let Some(ref cal_id) = cal_event.id {
             if !cal_id.is_empty() {
+                let id_variants = calendar_id_variants(cal_id);
                 for (mid, _title, _start) in meeting_ids {
-                    if mid == cal_id {
+                    if id_variants.iter().any(|candidate| candidate == mid) {
                         return Some(GranolaMatchResult {
                             meeting_id: mid.clone(),
                             method: MatchMethod::CalendarId,
@@ -56,16 +57,16 @@ pub fn match_to_meeting(
         .as_ref()
         .and_then(|e| e.start.as_ref())
         .and_then(|s| s.date_time.as_deref())
-        .and_then(|t| t.parse::<DateTime<Utc>>().ok());
+        .and_then(parse_timestamp_to_utc);
 
     let doc_start = doc_start?;
 
     let mut best: Option<(GranolaMatchResult, u32)> = None;
 
     for (mid, title, start_time) in meeting_ids {
-        let meeting_start = match start_time.parse::<DateTime<Utc>>() {
-            Ok(t) => t,
-            Err(_) => continue,
+        let meeting_start = match parse_timestamp_to_utc(start_time) {
+            Some(t) => t,
+            None => continue,
         };
 
         let t_score = title_score(&doc.title, title);
@@ -84,6 +85,42 @@ pub fn match_to_meeting(
     }
 
     best.map(|(result, _)| result)
+}
+
+/// Build likely calendar ID variants across storage conventions.
+///
+/// Meetings are commonly stored with `@` normalized to `_at_`.
+/// Granola may emit either raw (`abc@google.com`) or normalized IDs.
+fn calendar_id_variants(id: &str) -> Vec<String> {
+    let mut variants = vec![id.to_string()];
+
+    if id.contains('@') {
+        variants.push(id.replace('@', "_at_"));
+    }
+    if id.contains("_at_") {
+        variants.push(id.replace("_at_", "@"));
+    }
+
+    variants.sort();
+    variants.dedup();
+    variants
+}
+
+/// Parse common timestamp encodings to UTC.
+fn parse_timestamp_to_utc(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .ok()
+        .or_else(|| {
+            NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
+                .ok()
+                .map(|dt| Utc.from_utc_datetime(&dt))
+        })
+        .or_else(|| {
+            NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|dt| Utc.from_utc_datetime(&dt))
+        })
 }
 
 /// Score title similarity (same algorithm as quill::matcher).
@@ -130,7 +167,7 @@ fn time_proximity_score(a: &DateTime<Utc>, b: &DateTime<Utc>) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::granola::cache::{EventTime, GoogleCalendarEvent};
+    use crate::granola::cache::{EventTime, GoogleCalendarEvent, GranolaContentType};
 
     fn make_doc(
         id: &str,
@@ -144,6 +181,7 @@ mod tests {
             created_at: None,
             updated_at: None,
             content: "Test content".to_string(),
+            content_type: GranolaContentType::Transcript,
             google_calendar_event: Some(GoogleCalendarEvent {
                 id: cal_id.map(String::from),
                 summary: Some(title.to_string()),
@@ -191,6 +229,48 @@ mod tests {
             "meeting-1".to_string(),
             "Weekly Sync".to_string(),
             "2026-02-17T14:00:00Z".to_string(),
+        )];
+
+        let result = match_to_meeting(&doc, &meetings);
+        assert!(result.is_some());
+        let m = result.unwrap();
+        assert_eq!(m.meeting_id, "meeting-1");
+        assert_eq!(m.method, MatchMethod::TitleTime);
+    }
+
+    #[test]
+    fn test_calendar_id_match_raw_to_normalized() {
+        let doc = make_doc(
+            "g1",
+            "Weekly Sync",
+            Some("abc123@google.com"),
+            Some("2026-02-17T14:00:00Z"),
+        );
+        let meetings = vec![(
+            "abc123_at_google.com".to_string(),
+            "Weekly Sync".to_string(),
+            "2026-02-17T14:00:00Z".to_string(),
+        )];
+
+        let result = match_to_meeting(&doc, &meetings);
+        assert!(result.is_some());
+        let m = result.unwrap();
+        assert_eq!(m.meeting_id, "abc123_at_google.com");
+        assert_eq!(m.method, MatchMethod::CalendarId);
+    }
+
+    #[test]
+    fn test_title_time_fallback_parses_naive_meeting_start() {
+        let doc = make_doc(
+            "g1",
+            "Weekly Sync",
+            Some("cal-999"),
+            Some("2026-02-17T14:00:00Z"),
+        );
+        let meetings = vec![(
+            "meeting-1".to_string(),
+            "Weekly Sync".to_string(),
+            "2026-02-17T14:00:00".to_string(),
         )];
 
         let result = match_to_meeting(&doc, &meetings);

@@ -1,7 +1,7 @@
 /* PersonRelationships — "Their Network" chapter (I392, ADR-0088) */
 
 .chapter {
-  padding-top: var(--space-2xl);
+  /* Spacing handled by page-level chapterSectionWithPadding wrapper */
 }
 
 .clusterSummary {
@@ -75,8 +75,19 @@
   padding: 2px 6px;
   border-radius: var(--radius-editorial-sm);
   /* Charcoal tint — from --color-desk-charcoal #1e2530 */
-  background: rgba(30, 37, 48, 0.06);
+  background: var(--color-rule-light);
   color: var(--color-text-secondary);
+}
+
+.suggestedBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-garden-sage-14);
+  color: var(--color-garden-sage);
 }
 
 .edgeMeta {
@@ -96,8 +107,58 @@
   text-underline-offset: 2px;
 }
 
+.edgeRationale {
+  cursor: help;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .edgeDate {
   opacity: 0.7;
+}
+
+/* Accept button on suggested edge rows */
+.acceptBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-garden-sage);
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.edgeRow:hover .acceptBtn {
+  opacity: 1;
+}
+
+.acceptBtn:hover {
+  color: var(--color-garden-eucalyptus);
+}
+
+/* Confirm button (inline confirm flow) */
+.confirmBtn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-paper-warm-white);
+  background: var(--color-garden-sage);
+  border: none;
+  border-radius: var(--radius-editorial-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.confirmBtn:hover {
+  opacity: 0.9;
 }
 
 /* Delete button on edge rows */
@@ -204,7 +265,7 @@
 }
 
 .searchResultItem:hover {
-  background: rgba(30, 37, 48, 0.04);
+  background: var(--color-desk-charcoal-4);
 }
 
 .searchResultName {

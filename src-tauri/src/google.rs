@@ -54,7 +54,9 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 
     // Fetch a week of events so the timeline, cancellation detection,
     // and prep generation cover upcoming meetings (I386).
-    let today = Utc::now().date_naive();
+    // Use LOCAL date, not UTC — at 9 PM ET, UTC is already tomorrow,
+    // which would exclude today's events from the poll response.
+    let today = chrono::Local::now().date_naive();
     let end_date = today + chrono::Duration::days(7);
     let raw_events = google_api::calendar::fetch_events(&access_token, today, end_date)
         .await
@@ -286,6 +288,16 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     }
                 }
 
+                // I428: Record successful calendar sync
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_success(
+                            conn.conn_ref(),
+                            "google_calendar",
+                        );
+                    }
+                }
+
                 let _ = app_handle.emit("calendar-updated", ());
 
                 // Check for recently-ended meetings needing Quill transcript sync
@@ -301,6 +313,16 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
+                // I428: Record calendar sync failure
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_failure(
+                            conn.conn_ref(),
+                            "google_calendar",
+                            "Auth token expired",
+                        );
+                    }
+                }
                 if let Ok(mut guard) = state.calendar.google_auth.lock() {
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
@@ -312,7 +334,17 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 );
                 let _ = crate::notification::notify_auth_expired(&app_handle);
             }
-            Err(PollError::ApiError(e)) => {
+            Err(PollError::ApiError(ref e)) => {
+                // I428: Record calendar sync failure
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_failure(
+                            conn.conn_ref(),
+                            "google_calendar",
+                            e,
+                        );
+                    }
+                }
                 log::warn!("Calendar poll error: {}", e);
             }
         }
@@ -602,7 +634,7 @@ fn populate_people_from_events(
         let old_title: Option<String> = db
             .conn_ref()
             .query_row(
-                "SELECT title FROM meetings_history WHERE id = ?1",
+                "SELECT title FROM meetings WHERE id = ?1",
                 rusqlite::params![meeting_id],
                 |row| row.get(0),
             )
@@ -795,7 +827,8 @@ fn populate_people_from_events(
 ///
 /// These are likely cancelled meetings. Updates their intelligence_state to "archived".
 fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState) {
-    let today = Utc::now().date_naive();
+    // Use local date — consistent with poll range (which also uses local date).
+    let today = chrono::Local::now().date_naive();
     let range_start = today.to_string(); // "YYYY-MM-DD"
     let range_end = (today + chrono::Duration::days(8)).to_string();
 
@@ -814,10 +847,11 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
 
     // Query meetings in the polled range from DB that have a calendar_event_id (I386)
     let mut stmt = match db.conn_ref().prepare(
-        "SELECT id, calendar_event_id FROM meetings_history
-         WHERE start_time >= ?1 AND start_time < ?2
-         AND calendar_event_id IS NOT NULL
-         AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+        "SELECT m.id, m.calendar_event_id FROM meetings m
+         LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+         WHERE m.start_time >= ?1 AND m.start_time < ?2
+         AND m.calendar_event_id IS NOT NULL
+         AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
     ) {
         Ok(s) => s,
         Err(_) => return,
@@ -1040,29 +1074,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // Longer startup delay than calendar (10s vs 5s) — let auth + calendar settle
     tokio::time::sleep(Duration::from_secs(10)).await;
 
-    // ADR-0095: In Glean Governed mode, Gmail poller is disabled.
-    // Glean indexes Gmail directly — no need for DailyOS to poll.
-    if state.context_provider.provider_name() == "glean" {
-        let is_governed = state
-            .with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))
-            .map(|mode| {
-                matches!(
-                    mode,
-                    crate::context_provider::ContextMode::Glean {
-                        strategy: crate::context_provider::GleanStrategy::Governed,
-                        ..
-                    }
-                )
-            })
-            .unwrap_or(false);
-
-        if is_governed {
-            log::info!("Email poller: disabled in Glean Governed mode");
-            loop {
-                tokio::time::sleep(Duration::from_secs(3600)).await;
-            }
-        }
-    }
+    // Gmail always polls — Glean Governed mode removed (I560 Wave 1).
 
     loop {
         // Dev mode isolation: pause background processing while dev sandbox is active
@@ -1120,6 +1132,16 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 serde_json::json!({"emails_fetched": after_ids.len()}),
                             );
                         }
+                        // I428: Record successful gmail sync
+                        if let Ok(guard) = state.db.lock() {
+                            if let Some(conn) = guard.as_ref() {
+                                let _ = crate::connectivity::record_sync_success(
+                                    conn.conn_ref(),
+                                    "gmail",
+                                );
+                            }
+                        }
+
                         // Emit mechanical update immediately
                         let _ = app_handle.emit("emails-updated", ());
 
@@ -1138,14 +1160,15 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             // Serialize expensive poller enrichment/scoring work so wake/unlock
                             // paths don't compete with other heavy queues.
                             let _heavy_work_permit = match state
-                                .heavy_work_semaphore
+                                .permits
+                                .pty
                                 .acquire()
                                 .await
                             {
                                 Ok(permit) => permit,
                                 Err(e) => {
                                     log::warn!(
-                                        "Email poll: heavy_work_semaphore closed, skipping enrichment: {}",
+                                        "Email poll: PTY permit closed, skipping enrichment: {}",
                                         e
                                     );
                                     continue;
@@ -1257,12 +1280,32 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             log::info!("Email poll: no new emails");
                         }
                     }
-                    Err(e) => {
+                    Err(ref e) => {
+                        // I428: Record gmail sync failure (delivery)
+                        if let Ok(guard) = state.db.lock() {
+                            if let Some(conn) = guard.as_ref() {
+                                let _ = crate::connectivity::record_sync_failure(
+                                    conn.conn_ref(),
+                                    "gmail",
+                                    &e.to_string(),
+                                );
+                            }
+                        }
                         log::warn!("Email poll: delivery failed: {}", e);
                     }
                 }
             }
-            Err(e) => {
+            Err(ref e) => {
+                // I428: Record gmail sync failure (fetch)
+                if let Ok(guard) = state.db.lock() {
+                    if let Some(conn) = guard.as_ref() {
+                        let _ = crate::connectivity::record_sync_failure(
+                            conn.conn_ref(),
+                            "gmail",
+                            &e.to_string(),
+                        );
+                    }
+                }
                 log::warn!("Email poll: fetch failed: {}", e);
             }
         }

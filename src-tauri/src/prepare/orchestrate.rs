@@ -1025,7 +1025,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     let (classified, _events, _meetings_by_type, _time_status, events_by_day) =
         fetch_and_classify_week(monday, friday, &user_domains, &entity_hints).await;
 
-    // Ensure classified meetings exist in meetings_history and generate intelligence (ADR-0081)
+    // Ensure classified meetings exist in meetings table and generate intelligence (ADR-0081)
     {
         let intel_guard = state.db.lock().ok();
         if let Some(db) = intel_guard.as_ref().and_then(|g| g.as_ref()) {
@@ -1046,7 +1046,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     .and_then(|v| v.as_str())
                     .unwrap_or("(untitled)");
 
-                // Upsert meeting into meetings_history so intelligence lifecycle can find it
+                // Upsert meeting into meetings table so intelligence lifecycle can find it
                 let existing = db
                     .get_meeting_by_calendar_event_id(calendar_event_id)
                     .ok()
@@ -1319,11 +1319,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
 /// Replaces refresh_emails.py. Writes: _today/data/email-refresh-directive.json
 pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
-    // Serialize heavy refresh work (PTY + embedding inference) with other queues to
-    // reduce wake/unlock contention and UI stalls under load.
-    let _heavy_work_permit = state.heavy_work_semaphore.acquire().await.map_err(|_| {
-        ExecutionError::ConfigurationError("Heavy work semaphore closed".to_string())
-    })?;
+    // I567: Permit moved to wrap only the PTY enrichment call below.
+    // Gmail fetch, DB persistence, thread update, signal emission run without the permit.
 
     let (_profile, user_domains, _user_focus) = get_config(state);
     let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
@@ -1463,6 +1460,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
 
     // I367: Mandatory email enrichment (entity resolution + AI analysis)
     // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
+    // I567: Only hold orchestration permit during the PTY enrichment call.
     {
         let ai_config = {
             let cfg = state.config.read().ok();
@@ -1471,8 +1469,12 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
                 .map(|c| c.ai_models.clone())
                 .unwrap_or_default()
         };
+        let _enrich_permit = state.permits.orchestration.acquire().await.map_err(|_| {
+            ExecutionError::ConfigurationError("Orchestration permit closed".to_string())
+        })?;
         let enriched =
             super::email_enrich::enrich_pending_emails_two_phase(state, workspace, &ai_config, 20);
+        drop(_enrich_permit);
         if enriched > 0 {
             log::info!("refresh_emails: enriched {} emails", enriched);
         }
@@ -1670,14 +1672,9 @@ fn queue_person_intelligence(
             let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
         }
 
-        // Check intelligence.json freshness
-        let entity_name = pe
-            .get("entity_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&entity_id);
-        let person_dir = crate::people::person_dir(workspace, entity_name);
-
-        if let Ok(intel) = crate::intelligence::read_intelligence_json(&person_dir) {
+        // Check intelligence freshness (I513: DB is the sole source — no file fallback)
+        let intel_opt = db.get_entity_intelligence(&entity_id).ok().flatten();
+        if let Some(intel) = intel_opt {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&intel.enriched_at) {
                 let age_secs = (Utc::now() - ts.with_timezone(&Utc)).num_seconds();
                 if age_secs < 7200 {
@@ -1691,13 +1688,11 @@ fn queue_person_intelligence(
             }
         }
 
-        queue.enqueue(crate::intel_queue::IntelRequest {
+        queue.enqueue(crate::intel_queue::IntelRequest::new(
             entity_id,
-            entity_type: "person".to_string(),
-            priority: crate::intel_queue::IntelPriority::CalendarChange,
-            requested_at: std::time::Instant::now(),
-            retry_count: 0,
-        });
+            "person".to_string(),
+            crate::intel_queue::IntelPriority::CalendarChange,
+        ));
         enqueued += 1;
     }
 
@@ -2353,6 +2348,13 @@ fn track_thread_positions(
     }
 
     (total, awaiting)
+}
+
+/// Compute human-readable wait duration from a date string.
+///
+/// Public alias for use by services that build replies_needed from DB (I513).
+pub fn compute_wait_duration_public(date_str: &str, now: &chrono::DateTime<Utc>) -> String {
+    compute_wait_duration(date_str, now)
 }
 
 /// Compute human-readable wait duration from a date string.
@@ -4246,18 +4248,16 @@ mod tests {
         let queue = crate::intel_queue::IntelligenceQueue::new();
         let workspace = TempDir::new().unwrap();
 
-        // Create a fresh intelligence.json
-        let person_dir = crate::people::person_dir(workspace.path(), "Fresh Person");
-        std::fs::create_dir_all(&person_dir).unwrap();
-        let intel_json = json!({
-            "version": 1,
-            "entityId": "person_fresh_example_com",
-            "entityType": "person",
-            "enrichedAt": Utc::now().to_rfc3339(),
-            "executiveAssessment": "Fresh assessment.",
-        });
-        let intel_str = serde_json::to_string_pretty(&intel_json).unwrap();
-        crate::util::atomic_write_str(&person_dir.join("intelligence.json"), &intel_str).unwrap();
+        // I513: Insert fresh intelligence into DB (no file fallback).
+        let intel = crate::intelligence::IntelligenceJson {
+            version: 1,
+            entity_id: "person_fresh_example_com".to_string(),
+            entity_type: "person".to_string(),
+            enriched_at: Utc::now().to_rfc3339(),
+            executive_assessment: Some("Fresh assessment.".to_string()),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&intel).unwrap();
 
         let contexts = vec![person_meeting_context(
             "person_fresh_example_com",

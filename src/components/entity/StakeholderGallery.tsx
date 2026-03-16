@@ -7,16 +7,25 @@
  *
  * I261: Live editing (name, role, assessment, engagement), add/remove
  * stakeholders, internal people filter, create contact from stakeholder.
+ *
+ * I493: Enriched cards show title/organization from linked person data,
+ * engagement badges, last interaction date, and coverage analysis strip.
  */
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { X, Plus, UserPlus, Search, LinkIcon, Check } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
+import { formatRelativeDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
 import { Avatar } from "@/components/ui/Avatar";
 import { EngagementSelector } from "./EngagementSelector";
+import { getEngagementDisplay } from "./EngagementSelector";
+import { TeamRoleSelector, getTeamRoleDisplay } from "./TeamRoleSelector";
+import css from "./StakeholderGallery.module.css";
 
 interface StakeholderGalleryProps {
   intelligence: EntityIntelligence | null;
@@ -30,6 +39,14 @@ interface StakeholderGalleryProps {
   entityType?: string;
   /** Called after any intelligence field is updated (for parent re-fetch). */
   onIntelligenceUpdated?: () => void;
+  /** Team edit callbacks — when provided, enables inline team editing. */
+  onRemoveTeamMember?: (personId: string, role: string) => void;
+  onChangeTeamRole?: (personId: string, newRole: string) => void;
+  onAddTeamMember?: (personId: string, role: string) => void;
+  onCreateTeamMember?: (name: string, email: string, role: string) => void;
+  teamSearchQuery?: string;
+  onTeamSearchQueryChange?: (query: string) => void;
+  teamSearchResults?: Person[];
 }
 
 function buildEpigraph(stakeholders: { name: string }[]): string {
@@ -64,28 +81,154 @@ const ASSESSMENT_CHAR_LIMIT = 150;
 function TruncatedAssessment({ text }: { text: string }) {
   const [showFull, setShowFull] = useState(false);
   const truncated = text.length > ASSESSMENT_CHAR_LIMIT && !showFull;
-  const displayText = truncated ? text.slice(0, ASSESSMENT_CHAR_LIMIT) + "…" : text;
+  const displayText = truncated ? text.slice(0, ASSESSMENT_CHAR_LIMIT) + "\u2026" : text;
   return (
-    <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}>
+    <p className={css.assessment}>
       {displayText}
       {truncated && (
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFull(true); }}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "0 0 0 4px",
-          }}
+          className={css.readMore}
         >
           Read more
         </button>
       )}
     </p>
   );
+}
+
+/** Team add form — search input + role selector with portal dropdown for results. */
+function TeamAddForm({
+  teamSearchQuery,
+  onTeamSearchQueryChange,
+  teamNewRole,
+  setTeamNewRole,
+  teamNewEmail: _teamNewEmail,
+  setTeamNewEmail: _setTeamNewEmail,
+  teamSearchResults,
+  onClose,
+  onAddTeamMember,
+  onCreateTeamMember,
+}: {
+  teamSearchQuery: string;
+  onTeamSearchQueryChange?: (q: string) => void;
+  teamNewRole: string;
+  setTeamNewRole: (r: string) => void;
+  teamNewEmail: string;
+  setTeamNewEmail: (e: string) => void;
+  teamSearchResults: Person[];
+  onClose: () => void;
+  onAddTeamMember: (personId: string) => void;
+  onCreateTeamMember?: (query: string) => void;
+}) {
+  const inputRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  const updatePos = useCallback(() => {
+    if (!inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 320) });
+  }, []);
+
+  const hasResults = teamSearchResults.length > 0;
+  const hasQuery = teamSearchQuery.trim().length >= 2;
+  const showDropdown = hasQuery && (hasResults || !!onCreateTeamMember);
+
+  useEffect(() => {
+    if (!showDropdown) return;
+    updatePos();
+
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        inputRef.current && !inputRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
+        // Don't close the whole form, just let the dropdown disappear naturally
+      }
+    }
+
+    function handleScroll() { updatePos(); }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [showDropdown, updatePos]);
+
+  return (
+    <div className={css.teamAddForm}>
+      <div ref={inputRef} className={css.searchInputWrapper}>
+        <Search size={12} className={css.searchIcon} />
+        <input
+          value={teamSearchQuery}
+          onChange={(e) => onTeamSearchQueryChange?.(e.target.value)}
+          placeholder="Search people"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onClose();
+          }}
+          className={css.searchInput}
+        />
+      </div>
+      <TeamRoleSelector value={teamNewRole} onChange={setTeamNewRole} />
+      <button onClick={onClose} className={css.teamAddCancel}>Cancel</button>
+
+      {showDropdown && createPortal(
+        <div
+          ref={dropdownRef}
+          className={css.teamSearchDropdownPortal}
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
+        >
+          {hasResults && (
+            <p className={css.searchResultsLabel}>Existing People</p>
+          )}
+          {teamSearchResults.map((person) => (
+            <button
+              key={person.id}
+              onClick={() => onAddTeamMember(person.id)}
+              className={css.searchResultItem}
+            >
+              <UserPlus size={14} className={css.searchResultIcon} />
+              <div>
+                <span className={css.searchResultName}>{person.name}</span>
+                {(person.role || person.organization) && (
+                  <span className={css.searchResultMeta}>
+                    {[person.role, person.organization].filter(Boolean).join(" \u00b7 ")}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+          {onCreateTeamMember && (
+            <button
+              onClick={() => onCreateTeamMember(teamSearchQuery.trim())}
+              className={css.searchResultItem}
+            >
+              <Plus size={14} className={css.searchResultIcon} />
+              <span className={css.searchResultName}>
+                Create &ldquo;{teamSearchQuery.trim()}&rdquo;
+              </span>
+            </button>
+          )}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+/** Build a title/organization line from enriched person data. */
+function buildPersonDetail(matched: Person | undefined): string | null {
+  if (!matched) return null;
+  const parts: string[] = [];
+  // Use role as title (Person.role is the job title field)
+  if (matched.role) parts.push(matched.role);
+  if (matched.organization) parts.push(matched.organization);
+  return parts.length > 0 ? parts.join(" \u00b7 ") : null;
 }
 
 export function StakeholderGallery({
@@ -97,6 +240,13 @@ export function StakeholderGallery({
   entityId,
   entityType,
   onIntelligenceUpdated,
+  onRemoveTeamMember,
+  onChangeTeamRole,
+  onAddTeamMember,
+  onCreateTeamMember,
+  teamSearchQuery,
+  onTeamSearchQueryChange,
+  teamSearchResults,
 }: StakeholderGalleryProps) {
   const navigate = useNavigate();
   const allStakeholders = intelligence?.stakeholderInsights ?? [];
@@ -105,6 +255,12 @@ export function StakeholderGallery({
   const epigraph = hasStakeholders ? buildEpigraph(stakeholders) : undefined;
   const teamMembers = accountTeam ?? [];
   const canEdit = !!entityId && !!entityType;
+  const canEditTeam = !!onRemoveTeamMember;
+
+  // teamEditMode removed — always inline-editable (no pencil toggle)
+  const [teamAddingMember, setTeamAddingMember] = useState(false);
+  const [teamNewRole, setTeamNewRole] = useState("associated");
+  const [teamNewEmail, setTeamNewEmail] = useState("");
 
   const [expandedGrid, setExpandedGrid] = useState(false);
   const [addingStakeholder, setAddingStakeholder] = useState(false);
@@ -129,13 +285,21 @@ export function StakeholderGallery({
   }, [showDropdown]);
 
   // Empty section collapse: return null when nothing to show (and not editing)
-  if (!hasStakeholders && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit) {
+  if (!hasStakeholders && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit && !canEditTeam) {
     return null;
   }
 
   const STAKEHOLDER_LIMIT = 6;
   const visibleStakeholders = expandedGrid ? stakeholders : stakeholders.slice(0, STAKEHOLDER_LIMIT);
   const hasMoreStakeholders = stakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
+
+  // ── Coverage analysis ──
+  const totalKnown = stakeholders.length + linkedPeople.filter(
+    (p) => !stakeholders.some((s) => s.name.toLowerCase() === p.name.toLowerCase()),
+  ).length;
+  const engagedCount = stakeholders.filter(
+    (s) => s.engagement && s.engagement !== "unknown" && s.engagement !== "none",
+  ).length;
 
   // ── Field update helper ──
   async function updateField(fieldPath: string, value: string) {
@@ -150,6 +314,7 @@ export function StakeholderGallery({
       onIntelligenceUpdated?.();
     } catch (e) {
       console.error("Failed to update intelligence field:", e);
+      toast.error("Failed to save");
     }
   }
 
@@ -165,6 +330,7 @@ export function StakeholderGallery({
       onIntelligenceUpdated?.();
     } catch (e) {
       console.error("Failed to update stakeholders:", e);
+      toast.error("Failed to save");
     }
   }
 
@@ -257,6 +423,7 @@ export function StakeholderGallery({
       }
     } catch (e) {
       console.error("Failed to create person from stakeholder:", e);
+      toast.error("Failed to save");
     }
   }
 
@@ -274,12 +441,12 @@ export function StakeholderGallery({
   }
 
   return (
-    <section id={sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+    <section id={sectionId || undefined} className={css.section}>
       <ChapterHeading title={chapterTitle} epigraph={epigraph} />
 
       {hasStakeholders ? (
         <>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px 48px" }}>
+        <div className={css.grid}>
           {visibleStakeholders.map((s, i) => {
             // I420: personId-first matching, then name fallback
             const matched = s.personId
@@ -290,11 +457,12 @@ export function StakeholderGallery({
               : null;
             const idx = actualIndex(i);
             const isHovered = hoveredCard === i;
+            const personDetail = buildPersonDetail(matched);
 
             const card = (
               <div
                 key={i}
-                style={{ position: "relative" }}
+                className={css.card}
                 onMouseEnter={() => setHoveredCard(i)}
                 onMouseLeave={() => setHoveredCard(null)}
               >
@@ -306,35 +474,16 @@ export function StakeholderGallery({
                       e.stopPropagation();
                       handleRemove(i);
                     }}
-                    style={{
-                      position: "absolute",
-                      top: -4,
-                      right: -4,
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      border: "1px solid var(--color-rule-light)",
-                      background: "var(--color-paper-cream)",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 2,
-                    }}
+                    className={css.removeButton}
                     title="Remove stakeholder"
                   >
-                    <X size={12} strokeWidth={1.5} style={{ color: "var(--color-text-tertiary)" }} />
+                    <X size={12} strokeWidth={1.5} className={css.removeIcon} />
                   </button>
                 )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                <div className={css.cardHeader}>
                   {/* Avatar with larkspur ring for linked person entities */}
-                  <div style={{
-                    borderRadius: "50%",
-                    padding: matched ? 2 : 0,
-                    border: matched ? "2px solid var(--color-garden-larkspur)" : "2px solid transparent",
-                    flexShrink: 0,
-                  }}>
+                  <div className={matched ? css.avatarRingLinked : css.avatarRing}>
                     <Avatar name={s.name} personId={matched?.id} size={24} />
                   </div>
                   {canEdit ? (
@@ -342,15 +491,19 @@ export function StakeholderGallery({
                       value={s.name}
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].name`, v)}
                       multiline={false}
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}
+                      className={css.editableName}
                     />
+                  ) : matched ? (
+                    <Link to="/people/$personId" params={{ personId: matched.id }} className={css.nameLink}>
+                      {s.name}
+                    </Link>
                   ) : (
-                    <span style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}>
+                    <span className={css.name}>
                       {s.name}
                     </span>
                   )}
                   {matched && (
-                    <LinkIcon size={12} strokeWidth={1.5} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} aria-label={`Linked to ${matched.name}`} />
+                    <LinkIcon size={12} strokeWidth={1.5} className={css.linkIcon} aria-label={`Linked to ${matched.name}`} />
                   )}
                   {s.engagement && canEdit ? (
                     <EngagementSelector
@@ -359,21 +512,16 @@ export function StakeholderGallery({
                     />
                   ) : s.engagement ? (
                     <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 9,
-                        fontWeight: 500,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        padding: "2px 7px",
-                        borderRadius: 3,
-                        ...getStaticBadgeStyle(s.engagement),
-                      }}
+                      className={`${css.engagementBadge} ${getEngagementBadgeClass(s.engagement)}`}
                     >
                       {getStaticBadgeLabel(s.engagement)}
                     </span>
                   ) : null}
                 </div>
+                {/* I493: Title and organization from linked person data */}
+                {personDetail && (
+                  <p className={css.titleLine}>{personDetail}</p>
+                )}
                 {s.role != null && (
                   canEdit ? (
                     <EditableText
@@ -381,10 +529,10 @@ export function StakeholderGallery({
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].role`, v)}
                       as="p"
                       multiline={false}
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "0 0 8px 0" }}
+                      className={css.editableRole}
                     />
                   ) : (
-                    <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "0 0 8px 0" }}>
+                    <p className={css.role}>
                       {s.role}
                     </p>
                   )
@@ -396,11 +544,22 @@ export function StakeholderGallery({
                       onChange={(v) => updateField(`stakeholderInsights[${idx}].assessment`, v)}
                       as="p"
                       multiline
-                      style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}
+                      className={css.editableAssessment}
                     />
                   ) : (
                     <TruncatedAssessment text={s.assessment} />
                   )
+                )}
+                {s.source && (s.source === "clay" || s.source === "gravatar") && (
+                  <span className={css.enrichmentTag} data-source={s.source}>
+                    {s.source === "clay" ? "Clay" : "Gravatar"}
+                  </span>
+                )}
+                {/* I493: Last interaction date from linked person data */}
+                {matched?.lastSeen && (
+                  <div className={css.lastSeen}>
+                    Last seen {formatRelativeDate(matched.lastSeen)}
+                  </div>
                 )}
                 {/* I420: Suggestion confirmation prompt */}
                 {canEdit && suggested && (
@@ -410,19 +569,7 @@ export function StakeholderGallery({
                       e.stopPropagation();
                       confirmSuggestion(idx, suggested.id, suggested.name);
                     }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      marginTop: 8,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-garden-larkspur)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
+                    className={css.actionButtonSuggestion}
                     title={`Link to ${suggested.name}`}
                   >
                     <Check size={12} strokeWidth={1.5} />
@@ -437,19 +584,7 @@ export function StakeholderGallery({
                       e.stopPropagation();
                       handleCreateContact(s);
                     }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      marginTop: 8,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
+                    className={css.actionButtonCreate}
                   >
                     <UserPlus size={12} strokeWidth={1.5} />
                     Create contact
@@ -458,60 +593,51 @@ export function StakeholderGallery({
               </div>
             );
 
-            if (matched) {
-              return (
-                <Link key={i} to="/people/$personId" params={{ personId: matched.id }} style={{ textDecoration: "none", color: "inherit" }}>
-                  {card}
-                </Link>
-              );
-            }
+            // Card body does NOT navigate — only name click navigates
             return card;
           })}
         </div>
         {hasMoreStakeholders && (
           <button
             onClick={() => setExpandedGrid(true)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: "12px 0 0",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
+            className={css.showMore}
           >
             Show {stakeholders.length - STAKEHOLDER_LIMIT} more
           </button>
         )}
         </>
       ) : linkedPeople.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px 48px" }}>
+        <div className={css.grid}>
           {linkedPeople.map((p) => (
-            <Link key={p.id} to="/people/$personId" params={{ personId: p.id }} style={{ textDecoration: "none", color: "inherit" }}>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 16, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                {p.name}
-              </span>
+            <div key={p.id} className={css.card}>
+              <div className={css.cardHeader}>
+                <Link to="/people/$personId" params={{ personId: p.id }} className={css.nameLink}>
+                  {p.name}
+                </Link>
+              </div>
               {p.role && (
-                <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 400, color: "var(--color-text-tertiary)", margin: "4px 0 0 0" }}>
-                  {p.role}
+                <p className={css.titleLine}>
+                  {[p.role, p.organization].filter(Boolean).join(" \u00b7 ")}
                 </p>
               )}
-            </Link>
+              {p.lastSeen && (
+                <div className={css.lastSeen}>
+                  Last seen {formatRelativeDate(p.lastSeen)}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       ) : null}
 
       {/* Add stakeholder */}
       {canEdit && (
-        <div style={{ marginTop: hasStakeholders ? 32 : 16 }}>
+        <div className={hasStakeholders ? css.addSection : css.addSectionCompact}>
           {addingStakeholder ? (
             <div ref={addContainerRef}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative", width: 200 }}>
-                  <Search size={12} style={{ position: "absolute", left: 8, top: 9, color: "var(--color-text-tertiary)" }} />
+              <div className={css.addForm}>
+                <div className={css.searchInputWrapper}>
+                  <Search size={12} className={css.searchIcon} />
                   <input
                     value={newName}
                     onChange={(e) => handleNameChange(e.target.value)}
@@ -521,16 +647,7 @@ export function StakeholderGallery({
                       if (e.key === "Enter") handleAdd();
                       if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); setShowDropdown(false); }
                     }}
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 14,
-                      padding: "4px 8px 4px 26px",
-                      border: "1px solid var(--color-rule-light)",
-                      borderRadius: 4,
-                      background: "transparent",
-                      color: "var(--color-text-primary)",
-                      width: "100%",
-                    }}
+                    className={css.searchInput}
                   />
                 </div>
                 <input
@@ -541,80 +658,37 @@ export function StakeholderGallery({
                     if (e.key === "Enter") handleAdd();
                     if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); }
                   }}
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    padding: "4px 8px",
-                    border: "1px solid var(--color-rule-light)",
-                    borderRadius: 4,
-                    background: "transparent",
-                    color: "var(--color-text-primary)",
-                    width: 160,
-                  }}
+                  className={css.roleInput}
                 />
                 <button
                   onClick={handleAdd}
                   disabled={!newName.trim()}
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: newName.trim() ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
-                    background: "none",
-                    border: "none",
-                    cursor: newName.trim() ? "pointer" : "default",
-                    padding: "4px 0",
-                  }}
+                  className={newName.trim() ? css.addButtonActive : css.addButtonDisabled}
                 >
                   Add
                 </button>
               </div>
 
-              {/* Inline search results — no absolute positioning, no z-index issues */}
+              {/* Inline search results */}
               {showDropdown && searchResults.length > 0 && (
-                <div style={{
-                  marginTop: 8,
-                  border: "1px solid var(--color-rule-light)",
-                  borderRadius: 4,
-                  background: "var(--color-paper-warm-white)",
-                }}>
-                  <p style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "var(--color-text-tertiary)",
-                    padding: "8px 12px 4px",
-                    margin: 0,
-                  }}>
+                <div className={css.searchResults}>
+                  <p className={css.searchResultsLabel}>
                     Existing People
                   </p>
                   {searchResults.map((person) => (
                     <button
                       key={person.id}
                       onClick={() => handleSelectPerson(person)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        width: "100%",
-                        padding: "8px 12px",
-                        background: "none",
-                        border: "none",
-                        borderTop: "1px solid var(--color-rule-light)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
+                      className={css.searchResultItem}
                     >
-                      <UserPlus size={14} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} />
+                      <UserPlus size={14} className={css.searchResultIcon} />
                       <div>
-                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                        <span className={css.searchResultName}>
                           {person.name}
                         </span>
                         {(person.role || person.organization) && (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginLeft: 8 }}>
-                            {[person.role, person.organization].filter(Boolean).join(" · ")}
+                          <span className={css.searchResultMeta}>
+                            {[person.role, person.organization].filter(Boolean).join(" \u00b7 ")}
                           </span>
                         )}
                       </div>
@@ -626,20 +700,7 @@ export function StakeholderGallery({
           ) : (
             <button
               onClick={() => setAddingStakeholder(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
+              className={css.addTrigger}
             >
               <Plus size={12} strokeWidth={1.5} />
               Add Stakeholder
@@ -648,45 +709,169 @@ export function StakeholderGallery({
         </div>
       )}
 
-      {/* Your Team strip */}
-      {teamMembers.length > 0 && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-heavy)",
-            borderBottom: "1px solid var(--color-rule-heavy)",
-            padding: "14px 0",
-            marginTop: 40,
-            display: "flex",
-            alignItems: "baseline",
-            gap: 24,
-            flexWrap: "wrap",
-          }}
-        >
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-text-tertiary)" }}>
-            Your Team
-          </span>
-          {teamMembers.map((member) => (
-            <span key={member.personId} style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-text-tertiary)" }}>
-                {member.role}
+      {/* I493: Coverage analysis strip */}
+      {totalKnown > 0 && (
+        <div className={css.coverageStrip}>
+          <span className={css.coverageNumbers}>{engagedCount} of {totalKnown}</span>
+          <span className={css.coverageLabel}>known stakeholders with defined roles</span>
+        </div>
+      )}
+
+      {/* I557: Relationship Depth Summary */}
+      {intelligence?.relationshipDepth && (
+        <div className={css.relationshipDepthSection}>
+          <div className={css.depthStrip}>
+            {intelligence.relationshipDepth.championStrength && (
+              <div className={css.depthCell}>
+                <div className={css.depthCellLabel}>Champion</div>
+                <div className={`${css.depthCellValue} ${getDepthColor("champion", intelligence.relationshipDepth.championStrength)}`}>
+                  {intelligence.relationshipDepth.championStrength}
+                </div>
+              </div>
+            )}
+            {intelligence.relationshipDepth.executiveAccess && (
+              <div className={css.depthCell}>
+                <div className={css.depthCellLabel}>Executive Access</div>
+                <div className={`${css.depthCellValue} ${getDepthColor("access", intelligence.relationshipDepth.executiveAccess)}`}>
+                  {intelligence.relationshipDepth.executiveAccess}
+                </div>
+              </div>
+            )}
+            {intelligence.relationshipDepth.stakeholderCoverage && (
+              <div className={css.depthCell}>
+                <div className={css.depthCellLabel}>Coverage</div>
+                <div className={`${css.depthCellValue} ${getDepthColor("coverage", intelligence.relationshipDepth.stakeholderCoverage)}`}>
+                  {intelligence.relationshipDepth.stakeholderCoverage}
+                </div>
+              </div>
+            )}
+          </div>
+          {intelligence.relationshipDepth.coverageGaps && intelligence.relationshipDepth.coverageGaps.length > 0 && (
+            <div className={css.depthGapsRow}>
+              <span className={css.depthGapsLabel}>Gaps</span>
+              <span className={css.depthGapsText}>
+                {intelligence.relationshipDepth.coverageGaps.join(" · ")}
               </span>
-              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)" }}>
-                {member.personName}
-              </span>
-            </span>
-          ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Your Team — compact clickable chips with inline editing */}
+      {(teamMembers.length > 0 || canEditTeam) && (
+        <div className={css.teamChipsSection}>
+          <div className={css.teamHeader}>
+            <span className={css.teamLabel}>Your Team</span>
+          </div>
+          <div className={css.teamChips}>
+            {teamMembers.map((member) => (
+              <div key={member.personId} className={css.teamChipEditable}>
+                <Link
+                  to="/people/$personId"
+                  params={{ personId: member.personId }}
+                  className={css.teamChipNameLink}
+                >
+                  {member.personName}
+                </Link>
+                {canEditTeam && onChangeTeamRole ? (
+                  <TeamRoleSelector
+                    value={member.role}
+                    onChange={(newRole) => onChangeTeamRole(member.personId, newRole)}
+                  />
+                ) : member.role ? (
+                  <span className={css.teamChipRole}>{getTeamRoleDisplay(member.role)}</span>
+                ) : null}
+                {canEditTeam && onRemoveTeamMember && (
+                  <button
+                    onClick={() => onRemoveTeamMember(member.personId, member.role)}
+                    className={css.teamChipRemove}
+                    title="Remove from team"
+                  >
+                    <X size={10} strokeWidth={2} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {canEditTeam && !teamAddingMember && (
+              <button
+                onClick={() => setTeamAddingMember(true)}
+                className={css.teamAddTrigger}
+              >
+                <Plus size={10} strokeWidth={2} />
+                Add
+              </button>
+            )}
+          </div>
+
+          {/* Inline add member form */}
+          {canEditTeam && teamAddingMember && (
+            <TeamAddForm
+              teamSearchQuery={teamSearchQuery ?? ""}
+              onTeamSearchQueryChange={onTeamSearchQueryChange}
+              teamNewRole={teamNewRole}
+              setTeamNewRole={setTeamNewRole}
+              teamNewEmail={teamNewEmail}
+              setTeamNewEmail={setTeamNewEmail}
+              teamSearchResults={(teamSearchResults ?? []).filter(
+                (p) => p.relationship === "internal" && !teamMembers.some((m) => m.personId === p.id),
+              )}
+              onClose={() => {
+                setTeamAddingMember(false);
+                onTeamSearchQueryChange?.("");
+              }}
+              onAddTeamMember={(personId) => {
+                onAddTeamMember?.(personId, teamNewRole);
+                setTeamAddingMember(false);
+                onTeamSearchQueryChange?.("");
+                setTeamNewRole("associated");
+              }}
+              onCreateTeamMember={onCreateTeamMember ? (query) => {
+                onCreateTeamMember(query, teamNewEmail, teamNewRole);
+                setTeamAddingMember(false);
+                onTeamSearchQueryChange?.("");
+                setTeamNewRole("associated");
+                setTeamNewEmail("");
+              } : undefined}
+            />
+          )}
         </div>
       )}
     </section>
   );
 }
 
-// Static badge helpers for non-editable mode
-import { getEngagementDisplay } from "./EngagementSelector";
+// Relationship depth color helpers
+function getDepthColor(dimension: string, value: string): string {
+  const v = value.toLowerCase().replace(/[_\s-]/g, "");
+  if (dimension === "champion") {
+    if (v === "strong") return css.depthBadgeSage;
+    if (v === "moderate" || v === "adequate") return css.depthBadgeTurmeric;
+    if (v === "weak") return css.depthBadgeTerracotta;
+    if (v === "none") return css.depthBadgeRed;
+    return css.depthBadgeNeutral;
+  }
+  if (dimension === "access") {
+    if (v === "direct") return css.depthBadgeSage;
+    if (v === "indirect" || v === "limited") return css.depthBadgeTurmeric;
+    if (v === "none") return css.depthBadgeTerracotta;
+    return css.depthBadgeNeutral;
+  }
+  if (dimension === "coverage") {
+    if (v === "broad") return css.depthBadgeSage;
+    if (v === "narrow") return css.depthBadgeTurmeric;
+    if (v === "singlethreaded") return css.depthBadgeTerracotta;
+    return css.depthBadgeNeutral;
+  }
+  return css.depthBadgeNeutral;
+}
 
-function getStaticBadgeStyle(engagement: string): { background: string; color: string } {
-  const d = getEngagementDisplay(engagement);
-  return { background: d.background, color: d.color };
+// Static badge helpers for non-editable mode
+function getEngagementBadgeClass(engagement: string): string {
+  const e = (engagement ?? "").toLowerCase();
+  if (e === "high" || e === "active") return css.engagementActive;
+  if (e === "medium" || e === "warm") return css.engagementWarm;
+  if (e === "low" || e === "cooling") return css.engagementCooling;
+  return css.engagementNew;
 }
 
 function getStaticBadgeLabel(engagement: string): string {

@@ -108,7 +108,7 @@ details[open] .detailsChevron {
 .bulletDotTurmericMuted {
   composes: bulletDot;
   /* Turmeric at 60% opacity — from --color-spice-turmeric #c9a227 */
-  background: rgba(201, 162, 39, 0.6);
+  background: var(--color-spice-turmeric-60);
 }
 
 .sectionRule {
@@ -460,6 +460,12 @@ details[open] .detailsChevron {
   margin-top: 10px;
 }
 
+.entityChipsWrapCentered {
+  composes: entityChipsWrap;
+  display: flex;
+  justify-content: center;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    NEW SIGNALS BANNER
    ───────────────────────────────────────────────────────────────────────────── */
@@ -498,11 +504,46 @@ details[open] .detailsChevron {
   opacity: 0.5;
 }
 
+.consistencyBanner {
+  padding: 10px var(--space-md);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.consistencyBannerCorrected {
+  background: var(--color-garden-sage-12);
+  color: var(--color-garden-sage);
+}
+
+.consistencyBannerFlagged {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.consistencyCount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    KEY INSIGHT (pull quote)
    ───────────────────────────────────────────────────────────────────────────── */
 
 .keyInsight {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
   margin: 28px 0 0 0;
   border-left: 3px solid var(--color-spice-turmeric);
   padding: var(--space-md) 0 var(--space-md) var(--space-lg);
@@ -574,6 +615,9 @@ details[open] .detailsChevron {
 }
 
 .featuredRisk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
   border-left: 3px solid var(--color-spice-terracotta);
   padding: var(--space-md) 0 var(--space-md) var(--space-lg);
   margin: 0;
@@ -590,6 +634,9 @@ details[open] .detailsChevron {
 }
 
 .subordinateRisk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
   border-top: 1px solid var(--color-rule-light);
   padding-top: var(--space-md);
 }
@@ -1086,6 +1133,116 @@ details[open] .detailsChevron {
   color: var(--color-text-tertiary);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   RECENT CORRESPONDENCE (email signals)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.emailSignalLink {
+  text-decoration: none;
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.emailSignalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--space-xs);
+}
+
+.emailSignalSender {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.emailSignalDate {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ATTENDEE COLOR VARIANTS — Avatar, temperature, engagement
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Avatar background/foreground by relationship temperature */
+.attendeeAvatarCold {
+  background: var(--color-spice-terracotta-10);
+  color: var(--color-spice-terracotta);
+}
+
+.attendeeAvatarNew {
+  background: var(--color-garden-sage-10);
+  color: var(--color-garden-sage);
+}
+
+.attendeeAvatarDefault {
+  background: var(--color-spice-turmeric-10);
+  color: var(--color-spice-turmeric);
+}
+
+/* Temperature indicator (dot) background variants */
+.tempIndicatorHot {
+  background: var(--color-garden-sage);
+}
+
+.tempIndicatorWarm {
+  background: var(--color-spice-turmeric);
+}
+
+.tempIndicatorCool {
+  background: var(--color-text-tertiary);
+}
+
+.tempIndicatorCold {
+  background: var(--color-spice-terracotta);
+}
+
+.tempIndicatorDefault {
+  background: var(--color-text-tertiary);
+}
+
+/* Temperature label color variants */
+.tempLabelHot {
+  color: var(--color-garden-sage);
+}
+
+.tempLabelWarm {
+  color: var(--color-spice-turmeric);
+}
+
+.tempLabelCool {
+  color: var(--color-text-tertiary);
+}
+
+.tempLabelCold {
+  color: var(--color-spice-terracotta);
+}
+
+.tempLabelDefault {
+  color: var(--color-text-tertiary);
+}
+
+/* Engagement badge color variants */
+.engagementChampion {
+  color: var(--color-garden-sage);
+}
+
+.engagementDetractor {
+  color: var(--color-spice-terracotta);
+}
+
+.engagementNeutral {
+  color: var(--color-text-tertiary);
+}
+
+.engagementDefault {
+  color: var(--color-text-tertiary);
+}
+
 /* I477 — Briefing updating banner during entity mutation */
 .updatingBanner {
   display: inline-flex;
@@ -1105,4 +1262,216 @@ details[open] .detailsChevron {
 
 .updatingBanner svg {
   animation: spin 1s linear infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACCOUNT HEALTH STRIP — I502 / I542
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.healthStripContainer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.healthStripItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.healthStripLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SINCE LAST MEETING — I558 compact timeline
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.sinceLastWrap {
+  margin-top: var(--space-xl);
+  border-left: 2px solid var(--color-rule-light);
+  padding-left: var(--space-lg);
+}
+
+.sinceLastHeading {
+  composes: chapterHeading;
+  margin-bottom: 10px;
+}
+
+.sinceLastList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sinceLastItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACCOUNT PULSE — I558 current state (working / not working)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.currentStateWrap {
+  margin-top: var(--space-lg);
+}
+
+.currentStateHeading {
+  composes: chapterHeading;
+  margin-bottom: 10px;
+}
+
+.currentStateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm) var(--space-lg);
+}
+
+.currentStateItem {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RECENT WINS — I558 positive context after risks
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.recentWinsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.recentWinItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.bulletDotSage {
+  composes: bulletDot;
+  background: var(--color-garden-sage);
+}
+
+.recentWinText {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   OPEN ITEMS — I558 follow-up tracking
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.openItemsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.openItemRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.openItemRow:last-child {
+  border-bottom: none;
+}
+
+.openItemOverdue {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.openItemTitle {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.openItemDue {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.openItemDueOverdue {
+  color: var(--color-spice-terracotta);
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PER-ITEM FEEDBACK ACTIONS — hover-reveal pattern (matches entity sections)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.intelRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.intelRowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  padding-top: 2px;
+}
+
+.featuredRisk:hover .itemActions,
+.subordinateRisk:hover .itemActions,
+.recentWinItem:hover .itemActions,
+.emailSignalLink:hover .itemActions,
+.intelRow:hover .itemActions,
+.itemActions:focus-within {
+  opacity: 1;
+}
+
+.dismissButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.dismissButton:hover {
+  color: var(--color-spice-terracotta);
 }
