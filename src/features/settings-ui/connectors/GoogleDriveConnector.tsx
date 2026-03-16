@@ -40,6 +40,7 @@ export default function GoogleDriveConnector() {
       setStatus({ ...status, enabled: newEnabled });
     } catch (err) {
       console.error("Failed to toggle Drive:", err);
+      toast.error("Failed to toggle Google Drive");
     }
   }
 

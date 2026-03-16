@@ -472,3 +472,97 @@ pub async fn generate_weekly_impact_if_needed(
     generate_report(state, "user", "user", "weekly_impact", None, None).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::reports::upsert_report;
+
+    #[test]
+    fn test_save_and_get_report() {
+        let db = test_db();
+
+        // Save via service layer
+        save_report(
+            &db,
+            "acc-1",
+            "account",
+            "account_health",
+            r#"{"score": 75}"#,
+        )
+        .expect("save_report should not fail on missing row (no-op update)");
+
+        // Insert via upsert_report first, then retrieve
+        upsert_report(&db, "acc-1", "account", "account_health", r#"{"score": 75}"#, "hash-1")
+            .expect("upsert_report");
+
+        let cached = get_report_cached(&db, "acc-1", "account", "account_health")
+            .expect("get_report_cached");
+        assert!(cached.is_some(), "Report should be retrievable after upsert");
+        let report = cached.unwrap();
+        assert_eq!(report.entity_id, "acc-1");
+        assert_eq!(report.report_type, "account_health");
+        assert_eq!(report.content_json, r#"{"score": 75}"#);
+        assert_eq!(report.intel_hash, "hash-1");
+        assert!(!report.is_stale);
+    }
+
+    #[test]
+    fn test_get_all_reports_for_entity() {
+        let db = test_db();
+
+        upsert_report(&db, "acc-2", "account", "account_health", r#"{"score": 80}"#, "h1")
+            .expect("upsert health");
+        upsert_report(&db, "acc-2", "account", "swot", r#"{"strengths": []}"#, "h2")
+            .expect("upsert swot");
+
+        let reports = get_all_reports_for_entity(&db, "acc-2", "account")
+            .expect("get_all_reports_for_entity");
+        assert_eq!(reports.len(), 2, "Should have 2 reports");
+
+        let types: Vec<&str> = reports.iter().map(|r| r.report_type.as_str()).collect();
+        assert!(types.contains(&"account_health"));
+        assert!(types.contains(&"swot"));
+    }
+
+    #[test]
+    fn test_save_report_overwrites_existing() {
+        let db = test_db();
+
+        upsert_report(&db, "acc-3", "account", "account_health", r#"{"score": 60}"#, "h-old")
+            .expect("first upsert");
+        upsert_report(&db, "acc-3", "account", "account_health", r#"{"score": 90}"#, "h-new")
+            .expect("second upsert");
+
+        let report = get_report_cached(&db, "acc-3", "account", "account_health")
+            .expect("get")
+            .expect("should exist");
+        assert_eq!(report.content_json, r#"{"score": 90}"#, "Content should be updated");
+        assert_eq!(report.intel_hash, "h-new", "Hash should be updated");
+    }
+
+    #[test]
+    fn test_save_report_updates_content() {
+        let db = test_db();
+
+        upsert_report(&db, "acc-4", "account", "swot", r#"{"old": true}"#, "h1")
+            .expect("initial upsert");
+        save_report(&db, "acc-4", "account", "swot", r#"{"edited": true}"#)
+            .expect("save_report");
+
+        let report = get_report_cached(&db, "acc-4", "account", "swot")
+            .expect("get")
+            .expect("should exist");
+        assert_eq!(report.content_json, r#"{"edited": true}"#);
+    }
+
+    #[test]
+    fn test_get_report_returns_none_for_missing() {
+        let db = test_db();
+
+        let result = get_report_cached(&db, "nonexistent", "account", "account_health")
+            .expect("should not error");
+        assert!(result.is_none(), "Should return None for missing report");
+    }
+}

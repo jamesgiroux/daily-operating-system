@@ -593,3 +593,150 @@ pub fn apply_success_plan_template(
         Ok(created)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+    use rusqlite::params;
+
+    fn seed_account(db: &crate::db::ActionDb, id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, account_type, updated_at)
+                 VALUES (?1, ?2, 'customer', '2026-01-01T00:00:00Z')",
+                params![id, format!("Account {id}")],
+            )
+            .expect("seed account");
+    }
+
+    #[test]
+    fn test_create_objective() {
+        let db = test_db();
+        seed_account(&db, "acc-sp");
+
+        let obj = create_objective(&db, "acc-sp", "Onboard customer", Some("Get them live"), None, "user")
+            .expect("create_objective");
+        assert_eq!(obj.title, "Onboard customer");
+        assert_eq!(obj.account_id, "acc-sp");
+        assert_eq!(obj.status, "active");
+
+        // Verify in DB
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_objectives WHERE account_id = 'acc-sp'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_apply_template() {
+        let db = test_db();
+        seed_account(&db, "acc-tmpl");
+
+        let objectives = apply_success_plan_template(&db, "acc-tmpl", "onboarding-standard")
+            .expect("apply_success_plan_template");
+        // Onboarding template has 3 objectives
+        assert_eq!(objectives.len(), 3, "Onboarding template should create 3 objectives");
+
+        // Each objective should have milestones
+        for obj in &objectives {
+            assert!(!obj.milestones.is_empty(), "Each objective should have milestones");
+        }
+
+        // Verify total milestone count in DB (3 objectives x 3 milestones each = 9)
+        let milestone_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_milestones WHERE account_id = 'acc-tmpl'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(milestone_count, 9, "Onboarding template should create 9 milestones total");
+    }
+
+    #[test]
+    fn test_link_action_to_objective() {
+        let db = test_db();
+        seed_account(&db, "acc-link");
+
+        let obj = create_objective(&db, "acc-link", "Goal A", None, None, "user")
+            .expect("create objective");
+
+        // Seed a minimal action row (status must match CHECK constraint)
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions (id, title, status, created_at, updated_at)
+                 VALUES ('act-1', 'Do the thing', 'pending', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .expect("seed action");
+
+        link_action_to_objective(&db, "act-1", &obj.id).expect("link_action_to_objective");
+
+        let link_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM action_objective_links WHERE action_id = 'act-1' AND objective_id = ?1",
+                params![obj.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(link_count, 1, "Action-objective link should exist");
+    }
+
+    #[test]
+    fn test_reorder_objectives() {
+        let db = test_db();
+        seed_account(&db, "acc-ro");
+
+        let obj1 = create_objective(&db, "acc-ro", "First", None, None, "user").unwrap();
+        let obj2 = create_objective(&db, "acc-ro", "Second", None, None, "user").unwrap();
+        let obj3 = create_objective(&db, "acc-ro", "Third", None, None, "user").unwrap();
+
+        // Reorder: Third, First, Second
+        let new_order = vec![obj3.id.clone(), obj1.id.clone(), obj2.id.clone()];
+        reorder_objectives(&db, "acc-ro", &new_order).expect("reorder_objectives");
+
+        // Verify sort_order
+        let order3: i32 = db
+            .conn_ref()
+            .query_row(
+                "SELECT sort_order FROM account_objectives WHERE id = ?1",
+                params![obj3.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let order1: i32 = db
+            .conn_ref()
+            .query_row(
+                "SELECT sort_order FROM account_objectives WHERE id = ?1",
+                params![obj1.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            order3 < order1,
+            "obj3 should have lower sort_order than obj1 after reorder"
+        );
+    }
+
+    #[test]
+    fn test_create_milestone() {
+        let db = test_db();
+        seed_account(&db, "acc-ms");
+
+        let obj = create_objective(&db, "acc-ms", "Goal", None, None, "user").unwrap();
+        let ms = create_milestone(&db, &obj.id, "Kickoff done", Some("2026-04-01"), Some("kickoff"))
+            .expect("create_milestone");
+
+        assert_eq!(ms.title, "Kickoff done");
+        assert_eq!(ms.objective_id, obj.id);
+        assert_eq!(ms.status, "pending");
+    }
+}
