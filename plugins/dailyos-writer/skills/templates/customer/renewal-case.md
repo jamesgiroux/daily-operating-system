@@ -150,7 +150,7 @@ This isn't "please stay with us." It's "here's what you've accomplished and what
 ## Example
 
 ```markdown
-# Harbor Group Domestic Partnership Renewal
+# Meridian Hotels Domestic Partnership Renewal
 
 ## What You've Accomplished
 
@@ -188,5 +188,5 @@ You've told us 2026 is about personalization—using first-party data to create 
 
 **Terms**: 2-year renewal, $450K annually (same rate, no increase)
 **Timeline**: Decision needed by March 15 to avoid gap in coverage
-**Next step**: Schedule 30-min call with James to discuss and address any questions - james@automattic.com
+**Next step**: Schedule 30-min call with Your Name to discuss and address any questions - you@yourcompany.com
 ```

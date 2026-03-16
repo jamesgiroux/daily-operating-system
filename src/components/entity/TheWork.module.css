@@ -1,0 +1,268 @@
+.section {
+  display: block;
+}
+
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.headerActions,
+.objectiveActions,
+.milestoneActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.headerButton,
+.templateApply,
+.smallAction,
+.smallActionMuted,
+.inlineAdder {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0;
+}
+
+.headerButton,
+.templateApply,
+.smallAction,
+.inlineAdder {
+  color: var(--color-spice-turmeric);
+}
+
+.smallActionMuted {
+  color: var(--color-text-tertiary);
+}
+
+.panelTitle,
+.subheading,
+.suggestionTitle {
+  font-family: var(--font-serif);
+  color: var(--color-text-primary);
+}
+
+.panelTitle {
+  font-size: 20px;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+
+.suggestionDescription,
+.suggestionMeta,
+.objectiveMeta,
+.milestoneMeta {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.panel {
+  margin-bottom: 28px;
+  padding: 18px;
+  border: 1px solid var(--color-rule-light);
+}
+
+.suggestionCard,
+.objectiveCard {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 18px;
+  margin-top: 18px;
+}
+
+.suggestionCard:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.suggestionTop,
+.objectiveTop,
+.linkedActionRow,
+.linkableActionRow,
+.newObjectiveRow,
+.newMilestoneRow,
+.actionComposer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.suggestionTitle,
+.objectiveTitle {
+  font-size: 22px;
+  font-weight: 400;
+  margin: 0;
+}
+
+.suggestionMilestones,
+.milestoneList {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggestionMilestones li {
+  padding: 6px 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.objectiveInput,
+.linkSelect {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: none;
+  padding: 6px 0;
+  outline: none;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.objectiveCard {
+  padding-bottom: 24px;
+}
+
+.objectiveMain,
+.milestoneContent,
+.linkedActionMain,
+.linkableActionMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.objectiveDescription {
+  display: block;
+  margin-top: 8px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.milestoneRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.milestoneToggle {
+  width: 16px;
+  height: 16px;
+  margin-top: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--color-rule-heavy);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.milestoneToggleDone {
+  background: var(--color-garden-sage);
+  border-color: var(--color-garden-sage);
+}
+
+.milestoneTitle {
+  color: var(--color-text-primary);
+}
+
+.linkedActions,
+.actionSection,
+.meetingSection {
+  margin-top: 28px;
+}
+
+.sectionLabel,
+.groupLabel,
+.subheading {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.sectionLabel,
+.subheading {
+  margin-bottom: 12px;
+}
+
+.groupLabel {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-bottom: 12px;
+  color: var(--label-color, var(--color-text-tertiary));
+}
+
+.actionGroup {
+  margin-bottom: 24px;
+}
+
+.linkBox {
+  min-width: 120px;
+  padding-top: 14px;
+}
+
+.emptyMessage {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Progress bar */
+.progressBar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border-subtle);
+  margin-top: 8px;
+  overflow: hidden;
+}
+.progressFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.progressOnTrack .progressFill { background: var(--color-garden-sage); }
+.progressWarning .progressFill { background: var(--color-spice-turmeric); }
+.progressOverdue .progressFill { background: var(--color-spice-terracotta); }
+
+/* Objective target date */
+.objectiveTargetDate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* Objective status states */
+.objectiveDraft { opacity: 0.6; }
+.objectiveCompleted { border-left: 3px solid var(--color-garden-sage); padding-left: 12px; }
+.objectiveAbandoned { opacity: 0.5; }
+.objectiveAbandoned .objectiveTitle { text-decoration: line-through; }
+
+/* Empty state */
+.emptyObjectives {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  padding: 16px 0;
+}
+
+/* Scroll target */
+.scrollTarget { scroll-margin-top: 60px; }

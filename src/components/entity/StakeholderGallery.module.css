@@ -1,0 +1,713 @@
+/* =============================================================================
+   STAKEHOLDER GALLERY — CSS Module
+   Editorial stakeholder cards with enriched person data.
+   ============================================================================= */
+
+/* ── Section root ── */
+
+.section {
+  scroll-margin-top: 60px;
+}
+
+/* ── 2-column card grid ── */
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px 48px;
+}
+
+/* ── Individual card ── */
+
+.card {
+  position: relative;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Avatar ring ── */
+
+.avatarRing {
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid transparent;
+}
+
+.avatarRingLinked {
+  border-radius: 50%;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 2px solid var(--color-garden-larkspur);
+}
+
+/* ── Name ── */
+
+.name {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+/* ── Name as link ── */
+
+.nameLink {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.nameLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Link icon ── */
+
+.linkIcon {
+  color: var(--color-garden-larkspur);
+  flex-shrink: 0;
+}
+
+/* ── Title & department line ── */
+
+.titleLine {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin: 0 0 4px 0;
+}
+
+/* ── Role from stakeholder data ── */
+
+.role {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin: 0 0 8px 0;
+}
+
+/* ── Assessment text ── */
+
+.assessment {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.readMore {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 4px;
+}
+
+/* ── Last interaction date ── */
+
+.lastSeen {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+}
+
+/* ── Static engagement badge ── */
+
+.engagementBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+
+/* ── Remove button (hover) ── */
+
+.removeButton {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.removeIcon {
+  color: var(--color-text-tertiary);
+}
+
+/* ── Suggestion / create contact actions ── */
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.actionButtonSuggestion {
+  composes: actionButton;
+  color: var(--color-garden-larkspur);
+}
+
+.actionButtonCreate {
+  composes: actionButton;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Card link wrapper ── */
+
+.cardLink {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ── Show more button ── */
+
+.showMore {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Add stakeholder section ── */
+
+.addSection {
+  margin-top: var(--space-xl);
+}
+
+.addSectionCompact {
+  margin-top: var(--space-md);
+}
+
+.addForm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.searchInputWrapper {
+  position: relative;
+  width: 200px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 8px;
+  top: 9px;
+  color: var(--color-text-tertiary);
+}
+
+.searchInput {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 4px 8px 4px 26px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-primary);
+  width: 100%;
+}
+
+.roleInput {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-primary);
+  width: 160px;
+}
+
+.addButton {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: none;
+  border: none;
+  padding: 4px 0;
+}
+
+.addButtonActive {
+  composes: addButton;
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+}
+
+.addButtonDisabled {
+  composes: addButton;
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+/* ── Search results dropdown ── */
+
+.searchResults {
+  margin-top: 8px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: var(--color-paper-warm-white);
+}
+
+.searchResultsLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding: 8px 12px 4px;
+  margin: 0;
+}
+
+.searchResultItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  text-align: left;
+}
+
+.searchResultName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.searchResultMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-left: 8px;
+}
+
+.searchResultIcon {
+  color: var(--color-garden-larkspur);
+  flex-shrink: 0;
+}
+
+/* ── Add stakeholder trigger ── */
+
+.addTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ── Your Team — compact clickable chips ── */
+
+.teamChipsSection {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.teamHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.teamLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.teamEditToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.teamHeader:hover .teamEditToggle {
+  opacity: 1;
+}
+
+.teamEditToggleActive {
+  composes: teamEditToggle;
+  opacity: 1;
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.teamChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: relative;
+}
+
+.teamChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-warm-white);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.teamChip:hover {
+  border-color: var(--color-text-tertiary);
+}
+
+.teamChipName {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.teamChipNameLink {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.teamChipNameLink:hover {
+  color: var(--color-spice-turmeric);
+}
+
+.teamChipRole {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Team edit mode ── */
+
+.teamChipEditable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--color-garden-larkspur-14);
+  background: var(--color-paper-warm-white);
+}
+
+.teamChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.teamChipRemove:hover {
+  border-color: var(--color-earth-terracotta);
+  color: var(--color-earth-terracotta);
+}
+
+.teamAddTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px dashed var(--color-rule-light);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.teamAddTrigger:hover {
+  border-color: var(--color-garden-larkspur);
+  color: var(--color-garden-larkspur);
+}
+
+.teamAddForm {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.teamAddCancel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.teamSearchDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  width: 320px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-paper-warm-white);
+  box-shadow: var(--shadow-lg);
+}
+
+.teamSearchDropdownPortal {
+  position: fixed;
+  z-index: 9999;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-paper-cream);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 4px 0;
+}
+
+/* ── Coverage strip ── */
+
+.coverageStrip {
+  margin-top: var(--space-xl);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.coverageNumbers {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+}
+
+.coverageLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Enrichment provenance tag (I550) ── */
+
+.enrichmentTag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+
+.enrichmentTag[data-source="clay"] {
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.enrichmentTag[data-source="gravatar"] {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
+}
+
+/* ── Engagement badges ── */
+
+.engagementBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+.engagementActive { background: rgba(126, 170, 123, 0.12); color: var(--color-garden-sage); }
+.engagementWarm { background: rgba(222, 184, 65, 0.12); color: var(--color-spice-turmeric); }
+.engagementCooling { background: rgba(196, 101, 74, 0.12); color: var(--color-spice-terracotta); }
+.engagementNew { background: rgba(143, 163, 196, 0.12); color: var(--color-garden-larkspur); }
+
+/* ── Relationship Depth — full-width strip (Ledger-inspired) ── */
+
+.relationshipDepthSection {
+  margin-top: 32px;
+  border-top: 2px solid var(--color-desk-charcoal);
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.depthStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0;
+}
+
+.depthCell {
+  padding: 20px 20px;
+  border-right: 1px solid var(--color-rule-light);
+}
+
+.depthCell:last-child {
+  border-right: none;
+}
+
+.depthCellLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.depthCellValue {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 300;
+  text-transform: capitalize;
+  letter-spacing: -0.01em;
+}
+
+.depthBadgeSage { color: var(--color-garden-sage); }
+.depthBadgeTurmeric { color: var(--color-spice-turmeric); }
+.depthBadgeTerracotta { color: var(--color-spice-terracotta); }
+.depthBadgeRed { color: var(--color-spice-terracotta); }
+.depthBadgeNeutral { color: var(--color-text-tertiary); }
+
+.depthGapsRow {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.depthGapsLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-spice-terracotta);
+  flex-shrink: 0;
+}
+
+.depthGapsText {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* ── Editable text overrides for stakeholder cards ── */
+
+.editableName {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.editableRole {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin: 0 0 8px 0;
+}
+
+.editableAssessment {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+}

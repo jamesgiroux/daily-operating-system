@@ -257,8 +257,8 @@ pub fn write_person_markdown(
         }
     }
 
-    // === Intelligence sections (I136 — from intelligence.json) ===
-    if let Ok(intel) = crate::intelligence::read_intelligence_json(&dir) {
+    // === Intelligence sections (I136 — from DB, I513) ===
+    if let Some(intel) = db.get_entity_intelligence(&person.id).ok().flatten() {
         let intel_md = crate::intelligence::format_intelligence_markdown(&intel);
         if !intel_md.is_empty() {
             md.push_str(&intel_md);
@@ -615,25 +615,24 @@ mod tests {
         let dir = person_dir(workspace.path(), &person.name);
         std::fs::create_dir_all(&dir).expect("create dir");
 
-        // Write a minimal intelligence.json via serde_json (camelCase keys)
-        let intel_json = serde_json::json!({
-            "version": 1,
-            "entityId": person.id,
-            "entityType": "person",
-            "enrichedAt": Utc::now().to_rfc3339(),
-            "executiveAssessment": "Alice is a key technical leader at Acme.",
-        });
-        let intel_str = serde_json::to_string_pretty(&intel_json).expect("serialize");
-        crate::util::atomic_write_str(&dir.join("intelligence.json"), &intel_str)
-            .expect("write intel");
+        // Write intelligence to DB (I513: DB as sole source of truth)
+        let intel = crate::intelligence::IntelligenceJson {
+            version: 1,
+            entity_id: person.id.clone(),
+            entity_type: "person".to_string(),
+            enriched_at: Utc::now().to_rfc3339(),
+            executive_assessment: Some("Alice is a key technical leader at Acme.".to_string()),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&intel).expect("upsert intel");
 
-        // Regenerate person.md — it should pick up intelligence
+        // Regenerate person.md — it should pick up intelligence from DB
         write_person_markdown(workspace.path(), &person, &db).expect("regen md");
 
         let md = std::fs::read_to_string(dir.join("person.md")).expect("read md");
         assert!(
             md.contains("Alice is a key technical leader at Acme"),
-            "person.md should include executive assessment from intelligence.json.\nGot:\n{}",
+            "person.md should include executive assessment from DB.\nGot:\n{}",
             md,
         );
     }

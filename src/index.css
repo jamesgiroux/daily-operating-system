@@ -206,6 +206,21 @@
   transform: translateY(0);
 }
 
+/* Stagger reveal — cascading fade-in for child elements */
+.editorial-reveal-stagger > * {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+.editorial-reveal-stagger.visible > *:nth-child(1) { opacity: 1; transform: none; transition-delay: 0ms; }
+.editorial-reveal-stagger.visible > *:nth-child(2) { opacity: 1; transform: none; transition-delay: 80ms; }
+.editorial-reveal-stagger.visible > *:nth-child(3) { opacity: 1; transform: none; transition-delay: 160ms; }
+.editorial-reveal-stagger.visible > *:nth-child(4) { opacity: 1; transform: none; transition-delay: 240ms; }
+.editorial-reveal-stagger.visible > *:nth-child(5) { opacity: 1; transform: none; transition-delay: 320ms; }
+.editorial-reveal-stagger.visible > *:nth-child(6) { opacity: 1; transform: none; transition-delay: 400ms; }
+.editorial-reveal-stagger.visible > *:nth-child(7) { opacity: 1; transform: none; transition-delay: 480ms; }
+.editorial-reveal-stagger.visible > *:nth-child(8) { opacity: 1; transform: none; transition-delay: 560ms; }
+
 /* Risk urgency pulse — single heartbeat on reveal */
 @keyframes risk-pulse {
   0% { border-left-color: var(--color-spice-terracotta); }
@@ -306,7 +321,9 @@
 
   /* Full width, no scroll-linked effects */
   .editorial-reveal,
-  .editorial-reveal-slow {
+  .editorial-reveal-slow,
+  .editorial-reveal-stagger,
+  .editorial-reveal-stagger > * {
     opacity: 1 !important;
     transform: none !important;
     transition: none !important;
@@ -327,4 +344,21 @@
 
   /* Remove max-width constraint for print */
   body * { max-width: 100% !important; }
+}
+
+/* ── I576: Intelligence Provenance Tags ── */
+
+.provenance-tag {
+  display: inline-block;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-tertiary, #6b7280);
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+}
+
+.provenance-discrepancy {
+  color: var(--color-spice-terracotta, #c4654a);
+  font-weight: 600;
 }

@@ -1,11 +1,10 @@
 //! Account Health Review report (I399).
 //!
-//! Produces a structured health assessment reading entity_intelligence
+//! Produces a structured health assessment reading entity_assessment
 //! fields plus meeting cadence and email signal data.
 
 use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::read_intelligence_json;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -52,9 +51,9 @@ pub struct AccountHealthContent {
 fn build_account_health_prompt(
     entity_name: &str,
     db: &ActionDb,
-    workspace: &std::path::Path,
+    _workspace: &std::path::Path,
     entity_id: &str,
-    account: Option<&crate::db::DbAccount>,
+    _account: Option<&crate::db::DbAccount>,
     active_preset: &str,
     context_provider: &dyn ContextProvider,
 ) -> String {
@@ -83,10 +82,7 @@ fn build_account_health_prompt(
         "the-desk" => "working relationship",
         _ => "customer partnership",
     };
-    let prior = account.and_then(|a| {
-        let dir = crate::accounts::resolve_account_dir(workspace, a);
-        read_intelligence_json(&dir).ok()
-    });
+    let prior = db.get_entity_intelligence(entity_id).ok().flatten();
 
     let ctx = context_provider
         .gather_entity_context(db, entity_id, "account", prior.as_ref())
@@ -97,7 +93,7 @@ fn build_account_health_prompt(
     let meeting_count_90d: i64 = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(*) FROM meetings_history m
+            "SELECT COUNT(*) FROM meetings m
              JOIN meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1 AND m.start_time > ?2
                AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
@@ -142,8 +138,37 @@ fn build_account_health_prompt(
     }
     prompt.push('\n');
 
+    // Gather urgency-enriched captures (90 days) via existing DB function
+    let enriched_captures = db
+        .get_account_enriched_captures(entity_id, 90)
+        .unwrap_or_default();
+
+    let captures_section: String = if enriched_captures.is_empty() {
+        String::new()
+    } else {
+        let mut lines = Vec::new();
+        for cap in enriched_captures.iter().take(20) {
+            let urg = cap.urgency.as_deref().unwrap_or("none");
+            let sub = cap.sub_type.as_deref().unwrap_or("");
+            let date = cap.captured_at.split('T').next().unwrap_or(&cap.captured_at);
+            let quote = cap.evidence_quote.as_ref()
+                .map(|q| format!(" #\"{}\"", q))
+                .unwrap_or_default();
+            lines.push(format!(
+                "- [{}] {} | [{}] {} ({}){}", urg, cap.capture_type, sub, cap.content, date, quote
+            ));
+        }
+        lines.join("\n")
+    };
+
     prompt.push_str("# Intelligence Data\n\n");
     append_intel_context(&mut prompt, &ctx);
+
+    if !captures_section.is_empty() {
+        prompt.push_str("\n## Recent Captures (urgency-sorted, RED first)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&captures_section));
+        prompt.push_str("\n\n");
+    }
 
     prompt.push_str("# Output Format\n\n");
     prompt.push_str(
@@ -184,6 +209,7 @@ fn build_account_health_prompt(
     prompt.push_str("- value_delivered: Must have real citations where possible.\n");
     prompt.push_str("- recommended_actions: Exactly 3. Concrete verb phrases.\n");
     prompt.push_str("- SPECIFICITY: The Entity Intelligence Assessment (if present above) is your primary source. Use the specific risks, named people, and strategic context it identifies. Generic observations from meeting metadata alone are not sufficient.\n");
+    prompt.push_str("- CAPTURES: When Recent Captures are present, distinguish RED urgency items from GREEN_WATCH. RED items should inform risks and what_is_struggling. Use evidence_quote when available for customer_quote.\n");
 
     prompt
 }
@@ -226,6 +252,7 @@ pub fn gather_account_health_input(
         prompt,
         ai_models,
         intel_hash,
+        extra_data: None,
     })
 }
 

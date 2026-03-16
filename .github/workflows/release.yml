@@ -168,6 +168,43 @@ jobs:
           printf '\n' >> "$GITHUB_OUTPUT"
           echo "SIG_EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Extract release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          # Extract the section for this version from release-notes.md
+          # Matches from "## vX.Y.Z" heading to the next "---" separator (or EOF)
+          awk -v ver="## v${VERSION}" '
+            $0 ~ ver { found=1; next }
+            found && /^---$/ { exit }
+            found { print }
+          ' release-notes.md | sed -e 's/^[[:space:]]*//' -e '/^$/N;/^\n$/d' > /tmp/release_notes.md
+
+          if [ ! -s /tmp/release_notes.md ]; then
+            echo "WARNING: No release notes found for v${VERSION} in release-notes.md"
+            echo "DailyOS v${VERSION}" > /tmp/release_notes.md
+          fi
+
+          # Build the full GitHub Release body (notes + install instructions)
+          DMG_NAME="${{ steps.artifacts.outputs.dmg_name }}"
+          cat /tmp/release_notes.md > /tmp/release_body.md
+          cat >> /tmp/release_body.md << INSTALL_EOF
+
+---
+
+## Installation
+
+**New users:**
+1. Download \`${DMG_NAME}\`
+2. Drag DailyOS to Applications
+3. Open DailyOS — the app is signed and notarized, no workarounds needed
+
+**Existing users:** DailyOS will update automatically. Check Settings for details.
+INSTALL_EOF
+
+          echo "Release notes extracted:"
+          cat /tmp/release_notes.md
+
       - name: Generate latest.json
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -176,13 +213,11 @@ jobs:
           REPO_URL="https://github.com/${{ github.repository }}"
           SIG_PATH="${{ steps.artifacts.outputs.sig_path }}"
 
-          # Signature is multiline — use jq to JSON-escape it
-          SIG_JSON=$(cat "$SIG_PATH" | jq -Rs .)
-
           # Build latest.json with jq for safe JSON construction
+          # Release notes read from file to avoid shell injection
           jq -n \
             --arg version "$VERSION" \
-            --arg notes "DailyOS v$VERSION" \
+            --rawfile notes /tmp/release_notes.md \
             --arg pub_date "$PUB_DATE" \
             --arg url "$REPO_URL/releases/download/${{ github.ref_name }}/$TARBALL_NAME" \
             --arg sig "$(cat "$SIG_PATH")" \
@@ -205,15 +240,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: DailyOS ${{ github.ref_name }}
-          body: |
-            ## Installation
-
-            **New users:**
-            1. Download `${{ steps.artifacts.outputs.dmg_name }}`
-            2. Drag DailyOS to Applications
-            3. Open DailyOS — the app is signed and notarized, no workarounds needed
-
-            **Existing users:** DailyOS will update automatically. Check Settings for details.
+          body_path: /tmp/release_body.md
           files: |
             ${{ steps.artifacts.outputs.dmg_path }}
             ${{ steps.artifacts.outputs.tarball_path }}

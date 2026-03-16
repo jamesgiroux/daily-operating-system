@@ -1,0 +1,37 @@
+FILE_TYPE: transcript
+ACCOUNT: Delta Inc
+MEETING: Check-in Call
+SUMMARY: Brief check-in with Delta Inc. No significant updates. Customer seemed generally satisfied but no concrete outcomes discussed.
+DISCUSSION:
+- General status update on usage
+- Customer mentioned things are going fine
+- No specific issues raised
+END_DISCUSSION
+ACTIONS:
+END_ACTIONS
+WINS:
+END_WINS
+RISKS:
+- [GREEN_WATCH] Low engagement — no concrete outcomes from check-in, vague satisfaction signals only
+END_RISKS
+DECISIONS:
+END_DECISIONS
+CHAMPION_HEALTH:
+- champion_name: unidentified
+- champion_status: none
+- champion_evidence: No clear advocate identified in this brief check-in
+END_CHAMPION_HEALTH
+SENTIMENT:
+- overall: neutral
+- customer: neutral
+- engagement: low
+- forward_looking: no
+- competitor_mentions: none
+- champion_present: no
+- champion_engaged: no
+- ownership_language: mixed
+- past_tense_references: no
+- data_export_interest: no
+- internal_advocacy_visible: no
+- roadmap_interest: no
+END_SENTIMENT

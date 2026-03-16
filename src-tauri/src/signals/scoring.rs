@@ -168,7 +168,7 @@ fn entity_has_meeting_today(db: &ActionDb, entity_id: &str) -> bool {
     db.conn_ref()
         .query_row(
             "SELECT COUNT(*) FROM meeting_entities me
-             JOIN meetings_history mh ON me.meeting_id = mh.id
+             JOIN meetings mh ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
             rusqlite::params![entity_id, start, end],
             |row| row.get::<_, i64>(0),

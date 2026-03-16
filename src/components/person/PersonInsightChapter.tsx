@@ -5,6 +5,7 @@
  * External/Unknown → "The Dynamic" (relationship health framing)
  * Internal → "The Rhythm" (collaboration patterns framing)
  */
+import type { ReactNode } from "react";
 import type { PersonDetail, EntityIntelligence } from "@/types";
 import { formatShortDate } from "@/lib/utils";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -16,6 +17,7 @@ interface PersonInsightChapterProps {
   intelligence: EntityIntelligence | null;
   /** When provided, state items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
+  feedbackSlot?: ReactNode;
 }
 
 const ADAPTATION = {
@@ -92,20 +94,25 @@ function CadenceStrip({ detail }: { detail: PersonDetail }) {
 
 /* ── Main component ── */
 
-export function PersonInsightChapter({ detail, intelligence, onUpdateField }: PersonInsightChapterProps) {
+export function PersonInsightChapter({
+  detail,
+  intelligence,
+  onUpdateField,
+  feedbackSlot,
+}: PersonInsightChapterProps) {
   const adapt = getAdaptation(detail.relationship);
 
   const working = intelligence?.currentState?.working ?? [];
   const notWorking = intelligence?.currentState?.notWorking ?? [];
   const paragraphs = intelligence?.executiveAssessment?.split("\n").filter((p) => p.trim()) ?? [];
-  const pullQuote = paragraphs.length > 1 ? paragraphs[1] : null;
+  const pullQuote = intelligence?.pullQuote ?? (paragraphs.length > 1 ? paragraphs[1] : null);
   const remainingParagraphs = paragraphs.slice(2);
 
   const hasContent = working.length > 0 || notWorking.length > 0;
 
   return (
     <section id={adapt.sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading title={adapt.title} />
+      <ChapterHeading title={adapt.title} feedbackSlot={feedbackSlot} />
 
       {hasContent ? (
         <>

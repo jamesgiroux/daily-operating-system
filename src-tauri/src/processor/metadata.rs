@@ -49,7 +49,10 @@ fn re_context() -> &'static Regex {
 
 fn re_waiting() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?i)\b(waiting|blocked|pending)\b").unwrap())
+    // Waiting/blocked intent should be explicit in the action title itself.
+    // Keep this anchored to the start to avoid false positives from context
+    // strings (e.g., #"renewal decision pending CFO approval").
+    RE.get_or_init(|| Regex::new(r"(?i)^\s*(waiting|blocked|pending)\b").unwrap())
 }
 
 /// Parse inline metadata tokens from action text.
@@ -199,6 +202,15 @@ mod tests {
         let m = parse_action_metadata("Pending approval from finance");
         assert!(m.is_waiting);
         assert_eq!(m.clean_title, "Pending approval from finance");
+    }
+
+    #[test]
+    fn pending_in_context_is_not_waiting() {
+        let m = parse_action_metadata(
+            r#"Follow up on renewal P1 @Acme due: 2026-03-15 #"Decision pending CFO approval""#,
+        );
+        assert!(!m.is_waiting);
+        assert_eq!(m.clean_title, "Follow up on renewal");
     }
 
     #[test]

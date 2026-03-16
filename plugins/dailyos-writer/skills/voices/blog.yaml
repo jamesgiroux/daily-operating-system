@@ -1,5 +1,5 @@
 # Personal Blog Voice Profile
-# For: jamesgiroux.ca posts - personal reflections on WordPress, leadership, culture, work
+# For: yourblog.example.com posts - personal reflections on WordPress, leadership, culture, work
 # Based on: Analysis of "Assuming Positive Intent", "Why We Need More Recognition",
 #           "Peak WordPress", "Emotional Tremors", "Quiet Quitting"
 
@@ -216,21 +216,21 @@ example_phrases:
 sample_posts:
   # Reference posts for voice calibration
   - title: "When 'Assuming Positive Intent' Gets Lost In Translation"
-    url: "https://jamesgiroux.ca/when-assuming-positive-intent-gets-lost-in-translation/"
+    url: "https://yourblog.example.com/when-assuming-positive-intent-gets-lost-in-translation/"
     demonstrates: "WordPress lens, naming both sides, community observation"
 
   - title: "Why We Need More Recognition In WordPress"
-    url: "https://jamesgiroux.ca/why-we-need-more-recognition-in-wordpress/"
+    url: "https://yourblog.example.com/why-we-need-more-recognition-in-wordpress/"
     demonstrates: "Parenting as entry point, vulnerability, numbered actions"
 
   - title: "Have We Reached 'Peak' WordPress?"
-    url: "https://jamesgiroux.ca/have-we-reached-peak-wordpress/"
+    url: "https://yourblog.example.com/have-we-reached-peak-wordpress/"
     demonstrates: "Experience-as-evidence (Envato), ecosystem analysis, question-ending"
 
   - title: "Leading Through Emotional Tremors"
-    url: "https://jamesgiroux.ca/leading-through-emotional-tremors/"
+    url: "https://yourblog.example.com/leading-through-emotional-tremors/"
     demonstrates: "Deep vulnerability, personal struggle, actionable guidance"
 
   - title: "Quiet Quitting, WordPress And The Great Reset"
-    url: "https://jamesgiroux.ca/quiet-quitting-wordpress-and-the-great-reset/"
+    url: "https://yourblog.example.com/quiet-quitting-wordpress-and-the-great-reset/"
     demonstrates: "Current event hook, millennial perspective, WordPress application"

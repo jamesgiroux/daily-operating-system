@@ -73,11 +73,11 @@ Ready. {Role preset} workspace loaded.
 ```
 Ready. Customer Success workspace loaded.
 
-5 meetings today, including the Nexus Analytics QBR at 2pm.
+5 meetings today, including the Acme Corp QBR at 2pm.
 12 open actions (3 overdue).
-Nexus Analytics renewal is in 47 days with Yellow health.
+Acme Corp renewal is in 47 days with Yellow health.
 
-Nexus Analytics QBR in 3 hours with declining health. Want me to draft talking points or run an assessment first?
+Acme Corp QBR in 3 hours with declining health. Want me to draft talking points or run an assessment first?
 ```
 
 **If nothing urgent**, keep it clean:

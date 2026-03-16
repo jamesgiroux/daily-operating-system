@@ -7,6 +7,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{NaiveDateTime, Utc};
+use rusqlite::params;
 use tauri::{AppHandle, Emitter};
 
 use crate::state::AppState;
@@ -93,42 +95,71 @@ fn poll_once(
     let meetings_for_matching = {
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        get_recent_meetings_for_matching(db)?
+        get_recent_meetings_for_matching(db, 90)?
     };
 
     let mut synced = 0;
 
     for doc in &documents {
-        // Match to a meetings_history row
+        // Match to a meetings row
         let match_result = matcher::match_to_meeting(doc, &meetings_for_matching);
         let matched = match match_result {
             Some(m) => m,
             None => continue,
         };
 
-        // Check if a sync row already exists for this meeting with source='granola'
-        let already_synced = {
-            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-            let db = db_guard.as_ref().ok_or("Database not initialized")?;
-            db.get_quill_sync_state_by_source(&matched.meeting_id, "granola")
-                .map_err(|e| e.to_string())?
-                .is_some()
-        };
-
-        if already_synced {
-            continue;
-        }
-
-        // Create sync row and process
+        // Resolve sync row for this meeting/source. Unlike the previous behavior
+        // (which skipped any existing row), we must resume non-completed rows so
+        // app restarts don't strand pending Granola transcripts forever.
         let sync_id = {
             let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
             let db = db_guard.as_ref().ok_or("Database not initialized")?;
-            db.insert_quill_sync_state_with_source(&matched.meeting_id, "granola")
+
+            match db
+                .get_quill_sync_state_by_source(&matched.meeting_id, "granola")
                 .map_err(|e| e.to_string())?
+            {
+                Some(existing) => {
+                    if !should_process_existing_sync(&existing) {
+                        continue;
+                    }
+
+                    // Reset any stale in-flight/failed row so this poll cycle can resume it.
+                    if existing.state != "pending" {
+                        let _ = crate::quill::sync::transition_state(
+                            db,
+                            &existing.id,
+                            "pending",
+                            None,
+                            None,
+                            None,
+                            Some("Granola resume/retry"),
+                        );
+                    }
+                    existing.id
+                }
+                None => db
+                    .insert_quill_sync_state_with_source(&matched.meeting_id, "granola")
+                    .map_err(|e| e.to_string())?,
+            }
         };
 
         // Process through the shared transcript pipeline
-        let result = process_granola_document(state, &sync_id, &matched.meeting_id, &doc.content);
+        let content_kind = match doc.content_type {
+            cache::GranolaContentType::Transcript => {
+                crate::processor::transcript::TranscriptContentKind::Transcript
+            }
+            cache::GranolaContentType::Notes => {
+                crate::processor::transcript::TranscriptContentKind::Notes
+            }
+        };
+        let result = process_granola_document(
+            state,
+            &sync_id,
+            &matched.meeting_id,
+            &doc.content,
+            content_kind,
+        );
 
         match &result {
             Ok(dest) => {
@@ -173,6 +204,7 @@ fn process_granola_document(
     sync_id: &str,
     meeting_id: &str,
     content: &str,
+    content_kind: crate::processor::transcript::TranscriptContentKind,
 ) -> Result<String, String> {
     // Phase 1: Read data with lock, then drop
     let (calendar_event, workspace, profile, ai_config) = {
@@ -198,17 +230,23 @@ fn process_granola_document(
             }
         };
 
+        // Mark as processing before leaving the DB lock. If the app exits mid-run,
+        // the next poll can recover this row.
+        let _ =
+            crate::quill::sync::transition_state(db, sync_id, "processing", None, None, None, None);
+
         (calendar_event, workspace, profile, ai_config)
     }; // DB lock dropped
 
     // Phase 2: Run AI pipeline WITHOUT holding the DB mutex
-    let result = crate::quill::sync::process_fetched_transcript_without_db(
+    let result = crate::quill::sync::process_fetched_transcript_without_db_with_kind(
         sync_id,
         &calendar_event,
         content,
         &workspace,
         &profile,
         ai_config.as_ref(),
+        content_kind,
     );
 
     // Phase 3: Re-acquire lock to write results
@@ -227,12 +265,13 @@ fn process_granola_document(
             );
 
             // Write captures (wins, risks, decisions) extracted by AI
+            let meeting_account_id = resolve_meeting_account_id(db, &calendar_event.id);
             let account = calendar_event.account.as_deref();
             for win in &tr.wins {
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
-                    account,
+                    meeting_account_id.as_deref(),
                     "win",
                     win,
                 );
@@ -241,7 +280,7 @@ fn process_granola_document(
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
-                    account,
+                    meeting_account_id.as_deref(),
                     "risk",
                     risk,
                 );
@@ -250,7 +289,7 @@ fn process_granola_document(
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
-                    account,
+                    meeting_account_id.as_deref(),
                     "decision",
                     decision,
                 );
@@ -259,28 +298,43 @@ fn process_granola_document(
             // Write extracted actions as proposed actions
             let now = chrono::Utc::now().to_rfc3339();
             for (i, action) in tr.actions.iter().enumerate() {
+                let action_account_id = action
+                    .account
+                    .as_deref()
+                    .or(action.owner.as_deref())
+                    .and_then(|candidate| {
+                        db.get_account(candidate)
+                            .ok()
+                            .flatten()
+                            .map(|account| account.id)
+                            .or_else(|| {
+                                db.get_account_by_name(candidate)
+                                    .ok()
+                                    .flatten()
+                                    .map(|account| account.id)
+                            })
+                    })
+                    .or_else(|| {
+                        meeting_account_id.clone().or_else(|| {
+                            account.and_then(|a| {
+                                db.get_account_by_name(a).ok().flatten().map(|acc| acc.id)
+                            })
+                        })
+                    });
                 let db_action = crate::db::DbAction {
                     id: format!("granola-{}-{}", meeting_id, i),
                     title: action.title.clone(),
-                    priority: "P2".to_string(),
+                    priority: action.priority.clone().unwrap_or_else(|| "P2".to_string()),
                     status: "proposed".to_string(),
                     created_at: now.clone(),
                     due_date: action.due_date.clone(),
                     completed_at: None,
-                    account_id: account
-                        .map(|a| {
-                            db.get_account_by_name(a)
-                                .ok()
-                                .flatten()
-                                .map(|acc| acc.id)
-                                .unwrap_or_default()
-                        })
-                        .filter(|s| !s.is_empty()),
+                    account_id: action_account_id,
                     project_id: None,
                     source_type: Some("transcript".to_string()),
                     source_id: Some(calendar_event.id.clone()),
                     source_label: Some(calendar_event.title.clone()),
-                    context: None,
+                    context: action.context.clone(),
                     waiting_on: None,
                     updated_at: now.clone(),
                     person_id: None,
@@ -316,6 +370,9 @@ fn process_granola_document(
                         None,
                         Some(&error),
                     );
+                    // Use shared exponential backoff state so repeated failures
+                    // eventually cool off and can be recovered manually if needed.
+                    let _ = crate::quill::sync::advance_attempt(db, sync_id);
                 }
             }
             Err(error)
@@ -323,11 +380,60 @@ fn process_granola_document(
     }
 }
 
+fn should_process_existing_sync(row: &crate::db::DbQuillSyncState) -> bool {
+    match row.state.as_str() {
+        "completed" | "abandoned" => false,
+        "pending" | "polling" | "fetching" | "processing" => true,
+        "failed" => {
+            if row.attempts >= row.max_attempts {
+                return false;
+            }
+            is_retry_due(row.next_attempt_at.as_deref())
+        }
+        _ => false,
+    }
+}
+
+fn is_retry_due(next_attempt_at: Option<&str>) -> bool {
+    let Some(raw) = next_attempt_at else {
+        return true;
+    };
+
+    if let Ok(dt) = NaiveDateTime::parse_from_str(raw, "%Y-%m-%d %H:%M:%S") {
+        return dt <= Utc::now().naive_utc();
+    }
+
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(raw) {
+        return dt.with_timezone(&Utc) <= Utc::now();
+    }
+
+    true
+}
+
+/// Resolve the primary account_id for a meeting.
+///
+/// Uses explicit account links in `meeting_entities`.
+fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Option<String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT me.entity_id
+             FROM meeting_entities me
+             WHERE me.meeting_id = ?1
+               AND me.entity_type = 'account'
+             ORDER BY me.rowid ASC
+             LIMIT 1",
+            params![meeting_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+}
+
 /// Get recent meetings (last 90 days) as (id, title, start_time) tuples for matching.
 fn get_recent_meetings_for_matching(
     db: &crate::db::ActionDb,
+    days_back: i32,
 ) -> Result<Vec<(String, String, String)>, String> {
-    db.get_meetings_for_transcript_matching(90)
+    db.get_meetings_for_transcript_matching(days_back)
         .map_err(|e| e.to_string())
 }
 
@@ -354,8 +460,8 @@ fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_i
     }
 }
 
-/// Run a one-time backfill: match all Granola cache documents to meetings_history.
-pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> {
+/// Run a one-time backfill: match all Granola cache documents to meetings.
+pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, usize), String> {
     let granola_config = state
         .config
         .read()
@@ -373,7 +479,7 @@ pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> 
     let meetings_for_matching = {
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
-        get_recent_meetings_for_matching(db)?
+        get_recent_meetings_for_matching(db, days_back)?
     };
 
     let mut created = 0;
@@ -408,4 +514,61 @@ pub fn run_granola_backfill(state: &AppState) -> Result<(usize, usize), String> 
     }
 
     Ok((created, eligible))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sync_row(
+        state: &str,
+        attempts: i32,
+        max_attempts: i32,
+        next_attempt_at: Option<&str>,
+    ) -> crate::db::DbQuillSyncState {
+        crate::db::DbQuillSyncState {
+            id: "sync-1".to_string(),
+            meeting_id: "meeting-1".to_string(),
+            quill_meeting_id: None,
+            state: state.to_string(),
+            attempts,
+            max_attempts,
+            next_attempt_at: next_attempt_at.map(|s| s.to_string()),
+            last_attempt_at: None,
+            completed_at: None,
+            error_message: None,
+            match_confidence: None,
+            transcript_path: None,
+            created_at: Utc::now().to_rfc3339(),
+            updated_at: Utc::now().to_rfc3339(),
+            source: "granola".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_should_process_existing_sync_pending() {
+        let row = sync_row("pending", 0, 6, None);
+        assert!(should_process_existing_sync(&row));
+    }
+
+    #[test]
+    fn test_should_process_existing_sync_completed_false() {
+        let row = sync_row("completed", 0, 6, None);
+        assert!(!should_process_existing_sync(&row));
+    }
+
+    #[test]
+    fn test_should_process_existing_sync_failed_due() {
+        let row = sync_row("failed", 2, 6, Some("2001-01-01 00:00:00"));
+        assert!(should_process_existing_sync(&row));
+    }
+
+    #[test]
+    fn test_should_process_existing_sync_failed_not_due() {
+        let future = (Utc::now() + chrono::Duration::hours(1))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        let row = sync_row("failed", 2, 6, Some(&future));
+        assert!(!should_process_existing_sync(&row));
+    }
 }

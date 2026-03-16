@@ -1,0 +1,67 @@
+{
+  "surfaceId": "dashboard_briefing",
+  "commands": {
+    "get_dashboard_data": {
+      "overview": {
+        "greeting": "Good morning, James",
+        "date": "Tuesday, March 10",
+        "summary": "You have 6 meetings and 11 actions",
+        "focus": "Renewal risk and executive alignment"
+      },
+      "meetings": [
+        {
+          "id": "mtg-real-1",
+          "calendarEventId": "abc123",
+          "title": "Globex Exec Sync",
+          "time": "08:30",
+          "type": "customer",
+          "hasPrep": true,
+          "prepReviewed": false
+        }
+      ],
+      "actions": [
+        {
+          "id": "act-real-1",
+          "title": "Escalate pricing concern",
+          "priority": "P1",
+          "status": "pending",
+          "context": "CFO requested revised pricing model"
+        }
+      ],
+      "freshness": {
+        "freshness": "fresh",
+        "generatedAt": "2026-03-10T08:05:12Z"
+      },
+      "googleAuth": {
+        "status": "authenticated",
+        "email": "james@example.com"
+      }
+    },
+    "get_week_data": {
+      "weekNumber": "11",
+      "dateRange": "Mar 10 - Mar 14",
+      "days": [
+        {
+          "date": "2026-03-10",
+          "dayName": "Tuesday",
+          "meetings": [
+            {
+              "time": "08:30",
+              "title": "Globex Exec Sync",
+              "meetingId": "mtg-real-1",
+              "type": "customer",
+              "prepStatus": "prep_ready"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": {
+    "get_dashboard_data": {
+      "code": "DASHBOARD_UNAVAILABLE",
+      "message": "Dashboard data unavailable",
+      "retryable": true
+    }
+  }
+}

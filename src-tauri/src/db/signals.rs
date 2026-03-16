@@ -1,4 +1,5 @@
 use super::*;
+use rusqlite::OptionalExtension;
 
 impl ActionDb {
     // =========================================================================
@@ -12,7 +13,7 @@ impl ActionDb {
         let count_30d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
+                "SELECT COUNT(*) FROM meetings m
                  INNER JOIN meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-30 days')",
@@ -24,7 +25,7 @@ impl ActionDb {
         let count_90d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history m
+                "SELECT COUNT(*) FROM meetings m
                  INNER JOIN meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-90 days')",
@@ -37,7 +38,7 @@ impl ActionDb {
         let last_meeting: Option<String> = self
             .conn
             .query_row(
-                "SELECT MAX(m.start_time) FROM meetings_history m
+                "SELECT MAX(m.start_time) FROM meetings m
                  INNER JOIN meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time <= datetime('now')",
@@ -221,6 +222,29 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Insert an enriched capture with metadata columns (I555).
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_capture_enriched(
+        &self,
+        meeting_id: &str,
+        meeting_title: &str,
+        account_id: Option<&str>,
+        capture_type: &str,
+        content: &str,
+        sub_type: Option<&str>,
+        urgency: Option<&str>,
+        evidence_quote: Option<&str>,
+    ) -> Result<(), DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, captured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![id, meeting_id, meeting_title, account_id, capture_type, content, sub_type, urgency, evidence_quote, now],
+        )?;
+        Ok(())
+    }
+
     /// Query recent captures (wins/risks) for an account within `days_back` days.
     ///
     /// Used by meeting:prep (ADR-0030 / I33) to surface recent wins and risks
@@ -346,6 +370,39 @@ impl ActionDb {
         urgency: Option<&str>,
         detected_at: Option<&str>,
     ) -> Result<bool, DbError> {
+        self.upsert_email_signal_with_source(
+            email_id,
+            sender_email,
+            person_id,
+            entity_id,
+            entity_type,
+            signal_type,
+            signal_text,
+            confidence,
+            sentiment,
+            urgency,
+            detected_at,
+            None,
+        )
+    }
+
+    /// Insert an email signal with explicit source attribution.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_email_signal_with_source(
+        &self,
+        email_id: &str,
+        sender_email: Option<&str>,
+        person_id: Option<&str>,
+        entity_id: &str,
+        entity_type: &str,
+        signal_type: &str,
+        signal_text: &str,
+        confidence: Option<f64>,
+        sentiment: Option<&str>,
+        urgency: Option<&str>,
+        detected_at: Option<&str>,
+        source: Option<&str>,
+    ) -> Result<bool, DbError> {
         if !Self::VALID_SIGNAL_TYPES.contains(&signal_type) {
             log::warn!(
                 "Ignoring unknown email signal type '{}' for entity {}",
@@ -365,8 +422,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT OR IGNORE INTO email_signals (
                 email_id, sender_email, person_id, entity_id, entity_type,
-                signal_type, signal_text, confidence, sentiment, urgency, detected_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, COALESCE(?11, datetime('now')))",
+                signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, COALESCE(?11, datetime('now')), COALESCE(?12, 'email_enrichment'))",
             params![
                 email_id,
                 sender_email,
@@ -379,9 +436,31 @@ impl ActionDb {
                 sentiment,
                 urgency,
                 detected_at,
+                source,
             ],
         )?;
         Ok(self.conn.changes() > 0)
+    }
+
+    /// Get the most recent non-feedback email signal source for a given email.
+    pub fn get_email_signal_source_for_feedback(
+        &self,
+        email_id: &str,
+    ) -> Result<Option<String>, DbError> {
+        self.conn
+            .query_row(
+                "SELECT source
+                 FROM email_signals
+                 WHERE email_id = ?1
+                   AND signal_type != 'feedback'
+                   AND deactivated_at IS NULL
+                 ORDER BY detected_at DESC, id DESC
+                 LIMIT 1",
+                params![email_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(DbError::Sqlite)
     }
 
     /// Dismiss a single email signal by setting `deactivated_at`.
@@ -417,7 +496,7 @@ impl ActionDb {
     ) -> Result<Vec<DbEmailSignal>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
-                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
              FROM email_signals
              WHERE entity_id = ?1 AND deactivated_at IS NULL
              ORDER BY detected_at DESC, id DESC
@@ -438,6 +517,7 @@ impl ActionDb {
                 sentiment: row.get(9)?,
                 urgency: row.get(10)?,
                 detected_at: row.get(11)?,
+                source: row.get(12)?,
             })
         })?;
 
@@ -460,7 +540,7 @@ impl ActionDb {
         let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{}", i)).collect();
         let sql = format!(
             "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
-                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at, source
              FROM email_signals
              WHERE email_id IN ({}) AND deactivated_at IS NULL
              ORDER BY detected_at DESC, id DESC",
@@ -487,6 +567,7 @@ impl ActionDb {
                 sentiment: row.get(9)?,
                 urgency: row.get(10)?,
                 detected_at: row.get(11)?,
+                source: row.get(12)?,
             })
         })?;
 
@@ -697,5 +778,75 @@ impl ActionDb {
             .execute(&sql, param_values.as_slice())
             .map_err(|e| format!("Failed to deactivate email signals: {e}"))?;
         Ok(rows)
+    }
+
+    /// I487: Check if a Glean document signal already exists for a URL.
+    ///
+    /// If `updated_at` is provided, checks if a signal exists with that URL
+    /// created since the document's update time. Otherwise uses max_age_days.
+    pub fn has_glean_signal_for_url(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        url: &str,
+        updated_at: Option<&str>,
+        max_age_days: i32,
+    ) -> Result<bool, DbError> {
+        let count: i32 = if let Some(doc_updated) = updated_at {
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_type = ?1
+                   AND entity_id = ?2
+                   AND signal_type = 'glean_document'
+                   AND value LIKE '%|' || ?3
+                   AND created_at >= ?4",
+                params![entity_type, entity_id, url, doc_updated],
+                |row| row.get(0),
+            )?
+        } else {
+            let days_param = format!("-{max_age_days} days");
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_type = ?1
+                   AND entity_id = ?2
+                   AND signal_type = 'glean_document'
+                   AND value LIKE '%|' || ?3
+                   AND created_at >= datetime('now', ?4)",
+                params![entity_type, entity_id, url, days_param],
+                |row| row.get(0),
+            )?
+        };
+        Ok(count > 0)
+    }
+
+    /// I499: Get recent signal events for an entity within a time window.
+    pub fn get_recent_signals_for_entity(
+        &self,
+        entity_id: &str,
+        days: i32,
+    ) -> Result<Vec<(String, String, f64, String)>, DbError> {
+        let days_param = format!("-{days} days");
+        let mut stmt = self.conn.prepare(
+            "SELECT signal_type, source, confidence, created_at
+             FROM signal_events
+             WHERE entity_id = ?1
+               AND created_at >= datetime('now', ?2)
+             ORDER BY created_at DESC",
+        )?;
+
+        let rows = stmt.query_map(params![entity_id, days_param], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+
+        let mut signals = Vec::new();
+        for row in rows {
+            signals.push(row?);
+        }
+        Ok(signals)
     }
 }

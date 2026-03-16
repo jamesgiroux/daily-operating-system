@@ -14,6 +14,7 @@ import { EbrQbrReport } from "@/components/reports/EbrQbrReport";
 import { REPORT_TYPE_LABELS } from "@/types/reports";
 import type { ReportRow, ReportType, SwotContent, AccountHealthContent, EbrQbrContent } from "@/types/reports";
 import type { UserEntity } from "@/types";
+import styles from "./report-page.module.css";
 
 export default function ReportPage() {
   const { accountId, projectId, personId, reportType } = useParams({
@@ -73,13 +74,7 @@ export default function ReportPage() {
 
   if (loading) {
     return (
-      <div
-        style={{
-          padding: "2rem",
-          color: "var(--color-desk-charcoal)",
-          opacity: 0.7,
-        }}
-      >
+      <div className={styles.loadingState}>
         Loading…
       </div>
     );
@@ -87,12 +82,7 @@ export default function ReportPage() {
 
   if (error) {
     return (
-      <div
-        style={{
-          padding: "2rem",
-          color: "var(--color-spice-terracotta)",
-        }}
-      >
+      <div className={styles.errorState}>
         Error: {error}
       </div>
     );
@@ -111,20 +101,14 @@ export default function ReportPage() {
           return <EbrQbrReport content={content as EbrQbrContent} />;
         default:
           return (
-            <pre
-              style={{
-                padding: "2rem",
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.8rem",
-              }}
-            >
+            <pre className={styles.preBlock}>
               {JSON.stringify(content, null, 2)}
             </pre>
           );
       }
     } catch {
       return (
-        <div style={{ padding: "2rem" }}>Error parsing report content.</div>
+        <div className={styles.parseError}>Error parsing report content.</div>
       );
     }
   };

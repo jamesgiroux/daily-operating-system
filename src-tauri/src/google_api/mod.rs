@@ -433,11 +433,23 @@ fn map_refresh_error(status: u16, body: &str) -> GoogleApiError {
 ///
 /// This is the main entry point for all API calls.
 pub async fn get_valid_access_token() -> Result<String, GoogleApiError> {
-    let token = load_token()?;
+    // I570: Keychain access (with retry/sleep) off Tokio threads.
+    let token = tokio::task::spawn_blocking(load_token)
+        .await
+        .map_err(|e| GoogleApiError::RefreshFailed(format!("Keychain task panicked: {}", e)))??;
 
     if is_token_expired(&token) {
-        let refreshed = refresh_access_token(&token).await?;
-        Ok(refreshed.token)
+        match refresh_access_token(&token).await {
+            Ok(refreshed) => {
+                // I572: Structured log for token refresh (audit log access requires AppState)
+                log::info!("[audit:security] oauth_token_refreshed provider=google");
+                Ok(refreshed.token)
+            }
+            Err(e) => {
+                log::warn!("[audit:security] oauth_token_refresh_failed provider=google error={}", e);
+                Err(e)
+            }
+        }
     } else {
         Ok(token.token)
     }

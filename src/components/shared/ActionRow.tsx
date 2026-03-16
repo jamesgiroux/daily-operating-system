@@ -26,6 +26,7 @@ interface ActionRowFullProps {
     status: string;
     priority: string;
     dueDate?: string | null;
+    context?: string | null;
     accountName?: string | null;
     accountId?: string | null;
     sourceLabel?: string | null;
@@ -215,6 +216,20 @@ function FullActionRow({
         >
           {stripMarkdown(action.title)}
         </Link>
+        {action.context && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              fontWeight: 400,
+              color: "var(--color-text-secondary)",
+              marginTop: 4,
+              lineHeight: 1.45,
+            }}
+          >
+            {stripMarkdown(action.context)}
+          </div>
+        )}
         {contextParts.length > 0 && (
           <div
             style={{
@@ -222,7 +237,7 @@ function FullActionRow({
               fontSize: 13,
               fontWeight: isOverdue ? 500 : 300,
               color: isOverdue ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-              marginTop: 2,
+              marginTop: action.context ? 6 : 2,
             }}
           >
             {contextParts.join(" \u00B7 ")}
@@ -296,7 +311,7 @@ function OutcomeActionRow({
           </button>
           <button
             onClick={onReject}
-            title="Reject"
+            title="Dismiss"
             style={{
               width: 20, height: 20, borderRadius: 3,
               border: "1px solid var(--color-spice-terracotta)",
@@ -315,7 +330,7 @@ function OutcomeActionRow({
           style={{
             width: 16, height: 16, borderRadius: 3,
             border: isCompleted ? "1px solid var(--color-garden-sage)" : "1px solid var(--color-text-tertiary)",
-            background: isCompleted ? "rgba(126, 170, 123, 0.2)" : "transparent",
+            background: isCompleted ? "var(--color-garden-sage-20)" : "transparent",
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
             flexShrink: 0, padding: 0,
           }}

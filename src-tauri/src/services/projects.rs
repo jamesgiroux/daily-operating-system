@@ -147,7 +147,7 @@ pub async fn get_project_detail(
                 } else {
                     (None, Vec::new(), None)
                 };
-                let intel = crate::intelligence::read_intelligence_json(&project_dir).ok();
+                let intel = db.get_entity_intelligence(&project_id).ok().flatten();
                 (desc, ms, nt, intel)
             } else {
                 (None, Vec::new(), None, None)

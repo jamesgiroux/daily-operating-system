@@ -7,5 +7,5 @@
 }
 
 .editable:hover {
-  background: rgba(30, 37, 48, 0.05);
+  background: var(--color-desk-charcoal-5);
 }

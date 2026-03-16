@@ -117,7 +117,7 @@ fn build_weekly_impact_prompt(
     let meetings: String = db
         .conn_ref()
         .prepare(
-            "SELECT title, start_time, meeting_type FROM meetings_history
+            "SELECT title, start_time, meeting_type FROM meetings
              WHERE start_time >= ?1 AND start_time <= ?2
                AND meeting_type NOT IN ('personal', 'focus', 'blocked')
              ORDER BY start_time",
@@ -157,6 +157,65 @@ fn build_weekly_impact_prompt(
                 Ok(format!(
                     "- [{}] {} — {} (source: {})",
                     stype, entity, val, src
+                ))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+        })
+        .unwrap_or_default();
+
+    // Gather meeting summaries for the week (from transcripts)
+    let meeting_summaries: String = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.title, m.start_time, mt.summary
+             FROM meetings m
+             JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2
+               AND mt.summary IS NOT NULL AND mt.summary != ''
+             ORDER BY m.start_time
+             LIMIT 30",
+        )
+        .and_then(|mut s| {
+            let rows = s.query_map(rusqlite::params![week_start_str, week_end_str], |row| {
+                let title: String = row.get(0)?;
+                let time: String = row.get(1)?;
+                let summary: String = row.get(2)?;
+                let date = time.split('T').next().unwrap_or(&time).to_string();
+                Ok(format!("- {} | {} | Summary: {}", date, title, summary))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+        })
+        .unwrap_or_default();
+
+    // Gather captures for the week (wins, risks, decisions with metadata)
+    let week_captures: String = db
+        .conn_ref()
+        .prepare(
+            "SELECT capture_type, content, sub_type, urgency, impact,
+                    evidence_quote, meeting_title, captured_at
+             FROM captures
+             WHERE captured_at >= ?1 AND captured_at <= ?2
+             ORDER BY CASE urgency WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'green_watch' THEN 2 ELSE 3 END,
+                      captured_at
+             LIMIT 30",
+        )
+        .and_then(|mut s| {
+            let rows = s.query_map(rusqlite::params![week_start_str, week_end_str], |row| {
+                let ctype: String = row.get(0)?;
+                let content: String = row.get(1)?;
+                let sub_type: Option<String> = row.get(2)?;
+                let urgency: Option<String> = row.get(3)?;
+                let _impact: Option<String> = row.get(4)?;
+                let quote: Option<String> = row.get(5)?;
+                let mtitle: Option<String> = row.get(6)?;
+                let captured: String = row.get(7)?;
+                let date = captured.split('T').next().unwrap_or(&captured).to_string();
+                let sub = sub_type.map(|s| format!("[{}] ", s)).unwrap_or_default();
+                let urg = urgency.map(|u| format!("[{}] ", u)).unwrap_or_default();
+                let src = mtitle.map(|t| format!(" — from {}", t)).unwrap_or_default();
+                let q = quote.map(|q| format!(" #\"{}\"", q)).unwrap_or_default();
+                Ok(format!("- {}: {}{}{} ({}){}{}",
+                    ctype.to_uppercase(), urg, sub, content, date, src, q
                 ))
             })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
@@ -221,6 +280,19 @@ fn build_weekly_impact_prompt(
         prompt.push_str("## Meetings This Week\n(none)\n\n");
     }
 
+    if !meeting_summaries.is_empty() {
+        prompt.push_str("## Meeting Content This Week (summaries from transcripts)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&meeting_summaries));
+        prompt.push_str("\n\n");
+    }
+
+    if !week_captures.is_empty() {
+        // Group captures by type for readability
+        prompt.push_str("## Outcomes Captured This Week (wins, risks, decisions)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&week_captures));
+        prompt.push_str("\n\n");
+    }
+
     if !signals.is_empty() {
         prompt.push_str("## Updates Captured\n");
         prompt.push_str(&crate::util::wrap_user_data(&signals));
@@ -276,11 +348,11 @@ fn build_weekly_impact_prompt(
     prompt.push_str(&format!(
         "- totalMeetings and totalActionsClosed: use the EXACT counts from the data. Do not change them.\n\
          - headline: punchy editorial one-liner — make it feel like a headline, not a summary sentence.\n\
-         - prioritiesMoved: ONLY include if there is a real meeting or signal demonstrating progress. source must be a meeting ID from the list above. NEVER fabricate.\n\
+         - prioritiesMoved: ONLY include if there is a real meeting or signal demonstrating progress. source must be a date from the meetings list above. Cite specific meeting outcomes from the Meeting Content and Outcomes Captured sections — not just meeting titles. NEVER fabricate.\n\
          - If no priorities are set: prioritiesMoved = []. intoNextWeek still MUST have 2-3 items.\n\
-         - wins: 1-3 concrete wins from the data. Each needs to be specific — not 'had a good meeting'.\n\
+         - wins: 1-3 concrete wins from the data. Reference actual captured wins with evidence from the Outcomes Captured section where available. Each needs to be specific — not 'had a good meeting'.\n\
          - whatYouDid: editorial, not corporate. Describes the week's character, not just volume.\n\
-         - watch: 1-3 items — patterns, risks, follow-up gaps. Specific.\n\
+         - watch: 1-3 items — patterns, risks, follow-up gaps. Reference actual captured risks with urgency context from the Outcomes Captured section where available. Specific.\n\
          - intoNextWeek: ALWAYS 2-3 items — never empty. Derive from watch items, open threads from wins, or next logical steps from the week's work. If no priorities, infer from the meetings and what came up. E.g. 'Follow up with [name] on [thing]', 'Schedule [meeting]', 'Close [action]'. Use '{}' vocabulary.\n\
          - Do NOT mention AI, enrichment, or internal app mechanics in any output text. Use human language.\n",
         entity_noun
@@ -321,6 +393,7 @@ pub fn gather_weekly_impact_input(
         prompt,
         ai_models,
         intel_hash,
+        extra_data: None,
     })
 }
 

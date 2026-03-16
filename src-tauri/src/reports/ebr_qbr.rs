@@ -5,7 +5,6 @@
 
 use crate::context_provider::ContextProvider;
 use crate::db::ActionDb;
-use crate::intelligence::read_intelligence_json;
 use crate::reports::generator::ReportGeneratorInput;
 use crate::reports::prompts::{append_intel_context, build_report_preamble};
 use crate::types::AiModelConfig;
@@ -68,9 +67,9 @@ pub struct EbrQbrContent {
 fn build_ebr_qbr_prompt(
     entity_name: &str,
     db: &ActionDb,
-    workspace: &std::path::Path,
+    _workspace: &std::path::Path,
     entity_id: &str,
-    account: Option<&crate::db::DbAccount>,
+    _account: Option<&crate::db::DbAccount>,
     active_preset: &str,
     context_provider: &dyn ContextProvider,
 ) -> String {
@@ -98,10 +97,7 @@ fn build_ebr_qbr_prompt(
         "leadership" => "executive-facing",
         _ => "customer-facing",
     };
-    let prior = account.and_then(|a| {
-        let dir = crate::accounts::resolve_account_dir(workspace, a);
-        read_intelligence_json(&dir).ok()
-    });
+    let prior = db.get_entity_intelligence(entity_id).ok().flatten();
 
     let ctx = context_provider
         .gather_entity_context(db, entity_id, "account", prior.as_ref())
@@ -136,8 +132,42 @@ fn build_ebr_qbr_prompt(
         prompt.push_str("\n\n");
     }
 
+    // Gather verbatim customer quotes from captures (90 days)
+    let customer_quotes: String = db
+        .conn_ref()
+        .prepare(
+            "SELECT c.evidence_quote, c.content, c.capture_type, c.meeting_title, c.captured_at
+             FROM captures c
+             WHERE c.account_id = ?1
+               AND c.evidence_quote IS NOT NULL
+               AND c.evidence_quote != ''
+               AND c.captured_at >= datetime('now', '-90 days')
+             ORDER BY c.captured_at DESC
+             LIMIT 10",
+        )
+        .and_then(|mut s| {
+            let rows = s.query_map(rusqlite::params![entity_id], |row| {
+                let quote: String = row.get(0)?;
+                let content: String = row.get(1)?;
+                let ctype: String = row.get(2)?;
+                let mtitle: Option<String> = row.get(3)?;
+                let captured: String = row.get(4)?;
+                let date = captured.split('T').next().unwrap_or(&captured).to_string();
+                let src = mtitle.unwrap_or_else(|| "unknown".to_string());
+                Ok(format!("- \"{}\" — {} ({}) [context: {} — {}]", quote, src, date, ctype, content))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
+        })
+        .unwrap_or_default();
+
     prompt.push_str("# Intelligence Data\n\n");
     append_intel_context(&mut prompt, &ctx);
+
+    if !customer_quotes.is_empty() {
+        prompt.push_str("\n## Customer Quotes (verbatim from meetings)\n");
+        prompt.push_str(&crate::util::wrap_user_data(&customer_quotes));
+        prompt.push_str("\n\n");
+    }
 
     prompt.push_str("# Output Format\n\n");
     prompt.push_str(&format!(
@@ -196,7 +226,7 @@ fn build_ebr_qbr_prompt(
     prompt.push_str("- challenges: Include resolved risks too (status='resolved'). Temporal inference allowed.\n");
     prompt.push_str("- next_steps: 3–5 concrete actions. Mix CSM and customer owners.\n");
     prompt.push_str("- strategic_roadmap: Synthesis only — no promises not supported by data.\n");
-    prompt.push_str("- customer_quote: Must be from actual transcript or email content. No paraphrasing — quote or null.\n");
+    prompt.push_str("- customer_quote: Select the most impactful verbatim customer quote from the Customer Quotes section above. Use their exact words. If no suitable quotes are available in the Customer Quotes section, return null. Do NOT fabricate or paraphrase — only use quotes marked as verbatim.\n");
     prompt.push_str(&format!(
         "- AUDIENCE: This is a {} document. Use appropriate language for the audience. No internal jargon, no app mechanics.\n",
         audience_framing
@@ -245,6 +275,7 @@ pub fn gather_ebr_qbr_input(
         prompt,
         ai_models,
         intel_hash,
+        extra_data: None,
     })
 }
 
