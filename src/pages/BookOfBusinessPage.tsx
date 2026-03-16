@@ -1,13 +1,15 @@
 /**
- * BookOfBusinessPage — Slide-deck portfolio review for leadership.
- * Full-viewport slides with scroll-snap, editorial typography, one idea per screen.
- * Follows the same pattern as RiskBriefingPage and WeeklyImpactPage.
+ * BookOfBusinessPage — Template-aligned slide-deck portfolio review for leadership.
+ * 14 slides matching the BoB review template. Full-viewport slides with scroll-snap.
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { FileText, AlertTriangle, Search, Layers, MessageSquare, Check } from "lucide-react";
+import {
+  FileText, AlertTriangle, Shield, TrendingUp, Target,
+  Calendar, MessageSquare, Layers, Check,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AccountListItem } from "@/types";
@@ -17,20 +19,19 @@ import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { CoverSlide } from "@/components/book-of-business/CoverSlide";
-import { AttentionSlide } from "@/components/book-of-business/AttentionSlide";
-import { SpotlightSlide } from "@/components/book-of-business/SpotlightSlide";
-import { ValueThemesSlide } from "@/components/book-of-business/ValueThemesSlide";
-import { AskSlide } from "@/components/book-of-business/AskSlide";
+import { HealthOverviewSlide } from "@/components/book-of-business/HealthOverviewSlide";
+import { RiskTableSlide } from "@/components/book-of-business/RiskTableSlide";
+import { RetentionDeepDiveSlide } from "@/components/book-of-business/RetentionDeepDiveSlide";
+import { SaveMotionsSlide } from "@/components/book-of-business/SaveMotionsSlide";
+import { ExpansionSlide } from "@/components/book-of-business/ExpansionSlide";
+import { YearEndSlide } from "@/components/book-of-business/YearEndSlide";
+import { LeadershipAsksSlide } from "@/components/book-of-business/LeadershipAsksSlide";
+import { AccountFocusSlide } from "@/components/book-of-business/AccountFocusSlide";
+import { QuarterlyFocusSlide } from "@/components/book-of-business/QuarterlyFocusSlide";
+import { ThemesSlide } from "@/components/book-of-business/ThemesSlide";
 import type {
   ReportRow,
   BookOfBusinessContent,
-  BookRiskItem,
-  BookOpportunityItem,
-  AccountSnapshotRow,
-  AccountDeepDive,
-  ValueDeliveredRow,
-  BookTheme,
-  LeadershipAsk,
 } from "@/types/reports";
 import slides from "./report-slides.module.css";
 
@@ -44,39 +45,72 @@ function toArr<T>(v: unknown): T[] {
 
 function normalizeBookOfBusiness(raw: Record<string, unknown>): BookOfBusinessContent {
   return {
+    // Slide 1: Executive Summary
     periodLabel: (raw.periodLabel as string) ?? "",
     executiveSummary: ((raw.executiveSummary ?? raw.executiveNarrative) as string) ?? "",
     totalAccounts: (raw.totalAccounts as number) ?? 0,
-    totalArr: (raw.totalArr as number | null) ?? null,
-    atRiskArr: (raw.atRiskArr as number | null) ?? null,
-    upcomingRenewals: (raw.upcomingRenewals as number) ?? 0,
-    upcomingRenewalsArr: (raw.upcomingRenewalsArr as number | null) ?? null,
-    hasLeadershipAsks: (raw.hasLeadershipAsks as boolean) ?? false,
-    topRisks: toArr<BookRiskItem>(raw.topRisks ?? raw.risks),
-    topOpportunities: toArr<BookOpportunityItem>(raw.topOpportunities ?? raw.opportunities),
-    accountSnapshot: toArr<AccountSnapshotRow>(raw.accountSnapshot ?? raw.snapshot),
-    deepDives: toArr<AccountDeepDive>(raw.deepDives),
-    valueDelivered: toArr<ValueDeliveredRow>(raw.valueDelivered),
-    keyThemes: toArr<BookTheme>(raw.keyThemes ?? raw.themes),
-    leadershipAsks: toArr<LeadershipAsk>(raw.leadershipAsks),
+    totalArr: (raw.totalArr as number) ?? 0,
+    atRiskArr: (raw.atRiskArr as number) ?? 0,
+    committedExpansion: (raw.committedExpansion as number) ?? 0,
+    projectedChurn: (raw.projectedChurn as number) ?? 0,
+    topRisksSummary: toArr<string>(raw.topRisksSummary),
+    topOpportunitiesSummary: toArr<string>(raw.topOpportunitiesSummary),
+    biggestRisk: (raw.biggestRisk as BookOfBusinessContent["biggestRisk"]) ?? null,
+    biggestUpside: (raw.biggestUpside as BookOfBusinessContent["biggestUpside"]) ?? null,
+    eltHelpRequired: (raw.eltHelpRequired as boolean) ?? false,
+    // Slide 2: Health Overview
+    healthOverview: (raw.healthOverview as BookOfBusinessContent["healthOverview"]) ?? {
+      healthyCount: 0, healthyArr: 0, mediumCount: 0, mediumArr: 0,
+      highRiskCount: 0, highRiskArr: 0, secureArr: 0,
+      renewals90d: 0, renewals90dArr: 0, renewals180d: 0, renewals180dArr: 0,
+    },
+    // Slide 3: Risk Table
+    riskAccounts: toArr(raw.riskAccounts),
+    // Slide 4: Retention Deep Dives
+    retentionRiskDeepDives: toArr(raw.retentionRiskDeepDives),
+    // Slide 5: Save Motions
+    saveMotions: toArr(raw.saveMotions),
+    // Slide 6: Expansion
+    expansionAccounts: toArr(raw.expansionAccounts),
+    // Slide 7: Expansion Readiness
+    expansionReadiness: toArr(raw.expansionReadiness),
+    // Slide 8: Year-End Outlook
+    yearEndOutlook: (raw.yearEndOutlook as BookOfBusinessContent["yearEndOutlook"]) ?? {
+      startingArr: 0, atRiskArr: 0, committedExpansion: 0, expectedChurn: 0, projectedEoyArr: 0,
+    },
+    // Slide 9: Landing Scenarios
+    landingScenarios: (raw.landingScenarios as BookOfBusinessContent["landingScenarios"]) ?? {
+      best: { keyAssumptions: "", attrition: "", expansion: "", notes: "" },
+      expected: { keyAssumptions: "", attrition: "", expansion: "", notes: "" },
+      worst: { keyAssumptions: "", attrition: "", expansion: "", notes: "" },
+    },
+    // Slide 10+14: Leadership Asks
+    leadershipAsks: toArr(raw.leadershipAsks),
+    // Slide 11: Account Focus
+    accountFocus: toArr(raw.accountFocus),
+    // Slide 12: Quarterly Focus
+    quarterlyFocus: (raw.quarterlyFocus as BookOfBusinessContent["quarterlyFocus"]) ?? {
+      retention: [], expansion: [], execution: [],
+    },
+    // Slide 13: Key Themes
+    keyThemes: toArr(raw.keyThemes ?? raw.themes),
+    // Account snapshot
+    accountSnapshot: toArr(raw.accountSnapshot ?? raw.snapshot),
   };
 }
 
 // =============================================================================
-// Generating progress config
+// Progress config
 // =============================================================================
 
-// I547: Event-driven progress phases — mapped from bob-section-progress events
 const BOB_PHASES = [
   { key: "gathering", label: "Gathering portfolio data", detail: "Reading account health, meeting history, and renewal context" },
   { key: "glean", label: "Fetching enterprise insights", detail: "Querying Glean for cross-system context" },
-  { key: "topRisks", label: "Analyzing risks", detail: "Identifying top risks across the portfolio" },
-  { key: "topOpportunities", label: "Finding opportunities", detail: "Spotting expansion and growth signals" },
-  { key: "deepDives", label: "Building account spotlights", detail: "Generating deep dives for spotlight accounts" },
-  { key: "valueDelivered", label: "Documenting value delivered", detail: "Summarizing concrete outcomes" },
-  { key: "keyThemes", label: "Identifying themes", detail: "Finding cross-portfolio patterns" },
-  { key: "leadershipAsks", label: "Preparing leadership asks", detail: "Building executive-ready asks" },
-  { key: "executiveSummary", label: "Writing executive summary", detail: "Synthesizing the full portfolio narrative" },
+  { key: "healthOverview", label: "Computing health overview", detail: "Calculating risk tiers and ARR weights" },
+  { key: "riskAccounts", label: "Building risk table", detail: "Identifying at-risk accounts and drivers" },
+  { key: "expansionAccounts", label: "Mapping expansion", detail: "Finding growth opportunities" },
+  { key: "yearEndOutlook", label: "Projecting year-end", detail: "Computing ARR outlook" },
+  { key: "synthesis", label: "Generating analysis", detail: "AI synthesizing narrative sections" },
 ];
 
 const EDITORIAL_QUOTES = [
@@ -174,14 +208,19 @@ export default function BookOfBusinessPage() {
   // Build dynamic slide/chapter list based on content
   const slideIds = useMemo(() => {
     if (!content) return [];
-    const ids: string[] = ["cover", "attention"];
-    content.deepDives.forEach((_, i) => ids.push(`spotlight-${i + 1}`));
-    if (content.valueDelivered.length > 0 || content.keyThemes.length > 0) {
-      ids.push("value-themes");
-    }
-    if (content.leadershipAsks.length > 0) {
-      ids.push("the-ask");
-    }
+    const ids: string[] = [
+      "cover",
+      "health-overview",
+      "risk-table",
+    ];
+    if (content.retentionRiskDeepDives.length > 0) ids.push("retention-deep-dives");
+    if (content.saveMotions.length > 0) ids.push("save-motions");
+    if (content.expansionAccounts.length > 0 || content.expansionReadiness.length > 0) ids.push("expansion");
+    ids.push("year-end");
+    if (content.leadershipAsks.length > 0) ids.push("the-ask");
+    if (content.accountFocus.length > 0) ids.push("account-focus");
+    if (content.quarterlyFocus.retention.length > 0 || content.quarterlyFocus.expansion.length > 0 || content.quarterlyFocus.execution.length > 0) ids.push("quarterly-focus");
+    if (content.keyThemes.length > 0) ids.push("themes");
     return ids;
   }, [content]);
 
@@ -189,21 +228,24 @@ export default function BookOfBusinessPage() {
     if (!content) return undefined;
     const ch: { id: string; label: string; icon: React.ReactNode }[] = [
       { id: "cover", label: "Cover", icon: <FileText size={18} strokeWidth={1.5} /> },
-      { id: "attention", label: "Attention", icon: <AlertTriangle size={18} strokeWidth={1.5} /> },
+      { id: "health-overview", label: "Health", icon: <Shield size={18} strokeWidth={1.5} /> },
+      { id: "risk-table", label: "Risks", icon: <AlertTriangle size={18} strokeWidth={1.5} /> },
     ];
-    content.deepDives.forEach((dive, i) => {
-      ch.push({
-        id: `spotlight-${i + 1}`,
-        label: dive.accountName.length > 16 ? dive.accountName.slice(0, 14) + "..." : dive.accountName,
-        icon: <Search size={18} strokeWidth={1.5} />,
-      });
-    });
-    if (content.valueDelivered.length > 0 || content.keyThemes.length > 0) {
-      ch.push({ id: "value-themes", label: "Value & Themes", icon: <Layers size={18} strokeWidth={1.5} /> });
-    }
-    if (content.leadershipAsks.length > 0) {
+    if (content.retentionRiskDeepDives.length > 0)
+      ch.push({ id: "retention-deep-dives", label: "Deep Dives", icon: <AlertTriangle size={18} strokeWidth={1.5} /> });
+    if (content.saveMotions.length > 0)
+      ch.push({ id: "save-motions", label: "Save Motions", icon: <Shield size={18} strokeWidth={1.5} /> });
+    if (content.expansionAccounts.length > 0 || content.expansionReadiness.length > 0)
+      ch.push({ id: "expansion", label: "Expansion", icon: <TrendingUp size={18} strokeWidth={1.5} /> });
+    ch.push({ id: "year-end", label: "Year-End", icon: <Calendar size={18} strokeWidth={1.5} /> });
+    if (content.leadershipAsks.length > 0)
       ch.push({ id: "the-ask", label: "The Ask", icon: <MessageSquare size={18} strokeWidth={1.5} /> });
-    }
+    if (content.accountFocus.length > 0)
+      ch.push({ id: "account-focus", label: "Focus", icon: <Target size={18} strokeWidth={1.5} /> });
+    if (content.quarterlyFocus.retention.length > 0 || content.quarterlyFocus.expansion.length > 0 || content.quarterlyFocus.execution.length > 0)
+      ch.push({ id: "quarterly-focus", label: "Q→Q", icon: <Layers size={18} strokeWidth={1.5} /> });
+    if (content.keyThemes.length > 0)
+      ch.push({ id: "themes", label: "Themes", icon: <Layers size={18} strokeWidth={1.5} /> });
     return ch;
   }, [content]);
 
@@ -244,7 +286,7 @@ export default function BookOfBusinessPage() {
     });
   }, []);
 
-  // I547: Listen for progressive section completion events
+  // Listen for progressive section completion events
   useEffect(() => {
     if (!generating) return;
 
@@ -303,14 +345,11 @@ export default function BookOfBusinessPage() {
     }
   }, [userId, generating, selectedSpotlights]);
 
-  // Return to spotlight picker (for regeneration), pre-populated with current spotlights
+  // Return to spotlight picker (for regeneration)
   const handleRegenerate = useCallback(() => {
-    if (content) {
-      setSelectedSpotlights(new Set(content.deepDives.map((d) => d.accountId)));
-    }
     setContent(null);
     window.scrollTo({ top: 0, behavior: "instant" });
-  }, [content]);
+  }, []);
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -404,7 +443,6 @@ export default function BookOfBusinessPage() {
       red: "var(--color-spice-terracotta)",
     };
 
-    // Group accounts: parents first (with children indented), then standalone
     const parentAccounts = accounts.filter((a) => a.isParent);
     const childrenOf = new Map<string, AccountListItem[]>();
     for (const a of accounts) {
@@ -466,36 +504,16 @@ export default function BookOfBusinessPage() {
               }}
             />
           )}
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-primary)",
-              flex: 1,
-            }}
-          >
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)", flex: 1 }}>
             {acct.name}
           </span>
           {acct.arr != null && acct.arr > 0 && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
               ${(acct.arr / 1000).toFixed(0)}k
             </span>
           )}
           {acct.renewalDate && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                color: "var(--color-text-tertiary)",
-                textTransform: "uppercase",
-              }}
-            >
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase" }}>
               {acct.renewalDate}
             </span>
           )}
@@ -508,7 +526,6 @@ export default function BookOfBusinessPage() {
         className={slides.emptyState}
         style={{
           "--report-accent": "var(--color-spice-turmeric)",
-          alignItems: accounts.length > 0 ? "center" : "center",
         } as React.CSSProperties}
       >
         <div className={slides.emptyOverline}>Book of Business</div>
@@ -546,16 +563,8 @@ export default function BookOfBusinessPage() {
         )}
 
         {selectedSpotlights.size > 0 && (
-          <p
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-tertiary)",
-              marginBottom: 16,
-            }}
-          >
-            {selectedSpotlights.size} account{selectedSpotlights.size !== 1 ? "s" : ""} selected for
-            spotlight
+          <p style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 16 }}>
+            {selectedSpotlights.size} account{selectedSpotlights.size !== 1 ? "s" : ""} selected for spotlight
           </p>
         )}
 
@@ -567,9 +576,8 @@ export default function BookOfBusinessPage() {
     );
   }
 
-  // ── Generating state (I547: event-driven progress) ──────────────────────
+  // ── Generating state ──────────────────────────────────────────────────
   if (generating && !content) {
-    // For the initial gathering phase before events arrive, use timer fallback
     const showGlean = completedSections.size === 0 && genSeconds >= 3 && genSeconds < 15;
     const activeKey = completedSections.size > 0
       ? currentPhaseKey
@@ -629,7 +637,6 @@ export default function BookOfBusinessPage() {
             })}
           </div>
 
-          {/* Pull quote */}
           <div>
             <div style={{ borderTop: "1px solid var(--color-rule-light)", marginBottom: 20 }} />
             <p style={{ fontFamily: "var(--font-serif)", fontSize: 16, fontStyle: "italic", fontWeight: 300, color: "var(--color-text-tertiary)", lineHeight: 1.6, margin: 0 }}>
@@ -673,50 +680,102 @@ export default function BookOfBusinessPage() {
         />
       </section>
 
-      {/* Slide 2: What Needs Attention — risks & opportunities */}
+      {/* Slide 2: Health Overview */}
       <div className="editorial-reveal">
-        <AttentionSlide content={c} onUpdate={updateContent} />
+        <HealthOverviewSlide content={c} onUpdate={updateContent} />
+      </div>
+
+      {/* Slide 3: Risk Table */}
+      <div className="editorial-reveal">
+        <RiskTableSlide content={c} onUpdate={updateContent} />
         <IntelligenceFeedback
-          value={feedback.getFeedback("attention")}
-          onFeedback={(type) => feedback.submitFeedback("attention", type)}
+          value={feedback.getFeedback("risk_table")}
+          onFeedback={(type) => feedback.submitFeedback("risk_table", type)}
         />
       </div>
 
-      {/* Slides 3-N: Account Spotlights — one per deep dive */}
-      {c.deepDives.map((dive, i) => (
-        <div key={dive.accountId} className="editorial-reveal">
-          <SpotlightSlide
-            dive={dive}
-            index={i + 1}
-            total={c.deepDives.length}
-            content={c}
-            onUpdate={updateContent}
-          />
-          <IntelligenceFeedback
-            value={feedback.getFeedback(`spotlight_${dive.accountId}`)}
-            onFeedback={(type) => feedback.submitFeedback(`spotlight_${dive.accountId}`, type)}
-          />
-        </div>
-      ))}
-
-      {/* Value Delivered + Themes */}
-      {(c.valueDelivered.length > 0 || c.keyThemes.length > 0) && (
+      {/* Slide 4: Retention Deep Dives */}
+      {c.retentionRiskDeepDives.length > 0 && (
         <div className="editorial-reveal">
-          <ValueThemesSlide content={c} onUpdate={updateContent} />
+          <RetentionDeepDiveSlide content={c} onUpdate={updateContent} />
           <IntelligenceFeedback
-            value={feedback.getFeedback("value_themes")}
-            onFeedback={(type) => feedback.submitFeedback("value_themes", type)}
+            value={feedback.getFeedback("retention_deep_dives")}
+            onFeedback={(type) => feedback.submitFeedback("retention_deep_dives", type)}
           />
         </div>
       )}
 
-      {/* The Ask — leadership asks (conditional) */}
+      {/* Slide 5: Save Motions */}
+      {c.saveMotions.length > 0 && (
+        <div className="editorial-reveal">
+          <SaveMotionsSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("save_motions")}
+            onFeedback={(type) => feedback.submitFeedback("save_motions", type)}
+          />
+        </div>
+      )}
+
+      {/* Slide 6+7: Expansion */}
+      {(c.expansionAccounts.length > 0 || c.expansionReadiness.length > 0) && (
+        <div className="editorial-reveal">
+          <ExpansionSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("expansion")}
+            onFeedback={(type) => feedback.submitFeedback("expansion", type)}
+          />
+        </div>
+      )}
+
+      {/* Slide 8+9: Year-End */}
+      <div className="editorial-reveal">
+        <YearEndSlide content={c} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("year_end")}
+          onFeedback={(type) => feedback.submitFeedback("year_end", type)}
+        />
+      </div>
+
+      {/* Slide 10+14: Leadership Asks */}
       {c.leadershipAsks.length > 0 && (
         <div className="editorial-reveal">
-          <AskSlide content={c} onUpdate={updateContent} />
+          <LeadershipAsksSlide content={c} onUpdate={updateContent} />
           <IntelligenceFeedback
             value={feedback.getFeedback("leadership_asks")}
             onFeedback={(type) => feedback.submitFeedback("leadership_asks", type)}
+          />
+        </div>
+      )}
+
+      {/* Slide 11: Account Focus */}
+      {c.accountFocus.length > 0 && (
+        <div className="editorial-reveal">
+          <AccountFocusSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("account_focus")}
+            onFeedback={(type) => feedback.submitFeedback("account_focus", type)}
+          />
+        </div>
+      )}
+
+      {/* Slide 12: Quarterly Focus */}
+      {(c.quarterlyFocus.retention.length > 0 || c.quarterlyFocus.expansion.length > 0 || c.quarterlyFocus.execution.length > 0) && (
+        <div className="editorial-reveal">
+          <QuarterlyFocusSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("quarterly_focus")}
+            onFeedback={(type) => feedback.submitFeedback("quarterly_focus", type)}
+          />
+        </div>
+      )}
+
+      {/* Slide 13: Key Themes */}
+      {c.keyThemes.length > 0 && (
+        <div className="editorial-reveal">
+          <ThemesSlide content={c} onUpdate={updateContent} />
+          <IntelligenceFeedback
+            value={feedback.getFeedback("key_themes")}
+            onFeedback={(type) => feedback.submitFeedback("key_themes", type)}
           />
         </div>
       )}
