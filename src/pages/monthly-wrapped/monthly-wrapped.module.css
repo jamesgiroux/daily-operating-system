@@ -1,0 +1,362 @@
+/* =============================================================================
+ * Monthly Wrapped — shared slide layout + animation classes
+ * ============================================================================= */
+
+/* Scroll-snap wrapper */
+.slideContainer {
+  scroll-snap-type: y proximity;
+}
+
+/* Full-viewport breakout — escapes parent max-width */
+.viewportBreakout {
+  margin-left: calc(50% - 50vw);
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* Base slide */
+.slide {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  scroll-margin-top: 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 120px 120px 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Slide headline typography */
+.slideTitle {
+  font-family: var(--font-serif);
+  font-weight: 300;
+  line-height: 1.05;
+  margin: 0 0 24px;
+  letter-spacing: -0.01em;
+}
+
+/* Slide subtitle */
+.slideSubtitle {
+  font-family: var(--font-serif);
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+/* Body text */
+.slideBody {
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+/* Mono overline label */
+.overline {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Small overline variant (11px) */
+.overlineSmall {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Large animated number display */
+.statNumber {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Stat label */
+.statLabel {
+  font-family: var(--font-serif);
+  font-weight: 300;
+}
+
+/* Sub-stats row */
+.subStats {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+/* Serif italic quote/pattern text */
+.serifQuote {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.6;
+  max-width: 700px;
+  margin: 0;
+}
+
+/* Background texture overlay */
+.bgTexture {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Relative z-index container (above bg textures) */
+.contentLayer {
+  position: relative;
+  z-index: 1;
+}
+
+/* Moment item in the moments slide */
+.momentItem {
+  padding-bottom: 28px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.momentItem:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.momentLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  margin-bottom: 6px;
+}
+
+.momentHeadline {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+}
+
+.momentSubtext {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* Rarity label divider */
+.rarityDivider {
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 16px;
+}
+
+/* Alignment badge */
+.alignmentBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Priority CTA button */
+.ctaButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  cursor: pointer;
+}
+
+/* Three words pill */
+.wordPill {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 400;
+  border-radius: 4px;
+  padding: 8px 16px;
+}
+
+/* Flourish symbol */
+.flourish {
+  font-family: var(--font-mono);
+  font-size: 20px;
+}
+
+/* Loading skeleton container */
+.loadingSkeleton {
+  padding: 120px 120px 80px;
+}
+
+/* Empty state container */
+.emptyState {
+  padding: 120px 120px 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+
+.emptyOverline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-garden-eucalyptus);
+  margin-bottom: 24px;
+}
+
+.emptyTitle {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.emptyDescription {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  max-width: 420px;
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+
+.emptyError {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-spice-terracotta);
+  margin-bottom: 16px;
+}
+
+/* Folio regenerate button */
+.folioAction {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.folioActionActive {
+  color: var(--color-garden-eucalyptus);
+  border: 1px solid var(--color-garden-eucalyptus);
+  opacity: 1;
+}
+
+.folioActionDisabled {
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-light);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =============================================================================
+ * Animation utility classes
+ * ============================================================================= */
+
+.animHidden { opacity: 0; }
+.animSlideUp { animation: wrappedSlideUp 0.5s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.animSlideUpSlow { animation: wrappedSlideUp 0.55s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.animSlideUpLong { animation: wrappedSlideUp 0.6s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.animFadeIn { animation: wrappedFadeIn 0.4s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.animFadeInSlow { animation: wrappedFadeIn 0.5s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.animScaleReveal { animation: wrappedScaleReveal 0.6s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+
+/* =============================================================================
+ * Slide background variants
+ * ============================================================================= */
+
+.bgInk { background: var(--color-desk-ink); }
+.bgEucalyptus { background: var(--color-garden-eucalyptus); }
+.bgTurmeric { background: var(--color-spice-turmeric); }
+.bgWarmWhite { background: var(--color-paper-warm-white); }
+.bgTerracotta { background: var(--color-spice-terracotta); }
+.bgRosemary { background: var(--color-garden-rosemary); }
+.bgSage { background: var(--color-garden-sage); }
+.bgSaffron { background: var(--color-spice-saffron); }
+.bgLinen { background: var(--color-paper-linen); }
+
+/* =============================================================================
+ * Loading skeleton background
+ * ============================================================================= */
+
+.skeletonBar { background: var(--color-rule-light); }
+
+/* =============================================================================
+ * Per-slide element variants (layered on base typography classes)
+ * ============================================================================= */
+
+/* --- SplashSlide --- */
+.splashOverline { color: rgba(255,255,255,0.4); margin-bottom: 24px; }
+.splashMonth { font-size: clamp(64px, 9vw, 120px); line-height: 0.95; color: #ffffff; margin: 0 0 20px; letter-spacing: -0.02em; }
+.splashYear { font-family: var(--font-mono); font-size: clamp(28px, 3.5vw, 48px); font-weight: 700; color: var(--color-spice-turmeric); letter-spacing: 0.04em; }
+
+/* --- VolumeSlide --- */
+.volumeOverline { font-size: 12px; color: rgba(255,255,255,0.7); margin-bottom: 32px; }
+.volumeStat { font-size: clamp(72px, 10vw, 96px); color: #ffffff; margin-bottom: 8px; }
+.volumeStatLabel { font-size: 28px; color: rgba(255,255,255,0.9); margin-bottom: 32px; }
+.volumeSubStats { color: rgba(255,255,255,0.65); }
+
+/* --- TopAccountsSlide --- */
+.topAccountOverline { font-size: 12px; color: rgba(42,43,61,0.55); margin-bottom: 32px; }
+.topAccountName { font-size: clamp(48px, 7vw, 80px); color: var(--color-desk-ink); }
+.topAccountTouches { font-family: var(--font-mono); font-size: 16px; color: rgba(42,43,61,0.65); letter-spacing: 0.02em; }
+
+/* --- MomentsSlide --- */
+.momentsOverline { font-size: 12px; font-weight: 700; color: var(--color-spice-turmeric); margin-bottom: 40px; }
+.momentsList { max-width: 680px; }
+
+/* --- HiddenPatternSlide --- */
+.hiddenPatternOverline { font-size: 12px; color: rgba(255,255,255,0.55); margin-bottom: 40px; }
+.hiddenPatternQuote { font-size: 28px; color: #ffffff; }
+
+/* --- PersonalitySlide --- */
+.personalityOverline { color: rgba(255,255,255,0.3); margin-bottom: 28px; }
+.personalityTypeName { font-size: clamp(48px, 7vw, 80px); color: var(--color-spice-saffron); }
+.personalityDescription { font-size: 18px; color: rgba(255,255,255,0.88); max-width: 600px; margin: 0 0 16px; }
+.personalityKeyTrait { font-family: var(--font-mono); font-size: 13px; color: rgba(255,255,255,0.45); margin-bottom: 24px; }
+.personalityRarity { color: var(--color-spice-turmeric); }
+
+/* --- PrioritySlide --- */
+.priorityOverline { font-size: 12px; color: rgba(255,255,255,0.65); margin-bottom: 40px; }
+.priorityStat { font-size: clamp(72px, 10vw, 96px); color: #ffffff; margin-bottom: 8px; }
+.priorityStatLabel { font-size: 22px; color: rgba(255,255,255,0.9); margin-bottom: 24px; }
+.priorityEmptyText { font-size: 24px; color: rgba(255,255,255,0.9); line-height: 1.5; max-width: 520px; margin-bottom: 28px; }
+.priorityEmptyCta { color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.4); }
+
+/* --- TopWinSlide --- */
+.topWinOverline { font-size: 12px; color: rgba(42,43,61,0.5); margin-bottom: 40px; }
+.topWinQuote { font-size: 28px; color: var(--color-desk-ink); margin: 0 0 32px; }
+.topWinFlourish { color: var(--color-spice-turmeric); }
+
+/* --- CarryForwardSlide --- */
+.carryForwardOverline { font-size: 12px; color: var(--color-text-tertiary); margin-bottom: 40px; }
+.carryForwardText { font-size: 22px; color: var(--color-text-primary); line-height: 1.7; max-width: 640px; margin: 0 0 56px; }
+.carryForwardWordsLabel { color: var(--color-text-tertiary); margin-bottom: 16px; }
+.carryForwardWordRow { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* --- CloseSlide --- */
+.closeHeadline { font-size: clamp(40px, 5.5vw, 72px); line-height: 1.1; color: #ffffff; }
+.closeSubLabel { font-family: var(--font-mono); font-size: 14px; color: rgba(255,255,255,0.3); letter-spacing: 0.04em; margin-bottom: 48px; }
+.closeExportCta { color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.2); }

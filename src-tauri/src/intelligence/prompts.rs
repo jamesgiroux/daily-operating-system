@@ -26,7 +26,7 @@ const MAX_CONTEXT_BYTES: usize = 10_000;
 // =============================================================================
 
 /// Assembled signals for the intelligence enrichment prompt.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct IntelligenceContext {
     /// Structured facts (ARR/health/lifecycle or status/milestone/owner).
     pub facts_block: String,
@@ -38,10 +38,12 @@ pub struct IntelligenceContext {
     pub recent_captures: String,
     /// Recent email-derived signals linked to this entity.
     pub recent_email_signals: String,
-    /// Linked stakeholders from entity_people + people.
+    /// Linked stakeholders from account_stakeholders/entity_members + people.
     pub stakeholders: String,
     /// Canonical contact names with IDs for stakeholder reconciliation (I420).
     pub canonical_contacts: Option<String>,
+    /// Deterministic attendance-backed stakeholder presence lines (I527).
+    pub verified_stakeholder_presence: Option<String>,
     /// Source file manifest.
     pub file_manifest: Vec<SourceManifestEntry>,
     /// Extracted text from workspace files (50KB initial, 20KB incremental).
@@ -62,6 +64,23 @@ pub struct IntelligenceContext {
     pub user_context: Option<String>,
     /// Entity-specific context entries from entity_context_entries table.
     pub entity_context: Option<String>,
+    /// I508c: Dimension-aware gap queries for Glean fan-out.
+    pub gap_queries: Vec<GapQueryItem>,
+    /// I499: Pre-computed account health from algorithmic scoring.
+    pub computed_health: Option<super::io::AccountHealth>,
+    /// I500: Org-level health data from external sources (Glean/CRM).
+    pub org_health: Option<super::io::OrgHealthData>,
+    /// I555: Additional context blocks (engagement patterns, champion health, commitments).
+    pub extra_blocks: Vec<String>,
+}
+
+/// I508c structured gap query item used for local ranking + remote fan-out.
+#[derive(Debug, Clone)]
+pub struct GapQueryItem {
+    /// Dimension key when the gap query targets a specific intelligence dimension.
+    pub dimension: Option<String>,
+    /// Search query text used for vector ranking / Glean search.
+    pub query: String,
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
@@ -231,6 +250,105 @@ pub fn build_intelligence_context(
         ctx.recent_captures = lines.join("\n");
     }
 
+    // --- I555: Meeting engagement patterns (last 5 meetings with dynamics) ---
+    if entity_type == "account" {
+        if let Ok(mut stmt) = db.conn.prepare(
+            "SELECT m.start_time, m.title, mid.talk_balance_customer_pct, mid.talk_balance_internal_pct,
+                    mid.question_density, mid.decision_maker_active, mid.forward_looking,
+                    mch.champion_name, mch.champion_status
+             FROM meeting_interaction_dynamics mid
+             JOIN meetings m ON m.id = mid.meeting_id
+             JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+             LEFT JOIN meeting_champion_health mch ON mch.meeting_id = m.id
+             ORDER BY m.start_time DESC LIMIT 5"
+        ) {
+            let rows: Vec<(String, String, Option<i32>, Option<i32>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
+                stmt.query_map(rusqlite::params![entity_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?))
+                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+
+            if !rows.is_empty() {
+                let mut lines = vec!["## Meeting Engagement Patterns (last 5 meetings)".to_string()];
+                for (date, title, cust_pct, int_pct, _qd, _dma, fl, champ_name, champ_status) in &rows {
+                    let short_date = date.split('T').next().unwrap_or(date);
+                    let talk = match (cust_pct, int_pct) {
+                        (Some(c), Some(i)) => format!("Talk: {}% customer / {}% internal", c, i),
+                        _ => "Talk: unknown".to_string(),
+                    };
+                    let champion = match (champ_name, champ_status) {
+                        (Some(n), Some(s)) => format!("Champion {n}: {s}"),
+                        _ => "Champion: n/a".to_string(),
+                    };
+                    let fwd = fl.as_deref().unwrap_or("unknown");
+                    lines.push(format!("- {short_date} | {title} | {talk} | {champion} | Forward-looking: {fwd}"));
+                }
+                ctx.extra_blocks.push(lines.join("\n"));
+            }
+        }
+
+        // --- I555: Champion health trend ---
+        if let Ok(mut stmt) = db.conn.prepare(
+            "SELECT m.start_time, mch.champion_name, mch.champion_status, mch.champion_evidence
+             FROM meeting_champion_health mch
+             JOIN meetings m ON m.id = mch.meeting_id
+             JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+             WHERE mch.champion_name IS NOT NULL
+             ORDER BY m.start_time DESC LIMIT 5"
+        ) {
+            let rows: Vec<(String, String, String, Option<String>)> =
+                stmt.query_map(rusqlite::params![entity_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+
+            if !rows.is_empty() {
+                let champion_name = &rows[0].1;
+                let statuses: Vec<String> = rows.iter().map(|(d, _, s, _)| {
+                    let short = d.split('T').next().unwrap_or(d);
+                    format!("{s} ({short})")
+                }).collect();
+                let mut lines = vec![
+                    "## Champion Health Trend".to_string(),
+                    format!("{champion_name} — {}", statuses.join(", ")),
+                ];
+                // Add evidence for weak/lost entries
+                for (date, _, status, evidence) in &rows {
+                    if (status == "weak" || status == "lost") && evidence.is_some() {
+                        let short = date.split('T').next().unwrap_or(date);
+                        lines.push(format!("  {short} ({status}): {}", evidence.as_deref().unwrap_or("")));
+                    }
+                }
+                ctx.extra_blocks.push(lines.join("\n"));
+            }
+        }
+
+        // --- I555: Open commitments from prior meetings ---
+        if let Ok(mut stmt) = db.conn.prepare(
+            "SELECT title, owner, target_date, source
+             FROM captured_commitments
+             WHERE account_id = ?1 AND consumed = 0
+             ORDER BY created_at DESC LIMIT 10"
+        ) {
+            let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> =
+                stmt.query_map(rusqlite::params![entity_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+
+            if !rows.is_empty() {
+                let mut lines = vec!["## Open Commitments (from prior meetings)".to_string()];
+                for (title, owner, target, source) in &rows {
+                    let owner_str = owner.as_deref().unwrap_or("unassigned");
+                    let target_str = target.as_deref().unwrap_or("no target date");
+                    let source_str = source.as_deref().map(|s| format!(", from {s}")).unwrap_or_default();
+                    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+                    let overdue = target.as_deref().map(|t| t < today.as_str()).unwrap_or(false);
+                    let tag = if overdue { " [OVERDUE]" } else { "" };
+                    lines.push(format!("- \"{title}\" — owned_by: {owner_str}, target: {target_str}{source_str}{tag}"));
+                }
+                ctx.extra_blocks.push(lines.join("\n"));
+            }
+        }
+    }
+
     // --- Recent email signals ---
     {
         // Fetch more signals for entities with upcoming meetings
@@ -379,6 +497,16 @@ pub fn build_intelligence_context(
         ctx.canonical_contacts = Some(canonical_lines.join("\n"));
     }
 
+    // I527: Deterministic stakeholder meeting presence lines for contradiction-resistant prompts.
+    if entity_type == "account" || entity_type == "project" {
+        if let Ok(facts) = crate::intelligence::build_fact_context(db, entity_id, entity_type) {
+            let lines = crate::intelligence::format_verified_presence_lines(&facts, 8);
+            if !lines.is_empty() {
+                ctx.verified_stakeholder_presence = Some(lines.join("\n"));
+            }
+        }
+    }
+
     // --- Entity connections (people only) ---
     if entity_type == "person" {
         let entities = db.get_entities_for_person(entity_id).unwrap_or_default();
@@ -486,7 +614,11 @@ pub fn build_intelligence_context(
     let mut ranked_files: Vec<&crate::db::DbContentFile> = Vec::new();
     let mut seen_file_ids = std::collections::HashSet::new();
 
-    let semantic_query = semantic_gap_query(prior);
+    let gap_queries = semantic_gap_queries(prior);
+    let semantic_query = gap_queries
+        .first()
+        .map(|q| q.query.clone())
+        .unwrap_or_default();
     if let Ok(matches) = crate::queries::search::search_entity_content(
         db,
         embedding_model,
@@ -571,17 +703,20 @@ pub fn build_intelligence_context(
         .take(30)
         .map(|f| {
             let is_selected = selected_filenames.contains(&f.filename);
+            let skip_reason = if is_selected {
+                None
+            } else if f.summary.is_none() {
+                Some("no_summary".to_string())
+            } else {
+                Some("budget".to_string())
+            };
             SourceManifestEntry {
                 filename: f.filename.clone(),
                 modified_at: f.modified_at.clone(),
                 format: Some(f.format.clone()),
                 content_type: Some(f.content_type.clone()),
                 selected: is_selected,
-                skip_reason: if is_selected {
-                    None
-                } else {
-                    Some("budget".to_string())
-                },
+                skip_reason,
             }
         })
         .collect();
@@ -618,6 +753,30 @@ pub fn build_intelligence_context(
         }
         if !transcript_parts.is_empty() {
             ctx.recent_transcripts = transcript_parts.join("\n\n");
+        }
+    }
+
+    // --- Recent transcript sentiment captures (I509) ---
+    if entity_type == "account" {
+        if let Ok(captures) = db.get_captures_for_account(entity_id, 90) {
+            let sentiment_captures: Vec<_> = captures
+                .iter()
+                .filter(|c| c.capture_type == "sentiment")
+                .take(5)
+                .collect();
+            if !sentiment_captures.is_empty() {
+                let mut parts = Vec::new();
+                for cap in &sentiment_captures {
+                    parts.push(format!(
+                        "- {} ({}): {}",
+                        cap.meeting_title, cap.captured_at, cap.content
+                    ));
+                }
+                ctx.recent_transcripts.push_str(&format!(
+                    "\n\n## Recent Meeting Sentiment Signals\n{}",
+                    parts.join("\n")
+                ));
+            }
         }
     }
 
@@ -685,6 +844,9 @@ pub fn build_intelligence_context(
         }
         ctx.entity_context = Some(block);
     }
+
+    // I508c: Store gap queries for Glean fan-out
+    ctx.gap_queries = gap_queries;
 
     ctx
 }
@@ -1093,24 +1255,116 @@ fn build_project_portfolio_children_context(db: &ActionDb, children: &[DbProject
     parts.join("\n")
 }
 
-fn semantic_gap_query(prior: Option<&IntelligenceJson>) -> String {
-    let mut terms = vec!["account status", "risks", "wins", "blockers", "next steps"];
+/// I508c: Dimension-aware semantic gap queries for entity enrichment.
+///
+/// Returns structured gap query items — the first query is used for local vector
+/// ranking, and the full set is used for Glean fan-out.
+fn semantic_gap_queries(prior: Option<&IntelligenceJson>) -> Vec<GapQueryItem> {
+    let mut queries = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut push_query = |dimension: Option<&str>, query: &str| {
+        if seen.insert(query.to_string()) {
+            queries.push(GapQueryItem {
+                dimension: dimension.map(|d| d.to_string()),
+                query: query.to_string(),
+            });
+        }
+    };
+
+    // Core query — always included
+    push_query(None, "account status risks wins blockers next steps");
 
     if let Some(p) = prior {
+        // Legacy checks
         if p.risks.is_empty() {
-            terms.push("risks concerns blockers challenges");
+            push_query(Some("risks"), "risks concerns blockers challenges");
         }
         if p.recent_wins.is_empty() {
-            terms.push("recent wins outcomes delivered value");
+            push_query(Some("recent_wins"), "recent wins outcomes delivered value");
         }
         if p.current_state.is_none() {
-            terms.push("working not working unknowns");
+            push_query(Some("current_state"), "working not working unknowns");
+        }
+        // I508a dimension-aware gap checks
+        if p.competitive_context.is_empty() {
+            push_query(
+                Some("competitive_context"),
+                "competitive landscape alternatives threats",
+            );
+        }
+        if p.strategic_priorities.is_empty() {
+            push_query(
+                Some("strategic_priorities"),
+                "strategic priorities initiatives roadmap goals",
+            );
+        }
+        if p.coverage_assessment.is_none() {
+            push_query(
+                Some("coverage_assessment"),
+                "stakeholder map org chart role coverage",
+            );
+        }
+        if p.organizational_changes.is_empty() {
+            push_query(
+                Some("organizational_changes"),
+                "leadership changes reorg hiring departures",
+            );
+        }
+        if p.meeting_cadence.is_none() {
+            push_query(
+                Some("meeting_cadence"),
+                "meeting frequency engagement cadence",
+            );
+        }
+        if p.blockers.is_empty() {
+            push_query(Some("blockers"), "blockers obstacles delays impediments");
+        }
+        if p.contract_context.is_none() {
+            push_query(
+                Some("contract_context"),
+                "contract renewal ARR pricing commercial terms",
+            );
+        }
+        if p.expansion_signals.is_empty() {
+            push_query(
+                Some("expansion_signals"),
+                "expansion upsell growth opportunity",
+            );
+        }
+        if p.support_health.is_none() {
+            push_query(
+                Some("support_health"),
+                "support tickets SLA issues incidents",
+            );
+        }
+        if p.nps_csat.is_none() {
+            push_query(
+                Some("nps_csat"),
+                "NPS CSAT satisfaction survey score feedback",
+            );
         }
     } else {
-        terms.push("executive assessment context renewal sentiment");
+        // Initial enrichment — broad set
+        push_query(
+            Some("executive_assessment"),
+            "executive assessment context renewal sentiment",
+        );
+        push_query(
+            Some("competitive_context"),
+            "competitive landscape alternatives threats",
+        );
+        push_query(
+            Some("strategic_priorities"),
+            "strategic priorities initiatives roadmap",
+        );
+        push_query(
+            Some("contract_context"),
+            "contract renewal ARR pricing terms",
+        );
+        push_query(Some("support_health"), "support tickets satisfaction NPS");
     }
 
-    terms.join(" ")
+    queries
 }
 
 fn format_meeting_time_for_prompt(raw: &str) -> String {
@@ -1347,9 +1601,21 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
+    // I527: Attendance-backed presence facts. These are deterministic checks, not model inference.
+    if let Some(ref verified) = ctx.verified_stakeholder_presence {
+        prompt.push_str(
+            "## Verified Stakeholder Meeting Presence\n\
+             These lines are deterministic meeting-attendance facts from local records.\n\
+             Use them as source-of-truth for attendance claims.\n\n",
+        );
+        prompt.push_str(&wrap_user_data(verified));
+        prompt.push_str("\n\n");
+    }
+
     // File manifest (always shown so Claude knows what exists)
     if !ctx.file_manifest.is_empty() {
-        prompt.push_str("## Workspace Files\n");
+        prompt.push_str("## Workspace Files [source: local_file, confidence: 0.85]\n");
+        prompt.push_str("Items derived from these files MUST use itemSource.source = \"local_file\" with confidence 0.85.\n");
         for f in &ctx.file_manifest {
             let ct = f.content_type.as_deref().unwrap_or("general");
             prompt.push_str(&format!(
@@ -1407,6 +1673,37 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
+    // I555: Extra context blocks (engagement patterns, champion health, commitments)
+    for block in &ctx.extra_blocks {
+        prompt.push_str(&wrap_user_data(block));
+        prompt.push_str("\n\n");
+    }
+
+    // Field-level deduplication rules
+    prompt.push_str(
+        "FIELD SCOPING RULES (critical — avoid redundancy across fields):\n\
+         Each item should appear in exactly ONE field. Do not repeat the same event, \
+         commitment, or concern across multiple fields. Cross-reference when relevant \
+         (e.g., renewalOutlook.riskFactors can say \"champion transition\" without \
+         duplicating the full description from organizationalChanges).\n\
+         - risks[]: Account-level THREATS to the relationship. Not blockers (those have owners), \
+           not commitments (those have due dates), not current-state observations.\n\
+         - currentState.notWorking[]: Present-tense observations about what is NOT going well \
+           RIGHT NOW. Not future risks, not blockers waiting on someone, not commitments.\n\
+         - blockers[]: Specific OBSTACLES with an identifiable owner blocking progress on \
+           a known initiative. Must have an owner and a since-date. Not general concerns.\n\
+         - openCommitments[]: PROMISES made by either side with a deliverable and timeline. \
+           Not strategic goals (those are strategicPriorities). Not blockers. \
+           If the context already contains an \"Open Commitments\" section from prior meetings, \
+           do NOT re-extract the same items. Supplement only with new commitments not already listed.\n\
+         - strategicPriorities[]: The customer's stated BUSINESS OBJECTIVES for the engagement. \
+           High-level goals, not tactical commitments or individual blockers.\n\
+         - renewalOutlook.riskFactors[]: Factors that could affect the CONTRACT DECISION \
+           specifically. Brief references to items detailed elsewhere — not full duplicates.\n\
+         - valueDelivered[]: OUTCOMES already achieved. Past tense. Not promises or goals.\n\
+         - expansionSignals[]: GROWTH opportunities not yet closed. Not existing commitments.\n\n",
+    );
+
     // Writing style instructions
     prompt.push_str(&format!(
         "WRITING RULES:\n\
@@ -1419,6 +1716,8 @@ fn build_intelligence_prompt_inner(
            Use explicit local dates and times instead.\n\
          - Temporal hygiene: rewrite stale time framing from prior intelligence. \
            If text says a past date/time is still upcoming, correct it.\n\
+         - Do NOT claim someone \"never attended\" or \"never appeared\" when \
+           verified meeting presence data shows attendance.\n\
          - Write for a busy executive who has 60 seconds to understand this {}.\n\n",
         entity_label,
     ));
@@ -1479,6 +1778,29 @@ fn build_intelligence_prompt_inner(
         },
         _ => "overall assessment",
     };
+    // I499: Inject pre-computed account health when available
+    if let Some(ref computed) = ctx.computed_health {
+        prompt.push_str(&format!(
+            "## Pre-Computed Account Health (Algorithmic — ADR-0097)\n\
+             Score: {score:.0}/100 ({band}) | Confidence: {conf:.0}%\n\
+             Dimensions: meeting_cadence={mc:.0} email={em:.0} stakeholder={sc:.0} \
+             champion={ch:.0} financial={fp:.0} signal={sm:.0}\n\n\
+             Given the pre-computed health above, for the \"health\" field return ONLY \
+             \"narrative\" (2-3 sentences explaining the score in business context) and \
+             \"recommendedActions\" (3 specific next actions). Do NOT return score, band, \
+             dimensions, or confidence — those are computed algorithmically.\n\n",
+            score = computed.score,
+            band = computed.band,
+            conf = computed.confidence * 100.0,
+            mc = computed.dimensions.meeting_cadence.score,
+            em = computed.dimensions.email_engagement.score,
+            sc = computed.dimensions.stakeholder_coverage.score,
+            ch = computed.dimensions.champion_health.score,
+            fp = computed.dimensions.financial_proximity.score,
+            sm = computed.dimensions.signal_momentum.score,
+        ));
+    }
+
     // JSON output format (I288)
     prompt.push_str(&format!(
         "Return ONLY a JSON object — no other text before or after.\n\
@@ -1558,6 +1880,16 @@ fn build_intelligence_prompt_inner(
         );
     }
 
+    // I504: Inferred person-to-person relationships for account/project entities.
+    if ctx.canonical_contacts.is_some() && (entity_type == "account" || entity_type == "project") {
+        prompt.push_str(
+            ",\n\
+               \"inferredRelationships\": [\n\
+                 {\"fromPersonId\": \"person-id-from-canonical-contacts\", \"toPersonId\": \"person-id-from-canonical-contacts\", \"relationshipType\": \"peer|manager|mentor|collaborator|ally|partner|introduced_by\", \"rationale\": \"1 sentence explaining why this relationship is inferred\"}\n\
+               ]",
+        );
+    }
+
     // I305: Keyword extraction for entity resolution
     prompt.push_str(
         ",\n\
@@ -1566,17 +1898,54 @@ fn build_intelligence_prompt_inner(
          abbreviations, and commonly used references.\"]",
     );
 
-    // I396: Intelligence report fields for CS health tracking
+    // I396/I499: Health section — narrative-only when pre-computed, full when not
+    if ctx.computed_health.is_some() {
+        // I499: Pre-computed health available — LLM only provides narrative + actions
+        prompt.push_str(
+            ",\n\
+               \"health\": {\n\
+                 \"narrative\": \"2-3 sentences explaining the pre-computed health score in business context. Connect the dimension scores to the account's situation.\",\n\
+                 \"recommendedActions\": [\"3 specific actions to improve or maintain account health\"]\n\
+               }",
+        );
+    } else {
+        // Full health schema — LLM computes everything (no algorithmic baseline available)
+        prompt.push_str(
+            ",\n\
+               \"health\": {\n\
+                 \"score\": \"number 0-100. Return only when account has sufficient evidence; omit for sparse accounts.\",\n\
+                 \"band\": \"green|yellow|red\",\n\
+                 \"source\": \"computed\",\n\
+                 \"confidence\": \"number 0.0-1.0\",\n\
+                 \"trend\": {\"direction\": \"improving|stable|declining|volatile\", \"rationale\": \"1 sentence\", \"timeframe\": \"30d|90d\", \"confidence\": \"number 0.0-1.0\"},\n\
+                 \"dimensions\": {\n\
+                   \"meetingCadence\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"emailEngagement\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"stakeholderCoverage\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"championHealth\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"financialProximity\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"},\n\
+                   \"signalMomentum\": {\"score\": 0, \"weight\": 0, \"evidence\": [\"signals\"], \"trend\": \"improving|stable|declining\"}\n\
+                 },\n\
+                 \"recommendedActions\": [\"specific next action\"]\n\
+               }",
+        );
+    }
+
+    // Shared fields — always present regardless of health mode
     prompt.push_str(
         ",\n\
-           \"healthScore\": \"number 0-100. Overall account health score. Only populate when the \
-         account has 3+ signals and 2+ meetings. Return null for sparse accounts.\",\n\
-           \"healthTrend\": {\"direction\": \"improving|stable|declining|volatile\", \
-         \"rationale\": \"1 sentence explaining trend direction\"},\n\
-           \"valueDelivered\": [{\"date\": \"ISO date\", \"statement\": \"what value was delivered\", \
-         \"source\": \"evidence source\", \"impact\": \"business impact\"}],\n\
-           \"successMetrics\": [{\"name\": \"KPI name\", \"target\": \"target value\", \
-         \"current\": \"current value\", \"status\": \"on_track|at_risk|behind|achieved\", \
+           \"valueDelivered\": [\n\
+         // ONLY include when the customer articulates a measurable business outcome.\n\
+         // Must be: quantified (includes a number), attributed (customer connects to your product),\n\
+         // and business-relevant (ties to revenue, cost, risk, or speed).\n\
+         // BAD: \"The product is useful\" / \"They use it daily\" / \"Team likes it\"\n\
+         // GOOD: \"Reduced troubleshooting time by 65%, saving ~$30K/month\"\n\
+         // GOOD: \"Onboarded 500 users in 2 weeks vs previous 6 weeks\"\n\
+         {\"date\": \"ISO date\", \"statement\": \"quantified outcome\", \
+         \"source\": \"meeting|email|capture\", \"impact\": \"revenue|cost|risk|speed\"}],\n\
+           \"successMetrics\": [{\"name\": \"short KPI label (max 5 words)\", \"target\": \"short target (e.g. 95%, $500K, 8+)\", \
+         \"current\": \"short current value (e.g. $639K, 9, 85%) — max 15 chars, number or grade only, NEVER a sentence\", \
+         \"status\": \"on_track|at_risk|behind|achieved\", \
          \"owner\": \"who owns this metric\"}],\n\
            \"openCommitments\": [{\"description\": \"what was committed\", \"owner\": \"who owns it\", \
          \"dueDate\": \"ISO date or null\", \"source\": \"meeting/email where committed\", \
@@ -1586,6 +1955,42 @@ fn build_intelligence_prompt_inner(
          \"stakeholderCoverage\": \"broad|narrow|single_threaded\", \
          \"coverageGaps\": [\"role or team with no relationship\"]}",
     );
+
+    // I508b: Dimension fields — only for accounts
+    if entity_type == "account" {
+        prompt.push_str(
+            ",\n\
+               \"competitiveContext\": [{\"competitor\": \"name\", \"threatLevel\": \"displacement|evaluation|mentioned|incumbent\", \"context\": \"1 sentence\", \"detectedAt\": \"ISO date or null\"}],\n\
+               \"strategicPriorities\": [{\"priority\": \"...\", \"status\": \"active|at_risk|completed|paused\", \"owner\": \"...\", \"timeline\": \"...\"}],\n\
+               \"coverageAssessment\": {\"roleFillRate\": 0.0, \"gaps\": [\"missing role\"], \"covered\": [\"filled role\"], \"level\": \"strong|adequate|thin|critical\"},\n\
+               \"organizationalChanges\": [{\"changeType\": \"departure|hire|promotion|reorg|role_change\", \"person\": \"name\", \"from\": \"...\", \"to\": \"...\", \"detectedAt\": \"ISO date\"}],\n\
+               \"internalTeam\": [{\"name\": \"...\", \"role\": \"RM|AE|TAM|Division Lead|etc\"}],\n\
+               \"meetingCadence\": {\"meetingsPerMonth\": 0.0, \"trend\": \"increasing|stable|declining|erratic\", \"daysSinceLast\": 0, \"assessment\": \"healthy|adequate|sparse|cold\"},\n\
+               \"emailResponsiveness\": {\"trend\": \"improving|stable|slowing|gone_quiet\", \"assessment\": \"responsive|normal|slow|unresponsive\"},\n\
+               \"blockers\": [{\"description\": \"...\", \"owner\": \"...\", \"since\": \"ISO date\", \"impact\": \"critical|high|moderate|low\"}],\n\
+               \"contractContext\": {\"contractType\": \"annual|multi_year|month_to_month\", \"autoRenew\": true, \"renewalDate\": \"ISO date\", \"currentArr\": 0.0},\n\
+               \"expansionSignals\": [\n\
+               // Cross-departmental interest, usage ceiling hits, proactive internal advocacy,\n\
+               // organizational growth (hiring, acquisitions), questions about roadmap/pricing,\n\
+               // budget increase mentions. Each must cite specific evidence.\n\
+               {\"opportunity\": \"...\", \"arrImpact\": 0.0, \"stage\": \"exploring|evaluating|committed|blocked\", \"strength\": \"strong|moderate|early\"}],\n\
+               \"renewalOutlook\": {\"confidence\": \"high|moderate|low\", \"riskFactors\": [\"...\"], \"expansionPotential\": \"...\", \"recommendedStart\": \"ISO date\"},\n\
+               \"supportHealth\": {\"openTickets\": 0, \"criticalTickets\": 0, \"trend\": \"improving|stable|degrading\", \"csat\": 0.0},\n\
+               \"productAdoption\": {\"adoptionRate\": 0.0, \"trend\": \"growing|stable|declining\", \"featureAdoption\": [\"...\"], \"lastActive\": \"ISO date\"},\n\
+               \"npsCsat\": {\"nps\": 0, \"csat\": 0.0, \"surveyDate\": \"ISO date\", \"verbatim\": \"quote\"},\n\
+               \"sourceAttribution\": {\"fieldName\": [\"source1\"]}",
+        );
+
+        // I554: Success plan signals for accounts
+        prompt.push_str(
+            ",\n\
+               \"successPlanSignals\": {\n\
+                 \"statedObjectives\": [{\"objective\": \"...\", \"source\": \"meeting|email|file\", \"owner\": \"...\", \"targetDate\": \"ISO or null\", \"confidence\": \"high|medium|low\"}],\n\
+                 \"mutualSuccessCriteria\": [{\"criterion\": \"...\", \"ownedBy\": \"us|them|joint\", \"status\": \"not_started|in_progress|achieved|at_risk\"}],\n\
+                 \"milestoneCandidates\": [{\"milestone\": \"...\", \"expectedBy\": \"ISO or null\", \"detectedFrom\": \"source\", \"autoDetectEvent\": \"lifecycle event type or null\"}]\n\
+               }",
+        );
+    }
 
     prompt.push_str(
         "\n\
@@ -1598,13 +2003,50 @@ fn build_intelligence_prompt_inner(
          - unknown = person not present in available transcripts\n\n\
          Max 3 nextMeetingReadiness.prepItems. Each should answer ONLY: \
          \"What do I need to do or ask before/during this meeting?\"\n\n\
-         For healthScore, healthTrend, successMetrics, openCommitments, and relationshipDepth: \
+         For health, successMetrics, openCommitments, and relationshipDepth: \
          return null/empty when the account has fewer than 2 signals. Do NOT hallucinate values \
          for sparse accounts. valueDelivered should include completed commitments and wins. \
          When the user's professional context includes a value proposition, frame valueDelivered \
          entries through that lens — describe value in terms the user would use to communicate \
          it to their stakeholders.\n",
     );
+
+    if entity_type == "account" {
+        prompt.push_str(
+            "\nFor I508 dimension fields (competitiveContext through sourceAttribution): \
+             include ONLY when evidence exists in the provided context (Glean snippets, \
+             meeting notes, files, email signals). Return null or empty array when no evidence. \
+             Do NOT fabricate. Evidence sources may include workspace files, meeting transcripts, \
+             email signals, and Glean documents — extract intelligence from all available sources.\n\n\
+             successPlanSignals — Synthesize the strategic objectives for this account from aggregate \
+             context. What is this customer trying to achieve with us? What have we mutually committed \
+             to? Focus on explicitly stated goals (\"our goal is...\", \"success looks like...\"), mutual \
+             commitments beyond individual action items, measurable criteria, and key milestones. \
+             Confidence: \"high\" = explicitly stated, \"medium\" = inferred from multiple signals, \
+             \"low\" = extrapolated from limited data. Do NOT fabricate objectives — return empty arrays \
+             if no stated goals exist.\n\n\
+             valueDelivered — ONLY include when the customer articulates a measurable business outcome. \
+             Must be quantified (includes a number), attributed (customer connects to your product), \
+             and business-relevant (ties to revenue, cost, risk, or speed). Reject vague usage \
+             statements like \"they use it daily\" or \"team likes it.\"\n\n\
+             expansionSignals — Include strength classification for each signal: \"strong\" = explicit \
+             interest with budget or timeline, \"moderate\" = multiple mentions or cross-departmental \
+             interest, \"early\" = single mention or indirect signal.\n",
+        );
+    }
+
+    if ctx.canonical_contacts.is_some() && (entity_type == "account" || entity_type == "project") {
+        prompt.push_str(
+            "\n\
+             For inferredRelationships: analyze meeting co-attendance patterns, email threads, \
+             and content context to infer person-to-person relationships. Only use person IDs \
+             from the canonical contacts list. Only infer relationships with clear evidence — do \
+             not guess. Prefer 'collaborator' for people who work together on projects, \
+             'manager' when reporting lines are evident, and 'peer' when people appear at a \
+             similar organizational level. Return an empty array when no relationship can be \
+             confidently inferred.\n",
+        );
+    }
 
     prompt
 }
@@ -1619,6 +2061,9 @@ fn build_intelligence_prompt_inner(
 struct AiIntelResponse {
     #[serde(default)]
     executive_assessment: Option<String>,
+    /// I576: Concise editorial pull quote.
+    #[serde(default)]
+    pull_quote: Option<String>,
     #[serde(default)]
     sources: Vec<String>,
     #[serde(default)]
@@ -1647,10 +2092,13 @@ struct AiIntelResponse {
     /// Auto-extracted keywords for entity resolution (I305).
     #[serde(default)]
     keywords: Vec<String>,
-    /// I396: Health score (0-100).
+    /// ADR-0097 structured account health payload.
+    #[serde(default)]
+    health: Option<super::io::AccountHealth>,
+    /// Legacy I396: health score (0-100).
     #[serde(default)]
     health_score: Option<f64>,
-    /// I396: Health trend direction + rationale.
+    /// Legacy I396: health trend direction + rationale.
     #[serde(default)]
     health_trend: Option<AiHealthTrend>,
     /// I396: Success metrics / KPIs the user tracks.
@@ -1662,6 +2110,40 @@ struct AiIntelResponse {
     /// I396: Relationship depth assessment.
     #[serde(default)]
     relationship_depth: Option<AiRelationshipDepth>,
+    // I508b: dimension fields — deserialize directly from LLM JSON output
+    #[serde(default)]
+    competitive_context: Vec<super::io::CompetitiveInsight>,
+    #[serde(default)]
+    strategic_priorities: Vec<super::io::StrategicPriority>,
+    #[serde(default)]
+    coverage_assessment: Option<super::io::CoverageAssessment>,
+    #[serde(default)]
+    organizational_changes: Vec<super::io::OrgChange>,
+    #[serde(default)]
+    internal_team: Vec<super::io::InternalTeamMember>,
+    #[serde(default, alias = "meetingCadenceAssessment")]
+    meeting_cadence: Option<super::io::CadenceAssessment>,
+    #[serde(default)]
+    email_responsiveness: Option<super::io::ResponsivenessAssessment>,
+    #[serde(default)]
+    blockers: Vec<super::io::Blocker>,
+    #[serde(default)]
+    contract_context: Option<super::io::ContractContext>,
+    #[serde(default)]
+    expansion_signals: Vec<super::io::ExpansionSignal>,
+    #[serde(default)]
+    renewal_outlook: Option<super::io::RenewalOutlook>,
+    #[serde(default)]
+    support_health: Option<super::io::SupportHealth>,
+    #[serde(default)]
+    product_adoption: Option<super::io::AdoptionSignals>,
+    #[serde(default)]
+    nps_csat: Option<super::io::SatisfactionData>,
+    #[serde(default)]
+    source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
+    /// I554: Success plan signals synthesized from aggregate context.
+    #[serde(default)]
+    success_plan_signals: Option<crate::types::SuccessPlanSignals>,
 }
 
 /// I396: Health trend direction with rationale.
@@ -1671,6 +2153,39 @@ struct AiHealthTrend {
     direction: String,
     #[serde(default)]
     rationale: Option<String>,
+}
+
+fn legacy_health_to_account_health(
+    health_score: Option<f64>,
+    health_trend: Option<AiHealthTrend>,
+) -> Option<super::io::AccountHealth> {
+    let score = health_score?;
+    let band = if score >= 70.0 {
+        "green"
+    } else if score >= 40.0 {
+        "yellow"
+    } else {
+        "red"
+    };
+    Some(super::io::AccountHealth {
+        score,
+        band: band.to_string(),
+        source: super::io::HealthSource::Computed,
+        confidence: 0.3,
+        trend: super::io::HealthTrend {
+            direction: health_trend
+                .as_ref()
+                .map(|t| t.direction.clone())
+                .unwrap_or_else(|| "stable".to_string()),
+            rationale: health_trend.and_then(|t| t.rationale),
+            timeframe: "30d".to_string(),
+            confidence: 0.3,
+        },
+        dimensions: super::io::RelationshipDimensions::default(),
+        divergence: None,
+        narrative: None,
+        recommended_actions: Vec::new(),
+    })
 }
 
 /// I396: A success metric / KPI tracked for an entity.
@@ -1760,8 +2275,8 @@ struct AiInferredRelationship {
     to_person_id: String,
     #[serde(default)]
     relationship_type: String,
-    #[serde(default)]
-    reason: Option<String>,
+    #[serde(default, alias = "reason")]
+    rationale: Option<String>,
 }
 
 /// AI response structure for portfolio intelligence (I384).
@@ -1909,9 +2424,9 @@ pub fn parse_intelligence_response(
     if let Some(ref mut readiness) = intel.next_meeting_readiness {
         readiness.prep_items.truncate(10);
     }
-    // I396: Clamp health_score to 0-100 range
-    if let Some(ref mut score) = intel.health_score {
-        *score = score.clamp(0.0, 100.0);
+    // ADR-0097: Clamp structured health score to 0-100 range.
+    if let Some(ref mut health) = intel.health {
+        health.score = health.score.clamp(0.0, 100.0);
     }
     if let Some(ref mut metrics) = intel.success_metrics {
         metrics.truncate(20);
@@ -1924,10 +2439,12 @@ pub fn parse_intelligence_response(
 }
 
 /// An inferred person-to-person relationship extracted from AI enrichment (I391).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferredRelationship {
     pub from_person_id: String,
     pub to_person_id: String,
     pub relationship_type: String,
+    pub rationale: Option<String>,
 }
 
 /// Extract inferred relationships from an AI enrichment response (I391).
@@ -1963,10 +2480,17 @@ pub fn extract_inferred_relationships(response: &str) -> Vec<InferredRelationshi
             if from.is_empty() || to.is_empty() {
                 return None;
             }
+            let rationale = entry
+                .get("rationale")
+                .or_else(|| entry.get("reason"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
             Some(InferredRelationship {
                 from_person_id: from,
                 to_person_id: to,
                 relationship_type: rel_type,
+                rationale,
             })
         })
         .collect()
@@ -2107,6 +2631,7 @@ fn try_parse_json_response(
         source_file_count,
         source_manifest: manifest.to_vec(),
         executive_assessment: ai_resp.executive_assessment,
+        pull_quote: ai_resp.pull_quote,
         risks: ai_resp
             .risks
             .into_iter()
@@ -2114,6 +2639,8 @@ fn try_parse_json_response(
                 text: r.text,
                 source: r.source,
                 urgency: r.urgency,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         recent_wins: ai_resp
@@ -2123,6 +2650,8 @@ fn try_parse_json_response(
                 text: w.text,
                 source: w.source,
                 impact: w.impact,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         current_state,
@@ -2137,6 +2666,8 @@ fn try_parse_json_response(
                 source: None,
                 person_id: None,
                 suggested_person_id: None,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         value_delivered: ai_resp
@@ -2147,6 +2678,8 @@ fn try_parse_json_response(
                 statement: v.statement,
                 source: v.source,
                 impact: v.impact,
+                item_source: None,
+                discrepancy: None,
             })
             .collect(),
         next_meeting_readiness,
@@ -2171,11 +2704,10 @@ fn try_parse_json_response(
             cluster_summary: n.cluster_summary,
         }),
         user_edits: Vec::new(),
-        health_score: ai_resp.health_score,
-        health_trend: ai_resp.health_trend.map(|ht| super::io::HealthTrend {
-            direction: ht.direction,
-            rationale: ht.rationale,
+        health: ai_resp.health.or_else(|| {
+            legacy_health_to_account_health(ai_resp.health_score, ai_resp.health_trend)
         }),
+        org_health: None,
         success_metrics: ai_resp.success_metrics.map(|metrics| {
             metrics
                 .into_iter()
@@ -2197,6 +2729,8 @@ fn try_parse_json_response(
                     due_date: c.due_date,
                     source: c.source,
                     status: c.status,
+                    item_source: None,
+                    discrepancy: None,
                 })
                 .collect()
         }),
@@ -2208,6 +2742,28 @@ fn try_parse_json_response(
                 stakeholder_coverage: rd.stakeholder_coverage,
                 coverage_gaps: rd.coverage_gaps,
             }),
+        consistency_status: None,
+        consistency_findings: Vec::new(),
+        consistency_checked_at: None,
+        // I508b: map LLM-returned dimension fields into IntelligenceJson
+        competitive_context: ai_resp.competitive_context,
+        strategic_priorities: ai_resp.strategic_priorities,
+        coverage_assessment: ai_resp.coverage_assessment,
+        organizational_changes: ai_resp.organizational_changes,
+        internal_team: ai_resp.internal_team,
+        meeting_cadence: ai_resp.meeting_cadence,
+        email_responsiveness: ai_resp.email_responsiveness,
+        blockers: ai_resp.blockers,
+        contract_context: ai_resp.contract_context,
+        expansion_signals: ai_resp.expansion_signals,
+        renewal_outlook: ai_resp.renewal_outlook,
+        support_health: ai_resp.support_health,
+        product_adoption: ai_resp.product_adoption,
+        nps_csat: ai_resp.nps_csat,
+        source_attribution: ai_resp.source_attribution,
+        gong_call_summaries: Vec::new(),
+        success_plan_signals: ai_resp.success_plan_signals,
+        dismissed_items: Vec::new(),
     })
 }
 
@@ -2402,6 +2958,8 @@ fn parse_risk_line(rest: &str) -> Option<IntelRisk> {
         text,
         source,
         urgency,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
@@ -2419,6 +2977,8 @@ fn parse_win_line(rest: &str) -> Option<IntelWin> {
         text,
         source,
         impact,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
@@ -2441,6 +3001,8 @@ fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
         source: None,
         person_id: None,
         suggested_person_id: None,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
@@ -2463,6 +3025,8 @@ fn parse_value_line(rest: &str) -> Option<ValueItem> {
         statement,
         source,
         impact,
+        item_source: None,
+        discrepancy: None,
     })
 }
 
@@ -2547,9 +3111,14 @@ mod tests {
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
             portfolio_children_context: None,
             canonical_contacts: None,
+            verified_stakeholder_presence: None,
             relationship_edges: None,
             user_context: None,
             entity_context: None,
+            gap_queries: Vec::new(),
+            computed_health: None,
+            org_health: None,
+            extra_blocks: Vec::new(),
         };
 
         let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
@@ -2583,6 +3152,22 @@ mod tests {
         assert!(prompt.contains("INCREMENTAL update"));
         assert!(prompt.contains("Prior."));
         assert!(!prompt.contains("\"companyContext\""));
+    }
+
+    #[test]
+    fn test_build_intelligence_prompt_includes_verified_presence() {
+        let ctx = IntelligenceContext {
+            verified_stakeholder_presence: Some(
+                "- Matt Wickham — appears in 2 recorded meetings (last seen 2026-03-01 10:00 AM EST)"
+                    .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let prompt = build_intelligence_prompt("Janus Henderson", "account", &ctx, None, None);
+        assert!(prompt.contains("Verified Stakeholder Meeting Presence"));
+        assert!(prompt.contains("appears in 2 recorded meetings"));
+        assert!(prompt.contains("Do NOT claim someone \"never attended\""));
     }
 
     #[test]
@@ -2978,5 +3563,415 @@ Hope this helps!"#;
 
         // Fallback for bad input
         assert_eq!(compute_signal_age("not-a-date"), "not-a-date");
+    }
+}
+
+// ==========================================================================
+// I619 — Prompt Evaluation Suite: golden fixture tests
+// ==========================================================================
+
+#[cfg(test)]
+mod eval_tests {
+    use super::*;
+
+    // ── Category 1: Prompt Construction Tests ──
+
+    #[test]
+    fn eval_intelligence_prompt_includes_json_output_format() {
+        let ctx = IntelligenceContext {
+            facts_block: "ARR: $200K".to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(prompt.contains("JSON"), "Prompt must request JSON output");
+        assert!(
+            prompt.contains("executiveAssessment"),
+            "Prompt must include executiveAssessment field"
+        );
+        assert!(
+            prompt.contains("risks"),
+            "Prompt must include risks field schema"
+        );
+        assert!(
+            prompt.contains("stakeholderInsights"),
+            "Prompt must include stakeholderInsights"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_writing_rules() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("Lead with conclusions"),
+            "Prompt must contain writing rule: lead with conclusions"
+        );
+        assert!(
+            prompt.contains("Do NOT include footnotes"),
+            "Prompt must prohibit footnotes"
+        );
+        assert!(
+            prompt.contains("Max 250 words"),
+            "Prompt must enforce 250 word limit"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_field_scoping_rules() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("FIELD SCOPING RULES"),
+            "Prompt must include field deduplication guidance"
+        );
+        assert!(
+            prompt.contains("openCommitments"),
+            "Prompt must mention openCommitments scoping"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_injection_preamble() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("INJECTION_BOUNDARY")
+                || prompt.contains("system instructions")
+                || prompt.contains(INJECTION_PREAMBLE.split('\n').next().unwrap_or("")),
+            "Prompt must include injection resistance preamble"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_person_entity_includes_network_schema() {
+        let ctx = IntelligenceContext {
+            facts_block: "Role: VP Engineering".to_string(),
+            ..Default::default()
+        };
+        let prompt =
+            build_intelligence_prompt("Jane Doe", "person", &ctx, Some("external"), None);
+        assert!(
+            prompt.contains("network"),
+            "Person prompt must include network schema"
+        );
+        assert!(
+            prompt.contains("EXTERNAL STAKEHOLDER"),
+            "Person prompt must include person context framing"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_partner_excludes_customer_vocab() {
+        let ctx = IntelligenceContext::default();
+        let prompt =
+            build_intelligence_prompt("PartnerCo", "account", &ctx, Some("partner"), None);
+        assert!(
+            prompt.contains("PARTNER CONTEXT"),
+            "Partner prompt must include partner framing"
+        );
+        assert!(
+            prompt.contains("partner organization"),
+            "Partner prompt must use partner vocabulary"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_health_schema() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        // Without pre-computed health, prompt should include full health schema
+        assert!(
+            prompt.contains("\"health\""),
+            "Prompt must include health field schema"
+        );
+        assert!(
+            prompt.contains("\"band\""),
+            "Prompt must include health band"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_with_precomputed_health_requests_narrative_only() {
+        let ctx = IntelligenceContext {
+            computed_health: Some(super::super::io::AccountHealth {
+                score: 72.0,
+                band: "green".to_string(),
+                confidence: 0.75,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("Pre-Computed Account Health"),
+            "Prompt must acknowledge pre-computed health"
+        );
+        assert!(
+            prompt.contains("narrative"),
+            "Prompt must request narrative for pre-computed health"
+        );
+    }
+
+    // ── Category 2: Response Parsing Tests ──
+
+    #[test]
+    fn eval_parse_full_enrichment_response() {
+        let response = include_str!("fixtures/enrichment_response_full.json");
+        let result = parse_intelligence_response(response, "acme-1", "account", 5, Vec::new());
+        assert!(result.is_ok(), "Full response must parse: {:?}", result.err());
+        let intel = result.unwrap();
+
+        // Executive assessment present
+        assert!(
+            intel.executive_assessment.is_some(),
+            "Must have executive assessment"
+        );
+        assert!(
+            intel
+                .executive_assessment
+                .as_ref()
+                .unwrap()
+                .contains("Acme Corp"),
+            "Assessment must mention entity name"
+        );
+
+        // Pull quote present
+        assert!(intel.pull_quote.is_some(), "Must have pull quote");
+
+        // Risks with urgency
+        assert!(intel.risks.len() >= 2, "Must have multiple risks");
+        assert!(
+            intel
+                .risks
+                .iter()
+                .any(|r| r.urgency == "critical"),
+            "Must have at least one critical-urgency risk"
+        );
+        assert!(
+            intel.risks.iter().any(|r| r.urgency == "watch"),
+            "Must have at least one watch-urgency risk"
+        );
+
+        // Wins
+        assert!(
+            intel.recent_wins.len() >= 2,
+            "Must have multiple wins"
+        );
+
+        // Stakeholder insights
+        assert!(
+            intel.stakeholder_insights.len() >= 3,
+            "Must have multiple stakeholders"
+        );
+        assert!(
+            intel
+                .stakeholder_insights
+                .iter()
+                .any(|s| s.engagement == Some("high".to_string())),
+            "Must have high-engagement stakeholder"
+        );
+
+        // Current state
+        assert!(intel.current_state.is_some(), "Must have current state");
+        let cs = intel.current_state.unwrap();
+        assert!(!cs.working.is_empty(), "Must have working items");
+        assert!(!cs.not_working.is_empty(), "Must have not-working items");
+        assert!(!cs.unknowns.is_empty(), "Must have unknowns");
+
+        // Health with dimensions
+        assert!(intel.health.is_some(), "Must have health");
+        let health = intel.health.unwrap();
+        assert!(health.score > 0.0 && health.score <= 100.0, "Score must be 0-100");
+        assert!(
+            ["green", "yellow", "red"].contains(&health.band.as_str()),
+            "Band must be green/yellow/red"
+        );
+
+        // Value delivered with quantification
+        assert!(
+            intel.value_delivered.len() >= 1,
+            "Must have value delivered"
+        );
+
+        // Competitive context (I508a dimension field)
+        assert!(
+            !intel.competitive_context.is_empty(),
+            "Must have competitive context"
+        );
+
+        // Strategic priorities
+        assert!(
+            !intel.strategic_priorities.is_empty(),
+            "Must have strategic priorities"
+        );
+
+        // Coverage assessment
+        assert!(
+            intel.coverage_assessment.is_some(),
+            "Must have coverage assessment"
+        );
+
+        // Expansion signals
+        assert!(
+            !intel.expansion_signals.is_empty(),
+            "Must have expansion signals"
+        );
+
+        // Success plan signals (I554)
+        assert!(
+            intel.success_plan_signals.is_some(),
+            "Must have success plan signals"
+        );
+
+        // Success metrics
+        assert!(
+            intel.success_metrics.is_some(),
+            "Must have success metrics"
+        );
+
+        // Open commitments
+        assert!(
+            intel.open_commitments.is_some(),
+            "Must have open commitments"
+        );
+
+        // Relationship depth
+        assert!(
+            intel.relationship_depth.is_some(),
+            "Must have relationship depth"
+        );
+    }
+
+    #[test]
+    fn eval_parse_sparse_enrichment_handles_missing_fields() {
+        let response = include_str!("fixtures/enrichment_response_sparse.json");
+        let result = parse_intelligence_response(response, "beta-1", "account", 1, Vec::new());
+        assert!(
+            result.is_ok(),
+            "Sparse response must parse: {:?}",
+            result.err()
+        );
+        let intel = result.unwrap();
+
+        // Should still have executive assessment
+        assert!(
+            intel.executive_assessment.is_some(),
+            "Sparse must have executive assessment"
+        );
+
+        // Wins empty is valid
+        assert!(
+            intel.recent_wins.is_empty(),
+            "Sparse response should have empty wins"
+        );
+
+        // Health present but low confidence
+        assert!(intel.health.is_some(), "Sparse must have health");
+        let health = intel.health.unwrap();
+        assert!(
+            health.confidence < 0.5,
+            "Sparse health confidence should be low"
+        );
+        assert_eq!(health.band, "yellow", "Sparse health should be yellow");
+    }
+
+    #[test]
+    fn eval_parse_malformed_response_graceful_handling() {
+        let response = include_str!("fixtures/enrichment_response_malformed.json");
+        // The malformed response has risks as a string instead of array.
+        // serde_json will fail to deserialize AiIntelResponse, so try_parse_json_response
+        // returns None, and it falls through to pipe-delimited parsing which also fails.
+        // Either way, the function should not panic.
+        let result =
+            parse_intelligence_response(response, "bad-1", "account", 0, Vec::new());
+        // Malformed JSON with wrong types should either produce an error or degrade gracefully.
+        // The key assertion is: no panic.
+        if let Ok(intel) = &result {
+            // If it somehow parsed (unlikely), verify it degraded gracefully
+            assert!(
+                intel.risks.len() <= 1,
+                "Malformed risks should not produce valid entries"
+            );
+        }
+        // Either way, we got here without panicking — success
+    }
+
+    #[test]
+    fn eval_parse_response_clamps_health_score() {
+        // Scores > 100 should be clamped
+        let response = r#"{"executiveAssessment":"Test","health":{"score":150,"band":"green","confidence":0.5}}"#;
+        let result = parse_intelligence_response(response, "t1", "account", 0, Vec::new());
+        assert!(result.is_ok());
+        let intel = result.unwrap();
+        assert!(intel.health.is_some());
+        assert!(
+            intel.health.as_ref().unwrap().score <= 100.0,
+            "Health score must be clamped to 100"
+        );
+    }
+
+    #[test]
+    fn eval_parse_response_truncates_large_arrays() {
+        // Build a response with 25 risks (exceeds 20 cap)
+        let mut risks = Vec::new();
+        for i in 0..25 {
+            risks.push(format!(
+                r#"{{"text":"Risk {}","urgency":"watch"}}"#,
+                i
+            ));
+        }
+        let response = format!(
+            r#"{{"executiveAssessment":"Test","risks":[{}]}}"#,
+            risks.join(",")
+        );
+        let result = parse_intelligence_response(&response, "t2", "account", 0, Vec::new());
+        assert!(result.is_ok());
+        let intel = result.unwrap();
+        assert_eq!(
+            intel.risks.len(),
+            20,
+            "Risks must be truncated to 20"
+        );
+    }
+
+    #[test]
+    fn eval_parse_response_with_markdown_fences() {
+        let response = "Here is the assessment:\n```json\n{\"executiveAssessment\":\"Test response in fenced JSON\"}\n```\nEnd.";
+        let result = parse_intelligence_response(response, "t3", "account", 0, Vec::new());
+        assert!(result.is_ok(), "Must parse JSON from markdown fences");
+        let intel = result.unwrap();
+        assert_eq!(
+            intel.executive_assessment,
+            Some("Test response in fenced JSON".to_string())
+        );
+    }
+
+    #[test]
+    fn eval_extract_inferred_relationships() {
+        let response = r#"{"inferredRelationships":[
+            {"fromPersonId":"p1","toPersonId":"p2","relationshipType":"peer","rationale":"Work together on project X"},
+            {"fromPersonId":"p3","toPersonId":"p4","relationshipType":"manager","reason":"Direct report"}
+        ]}"#;
+        let rels = extract_inferred_relationships(response);
+        assert_eq!(rels.len(), 2, "Must extract 2 relationships");
+        assert_eq!(rels[0].relationship_type, "peer");
+        assert_eq!(
+            rels[0].rationale,
+            Some("Work together on project X".to_string())
+        );
+        // "reason" alias should also work
+        assert_eq!(
+            rels[1].rationale,
+            Some("Direct report".to_string())
+        );
+    }
+
+    #[test]
+    fn eval_extract_inferred_relationships_empty_on_bad_input() {
+        let rels = extract_inferred_relationships("not json at all");
+        assert!(rels.is_empty(), "Bad input must produce empty vec");
+
+        let rels2 = extract_inferred_relationships(r#"{"inferredRelationships":"not an array"}"#);
+        assert!(rels2.is_empty(), "Non-array must produce empty vec");
     }
 }

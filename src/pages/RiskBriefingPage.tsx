@@ -7,6 +7,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import {
   AlignLeft,
   Crosshair,
@@ -19,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { RiskCover } from "@/components/risk-briefing/RiskCover";
@@ -27,6 +31,7 @@ import { WhatHappenedSlide } from "@/components/risk-briefing/WhatHappenedSlide"
 import { StakesSlide } from "@/components/risk-briefing/StakesSlide";
 import { ThePlanSlide } from "@/components/risk-briefing/ThePlanSlide";
 import { TheAskSlide } from "@/components/risk-briefing/TheAskSlide";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import type {
   RiskBriefing,
   RiskBottomLine,
@@ -53,10 +58,15 @@ export default function RiskBriefingPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [genSeconds, setGenSeconds] = useState(0);
+  const [completedSections, setCompletedSections] = useState<Set<string>>(new Set());
+  const [currentPhaseKey, setCurrentPhaseKey] = useState<string>("gathering");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Slide-level feedback (matches AccountHealthPage/SwotPage pattern)
+  const feedback = useIntelligenceFeedback(accountId ?? undefined, "account");
 
   // Debounced save — persists edited briefing to disk
   const debouncedSave = useCallback(
@@ -64,13 +74,21 @@ export default function RiskBriefingPage() {
       if (!accountId) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        invoke("save_risk_briefing", { accountId, briefing: updated })
+        invoke("save_report", {
+          entityId: accountId,
+          entityType: "account",
+          reportType: "risk_briefing",
+          contentJson: JSON.stringify(updated),
+        })
           .then(() => {
             setSaveStatus("saved");
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save risk briefing:", e));
+          .catch((e) => {
+            console.error("Failed to save risk briefing:", e);
+            toast.error("Failed to save risk briefing");
+          });
       }, 500);
     },
     [accountId],
@@ -114,6 +132,8 @@ export default function RiskBriefingPage() {
     setGenerating(true);
     setGenSeconds(0);
     setError(null);
+    setCompletedSections(new Set());
+    setCurrentPhaseKey("gathering");
     window.scrollTo({ top: 0, behavior: "instant" });
 
     timerRef.current = setInterval(() => setGenSeconds((s) => s + 1), 1000);
@@ -128,6 +148,36 @@ export default function RiskBriefingPage() {
       if (timerRef.current) clearInterval(timerRef.current);
     }
   }, [accountId, generating]);
+
+  useEffect(() => {
+    if (!generating) return;
+
+    let unlistenContent: UnlistenFn | null = null;
+
+    listen<RiskBriefing>("risk-briefing-content", (event) => {
+      if (event.payload.accountId !== accountId) return;
+      setBriefing(event.payload);
+    }).then((fn) => {
+      unlistenContent = fn;
+    });
+
+    return () => {
+      if (unlistenContent) unlistenContent();
+    };
+  }, [accountId, generating]);
+
+  const handleRiskProgress = useCallback((payload: {
+    accountId: string;
+    sectionName: string;
+    completed: number;
+    total: number;
+  }) => {
+    if (!accountId || payload.accountId !== accountId) return;
+    setCompletedSections((prev) => new Set([...prev, payload.sectionName]));
+    setCurrentPhaseKey(payload.sectionName);
+  }, [accountId]);
+
+  useTauriEvent("risk-briefing-progress", handleRiskProgress);
 
   // Register magazine shell (after handleGenerate so folioActions can reference it)
   const shellConfig = useMemo(
@@ -296,13 +346,24 @@ export default function RiskBriefingPage() {
   }
 
   // Generating state
-  if (generating) {
+  if (generating && !briefing) {
+    const phaseMap: Record<string, string> = {
+      bottomLine: "building",
+      whatHappened: "reading",
+      stakes: "mapping",
+      thePlan: "planning",
+      theAsk: "finalizing",
+    };
     return (
       <GeneratingProgress
         title="Building Risk Briefing"
         accentColor="var(--color-spice-terracotta)"
         phases={ANALYSIS_PHASES}
-        currentPhaseKey={ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key}
+        currentPhaseKey={
+          completedSections.size > 0
+            ? (phaseMap[currentPhaseKey] ?? "gathering")
+            : ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key
+        }
         quotes={EDITORIAL_QUOTES}
         elapsed={genSeconds}
       />
@@ -326,6 +387,10 @@ export default function RiskBriefingPage() {
           data={briefing!.bottomLine}
           onUpdate={(v: RiskBottomLine) => updateSlide("bottomLine", v)}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("bottom_line")}
+          onFeedback={(type) => feedback.submitFeedback("bottom_line", type)}
+        />
       </div>
 
       {/* Slide 3: What Happened */}
@@ -333,6 +398,10 @@ export default function RiskBriefingPage() {
         <WhatHappenedSlide
           data={briefing!.whatHappened}
           onUpdate={(v: RiskWhatHappened) => updateSlide("whatHappened", v)}
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("what_happened")}
+          onFeedback={(type) => feedback.submitFeedback("what_happened", type)}
         />
       </div>
 
@@ -342,6 +411,10 @@ export default function RiskBriefingPage() {
           data={briefing!.stakes}
           onUpdate={(v: RiskStakes) => updateSlide("stakes", v)}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("stakes")}
+          onFeedback={(type) => feedback.submitFeedback("stakes", type)}
+        />
       </div>
 
       {/* Slide 5: The Plan */}
@@ -350,6 +423,10 @@ export default function RiskBriefingPage() {
           data={briefing!.thePlan}
           onUpdate={(v: RiskThePlan) => updateSlide("thePlan", v)}
         />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("the_plan")}
+          onFeedback={(type) => feedback.submitFeedback("the_plan", type)}
+        />
       </div>
 
       {/* Slide 6: The Ask */}
@@ -357,6 +434,10 @@ export default function RiskBriefingPage() {
         <TheAskSlide
           data={briefing!.theAsk}
           onUpdate={(v: RiskTheAsk) => updateSlide("theAsk", v)}
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("the_ask")}
+          onFeedback={(type) => feedback.submitFeedback("the_ask", type)}
         />
       </div>
 
@@ -373,8 +454,8 @@ export default function RiskBriefingPage() {
 // =============================================================================
 
 const ANALYSIS_PHASES = [
-  { key: "gathering", label: "Gathering intelligence", detail: "Reading account data, meeting history, and stakeholder signals" },
-  { key: "reading", label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship signals" },
+  { key: "gathering", label: "Gathering context", detail: "Reading account data, meeting history, and stakeholder updates" },
+  { key: "reading", label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship patterns" },
   { key: "building", label: "Building the story", detail: "Synthesizing situation, complication, and decline arc" },
   { key: "mapping", label: "Mapping stakes", detail: "Assessing financial exposure and decision-maker landscape" },
   { key: "planning", label: "Developing the plan", detail: "Building recovery strategy and action steps" },
@@ -389,4 +470,3 @@ const EDITORIAL_QUOTES = [
   "What gets measured gets managed.",
   "The most dangerous phrase is: we've always done it this way.",
 ];
-

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
@@ -8,15 +9,24 @@ import { useActivePreset } from "@/hooks/useActivePreset";
 import { getAccountReports } from "@/lib/report-config";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
-import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { useRegisterMagazineShell, useUpdateFolioVolatile } from "@/hooks/useMagazineShell";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import {
   AlignLeft,
+  BarChart3,
   Briefcase,
   Clock,
   Users,
   Eye,
   Activity,
   CheckSquare2,
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Award,
+  Compass,
+  Telescope,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +50,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AccountHero } from "@/components/account/AccountHero";
-import { AccountAppendix } from "@/components/account/AccountAppendix";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { EditableVitalsStrip } from "@/components/entity/EditableVitalsStrip";
 import { StateOfPlay } from "@/components/entity/StateOfPlay";
@@ -48,12 +57,20 @@ import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
+import { ValueCommitments } from "@/components/entity/ValueCommitments";
+import { StrategicLandscape } from "@/components/entity/StrategicLandscape";
+import { AccountOutlook } from "@/components/entity/AccountOutlook";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
-import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
+import { AddToRecord } from "@/components/entity/AddToRecord";
+import { FileListSection } from "@/components/entity/FileListSection";
 import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
+import { DimensionBar } from "@/components/shared/DimensionBar";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import shared from "@/styles/entity-detail.module.css";
+import styles from "./AccountDetailEditorial.module.css";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 
 /* ── Vitals assembly (moved from old account/VitalsStrip) ── */
 
@@ -118,11 +135,15 @@ function buildAccountVitals(detail: {
 // I393: Portfolio chapter conditionally included for parent accounts
 const BASE_CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "headline", label: "The Headline", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
+  { id: "outlook", label: "Outlook", icon: <Telescope size={18} strokeWidth={1.5} /> },
   { id: "state-of-play", label: "State of Play", icon: <Clock size={18} strokeWidth={1.5} /> },
   { id: "the-room", label: "The Room", icon: <Users size={18} strokeWidth={1.5} /> },
   { id: "watch-list", label: "Watch List", icon: <Eye size={18} strokeWidth={1.5} /> },
+  { id: "value-commitments", label: "Value & Commitments", icon: <Award size={18} strokeWidth={1.5} /> },
+  { id: "strategic-landscape", label: "Competitive & Strategic", icon: <Compass size={18} strokeWidth={1.5} /> },
   { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
   { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
+  { id: "reports", label: "Reports", icon: <FileText size={18} strokeWidth={1.5} /> },
 ];
 
 const PORTFOLIO_CHAPTER = {
@@ -131,10 +152,37 @@ const PORTFOLIO_CHAPTER = {
   icon: <Briefcase size={18} strokeWidth={1.5} />,
 };
 
-function buildChapters(isParent: boolean) {
-  if (!isParent) return BASE_CHAPTERS;
-  // Portfolio appears after headline, before State of Play
-  return [BASE_CHAPTERS[0], PORTFOLIO_CHAPTER, ...BASE_CHAPTERS.slice(1)];
+const HEALTH_CHAPTER = {
+  id: "relationship-health",
+  label: "Health",
+  icon: <BarChart3 size={18} strokeWidth={1.5} />,
+};
+
+function buildChapters(isParent: boolean, hasHealth: boolean) {
+  // BASE_CHAPTERS: [headline, outlook, state-of-play, the-room, watch-list, ...]
+  let chapters = [...BASE_CHAPTERS];
+  // Portfolio inserts after outlook (index 2), before state-of-play
+  if (isParent) {
+    chapters.splice(2, 0, PORTFOLIO_CHAPTER);
+  }
+  // Health inserts after state-of-play, before the-room
+  const sopIndex = chapters.findIndex((c) => c.id === "state-of-play");
+  if (hasHealth && sopIndex >= 0) {
+    chapters.splice(sopIndex + 1, 0, HEALTH_CHAPTER);
+  }
+  return chapters;
+}
+
+function getHealthColorClass(health: string): string {
+  if (health === "green") return styles.healthGreen;
+  if (health === "red") return styles.healthRed;
+  return styles.healthYellow;
+}
+
+function getHealthDotClass(health: string): string {
+  if (health === "green") return styles.healthDotGreen;
+  if (health === "red") return styles.healthDotRed;
+  return styles.healthDotYellow;
 }
 
 export default function AccountDetailEditorial() {
@@ -145,127 +193,187 @@ export default function AccountDetailEditorial() {
   useRevealObserver(!acct.loading && !!acct.detail);
 
   const [reportsOpen, setReportsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   useEffect(() => {
-    if (!reportsOpen) return;
-    function handleClick() { setReportsOpen(false); }
+    if (!reportsOpen && !toolsOpen) return;
+    function handleClick() { setReportsOpen(false); setToolsOpen(false); }
     document.addEventListener("click", handleClick);
     return () => document.removeEventListener("click", handleClick);
-  }, [reportsOpen]);
+  }, [reportsOpen, toolsOpen]);
+
+  // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
+  const {
+    updateField: handleUpdateIntelField,
+    saveStatus,
+    setSaveStatus: setFolioSaveStatus,
+  } = useIntelligenceFieldUpdate("account", accountId, acct.silentRefresh);
+
+  const finishFolioSave = () => {
+    setFolioSaveStatus("saved");
+    window.setTimeout(() => setFolioSaveStatus("idle"), 2000);
+  };
+
+  const saveMetadata = async (updated: Record<string, string>) => {
+    if (!accountId) return;
+    setFolioSaveStatus("saving");
+    try {
+      await invoke("update_entity_metadata", {
+        entityId: accountId,
+        entityType: "account",
+        metadata: JSON.stringify(updated),
+      });
+      finishFolioSave();
+    } catch (err) {
+      console.error("update_entity_metadata failed:", err);
+      toast.error("Failed to save metadata");
+      setFolioSaveStatus("idle");
+      throw err;
+    }
+  };
+
+  const saveAccountField = async (field: string, value: string) => {
+    if (!acct.detail) return;
+    setFolioSaveStatus("saving");
+    try {
+      await invoke("update_account_field", { accountId: acct.detail.id, field, value });
+      await acct.load();
+      finishFolioSave();
+    } catch (err) {
+      console.error("update_account_field failed:", err);
+      toast.error("Failed to save field");
+      setFolioSaveStatus("idle");
+    }
+  };
 
   // Register magazine shell configuration — MagazinePageLayout consumes this
+  // Memoize chapters separately — they only change with isParent/hasHealth,
+  // not with frequently-changing folio state (saveStatus, enrichSeconds, etc.)
+  const chapters = useMemo(
+    () => buildChapters(acct.detail?.isParent ?? false, !!acct.intelligence?.health),
+    [acct.detail?.isParent, acct.intelligence?.health],
+  );
+
+  // I563: Split stable shell config from volatile folio state to prevent render loops.
+  // Stable config only changes on page/entity identity changes → re-registers rarely.
   const shellConfig = useMemo(
     () => ({
       folioLabel: acct.detail?.accountType === "internal" ? "Internal" : acct.detail?.accountType === "partner" ? "Partner" : "Account",
       atmosphereColor: acct.detail?.accountType === "internal" ? "larkspur" as const : "turmeric" as const,
       activePage: "accounts" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
-      chapters: buildChapters(acct.detail?.isParent ?? false),
-      folioActions: (
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {acct.detail && (
-            <button
-              onClick={() => acct.setCreateChildOpen(true)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-garden-eucalyptus)",
-                background: "none",
-                border: "1px solid var(--color-garden-eucalyptus)",
-                borderRadius: 4,
-                padding: "2px 10px",
-                cursor: "pointer",
-              }}
-            >
-              + Business Unit
-            </button>
-          )}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-spice-turmeric)",
-                background: "none",
-                border: "1px solid var(--color-spice-turmeric)",
-                borderRadius: 4,
-                padding: "2px 10px",
-                cursor: "pointer",
-              }}
-            >
-              Reports {reportsOpen ? "▴" : "▾"}
-            </button>
-            {reportsOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 6px)",
-                  right: 0,
-                  background: "var(--color-paper-warm-white)",
-                  border: "1px solid var(--color-paper-linen)",
-                  borderRadius: 6,
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                  minWidth: 180,
-                  zIndex: 100,
-                  overflow: "hidden",
-                }}
-              >
-                {getAccountReports(preset?.id).map((item) => (
-                  <button
-                    key={item.label}
-                    onClick={() => {
-                      setReportsOpen(false);
-                      if (item.reportType === null) {
-                        navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
-                      } else if (item.reportType === "account_health") {
-                        navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
-                      } else if (item.reportType === "ebr_qbr") {
-                        navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
-                      } else {
-                        navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
-                      }
-                    }}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "left",
-                      padding: "10px 16px",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      textTransform: "uppercase" as const,
-                      letterSpacing: "0.06em",
-                      color: "var(--color-desk-charcoal)",
-                      background: "none",
-                      border: "none",
-                      borderBottom: "1px solid var(--color-paper-linen)",
-                      cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--color-paper-linen)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      ),
+      chapters,
     }),
-    [navigate, accountId, acct.detail, acct.setCreateChildOpen, reportsOpen, setReportsOpen, preset?.id],
+    [navigate, acct.detail?.accountType, chapters],
   );
   useRegisterMagazineShell(shellConfig);
 
-  // Drawer/dialog open state
-  const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
+  // I563: Volatile folio state — updates via ref, no re-registration.
+  // Pass accountId as repaintKey so MagazinePageLayout re-reads when navigating
+  // between accounts (same route, different params → component doesn't remount).
+  useUpdateFolioVolatile({
+    folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+    folioActions: (
+      <div className={shared.folioActions}>
+        {acct.detail && !acct.detail.archived && (
+          <FolioRefreshButton
+            onClick={acct.handleEnrich}
+            loading={!!acct.enriching}
+            loadingProgress={
+              acct.enriching
+                ? acct.enrichmentPercentage != null
+                  ? `${acct.enrichmentPercentage}%`
+                  : `${acct.enrichSeconds ?? 0}s`
+                : undefined
+            }
+          />
+        )}
+        <div className={styles.reportsDropdownWrapper}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setReportsOpen(o => !o); }}
+            className={styles.reportsButton}
+          >
+            Reports {reportsOpen ? "\u25b4" : "\u25be"}
+          </button>
+          {reportsOpen && (
+            <div className={styles.reportsDropdown}>
+              {getAccountReports(preset?.id).map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => {
+                    setReportsOpen(false);
+                    if (item.reportType === null) {
+                      navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+                    } else if (item.reportType === "account_health") {
+                      navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
+                    } else if (item.reportType === "ebr_qbr") {
+                      navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
+                    } else {
+                      navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
+                    }
+                  }}
+                  className={styles.reportsDropdownItem}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className={styles.toolsDropdownWrapper}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setToolsOpen(o => !o); }}
+            className={styles.toolsButton}
+          >
+            Tools {toolsOpen ? "\u25b4" : "\u25be"}
+          </button>
+          {toolsOpen && (
+            <div className={styles.toolsDropdown}>
+              {acct.detail && (
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); acct.setCreateChildOpen(true); }}
+                >
+                  + Business Unit
+                </button>
+              )}
+              <button
+                className={styles.toolsDropdownItem}
+                onClick={() => { setToolsOpen(false); setMergeDialogOpen(true); }}
+              >
+                Merge Into...
+              </button>
+              <button
+                className={styles.toolsDropdownItem}
+                onClick={() => { setToolsOpen(false); acct.handleIndexFiles(); }}
+                disabled={acct.indexing}
+              >
+                {acct.indexing ? "Indexing\u2026" : "Index Files"}
+              </button>
+              <div className={styles.toolsDropdownSeparator} />
+              {acct.detail?.archived ? (
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); acct.handleUnarchive(); }}
+                >
+                  Unarchive
+                </button>
+              ) : acct.detail ? (
+                <button
+                  className={styles.toolsDropdownItem}
+                  onClick={() => { setToolsOpen(false); setArchiveDialogOpen(true); }}
+                >
+                  Archive
+                </button>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    ),
+  }, accountId);
+
+  // Dialog open state
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [rolloverDismissed, setRolloverDismissed] = useState(false);
@@ -296,8 +404,8 @@ export default function AccountDetailEditorial() {
       });
   }, [accountId]);
 
-  // I352: Shared intelligence field update hook
-  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
+  // I529: Intelligence quality feedback
+  const feedback = useIntelligenceFeedback(accountId, "account");
 
   // Context entries — must be before early returns (React hooks rule)
   const entityCtx = useEntityContextEntries("account", accountId ?? null);
@@ -314,37 +422,16 @@ export default function AccountDetailEditorial() {
     <>
       {/* I316: Ancestor breadcrumbs for nested accounts */}
       {ancestors.length > 0 && (
-        <nav
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: "var(--color-text-tertiary)",
-            padding: "8px 0 4px",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            flexWrap: "wrap",
-          }}
-        >
+        <nav className={shared.breadcrumbNav}>
           <button
             onClick={() => navigate({ to: "/accounts" })}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              color: "var(--color-text-tertiary)",
-              fontFamily: "inherit",
-              fontSize: "inherit",
-              letterSpacing: "inherit",
-            }}
+            className={shared.breadcrumbButton}
           >
             Accounts
           </button>
           {ancestors.map((anc) => (
             <React.Fragment key={anc.id}>
-              <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+              <span className={shared.breadcrumbSeparator}>/</span>
               <button
                 onClick={() =>
                   navigate({
@@ -352,28 +439,19 @@ export default function AccountDetailEditorial() {
                     params: { accountId: anc.id },
                   })
                 }
-                style={{
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  color: "var(--color-spice-turmeric)",
-                  fontFamily: "inherit",
-                  fontSize: "inherit",
-                  letterSpacing: "inherit",
-                }}
+                className={styles.breadcrumbAncestorLink}
               >
                 {anc.name}
               </button>
             </React.Fragment>
           ))}
-          <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
-          <span style={{ color: "var(--color-text-primary)" }}>{detail?.name ?? ""}</span>
+          <span className={shared.breadcrumbSeparator}>/</span>
+          <span className={shared.breadcrumbCurrent}>{detail?.name ?? ""}</span>
         </nav>
       )}
 
       {/* Chapter 1: The Headline (Hero) — no reveal, visible immediately */}
-      <section id="headline" style={{ scrollMarginTop: 60 }}>
+      <section id="headline" className={shared.chapterSection}>
         <AccountHero
           detail={detail}
           intelligence={intelligence}
@@ -384,62 +462,43 @@ export default function AccountDetailEditorial() {
           editLifecycle={acct.editLifecycle}
           setEditLifecycle={(v) => { acct.setEditLifecycle(v); acct.setDirty(true); }}
           onSave={acct.handleSave}
-          onSaveField={(field, value) => {
-            invoke("update_account_field", { accountId: detail.id, field, value })
-              .then(() => acct.load())
-              .catch((err) => console.error("update_account_field failed:", err));
-          }}
-          onEnrich={acct.handleEnrich}
-          enriching={acct.enriching}
-          enrichSeconds={acct.enrichSeconds}
-          onArchive={() => setArchiveDialogOpen(true)}
-          onUnarchive={acct.handleUnarchive}
+          onSaveField={saveAccountField}
+          vitalsSlot={
+            detail.accountType !== "internal" ? (
+              preset ? (
+                <EditableVitalsStrip
+                  fields={preset.vitals.account}
+                  entityData={detail}
+                  metadata={metadataValues}
+                  onFieldChange={(key, columnMapping, source, value) => {
+                    if (source === "metadata") {
+                  setMetadataValues((prev) => {
+                    const updated = { ...prev, [key]: value };
+                    void saveMetadata(updated);
+                    return updated;
+                  });
+                } else if (source === "column") {
+                  const field = columnMapping ?? key;
+                  void saveAccountField(field, value);
+                }
+              }}
+            />
+              ) : (
+                <VitalsStrip vitals={buildAccountVitals(detail)} />
+              )
+            ) : undefined
+          }
         />
-        <div className="editorial-reveal">
-          {detail.accountType !== "internal" && (
-            preset ? (
-              <EditableVitalsStrip
-                fields={preset.vitals.account}
-                entityData={detail}
-                metadata={metadataValues}
-                onFieldChange={(key, columnMapping, source, value) => {
-                  if (source === "metadata") {
-                    setMetadataValues((prev) => {
-                      const updated = { ...prev, [key]: value };
-                      invoke("update_entity_metadata", {
-                        entityId: accountId,
-                        entityType: "account",
-                        metadata: JSON.stringify(updated),
-                      }).catch((err) => console.error("update_entity_metadata failed:", err));
-                      return updated;
-                    });
-                  } else if (source === "column") {
-                    const field = columnMapping ?? key;
-                    invoke("update_account_field", { accountId: detail.id, field, value })
-                      .then(() => acct.load())
-                      .catch((err) => console.error("update_account_field failed:", err));
-                  }
-                }}
-              />
-            ) : (
-              <VitalsStrip vitals={buildAccountVitals(detail)} />
-            )
-          )}
-        </div>
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.account.length > 0 && (
-          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
             <PresetFieldsEditor
               fields={preset.metadata.account}
               values={metadataValues}
               onChange={(key, value) => {
                 setMetadataValues((prev) => {
                   const updated = { ...prev, [key]: value };
-                  invoke("update_entity_metadata", {
-                    entityId: accountId,
-                    entityType: "account",
-                    metadata: JSON.stringify(updated),
-                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  void saveMetadata(updated);
                   return updated;
                 });
               }}
@@ -448,32 +507,19 @@ export default function AccountDetailEditorial() {
         )}
         {/* Auto-rollover prompt for past renewal dates */}
         {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
-          <div
-            style={{
-              margin: "24px 0",
-              padding: "16px 20px",
-              background: "var(--color-spice-saffron-8)",
-              borderLeft: "3px solid var(--color-spice-saffron)",
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              color: "var(--color-text-primary)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 16,
-            }}
-          >
+          <div className={styles.rolloverPrompt}>
             <span>Renewal date has passed — what happened?</span>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div className={styles.rolloverActions}>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
                   acct.setNewEventType("renewal");
                   acct.setNewEventDate(detail.renewalDate!);
-                  setEventDrawerOpen(true);
+                  acct.handleRecordEvent();
+                  setRolloverDismissed(true);
                 }}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+                className={styles.rolloverButton}
               >
                 Renewed
               </Button>
@@ -483,24 +529,16 @@ export default function AccountDetailEditorial() {
                 onClick={() => {
                   acct.setNewEventType("churn");
                   acct.setNewEventDate(detail.renewalDate!);
-                  setEventDrawerOpen(true);
+                  acct.handleRecordEvent();
+                  setRolloverDismissed(true);
                 }}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+                className={styles.rolloverButton}
               >
                 Churned
               </Button>
               <button
                 onClick={() => setRolloverDismissed(true)}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-text-tertiary)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
+                className={styles.rolloverDismiss}
               >
                 Dismiss
               </button>
@@ -509,25 +547,30 @@ export default function AccountDetailEditorial() {
         )}
       </section>
 
+      {/* Chapter 2: Outlook — commercial picture immediately after hero */}
+      {intelligence && (intelligence.renewalOutlook || intelligence.expansionSignals?.length || intelligence.contractContext) ? (
+        <div id="outlook" className={`editorial-reveal ${shared.marginLabelSection}`}>
+          <div className={shared.marginLabel}>Outlook</div>
+          <div className={shared.marginContent}>
+            <AccountOutlook
+              intelligence={intelligence}
+              onUpdateField={handleUpdateIntelField}
+              getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+              onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* I393: Portfolio chapter — only for parent accounts */}
       {detail.isParent && detail.children.length > 0 && (
-        <section id="portfolio" className="editorial-reveal" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
+        <section id="portfolio" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
           <ChapterHeading title="Portfolio" />
 
           {/* Health summary — one-sentence portfolio health statement */}
           {intelligence?.portfolio?.healthSummary && (
-            <div style={{ marginBottom: 32 }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 18,
-                  fontWeight: 600,
-                  lineHeight: 1.5,
-                  color: "var(--color-text-primary)",
-                  maxWidth: 640,
-                  margin: 0,
-                }}
-              >
+            <div className={shared.portfolioHealthSummary}>
+              <p className={shared.portfolioHealthSummaryText}>
                 {intelligence.portfolio.healthSummary}
               </p>
             </div>
@@ -535,19 +578,8 @@ export default function AccountDetailEditorial() {
 
           {/* Portfolio narrative */}
           {intelligence?.portfolio?.portfolioNarrative && (
-            <div style={{ marginBottom: 48 }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 21,
-                  fontStyle: "italic",
-                  fontWeight: 300,
-                  lineHeight: 1.65,
-                  color: "var(--color-text-primary)",
-                  maxWidth: 640,
-                  margin: 0,
-                }}
-              >
+            <div className={shared.portfolioNarrative}>
+              <p className={shared.portfolioNarrativeText}>
                 {intelligence.portfolio.portfolioNarrative}
               </p>
             </div>
@@ -555,45 +587,21 @@ export default function AccountDetailEditorial() {
 
           {/* Hotspots — child accounts needing attention */}
           {intelligence?.portfolio?.hotspots && intelligence.portfolio.hotspots.length > 0 && (
-            <div style={{ marginBottom: 48 }}>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-spice-terracotta)",
-                  marginBottom: 20,
-                }}
-              >
+            <div className={shared.portfolioHotspotsSection}>
+              <div className={shared.portfolioSectionLabelTerracotta}>
                 Needs Attention
               </div>
               {intelligence.portfolio.hotspots.map((hotspot, i) => (
                 <div
                   key={hotspot.childId}
-                  style={{
-                    display: "flex",
-                    gap: 14,
-                    padding: "16px 0",
-                    borderBottom:
-                      i === intelligence.portfolio!.hotspots.length - 1
-                        ? "none"
-                        : "1px solid rgba(30,37,48,0.06)",
-                    alignItems: "flex-start",
-                  }}
+                  className={
+                    i === intelligence.portfolio!.hotspots.length - 1
+                      ? shared.hotspotRow
+                      : shared.hotspotRowBorder
+                  }
                 >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "var(--color-spice-terracotta)",
-                      flexShrink: 0,
-                      marginTop: 6,
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <span className={shared.hotspotDot} />
+                  <div className={shared.hotspotContent}>
                     <button
                       onClick={() =>
                         navigate({
@@ -601,29 +609,11 @@ export default function AccountDetailEditorial() {
                           params: { accountId: hotspot.childId },
                         })
                       }
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-spice-turmeric)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: 0,
-                        textAlign: "left",
-                      }}
+                      className={styles.hotspotLinkTurmeric}
                     >
                       {hotspot.childName}
                     </button>
-                    <p
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        lineHeight: 1.6,
-                        color: "var(--color-text-secondary)",
-                        margin: "4px 0 0",
-                      }}
-                    >
+                    <p className={shared.hotspotReason}>
                       {hotspot.reason}
                     </p>
                   </div>
@@ -634,38 +624,14 @@ export default function AccountDetailEditorial() {
 
           {/* Cross-BU patterns — only shown when non-empty */}
           {intelligence?.portfolio?.crossBuPatterns && intelligence.portfolio.crossBuPatterns.length > 0 && (
-            <div
-              style={{
-                background: "rgba(30,37,48,0.04)",
-                borderLeft: "3px solid var(--color-garden-larkspur)",
-                borderRadius: "0 6px 6px 0",
-                padding: "16px 20px",
-                marginBottom: 48,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--color-garden-larkspur)",
-                  marginBottom: 12,
-                }}
-              >
+            <div className={shared.crossPatternsBlock}>
+              <div className={shared.portfolioSectionLabelLarkspur}>
                 Cross-BU Patterns
               </div>
               {intelligence.portfolio.crossBuPatterns.map((pattern, i) => (
                 <p
                   key={i}
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    color: "var(--color-text-primary)",
-                    margin: i === 0 ? 0 : "8px 0 0",
-                  }}
+                  className={i === 0 ? shared.crossPatternTextFirst : shared.crossPatternTextSubsequent}
                 >
                   {pattern}
                 </p>
@@ -674,33 +640,18 @@ export default function AccountDetailEditorial() {
           )}
 
           {/* Condensed child list */}
-          <div style={{ marginBottom: 24 }}>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: "var(--color-text-tertiary)",
-                marginBottom: 16,
-              }}
-            >
+          <div className={shared.childListSection}>
+            <div className={shared.portfolioSectionLabelTertiary}>
               Business Units
             </div>
             {detail.children.map((child, i) => (
               <div
                 key={child.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "12px 0",
-                  borderBottom:
-                    i === detail.children.length - 1
-                      ? "none"
-                      : "1px solid rgba(30,37,48,0.06)",
-                }}
+                className={
+                  i === detail.children.length - 1
+                    ? shared.childRow
+                    : shared.childRowBorder
+                }
               >
                 <button
                   onClick={() =>
@@ -709,67 +660,19 @@ export default function AccountDetailEditorial() {
                       params: { accountId: child.id },
                     })
                   }
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 400,
-                    color: "var(--color-text-primary)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                    textAlign: "left",
-                    flex: 1,
-                    minWidth: 0,
-                  }}
+                  className={shared.childNameButton}
                 >
                   {child.name}
                   {child.accountType && child.accountType !== "customer" && (
-                    <span style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-text-tertiary)",
-                      marginLeft: 4,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}>
+                    <span className={shared.childTypeBadge}>
                       {child.accountType === "partner" ? "Partner" : "Internal"}
                     </span>
                   )}
                 </button>
                 {/* Health indicator */}
                 {child.health && (
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                      color:
-                        child.health === "green"
-                          ? "var(--color-garden-sage)"
-                          : child.health === "red"
-                            ? "var(--color-spice-terracotta)"
-                            : "var(--color-spice-saffron)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background:
-                          child.health === "green"
-                            ? "var(--color-garden-sage)"
-                            : child.health === "red"
-                              ? "var(--color-spice-terracotta)"
-                              : "var(--color-spice-saffron)",
-                      }}
-                    />
+                  <span className={`${shared.statusIndicator} ${getHealthColorClass(child.health)}`}>
+                    <span className={getHealthDotClass(child.health)} />
                     {child.health === "green"
                       ? "Healthy"
                       : child.health === "red"
@@ -779,15 +682,7 @@ export default function AccountDetailEditorial() {
                 )}
                 {/* ARR if available */}
                 {child.arr != null && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      letterSpacing: "0.04em",
-                      color: "var(--color-text-tertiary)",
-                    }}
-                  >
+                  <span className={shared.secondaryMetric}>
                     ${formatArr(child.arr)}
                   </span>
                 )}
@@ -798,85 +693,223 @@ export default function AccountDetailEditorial() {
       )}
 
       {/* Chapter 2: State of Play */}
-      <div id="state-of-play" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <StateOfPlay intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
+      <div id="state-of-play" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>State of<br/>Play</div>
+        <div className={shared.marginContent}>
+          <StateOfPlay
+            intelligence={intelligence}
+            sectionId=""
+            onUpdateField={handleUpdateIntelField}
+            getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+            onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+          />
+        </div>
       </div>
 
-      {/* Chapter 3: The Room */}
-      <div id="the-room" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <StakeholderGallery
-          intelligence={intelligence}
-          linkedPeople={detail.linkedPeople}
-          accountTeam={detail.accountTeam}
-          entityId={accountId}
-          entityType="account"
-          onIntelligenceUpdated={acct.silentRefresh}
-        />
+      {/* Pull quote — dedicated field with fallback to first sentence of executive assessment */}
+      {(intelligence?.pullQuote || intelligence?.executiveAssessment) && (() => {
+        const quote = intelligence.pullQuote
+          || (() => {
+            // Fallback: extract first sentence from executiveAssessment
+            const text = intelligence.executiveAssessment!;
+            const match = text.match(/^(.+?[.!?])(?:\s|\n|$)/);
+            return match ? match[1] : text.split("\n\n")[0]?.slice(0, 200);
+          })();
+        return quote ? (
+          <div className={`editorial-reveal-slow ${styles.pullQuote}`}>
+            <blockquote className={styles.pullQuoteText}>
+              {quote}
+            </blockquote>
+            <cite className={styles.pullQuoteAttribution}>From the executive assessment</cite>
+          </div>
+        ) : null;
+      })()}
+
+      {/* Chapter 3: Relationship Health */}
+      {intelligence?.health && (
+        <div id="relationship-health" className={`editorial-reveal ${shared.marginLabelSection}`}>
+          <div className={shared.marginLabel}>Relationship<br/>Health</div>
+          <div className={shared.marginContent}>
+            <ChapterHeading title="Relationship Health" />
+            <div className={styles.healthHero}>
+              <div className={styles.healthScoreNumber}>
+                {Math.round(intelligence.health.score)}
+              </div>
+              <div className={styles.healthMeta}>
+                <div className={
+                  intelligence.health.band === "green" ? styles.healthBandGreen
+                    : intelligence.health.band === "red" ? styles.healthBandRed
+                    : styles.healthBandYellow
+                }>
+                  {intelligence.health.band === "green" ? "Healthy"
+                    : intelligence.health.band === "red" ? "At Risk"
+                    : "Monitor"}
+                </div>
+                {intelligence.health.narrative && (
+                  <p className={styles.healthNarrative}>{intelligence.health.narrative}</p>
+                )}
+                <div className={styles.healthTrendLabel}>
+                  {intelligence.health.trend.direction === "improving" && <TrendingUp size={12} strokeWidth={2} />}
+                  {intelligence.health.trend.direction === "declining" && <TrendingDown size={12} strokeWidth={2} />}
+                  {(intelligence.health.trend.direction === "stable" || intelligence.health.trend.direction === "volatile") && <Minus size={12} strokeWidth={2} />}
+                  {intelligence.health.trend.direction}
+                  {intelligence.health.trend.timeframe && ` \u00b7 ${intelligence.health.trend.timeframe}`}
+                </div>
+              </div>
+            </div>
+            <div className="editorial-reveal-stagger">
+              <DimensionBar dimensions={intelligence.health.dimensions} />
+            </div>
+            {/* I557: Engagement cadence context below dimension bars */}
+          </div>
+        </div>
+      )}
+
+      {/* Chapter 4: The Room */}
+      <div id="the-room" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>The<br/>Room</div>
+        <div className={shared.marginContent}>
+          <StakeholderGallery
+            intelligence={intelligence}
+            linkedPeople={detail.linkedPeople}
+            accountTeam={detail.accountTeam}
+            sectionId=""
+            entityId={accountId}
+            entityType="account"
+            onIntelligenceUpdated={acct.silentRefresh}
+            onRemoveTeamMember={acct.handleRemoveTeamMember}
+            onChangeTeamRole={acct.changeTeamMemberRole}
+            onAddTeamMember={acct.addTeamMemberDirect}
+            onCreateTeamMember={acct.createTeamMemberDirect}
+            teamSearchQuery={acct.teamSearchQuery}
+            onTeamSearchQueryChange={acct.setTeamSearchQuery}
+            teamSearchResults={acct.teamSearchResults}
+          />
+        </div>
       </div>
 
-      {/* Chapter 4: Watch List (full-bleed linen band) */}
-      <div id="watch-list" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <WatchList
-          intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
-        />
+      {/* Chapter 5: Watch List */}
+      <div id="watch-list" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>Watch<br/>List</div>
+        <div className={shared.marginContent}>
+          <WatchList
+            intelligence={intelligence}
+            sectionId=""
+            onUpdateField={handleUpdateIntelField}
+            getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+            onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+          />
+        </div>
       </div>
 
-      {/* Chapter 5: The Record */}
-      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <UnifiedTimeline data={{ ...detail, accountEvents: events }} />
+      {/* Chapter: Value & Commitments (I557) */}
+      {intelligence && (intelligence.valueDelivered?.length || intelligence.successMetrics?.length || intelligence.openCommitments?.length) ? (
+        <div id="value-commitments" className={`editorial-reveal ${shared.marginLabelSection}`}>
+          <div className={shared.marginLabel}>Value &<br/>Commitments</div>
+          <div className={shared.marginContent}>
+            <ValueCommitments
+              intelligence={intelligence}
+              onUpdateField={handleUpdateIntelField}
+              getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+              onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {/* Chapter: Competitive & Strategic Landscape (I557) */}
+      {intelligence && (intelligence.strategicPriorities?.length || intelligence.competitiveContext?.length || intelligence.organizationalChanges?.length || intelligence.blockers?.length) ? (
+        <div id="strategic-landscape" className={`editorial-reveal ${shared.marginLabelSection}`}>
+          <div className={shared.marginLabel}>Competitive &<br/>Strategic</div>
+          <div className={shared.marginContent}>
+            <StrategicLandscape
+              intelligence={intelligence}
+              onUpdateField={handleUpdateIntelField}
+              getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+              onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {/* Chapter 6: The Record */}
+      <div id="the-record" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>The<br/>Record</div>
+        <div className={shared.marginContent}>
+          <UnifiedTimeline
+            data={{ ...detail, accountEvents: events, contextEntries: entityCtx.entries }}
+            sectionId=""
+            actionSlot={<AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />}
+          />
+        </div>
       </div>
 
-      {/* Chapter 6: The Work */}
-      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <TheWork
-          data={detail}
-          addingAction={acct.addingAction}
-          setAddingAction={acct.setAddingAction}
-          newActionTitle={acct.newActionTitle}
-          setNewActionTitle={acct.setNewActionTitle}
-          creatingAction={acct.creatingAction}
-          onCreateAction={acct.handleCreateAction}
-        />
+      {/* Chapter 7: The Work */}
+      <div id="the-work" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>The<br/>Work</div>
+        <div className={shared.marginContent}>
+          <TheWork
+            data={{ ...detail, accountId: detail.id }}
+            sectionId=""
+            addingAction={acct.addingAction}
+            setAddingAction={acct.setAddingAction}
+            newActionTitle={acct.newActionTitle}
+            setNewActionTitle={acct.setNewActionTitle}
+            creatingAction={acct.creatingAction}
+            onCreateAction={acct.handleCreateAction}
+            onRefresh={acct.silentRefresh}
+          />
+        </div>
       </div>
 
-      {/* Finis marker — inside The Work per mockup */}
+      {/* Chapter 8: Reports */}
+      <div id="reports" className={`editorial-reveal ${shared.marginLabelSection}`}>
+        <div className={shared.marginLabel}>Reports</div>
+        <div className={shared.marginContent}>
+          <ChapterHeading title="Reports" />
+          <div className={styles.reportsChapter}>
+            {getAccountReports(preset?.id).map((item) => {
+              const handleClick = () => {
+                if (item.reportType === null) {
+                  navigate({ to: "/accounts/$accountId/risk-briefing", params: { accountId: accountId! } });
+                } else if (item.reportType === "account_health") {
+                  navigate({ to: "/accounts/$accountId/reports/account_health", params: { accountId: accountId! } } as any);
+                } else if (item.reportType === "ebr_qbr") {
+                  navigate({ to: "/accounts/$accountId/reports/ebr_qbr", params: { accountId: accountId! } } as any);
+                } else {
+                  navigate({ to: "/accounts/$accountId/reports/$reportType", params: { accountId: accountId!, reportType: item.reportType } });
+                }
+              };
+              return (
+                <button
+                  key={item.label}
+                  onClick={handleClick}
+                  className={styles.reportRow}
+                >
+                  <FileText size={16} strokeWidth={1.5} className={styles.reportIcon} />
+                  <span className={styles.reportName}>{item.label}</span>
+                  <span className={styles.reportAction}>View</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Files section — inline when files exist */}
+      {files.length > 0 && (
+        <div className={shared.marginLabelSection}>
+          <div className={shared.marginLabel}>Files</div>
+          <div className={shared.marginContent}>
+            <FileListSection files={files} />
+          </div>
+        </div>
+      )}
+
+      {/* Finis marker */}
       <div className="editorial-reveal">
         <FinisMarker enrichedAt={intelligence?.enrichedAt} />
       </div>
-
-      {/* Chapter 7: Appendix */}
-      <div className="editorial-reveal">
-        <AccountAppendix
-          detail={detail}
-          events={events}
-          files={files}
-          contextEntries={entityCtx.entries}
-          onCreateContextEntry={entityCtx.createEntry}
-          onUpdateContextEntry={entityCtx.updateEntry}
-          onDeleteContextEntry={entityCtx.deleteEntry}
-          onRecordEvent={() => setEventDrawerOpen(true)}
-          onIndexFiles={acct.handleIndexFiles}
-          indexing={acct.indexing}
-          indexFeedback={acct.indexFeedback}
-          onCreateChild={() => acct.setCreateChildOpen(true)}
-          onMerge={() => setMergeDialogOpen(true)}
-        />
-      </div>
-
-      <LifecycleEventDrawer
-        open={eventDrawerOpen}
-        onOpenChange={setEventDrawerOpen}
-        newEventType={acct.newEventType}
-        setNewEventType={acct.setNewEventType}
-        newEventDate={acct.newEventDate}
-        setNewEventDate={acct.setNewEventDate}
-        newArrImpact={acct.newArrImpact}
-        setNewArrImpact={acct.setNewArrImpact}
-        newEventNotes={acct.newEventNotes}
-        setNewEventNotes={acct.setNewEventNotes}
-        onSave={acct.handleRecordEvent}
-      />
 
       {/* ─── Archive Confirmation ─── */}
       <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
@@ -906,7 +939,7 @@ export default function AccountDetailEditorial() {
               Create a new {detail.accountType === "internal" ? "team" : "business unit"} under {detail.name}.
             </DialogDescription>
           </DialogHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+          <div className={shared.dialogForm}>
             <Input
               value={acct.childName}
               onChange={(e) => acct.setChildName(e.target.value)}
@@ -917,18 +950,18 @@ export default function AccountDetailEditorial() {
               onChange={(e) => acct.setChildDescription(e.target.value)}
               placeholder="Description (optional)"
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+            <div className={shared.dialogActions}>
               <Button
                 variant="ghost"
                 onClick={() => acct.setCreateChildOpen(false)}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={shared.dialogButton}
               >
                 Cancel
               </Button>
               <Button
                 onClick={acct.handleCreateChild}
                 disabled={acct.creatingChild || !acct.childName.trim()}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+                className={shared.dialogButton}
               >
                 {acct.creatingChild ? "Creating…" : "Create"}
               </Button>

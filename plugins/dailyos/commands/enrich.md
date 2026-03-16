@@ -45,7 +45,7 @@ Compare what the workspace has against what a complete intelligence picture requ
 Present the gap assessment:
 
 ```
-Intelligence gaps for Nielsen:
+Intelligence gaps for Acme Corp:
 
 - Last intelligence update: January 3 (45 days ago)
 - Missing stakeholder: no Technical Buyer identified
@@ -85,11 +85,11 @@ Use web search to fill identified gaps. Research targets:
 Organize research findings into workspace-relevant categories:
 
 ```markdown
-## Enrichment Report: Nielsen
+## Enrichment Report: Acme Corp
 
 ### Company Updates
 - Q4 2025 earnings: Revenue up 8% YoY, beat analyst estimates by 3%
-- New Chief Data Officer hired in January (Maya Patel, ex-Snowflake)
+- New Chief Data Officer hired in January (Maya Patel, ex-CloudVault)
 - Announced strategic pivot toward AI-powered analytics in January investor call
 
 ### Stakeholder Updates
@@ -98,16 +98,16 @@ Organize research findings into workspace-relevant categories:
 - New CDO Maya Patel — likely becomes relevant stakeholder for our data platform work
 
 ### Competitive Intelligence
-- Datadog launched new analytics module in January (relevant to the competitive evaluation mentioned in Feb 14 meeting)
-- Snowflake announced partnership with a consulting firm Nielsen uses — could create alternate path
+- Atlas Analytics launched new analytics module in January (relevant to the competitive evaluation mentioned in Feb 14 meeting)
+- CloudVault announced partnership with a consulting firm Acme Corp uses — could create alternate path
 
 ### Strategic Context
-- Nielsen's AI analytics pivot aligns with our platform capabilities — potential expansion vector
+- Acme Corp's AI analytics pivot aligns with our platform capabilities — potential expansion vector
 - "Vendor sprawl reduction" theme from CTO keynote is a risk if we are seen as an additional vendor rather than a consolidation play
 
 ### Recommended Intelligence Updates
 1. Update intelligence.json executive_assessment to reflect Q4 earnings and AI pivot
-2. Add competitive risk: Datadog analytics module + Snowflake consulting partnership
+2. Add competitive risk: Atlas Analytics analytics module + CloudVault consulting partnership
 3. Add opportunity: AI analytics pivot alignment with our platform
 4. Create People/ profile for Maya Patel (new CDO)
 5. Update David Park's profile with vendor sprawl concerns
@@ -119,15 +119,15 @@ Organize research findings into workspace-relevant categories:
 Present the enrichment report and proposed workspace updates:
 
 ```
-Ready to update Nielsen workspace:
+Ready to update Acme Corp workspace:
 
-1. Update Accounts/Nielsen/intelligence.json:
+1. Update Accounts/Acme-Corp/intelligence.json:
    - Revised executive assessment reflecting Q4 performance and AI pivot
-   - New risk: competitive evaluation (Datadog, Snowflake)
+   - New risk: competitive evaluation (Atlas Analytics, CloudVault)
    - New opportunity: AI analytics alignment
    - Updated last_updated timestamp
 
-2. Update Accounts/Nielsen/stakeholders.md:
+2. Update Accounts/Acme-Corp/stakeholders.md:
    - Add Maya Patel (CDO) as emerging stakeholder
    - Note David Park's vendor consolidation stance
 
@@ -156,7 +156,7 @@ After confirmation:
 This command's primary output is workspace updates. The confirmation step (Step 5) is the loop-back gate. Additionally, if enrichment reveals actionable items, offer to create actions:
 
 ```
-The vendor sprawl concern and competitive evaluation suggest you should proactively address Nielsen's consolidation narrative before renewal. Want me to create an action: "Prepare consolidation value narrative for Nielsen renewal conversation" — due by March 1?
+The vendor sprawl concern and competitive evaluation suggest you should proactively address Acme Corp's consolidation narrative before renewal. Want me to create an action: "Prepare consolidation value narrative for Acme Corp renewal conversation" — due by March 1?
 ```
 
 ## Skills That Contribute

@@ -40,11 +40,11 @@ Guidance for adapting content across channels, formats, and audiences—includin
 **Example transformation** (P2 → Slack):
 ```
 P2 Version (800 words):
-"Cox Automotive approved the Agentforce pilot expansion yesterday.
+"Keystone Automotive approved the Agentforce pilot expansion yesterday.
 This represents our first formal commitment beyond POC scope..."
 
 Slack Version (50 words):
-🎯 Cox approved Agentforce pilot expansion
+🎯 Keystone approved Agentforce pilot expansion
 
 50 dealers, February launch. This is our first formal commitment
 beyond POC and validates the co-sell model we've been building.
@@ -85,7 +85,7 @@ Next step: Dealer selection finalized by Jan 17.
 **Example transformation** (Internal insight → LinkedIn):
 ```
 Internal:
-"Cox's Agentforce pilot showed 60% reduction in dealer inquiry
+"Keystone's Agentforce pilot showed 60% reduction in dealer inquiry
 response time. This validates our thesis that AI-powered
 customer support on CMS platforms is a differentiator."
 
@@ -171,7 +171,7 @@ Content created for P2s, internal updates, or customer-specific docs can often b
 
 | Internal | External |
 |----------|----------|
-| "Cox Automotive" | "A Fortune 500 automotive company" |
+| "Keystone Automotive" | "A Fortune 500 automotive company" |
 | "$400K deal" | "Six-figure partnership" |
 | "Summit ring customer" | "Strategic account" |
 | "Our Agentforce connector" | "AI integration capabilities" |

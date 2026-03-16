@@ -651,7 +651,7 @@ Create a proposed time-blocked schedule:
 |------|----------|------|----------|------|
 | 9:30-10:30 | 60m | Acme Corp docs (overdue) | P2 | Large - Morning |
 | 14:00-14:30 | 30m | Email Joanna re: Compliance | P2 | Medium - Afternoon |
-| 14:30-15:00 | 30m | Dashboard refresh: Crowley | P3 | Medium - Afternoon |
+| 14:30-15:00 | 30m | Dashboard refresh: Initech | P3 | Medium - Afternoon |
 
 ### Tuesday
 | Time | Duration | Task | Priority | Type |

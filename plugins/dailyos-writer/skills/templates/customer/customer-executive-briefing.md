@@ -138,12 +138,12 @@ Shorter is almost always better.
 # Q4 Strategic Review: Briefing for Sarah Chen
 
 **Meeting**: January 15, 2:00 PM ET, 60 min
-**Attendees**: Sarah Chen (VP Digital), James Giroux (WordPress VIP), Lisa Park (Marketing Ops)
+**Attendees**: Sarah Chen (VP Digital), Your Name (WordPress VIP), Lisa Park (Marketing Ops)
 
 ---
 
 ## Context
-We're reviewing Q4 results and planning Q1 priorities. The Agentforce pilot decision needs your approval before the meeting concludes—Cox is waiting on our timeline confirmation.
+We're reviewing Q4 results and planning Q1 priorities. The Agentforce pilot decision needs your approval before the meeting concludes—Keystone is waiting on our timeline confirmation.
 
 ## Key Points
 - **Q4 results exceeded targets**: Zero outages during peak season, 40% improvement in content velocity

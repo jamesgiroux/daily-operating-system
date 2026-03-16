@@ -14,7 +14,7 @@ Universal rules that apply to all content types.
 
 | With em dashes | Better |
 |---------------|--------|
-| "Two Salesforce AEs—Keith Coles and Joe Shunia—reached out" | "Two Salesforce AEs (Keith Coles from Data Cloud and Joe Shunia from Marketing Cloud Digital) reached out" |
+| "Two Globex AEs—Keith Coles and Joe Shunia—reached out" | "Two Globex AEs (Keith Coles from Data Cloud and Joe Shunia from Marketing Cloud Digital) reached out" |
 | "Dreamforce wasn't the finish line—it was the starting point" | "Dreamforce was the starting point." |
 | "The momentum is real—it's commercial, and moving fast" | "The momentum is translating into commercial activity." |
 
@@ -43,8 +43,8 @@ Universal rules that apply to all content types.
 ### Active Voice Preference
 
 **Prefer active voice** for clarity and directness:
-- Good: "Salesforce AEs brought us into the deal"
-- Acceptable: "We were brought into the deal by Salesforce AEs"
+- Good: "Globex AEs brought us into the deal"
+- Acceptable: "We were brought into the deal by Globex AEs"
 
 **Exception**: Use passive when the actor is unknown or irrelevant.
 
@@ -74,7 +74,7 @@ Never skip heading levels (don't go H1 to H3).
 Good:
 ```
 The focus shifts to:
-- Executing on NXP
+- Executing on Vertex
 - Formalizing partnerships
 - Building field enablement
 ```
@@ -84,7 +84,7 @@ The focus shifts to:
 Good:
 ```
 We're focusing on
-- Executing on NXP
+- Executing on Vertex
 - Formalizing partnerships
 ```
 
@@ -94,14 +94,14 @@ We're focusing on
 
 Good:
 ```
-- Execute on NXP pursuit
+- Execute on Vertex pursuit
 - Formalize partnership agreements
 - Build field enablement
 ```
 
 Wrong (not parallel):
 ```
-- Execute on NXP pursuit
+- Execute on Vertex pursuit
 - Partnership agreements should be formalized
 - Building field enablement
 ```

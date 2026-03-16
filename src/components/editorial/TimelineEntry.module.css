@@ -41,6 +41,7 @@
 .dotValue { background: var(--color-garden-sage); }
 .dotRisk { background: var(--color-spice-terracotta); }
 .dotDecision { background: var(--color-spice-terracotta); }
+.dotContext { background: var(--color-garden-rosemary); }
 
 .dateLine {
   display: flex;
@@ -70,13 +71,14 @@
   margin-left: 8px;
 }
 
-.typeMeeting { background: rgba(201, 162, 39, 0.10); color: var(--color-spice-turmeric); }
-.typeEmail { background: rgba(143, 163, 196, 0.12); color: var(--color-garden-larkspur); }
-.typeCapture { background: rgba(126, 170, 123, 0.12); color: var(--color-garden-rosemary); }
-.typeEvent { background: rgba(222, 184, 65, 0.12); color: var(--color-spice-saffron); }
-.typeValue { background: rgba(126, 170, 123, 0.12); color: var(--color-garden-rosemary); }
-.typeRisk { background: rgba(196, 101, 74, 0.10); color: var(--color-spice-terracotta); }
-.typeDecision { background: rgba(196, 101, 74, 0.10); color: var(--color-spice-terracotta); }
+.typeMeeting { background: var(--color-spice-turmeric-10); color: var(--color-spice-turmeric); }
+.typeEmail { background: var(--color-garden-larkspur-12); color: var(--color-garden-larkspur); }
+.typeCapture { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.typeEvent { background: var(--color-spice-saffron-12); color: var(--color-spice-saffron); }
+.typeValue { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.typeRisk { background: var(--color-spice-terracotta-10); color: var(--color-spice-terracotta); }
+.typeDecision { background: var(--color-spice-terracotta-10); color: var(--color-spice-terracotta); }
+.typeContext { background: color-mix(in srgb, var(--color-garden-rosemary) 12%, transparent); color: var(--color-garden-rosemary); }
 
 .title {
   font-family: var(--font-sans);

@@ -94,8 +94,8 @@ Bottom Line Up Front structure for strategic communications. Best for busy execu
 
 | Topic Header (Bad) | Action Title (Good) |
 |-------------------|---------------------|
-| Partnership Update | Salesforce partnership advances to legal review |
-| NXP Opportunity | NXP deal validates Agentforce positioning |
+| Partnership Update | Globex partnership advances to legal review |
+| Vertex Opportunity | Vertex deal validates Agentforce positioning |
 | Q4 Results | Q4 exceeded targets: $2.1M closed |
 
 ---
@@ -136,7 +136,7 @@ Bottom Line Up Front structure for strategic communications. Best for busy execu
 ## Example
 
 ```markdown
-# Salesforce Partnership Advances to Legal Review
+# Globex Partnership Advances to Legal Review
 
 **BLUF**: After three months of technical validation, the Agentforce WordPress Connector partnership is moving to legal review with a target close of February 2026.
 
@@ -144,10 +144,10 @@ Bottom Line Up Front structure for strategic communications. Best for busy execu
 
 ## What Happened
 
-On January 8, Jared (Salesforce Partner Manager) confirmed legal engagement would begin this week. This follows:
+On January 8, Jared (Globex Partner Manager) confirmed legal engagement would begin this week. This follows:
 - Successful Dreamforce theater session (October 2025)
 - MCP Beta Program enrollment (January 2026)
-- NXP co-sell opportunity identified ($400K potential)
+- Vertex co-sell opportunity identified ($400K potential)
 
 Technical validation is complete. Both teams have aligned on the connector architecture and go-to-market approach.
 
@@ -155,15 +155,15 @@ Technical validation is complete. Both teams have aligned on the connector archi
 
 This moves us from proof-of-concept to formal partnership status. Once signed:
 - VIP gains access to AppExchange distribution
-- Salesforce sellers can formally include us in deals
+- Globex sellers can formally include us in deals
 - Marketing co-investment becomes available
 
-The NXP deal ($400K) is the first test of the co-sell motion. If it closes, it validates the commercial model.
+The Vertex deal ($400K) is the first test of the co-sell motion. If it closes, it validates the commercial model.
 
 ## What's Next
 
 - **Riley**: Lead legal negotiation (target: Feb close)
-- **James**: Support NXP pursuit with technical POV
+- **Your Name**: Support Vertex pursuit with technical POV
 - **Abdul**: Finalize MVP scope for February beta
 - **Ask**: None - informational update
 ```

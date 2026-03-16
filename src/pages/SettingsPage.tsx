@@ -9,45 +9,20 @@ import { useClaudeStatus } from "@/hooks/useClaudeStatus";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import StatusDot from "@/components/shared/StatusDot";
 import YouCard from "@/components/settings/YouCard";
 import ConnectorsGrid from "@/components/settings/ConnectorsGrid";
 import ContextSourceSection from "@/components/settings/ContextSourceSection";
 import SystemStatus from "@/components/settings/SystemStatus";
 import ActivityLogSection from "@/components/settings/ActivityLogSection";
 import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
+import DatabaseRecoveryCard from "@/components/settings/DatabaseRecoveryCard";
+import DataPrivacySection from "@/components/settings/DataPrivacySection";
+import s from "./SettingsPage.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ClaudeCodeSection
 // ═══════════════════════════════════════════════════════════════════════════
-
-const ctaButtonStyle = (disabled: boolean): React.CSSProperties => ({
-  alignSelf: "flex-start",
-  fontFamily: "var(--font-mono)",
-  fontSize: 11,
-  letterSpacing: "0.04em",
-  color: disabled ? "var(--color-text-tertiary)" : "var(--color-spice-turmeric)",
-  background: "none",
-  border: "none",
-  cursor: disabled ? "default" : "pointer",
-  padding: 0,
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-});
-
-function StatusDot({ color }: { color: string }) {
-  return (
-    <div
-      style={{
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: color,
-        flexShrink: 0,
-      }}
-    />
-  );
-}
 
 function ClaudeCodeSection() {
   const { status, aiUnavailable, checking, refresh } = useClaudeStatus();
@@ -63,55 +38,38 @@ function ClaudeCodeSection() {
 
   return (
     <div>
-      <p
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          color: "var(--color-text-tertiary)",
-          margin: 0,
-          marginBottom: 12,
-        }}
-      >
-        Claude Code
-      </p>
+      <p className={s.claudeCodeLabel}>Claude Code</p>
 
       {/* Loading */}
       {checking && !status && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Loader2 size={14} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-tertiary)" }}>
-            Checking...
-          </span>
+        <div className={s.claudeCodeRow}>
+          <Loader2 size={14} className={`animate-spin ${s.iconTertiary}`} />
+          <span className={s.claudeCodeTextTertiary}>Checking...</span>
         </div>
       )}
 
       {/* Ready */}
       {status && ready && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <StatusDot color="var(--color-garden-sage)" />
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
-            Claude Code is ready
-          </span>
+        <div className={s.claudeCodeRow}>
+          <StatusDot status="connected" />
+          <span className={s.claudeCodeText}>Claude Code is ready</span>
         </div>
       )}
 
       {/* Installed, not authenticated */}
       {status && status.installed && !status.authenticated && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <StatusDot color="var(--color-spice-turmeric)" />
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)" }}>
+        <div className={s.claudeCodeColumn}>
+          <div className={s.claudeCodeRow}>
+            <StatusDot status="loading" />
+            <span className={s.claudeCodeTextMuted}>
               Claude Code needs to be signed in
             </span>
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
-            <button onClick={handleSignIn} style={ctaButtonStyle(false)}>
+          <div className={s.claudeCodeActions}>
+            <button onClick={handleSignIn} className={s.ctaButton}>
               Sign in to Claude &rarr;
             </button>
-            <button onClick={refresh} disabled={checking} style={ctaButtonStyle(checking)}>
+            <button onClick={refresh} disabled={checking} className={s.ctaButton}>
               {checking && <Loader2 size={11} className="animate-spin" />}
               Check again
             </button>
@@ -121,18 +79,18 @@ function ClaudeCodeSection() {
 
       {/* Not installed */}
       {status && !status.installed && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <StatusDot color="var(--color-spice-terracotta)" />
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)" }}>
+        <div className={s.claudeCodeColumn}>
+          <div className={s.claudeCodeRow}>
+            <StatusDot status="disconnected" />
+            <span className={s.claudeCodeTextMuted}>
               Claude Code isn't installed
             </span>
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
-            <button onClick={handleDownload} style={ctaButtonStyle(false)}>
+          <div className={s.claudeCodeActions}>
+            <button onClick={handleDownload} className={s.ctaButton}>
               Download Claude Code &rarr;
             </button>
-            <button onClick={refresh} disabled={checking} style={ctaButtonStyle(checking)}>
+            <button onClick={refresh} disabled={checking} className={s.ctaButton}>
               {checking && <Loader2 size={11} className="animate-spin" />}
               Check again
             </button>
@@ -197,7 +155,7 @@ export default function SettingsPage() {
   const search = useSearch({ from: "/settings" });
   const scrolledRef = useRef(false);
   const claudeCodeRef = useRef<HTMLDivElement>(null);
-  const { appState, resumeOnboarding } = useAppState();
+  const { appState, resumeOnboarding, dismissSetupBanner } = useAppState();
   const { status: claudeStatus, aiUnavailable } = useClaudeStatus();
 
   // Chapters: include diagnostics only in dev mode
@@ -234,81 +192,31 @@ export default function SettingsPage() {
   }, [search.tab]);
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={s.container}>
       {/* Setup incomplete banner (I57) */}
       {!appState.wizardCompletedAt && (
-        <div
-          style={{
-            padding: "12px 20px",
-            borderBottom: "1px solid var(--color-rule-light)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 16,
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-text-secondary)",
-            }}
-          >
+        <div className={s.banner}>
+          <span className={s.bannerText}>
             Finish setting up DailyOS — briefings work best when the system knows about you.
           </span>
-          <button
-            onClick={resumeOnboarding}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              letterSpacing: "0.04em",
-              color: "var(--color-spice-turmeric)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              padding: 0,
-            }}
-          >
+          <button onClick={resumeOnboarding} className={s.bannerAction}>
             Resume setup &rarr;
+          </button>
+          <button onClick={dismissSetupBanner} className={s.bannerDismiss} title="Dismiss">
+            &times;
           </button>
         </div>
       )}
 
       {/* Claude Code not ready banner — shown only after wizard is complete */}
       {appState.wizardCompletedAt && claudeStatus !== null && aiUnavailable && (
-        <div
-          style={{
-            padding: "12px 20px",
-            borderBottom: "1px solid var(--color-rule-light)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 16,
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-text-secondary)",
-            }}
-          >
+        <div className={s.banner}>
+          <span className={s.bannerText}>
             Claude Code isn't set up — without it, AI briefings won't be generated.
           </span>
           <button
             onClick={() => claudeCodeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              letterSpacing: "0.04em",
-              color: "var(--color-spice-turmeric)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              padding: 0,
-            }}
+            className={s.bannerAction}
           >
             Set up Claude Code &rarr;
           </button>
@@ -316,30 +224,13 @@ export default function SettingsPage() {
       )}
 
       {/* ═══ HERO ═══ */}
-      <section style={{ paddingTop: 80, paddingBottom: 40 }}>
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 42,
-            fontWeight: 400,
-            letterSpacing: "-0.02em",
-            color: "var(--color-text-primary)",
-            margin: 0,
-          }}
-        >
-          Settings
-        </h1>
-        <div
-          style={{
-            height: 2,
-            background: "var(--color-desk-charcoal)",
-            marginTop: 16,
-          }}
-        />
+      <section className={s.hero}>
+        <h1 className={s.heroTitle}>Settings</h1>
+        <div className={s.heroRule} />
       </section>
 
       {/* ═══ YOU ═══ */}
-      <section id="settings-you" style={{ marginBottom: 48 }}>
+      <section id="settings-you" className={s.section}>
         <ChapterHeading
           title="You"
           epigraph="Who you are and how your workspace is organized."
@@ -348,7 +239,7 @@ export default function SettingsPage() {
       </section>
 
       {/* ═══ CONNECTORS ═══ */}
-      <section id="settings-connectors" style={{ marginBottom: 48 }}>
+      <section id="settings-connectors" className={s.section}>
         <ChapterHeading
           title="Connectors"
           epigraph="External services that feed your daily briefings."
@@ -358,29 +249,41 @@ export default function SettingsPage() {
       </section>
 
       {/* ═══ DATA ═══ */}
-      <section id="settings-data" style={{ marginBottom: 48 }}>
+      <section id="settings-data" className={s.section}>
         <ChapterHeading
           title="Data"
           epigraph="What happened, when, and whether anything looks unusual."
         />
+        <DatabaseRecoveryCard />
         <ActivityLogSection />
+        <div className={s.sectionInset}>
+          <DataPrivacySection />
+        </div>
       </section>
 
       {/* ═══ SYSTEM ═══ */}
-      <section id="settings-system" style={{ marginBottom: 48 }}>
+      <section id="settings-system" className={s.section}>
         <ChapterHeading
           title="System"
           epigraph="Version, health, and advanced configuration."
         />
-        <div ref={claudeCodeRef} style={{ marginBottom: 32 }}>
+        <div ref={claudeCodeRef} className={s.claudeCodeWrapper}>
           <ClaudeCodeSection />
         </div>
         <SystemStatus />
+        {appState.wizardCompletedAt && (
+          <div className={s.systemAction}>
+            <button onClick={resumeOnboarding} className={s.systemActionButton}>
+              Run Setup Again
+            </button>
+            <span className={s.systemActionHint}>Re-run the onboarding wizard to update your profile and connectors.</span>
+          </div>
+        )}
       </section>
 
       {/* ═══ DIAGNOSTICS (dev only) ═══ */}
       {import.meta.env.DEV && (
-        <section id="settings-diagnostics" style={{ marginBottom: 48 }}>
+        <section id="settings-diagnostics" className={s.section}>
           <ChapterHeading
             title="Diagnostics"
             epigraph="Developer tools and debugging utilities."
@@ -390,7 +293,7 @@ export default function SettingsPage() {
       )}
 
       <FinisMarker />
-      <div style={{ height: 80 }} />
+      <div className={s.bottomSpacer} />
     </div>
   );
 }

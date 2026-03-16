@@ -1,0 +1,178 @@
+/* =============================================================================
+   EmailsPage — CSS Module for The Correspondent email surface
+   Extends editorial-briefing.module.css for page-specific patterns.
+   ============================================================================= */
+
+/* ── Page Container ─────────────────────────────────────────────────────── */
+
+.pageContainer {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Hero Stat Line ─────────────────────────────────────────────────────── */
+
+.heroStatLine {
+  display: flex;
+  gap: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.heroStatPriority {
+  color: var(--color-spice-terracotta);
+}
+
+/* ── Sync Status ────────────────────────────────────────────────────────── */
+
+.syncStatus {
+  display: flex;
+  gap: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-sm);
+}
+
+.syncStatusAlert {
+  color: var(--color-spice-terracotta);
+}
+
+/* ── Section Spacing ────────────────────────────────────────────────────── */
+
+.sectionSpacing {
+  margin-bottom: var(--space-2xl);
+}
+
+.sectionRuleTop {
+  margin-top: var(--space-lg);
+}
+
+/* ── Margin Label Color Variants ────────────────────────────────────────── */
+
+.marginLabelYourMove {
+  color: var(--color-spice-terracotta);
+}
+
+/* ── Extracted Items (Commitments / Questions) ──────────────────────────── */
+
+.extractedItem {
+  position: relative;
+}
+
+.extractedItemSpacing {
+  margin-bottom: var(--space-md);
+}
+
+.extractedItemText {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  margin: 0;
+  max-width: 640px;
+}
+
+.extractedItemMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.dismissButton {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: var(--space-xs);
+}
+
+/* ── Commitment Grid Spacing ────────────────────────────────────────────── */
+
+.commitmentGridSpacing {
+  margin-bottom: 28px;
+}
+
+/* ── Updates Section ────────────────────────────────────────────────────── */
+
+.updateEntityName {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+
+.updateEntityCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-left: 10px;
+}
+
+.updateSignalsContainer {
+  margin: 0 0 var(--space-md) 0;
+  max-width: 640px;
+}
+
+.updateSignalRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: 6px;
+}
+
+.updateSignalType {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  min-width: 72px;
+  padding-top: 3px;
+  flex-shrink: 0;
+}
+
+.updateSignalText {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  flex: 1;
+}
+
+.dismissSignalButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.updateSectionRule {
+  margin-bottom: var(--space-md);
+}
+
+/* ── Overflow Threads ───────────────────────────────────────────────────── */
+
+.overflowText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+}

@@ -160,38 +160,38 @@ A strategy memo isn't a summary—it's a persuasive argument. You're not reporti
 ## Example
 
 ```markdown
-# WordPress VIP Should Formalize the Salesforce Partnership in Q1
+# WordPress VIP Should Formalize the Globex Partnership in Q1
 
 ## The Proposal
-We should invest in formalizing our Salesforce partnership before the ecosystem matures. Early movers in the Agentforce partner program get preferential positioning. We have validated technology and a lighthouse customer ready—the risk is in waiting, not acting.
+We should invest in formalizing our Globex partnership before the ecosystem matures. Early movers in the Agentforce partner program get preferential positioning. We have validated technology and a lighthouse customer ready—the risk is in waiting, not acting.
 
 ---
 
 ## The Situation
-Salesforce generated $100M in Agentforce bookings in year one. Their partner ecosystem is actively forming. Three enterprise accounts in our pipeline are specifically asking about Salesforce integration capability.
+Globex generated $100M in Agentforce bookings in year one. Their partner ecosystem is actively forming. Three enterprise accounts in our pipeline are specifically asking about Globex integration capability.
 
-We demonstrated a working connector at Dreamforce. Cox Automotive is deploying as a lighthouse customer. The technical validation phase is behind us.
+We demonstrated a working connector at Dreamforce. Keystone Automotive is deploying as a lighthouse customer. The technical validation phase is behind us.
 
-The window is now. Salesforce is building their preferred partner list. Waiting six months means competing against entrenched partners rather than establishing as an early mover.
+The window is now. Globex is building their preferred partner list. Waiting six months means competing against entrenched partners rather than establishing as an early mover.
 
 ## What We Should Do
-Formalize the partnership through Salesforce's ISV partner program with target completion in Q1.
+Formalize the partnership through Globex's ISV partner program with target completion in Q1.
 
 ### Partner Program Enrollment
 Complete AppExchange listing and ISV partnership paperwork. Riley to lead, with target legal close in February.
 
 ### Co-Sell Infrastructure
-Establish joint pipeline management with Salesforce AEs. Define shared success metrics and lead routing process.
+Establish joint pipeline management with Globex AEs. Define shared success metrics and lead routing process.
 
 ### Marketing Coordination
-Coordinate announcement with Salesforce partnership marketing. Leverage Cox case study as launch proof point.
+Coordinate announcement with Globex partnership marketing. Leverage Keystone case study as launch proof point.
 
 ## Why This Approach
 **Why formal partnership vs. ad-hoc deals?**
 Current deals require custom coordination on each opportunity. Partnership infrastructure enables repeatable co-sell motion at scale.
 
 **Why now vs. Q2 or later?**
-Partner ecosystem forming now. NXP opportunity ($400K) is testing a model we can't scale without partnership infrastructure. Three additional opportunities waiting on partnership clarity.
+Partner ecosystem forming now. Vertex opportunity ($400K) is testing a model we can't scale without partnership infrastructure. Three additional opportunities waiting on partnership clarity.
 
 **Alternative considered**: Continue ad-hoc deals. Rejected because: unsustainable coordination overhead, miss AppExchange distribution, lose to partners who can execute formal co-sell.
 
@@ -204,7 +204,7 @@ Approve formal partnership pursuit as Q1 priority. This requires:
 - Marketing coordination for launch announcement
 
 ### Next Steps (if approved)
-- **Riley**: Initiate Salesforce partnership application by Jan 15
-- **James**: Continue NXP as proof point, support Cox lighthouse positioning
-- **Marketing**: Begin case study development with Cox
+- **Riley**: Initiate Globex partnership application by Jan 15
+- **Your Name**: Continue Vertex as proof point, support Keystone lighthouse positioning
+- **Marketing**: Begin case study development with Keystone
 ```

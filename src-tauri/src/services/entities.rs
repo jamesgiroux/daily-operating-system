@@ -232,7 +232,7 @@ pub fn auto_extract_title_keywords(
     for w in &title_words {
         candidates.push(w.clone());
     }
-    // Adjacent pairs (e.g., "Janus Henderson" from title words)
+    // Adjacent pairs (e.g., "Acme Corp" from title words)
     for pair in title_words.windows(2) {
         candidates.push(format!("{} {}", pair[0], pair[1]));
     }
@@ -304,11 +304,87 @@ pub async fn get_executive_intelligence(
     let workspace = std::path::Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
 
-    // Load schedule meetings (merged with live calendar)
-    let meetings = if today_dir.join("data").exists() {
-        let briefing_meetings = crate::json_loader::load_schedule_json(&today_dir)
-            .map(|(_overview, meetings)| meetings)
+    // Load today's meetings from DB, merge with live calendar (I513)
+    let meetings = {
+        let tz_ent: chrono_tz::Tz = config
+            .schedules
+            .today
+            .timezone
+            .parse()
+            .unwrap_or(chrono_tz::America::New_York);
+        let tf_ent = crate::helpers::today_meeting_filter(&tz_ent);
+        let today = tf_ent.date;
+        let tomorrow = tf_ent.next_date;
+        let db_meetings: Vec<crate::types::Meeting> = state
+            .db_read(move |db| {
+                let conn = db.conn_ref();
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, title, meeting_type, start_time, end_time, calendar_event_id
+                         FROM meetings
+                         WHERE start_time >= ?1 AND start_time < ?2
+                         ORDER BY start_time ASC",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let rows = stmt
+                    .query_map(rusqlite::params![today, tomorrow], |row| {
+                        let id: String = row.get(0)?;
+                        let title: String = row.get(1)?;
+                        let mt: String = row.get(2)?;
+                        let start: String = row.get(3)?;
+                        let end: Option<String> = row.get(4)?;
+                        let cal_id: Option<String> = row.get(5)?;
+                        Ok((id, title, mt, start, end, cal_id))
+                    })
+                    .map_err(|e| e.to_string())?;
+                let meetings = rows
+                    .filter_map(|r| r.ok())
+                    .map(|(id, title, mt, start, end, cal_id)| {
+                        let meeting_type = crate::parser::parse_meeting_type(&mt);
+                        let time =
+                            chrono::NaiveDateTime::parse_from_str(&start, "%Y-%m-%dT%H:%M:%S")
+                                .map(|dt| dt.format("%-I:%M %p").to_string())
+                                .or_else(|_| {
+                                    chrono::DateTime::parse_from_rfc3339(&start)
+                                        .map(|dt| dt.format("%-I:%M %p").to_string())
+                                })
+                                .unwrap_or_else(|_| start.clone());
+                        let end_time = end.as_ref().and_then(|et| {
+                            chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%dT%H:%M:%S")
+                                .map(|dt| dt.format("%-I:%M %p").to_string())
+                                .or_else(|_| {
+                                    chrono::DateTime::parse_from_rfc3339(et)
+                                        .map(|dt| dt.format("%-I:%M %p").to_string())
+                                })
+                                .ok()
+                        });
+                        crate::types::Meeting {
+                            id,
+                            calendar_event_id: cal_id,
+                            time,
+                            end_time,
+                            start_iso: Some(start),
+                            title,
+                            meeting_type,
+                            prep: None,
+                            is_current: None,
+                            prep_file: None,
+                            has_prep: false,
+                            overlay_status: None,
+                            prep_reviewed: None,
+                            linked_entities: None,
+                            suggested_unarchive_account_id: None,
+                            intelligence_quality: None,
+                            calendar_attendees: None,
+                            calendar_description: None,
+                        }
+                    })
+                    .collect();
+                Ok(meetings)
+            })
+            .await
             .unwrap_or_default();
+
         let live_events = state
             .calendar
             .events
@@ -321,9 +397,7 @@ pub async fn get_executive_intelligence(
             .timezone
             .parse()
             .unwrap_or(chrono_tz::America::New_York);
-        crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz)
-    } else {
-        Vec::new()
+        crate::calendar_merge::merge_meetings(db_meetings, &live_events, &tz)
     };
 
     // Load cached skip-today from AI enrichment (if available)

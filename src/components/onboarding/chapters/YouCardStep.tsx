@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import styles from "../onboarding.module.css";
 
 export interface YouCardFormData {
   name: string;
@@ -26,35 +27,14 @@ interface YouCardStepProps {
   onFormChange: (data: YouCardFormData) => void;
   onNext: () => void;
   onSkip: () => void;
+  gleanConnected?: boolean;
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <label
-      style={{
-        fontFamily: "var(--font-sans)",
-        fontSize: 13,
-        fontWeight: 500,
-        color: "var(--color-text-secondary)",
-        display: "block",
-        marginBottom: 6,
-      }}
-    >
-      {children}
-    </label>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  background: "var(--color-paper-warm-white)",
-  border: "1px solid var(--color-desk-charcoal)",
-  borderRadius: 4,
-};
-
-export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardStepProps) {
+export function YouCardStep({ formData, onFormChange, onNext, onSkip, gleanConnected }: YouCardStepProps) {
   const { email } = useGoogleAuth();
   const [domainInput, setDomainInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
 
   const { name, company, title, domains } = formData;
 
@@ -65,6 +45,32 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardS
       // The real name comes from Google profile — handled by set_user_profile
     }
   }, [email, name]);
+
+  // Glean pre-fill: fetch profile from org directory
+  useEffect(() => {
+    if (!gleanConnected || prefilled) return;
+    // Only pre-fill if form is mostly empty
+    if (name || company || title) return;
+
+    let cancelled = false;
+    invoke<{ name: string | null; title: string | null; department: string | null; company: string | null } | null>(
+      "onboarding_prefill_profile"
+    )
+      .then((suggestion) => {
+        if (cancelled || !suggestion) return;
+        const updates: Partial<YouCardFormData> = {};
+        if (suggestion.name && !name) updates.name = suggestion.name;
+        if (suggestion.company && !company) updates.company = suggestion.company;
+        if (suggestion.title && !title) updates.title = suggestion.title;
+        if (Object.keys(updates).length > 0) {
+          onFormChange({ ...formData, ...updates });
+          setPrefilled(true);
+        }
+      })
+      .catch(() => {}); // Non-fatal
+
+    return () => { cancelled = true; };
+  }, [gleanConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-fill first domain from Google email
   useEffect(() => {
@@ -125,52 +131,58 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardS
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="About you"
         epigraph="A little context helps tailor your briefings. Everything here is optional."
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {prefilled && (
+        <p className={styles.helperText}>
+          Pre-filled from your company directory. Edit anything that needs updating.
+        </p>
+      )}
+
+      <div className={`${styles.flexCol} ${styles.gap20}`}>
         {/* Name */}
         <div>
-          <FieldLabel>Your name</FieldLabel>
+          <label className={styles.fieldLabel}>Your name</label>
           <Input
             type="text"
             placeholder="e.g. Alex Chen"
             value={name}
             onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
-            style={inputStyle}
+            className={styles.editorialInput}
           />
         </div>
 
         {/* Company */}
         <div>
-          <FieldLabel>Company</FieldLabel>
+          <label className={styles.fieldLabel}>Company</label>
           <Input
             type="text"
             placeholder="e.g. Acme Inc."
             value={company}
             onChange={(e) => onFormChange({ ...formData, company: e.target.value })}
-            style={inputStyle}
+            className={styles.editorialInput}
           />
         </div>
 
         {/* Title */}
         <div>
-          <FieldLabel>Title</FieldLabel>
+          <label className={styles.fieldLabel}>Title</label>
           <Input
             type="text"
             placeholder="e.g. Customer Success Manager"
             value={title}
             onChange={(e) => onFormChange({ ...formData, title: e.target.value })}
-            style={inputStyle}
+            className={styles.editorialInput}
           />
         </div>
 
         {/* Domains */}
         <div>
-          <FieldLabel>Company email domains</FieldLabel>
+          <label className={styles.fieldLabel}>Company email domains</label>
           <div className="flex gap-2">
             <Input
               type="text"
@@ -178,7 +190,7 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardS
               value={domainInput}
               onChange={(e) => setDomainInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addDomain()}
-              style={inputStyle}
+              className={styles.editorialInput}
             />
             <Button
               variant="outline"
@@ -190,33 +202,13 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardS
             </Button>
           </div>
           {domains.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            <div className={`${styles.flexWrap} ${styles.mt8}`}>
               {domains.map((d) => (
-                <span
-                  key={d}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    border: "1px solid var(--color-rule-heavy)",
-                    borderRadius: 4,
-                    padding: "4px 10px",
-                    color: "var(--color-text-primary)",
-                  }}
-                >
+                <span key={d} className={styles.domainChip}>
                   @{d}
                   <button
                     onClick={() => removeDomain(d)}
-                    style={{
-                      color: "var(--color-text-tertiary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      lineHeight: 1,
-                    }}
+                    className={styles.ghostButton}
                   >
                     <X size={12} />
                   </button>
@@ -224,31 +216,16 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip }: YouCardS
               ))}
             </div>
           )}
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              margin: "4px 0 0",
-            }}
-          >
+          <p className={styles.helperText}>
             Helps distinguish internal meetings from external ones.
           </p>
         </div>
       </div>
 
       {/* Continue / Skip */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className={styles.flexBetween}>
         <button
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "0.04em",
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-          }}
+          className={styles.skipButton}
           onClick={() => {
             invoke("set_wizard_step", { step: "youcard" }).catch(() => {});
             onSkip();

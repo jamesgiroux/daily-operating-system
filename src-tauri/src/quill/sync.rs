@@ -52,14 +52,14 @@ pub fn should_sync_meeting(event: &CalendarEvent) -> bool {
 /// Returns the sync row ID on success, or an error message.
 /// Uses INSERT OR IGNORE so it's safe to call multiple times for the same meeting.
 pub fn create_sync_for_meeting(db: &ActionDb, meeting_id: &str) -> Result<String, String> {
-    // Check if a sync row already exists
-    match db.get_quill_sync_state(meeting_id) {
+    // Check if a Quill-source sync row already exists
+    match db.get_quill_sync_state_by_source(meeting_id, "quill") {
         Ok(Some(existing)) => return Ok(existing.id),
         Ok(None) => {}
         Err(e) => return Err(format!("Failed to check sync state: {}", e)),
     }
 
-    db.insert_quill_sync_state(meeting_id)
+    db.insert_quill_sync_state_with_source(meeting_id, "quill")
         .map_err(|e| format!("Failed to create sync row: {}", e))
 }
 
@@ -151,6 +151,26 @@ pub fn process_fetched_transcript_without_db(
     profile: &str,
     ai_config: Option<&crate::types::AiModelConfig>,
 ) -> Result<crate::types::TranscriptResult, String> {
+    process_fetched_transcript_without_db_with_kind(
+        sync_id,
+        meeting,
+        transcript_text,
+        workspace,
+        profile,
+        ai_config,
+        crate::processor::transcript::TranscriptContentKind::Transcript,
+    )
+}
+
+pub fn process_fetched_transcript_without_db_with_kind(
+    sync_id: &str,
+    meeting: &CalendarEvent,
+    transcript_text: &str,
+    workspace: &Path,
+    profile: &str,
+    ai_config: Option<&crate::types::AiModelConfig>,
+    content_kind: crate::processor::transcript::TranscriptContentKind,
+) -> Result<crate::types::TranscriptResult, String> {
     let temp_dir = workspace.join("_temp");
     let _ = std::fs::create_dir_all(&temp_dir);
     let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
@@ -161,13 +181,15 @@ pub fn process_fetched_transcript_without_db(
     let temp_path_str = temp_path.display().to_string();
 
     // Run the AI pipeline — this is the expensive part that must NOT hold the DB lock
-    let result = crate::processor::transcript::process_transcript(
+    let result = crate::processor::transcript::process_transcript_with_kind(
         workspace,
         &temp_path_str,
         meeting,
+        None,
         None, // No DB reference — caller writes captures after re-acquiring lock
         profile,
         ai_config,
+        content_kind,
     );
 
     let _ = std::fs::remove_file(&temp_path);
@@ -217,6 +239,7 @@ pub fn process_fetched_transcript(
         workspace,
         &temp_path_str,
         meeting,
+        None,
         Some(db),
         profile,
         ai_config,
