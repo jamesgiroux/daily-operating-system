@@ -29,7 +29,7 @@ for rel_path in "${HOTSPOT_FILES[@]}"; do
     continue
   fi
 
-  cutoff_line="$(rg -n '#\[cfg\(test\)\]' "$file_path" | head -n1 | cut -d: -f1 || true)"
+  cutoff_line="$(grep -n '#\[cfg(test)\]' "$file_path" | head -n1 | cut -d: -f1 || true)"
   if [[ -z "$cutoff_line" ]]; then
     cutoff_line=999999
   fi
