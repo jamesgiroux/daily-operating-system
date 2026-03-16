@@ -106,6 +106,7 @@ export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdat
           display: "flex",
           gap: 48,
           marginBottom: 40,
+          flexWrap: "wrap",
         }}
       >
         <EditableVitalStat
@@ -118,7 +119,7 @@ export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdat
         />
         <EditableVitalStat
           label="Total ARR"
-          value={content.totalArr != null ? `$${formatArr(content.totalArr)}` : "\u2014"}
+          value={`$${formatArr(content.totalArr)}`}
           onChange={(v) => {
             const n = parseFloat(v.replace(/[^0-9.]/g, ""));
             if (!isNaN(n)) onUpdate({ ...content, totalArr: n });
@@ -126,24 +127,55 @@ export function CoverSlide({ content, isStale, onRegenerate, generating, onUpdat
         />
         <EditableVitalStat
           label="At-Risk ARR"
-          value={content.atRiskArr != null ? `$${formatArr(content.atRiskArr)}` : "\u2014"}
-          danger={(content.atRiskArr ?? 0) > 0}
+          value={`$${formatArr(content.atRiskArr)}`}
+          danger={content.atRiskArr > 0}
           onChange={(v) => {
             const n = parseFloat(v.replace(/[^0-9.]/g, ""));
             if (!isNaN(n)) onUpdate({ ...content, atRiskArr: n });
           }}
         />
         <EditableVitalStat
-          label="Upcoming Renewals"
-          value={`${content.upcomingRenewals}${content.upcomingRenewalsArr != null ? ` ($${formatArr(content.upcomingRenewalsArr)})` : ""}`}
+          label="Projected Churn"
+          value={`$${formatArr(content.projectedChurn)}`}
+          danger={content.projectedChurn > 0}
           small
           onChange={(v) => {
-            // Parse "N ($XYk)" format — extract the count
-            const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
-            if (!isNaN(n)) onUpdate({ ...content, upcomingRenewals: n });
+            const n = parseFloat(v.replace(/[^0-9.]/g, ""));
+            if (!isNaN(n)) onUpdate({ ...content, projectedChurn: n });
           }}
         />
       </div>
+
+      {/* Biggest risk / upside callouts */}
+      {(content.biggestRisk || content.biggestUpside) && (
+        <div style={{ display: "flex", gap: 48, marginBottom: 32 }}>
+          {content.biggestRisk && (
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-spice-terracotta)", marginBottom: 4 }}>
+                Biggest Risk
+              </div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                {content.biggestRisk.accountName} — ${formatArr(content.biggestRisk.arr)}
+              </div>
+            </div>
+          )}
+          {content.biggestUpside && (
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-garden-sage)", marginBottom: 4 }}>
+                Biggest Upside
+              </div>
+              <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                {content.biggestUpside.accountName} — ${formatArr(content.biggestUpside.arr)}
+              </div>
+            </div>
+          )}
+          {content.eltHelpRequired && (
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-spice-saffron)", alignSelf: "center", background: "color-mix(in srgb, var(--color-spice-saffron) 10%, transparent)", padding: "4px 12px", borderRadius: 4 }}>
+              ELT Help Required
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Executive summary */}
       <EditableText

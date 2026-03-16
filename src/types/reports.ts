@@ -147,17 +147,26 @@ export interface EbrQbrContent {
   nextSteps: EbrQbrAction[];
 }
 
-// Book of Business content schema (mirrors Rust BookOfBusinessContent)
-export interface BookRiskItem {
+// Book of Business content schema — template-aligned (14 slides)
+
+export interface BiggestItem {
   accountName: string;
-  risk: string;
-  arr: number | null;
+  arr: number;
+  description: string;
 }
 
-export interface BookOpportunityItem {
-  accountName: string;
-  opportunity: string;
-  estimatedValue: string | null;
+export interface PortfolioHealthOverview {
+  healthyCount: number;
+  healthyArr: number;
+  mediumCount: number;
+  mediumArr: number;
+  highRiskCount: number;
+  highRiskArr: number;
+  secureArr: number;
+  renewals90d: number;
+  renewals90dArr: number;
+  renewals180d: number;
+  renewals180dArr: number;
 }
 
 export interface AccountSnapshotRow {
@@ -176,22 +185,91 @@ export interface AccountSnapshotRow {
   parentId?: string;
 }
 
-export interface AccountDeepDive {
+export interface RiskAccountRow {
   accountName: string;
-  accountId: string;
-  arr: number | null;
-  renewalDate: string | null;
-  statusNarrative: string;
-  activeWorkstreams: string[];
-  renewalOrGrowthImpact: string;
-  risksAndGaps: string[];
+  arr: number;
+  renewalTiming: string;
+  riskLevel: string;
+  primaryRiskDriver: string;
 }
 
-export interface ValueDeliveredRow {
+export interface RetentionRiskDeepDive {
   accountName: string;
-  headlineOutcome: string;
+  arr: number;
+  whyAtRisk: string;
+  saveConfidence: string;
+  next90Days: string;
+  keyTactics: string[];
+  successSignals: string[];
+  helpNeeded: string[];
+}
+
+export interface SaveMotion {
+  accountName: string;
+  risk: string;
+  saveMotion: string;
+  timeline: string;
+  successSignals: string;
+}
+
+export interface ExpansionRow {
+  accountName: string;
+  arr: number;
+  readiness: string;
+  expansionType: string;
+  estimatedValue: string;
+  timing: string;
+}
+
+export interface ExpansionReadiness {
+  accountName: string;
+  readiness: string;
+  primaryRisk: string;
+  nextAction: string;
+}
+
+export interface YearEndOutlook {
+  startingArr: number;
+  atRiskArr: number;
+  committedExpansion: number;
+  expectedChurn: number;
+  projectedEoyArr: number;
+}
+
+export interface LandingScenarios {
+  best: ScenarioRow;
+  expected: ScenarioRow;
+  worst: ScenarioRow;
+}
+
+export interface ScenarioRow {
+  keyAssumptions: string;
+  attrition: string;
+  expansion: string;
+  notes: string;
+}
+
+export interface LeadershipAsk {
+  supportNeeded: string;
   whyItMatters: string;
-  source: string | null;
+  impactedAccounts: string[];
+  dollarImpact: string | null;
+  timing: string;
+}
+
+export interface AccountFocus {
+  rank: number;
+  accountName: string;
+  arr: number;
+  primaryObjective: string;
+  keyTactics: string[];
+  successSignals: string[];
+}
+
+export interface QuarterlyFocus {
+  retention: string[];
+  expansion: string[];
+  execution: string[];
 }
 
 export interface BookTheme {
@@ -200,29 +278,46 @@ export interface BookTheme {
   citedAccounts: string[];
 }
 
-export interface LeadershipAsk {
-  ask: string;
-  context: string;
-  impactedAccounts: string[];
-  status: string | null;
-}
-
 export interface BookOfBusinessContent {
+  // Slide 1: Executive Summary
   periodLabel: string;
   executiveSummary: string;
   totalAccounts: number;
-  totalArr: number | null;
-  atRiskArr: number | null;
-  upcomingRenewals: number;
-  upcomingRenewalsArr: number | null;
-  hasLeadershipAsks: boolean;
-  topRisks: BookRiskItem[];
-  topOpportunities: BookOpportunityItem[];
-  accountSnapshot: AccountSnapshotRow[];
-  deepDives: AccountDeepDive[];
-  valueDelivered: ValueDeliveredRow[];
-  keyThemes: BookTheme[];
+  totalArr: number;
+  atRiskArr: number;
+  committedExpansion: number;
+  projectedChurn: number;
+  topRisksSummary: string[];
+  topOpportunitiesSummary: string[];
+  biggestRisk: BiggestItem | null;
+  biggestUpside: BiggestItem | null;
+  eltHelpRequired: boolean;
+  // Slide 2: Portfolio Health
+  healthOverview: PortfolioHealthOverview;
+  // Slide 3: Risk Table
+  riskAccounts: RiskAccountRow[];
+  // Slide 4: Retention Risk Deep Dives
+  retentionRiskDeepDives: RetentionRiskDeepDive[];
+  // Slide 5: Save Motions
+  saveMotions: SaveMotion[];
+  // Slide 6: Expansion
+  expansionAccounts: ExpansionRow[];
+  // Slide 7: Expansion Readiness
+  expansionReadiness: ExpansionReadiness[];
+  // Slide 8: Year-End Outlook
+  yearEndOutlook: YearEndOutlook;
+  // Slide 9: Landing Scenarios
+  landingScenarios: LandingScenarios;
+  // Slide 10+14: Leadership Asks
   leadershipAsks: LeadershipAsk[];
+  // Slide 11: Account Focus
+  accountFocus: AccountFocus[];
+  // Slide 12: Quarterly Focus
+  quarterlyFocus: QuarterlyFocus;
+  // Slide 13: Key Themes
+  keyThemes: BookTheme[];
+  // Account snapshot
+  accountSnapshot: AccountSnapshotRow[];
 }
 
 // Human-readable labels per report type
