@@ -1159,3 +1159,277 @@ mod tests {
         assert_eq!(DIMENSION_NAMES.len(), 6);
     }
 }
+
+// ==========================================================================
+// I619 — Prompt Evaluation Suite: dimension prompt + merge tests
+// ==========================================================================
+
+#[cfg(test)]
+mod eval_tests {
+    use super::*;
+
+    fn empty_intel() -> IntelligenceJson {
+        IntelligenceJson::default()
+    }
+
+    fn make_ctx() -> IntelligenceContext {
+        IntelligenceContext {
+            facts_block: "ARR: $120K\nHealth: green".to_string(),
+            meeting_history: "2026-03-10: QBR".to_string(),
+            stakeholders: "Jane Doe — VP Engineering".to_string(),
+            recent_email_signals: "3 emails last week".to_string(),
+            recent_captures: "Win: reduced churn 20%".to_string(),
+            ..Default::default()
+        }
+    }
+
+    // ── Category 1 (supplement): Dimension prompt construction ──
+
+    #[test]
+    fn eval_dimension_prompt_includes_evidence_guidance() {
+        let ctx = make_ctx();
+        for dim in DIMENSION_NAMES {
+            let prompt =
+                build_dimension_prompt(dim, "TestCo", "account", None, &ctx, false);
+            assert!(
+                prompt.contains("itemSource") || prompt.contains("source"),
+                "Dimension '{}' prompt must request source attribution",
+                dim
+            );
+            assert!(
+                prompt.contains("JSON"),
+                "Dimension '{}' prompt must request JSON output",
+                dim
+            );
+        }
+    }
+
+    #[test]
+    fn eval_dimension_prompt_core_assessment_includes_risk_schema() {
+        let ctx = make_ctx();
+        let prompt =
+            build_dimension_prompt("core_assessment", "TestCo", "account", None, &ctx, false);
+        assert!(
+            prompt.contains("executiveAssessment"),
+            "Core assessment must include executiveAssessment"
+        );
+        assert!(
+            prompt.contains("risks"),
+            "Core assessment must include risks"
+        );
+        assert!(
+            prompt.contains("recentWins"),
+            "Core assessment must include recentWins"
+        );
+    }
+
+    #[test]
+    fn eval_glean_prompt_includes_confidence_tiers() {
+        let ctx = make_ctx();
+        let prompt = super::super::glean_prompts::build_glean_enrichment_prompt(
+            "TestCo", "account", None, &ctx, false,
+        );
+        assert!(
+            prompt.contains("CRM") || prompt.contains("Salesforce"),
+            "Glean prompt must reference CRM source"
+        );
+        assert!(
+            prompt.contains("confidence"),
+            "Glean prompt must mention confidence"
+        );
+        assert!(
+            prompt.contains("JSON"),
+            "Glean prompt must request JSON output"
+        );
+    }
+
+    // ── Category 4: Dimension Merge Tests ──
+
+    #[test]
+    fn eval_merge_core_assessment_preserves_unrelated_fields() {
+        let mut existing = empty_intel();
+        existing.stakeholder_insights = vec![super::super::io::StakeholderInsight {
+            name: "Alice".to_string(),
+            role: Some("VP".to_string()),
+            assessment: None,
+            engagement: None,
+            source: None,
+            person_id: None,
+            suggested_person_id: None,
+            item_source: None,
+            discrepancy: None,
+        }];
+        existing.contract_context = Some(super::super::io::ContractContext {
+            contract_type: Some("annual".to_string()),
+            ..Default::default()
+        });
+
+        let mut partial = empty_intel();
+        partial.executive_assessment = Some("Updated assessment".to_string());
+        partial.risks = vec![super::super::io::IntelRisk {
+            text: "New risk identified".to_string(),
+            source: Some("meeting".to_string()),
+            urgency: "critical".to_string(),
+            item_source: None,
+            discrepancy: None,
+        }];
+        partial.recent_wins = vec![super::super::io::IntelWin {
+            text: "New win".to_string(),
+            source: None,
+            impact: Some("high".to_string()),
+            item_source: None,
+            discrepancy: None,
+        }];
+
+        merge_dimension_into(&mut existing, "core_assessment", &partial).unwrap();
+
+        // Core fields updated
+        assert_eq!(
+            existing.executive_assessment,
+            Some("Updated assessment".to_string())
+        );
+        assert_eq!(existing.risks.len(), 1);
+        assert_eq!(existing.recent_wins.len(), 1);
+
+        // Unrelated fields preserved
+        assert_eq!(existing.stakeholder_insights.len(), 1, "Stakeholders must be preserved");
+        assert_eq!(existing.stakeholder_insights[0].name, "Alice");
+        assert!(existing.contract_context.is_some(), "Contract context must be preserved");
+    }
+
+    #[test]
+    fn eval_merge_commercial_financial_preserves_core_fields() {
+        let mut existing = empty_intel();
+        existing.executive_assessment = Some("Existing assessment".to_string());
+        existing.risks = vec![super::super::io::IntelRisk {
+            text: "Existing risk".to_string(),
+            source: None,
+            urgency: "watch".to_string(),
+            item_source: None,
+            discrepancy: None,
+        }];
+
+        let mut partial = empty_intel();
+        partial.contract_context = Some(super::super::io::ContractContext {
+            contract_type: Some("multi-year".to_string()),
+            ..Default::default()
+        });
+        partial.expansion_signals = vec![super::super::io::ExpansionSignal {
+            opportunity: "EMEA expansion".to_string(),
+            arr_impact: None,
+            source: Some("QBR".to_string()),
+            stage: Some("exploring".to_string()),
+            strength: Some("strong".to_string()),
+            item_source: None,
+            discrepancy: None,
+        }];
+
+        merge_dimension_into(&mut existing, "commercial_financial", &partial).unwrap();
+
+        // Commercial fields updated
+        assert!(existing.contract_context.is_some());
+        assert_eq!(existing.expansion_signals.len(), 1);
+
+        // Core fields preserved
+        assert_eq!(
+            existing.executive_assessment,
+            Some("Existing assessment".to_string()),
+            "Executive assessment must be preserved"
+        );
+        assert_eq!(existing.risks.len(), 1, "Risks must be preserved");
+    }
+
+    #[test]
+    fn eval_merge_all_six_dimensions_sequentially() {
+        let mut existing = empty_intel();
+
+        // Merge core_assessment
+        let mut p1 = empty_intel();
+        p1.executive_assessment = Some("Assessment".to_string());
+        p1.risks = vec![super::super::io::IntelRisk {
+            text: "Risk 1".to_string(),
+            source: None,
+            urgency: "watch".to_string(),
+            item_source: None,
+            discrepancy: None,
+        }];
+        merge_dimension_into(&mut existing, "core_assessment", &p1).unwrap();
+
+        // Merge stakeholder_champion
+        let mut p2 = empty_intel();
+        p2.stakeholder_insights = vec![super::super::io::StakeholderInsight {
+            name: "Bob".to_string(),
+            role: Some("CTO".to_string()),
+            assessment: None,
+            engagement: Some("high".to_string()),
+            source: None,
+            person_id: None,
+            suggested_person_id: None,
+            item_source: None,
+            discrepancy: None,
+        }];
+        merge_dimension_into(&mut existing, "stakeholder_champion", &p2).unwrap();
+
+        // Merge commercial_financial
+        let mut p3 = empty_intel();
+        p3.contract_context = Some(super::super::io::ContractContext {
+            contract_type: Some("annual".to_string()),
+            ..Default::default()
+        });
+        merge_dimension_into(&mut existing, "commercial_financial", &p3).unwrap();
+
+        // Merge strategic_context
+        let mut p4 = empty_intel();
+        p4.competitive_context = vec![super::super::io::CompetitiveInsight {
+            competitor: "CompetitorX".to_string(),
+            context: Some("Evaluating".to_string()),
+            threat_level: Some("evaluation".to_string()),
+            source: None,
+            detected_at: None,
+            item_source: None,
+            discrepancy: None,
+        }];
+        merge_dimension_into(&mut existing, "strategic_context", &p4).unwrap();
+
+        // Merge value_success
+        let mut p5 = empty_intel();
+        p5.success_metrics = Some(vec![super::super::io::SuccessMetric {
+            name: "Adoption".to_string(),
+            target: Some("90%".to_string()),
+            current: Some("85%".to_string()),
+            status: Some("on_track".to_string()),
+            owner: None,
+        }]);
+        merge_dimension_into(&mut existing, "value_success", &p5).unwrap();
+
+        // Merge engagement_signals
+        let mut p6 = empty_intel();
+        p6.meeting_cadence = Some(super::super::io::CadenceAssessment {
+            meetings_per_month: Some(2.0),
+            trend: Some("stable".to_string()),
+            assessment: Some("healthy".to_string()),
+            ..Default::default()
+        });
+        merge_dimension_into(&mut existing, "engagement_signals", &p6).unwrap();
+
+        // All fields from all dimensions should be present
+        assert!(existing.executive_assessment.is_some(), "Core: assessment");
+        assert_eq!(existing.risks.len(), 1, "Core: risks");
+        assert_eq!(existing.stakeholder_insights.len(), 1, "Stakeholder: insights");
+        assert!(existing.contract_context.is_some(), "Commercial: contract");
+        assert_eq!(existing.competitive_context.len(), 1, "Strategic: competitive");
+        assert!(existing.success_metrics.is_some(), "Value: metrics");
+        assert!(existing.meeting_cadence.is_some(), "Engagement: cadence");
+    }
+
+    #[test]
+    fn eval_merge_unknown_dimension_returns_error() {
+        let mut existing = empty_intel();
+        let partial = empty_intel();
+        let result = merge_dimension_into(&mut existing, "nonexistent_dimension", &partial);
+        assert!(
+            result.is_err(),
+            "Unknown dimension must return an error"
+        );
+    }
+}

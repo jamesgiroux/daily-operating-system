@@ -65,6 +65,7 @@ pub mod self_healing;
 pub mod services;
 pub mod signals;
 pub mod state;
+mod task_supervisor;
 pub mod types;
 pub mod util;
 mod watcher;
@@ -190,92 +191,115 @@ pub fn run() {
             // Start inbox file watcher
             watcher::start_watcher(state.clone(), app.handle().clone());
 
-            // Spawn calendar poller (Phase 3A)
+            // Spawn calendar poller (Phase 3A) — supervised (I616)
             let poller_state = state.clone();
             let poller_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                google::run_calendar_poller(poller_state, poller_handle).await;
+            task_supervisor::spawn_supervised("CalendarPoller", move || {
+                let s = poller_state.clone();
+                let h = poller_handle.clone();
+                async move { google::run_calendar_poller(s, h).await }
             });
 
-            // Spawn email poller
+            // Spawn email poller — supervised (I616)
             let email_poller_state = state.clone();
             let email_poller_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                google::run_email_poller(email_poller_state, email_poller_handle).await;
+            task_supervisor::spawn_supervised("EmailPoller", move || {
+                let s = email_poller_state.clone();
+                let h = email_poller_handle.clone();
+                async move { google::run_email_poller(s, h).await }
             });
 
-            // Spawn capture detection loop (Phase 3B)
+            // Spawn capture detection loop (Phase 3B) — supervised (I616)
             let capture_state = state.clone();
             let capture_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                capture::run_capture_loop(capture_state, capture_handle).await;
+            task_supervisor::spawn_supervised("CaptureLoop", move || {
+                let s = capture_state.clone();
+                let h = capture_handle.clone();
+                async move { capture::run_capture_loop(s, h).await }
             });
 
-            // Spawn intelligence enrichment processor (I132)
+            // Spawn intelligence enrichment processor (I132) — supervised (I616)
             let intel_state = state.clone();
             let intel_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                intel_queue::run_intel_processor(intel_state, intel_handle).await;
+            task_supervisor::spawn_supervised("IntelProcessor", move || {
+                let s = intel_state.clone();
+                let h = intel_handle.clone();
+                async move { intel_queue::run_intel_processor(s, h).await }
             });
 
-            // Spawn meeting prep queue processor
+            // Spawn meeting prep queue processor — supervised (I616)
             let prep_state = state.clone();
             let prep_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                meeting_prep_queue::run_meeting_prep_processor(prep_state, prep_handle).await;
+            task_supervisor::spawn_supervised("MeetingPrepProcessor", move || {
+                let s = prep_state.clone();
+                let h = prep_handle.clone();
+                async move { meeting_prep_queue::run_meeting_prep_processor(s, h).await }
             });
 
-            // Spawn background embedding processor (Sprint 26)
+            // Spawn background embedding processor (Sprint 26) — supervised (I616)
             let embedding_state = state.clone();
             let embedding_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                processor::embeddings::run_embedding_processor(embedding_state, embedding_handle)
-                    .await;
+            task_supervisor::spawn_supervised("EmbeddingProcessor", move || {
+                let s = embedding_state.clone();
+                let h = embedding_handle.clone();
+                async move {
+                    processor::embeddings::run_embedding_processor(s, h).await;
+                }
             });
 
-            // Spawn hygiene scanner loop (I145 — ADR-0058)
+            // Spawn hygiene scanner loop (I145 — ADR-0058) — supervised (I616)
             let hygiene_state = state.clone();
             let hygiene_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                hygiene::run_hygiene_loop(hygiene_state, hygiene_handle).await;
+            task_supervisor::spawn_supervised("HygieneLoop", move || {
+                let s = hygiene_state.clone();
+                let h = hygiene_handle.clone();
+                async move { hygiene::run_hygiene_loop(s, h).await }
             });
 
-            // Spawn Quill transcript poller
+            // Spawn Quill transcript poller — supervised (I616)
             let quill_state = state.clone();
             let quill_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                quill::poller::run_quill_poller(quill_state, quill_handle).await;
+            task_supervisor::spawn_supervised("QuillPoller", move || {
+                let s = quill_state.clone();
+                let h = quill_handle.clone();
+                async move { quill::poller::run_quill_poller(s, h).await }
             });
 
-            // Spawn Granola transcript poller (I226)
+            // Spawn Granola transcript poller (I226) — supervised (I616)
             let granola_state = state.clone();
             let granola_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                granola::poller::run_granola_poller(granola_state, granola_handle).await;
+            task_supervisor::spawn_supervised("GranolaPoller", move || {
+                let s = granola_state.clone();
+                let h = granola_handle.clone();
+                async move { granola::poller::run_granola_poller(s, h).await }
             });
 
-            // Spawn unified enrichment processor (Clay + Gravatar)
+            // Spawn unified enrichment processor (Clay + Gravatar) — supervised (I616)
             let enrichment_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                enrichment::run_enrichment_processor(enrichment_state).await;
+            task_supervisor::spawn_supervised("EnrichmentProcessor", move || {
+                let s = enrichment_state.clone();
+                async move { enrichment::run_enrichment_processor(s).await }
             });
 
-            // Spawn Linear sync poller (I346)
+            // Spawn Linear sync poller (I346) — supervised (I616)
             let linear_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                linear::poller::run_linear_poller(linear_state).await;
+            task_supervisor::spawn_supervised("LinearPoller", move || {
+                let s = linear_state.clone();
+                async move { linear::poller::run_linear_poller(s).await }
             });
 
-            // Spawn Google Drive poller (I426)
+            // Spawn Google Drive poller (I426) — supervised (I616)
             let drive_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                google_drive::poller::run_drive_poller(drive_state).await;
+            task_supervisor::spawn_supervised("DrivePoller", move || {
+                let s = drive_state.clone();
+                async move { google_drive::poller::run_drive_poller(s).await }
             });
 
-            // Spawn event-driven entity resolution trigger (I308)
+            // Spawn event-driven entity resolution trigger (I308) — supervised (I616)
             let entity_res_state = state.clone();
-            tauri::async_runtime::spawn(async move {
-                signals::event_trigger::run_entity_resolution_trigger(entity_res_state).await;
+            task_supervisor::spawn_supervised("EntityResolutionTrigger", move || {
+                let s = entity_res_state.clone();
+                async move { signals::event_trigger::run_entity_resolution_trigger(s).await }
             });
 
             // Create tray menu

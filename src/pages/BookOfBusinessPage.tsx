@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import {
   FileText, AlertTriangle, Shield, TrendingUp, Target,
   Calendar, MessageSquare, Layers, Check,
@@ -189,7 +190,10 @@ export default function BookOfBusinessPage() {
           if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
           fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
         })
-        .catch((e) => console.error("Failed to save book of business report:", e));
+        .catch((e) => {
+          console.error("Failed to save book of business report:", e);
+          toast.error("Failed to save report");
+        });
     }, 500);
   }, [userId]);
 

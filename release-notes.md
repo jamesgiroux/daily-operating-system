@@ -10,6 +10,30 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.0.0 — Your chief of staff is ready
+
+DailyOS is a personal chief of staff that runs entirely on your Mac. Connect your Google Calendar and Gmail, and it prepares your workday before you open the app — daily briefings, meeting prep, account insights, and action tracking. No servers, no subscriptions beyond Claude. Your data never leaves your machine.
+
+This is the 1.0 release. The architecture is solid, the intelligence is real, and the experience is designed for Customer Success professionals who manage a book of business.
+
+**Every account gets a health score.** Six dimensions — champion health, stakeholder coverage, engagement patterns, meeting cadence, signal momentum, and financial proximity — combine into one number with a trend arrow. Sparse accounts get an honest confidence qualifier instead of a misleading score. Open any account to see the full breakdown, with the evidence behind every dimension.
+
+**Your meetings know what happened last time.** When you process a transcript, DailyOS extracts categorized wins (not just "things went well" — specific adoption milestones, expansion signals, advocacy moments), risks with urgency levels, champion health changes, and commitments made. All of this flows into the next meeting's briefing automatically. Walk into every meeting knowing what matters.
+
+**Success Plans keep your accounts on track.** Set objectives and milestones for any account. Choose from four templates (onboarding, growth, renewal, at-risk) or build your own. When a lifecycle event happens — like a renewal closing — related milestones auto-complete. AI suggests new objectives based on what it hears in your meetings.
+
+**Search everything.** Press Cmd+K to find any account, person, project, meeting, or action. Results appear in under 300 milliseconds.
+
+**Works offline.** Disconnect from the internet — your briefings and account context are all cached locally. A status indicator shows what's current and what's stale. No blank screens, ever.
+
+**Your data, explained and exportable.** Settings tells you exactly what's stored and for how long. Export everything as a ZIP. Clear your data or delete everything with one click. This is your brain — you own it completely.
+
+**Glean integration (for enterprise teams).** If your company uses Glean, DailyOS pulls from Salesforce, Zendesk, Gong, Slack, and your org directory — producing richer context than local-only analysis. Everything still runs on your Mac; Glean just gives it more to work with. Connect during onboarding or in Settings.
+
+**Built to stay out of your way.** Background work runs on dedicated threads — no beach balls during updates. If something fails in the background, it restarts automatically. The app launches to a branded welcome screen instantly, not a blank window. Errors tell you what happened instead of failing silently.
+
+---
+
 ## v0.16.0 — A better start
 
 Before today, opening DailyOS for the first time meant staring at an empty screen. No guidance, no demonstration of what's possible, no clear path to getting value. You had to know what to connect and what to fill in — without any indication of whether it was worth the effort.

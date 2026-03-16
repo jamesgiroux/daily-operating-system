@@ -146,7 +146,9 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   // Up Next meeting (first upcoming, not past/cancelled)
   const upNext = findUpNextMeeting(meetings, now);
   const unpreppedHighStakes = findUnpreppedHighStakes(meetings, now, upNext?.id);
-  const scheduleMeetings = meetings;
+  // Only show meetings with invitees — filter out personal/solo calendar blocks
+  // (classified as "personal" by google_api/classify.rs rule 2: 0-1 attendees)
+  const scheduleMeetings = meetings.filter((m) => m.type !== "personal");
 
   // Readiness
   const readiness = computeReadiness(meetings, actions);

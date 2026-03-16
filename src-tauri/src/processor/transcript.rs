@@ -2814,3 +2814,229 @@ END_DECISIONS";
         assert!(parsed.risks[2].starts_with("[GREEN_WATCH]"));
     }
 }
+
+// ==========================================================================
+// I619 — Prompt Evaluation Suite: transcript extraction quality tests
+// ==========================================================================
+
+#[cfg(test)]
+mod eval_tests {
+    use super::*;
+
+    // ── Category 3: Transcript Extraction Quality Tests ──
+
+    #[test]
+    fn eval_transcript_wins_have_subtypes() {
+        let response =
+            include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
+        let parsed = parse_enrichment_response(response);
+
+        assert!(
+            parsed.wins.len() >= 3,
+            "Full transcript must extract 3+ wins, got {}",
+            parsed.wins.len()
+        );
+
+        let valid_subtypes = [
+            "ADOPTION",
+            "EXPANSION",
+            "VALUE_REALIZED",
+            "RELATIONSHIP",
+            "COMMERCIAL",
+            "ADVOCACY",
+        ];
+        for win in &parsed.wins {
+            let has_subtype = valid_subtypes
+                .iter()
+                .any(|st| win.contains(&format!("[{}]", st)));
+            assert!(
+                has_subtype,
+                "Win must have a valid sub-type tag: {}",
+                win
+            );
+        }
+    }
+
+    #[test]
+    fn eval_transcript_risks_have_urgency_tiers() {
+        let response =
+            include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
+        let parsed = parse_enrichment_response(response);
+
+        assert!(
+            parsed.risks.len() >= 3,
+            "Full transcript must extract 3+ risks, got {}",
+            parsed.risks.len()
+        );
+
+        let valid_urgencies = ["RED", "YELLOW", "GREEN_WATCH"];
+        for risk in &parsed.risks {
+            let has_urgency = valid_urgencies
+                .iter()
+                .any(|u| risk.contains(&format!("[{}]", u)));
+            assert!(
+                has_urgency,
+                "Risk must have urgency tier tag: {}",
+                risk
+            );
+        }
+
+        // Verify we have at least one of each tier
+        assert!(
+            parsed.risks.iter().any(|r| r.contains("[RED]")),
+            "Must have at least one RED risk"
+        );
+        assert!(
+            parsed.risks.iter().any(|r| r.contains("[YELLOW]")),
+            "Must have at least one YELLOW risk"
+        );
+        assert!(
+            parsed.risks.iter().any(|r| r.contains("[GREEN_WATCH]")),
+            "Must have at least one GREEN_WATCH risk"
+        );
+    }
+
+    #[test]
+    fn eval_champion_departure_flagged_as_lost() {
+        let response =
+            include_str!("../intelligence/fixtures/transcript_champion_departure.txt");
+
+        let champion = parse_champion_health_block(response);
+        assert!(
+            champion.is_some(),
+            "Champion departure fixture must produce champion health"
+        );
+        let ch = champion.unwrap();
+        assert_eq!(
+            ch.champion_status, "lost",
+            "Departed champion must have 'lost' status"
+        );
+        assert_eq!(ch.champion_name, "Mike Torres");
+        assert!(
+            ch.champion_risk.is_some(),
+            "Lost champion must have risk assessment"
+        );
+
+        // Verify RED risks present for champion departure
+        let parsed = parse_enrichment_response(response);
+        assert!(
+            parsed.risks.iter().any(|r| r.contains("[RED]")),
+            "Champion departure must produce at least one RED risk"
+        );
+    }
+
+    #[test]
+    fn eval_generic_sentiment_not_extracted_as_win() {
+        let response =
+            include_str!("../intelligence/fixtures/transcript_generic_sentiment.txt");
+        let parsed = parse_enrichment_response(response);
+
+        // The generic sentiment fixture should produce zero wins
+        assert!(
+            parsed.wins.is_empty(),
+            "Generic sentiment should NOT produce wins, got: {:?}",
+            parsed.wins
+        );
+    }
+
+    #[test]
+    fn eval_transcript_sentiment_parsing() {
+        let response =
+            include_str!("../intelligence/fixtures/transcript_extraction_full.txt");
+        let sentiment = parse_sentiment_block(response);
+        assert!(
+            sentiment.is_some(),
+            "Full transcript must produce sentiment block"
+        );
+        let s = sentiment.unwrap();
+
+        // Verify core fields
+        assert!(
+            s.overall.is_some(),
+            "Sentiment must have overall rating"
+        );
+        assert!(
+            s.engagement.is_some(),
+            "Sentiment must have engagement level"
+        );
+
+        // I554 expanded markers
+        assert!(
+            s.ownership_language.is_some(),
+            "Sentiment must have ownership_language (I554)"
+        );
+        assert!(
+            s.roadmap_interest.is_some(),
+            "Sentiment must have roadmap_interest (I554)"
+        );
+        assert!(
+            s.internal_advocacy_visible.is_some(),
+            "Sentiment must have internal_advocacy_visible (I554)"
+        );
+    }
+
+    #[test]
+    fn eval_transcript_phase3_dynamics_parsing() {
+        let response =
+            include_str!("../intelligence/fixtures/transcript_phase3_dynamics.txt");
+
+        // Commitments
+        let commitments = parse_commitments_block(response);
+        assert!(
+            commitments.len() >= 2,
+            "Must extract 2+ commitments, got {}",
+            commitments.len()
+        );
+        // Verify commitment has ownership
+        assert!(
+            commitments.iter().any(|c| c.owned_by.is_some()),
+            "At least one commitment must have owned_by"
+        );
+        // Verify commitment has target date
+        assert!(
+            commitments.iter().any(|c| c.target_date.is_some()),
+            "At least one commitment must have target_date"
+        );
+
+        // Role changes
+        let role_changes = parse_role_changes_block(response);
+        assert!(
+            role_changes.len() >= 2,
+            "Must extract 2+ role changes, got {}",
+            role_changes.len()
+        );
+        assert_eq!(role_changes[0].person_name, "Sarah Chen");
+        assert!(
+            role_changes[0].old_status.is_some(),
+            "Role change must have old status"
+        );
+        assert!(
+            role_changes[0].new_status.is_some(),
+            "Role change must have new status"
+        );
+
+        // Interaction dynamics
+        let dynamics = parse_interaction_dynamics(response);
+        assert!(
+            dynamics.is_some(),
+            "Must parse interaction dynamics"
+        );
+        let d = dynamics.unwrap();
+        assert!(
+            d.talk_balance.is_some(),
+            "Must have talk balance"
+        );
+        assert!(
+            !d.speaker_sentiment.is_empty(),
+            "Must have speaker sentiment entries"
+        );
+        assert!(
+            !d.competitor_mentions.is_empty(),
+            "Must have competitor mentions"
+        );
+        assert!(
+            !d.escalation_signals.is_empty(),
+            "Must have escalation signals"
+        );
+    }
+}

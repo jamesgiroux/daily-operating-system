@@ -5,6 +5,59 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.0.0] — 2026-03-16
+
+### Added
+
+- **Health scoring engine** — every account gets a health score powered by 6 algorithmic dimensions (champion health, stakeholder coverage, email engagement, cadence consistency, signal momentum, financial proximity). Scores update as new data arrives. Sparse accounts (one meeting, no email) get a confidence qualifier instead of a misleading number.
+- **Intelligence schema redesign** — 6 research-grounded dimensions replace the flat intelligence blob. Sub-struct types (I508a), source-agnostic enrichment prompts (I508b), and multi-query dimension coverage (I508c).
+- **Transcript signal fidelity** — wins extracted with 6 sub-types (ADOPTION, EXPANSION, RETENTION, ADVOCACY, MILESTONE, VALUE_REALIZATION). Risks carry urgency tiers (RED, YELLOW, GREEN_WATCH). Champion health assessed per meeting. Verbatim evidence quotes captured. Generic sentiment ("customer seems happy") filtered out.
+- **Success Plans** — objectives, milestones, and templates for account lifecycle management. Auto-complete milestones on lifecycle events. AI suggestions from transcript commitments and entity assessment. 4 built-in templates (onboarding, growth, renewal, at-risk).
+- **Account detail editorial redesign** — margin label layout, hero with executive assessment, pull quotes, State of Play two-column treatment, scroll-driven reveal. Value & Commitments, Competitive & Strategic Landscape, and Outlook chapters surface previously hidden intelligence.
+- **Meeting post-intelligence** — meetings with transcripts show engagement dynamics (talk balance, speaker sentiment), champion health, urgency-sorted outcomes, and role changes.
+- **Full-text search** — Cmd+K via SQLite FTS5. Accounts, people, projects, meetings, actions, emails. Results in < 300ms.
+- **Offline/degraded mode** — cached intelligence when APIs unavailable. System status indicator. No blank screens.
+- **Data export** — JSON ZIP of all entities, signals, intelligence from Settings → Data.
+- **Privacy clarity** — Settings explains what's stored, how long. Clear intelligence and delete all data options.
+- **Intelligence feedback UI** — hover-triggered thumbs up/down on any intelligence item. Feeds Bayesian source weights. Signal taxonomy: delete = curation (no penalty), edit = correction (source penalized).
+- **Glean-first intelligence (ADR-0100)** — Glean MCP `chat` tool as primary enrichment engine when connected. Tiered signal confidence (CRM 0.9, Zendesk 0.85, Gong 0.8, AI 0.7, Slack 0.5). PTY fallback for non-Glean users.
+- **Glean onboarding** — 3-connector wizard (Google, Claude, Glean). Account discovery, profile pre-fill from org directory, background enrichment.
+- **Automatic connector management** — Additive/Governed strategy removed. Token health monitoring with pre-expiry notifications. In-app re-auth without restart.
+- **Welcome screen** — branded asterisk + "DailyOS" appears instantly at window-show before JS executes. Eliminates blank window on cold and warm start.
+- **Background task supervisor** — all 13 long-lived background tasks wrapped in restart-on-panic with exponential backoff. No more silent subsystem death.
+- **Prompt evaluation suite** — 29 golden fixture tests validating prompt construction, response parsing, transcript extraction quality (sub-types, urgency tiers, champion health), and dimension merge correctness.
+- **Service layer smoke tests** — 25 tests across 5 mutation services (mutations, accounts, success_plans, intelligence, reports) verifying DB state + signal emission.
+
+### Changed
+
+- **ServiceLayer is mandatory** — every user-facing mutation goes through `services/`. No direct DB writes from command handlers. 20 domain service modules.
+- **DB as sole data source** — app reads zero generated state from filesystem. `intelligence.json`, `dashboard.json`, `schedule.json`, `actions.json`, `preps/*.json` no longer read by app. Workspace dirs and user files untouched.
+- **Module decomposition** — `commands.rs` from 4,000+ lines to 80-line dispatcher with 10 domain modules. `db.rs` replaced by 21 domain query modules.
+- **Schema migration framework** — fail-hard runner, guaranteed pre-migration backups, schema integrity checks for every version gate. Migration 068 rebuilt with correct DROP+CREATE pattern.
+- **Typed resource permits** — single `heavy_work_semaphore` replaced with 5 independent permits (PTY, user-initiated, embeddings, email, orchestration). Background enrichment no longer blocks UI.
+- **PTY on blocking threads** — enrichment wrapped in `spawn_blocking`. Async executor never blocked > 1s during enrichment. Beach ball eliminated.
+- **Glean token refresh isolated** — network calls on dedicated OS threads, not Tokio workers.
+- **Command handlers async-clean** — zero `state.db.lock()` in commands/. All DB access through async `db_service`.
+- **Actions pipeline** — Granola actions get correct priority and context. Briefing includes DB actions. 30-day pending auto-archive. Rejection source tracked correctly.
+- **Settings UX rebuild** — YouCard split into Identity/Workspace/Preferences. Audit log pagination. Vocabulary fixes. CSS modules throughout.
+
+### Fixed
+
+- Meeting briefing refresh rollback — snapshot existing prep before clearing; restore if enrichment fails. No more blank "Building context" pages.
+- Pipeline reliability — retry with backoff, PTY circuit breaker, partial result preservation.
+- Actions pipeline — 6 broken paths fixed (Granola metadata loss, briefing blind to DB actions, archive never called, rejection source "unknown", thin summaries, deceptive tooltip).
+- Component DRY/SRP — StatusDot defined once (was 3x), EditorialLoading/Empty/Error shared across all pages.
+- Inline styles migrated to CSS modules across MeetingDetailPage, Settings, entity detail pages.
+- ADR-0083 vocabulary compliance across all user-facing strings.
+- Top 20 user-facing error paths now show toast notifications instead of silent console.error.
+
+### Security
+
+- Data governance with source-aware lifecycle (ADR-0098). Purge by source on credential revocation.
+- Database recovery UX for migration/integrity failures — startup blocker + Settings recovery controls.
+
+---
+
 ## Resolved Issues (moved from backlog, 2026-03-15)
 
 Issues previously tracked in BACKLOG.md that have been completed, archived, superseded, absorbed, or withdrawn.
