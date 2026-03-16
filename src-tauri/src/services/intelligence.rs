@@ -104,7 +104,8 @@ pub async fn enrich_entity(
     let parsed = if is_remote {
         // Try Glean-first path
         let mut glean_result = None;
-        if let (Some(ref endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context) {
+        if let (Some(ref endpoint), Some(ref ctx)) = (&glean_endpoint, &input.intelligence_context)
+        {
             let provider =
                 crate::intelligence::glean_provider::GleanIntelligenceProvider::new(endpoint);
             match provider
@@ -151,7 +152,11 @@ pub async fn enrich_entity(
                 let ai_config_for_enrichment = ai_config.clone();
                 let app_handle_clone = app_handle.cloned();
                 tauri::async_runtime::spawn_blocking(move || {
-                    run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, app_handle_clone.as_ref())
+                    run_enrichment(
+                        &input_for_enrichment,
+                        &ai_config_for_enrichment,
+                        app_handle_clone.as_ref(),
+                    )
                 })
                 .await
                 .map_err(|e| format!("Enrichment task panicked: {}", e))??
@@ -163,7 +168,11 @@ pub async fn enrich_entity(
         let ai_config_for_enrichment = ai_config.clone();
         let app_handle_clone = app_handle.cloned();
         tauri::async_runtime::spawn_blocking(move || {
-            run_enrichment(&input_for_enrichment, &ai_config_for_enrichment, app_handle_clone.as_ref())
+            run_enrichment(
+                &input_for_enrichment,
+                &ai_config_for_enrichment,
+                app_handle_clone.as_ref(),
+            )
         })
         .await
         .map_err(|e| format!("Enrichment task panicked: {}", e))??
@@ -278,6 +287,18 @@ pub fn upsert_assessment_from_enrichment(
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
     })
+}
+
+/// Persist an assessment snapshot without emitting enrichment lifecycle signals.
+///
+/// Progressive-write paths use this helper so the final authoritative write can
+/// remain the single point for signal emission and downstream invalidation.
+pub fn upsert_assessment_snapshot(
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+) -> Result<(), String> {
+    db.upsert_entity_intelligence(intel)
+        .map_err(|e| e.to_string())
 }
 
 /// Persist AI-inferred person relationships for an enrichment run (I504).
@@ -433,10 +454,7 @@ pub async fn update_intelligence_field(
 
             // Read intelligence from DB (source of truth post-I513), not disk.
             // Fall back to disk if DB doesn't have it (legacy path).
-            let existing_intel = db
-                .get_entity_intelligence(&entity_id)
-                .ok()
-                .flatten();
+            let existing_intel = db.get_entity_intelligence(&entity_id).ok().flatten();
             let intel = if let Some(existing) = existing_intel {
                 crate::intelligence::apply_intelligence_field_update_in_memory(
                     existing,
@@ -452,9 +470,7 @@ pub async fn update_intelligence_field(
             // I530: Distinguish curation (delete/clear) from correction (edit).
             // Empty value = user removed the item → curation, no source penalty.
             // Non-empty value = user corrected the item → correction, source penalized.
-            let is_curation = value.trim().is_empty()
-                || value == "[]"
-                || value == "null";
+            let is_curation = value.trim().is_empty() || value == "[]" || value == "null";
 
             db.with_transaction(|tx| {
                 tx.upsert_entity_intelligence(&intel)
@@ -690,22 +706,38 @@ pub async fn dismiss_intelligence_item(
             };
 
             // Add tombstone
-            intel.dismissed_items.push(crate::intelligence::DismissedItem {
-                field: field.clone(),
-                content: item_text.clone(),
-                dismissed_at: chrono::Utc::now().to_rfc3339(),
-            });
+            intel
+                .dismissed_items
+                .push(crate::intelligence::DismissedItem {
+                    field: field.clone(),
+                    content: item_text.clone(),
+                    dismissed_at: chrono::Utc::now().to_rfc3339(),
+                });
 
             // Remove item from the relevant Vec by matching text
             let item_lower = item_text.to_lowercase();
             match field.as_str() {
-                "risks" => intel.risks.retain(|r| !r.text.to_lowercase().contains(&item_lower)),
-                "recentWins" => intel.recent_wins.retain(|w| !w.text.to_lowercase().contains(&item_lower)),
-                "stakeholderInsights" => intel.stakeholder_insights.retain(|s| !s.name.to_lowercase().contains(&item_lower)),
-                "valueDelivered" => intel.value_delivered.retain(|v| !v.statement.to_lowercase().contains(&item_lower)),
-                "competitiveContext" => intel.competitive_context.retain(|c| !c.competitor.to_lowercase().contains(&item_lower)),
-                "organizationalChanges" => intel.organizational_changes.retain(|o| !o.person.to_lowercase().contains(&item_lower)),
-                "expansionSignals" => intel.expansion_signals.retain(|e| !e.opportunity.to_lowercase().contains(&item_lower)),
+                "risks" => intel
+                    .risks
+                    .retain(|r| !r.text.to_lowercase().contains(&item_lower)),
+                "recentWins" => intel
+                    .recent_wins
+                    .retain(|w| !w.text.to_lowercase().contains(&item_lower)),
+                "stakeholderInsights" => intel
+                    .stakeholder_insights
+                    .retain(|s| !s.name.to_lowercase().contains(&item_lower)),
+                "valueDelivered" => intel
+                    .value_delivered
+                    .retain(|v| !v.statement.to_lowercase().contains(&item_lower)),
+                "competitiveContext" => intel
+                    .competitive_context
+                    .retain(|c| !c.competitor.to_lowercase().contains(&item_lower)),
+                "organizationalChanges" => intel
+                    .organizational_changes
+                    .retain(|o| !o.person.to_lowercase().contains(&item_lower)),
+                "expansionSignals" => intel
+                    .expansion_signals
+                    .retain(|e| !e.opportunity.to_lowercase().contains(&item_lower)),
                 "openCommitments" => {
                     if let Some(ref mut ocs) = intel.open_commitments {
                         ocs.retain(|c| !c.description.to_lowercase().contains(&item_lower));
@@ -726,7 +758,9 @@ pub async fn dismiss_intelligence_item(
                     &entity_id,
                     "intelligence_curated",
                     "user_curation",
-                    Some(&format!("{{\"field\":\"{field}\",\"dismissed\":\"{item_text}\"}}",)),
+                    Some(&format!(
+                        "{{\"field\":\"{field}\",\"dismissed\":\"{item_text}\"}}",
+                    )),
                     0.5,
                 )
                 .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -765,8 +799,7 @@ pub fn recompute_entity_health(
     };
 
     // Recompute health
-    let health =
-        crate::intelligence::health_scoring::compute_account_health(db, &account, None);
+    let health = crate::intelligence::health_scoring::compute_account_health(db, &account, None);
 
     intel.health = Some(health.clone());
 
@@ -884,7 +917,6 @@ pub fn get_risk_briefing(
     let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
     crate::risk_briefing::read_risk_briefing(&account_dir)
 }
-
 
 #[cfg(test)]
 mod inferred_relationship_tests {

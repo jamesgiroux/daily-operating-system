@@ -3,12 +3,19 @@
 -- Creates per-meeting tables for interaction dynamics, champion health, and role changes.
 -- Note: captured_commitments and success_plan_signals_json already exist from migration 068.
 
--- Step 1: Enrich captures table with metadata columns
-ALTER TABLE captures ADD COLUMN sub_type TEXT;
-ALTER TABLE captures ADD COLUMN urgency TEXT;
-ALTER TABLE captures ADD COLUMN impact TEXT;
-ALTER TABLE captures ADD COLUMN evidence_quote TEXT;
-ALTER TABLE captures ADD COLUMN speaker TEXT;
+-- Step 1: Ensure captures exists for legacy bootstrap paths.
+CREATE TABLE IF NOT EXISTS captures (
+    id TEXT PRIMARY KEY,
+    meeting_id TEXT NOT NULL,
+    meeting_title TEXT NOT NULL,
+    account_id TEXT,
+    project_id TEXT,
+    capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action', 'decision')) NOT NULL,
+    content TEXT NOT NULL,
+    owner TEXT,
+    due_date TEXT,
+    captured_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- Step 2: Per-meeting interaction dynamics
 CREATE TABLE IF NOT EXISTS meeting_interaction_dynamics (

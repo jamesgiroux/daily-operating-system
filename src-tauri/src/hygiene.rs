@@ -1606,15 +1606,13 @@ pub fn run_overnight_scan(
         None,
     );
 
-    let overnight = OvernightReport {
+    OvernightReport {
         ran_at: Utc::now().to_rfc3339(),
         entities_refreshed: report.fixes.ai_enrichments_enqueued,
         names_resolved: report.fixes.names_resolved,
         summaries_extracted: report.fixes.summaries_extracted,
         relationships_reclassified: report.fixes.relationships_reclassified,
-    };
-
-    overnight
+    }
 }
 
 /// Check if current time is in the overnight window (2-3 AM local time).
@@ -2961,7 +2959,11 @@ mod tests {
 
         // Report should have a timestamp
         assert!(!report.ran_at.is_empty());
-        let maint_path = workspace.path().join("_today").join("data").join("maintenance.json");
+        let maint_path = workspace
+            .path()
+            .join("_today")
+            .join("data")
+            .join("maintenance.json");
         assert!(!maint_path.exists());
     }
 

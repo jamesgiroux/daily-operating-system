@@ -11,6 +11,15 @@ use crate::commands::{
 use crate::db::ActionDb;
 use crate::state::AppState;
 
+pub fn set_account_domains(
+    db: &ActionDb,
+    account_id: &str,
+    domains: &[String],
+) -> Result<(), String> {
+    db.set_account_domains(account_id, domains)
+        .map_err(|e| e.to_string())
+}
+
 /// Create a child account under a parent with collision handling.
 ///
 /// Checks for duplicate names, generates unique IDs, creates DB record,
@@ -277,7 +286,9 @@ pub async fn get_account_detail(
                     .collect();
 
             let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
-            let account_team = db.get_account_team_internal(&account_id).unwrap_or_default();
+            let account_team = db
+                .get_account_team_internal(&account_id)
+                .unwrap_or_default();
             let account_team_import_notes = db
                 .get_account_team_import_notes(&account_id)
                 .unwrap_or_default();
