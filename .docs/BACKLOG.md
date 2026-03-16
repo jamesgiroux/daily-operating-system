@@ -13,6 +13,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | **I56** | Onboarding: educational redesign — demo data, guided tour | P0 | Onboarding |
+| **I600** | Migrate RiskBriefingPage to reports framework — unified route, renderer, feedback | P2 | Frontend / Reports |
 | **I57** | Onboarding: add accounts/projects + user domain configuration | P0 | Onboarding |
 | **I199** | Archived account recovery UX — restore + relink | P2 | Entity |
 | **I258** | Report Mode — export account detail as leadership-ready deck/PDF | P2 | UX |
@@ -112,6 +113,9 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I534** | Portfolio reader — read published intelligence from Shared Drive for cross-IC portfolio synthesis. JSON sidecar parsing. Spec: `.docs/issues/i534.md` | P1 | Backend + Frontend |
 | **I535** | Glean Agent integration — call purpose-built Glean Agents via REST API for org-level analysis during enrichment. Spec: `.docs/issues/i535.md` — Steps 1-8 implemented, blocked on testing | P1 | Backend / Connectors |
 | **I563** | shellConfig render loop on AccountDetailEditorial — `useRegisterMagazineShell` re-register cycle causes max update depth warning | P2 | Frontend / Architecture |
+| **I601** | Report animation foundation — shared primitives (AnimatedCounter, Sparkline, ProgressRing, useSlideReveal) for both reports | P1 | Frontend / Reports |
+| **I602** | Weekly Impact v2 — parallelized generation, DB intelligence, comparative narrative, animation polish | P1 | Backend + Frontend / Reports |
+| **I603** | Monthly Wrapped v2 — parallelized generation, DB intelligence, personality archetypes, achievements, visual transformation | P1 | Backend + Frontend / Reports |
 
 ---
 
