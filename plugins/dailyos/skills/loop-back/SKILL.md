@@ -27,9 +27,9 @@ After producing a deliverable, present the user with specific options for what c
 **Format:**
 ```
 Would you like me to:
-1. Save this report to Accounts/Nielsen/risk-assessment-2026-02.md
+1. Save this report to Accounts/Acme Corp/risk-assessment-2026-02.md
 2. Create 3 actions in data/actions.json from the recommendations
-3. Update Accounts/Nielsen/intelligence.json with the revised risk assessment
+3. Update Accounts/Acme Corp/intelligence.json with the revised risk assessment
 
 Or would you prefer to handle these manually?
 ```
@@ -102,9 +102,9 @@ When a deliverable includes recommendations or next steps, parse them into track
 ```
 I can create these actions from the assessment:
 
-1. "Schedule EBR with Sarah to address adoption concerns" — Nielsen, Sarah Chen, due Feb 28
-2. "Prepare competitive comparison deck for QBR" — Nielsen, due Mar 5
-3. "Follow up on integration timeline commitment" — Nielsen, David Park, due Feb 21
+1. "Schedule EBR with Sarah to address adoption concerns" — Acme Corp, Sarah Chen, due Feb 28
+2. "Prepare competitive comparison deck for QBR" — Acme Corp, due Mar 5
+3. "Follow up on integration timeline commitment" — Acme Corp, David Park, due Feb 21
 
 Create all three, or adjust first?
 ```
@@ -137,7 +137,7 @@ Present all options together so the user can approve or modify the full set.
 
 ## Behavior Rules
 
-1. **Be specific about paths.** Not "save to the workspace" but "save to Accounts/Nielsen/risk-assessment-2026-02.md"
+1. **Be specific about paths.** Not "save to the workspace" but "save to Accounts/Acme Corp/risk-assessment-2026-02.md"
 2. **Batch related writes.** If an assessment produces a report, actions, and intelligence updates, present them all at once rather than asking three separate times.
 3. **Respect the decline.** If the user says no, move on. Do not ask again.
 4. **Create directories as needed.** If `_archive/2026-02/` does not exist, create it as part of the write.

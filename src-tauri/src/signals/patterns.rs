@@ -35,7 +35,7 @@ pub fn mine_attendee_patterns(db: &ActionDb) -> Result<usize, DbError> {
     // Get meetings from last 90 days that have attendees
     let meetings: Vec<(String, Option<String>)> = {
         let mut stmt = db.conn_ref().prepare(
-            "SELECT id, attendees FROM meetings_history
+            "SELECT id, attendees FROM meetings
              WHERE start_time >= date('now', '-90 days')
                AND attendees IS NOT NULL AND attendees != ''
              ORDER BY start_time DESC",
@@ -279,11 +279,23 @@ mod tests {
         for i in 1..=3 {
             let meeting_id = format!("m{}", i);
             db.conn_ref().execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at, attendees)
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at, attendees)
                  VALUES (?1, 'Test Meeting', 'customer', datetime('now', '-1 day'), datetime('now'),
                          '[\"alice@acme.com\",\"bob@partner.com\"]')",
                 params![meeting_id],
             ).expect("insert meeting");
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
+                    params![meeting_id],
+                )
+                .expect("insert meeting_prep");
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES (?1)",
+                    params![meeting_id],
+                )
+                .expect("insert meeting_transcripts");
 
             // Create entity if not exists (only once)
             if i == 1 {

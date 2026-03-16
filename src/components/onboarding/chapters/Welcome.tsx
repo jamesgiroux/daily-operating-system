@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/ui/BrandMark";
+import styles from "../onboarding.module.css";
 
 interface WelcomeProps {
   onNext: () => void;
@@ -10,37 +11,18 @@ interface WelcomeProps {
 
 export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+    <div className={`${styles.flexCol} ${styles.gap32}`}>
       {/* Brand mark */}
-      <div style={{ color: "var(--color-spice-turmeric)" }}>
+      <div className={styles.brandMark}>
         <BrandMark size={48} />
       </div>
 
       {/* Hero headline — serif, left-aligned */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 32,
-            fontWeight: 400,
-            lineHeight: 1.2,
-            letterSpacing: "-0.01em",
-            color: "var(--color-text-primary)",
-            margin: 0,
-          }}
-        >
+      <div className={`${styles.flexCol} ${styles.gap16}`}>
+        <h1 className={styles.heroHeadline}>
           Open the app. Your day is ready.
         </h1>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            lineHeight: 1.6,
-            color: "var(--color-text-secondary)",
-            margin: 0,
-            maxWidth: 480,
-          }}
-        >
+        <p className={styles.bodyTextConstrained}>
           DailyOS prepares your day while you sleep — meeting prep,
           email triage, actions due, and a morning summary. You open it,
           read, and get to work.
@@ -48,71 +30,32 @@ export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
       </div>
 
       {/* Timeline block — editorial rule-separated */}
-      <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-        }}
-      >
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            textTransform: "uppercase" as const,
-            letterSpacing: "0.1em",
-            color: "var(--color-text-tertiary)",
-            marginBottom: 12,
-          }}
-        >
+      <div className={styles.ruleSection}>
+        <div className={styles.sectionLabel}>
           What it looks like
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--color-text-tertiary)",
-                flexShrink: 0,
-                width: 56,
-              }}
-            >
+        <div className={`${styles.flexCol} ${styles.gap8}`}>
+          <div className={styles.flexRowBaseline}>
+            <span className={styles.timestamp}>
               6:00 AM
             </span>
-            <span style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>
+            <span className={styles.timelineEntry}>
               Your briefing generates automatically
             </span>
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--color-text-tertiary)",
-                flexShrink: 0,
-                width: 56,
-              }}
-            >
+          <div className={styles.flexRowBaseline}>
+            <span className={styles.timestamp}>
               8:00 AM
             </span>
-            <span style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>
+            <span className={styles.timelineEntry}>
               You open the app. Everything's there.
             </span>
           </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--color-spice-turmeric)",
-                flexShrink: 0,
-                width: 56,
-              }}
-            >
+          <div className={styles.flexRowBaseline}>
+            <span className={styles.timestampAccent}>
               8:15 AM
             </span>
-            <span style={{ fontSize: 14, color: "var(--color-text-primary)", fontWeight: 500 }}>
+            <span className={styles.timelineHighlight}>
               You're prepared. Close the app. Do your work.
             </span>
           </div>
@@ -120,23 +63,13 @@ export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
       </div>
 
       {/* Tagline */}
-      <p
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 17,
-          fontStyle: "italic",
-          fontWeight: 300,
-          lineHeight: 1.55,
-          color: "var(--color-text-tertiary)",
-          margin: 0,
-        }}
-      >
+      <p className={styles.tagline}>
         No setup to maintain. No inbox to clear.
         Skip a day, skip a week — it picks up where you are.
       </p>
 
       {/* Primary CTA */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className={`${styles.flexCol} ${styles.gap12}`}>
         <div>
           <Button size="lg" onClick={onNext}>
             Get started
@@ -148,19 +81,7 @@ export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
         {onDemoMode && (
           <button
             onClick={onDemoMode}
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              textAlign: "left",
-              transition: "color 0.15s ease",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+            className={styles.textLink}
           >
             Explore with demo data
           </button>
@@ -169,21 +90,10 @@ export function Welcome({ onNext, onDemoMode, onSkipSetup }: WelcomeProps) {
 
       {/* Footer: Skip setup */}
       {onSkipSetup && (
-        <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+        <div className={styles.ruleSection}>
           <button
             onClick={onSkipSetup}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              letterSpacing: "0.04em",
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              transition: "color 0.15s ease",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
+            className={styles.skipButton}
           >
             Skip setup
           </button>

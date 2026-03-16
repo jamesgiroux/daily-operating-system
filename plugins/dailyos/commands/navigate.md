@@ -14,7 +14,7 @@ Tactical relationship intelligence for sensitive situations. Pre-conversation pr
 
 Examples:
 - `/navigate David Park` — Load full relationship intelligence and surface the tactical picture
-- `/navigate Nielsen stakeholders` — Map the full influence landscape for an entity
+- `/navigate Acme Corp stakeholders` — Map the full influence landscape for an entity
 - `/navigate "Sarah seems off in last two meetings"` — Situation analysis from signals
 - `/navigate "prep for QBR with David"` — Pre-conversation tactical brief
 - `/navigate "just finished the exec call"` — Post-meeting debrief mode
@@ -79,13 +79,13 @@ The command auto-selects the mode based on context. The user does not need to sp
 
 ```markdown
 <!-- internal-only -->
-## Pre-Conversation Brief: David Park (CTO, Nielsen)
+## Pre-Conversation Brief: David Park (CTO, Acme Corp)
 
 ### What They Care About
 David cares about technical credibility and vendor consolidation. His DataConf keynote was about reducing vendor sprawl — he is building a narrative internally that fewer, deeper vendor relationships are better. He will evaluate you through this lens: are you consolidating his stack or adding to the sprawl?
 
 ### Power Dynamic
-David has veto power on vendor renewals (he killed the Snowflake deal in October). You need him more than he needs you — he has alternatives (Datadog evaluation), and you have a $2.4M renewal at stake. Your leverage: Sarah Chen (his VP) is your champion and recently promoted, giving her more influence relative to David.
+David has veto power on vendor renewals (he killed the CloudVault deal in October). You need him more than he needs you — he has alternatives (Atlas Analytics evaluation), and you have a $2.4M renewal at stake. Your leverage: Sarah Chen (his VP) is your champion and recently promoted, giving her more influence relative to David.
 
 ### What to Say
 - Lead with the analytics capabilities roadmap. He needs to see a technical path forward, not a relationship pitch.
@@ -95,7 +95,7 @@ David has veto power on vendor renewals (he killed the Snowflake deal in October
 ### What NOT to Say
 - Do not reference his absence from meetings. He knows he has been absent. Pointing it out creates defensiveness.
 - Do not lead with relationship or partnership language. He reads that as sales pressure.
-- Do not badmouth Datadog. He is evaluating them. Disparaging his options makes you look insecure.
+- Do not badmouth Atlas Analytics. He is evaluating them. Disparaging his options makes you look insecure.
 
 ### Likely Objections
 - "We are evaluating our entire analytics stack." Response: "Makes sense. We want to be part of that evaluation, not outside it. Can we set up a technical comparison?"
@@ -246,7 +246,7 @@ When navigate intelligence informs other commands (compose uses relationship con
 This command does not use corporate language. It uses plain, direct, honest language:
 - "David is avoiding you. Force the interaction." Not "Consider proactively re-engaging the CTO."
 - "Sarah has more power now than David realizes. Use that." Not "Leverage the champion's enhanced organizational position."
-- "This meeting is a trap. They want to benchmark you against Datadog." Not "Be aware of potential competitive dynamics in the discussion."
+- "This meeting is a trap. They want to benchmark you against Atlas Analytics." Not "Be aware of potential competitive dynamics in the discussion."
 
 ### Evidence-Grounded
 

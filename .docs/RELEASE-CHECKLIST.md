@@ -98,6 +98,8 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] **Responsive behavior:** Window resize from 1280px down to minimum — no overflow, no broken layouts
 - [ ] **Keyboard navigation:** Tab order is logical, Cmd+K opens search, meeting prep keyboard shortcuts work
 - [ ] **Tray icon:** System tray icon renders as template icon (adapts to light/dark menu bar)
+- [ ] **ADR-0083 vocabulary audit:** grep user-facing strings for "entity", "intelligence", "signal", "enrichment", "prep", "connector" — translate per vocabulary rules in ADR-0083
+- [ ] **Release notes vocabulary:** verify `release-notes.md` entry exists for this version and uses product vocabulary (no internal jargon)
 
 ## 10. CI Pipeline
 

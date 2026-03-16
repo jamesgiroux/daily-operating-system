@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
@@ -49,8 +50,16 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { AddToRecord } from "@/components/entity/AddToRecord";
 import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
+import shared from "@/styles/entity-detail.module.css";
+import styles from "./PersonDetailEditorial.module.css";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+
+// Suppress unused import warning — styles reserved for future person-specific classes
+void styles;
 
 /* ── Vitals assembly ── */
 
@@ -124,6 +133,39 @@ export default function PersonDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!person.loading && !!person.detail);
 
+  // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
+  const {
+    updateField: handleUpdateIntelField,
+    saveStatus,
+    setSaveStatus: setFolioSaveStatus,
+  } = useIntelligenceFieldUpdate("person", personId, person.silentRefresh);
+
+  const finishFolioSave = useCallback(() => {
+    setFolioSaveStatus("saved");
+    window.setTimeout(() => setFolioSaveStatus("idle"), 2000);
+  }, [setFolioSaveStatus]);
+
+  const saveMetadata = useCallback(
+    async (updated: Record<string, string>) => {
+      if (!personId) return;
+      setFolioSaveStatus("saving");
+      try {
+        await invoke("update_entity_metadata", {
+          entityId: personId,
+          entityType: "person",
+          metadata: JSON.stringify(updated),
+        });
+        finishFolioSave();
+      } catch (err) {
+        console.error("update_entity_metadata failed:", err);
+        toast.error("Failed to save metadata");
+        setFolioSaveStatus("idle");
+        throw err;
+      }
+    },
+    [finishFolioSave, personId, setFolioSaveStatus],
+  );
+
   const relationship = person.detail?.relationship ?? "unknown";
   const shellConfig = useMemo(
     () => ({
@@ -132,8 +174,9 @@ export default function PersonDetailEditorial() {
       activePage: "people" as const,
       backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/people" }) },
       chapters: buildChapters(relationship),
+      folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
     }),
-    [navigate, relationship],
+    [navigate, relationship, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -161,8 +204,8 @@ export default function PersonDetailEditorial() {
       });
   }, [personId]);
 
-  // I352: Shared intelligence field update hook
-  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("person", personId);
+  // I529: Intelligence quality feedback
+  const feedback = useIntelligenceFeedback(personId, "person");
 
   // Context entries — must be before early returns (React hooks rule)
   const entityCtx = useEntityContextEntries("person", personId ?? null);
@@ -178,7 +221,7 @@ export default function PersonDetailEditorial() {
   return (
     <>
       {/* Chapter 1: The Profile (Hero) */}
-      <section id="headline" style={{ scrollMarginTop: 60 }}>
+      <section id="headline" className={shared.chapterSection}>
         <PersonHero
           detail={detail}
           intelligence={intelligence}
@@ -206,11 +249,7 @@ export default function PersonDetailEditorial() {
                 if (source === "metadata") {
                   setMetadataValues((prev) => {
                     const updated = { ...prev, [key]: value };
-                    invoke("update_entity_metadata", {
-                      entityId: personId,
-                      entityType: "person",
-                      metadata: JSON.stringify(updated),
-                    }).catch((err) => console.error("update_entity_metadata failed:", err));
+                    void saveMetadata(updated);
                     return updated;
                   });
                 }
@@ -222,18 +261,14 @@ export default function PersonDetailEditorial() {
         </div>
         {/* I312: Preset metadata fields */}
         {preset && preset.metadata.person.length > 0 && (
-          <div className="editorial-reveal" style={{ marginTop: 8 }}>
+          <div className={`editorial-reveal ${shared.presetFieldsReveal}`}>
             <PresetFieldsEditor
               fields={preset.metadata.person}
               values={metadataValues}
               onChange={(key, value) => {
                 setMetadataValues((prev) => {
                   const updated = { ...prev, [key]: value };
-                  invoke("update_entity_metadata", {
-                    entityId: personId,
-                    entityType: "person",
-                    metadata: JSON.stringify(updated),
-                  }).catch((err) => console.error("update_entity_metadata failed:", err));
+                  void saveMetadata(updated);
                   return updated;
                 });
               }}
@@ -243,12 +278,22 @@ export default function PersonDetailEditorial() {
       </section>
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
-      <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <PersonInsightChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
+      <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
+        <PersonInsightChapter
+          detail={detail}
+          intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
+          feedbackSlot={
+            <IntelligenceFeedback
+              value={feedback.getFeedback("person_insight")}
+              onFeedback={(type) => feedback.submitFeedback("person_insight", type)}
+            />
+          }
+        />
       </div>
 
       {/* Chapter 3: Their Orbit */}
-      <div id="their-orbit" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="their-orbit" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <PersonNetwork
           entities={detail.entities}
           onLink={person.handleLinkEntity}
@@ -258,7 +303,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 4: Their Network */}
-      <div id="their-network" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="their-network" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <PersonRelationships
           personId={personId ?? ""}
           network={intelligence?.network}
@@ -270,27 +315,34 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Landscape */}
-      <div id="the-landscape" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+      <div id="the-landscape" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
           sectionId="the-landscape"
           chapterTitle="The Landscape"
+          getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}
+          onItemFeedback={(fieldPath, type) => feedback.submitFeedback(fieldPath, type)}
         />
       </div>
 
-      {/* Chapter 5: The Record */}
-      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <UnifiedTimeline data={{
-          recentMeetings: detail.recentMeetings ?? [],
-          recentCaptures: detail.recentCaptures,
-          recentEmailSignals: detail.recentEmailSignals,
-        }} />
+      {/* Chapter 6: The Record */}
+      <div id="the-record" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
+        <UnifiedTimeline
+          data={{
+            recentMeetings: detail.recentMeetings ?? [],
+            recentCaptures: detail.recentCaptures,
+            recentEmailSignals: detail.recentEmailSignals,
+            contextEntries: entityCtx.entries,
+          }}
+          sectionId=""
+          actionSlot={<AddToRecord onAdd={(title, content) => entityCtx.createEntry(title, content)} />}
+        />
       </div>
 
       {/* Chapter 6: The Work (suppressed when empty per I351) */}
       {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0) && (
-        <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+        <div id="the-work" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
           <TheWork
             data={detail}
             addingAction={person.addingAction}
@@ -303,30 +355,23 @@ export default function PersonDetailEditorial() {
         </div>
       )}
 
-      {/* Finis marker */}
-      <div className="editorial-reveal">
-        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
-      </div>
-
       {/* Appendix */}
       <div className="editorial-reveal">
         <PersonAppendix
           detail={detail}
-          onSave={person.handleSave}
-          dirty={person.dirty}
-          saving={person.saving}
           duplicateCandidates={person.duplicateCandidates}
           onMergeSuggested={person.handleOpenSuggestedMerge}
           merging={person.merging}
-          contextEntries={entityCtx.entries}
-          onCreateContextEntry={entityCtx.createEntry}
-          onUpdateContextEntry={entityCtx.updateEntry}
-          onDeleteContextEntry={entityCtx.deleteEntry}
           files={person.files}
           onIndexFiles={person.handleIndexFiles}
           indexing={person.indexing}
           indexFeedback={person.indexFeedback}
         />
+      </div>
+
+      {/* Finis marker */}
+      <div className="editorial-reveal">
+        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
       </div>
 
       {/* Merge Person Picker Dialog */}
@@ -345,7 +390,7 @@ export default function PersonDetailEditorial() {
             autoFocus
           />
           {person.mergeSearchResults.length > 0 && (
-            <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+            <div className={shared.mergeSearchResults}>
               {person.mergeSearchResults.map((p) => (
                 <button
                   key={p.id}
@@ -354,43 +399,16 @@ export default function PersonDetailEditorial() {
                     person.setMergeDialogOpen(false);
                     person.setMergeConfirmOpen(true);
                   }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--space-sm)",
-                    padding: "var(--space-sm) var(--space-md)",
-                    borderRadius: 6,
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    width: "100%",
-                  }}
-                  className="hover:bg-muted"
+                  className={`${shared.mergeSearchButton} hover:bg-muted`}
                 >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: "50%",
-                      background: "var(--color-garden-larkspur-15)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: "var(--color-garden-larkspur)",
-                      flexShrink: 0,
-                    }}
-                  >
+                  <div className={shared.mergeAvatar}>
                     {p.name.charAt(0).toUpperCase()}
                   </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div className={shared.mergePersonInfo}>
+                    <div className={shared.mergePersonName}>
                       {p.name}
                     </div>
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div className={shared.mergePersonEmail}>
                       {p.email}
                       {p.organization && ` \u00B7 ${p.organization}`}
                     </div>
@@ -400,7 +418,7 @@ export default function PersonDetailEditorial() {
             </div>
           )}
           {person.mergeSearchQuery.length >= 2 && person.mergeSearchResults.length === 0 && (
-            <p style={{ textAlign: "center", padding: "16px 0", fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-tertiary)" }}>
+            <p className={shared.mergeEmptyState}>
               No matching people found
             </p>
           )}

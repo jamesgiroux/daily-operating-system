@@ -1,0 +1,366 @@
+/* ActionDetailPage — editorial action detail layout */
+
+/* ── Layout ── */
+
+.container {
+  padding: 120px 120px 80px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+/* ── Loading skeleton ── */
+
+.loadingSkeleton {
+  padding: 120px 120px 80px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.skeletonBar {
+  background: var(--color-rule-light);
+  border-radius: 2px;
+}
+
+.skeletonTitle {
+  height: 16px;
+  width: 96px;
+  margin-bottom: 16px;
+}
+
+.skeletonHeadline {
+  height: 40px;
+  width: 384px;
+  margin-bottom: 8px;
+}
+
+.skeletonSubhead {
+  height: 16px;
+  width: 192px;
+  margin-bottom: 24px;
+}
+
+.skeletonRule {
+  height: 1px;
+  width: 100%;
+  background: var(--color-rule-heavy);
+}
+
+.skeletonBody {
+  margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.skeletonBlock {
+  width: 100%;
+  border-radius: 2px;
+  background: var(--color-rule-light);
+}
+
+.skeletonBlockSmall {
+  height: 80px;
+}
+
+.skeletonBlockLarge {
+  height: 128px;
+}
+
+/* ── Error state ── */
+
+.errorState {
+  padding: 120px 120px 80px;
+  max-width: 680px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.errorTitle {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  color: var(--color-text-primary);
+  margin-bottom: 16px;
+}
+
+.errorMessage {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 24px;
+}
+
+.retryButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+/* ── Title band ── */
+
+.titleBand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.toggleButton {
+  margin-top: 6px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  transition: color 0.15s, opacity 0.15s;
+}
+
+.titleWrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Title typography (applied to EditableText) ── */
+
+.titleEditable {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+}
+
+.titleCompleted {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+/* ── Status strip ── */
+
+.statusStrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding-left: 36px;
+  flex-wrap: wrap;
+}
+
+.priorityPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.priorityP1 {
+  background: rgba(196, 101, 74, 0.10);
+  color: var(--color-spice-terracotta);
+}
+
+.priorityP2 {
+  background: rgba(201, 162, 39, 0.10);
+  color: var(--color-spice-turmeric);
+}
+
+.priorityP3 {
+  background: var(--color-garden-larkspur-12);
+  color: var(--color-garden-larkspur);
+}
+
+.monoBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(30, 37, 48, 0.06);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.monoBadgeLink {
+  composes: monoBadge;
+  text-decoration: none;
+}
+
+.monoLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.statusText {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Priority picker row ── */
+
+.priorityPickerRow {
+  padding-left: 36px;
+  margin-bottom: 24px;
+}
+
+/* ── Separator ── */
+
+.separator {
+  height: 1px;
+  background: var(--color-rule-light);
+  margin-bottom: 40px;
+}
+
+/* ── Sections ── */
+
+.section {
+  margin-bottom: 40px;
+}
+
+.sectionLabel {
+  composes: monoLabel;
+  margin-bottom: 12px;
+}
+
+.sectionLabelWide {
+  composes: monoLabel;
+  margin-bottom: 16px;
+}
+
+.autoNote {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+}
+
+/* ── Reference section ── */
+
+.refSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.refRow {
+  display: flex;
+  align-items: flex-start;
+}
+
+.refKey {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  width: 100px;
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+
+.refValue {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.accountDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.accountLink {
+  color: var(--color-text-primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.removeButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.accountChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Local EditableText (title editor) ── */
+
+.titleInput {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: 0;
+}
+
+.titleDisplay {
+  cursor: pointer;
+}
+
+/* ── Action bar ── */
+
+.actionBar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.saveStatus {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  transition: opacity 0.3s;
+}
+
+.actionButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-primary);
+  transition: opacity 0.15s;
+}

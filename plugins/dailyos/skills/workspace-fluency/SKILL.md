@@ -165,7 +165,7 @@ Read the active preset from `manifest.json` and apply its vocabulary to all outp
 After producing any deliverable, always offer to write results back to the workspace. This is the loop-back convention:
 
 - **Offer, never force.** Present what could be saved and where, then let the user confirm.
-- **Be specific.** Not "Want me to save this?" but "Would you like me to save this risk report to Accounts/Nielsen/intelligence.json and create 3 actions in data/actions.json?"
+- **Be specific.** Not "Want me to save this?" but "Would you like me to save this risk report to Accounts/Acme Corp/intelligence.json and create 3 actions in data/actions.json?"
 - **Route correctly.** Entity reports go to entity directories. People insights go to People/. Meeting outputs go to _archive/YYYY-MM/. Actions go to data/actions.json.
 
 The loop-back skill provides detailed routing rules. Every command includes loop-back instructions in its workflow.

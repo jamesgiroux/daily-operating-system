@@ -6,7 +6,8 @@
 //! - Sleep/wake detection via time-jump polling
 //! - Missed job handling (runs if within grace period)
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, Datelike, Local, Utc};
@@ -32,11 +33,52 @@ const TIME_JUMP_THRESHOLD_SECS: i64 = 300;
 /// Poll interval for scheduler loop (1 minute)
 const POLL_INTERVAL_SECS: u64 = 60;
 
+/// Delay before retrying a failed scheduler-owned task (I515).
+const SCHEDULED_RETRY_DELAY_SECS: i64 = 3600;
+
+/// Maximum number of scheduler-owned retries per task per day (I515).
+const MAX_SCHEDULED_RETRIES_PER_DAY: u8 = 3;
+
 /// Message sent to trigger workflow execution
 #[derive(Debug, Clone)]
 pub struct SchedulerMessage {
     pub workflow: WorkflowId,
     pub trigger: ExecutionTrigger,
+    pub retry_attempt: u8,
+}
+
+impl SchedulerMessage {
+    pub fn new(workflow: WorkflowId, trigger: ExecutionTrigger) -> Self {
+        Self {
+            workflow,
+            trigger,
+            retry_attempt: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum SchedulerRetryTask {
+    WeeklyImpact,
+    MonthlyWrapped,
+    PreMeetingRefresh { meeting_id: String },
+}
+
+impl SchedulerRetryTask {
+    fn key(&self) -> String {
+        match self {
+            Self::WeeklyImpact => "weekly_impact".to_string(),
+            Self::MonthlyWrapped => "monthly_wrapped".to_string(),
+            Self::PreMeetingRefresh { meeting_id } => format!("pre_meeting_refresh:{meeting_id}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SchedulerRetryEntry {
+    task: SchedulerRetryTask,
+    due_at: DateTime<Utc>,
+    retry_attempt: u8,
 }
 
 /// Scheduler for managing workflow execution times
@@ -44,6 +86,7 @@ pub struct Scheduler {
     state: Arc<AppState>,
     sender: mpsc::Sender<SchedulerMessage>,
     app_handle: AppHandle,
+    retry_queue: Arc<Mutex<HashMap<String, SchedulerRetryEntry>>>,
 }
 
 impl Scheduler {
@@ -56,6 +99,7 @@ impl Scheduler {
             state,
             sender,
             app_handle,
+            retry_queue: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -88,29 +132,14 @@ impl Scheduler {
 
                 // I418: Auto-generate weekly impact on Monday
                 if today.weekday() == chrono::Weekday::Mon {
-                    let state = self.state.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) =
-                            crate::services::reports::generate_weekly_impact_if_needed(&state).await
-                        {
-                            log::warn!("Scheduler: weekly impact generation failed: {}", e);
-                        }
-                    });
+                    self.run_scheduler_task_with_retry(SchedulerRetryTask::WeeklyImpact, 0)
+                        .await;
                 }
 
                 // I419: Auto-generate monthly wrapped on 1st of month
                 if today.day() == 1 {
-                    let state_month = self.state.clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) =
-                            crate::services::reports::generate_monthly_wrapped_if_needed(
-                                &state_month,
-                            )
-                            .await
-                        {
-                            log::warn!("Scheduler: monthly wrapped generation failed: {}", e);
-                        }
-                    });
+                    self.run_scheduler_task_with_retry(SchedulerRetryTask::MonthlyWrapped, 0)
+                        .await;
                 }
 
                 last_date = today;
@@ -126,15 +155,17 @@ impl Scheduler {
                 self.check_missed_jobs(now).await;
             }
 
+            self.run_due_retries(now).await;
+
             // Check and run due jobs
             self.check_and_run_due_jobs(now).await;
 
             // I305: Drain prep invalidation queue and trigger re-generation
             self.drain_prep_invalidation_queue().await;
 
-            // Auto-archive stale proposed actions daily (I256)
+            // Auto-archive stale action queues daily (I256, I540)
             if (now - last_proposed_archive).num_hours() >= 24 {
-                self.auto_archive_proposed_actions();
+                self.auto_archive_stale_actions();
                 last_proposed_archive = now;
             }
 
@@ -184,20 +215,32 @@ impl Scheduler {
         .await;
     }
 
-    /// Auto-archive proposed actions older than 7 days (I256).
-    fn auto_archive_proposed_actions(&self) {
+    /// Auto-archive stale proposed and pending actions on the daily scheduler sweep.
+    fn auto_archive_stale_actions(&self) {
         match crate::db::ActionDb::open() {
-            Ok(db) => match db.auto_archive_old_proposed(7) {
-                Ok(count) if count > 0 => {
-                    log::info!("Auto-archived {} stale proposed actions", count);
+            Ok(db) => {
+                match db.auto_archive_old_proposed(7) {
+                    Ok(count) if count > 0 => {
+                        log::info!("Auto-archived {} stale proposed actions", count);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::warn!("Failed to auto-archive proposed actions: {}", e);
+                    }
                 }
-                Ok(_) => {}
-                Err(e) => {
-                    log::warn!("Failed to auto-archive proposed actions: {}", e);
+
+                match db.archive_stale_actions(30) {
+                    Ok(count) if count > 0 => {
+                        log::info!("Auto-archived {} stale pending actions", count);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::warn!("Failed to auto-archive pending actions: {}", e);
+                    }
                 }
-            },
+            }
             Err(e) => {
-                log::warn!("Failed to open DB for proposed action archival: {}", e);
+                log::warn!("Failed to open DB for action archival: {}", e);
             }
         }
     }
@@ -208,13 +251,14 @@ impl Scheduler {
             Ok(db) => {
                 let conn = db.conn_ref();
                 let mut stmt = match conn.prepare(
-                    "SELECT id FROM meetings_history
-                     WHERE julianday(start_time) > julianday('now')
-                     AND julianday(start_time) <= julianday('now', '+2 hours')
-                     AND intelligence_state != 'archived'
-                     AND (has_new_signals = 1
-                          OR last_enriched_at IS NULL
-                          OR julianday(last_enriched_at) < julianday('now', '-12 hours'))",
+                    "SELECT m.id FROM meetings m
+                     LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                     WHERE julianday(m.start_time) > julianday('now')
+                     AND julianday(m.start_time) <= julianday('now', '+2 hours')
+                     AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')
+                     AND (mt.has_new_signals = 1
+                          OR mt.last_enriched_at IS NULL
+                          OR julianday(mt.last_enriched_at) < julianday('now', '-12 hours'))",
                 ) {
                     Ok(s) => s,
                     Err(e) => {
@@ -243,13 +287,7 @@ impl Scheduler {
 
         let mut refreshed = 0usize;
         for meeting_id in meetings_to_refresh {
-            match crate::intelligence::generate_meeting_intelligence(
-                &self.state,
-                &meeting_id,
-                false,
-            )
-            .await
-            {
+            match self.refresh_meeting_intelligence(&meeting_id).await {
                 Ok(quality) => {
                     log::info!(
                         "Pre-meeting refresh for {}: {:?}",
@@ -257,9 +295,21 @@ impl Scheduler {
                         quality.level
                     );
                     refreshed += 1;
+                    self.resolve_scheduler_failure(&SchedulerRetryTask::PreMeetingRefresh {
+                        meeting_id: meeting_id.clone(),
+                    })
+                    .await;
                 }
                 Err(e) => {
                     log::warn!("Pre-meeting refresh failed for {}: {}", meeting_id, e);
+                    self.schedule_scheduler_retry(
+                        SchedulerRetryTask::PreMeetingRefresh {
+                            meeting_id: meeting_id.clone(),
+                        },
+                        0,
+                        &e,
+                    )
+                    .await;
                 }
             }
         }
@@ -484,11 +534,138 @@ impl Scheduler {
     async fn trigger_workflow(&self, workflow: WorkflowId, trigger: ExecutionTrigger) {
         if self
             .sender
-            .send(SchedulerMessage { workflow, trigger })
+            .send(SchedulerMessage::new(workflow, trigger))
             .await
             .is_err()
         {
             log::error!("Failed to send scheduler message for {:?}", workflow);
+        }
+    }
+
+    async fn refresh_meeting_intelligence(
+        &self,
+        meeting_id: &str,
+    ) -> Result<crate::types::IntelligenceQuality, String> {
+        let quality =
+            crate::intelligence::generate_meeting_intelligence(&self.state, meeting_id, false)
+                .await
+                .map_err(|error| error.to_string())?;
+        let _ = self.app_handle.emit("entity-updated", ());
+        Ok(quality)
+    }
+
+    async fn run_due_retries(&self, now: DateTime<Utc>) {
+        let due = match self.retry_queue.lock() {
+            Ok(mut retries) => {
+                let keys: Vec<String> = retries
+                    .iter()
+                    .filter(|(_, entry)| entry.due_at <= now)
+                    .map(|(key, _)| key.clone())
+                    .collect();
+                keys.into_iter()
+                    .filter_map(|key| retries.remove(&key))
+                    .collect::<Vec<_>>()
+            }
+            Err(_) => {
+                log::error!("Scheduler retry queue lock poisoned");
+                return;
+            }
+        };
+
+        for entry in due {
+            self.run_scheduler_task_with_retry(entry.task, entry.retry_attempt)
+                .await;
+        }
+    }
+
+    async fn run_scheduler_task_with_retry(&self, task: SchedulerRetryTask, retry_attempt: u8) {
+        let result = match &task {
+            SchedulerRetryTask::WeeklyImpact => {
+                crate::services::reports::generate_weekly_impact_if_needed(&self.state).await
+            }
+            SchedulerRetryTask::MonthlyWrapped => {
+                crate::services::reports::generate_monthly_wrapped_if_needed(&self.state).await
+            }
+            SchedulerRetryTask::PreMeetingRefresh { meeting_id } => self
+                .refresh_meeting_intelligence(meeting_id)
+                .await
+                .map(|_| ()),
+        };
+
+        match result {
+            Ok(()) => {
+                self.resolve_scheduler_failure(&task).await;
+            }
+            Err(error) => {
+                self.schedule_scheduler_retry(task, retry_attempt, &error)
+                    .await;
+            }
+        }
+    }
+
+    async fn resolve_scheduler_failure(&self, task: &SchedulerRetryTask) {
+        let entity_id = task.key();
+        let _ = self
+            .state
+            .db_write(move |db| {
+                crate::services::mutations::resolve_pipeline_failures(
+                    db,
+                    "scheduler",
+                    Some(&entity_id),
+                    Some("scheduler_task"),
+                )
+            })
+            .await;
+    }
+
+    async fn schedule_scheduler_retry(
+        &self,
+        task: SchedulerRetryTask,
+        retry_attempt: u8,
+        error: &str,
+    ) {
+        let entity_id = task.key();
+        let attempt = i32::from(retry_attempt) + 1;
+        let error_message = error.to_string();
+        let _ = self
+            .state
+            .db_write(move |db| {
+                crate::services::mutations::record_pipeline_failure(
+                    db,
+                    "scheduler",
+                    Some(&entity_id),
+                    Some("scheduler_task"),
+                    "task_failure",
+                    Some(&error_message),
+                    attempt,
+                )
+            })
+            .await;
+
+        if retry_attempt >= MAX_SCHEDULED_RETRIES_PER_DAY {
+            log::error!(
+                "Scheduler: exhausted retries for {} after {} attempts",
+                task.key(),
+                retry_attempt
+            );
+            return;
+        }
+
+        let due_at = Utc::now() + chrono::Duration::seconds(SCHEDULED_RETRY_DELAY_SECS);
+        let key = task.key();
+        let entry = SchedulerRetryEntry {
+            task,
+            due_at,
+            retry_attempt: retry_attempt + 1,
+        };
+
+        match self.retry_queue.lock() {
+            Ok(mut retries) => {
+                retries.insert(key, entry);
+            }
+            Err(_) => {
+                log::error!("Scheduler retry queue lock poisoned");
+            }
         }
     }
 }

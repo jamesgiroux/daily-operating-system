@@ -174,31 +174,31 @@ Use consistent status indicators:
 # Agentforce WordPress Connector - Update - Jan 10, 2026
 
 ## Status: 🟢 On Track
-MVP feature-complete. Now in testing phase with Cox POC environment validation underway.
+MVP feature-complete. Now in testing phase with Keystone POC environment validation underway.
 
 ---
 
 ### Progress Since Last Update
 - ✅ Core connector MVP deployed to staging
-- ✅ Cox POC environment configured and validated
+- ✅ Keystone POC environment configured and validated
 - ✅ Documentation draft completed (technical + user guides)
-- 🔄 Integration testing with Salesforce team (60% complete)
+- 🔄 Integration testing with Globex team (60% complete)
 
 ### Blockers / Risks
 | Issue | Impact | Resolution | Owner |
 |-------|--------|------------|-------|
-| Salesforce API rate limit question | May affect scale scenarios | Meeting scheduled Jan 12 | Abdul |
+| Globex API rate limit question | May affect scale scenarios | Meeting scheduled Jan 12 | Abdul |
 
 ### Next Steps (Next 2 Weeks)
 - [ ] Complete integration testing - **Abdul** - Jan 15
-- [ ] Cox pilot dealer selection (50 dealers) - **James** - Jan 17
-- [ ] Partner documentation review with Salesforce - **Riley** - Jan 20
+- [ ] Keystone pilot dealer selection (50 dealers) - **Your Name** - Jan 17
+- [ ] Partner documentation review with Globex - **Riley** - Jan 20
 - [ ] Production environment setup - **Abdul** - Jan 22
 
 ### Timeline
 - **Original target**: Feb 1 pilot launch
 - **Current projection**: Feb 1 (On track)
-- **Key upcoming milestone**: Pilot launch with Cox by Feb 1
+- **Key upcoming milestone**: Pilot launch with Keystone by Feb 1
 
 ---
 

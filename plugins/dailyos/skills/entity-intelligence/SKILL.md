@@ -20,7 +20,7 @@ Activate when:
 1. Read directory listings of `Accounts/` and `Projects/`
 2. Match the mentioned name against directory names (case-insensitive, partial match)
 3. If exact match found, proceed silently
-4. If multiple partial matches, ask user to clarify: "Did you mean Accounts/Nielsen or Accounts/NielsenIQ?"
+4. If multiple partial matches, ask user to clarify: "Did you mean Accounts/Acme-Corp or Accounts/Acme-Analytics?"
 5. If no match, inform user: "No entity found matching '{name}'. Would you like me to search People/ instead?"
 
 ## Silent Context Loading
@@ -118,10 +118,10 @@ Meeting History:
 
 ## Behavior Rules
 
-1. **Silent loading.** Never announce "I'm loading entity intelligence for Nielsen." Just have it ready.
-2. **No redundant asks.** If the user says "How is Nielsen doing?" and dashboard.json has the health status, answer from workspace data. Do not ask the user to tell you.
+1. **Silent loading.** Never announce "I'm loading entity intelligence for Acme Corp." Just have it ready.
+2. **No redundant asks.** If the user says "How is Acme Corp doing?" and dashboard.json has the health status, answer from workspace data. Do not ask the user to tell you.
 3. **Staleness flagging.** If intelligence is stale (>14 days), mention it naturally: "Based on intelligence last updated January 3rd..."
-4. **Gap awareness.** If a file is missing or empty, note it internally. If the user asks about something in a missing file, explain the gap: "Nielsen doesn't have stakeholders mapped yet. Would you like me to create a stakeholder map?"
+4. **Gap awareness.** If a file is missing or empty, note it internally. If the user asks about something in a missing file, explain the gap: "Acme Corp doesn't have stakeholders mapped yet. Would you like me to create a stakeholder map?"
 5. **Multi-entity support.** If multiple entities are mentioned, load context for each. Keep them distinct in your working memory.
 
 ## Interaction with Other Skills

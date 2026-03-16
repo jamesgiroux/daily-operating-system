@@ -200,16 +200,16 @@ When quantifying opportunity:
 # Investment Case: Agentforce Partnership Formalization
 
 ## The Ask
-I'm requesting $50K budget allocation and 0.5 FTE (Riley) for Q1 to formalize the Salesforce Agentforce partnership. This investment positions us for the enterprise AI ecosystem where Salesforce generated $100M in year one bookings.
+I'm requesting $50K budget allocation and 0.5 FTE (Riley) for Q1 to formalize the Globex Agentforce partnership. This investment positions us for the enterprise AI ecosystem where Globex generated $100M in year one bookings.
 
 ---
 
 ## The Opportunity
 
 ### Business Impact
-**Direct pipeline**: Three enterprise opportunities ($800K combined) are specifically asking about Salesforce integration. NXP alone is $400K.
+**Direct pipeline**: Three enterprise opportunities ($800K combined) are specifically asking about Globex integration. Vertex alone is $400K.
 
-**Market access**: AppExchange listing reaches thousands of Salesforce customers. Conservative estimate: 5 qualified leads per quarter at current conversion rates = $500K additional pipeline annually.
+**Market access**: AppExchange listing reaches thousands of Globex customers. Conservative estimate: 5 qualified leads per quarter at current conversion rates = $500K additional pipeline annually.
 
 **Competitive positioning**: Early partner status in forming ecosystem. Waiting means competing against established partners.
 
@@ -238,20 +238,20 @@ Directly supports enterprise AI positioning strategy. Validates "open platform" 
 ## Risks and Assumptions
 
 ### Key Assumptions
-- Salesforce partnership program accepts our application (High confidence - validated at Dreamforce)
-- Cox lighthouse remains committed (High confidence - POC complete, pilot approved)
+- Globex partnership program accepts our application (High confidence - validated at Dreamforce)
+- Keystone lighthouse remains committed (High confidence - POC complete, pilot approved)
 - Market demand sustains (Medium confidence - based on early signals, not proven at scale)
 
 ### Risks
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Partnership approval delayed | Missed Q1 timing | Begin application immediately |
-| Cox lighthouse falls through | Lose proof point | Identify backup (NXP as candidate) |
+| Keystone lighthouse falls through | Lose proof point | Identify backup (Vertex as candidate) |
 | Lower demand than expected | Lower ROI | Phase investment, prove before scaling |
 
 ### What We Don't Know
 - Exact conversion rate from AppExchange leads
-- Salesforce co-sell support level we'll receive
+- Globex co-sell support level we'll receive
 - Competitor timing (are others also pursuing?)
 
 ---

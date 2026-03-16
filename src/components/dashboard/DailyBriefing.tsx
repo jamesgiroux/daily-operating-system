@@ -30,6 +30,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -126,23 +127,28 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   const actions = data.actions;
   const emails = data.emails ?? [];
 
-  // I395: Score-based email selection — prefer scored emails, fall back to priority-based
-  const scoredEmails = isStale ? [] : emails
-    .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
-    .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
-    .slice(0, 3);
-  // Fallback: if no scores computed yet, use emails with summaries (intelligence format)
-  // Strict check: summary must be a non-empty string to count as intelligence
-  const fallbackEmails = scoredEmails.length > 0 ? [] : (isStale ? [] : emails
-    .filter((e) => e.summary && e.summary.trim().length > 0)
-    .slice(0, 3));
-  const briefingEmails = scoredEmails.length > 0 ? scoredEmails : fallbackEmails;
+  // I395: Score-based email selection — scored emails first, then enriched fill.
+  // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
+  // that didn't meet the score threshold (avoids hiding useful intelligence).
+  const briefingEmails = isStale ? [] : (() => {
+    const scored = emails
+      .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
+      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+    const scoredIds = new Set(scored.map((e) => e.id));
+    // Fill remaining slots with enriched emails that have summaries but scored below threshold
+    const enrichedFill = emails
+      .filter((e) => !scoredIds.has(e.id) && e.summary && e.summary.trim().length > 0)
+      .slice(0, Math.max(0, 5 - scored.length));
+    return [...scored.slice(0, 5), ...enrichedFill].slice(0, 5);
+  })();
   const emailSectionLabel = briefingEmails.length > 0 ? "WORTH YOUR ATTENTION" : "";
 
   // Up Next meeting (first upcoming, not past/cancelled)
   const upNext = findUpNextMeeting(meetings, now);
   const unpreppedHighStakes = findUnpreppedHighStakes(meetings, now, upNext?.id);
-  const scheduleMeetings = meetings;
+  // Only show meetings with invitees — filter out personal/solo calendar blocks
+  // (classified as "personal" by google_api/classify.rs rule 2: 0-1 attendees)
+  const scheduleMeetings = meetings.filter((m) => m.type !== "personal");
 
   // Readiness
   const readiness = computeReadiness(meetings, actions);
@@ -182,7 +188,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           stats.push({ label: `${readyCount}/${readiness.totalExternal} ready`, color: "sage" });
         }
       } else {
-        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} prepped`, color: "sage" });
+        stats.push({ label: `${readiness.preppedCount}/${readiness.totalExternal} ready`, color: "sage" });
       }
     }
     if (readiness.overdueCount > 0) {
@@ -201,7 +207,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
         onClick={onRunBriefing}
         loading={!!isRunning}
         loadingLabel={phaseLabel ?? "Running\u2026"}
-        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and intelligence"}
+        title={isRunning ? "Briefing in progress" : "Refresh emails, actions, and context"}
       />
     );
   }, [onRunBriefing, isRunning, workflowStatus]);
@@ -284,7 +290,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
           }}
         >
           <Loader2 className="h-3 w-3 animate-spin" style={{ width: 12, height: 12 }} />
-          Morning refresh in progress
+          Refresh in progress
         </div>
       )}
 
@@ -339,28 +345,55 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     params={{ meetingId: m.id }}
                     style={{ textDecoration: "none", color: "inherit" }}
                   >
-                    &#9888; {m.title} at {m.time} — no prep yet
+                    &#9888; {m.title} at {m.time} — no briefing yet
                   </Link>
                 </div>
               ))}
 
               <div className={s.scheduleRows}>
-                {scheduleMeetings.map((meeting) => (
-                  <BriefingMeetingCard
-                    key={meeting.id}
-                    meeting={meeting}
-                    now={now}
-                    currentMeeting={currentMeeting}
-                    meetingActions={getActionsForMeeting(meeting.id)}
-                    onComplete={handleComplete}
-                    completedIds={completedIds}
-                    onEntitiesChanged={onRefresh}
-                    capturedActionCount={getCapturedActionCount(meeting.id)}
-                    proposedActionCount={getProposedActionCount(meeting.id)}
-                    isUpNext={upNext?.id === meeting.id}
-                    userDomain={data.userDomains?.[0]}
-                  />
-                ))}
+                {scheduleMeetings.map((meeting) => {
+                  // I502: Find health data for first linked account
+                  const healthMap = data.entityHealthMap;
+                  const linkedAccountHealth = healthMap && meeting.linkedEntities
+                    ? meeting.linkedEntities
+                        .filter((e) => e.entityType === "account" && healthMap[e.id])
+                        .map((e) => ({ entity: e, health: healthMap[e.id] }))[0]
+                    : undefined;
+
+                  return (
+                    <div key={meeting.id}>
+                      <BriefingMeetingCard
+                        meeting={meeting}
+                        now={now}
+                        currentMeeting={currentMeeting}
+                        meetingActions={getActionsForMeeting(meeting.id)}
+                        onComplete={handleComplete}
+                        completedIds={completedIds}
+                        onEntitiesChanged={onRefresh}
+                        capturedActionCount={getCapturedActionCount(meeting.id)}
+                        proposedActionCount={getProposedActionCount(meeting.id)}
+                        isUpNext={upNext?.id === meeting.id}
+                        userDomain={data.userDomains?.[0]}
+                      />
+                      {linkedAccountHealth && (
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingLeft: 52,
+                          paddingBottom: 4,
+                        }}>
+                          <HealthBadge
+                            score={linkedAccountHealth.health.score}
+                            band={linkedAccountHealth.health.band}
+                            trend={linkedAccountHealth.health.trend}
+                            size="compact"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -408,7 +441,10 @@ function AttentionSection({
 }: {
   proposedActions: Array<{ id: string; title: string; sourceLabel?: string; sourceId?: string }>;
   acceptAction: (id: string) => void;
-  rejectAction: (id: string) => void;
+  rejectAction: (
+    id: string,
+    source?: "actions_page" | "daily_briefing" | "meeting_detail"
+  ) => void;
   focus: DashboardData["focus"];
   pendingActions: Action[];
   completedIds: Set<string>;
@@ -477,7 +513,7 @@ function AttentionSection({
                     key={action.id}
                     action={action}
                     onAccept={() => acceptAction(action.id)}
-                    onReject={() => rejectAction(action.id)}
+                    onReject={() => rejectAction(action.id, "daily_briefing")}
                     showBorder={i < Math.min(proposedActions.length, 3) - 1}
                     compact
                   />

@@ -1,178 +1,265 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight, CalendarDays, Loader2, Sparkles } from "lucide-react";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ArrowRight, Upload, FileText, Headphones, HardDrive, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
-import type { OnboardingPrimingContext } from "@/types";
+import styles from "../onboarding.module.css";
+import type { CopyToInboxReport, EnrichmentProgress } from "@/types";
 
 interface PrimeBriefingProps {
+  importedAccountNames?: string[];
   onComplete: () => void;
 }
 
-export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
-  const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
-  const [context, setContext] = useState<OnboardingPrimingContext | null>(null);
-  const [runMessage, setRunMessage] = useState<string | null>(null);
-  const navigate = useNavigate();
+const VALID_EXTENSIONS = ["txt", "md", "pdf", "docx"];
 
+function hasValidExtension(path: string): boolean {
+  const lower = path.toLowerCase();
+  return VALID_EXTENSIONS.some(ext => lower.endsWith(`.${ext}`));
+}
+
+export function PrimeBriefing({ importedAccountNames = [], onComplete }: PrimeBriefingProps) {
+  const [processing, setProcessing] = useState(false);
+  const [filesAdded, setFilesAdded] = useState<string[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [enrichmentProgress, setEnrichmentProgress] = useState<EnrichmentProgress[]>([]);
+
+  // Tauri native drag-drop listener (provides real file paths)
   useEffect(() => {
-    async function load() {
-      try {
-        const payload = await invoke<OnboardingPrimingContext>("get_onboarding_priming_context");
-        setContext(payload);
-      } finally {
-        setLoading(false);
-      }
+    let unlisten: (() => void) | undefined;
+
+    try {
+      getCurrentWebview()
+        .onDragDropEvent((event) => {
+          if (event.payload.type === "over") {
+            setDragOver(true);
+          } else if (event.payload.type === "leave") {
+            setDragOver(false);
+          } else if (event.payload.type === "drop") {
+            setDragOver(false);
+            const paths = event.payload.paths;
+            if (paths && paths.length > 0) {
+              const valid = paths.filter(hasValidExtension);
+              if (valid.length > 0) {
+                handleFilePaths(valid);
+              }
+            }
+          }
+        })
+        .then((fn) => {
+          unlisten = fn;
+        })
+        .catch((err) => console.error("listen drag-drop failed:", err));
+    } catch {
+      // Drag-drop not available outside Tauri webview
     }
-    load();
+
+    return () => {
+      unlisten?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFilePaths = useCallback(async (paths: string[]) => {
+    setProcessing(true);
+
+    try {
+      const report = await invoke<CopyToInboxReport>("copy_to_inbox", { paths });
+      if (report.copiedCount > 0) {
+        setFilesAdded(prev => [...prev, ...report.copiedFilenames]);
+      } else {
+        console.warn("No files were copied — they may be outside permitted directories");
+      }
+    } catch (err) {
+      console.error("Failed to copy files to inbox:", err);
+    }
+
+    setProcessing(false);
   }, []);
 
-  const cards = useMemo(() => context?.cards ?? [], [context]);
-
-  async function handlePreviewRun() {
-    setRunning(true);
-    setRunMessage(null);
+  const handleBrowse = useCallback(async () => {
     try {
-      const message = await invoke<string>("run_workflow", { workflow: "today" });
-      setRunMessage(message);
-    } catch (error) {
-      setRunMessage(String(error));
-    } finally {
-      setRunning(false);
+      const selected = await open({
+        multiple: true,
+        filters: [{ name: "Documents", extensions: VALID_EXTENSIONS }],
+      });
+      if (!selected) return;
+
+      const paths = Array.isArray(selected) ? selected : [selected];
+      await handleFilePaths(paths);
+    } catch {
+      // User cancelled
     }
-  }
+  }, [handleFilePaths]);
+
+  useEffect(() => {
+    if (importedAccountNames.length === 0) {
+      setEnrichmentProgress([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadStatus() {
+      try {
+        const progress = await invoke<EnrichmentProgress[]>("onboarding_enrichment_status", {
+          accountNames: importedAccountNames,
+        });
+        if (!cancelled) {
+          setEnrichmentProgress(progress);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load onboarding enrichment status:", err);
+        }
+      }
+    }
+
+    loadStatus();
+    const interval = window.setInterval(loadStatus, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [importedAccountNames]);
+
+  const completedAccounts = enrichmentProgress.filter((item) => item.status === "complete");
+  const stakeholderCount = completedAccounts.reduce((sum, item) => sum + item.stakeholderCount, 0);
+  const riskCount = completedAccounts.reduce((sum, item) => sum + item.riskCount, 0);
+  const bookReady = importedAccountNames.length > 0 && enrichmentProgress.length > 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
-        title="Prime Your First Briefing"
-        epigraph={context?.prompt ?? "Load your calendar context, then run a full today workflow preview."}
+        title={bookReady ? "Your book is getting ready" : "Prime Your Briefings"}
+        epigraph={
+          bookReady
+            ? "Keep going now. Account enrichment continues in the background and your briefings will sharpen as it lands."
+            : "Give DailyOS context about your work — the more it knows, the better your briefings."
+        }
       />
 
-      {loading ? (
-        <div style={{ height: 128 }} />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {cards.length === 0 ? (
-            <p
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontStyle: "italic",
-                fontSize: 14,
-                color: "var(--color-text-tertiary)",
-                margin: 0,
-              }}
-            >
-              No upcoming events found yet. You can still generate a preview briefing now.
-            </p>
-          ) : (
-            cards.map((card) => (
-              <div
-                key={card.id}
-                style={{
-                  borderTop: "1px solid var(--color-rule-light)",
-                  paddingTop: 12,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                  <div>
-                    <div
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-text-tertiary)",
-                      }}
-                    >
-                      {card.dayLabel}
-                    </div>
-                    <div
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-text-primary)",
-                        marginTop: 2,
-                      }}
-                    >
-                      {card.title}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 4 }}>
-                      {card.suggestedAction}
-                    </div>
-                    {card.suggestedEntityName && (
-                      <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 2 }}>
-                        Entity: {card.suggestedEntityName}
-                      </div>
-                    )}
-                  </div>
-                  {card.suggestedEntityId && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        navigate({
-                          to: "/inbox",
-                          search: { entityId: card.suggestedEntityId },
-                        })
-                      }
-                    >
-                      Open Inbox
-                    </Button>
-                  )}
+      {bookReady && (
+        <div className={styles.ruleSection}>
+          <div className={`${styles.flexCol} ${styles.gap8}`}>
+            {enrichmentProgress.map((item) => {
+              const percentage =
+                item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
+              return (
+                <div key={item.entityId} className={styles.discoveryRow}>
+                  <span className={styles.bodyText}>{item.name}</span>
+                  <span className={styles.tertiaryText}>
+                    {item.status === "complete"
+                      ? "Ready"
+                      : item.status === "analyzing"
+                        ? `Analyzing ${percentage}%`
+                        : "Queued"}
+                  </span>
                 </div>
-              </div>
-            ))
-          )}
+              );
+            })}
+            <p className={styles.bodyText}>
+              {completedAccounts.length === enrichmentProgress.length
+                ? `Your book is ready: ${completedAccounts.length} account${completedAccounts.length === 1 ? "" : "s"}, ${stakeholderCount} stakeholder${stakeholderCount === 1 ? "" : "s"}, ${riskCount} risk${riskCount === 1 ? "" : "s"}.`
+                : `Already usable now: ${completedAccounts.length}/${enrichmentProgress.length} account${enrichmentProgress.length === 1 ? "" : "s"} finished.`}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Full Workflow Preview */}
+      {/* Path A: Drop zone */}
       <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-          fontSize: 14,
-          color: "var(--color-text-secondary)",
-        }}
+        onClick={handleBrowse}
+        className={`${styles.dropZone} ${dragOver ? styles.dropZoneActive : ""}`}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "var(--color-text-primary)" }}>
-          <CalendarDays size={16} />
-          <span style={{ fontWeight: 500 }}>Full Workflow Preview</span>
-        </div>
-        Run{" "}
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>today</span>{" "}
-        now to generate a complete preview briefing immediately.
+        {processing ? (
+          <div className={styles.flexCenterGap8}>
+            <Loader2 size={20} className={`animate-spin ${styles.tertiaryText}`} />
+            <span className={styles.processingIndicator}>
+              Processing...
+            </span>
+          </div>
+        ) : (
+          <>
+            <Upload size={24} className={styles.uploadIcon} />
+            <p className={styles.dropZoneLabel}>
+              Drop files here or click to browse
+            </p>
+            <p className={styles.dropZoneHint}>
+              .txt, .md, .pdf, .docx — meeting notes, account briefs, anything relevant
+            </p>
+          </>
+        )}
       </div>
 
-      {runMessage && (
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            borderTop: "1px solid var(--color-rule-light)",
-            paddingTop: 12,
-          }}
-        >
-          {runMessage}
+      {/* Files added feedback */}
+      {filesAdded.length > 0 && (
+        <div className={`${styles.flexCol} ${styles.gap8}`}>
+          {filesAdded.map((name, i) => (
+            <div key={i} className={`${styles.flexRow} ${styles.gap8}`}>
+              <Check size={14} className={styles.sageColor} />
+              <span className={styles.fileAddedName}>
+                {name}
+              </span>
+            </div>
+          ))}
+          <p className={styles.fileAddedMessage}>
+            DailyOS is primed. Context will build from what you just gave it, and from your connectors as they run.
+          </p>
         </div>
       )}
 
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={handlePreviewRun} disabled={running}>
-          {running ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Sparkles className="mr-2 size-4" />}
-          {running ? "Running Preview..." : "Generate Preview Briefing"}
-        </Button>
+      {/* Path B: Connect feeders */}
+      <div className={styles.ruleSection}>
+        <p className={styles.sectionLabelLg}>
+          Or connect a source
+        </p>
+        <div className={styles.flexWrapRow}>
+          {[
+            { icon: <Headphones size={16} />, name: "Quill", desc: "Meeting transcripts" },
+            { icon: <FileText size={16} />, name: "Granola", desc: "Meeting notes" },
+            { icon: <HardDrive size={16} />, name: "Google Drive", desc: "Shared documents" },
+          ].map((source) => (
+            <div
+              key={source.name}
+              className={styles.sourceCard}
+            >
+              <div className={styles.sourceHeader}>
+                {source.icon}
+                <span className={styles.sourceName}>
+                  {source.name}
+                </span>
+              </div>
+              <p className={styles.sourceDesc}>
+                {source.desc}
+              </p>
+              <p className={styles.sourceComingSoon}>
+                Coming soon
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className={styles.settingsHint}>
+          You can set these up any time in Settings.
+        </p>
+      </div>
+
+      {/* Actions */}
+      <div className={`flex justify-between ${styles.ruleSection}`}>
+        <button
+          onClick={onComplete}
+          className={styles.skipLink}
+        >
+          Continue to DailyOS
+        </button>
         <Button onClick={onComplete}>
-          Go to Dashboard
+          Continue to DailyOS
           <ArrowRight className="ml-2 size-4" />
         </Button>
       </div>
 
-      {/* Editorial close — FinisMarker */}
       <FinisMarker />
     </div>
   );

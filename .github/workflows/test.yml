@@ -59,6 +59,9 @@ jobs:
           # Force Cargo to re-run build.rs so it sees the stub binary
           touch src-tauri/build.rs
 
+      - name: Enforce service-layer mutation boundary
+        run: ./scripts/check_service_layer_boundary.sh
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 
@@ -74,6 +77,9 @@ jobs:
 
       - name: Run frontend tests
         run: pnpm test
+
+      - name: Run Phase 3 production-parity gate
+        run: pnpm run test:parity
 
       - name: Run frontend dependency audit (high+)
         run: pnpm audit --audit-level high
