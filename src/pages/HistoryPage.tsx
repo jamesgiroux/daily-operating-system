@@ -9,6 +9,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
 import type { ProcessingLogEntry } from "@/types";
+import styles from "./HistoryPage.module.css";
 
 export default function HistoryPage() {
   const navigate = useNavigate();
@@ -53,33 +54,18 @@ export default function HistoryPage() {
   }
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={styles.container}>
       {/* ═══ HERO ═══ */}
-      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h1
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 36,
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--color-text-primary)",
-              margin: 0,
-            }}
-          >
+      <section className={styles.hero}>
+        <div className={styles.heroRow}>
+          <h1 className={styles.title}>
             Processing History
           </h1>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              color: "var(--color-text-tertiary)",
-            }}
-          >
+          <span className={styles.entryCount}>
             {entries.length} entr{entries.length !== 1 ? "ies" : "y"}
           </span>
         </div>
-        <div style={{ height: 2, background: "var(--color-desk-charcoal)", marginTop: 16 }} />
+        <div className={styles.heroRule} />
       </section>
 
       {/* ═══ ENTRIES ═══ */}
@@ -98,26 +84,11 @@ export default function HistoryPage() {
       ) : (
         <>
           {/* Column headers */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "2fr 1fr 1fr 2fr 1fr",
-              gap: 12,
-              padding: "0 0 8px",
-              borderBottom: "1px solid var(--color-rule-light)",
-            }}
-          >
+          <div className={styles.headerRow}>
             {["FILE", "CLASS", "STATUS", "DESTINATION", "TIME"].map((h) => (
               <span
                 key={h}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--color-text-tertiary)",
-                }}
+                className={styles.headerCell}
               >
                 {h}
               </span>
@@ -147,62 +118,28 @@ function HistoryRow({
 
   return (
     <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "2fr 1fr 1fr 2fr 1fr",
-        gap: 12,
-        padding: "10px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        alignItems: "center",
-      }}
+      className={`${styles.entryRow} ${showBorder ? styles.entryRowBorder : ''}`}
     >
       {/* Filename */}
       <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          color: "var(--color-text-primary)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
+        className={styles.cellFilename}
         title={entry.filename}
       >
         {entry.filename}
       </span>
 
       {/* Classification */}
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--color-text-tertiary)",
-        }}
-      >
+      <span className={styles.cellMono}>
         {entry.classification}
       </span>
 
       {/* Status — colored dot + mono label */}
-      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span className={styles.statusCell}>
         <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: isError
-              ? "var(--color-spice-terracotta)"
-              : "var(--color-garden-sage)",
-            flexShrink: 0,
-          }}
+          className={`${styles.statusDot} ${isError ? styles.statusDotError : styles.statusDotSuccess}`}
         />
         <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: isError
-              ? "var(--color-spice-terracotta)"
-              : "var(--color-text-tertiary)",
-          }}
+          className={`${styles.cellMono} ${isError ? styles.statusTextError : ''}`}
         >
           {entry.status}
         </span>
@@ -210,42 +147,20 @@ function HistoryRow({
 
       {/* Destination */}
       <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--color-text-tertiary)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
+        className={`${styles.cellMono} ${styles.cellTruncate}`}
         title={entry.destinationPath || undefined}
       >
         {entry.destinationPath || "\u2014"}
       </span>
 
       {/* Time */}
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--color-text-tertiary)",
-          whiteSpace: "nowrap",
-        }}
-      >
+      <span className={`${styles.cellMono} ${styles.cellNoWrap}`}>
         {formatTimestamp(entry.createdAt)}
       </span>
 
       {/* Error row — spans full width */}
       {isError && entry.errorMessage && (
-        <div
-          style={{
-            gridColumn: "1 / -1",
-            fontFamily: "var(--font-sans)",
-            fontSize: 12,
-            color: "var(--color-spice-terracotta)",
-            paddingTop: 2,
-          }}
-        >
+        <div className={styles.errorRow}>
           {entry.errorMessage}
         </div>
       )}

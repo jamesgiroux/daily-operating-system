@@ -16,6 +16,7 @@ pub fn build_report_preamble(entity_name: &str, report_type: &str, entity_type: 
         "ebr_qbr" => "an Executive Business Review (EBR/QBR)",
         "weekly_impact" => "a Weekly Impact Report",
         "monthly_wrapped" => "a Monthly Wrapped report",
+        "book_of_business" => "a Book of Business Review",
         _ => "a strategic report",
     };
 

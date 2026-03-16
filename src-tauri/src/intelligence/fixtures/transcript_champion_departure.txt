@@ -1,0 +1,41 @@
+FILE_TYPE: transcript
+ACCOUNT: Gamma Corp
+MEETING: Weekly Sync
+SUMMARY: Critical meeting — primary champion Mike Torres announced departure effective end of month. No successor identified. Account team needs to urgently identify new internal advocate.
+DISCUSSION:
+- Mike Torres informed team of his departure
+- No handoff plan discussed for our product ownership
+- Remaining team expressed uncertainty about renewal timeline
+END_DISCUSSION
+ACTIONS:
+- [P1] Identify potential new champion at Gamma Corp @csm by: 2026-03-22
+END_ACTIONS
+WINS:
+END_WINS
+RISKS:
+- [RED] Champion Mike Torres departing end of month — no successor identified #"I'm moving on to a new opportunity, and honestly I'm not sure who will own this internally"
+- [RED] Renewal at risk — remaining team expressed uncertainty about continued investment #"Without Mike driving this, I'm not sure where we stand"
+- [YELLOW] Knowledge transfer gap — Mike holds all institutional context about our integration
+END_RISKS
+DECISIONS:
+END_DECISIONS
+CHAMPION_HEALTH:
+- champion_name: Mike Torres
+- champion_status: lost
+- champion_evidence: Announced departure effective end of month. No successor identified in the meeting.
+- champion_risk: Single-threaded relationship — Mike was the only internal advocate. Without a new champion, renewal is at significant risk.
+END_CHAMPION_HEALTH
+SENTIMENT:
+- overall: negative
+- customer: negative
+- engagement: low
+- forward_looking: no
+- competitor_mentions: none
+- champion_present: yes
+- champion_engaged: no
+- ownership_language: vendor
+- past_tense_references: yes
+- data_export_interest: no
+- internal_advocacy_visible: no
+- roadmap_interest: no
+END_SENTIMENT

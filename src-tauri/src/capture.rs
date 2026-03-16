@@ -305,6 +305,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                 Path::new(ws),
                                 &file_path.display().to_string(),
                                 &prompt.meeting,
+                                Some(&app_handle),
                                 db_ref,
                                 &profile,
                                 Some(&ai_config),

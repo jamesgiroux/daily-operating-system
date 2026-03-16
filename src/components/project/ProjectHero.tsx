@@ -7,6 +7,7 @@ import type { ProjectDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { EditableText } from "@/components/ui/EditableText";
+import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import styles from "./ProjectHero.module.css";
 
 interface ProjectHeroProps {
@@ -131,13 +132,11 @@ export function ProjectHero({
       {/* Meta row */}
       <div className={styles.meta} style={{ display: "flex", alignItems: "baseline", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
         {onEnrich && (
-          <button
-            className={enriching ? styles.metaButtonEnriching : styles.metaButton}
+          <FolioRefreshButton
             onClick={onEnrich}
-            disabled={enriching}
-          >
-            {enriching ? `Refreshing… ${enrichSeconds ?? 0}s` : "Refresh"}
-          </button>
+            loading={!!enriching}
+            loadingProgress={enriching ? `${enrichSeconds ?? 0}s` : undefined}
+          />
         )}
         {detail.archived && onUnarchive && (
           <button className={styles.metaButton} onClick={onUnarchive}>

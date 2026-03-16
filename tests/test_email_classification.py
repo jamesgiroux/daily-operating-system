@@ -41,9 +41,9 @@ def test_customer_domain_is_high():
 
 def test_account_hint_match_is_high():
     """Email from a domain matching an account slug → high."""
-    email = _email(from_addr="support@autoco.com")
+    email = _email(from_addr="support@acmecorp.com")
     assert _classify_email_priority(
-        email, set(), "myco.com", account_hints={"autoco"}
+        email, set(), "myco.com", account_hints={"acmecorp"}
     ) == "high"
 
 
@@ -63,9 +63,9 @@ def test_noreply_at_customer_domain_is_high():
 
 def test_noreply_account_hint_is_high():
     """noreply@known-account.com should be high (account hint check runs first)."""
-    email = _email(from_addr="noreply@autoco.com")
+    email = _email(from_addr="noreply@acmecorp.com")
     assert _classify_email_priority(
-        email, set(), "myco.com", account_hints={"autoco"}
+        email, set(), "myco.com", account_hints={"acmecorp"}
     ) == "high"
 
 

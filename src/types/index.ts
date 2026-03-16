@@ -31,6 +31,36 @@ export type MeetingType =
   | "external"
   | "personal";
 
+/** Feature flags for gating incomplete features (I537). */
+export interface FeatureFlags {
+  role_presets_enabled: boolean;
+  book_of_business_enabled: boolean;
+  glean_discovery_enabled: boolean;
+}
+
+export interface DatabaseRecoveryStatus {
+  required: boolean;
+  reason: string;
+  detail: string;
+  dbPath: string;
+}
+
+export interface BackupInfo {
+  path: string;
+  createdAt: string;
+  sizeBytes: number;
+  kind: string;
+  filename: string;
+  schemaVersion: number | null;
+}
+
+export interface DatabaseInfo {
+  path: string;
+  sizeBytes: number;
+  schemaVersion: number;
+  lastBackup: string | null;
+}
+
 export type Priority = "P1" | "P2" | "P3";
 
 export type ActionStatus = "pending" | "completed" | "proposed" | "archived";
@@ -287,6 +317,8 @@ export interface DashboardData {
   emailNarrative?: string;
   /** Threads awaiting user reply (I318/I355) */
   repliesNeeded?: ReplyNeeded[];
+  /** I502: Health data keyed by entity ID for accounts linked to today's meetings. */
+  entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
 // =============================================================================
@@ -537,6 +569,78 @@ export interface EmailBriefingData {
 }
 
 // =============================================================================
+// Post-Meeting Intelligence (I558)
+// =============================================================================
+
+export interface SpeakerSentiment {
+  name: string;
+  sentiment: string;
+  evidence: string;
+}
+
+export interface CompetitorMention {
+  competitor: string;
+  context: string;
+}
+
+export interface EscalationQuote {
+  quote: string;
+  speaker: string;
+}
+
+export interface InteractionDynamics {
+  meetingId: string;
+  talkBalanceCustomerPct?: number;
+  talkBalanceInternalPct?: number;
+  speakerSentiments: SpeakerSentiment[];
+  questionDensity?: string;
+  decisionMakerActive?: string;
+  forwardLooking?: string;
+  monologueRisk: boolean;
+  competitorMentions: CompetitorMention[];
+  escalationLanguage: EscalationQuote[];
+}
+
+export interface ChampionHealthAssessment {
+  meetingId: string;
+  championName?: string;
+  championStatus: string;
+  championEvidence?: string;
+  championRisk?: string;
+}
+
+export interface RoleChange {
+  id: string;
+  meetingId: string;
+  personName: string;
+  oldStatus?: string;
+  newStatus?: string;
+  evidenceQuote?: string;
+}
+
+export interface EnrichedCapture {
+  id: string;
+  meetingId: string;
+  meetingTitle: string;
+  accountId?: string;
+  captureType: string;
+  content: string;
+  subType?: string;
+  urgency?: string;
+  impact?: string;
+  evidenceQuote?: string;
+  speaker?: string;
+  capturedAt: string;
+}
+
+export interface MeetingPostIntelligence {
+  interactionDynamics?: InteractionDynamics;
+  championHealth?: ChampionHealthAssessment;
+  roleChanges: RoleChange[];
+  enrichedCaptures: EnrichedCapture[];
+}
+
+// =============================================================================
 // Full Meeting Prep (from individual prep files)
 // =============================================================================
 
@@ -566,6 +670,36 @@ export type GoogleAuthStatus =
 export type GleanAuthStatus =
   | { status: "notconfigured" }
   | { status: "authenticated"; email: string; name?: string };
+
+// I561 — Onboarding: Three Connectors
+export interface OnboardingImportResult {
+  created: number;
+  failed: string[];
+}
+
+export interface UserProfileSuggestion {
+  name: string | null;
+  title: string | null;
+  department: string | null;
+  company: string | null;
+}
+
+export interface EnrichmentProgress {
+  entityId: string;
+  name: string;
+  status: "queued" | "analyzing" | "complete" | "failed";
+  completed: number;
+  total: number;
+  stakeholderCount: number;
+  riskCount: number;
+}
+
+export interface GleanTokenHealth {
+  connected: boolean;
+  status: "healthy" | "expiring" | "expired" | "not_connected";
+  expiresAt: string | null;
+  expiresInHours: number | null;
+}
 
 export interface HygieneFixView {
   key: string;
@@ -672,6 +806,31 @@ export interface CapturedAction {
 // Transcript & Meeting Outcomes (I44 / I45 / ADR-0044)
 // =============================================================================
 
+/** Sentiment analysis from transcript processing (I509) */
+export interface TranscriptSentiment {
+  overall?: string;
+  customer?: string;
+  engagement?: string;
+  forwardLooking: boolean;
+  competitorMentions: string[];
+  championPresent?: boolean;
+  championEngaged?: boolean;
+}
+
+/** Engagement quality signals from a transcript (I509) */
+export interface EngagementSignals {
+  questionDensity?: string;
+  decisionMakerActive?: string;
+  forwardLooking?: string;
+  monologueRisk?: boolean;
+}
+
+/** An escalation signal detected in meeting language (I509) */
+export interface EscalationSignal {
+  quote: string;
+  speaker?: string;
+}
+
 /** Result of transcript processing */
 export interface TranscriptResult {
   status: "success" | "error";
@@ -684,6 +843,8 @@ export interface TranscriptResult {
   discussion: string[];
   analysis?: string;
   message?: string;
+  sentiment?: TranscriptSentiment;
+  interactionDynamics?: InteractionDynamics;
 }
 
 /** Meeting outcomes (from transcript processing or manual capture) */
@@ -752,6 +913,8 @@ export interface MeetingIntelligence {
     staleness: "current" | "aging" | "stale";
     hasNewSignals: boolean;
   };
+  /** I502: Health data keyed by entity ID for linked accounts that have intelligence health. */
+  entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
 export interface ApplyPrepPrefillResult {
@@ -880,6 +1043,10 @@ export interface FullMeetingPrep {
   stakeholderInsights?: StakeholderInsight[];
   /** Recent email-derived signals linked to meeting entity context (I215) */
   recentEmailSignals?: EmailSignal[];
+  /** I527: Deterministic consistency status from intelligence checks. */
+  consistencyStatus?: ConsistencyStatus;
+  /** I527: Deterministic consistency findings for trust transparency. */
+  consistencyFindings?: ConsistencyFinding[];
 }
 
 /** Account snapshot item for intelligence-enriched Quick Context (I186) */
@@ -1002,6 +1169,35 @@ export type AccountHealth = "green" | "yellow" | "red";
 /** Account classification: customer, internal org, or partner (I382). */
 export type AccountType = "customer" | "internal" | "partner";
 
+/** I494: Account discovered from Glean search. */
+export interface DiscoveredAccount {
+  name: string;
+  myRole: string | null;
+  evidence: string | null;
+  source: string | null;
+  domain: string | null;
+  industry: string | null;
+  contextPreview: string | null;
+  alreadyInDailyos: boolean;
+}
+
+/** I495: A single section within an ephemeral briefing. */
+export interface BriefingSection {
+  title: string;
+  content: string;
+  source: string | null;
+}
+
+/** I495: One-shot briefing about an account from Glean. */
+export interface EphemeralBriefing {
+  name: string;
+  summary: string;
+  sections: BriefingSection[];
+  sourceCount: number;
+  /** Entity ID if the account already exists in DailyOS. */
+  alreadyExists: string | null;
+}
+
 /** Summary item for the accounts list page. */
 export interface AccountListItem {
   id: string;
@@ -1010,7 +1206,6 @@ export interface AccountListItem {
   arr?: number;
   health?: AccountHealth;
   nps?: number;
-  teamSummary?: string;
   renewalDate?: string;
   openActionCount: number;
   daysSinceLastMeeting?: number;
@@ -1021,6 +1216,8 @@ export interface AccountListItem {
   isParent: boolean;
   accountType: AccountType;
   archived: boolean;
+  /** I502: Intelligence health data when available (populated from entity_intelligence). */
+  intelligenceHealth?: IntelligenceAccountHealth | null;
 }
 
 export interface CompanyOverview {
@@ -1126,6 +1323,7 @@ export interface AccountDetail extends AccountListItem {
   /** I114: Parent-child hierarchy */
   children: AccountChildSummary[];
   parentAggregate?: ParentAggregate;
+  objectives: AccountObjective[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
 }
@@ -1184,6 +1382,19 @@ export interface UserEdit {
   editedAt: string;
 }
 
+export type ConsistencyStatus = "ok" | "corrected" | "flagged";
+export type ConsistencySeverity = "high" | "medium" | "low";
+
+/** Deterministic contradiction finding recorded during consistency checks (I527). */
+export interface ConsistencyFinding {
+  code: string;
+  severity: ConsistencySeverity;
+  fieldPath: string;
+  claimText: string;
+  evidenceText: string;
+  autoFixed: boolean;
+}
+
 /** A child account flagged as a hotspot in a parent's portfolio assessment (I384). */
 export interface PortfolioHotspot {
   childId: string;
@@ -1233,9 +1444,218 @@ export interface PersonRelationshipEdge {
   contextEntityType?: string;
   contextEntityName?: string;
   source: string;
+  rationale?: string;
   createdAt: string;
   updatedAt: string;
   lastReinforcedAt?: string;
+}
+
+/** ADR-0097: Structured health model used in entity intelligence payloads. */
+export interface IntelligenceAccountHealth {
+  score: number;
+  band: "green" | "yellow" | "red";
+  source: "org" | "computed" | "userSet";
+  confidence: number;
+  trend: IntelligenceHealthTrend;
+  dimensions: RelationshipDimensions;
+  divergence?: HealthDivergence | null;
+  narrative?: string | null;
+  recommendedActions?: string[];
+}
+
+export interface IntelligenceHealthTrend {
+  direction: "improving" | "stable" | "declining" | "volatile";
+  rationale?: string | null;
+  timeframe?: string;
+  confidence?: number;
+}
+
+export interface RelationshipDimensions {
+  meetingCadence: DimensionScore;
+  emailEngagement: DimensionScore;
+  stakeholderCoverage: DimensionScore;
+  championHealth: DimensionScore;
+  financialProximity: DimensionScore;
+  signalMomentum: DimensionScore;
+}
+
+export interface DimensionScore {
+  score: number;
+  weight: number;
+  evidence?: string[];
+  trend: "improving" | "stable" | "declining";
+}
+
+export interface HealthDivergence {
+  severity: "minor" | "notable" | "critical";
+  description: string;
+  leadingIndicator: boolean;
+}
+
+export interface OrgHealthData {
+  healthBand?: string;
+  healthScore?: number;
+  renewalLikelihood?: string;
+  growthTier?: string;
+  customerStage?: string;
+  supportTier?: string;
+  icpFit?: string;
+  source: string;
+  gatheredAt: string;
+}
+
+/** Intelligence-layer transcript sentiment (from io.rs TranscriptSentiment, used in entity assessment) */
+export interface IntelligenceTranscriptSentiment {
+  overall: string;
+  customer?: string;
+  engagement?: string;
+  forwardLooking?: boolean;
+  competitorMentions?: string[];
+  championPresent?: string;
+  championEngaged?: string;
+}
+
+// =============================================================================
+// I508a: Intelligence Dimension Sub-Types
+// =============================================================================
+
+// -- Dimension 1: Strategic Assessment --
+
+export interface CompetitiveInsight {
+  competitor: string;
+  threatLevel?: string;
+  context?: string;
+  source?: string;
+  detectedAt?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
+}
+
+export interface StrategicPriority {
+  priority: string;
+  status?: string;
+  owner?: string;
+  source?: string;
+  timeline?: string;
+}
+
+// -- Dimension 2: Relationship Health --
+
+export interface CoverageAssessment {
+  roleFillRate?: number;
+  gaps?: string[];
+  covered?: string[];
+  level?: string;
+}
+
+export interface OrgChange {
+  changeType: string;
+  person: string;
+  from?: string;
+  to?: string;
+  detectedAt?: string;
+  source?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
+}
+
+export interface InternalTeamMember {
+  personId?: string;
+  name: string;
+  role: string;
+  source?: string;
+}
+
+// -- Dimension 3: Engagement Cadence --
+
+export interface CadenceAssessment {
+  meetingsPerMonth?: number;
+  trend?: string;
+  daysSinceLast?: number;
+  assessment?: string;
+  evidence?: string[];
+}
+
+export interface ResponsivenessAssessment {
+  trend?: string;
+  volumeTrend?: string;
+  assessment?: string;
+  evidence?: string[];
+}
+
+// -- Dimension 4: Value & Outcomes --
+
+export interface Blocker {
+  description: string;
+  owner?: string;
+  since?: string;
+  impact?: string;
+  source?: string;
+}
+
+// -- Dimension 5: Commercial Context --
+
+export interface ContractContext {
+  contractType?: string;
+  autoRenew?: boolean;
+  contractStart?: string;
+  renewalDate?: string;
+  currentArr?: number;
+  multiYearRemaining?: number;
+  previousRenewalOutcome?: string;
+  procurementNotes?: string;
+  customerFiscalYearStart?: number;
+}
+
+export interface ExpansionSignal {
+  opportunity: string;
+  arrImpact?: number;
+  source?: string;
+  stage?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
+}
+
+export interface RenewalOutlook {
+  confidence?: string;
+  riskFactors?: string[];
+  expansionPotential?: string;
+  recommendedStart?: string;
+  negotiationLeverage?: string[];
+  negotiationRisk?: string[];
+}
+
+// -- Dimension 6: External Health Signals --
+
+export interface SupportHealth {
+  openTickets?: number;
+  criticalTickets?: number;
+  avgResolutionTime?: string;
+  trend?: string;
+  csat?: number;
+  source?: string;
+}
+
+export interface AdoptionSignals {
+  adoptionRate?: number;
+  trend?: string;
+  featureAdoption?: string[];
+  lastActive?: string;
+  source?: string;
+}
+
+export interface SatisfactionData {
+  nps?: number;
+  csat?: number;
+  surveyDate?: string;
+  verbatim?: string;
+  source?: string;
 }
 
 /** Synthesized intelligence for an entity (account, project, or person). */
@@ -1247,6 +1667,8 @@ export interface EntityIntelligence {
   sourceFileCount: number;
   sourceManifest: SourceManifestEntry[];
   executiveAssessment?: string;
+  /** I576: Concise editorial pull quote — one impactful sentence. */
+  pullQuote?: string;
   risks: IntelRisk[];
   recentWins: IntelWin[];
   currentState?: IntelCurrentState;
@@ -1258,18 +1680,63 @@ export interface EntityIntelligence {
   /** Network intelligence for person entities (I391) */
   network?: NetworkIntelligence;
   userEdits?: UserEdit[];
-  /** I396: Account health score (0-100). Null for sparse accounts. */
-  healthScore?: number | null;
-  /** I396: Health trend direction + rationale. */
-  healthTrend?: { direction: string; rationale?: string } | null;
+  /** ADR-0097 structured health payload. */
+  health?: IntelligenceAccountHealth | null;
+  /** I500 org-health baseline payload (when available). */
+  orgHealth?: OrgHealthData | null;
   /** I396: Value delivered to the account. */
-  valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string }> | null;
+  valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
   /** I396: Success metrics / KPIs tracked for this entity. */
   successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
   /** I396: Open commitments (promises made to/from the account). */
-  openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string }> | null;
+  openCommitments?: Array<{ description: string; owner?: string; dueDate?: string; source?: string; status?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
   /** I396: Relationship depth assessment. */
   relationshipDepth?: { championStrength?: string; executiveAccess?: string; stakeholderCoverage?: string; coverageGaps?: string[] } | null;
+  /** I527: Deterministic consistency status. */
+  consistencyStatus?: ConsistencyStatus;
+  /** I527: Deterministic contradiction findings. */
+  consistencyFindings?: ConsistencyFinding[];
+  /** I527: Timestamp of latest consistency check. */
+  consistencyCheckedAt?: string;
+
+  // I508a: Intelligence Dimension Fields
+
+  /** Dimension 1: Competitive insights. */
+  competitiveContext?: CompetitiveInsight[];
+  /** Dimension 1: Strategic priorities. */
+  strategicPriorities?: StrategicPriority[];
+
+  /** Dimension 2: Stakeholder coverage assessment. */
+  coverageAssessment?: CoverageAssessment | null;
+  /** Dimension 2: Organizational changes detected. */
+  organizationalChanges?: OrgChange[];
+  /** Dimension 2: Internal team assigned to this account. */
+  internalTeam?: InternalTeamMember[];
+
+  /** Dimension 3: Meeting cadence assessment. */
+  meetingCadence?: CadenceAssessment | null;
+  /** Dimension 3: Email responsiveness assessment. */
+  emailResponsiveness?: ResponsivenessAssessment | null;
+
+  /** Dimension 4: Active blockers. */
+  blockers?: Blocker[];
+
+  /** Dimension 5: Contract and commercial context. */
+  contractContext?: ContractContext | null;
+  /** Dimension 5: Expansion signals. */
+  expansionSignals?: ExpansionSignal[];
+  /** Dimension 5: Renewal outlook. */
+  renewalOutlook?: RenewalOutlook | null;
+
+  /** Dimension 6: Support ticket health. */
+  supportHealth?: SupportHealth | null;
+  /** Dimension 6: Product adoption signals. */
+  productAdoption?: AdoptionSignals | null;
+  /** Dimension 6: NPS/CSAT satisfaction data. */
+  npsCsat?: SatisfactionData | null;
+
+  /** Cross-cutting: source attribution (I507). */
+  sourceAttribution?: Record<string, string[]> | null;
 }
 
 export interface SourceManifestEntry {
@@ -1278,16 +1745,32 @@ export interface SourceManifestEntry {
   format?: string;
 }
 
+/** I576: Source attribution for individual intelligence items. */
+export interface ItemSource {
+  source: string;
+  confidence: number;
+  sourcedAt: string;
+  reference?: string;
+}
+
 export interface IntelRisk {
   text: string;
   source?: string;
   urgency: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface IntelWin {
   text: string;
   source?: string;
   impact?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface IntelCurrentState {
@@ -1306,6 +1789,10 @@ export interface StakeholderInsight {
   personId?: string;
   /** Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420). */
   suggestedPersonId?: string;
+  /** I576: Structured source attribution with confidence. */
+  itemSource?: ItemSource;
+  /** I576: True if multiple sources disagree on this item. */
+  discrepancy?: boolean;
 }
 
 export interface IntelMeetingReadiness {
@@ -1489,6 +1976,8 @@ export interface PrepContext {
     role?: string;
     assessment?: string;
   }>;
+  consistencyStatus?: ConsistencyStatus;
+  consistencyFindings?: ConsistencyFinding[];
 }
 
 /** Meeting search result (I183). */
@@ -1510,12 +1999,19 @@ export type AccountEventType =
   | "expansion"
   | "churn"
   | "downsell"
+  | "downgrade"
   | "escalation"
+  | "escalation_resolved"
   | "champion_change"
+  | "executive_sponsor_change"
+  | "contract_signed"
+  | "pilot_start"
+  | "kickoff"
   | "go_live"
   | "qbr_completed"
   | "ebr_completed"
-  | "onboarding_complete";
+  | "onboarding_complete"
+  | "health_review";
 
 export interface AccountEvent {
   id: number;
@@ -1525,6 +2021,70 @@ export interface AccountEvent {
   arrImpact?: number;
   notes?: string;
   createdAt: string;
+}
+
+export interface AccountMilestone {
+  id: string;
+  objectiveId: string;
+  accountId: string;
+  title: string;
+  status: "pending" | "completed" | "skipped";
+  targetDate?: string | null;
+  completedAt?: string | null;
+  autoDetectSignal?: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountObjective {
+  id: string;
+  accountId: string;
+  title: string;
+  description?: string | null;
+  status: "draft" | "active" | "completed" | "abandoned";
+  targetDate?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  source: "user" | "ai_suggested" | "template";
+  sortOrder: number;
+  milestones: AccountMilestone[];
+  linkedActions: Action[];
+  linkedActionCount: number;
+  completedMilestoneCount: number;
+  totalMilestoneCount: number;
+}
+
+export interface SuggestedMilestone {
+  title: string;
+  targetDate?: string | null;
+  autoDetectEvent?: string | null;
+}
+
+export interface SuggestedObjective {
+  title: string;
+  description?: string | null;
+  confidence: "high" | "medium" | "low" | string;
+  sourceEvidence?: string | null;
+  milestones: SuggestedMilestone[];
+  sourceCommitmentIds: string[];
+}
+
+export interface SuccessPlanTemplate {
+  id: string;
+  name: string;
+  description: string;
+  lifecycleTrigger: string;
+  objectives: {
+    title: string;
+    description: string;
+    milestones: {
+      title: string;
+      offsetDays: number;
+      autoDetectSignal?: string | null;
+    }[];
+  }[];
 }
 
 // =============================================================================
@@ -1764,6 +2324,8 @@ export interface TimelineMeeting {
   followUpCount?: number;
   /** Whether a meeting briefing exists (prep_frozen_json or disk file) */
   hasPrep?: boolean;
+  /** I502: Health data keyed by entity ID for linked accounts with intelligence health. */
+  entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
 // =============================================================================
@@ -1832,4 +2394,78 @@ export interface QuarterlyPriority {
   linkedEntityId: string | null;
   linkedEntityType: string | null;
   createdAt: string;
+}
+
+// =============================================================================
+// I427: Global Search
+// =============================================================================
+
+export interface GlobalSearchResult {
+  entityId: string;
+  entityType: "account" | "project" | "person" | "meeting" | "action" | "email";
+  name: string;
+  secondaryText: string;
+  route: string;
+  rank: number;
+}
+
+export interface CopyToInboxReport {
+  copiedCount: number;
+  copiedFilenames: string[];
+}
+
+// =============================================================================
+// I428: Connectivity / Sync Freshness
+// =============================================================================
+
+export interface SyncFreshness {
+  source: string;
+  status: "green" | "amber" | "red" | "unknown";
+  lastSuccessAt: string | null;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  ageDescription: string;
+}
+
+// =============================================================================
+// I429: Data Export
+// =============================================================================
+
+export interface ExportReport {
+  path: string;
+  timestamp: string;
+  counts: ExportCounts;
+}
+
+export interface ExportCounts {
+  accounts: number;
+  people: number;
+  projects: number;
+  meetings: number;
+  actions: number;
+  signals: number;
+  intelligence: number;
+}
+
+// =============================================================================
+// I430: Privacy Controls
+// =============================================================================
+
+export interface DataSummary {
+  accounts: number;
+  people: number;
+  projects: number;
+  meetings: number;
+  actions: number;
+  insights: number;
+  signals: number;
+  emails: number;
+}
+
+export interface ClearReport {
+  assessmentsDeleted: number;
+  feedbackDeleted: number;
+  signalsDeleted: number;
+  summariesCleared: number;
 }

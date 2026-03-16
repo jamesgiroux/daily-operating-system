@@ -203,7 +203,7 @@ pub fn run_reconciliation(workspace: &Path, db: Option<&ActionDb>) -> Reconcilia
     }
 }
 
-/// Record completed meetings in SQLite meetings_history.
+/// Record completed meetings in SQLite meetings/meeting_prep/meeting_transcripts tables.
 ///
 /// Also persists enriched prep context (I181) so prep data survives archival.
 pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace: &Path) {
@@ -280,7 +280,7 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
             last_viewed_at: None,
         };
 
-        if let Err(e) = db.upsert_meeting(&meeting) {
+        if let Err(e) = crate::services::meetings::upsert_meeting_for_reconcile(db, &meeting) {
             log::warn!("Failed to persist meeting '{}': {}", ms.title, e);
             continue;
         }
@@ -579,8 +579,15 @@ pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> R
     // Ensure data/ exists (may have been cleaned, or may not exist yet)
     let _ = fs::create_dir_all(&data_dir);
 
-    fs::write(data_dir.join("next-morning-flags.json"), json)
-        .map_err(|e| format!("Failed to write next-morning-flags.json: {}", e))
+    fs::write(data_dir.join("next-morning-flags.json"), &json)
+        .map_err(|e| format!("Failed to write next-morning-flags.json: {}", e))?;
+
+    // I513: Also store in app_state_kv for DB-based reads
+    if let Ok(db) = crate::db::ActionDb::open() {
+        let _ = crate::services::mutations::upsert_app_state_kv_json(&db, "morning_flags", &json);
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

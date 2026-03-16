@@ -345,19 +345,19 @@ impl ActionDb {
         let old_path: Option<String> = self
             .conn
             .query_row(
-                "SELECT prep_snapshot_path FROM meetings_history WHERE id = ?1",
+                "SELECT prep_snapshot_path FROM meeting_prep WHERE meeting_id = ?1",
                 params![meeting_id],
                 |row| row.get(0),
             )
             .unwrap_or(None);
 
         self.conn.execute(
-            "UPDATE meetings_history SET
+            "UPDATE meeting_prep SET
                 prep_context_json = NULL,
                 prep_frozen_json = NULL,
                 prep_frozen_at = NULL,
                 prep_snapshot_path = NULL
-             WHERE id = ?1",
+             WHERE meeting_id = ?1",
             params![meeting_id],
         )?;
 
@@ -373,7 +373,7 @@ impl ActionDb {
     ) -> Result<Vec<(String, String, Option<String>, String)>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.calendar_event_id, m.start_time
-             FROM meetings_history m
+             FROM meetings m
              LEFT JOIN meeting_entities me ON me.meeting_id = m.id
              WHERE m.start_time >= ?1 AND me.meeting_id IS NULL
              ORDER BY m.start_time DESC
@@ -418,9 +418,10 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.attendees, m.notes_path, m.summary, m.created_at,
-                    m.calendar_event_id, m.transcript_path
-             FROM meetings_history m
+                    m.attendees, m.notes_path, mt.summary, m.created_at,
+                    m.calendar_event_id, mt.transcript_path
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              JOIN meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1 AND me.entity_type = 'project'
              ORDER BY m.start_time DESC
@@ -604,7 +605,7 @@ impl ActionDb {
 
     /// Cascade meeting entity links to all non-internal attendees.
     /// When a meeting is linked to an account/project, automatically link all
-    /// external attendees to that entity via the `entity_people` junction table.
+    /// external attendees to that entity via the appropriate junction table.
     ///
     /// Returns the number of new person-entity links created (excludes existing links).
     pub fn cascade_meeting_entity_to_people(
@@ -613,23 +614,34 @@ impl ActionDb {
         account_id: Option<&str>,
         project_id: Option<&str>,
     ) -> Result<usize, DbError> {
-        let entity_id = account_id.or(project_id);
-        let entity_id = match entity_id {
-            Some(eid) => eid,
-            None => return Ok(0),
-        };
+        // Route: accounts → account_stakeholders, projects → entity_members
+        if let Some(acct_id) = account_id {
+            let count = self.conn.execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, role, relationship_type)
+                 SELECT ?1, ma.person_id, 'associated', 'attendee'
+                 FROM meeting_attendees ma
+                 JOIN people p ON ma.person_id = p.id
+                 WHERE ma.meeting_id = ?2
+                   AND p.relationship = 'external'
+                 ON CONFLICT(account_id, person_id) DO NOTHING",
+                params![acct_id, meeting_id],
+            )?;
+            return Ok(count);
+        }
 
-        // Link all external attendees of this meeting to the entity (idempotent).
-        let count = self.conn.execute(
-            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
-             SELECT ?1, ma.person_id, 'attendee'
-             FROM meeting_attendees ma
-             JOIN people p ON ma.person_id = p.id
-             WHERE ma.meeting_id = ?2
-               AND p.relationship = 'external'",
-            params![entity_id, meeting_id],
-        )?;
+        if let Some(proj_id) = project_id {
+            let count = self.conn.execute(
+                "INSERT OR IGNORE INTO entity_members (entity_id, person_id, relationship_type)
+                 SELECT ?1, ma.person_id, 'attendee'
+                 FROM meeting_attendees ma
+                 JOIN people p ON ma.person_id = p.id
+                 WHERE ma.meeting_id = ?2
+                   AND p.relationship = 'external'",
+                params![proj_id, meeting_id],
+            )?;
+            return Ok(count);
+        }
 
-        Ok(count)
+        Ok(0)
     }
 }

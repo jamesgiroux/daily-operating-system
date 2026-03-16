@@ -32,6 +32,7 @@
    HOME BUTTON — Brand mark asterisk
    ───────────────────────────────────────────────────────────────────────── */
 .navIslandMark {
+  position: relative;
   width: 36px;
   height: 36px;
   border-radius: var(--radius-editorial-md);
@@ -48,17 +49,41 @@
   user-select: none;
 }
 
+.navIslandMark::after {
+  content: attr(data-label);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.navIslandMark:hover::after {
+  opacity: 1;
+}
+
 .navIslandMark:hover {
-  background: rgba(30, 37, 48, 0.04);
+  background: var(--color-desk-charcoal-4);
 }
 
 .navIslandMark:focus {
   outline: none;
-  background: rgba(30, 37, 48, 0.08);
+  background: var(--color-desk-charcoal-8);
 }
 
 .navIslandMarkActive {
-  background: rgba(201, 162, 39, 0.1);
+  background: var(--color-spice-turmeric-10);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -82,13 +107,13 @@
 }
 
 .navIslandItem:hover {
-  background: rgba(30, 37, 48, 0.04);
+  background: var(--color-desk-charcoal-4);
   color: var(--color-text-secondary);
 }
 
 .navIslandItem:focus {
   outline: none;
-  background: rgba(30, 37, 48, 0.08);
+  background: var(--color-desk-charcoal-8);
 }
 
 .navIslandItem svg {
@@ -102,32 +127,31 @@
 
 /* Turmeric active state */
 .activeTurmeric {
-  background: rgba(201, 162, 39, 0.1);
+  background: var(--color-spice-turmeric-10);
   color: var(--color-spice-turmeric);
 }
 
 /* Terracotta active state */
 .activeTerracotta {
-  background: rgba(196, 101, 74, 0.1);
+  background: var(--color-spice-terracotta-10);
   color: var(--color-spice-terracotta);
 }
 
 /* Larkspur active state */
 .activeLarkspur {
-  background: rgba(143, 163, 196, 0.1);
+  background: var(--color-garden-larkspur-10);
   color: var(--color-garden-larkspur);
 }
 
 /* Olive active state */
 .activeOlive {
-  background: rgba(107, 124, 82, 0.1);
+  background: var(--color-garden-olive-10);
   color: var(--color-garden-olive);
 }
 
 /* Eucalyptus active state — user entity (/me) */
 .activeEucalyptus {
-  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
-  background: rgba(107, 168, 164, 0.1);
+  background: var(--color-garden-eucalyptus-10);
   color: var(--color-garden-eucalyptus);
 }
 
@@ -182,28 +206,27 @@
    to change the active color scheme for all child items */
 
 .colorTurmeric .activeTurmeric {
-  background: rgba(201, 162, 39, 0.1);
+  background: var(--color-spice-turmeric-10);
   color: var(--color-spice-turmeric);
 }
 
 .colorTerracotta .activeTerracotta {
-  background: rgba(196, 101, 74, 0.1);
+  background: var(--color-spice-terracotta-10);
   color: var(--color-spice-terracotta);
 }
 
 .colorLarkspur .activeLarkspur {
-  background: rgba(143, 163, 196, 0.1);
+  background: var(--color-garden-larkspur-10);
   color: var(--color-garden-larkspur);
 }
 
 .colorOlive .activeOlive {
-  background: rgba(107, 124, 82, 0.1);
+  background: var(--color-garden-olive-10);
   color: var(--color-garden-olive);
 }
 
 .colorEucalyptus .activeEucalyptus {
-  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
-  background: rgba(107, 168, 164, 0.1);
+  background: var(--color-garden-eucalyptus-10);
   color: var(--color-garden-eucalyptus);
 }
 

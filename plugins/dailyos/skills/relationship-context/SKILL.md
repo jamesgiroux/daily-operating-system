@@ -120,7 +120,7 @@ Recent History:
 ## Behavior Rules
 
 1. **Silent loading.** Load person context without announcing it. The user should just notice that responses are informed.
-2. **Relationship-aware output.** When the user asks about someone, lead with the relationship context, not just raw data. "Sarah is the champion at Nexus Analytics — you meet weekly, she's been warming since the January EBR, and she owes you the stakeholder list from last Tuesday."
+2. **Relationship-aware output.** When the user asks about someone, lead with the relationship context, not just raw data. "Sarah is the champion at Acme Corp — you meet weekly, she's been warming since the January EBR, and she owes you the stakeholder list from last Tuesday."
 3. **Multi-person support.** If multiple people are mentioned, load context for each. Keep distinct.
 4. **Temperature is directional.** It matters not just where the temperature is, but which way it is moving. A stable relationship is different from one that was warming and just plateaued.
 5. **Absence is a signal.** If someone has no recent meetings, no recent actions, and no recent emails — that absence itself is meaningful context.

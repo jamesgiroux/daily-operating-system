@@ -14,6 +14,7 @@ import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import { X } from "lucide-react";
 import clsx from "clsx";
 import s from "@/styles/editorial-briefing.module.css";
+import e from "./EmailsPage.module.css";
 import type { EmailBriefingData, EmailSyncStats, EnrichedEmail } from "@/types";
 
 // =============================================================================
@@ -133,6 +134,7 @@ export default function EmailsPage() {
   const silentRefresh = useCallback(() => { loadEmails(true); }, [loadEmails]);
   useTauriEvent("emails-updated", silentRefresh);
   useTauriEvent("workflow-completed", silentRefresh);
+  useTauriEvent("email-enrichment-progress", silentRefresh);
 
   const handleDismiss = useCallback(async (
     itemType: string,
@@ -327,28 +329,18 @@ export default function EmailsPage() {
   const hasExtracted = allCommitments.length > 0 || allQuestions.length > 0;
   const hasSignals = entityThreads.length > 0;
   const hasYourMove = yourMoveEmails.length > 0;
-  const hasContent = hasYourMove || hasExtracted || hasSignals;
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={e.pageContainer}>
       {/* ═══ HERO ═══ */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{headline}</h1>
 
         {/* Intelligence stat line */}
         {data && data.stats.total > 0 && (
-          <div
-            style={{
-              display: "flex",
-              gap: 16,
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              letterSpacing: "0.06em",
-              color: "var(--color-text-tertiary)",
-            }}
-          >
+          <div className={e.heroStatLine}>
             {priorityEmails.length > 0 && (
-              <span style={{ color: "var(--color-spice-terracotta)" }}>
+              <span className={e.heroStatPriority}>
                 {priorityEmails.length} PRIORITY
               </span>
             )}
@@ -361,24 +353,14 @@ export default function EmailsPage() {
               <span>{allCommitments.length} COMMITMENT{allCommitments.length !== 1 ? "S" : ""}</span>
             )}
             {riskSignalCount > 0 && (
-              <span>{riskSignalCount} RISK SIGNAL{riskSignalCount !== 1 ? "S" : ""}</span>
+              <span>{riskSignalCount} RISK FLAG{riskSignalCount !== 1 ? "S" : ""}</span>
             )}
           </div>
         )}
 
         {/* Sync status (I373) */}
         {syncStats && (
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.04em",
-              color: "var(--color-text-tertiary)",
-              marginTop: 8,
-            }}
-          >
+          <div className={e.syncStatus}>
             {syncStats.lastFetchAt && (
               <span>
                 Updated {formatRelativeTime(syncStats.lastFetchAt)}
@@ -390,12 +372,12 @@ export default function EmailsPage() {
               </span>
             )}
             {syncStats.failed > 0 && (
-              <span style={{ color: "var(--color-spice-terracotta)" }}>
+              <span className={e.syncStatusAlert}>
                 {syncStats.failed} failed
               </span>
             )}
             {syncStats.total === 0 && syncStats.lastFetchAt === null && (
-              <span style={{ color: "var(--color-spice-terracotta)" }}>
+              <span className={e.syncStatusAlert}>
                 using cached data
               </span>
             )}
@@ -420,9 +402,9 @@ export default function EmailsPage() {
 
       {/* ═══ YOUR MOVE — Top scored emails with intelligence ═══ */}
       {hasYourMove && (
-        <section style={{ marginBottom: 48 }}>
+        <section className={e.sectionSpacing}>
           <div className={s.marginGrid}>
-            <div className={s.marginLabel} style={{ color: "var(--color-spice-terracotta)" }}>
+            <div className={clsx(s.marginLabel, e.marginLabelYourMove)}>
               YOUR MOVE
             </div>
             <div className={s.marginContent}>
@@ -431,46 +413,28 @@ export default function EmailsPage() {
               ))}
             </div>
           </div>
-          <div className={s.sectionRule} style={{ marginTop: 24 }} />
+          <div className={clsx(s.sectionRule, e.sectionRuleTop)} />
         </section>
       )}
 
       {/* ═══ EXTRACTED ═══ */}
       {hasExtracted && (
-        <section style={{ marginBottom: 48 }}>
+        <section className={e.sectionSpacing}>
           {allCommitments.length > 0 && (
-            <div className={s.marginGrid} style={{ marginBottom: allQuestions.length > 0 ? 28 : 0 }}>
+            <div className={clsx(s.marginGrid, allQuestions.length > 0 && e.commitmentGridSpacing)}>
               <div className={s.marginLabel}>COMMITMENTS</div>
               <div className={s.marginContent}>
                 {allCommitments.map((c, i) => (
-                  <div key={i} className="group" style={{ marginBottom: i < allCommitments.length - 1 ? 12 : 0, position: "relative" }}>
-                    <p
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 15,
-                        fontWeight: 400,
-                        lineHeight: 1.65,
-                        color: "var(--color-text-primary)",
-                        margin: 0,
-                        maxWidth: 640,
-                      }}
-                    >
+                  <div key={i} className={clsx("group", e.extractedItem, i < allCommitments.length - 1 && e.extractedItemSpacing)}>
+                    <p className={e.extractedItemText}>
                       {c.text}{!c.text.endsWith(".") ? "." : ""}
                     </p>
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 11,
-                        letterSpacing: "0.04em",
-                        color: "var(--color-text-tertiary)",
-                      }}
-                    >
+                    <span className={e.extractedItemMeta}>
                       {c.entityName ? `${c.entityName} · ` : ""}{c.sender}{c.subject ? ` · ${c.subject}` : ""}
                     </span>
                     <button
                       onClick={() => handleDismiss("commitment", c.emailId, c.text, c.senderDomain, c.emailType, c.entityId)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 4 }}
+                      className={clsx("opacity-0 group-hover:opacity-100 transition-opacity", e.dismissButton)}
                       title="Dismiss"
                     >
                       <X size={14} />
@@ -485,34 +449,16 @@ export default function EmailsPage() {
               <div className={s.marginLabel}>OPEN QUESTIONS</div>
               <div className={s.marginContent}>
                 {allQuestions.map((q, i) => (
-                  <div key={i} className="group" style={{ marginBottom: i < allQuestions.length - 1 ? 12 : 0, position: "relative" }}>
-                    <p
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 15,
-                        fontWeight: 400,
-                        lineHeight: 1.65,
-                        color: "var(--color-text-primary)",
-                        margin: 0,
-                        maxWidth: 640,
-                      }}
-                    >
+                  <div key={i} className={clsx("group", e.extractedItem, i < allQuestions.length - 1 && e.extractedItemSpacing)}>
+                    <p className={e.extractedItemText}>
                       {q.text}{!q.text.endsWith("?") && !q.text.endsWith(".") ? "?" : ""}
                     </p>
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 11,
-                        letterSpacing: "0.04em",
-                        color: "var(--color-text-tertiary)",
-                      }}
-                    >
+                    <span className={e.extractedItemMeta}>
                       {q.entityName ? `${q.entityName} · ` : ""}{q.sender}{q.subject ? ` · ${q.subject}` : ""}
                     </span>
                     <button
                       onClick={() => handleDismiss("question", q.emailId, q.text, q.senderDomain, q.emailType, q.entityId)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ position: "absolute", top: 0, right: 0, background: "none", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", padding: 4 }}
+                      className={clsx("opacity-0 group-hover:opacity-100 transition-opacity", e.dismissButton)}
                       title="Dismiss"
                     >
                       <X size={14} />
@@ -522,7 +468,7 @@ export default function EmailsPage() {
               </div>
             </div>
           )}
-          <div className={s.sectionRule} style={{ marginTop: 24 }} />
+          <div className={clsx(s.sectionRule, e.sectionRuleTop)} />
         </section>
       )}
 
@@ -536,7 +482,7 @@ export default function EmailsPage() {
         const shown = liveThreads.slice(0, 3);
         const overflow = liveThreads.slice(3);
         return (
-        <section style={{ marginBottom: 48 }}>
+        <section className={e.sectionSpacing}>
           <div className={s.marginGrid}>
             <div className={s.marginLabel}>UPDATES</div>
             <div className={s.marginContent}>
@@ -546,79 +492,25 @@ export default function EmailsPage() {
                 );
                 return (
                 <div key={thread.entityId}>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-serif)",
-                      fontSize: 22,
-                      fontWeight: 400,
-                      lineHeight: 1.3,
-                      color: "var(--color-text-primary)",
-                      marginBottom: 6,
-                    }}
-                  >
+                  <div className={e.updateEntityName}>
                     {thread.entityName}
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 11,
-                        color: "var(--color-text-tertiary)",
-                        letterSpacing: "0.04em",
-                        marginLeft: 10,
-                      }}
-                    >
+                    <span className={e.updateEntityCount}>
                       {thread.emailCount} email{thread.emailCount !== 1 ? "s" : ""}
                     </span>
                   </div>
-                  <div style={{ margin: "0 0 16px 0", maxWidth: 640 }}>
+                  <div className={e.updateSignalsContainer}>
                     {visibleSignals.map((sig) => (
-                      <div
-                        key={sig.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 8,
-                          marginBottom: 6,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 10,
-                            fontWeight: 500,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.06em",
-                            color: "var(--color-text-tertiary)",
-                            minWidth: 72,
-                            paddingTop: 3,
-                            flexShrink: 0,
-                          }}
-                        >
+                      <div key={sig.id} className={e.updateSignalRow}>
+                        <span className={e.updateSignalType}>
                           {sig.signalType}
                         </span>
-                        <span
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 15,
-                            fontWeight: 300,
-                            lineHeight: 1.5,
-                            color: "var(--color-text-secondary)",
-                            flex: 1,
-                          }}
-                        >
+                        <span className={e.updateSignalText}>
                           {sig.signalText}
                         </span>
                         <button
                           onClick={() => handleDismissSignal(sig.id!)}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            padding: 2,
-                            color: "var(--color-text-tertiary)",
-                            opacity: 0.5,
-                            flexShrink: 0,
-                          }}
-                          title="Dismiss signal"
+                          className={e.dismissSignalButton}
+                          title="Dismiss"
                         >
                           <X size={12} />
                         </button>
@@ -626,20 +518,13 @@ export default function EmailsPage() {
                     ))}
                   </div>
                   {i < shown.length - 1 && (
-                    <div className={s.sectionRule} style={{ marginBottom: 16 }} />
+                    <div className={clsx(s.sectionRule, e.updateSectionRule)} />
                   )}
                 </div>
                 );
               })}
               {overflow.length > 0 && (
-                <div
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    color: "var(--color-text-tertiary)",
-                    marginTop: 12,
-                  }}
-                >
+                <div className={e.overflowText}>
                   {overflow.map((t) => t.entityName).join(", ")}
                   {" — routine correspondence."}
                 </div>
@@ -652,7 +537,7 @@ export default function EmailsPage() {
 
       {/* ═══ ALL CORRESPONDENCE — Intelligence-first email list ═══ */}
       {allEnrichedEmails.length > 0 && (
-        <section style={{ marginBottom: 48 }}>
+        <section className={e.sectionSpacing}>
           <div className={s.marginGrid}>
             <div className={s.marginLabel}>
               INBOX
@@ -698,7 +583,7 @@ export default function EmailsPage() {
       )}
 
       {/* FINIS */}
-      {hasContent && <FinisMarker />}
+      <FinisMarker />
     </div>
   );
 }

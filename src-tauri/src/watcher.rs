@@ -419,13 +419,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
-                        state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-                            entity_id: entity_id.clone(),
-                            entity_type: "account".to_string(),
-                            priority: crate::intel_queue::IntelPriority::ContentChange,
-                            requested_at: std::time::Instant::now(),
-                            retry_count: 0,
-                        });
+                        state
+                            .intel_queue
+                            .enqueue(crate::intel_queue::IntelRequest::new(
+                                entity_id.clone(),
+                                "account".to_string(),
+                                crate::intel_queue::IntelPriority::ContentChange,
+                            ));
                     }
                     state.integrations.embedding_queue_wake.notify_one();
                     state.integrations.intel_queue_wake.notify_one();
@@ -455,13 +455,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
-                        state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-                            entity_id: entity_id.clone(),
-                            entity_type: "project".to_string(),
-                            priority: crate::intel_queue::IntelPriority::ContentChange,
-                            requested_at: std::time::Instant::now(),
-                            retry_count: 0,
-                        });
+                        state
+                            .intel_queue
+                            .enqueue(crate::intel_queue::IntelRequest::new(
+                                entity_id.clone(),
+                                "project".to_string(),
+                                crate::intel_queue::IntelPriority::ContentChange,
+                            ));
                     }
                     state.integrations.embedding_queue_wake.notify_one();
                     state.integrations.intel_queue_wake.notify_one();

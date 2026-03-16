@@ -27,7 +27,7 @@ pub struct BridgeCorrelation {
 /// upcoming meetings (next 48h) by attendee email overlap.
 ///
 /// Uses existing infrastructure:
-/// - `meetings_history` table for upcoming meetings + attendee CSV
+/// - `meetings` table for upcoming meetings + attendee CSV
 /// - `email_signals` table for sender_email matching
 /// - `emit_signal()` to write correlations to signal_events
 pub fn run_email_meeting_bridge(
@@ -41,7 +41,7 @@ pub fn run_email_meeting_bridge(
     let mut meeting_stmt = conn
         .prepare(
             "SELECT id, title, attendees, calendar_event_id
-             FROM meetings_history
+             FROM meetings
              WHERE start_time >= datetime('now')
                AND start_time <= datetime('now', '+48 hours')
                AND attendees IS NOT NULL AND attendees != ''",
@@ -372,9 +372,8 @@ pub fn emit_enriched_email_signals(
             let linked_accounts: Vec<String> = db
                 .conn_ref()
                 .prepare(
-                    "SELECT ep.entity_id FROM entity_people ep
-                     JOIN accounts a ON a.id = ep.entity_id
-                     WHERE ep.person_id = ?1",
+                    "SELECT as_.account_id FROM account_stakeholders as_
+                     WHERE as_.person_id = ?1",
                 )
                 .and_then(|mut stmt| {
                     let rows =
@@ -436,6 +435,12 @@ pub fn emit_enriched_email_signals(
             emitted,
             rows.len()
         );
+
+        // I598: Health recompute for accounts that received email signals is
+        // deferred — this function runs inside a DB lock hold in orchestrate.rs.
+        // Running recompute_entity_health here blocks dashboard reads and causes
+        // briefing flicker. Health will recompute on the next enrichment cycle
+        // or via the other 3 signal paths (Glean, transcript, stakeholder sync).
     }
 
     emitted
@@ -462,10 +467,20 @@ mod tests {
 
         // Insert a meeting starting in 1 hour with attendees
         conn.execute(
-            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at, attendees)
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at, attendees)
              VALUES ('m1', 'Sync with Alice', 'customer', datetime('now', '+1 hour'), datetime('now'), 'alice@acme.com, bob@partner.com')",
             [],
         ).expect("insert meeting");
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .expect("insert meeting_prep");
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_transcripts (meeting_id) VALUES ('m1')",
+            [],
+        )
+        .expect("insert meeting_transcripts");
 
         // Insert an email signal from alice
         conn.execute(

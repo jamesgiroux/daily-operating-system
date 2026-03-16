@@ -49,13 +49,11 @@ pub fn evaluate_on_signal(
     let score = super::remediation::compute_enrichment_trigger_score(db, entity_id, entity_type);
 
     if score > 0.7 && !check_circuit_breaker(db, entity_id) {
-        queue.enqueue(crate::intel_queue::IntelRequest {
-            entity_id: entity_id.to_string(),
-            entity_type: entity_type.to_string(),
-            priority: crate::intel_queue::IntelPriority::ContentChange,
-            requested_at: std::time::Instant::now(),
-            retry_count: 0,
-        });
+        queue.enqueue(crate::intel_queue::IntelRequest::new(
+            entity_id.to_string(),
+            entity_type.to_string(),
+            crate::intel_queue::IntelPriority::ContentChange,
+        ));
         Ok(true)
     } else {
         Ok(false)
@@ -209,13 +207,11 @@ fn window_hours_ago(db: &ActionDb, window_start: &str) -> f64 {
 
 /// Enqueue an entity for re-enrichment at ProactiveHygiene priority.
 fn enqueue_retry(queue: &IntelligenceQueue, entity_id: &str, entity_type: &str) {
-    queue.enqueue(crate::intel_queue::IntelRequest {
-        entity_id: entity_id.to_string(),
-        entity_type: entity_type.to_string(),
-        priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
-        requested_at: std::time::Instant::now(),
-        retry_count: 0,
-    });
+    queue.enqueue(crate::intel_queue::IntelRequest::new(
+        entity_id.to_string(),
+        entity_type.to_string(),
+        crate::intel_queue::IntelPriority::ProactiveHygiene,
+    ));
 }
 
 #[cfg(test)]

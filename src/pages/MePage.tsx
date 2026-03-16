@@ -1,26 +1,25 @@
 /**
  * MePage — User entity editorial page (/me).
- * Six-section layout: About Me, What I Deliver, My Priorities,
- * My Playbooks, Context Entries, Attachments.
+ * Three-section layout: About Me, My Priorities, Context & Knowledge.
  * ADR-0089/0090. Eucalyptus accent.
  */
-import { useState, useMemo, useCallback, useRef } from "react";
-import { User, Briefcase, Target, BookOpen, FileText, Paperclip, Upload } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { User, Target, FileText, Paperclip, Upload } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useNavigate } from "@tanstack/react-router";
+import { getPortfolioReportLabel } from "@/lib/report-config";
 
 import { useMe } from "@/hooks/useMe";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import type { AnnualPriority, QuarterlyPriority } from "@/types";
+import type { AnnualPriority, QuarterlyPriority, FeatureFlags } from "@/types";
 
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { EditableText } from "@/components/ui/EditableText";
-import { EditableList } from "@/components/ui/EditableList";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { ContextEntryList } from "@/components/entity/ContextEntryList";
 
@@ -30,9 +29,7 @@ import s from "./MePage.module.css";
 
 const CHAPTERS = [
   { id: "about-me", label: "About Me", icon: <User size={18} strokeWidth={1.8} /> },
-  { id: "what-i-deliver", label: "What I Deliver", icon: <Briefcase size={18} strokeWidth={1.8} /> },
   { id: "my-priorities", label: "My Priorities", icon: <Target size={18} strokeWidth={1.8} /> },
-  { id: "my-playbooks", label: "My Playbooks", icon: <BookOpen size={18} strokeWidth={1.8} /> },
   { id: "context-entries", label: "Context", icon: <FileText size={18} strokeWidth={1.8} /> },
   { id: "attachments", label: "Attachments", icon: <Paperclip size={18} strokeWidth={1.8} /> },
 ];
@@ -49,15 +46,6 @@ function parseJsonArray<T>(json: string | null): T[] {
   }
 }
 
-function parsePlaybooks(json: string | null): Record<string, string> {
-  if (!json) return {};
-  try {
-    const parsed = JSON.parse(json);
-    return typeof parsed === "object" && parsed !== null ? parsed : {};
-  } catch {
-    return {};
-  }
-}
 
 // ─── Priority sub-component ──────────────────────────────────────────
 
@@ -190,7 +178,18 @@ function PrioritySection({
 export default function MePage() {
   const me = useMe();
   const navigate = useNavigate();
+  const [activePreset, setActivePreset] = useState<string>("customer-success");
+  const [bobEnabled, setBobEnabled] = useState(false);
   useRevealObserver(!me.loading && !!me.userEntity);
+
+  useEffect(() => {
+    invoke<{ role?: string }>("get_config")
+      .then((c) => setActivePreset(c.role ?? "customer-success"))
+      .catch(() => {});
+    invoke<FeatureFlags>("get_feature_flags")
+      .then((flags) => setBobEnabled(flags.book_of_business_enabled))
+      .catch(() => {});
+  }, []);
 
   const shellConfig = useMemo(
     () => ({
@@ -200,6 +199,26 @@ export default function MePage() {
       chapters: CHAPTERS,
       folioActions: (
         <div style={{ display: "flex", gap: 8 }}>
+          {bobEnabled && (
+            <button
+              onClick={() => navigate({ to: "/me/reports/book_of_business" })}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                color: "var(--color-spice-turmeric)",
+                background: "none",
+                border: "1px solid var(--color-spice-turmeric)",
+                borderRadius: 4,
+                padding: "2px 10px",
+                cursor: "pointer",
+              }}
+            >
+              {getPortfolioReportLabel(activePreset)}
+            </button>
+          )}
           <button
             onClick={() => navigate({ to: "/me/reports/$reportType", params: { reportType: "weekly_impact" } })}
             style={{
@@ -239,7 +258,7 @@ export default function MePage() {
         </div>
       ),
     }),
-    [navigate],
+    [navigate, activePreset, bobEnabled],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -252,23 +271,15 @@ export default function MePage() {
   if (!entity) return <EditorialLoading />;
 
   // Parse JSON fields
-  const differentiators = parseJsonArray<string>(entity.differentiators);
-  const objections = parseJsonArray<string>(entity.objections);
   const annualPriorities = parseJsonArray<AnnualPriority>(entity.annualPriorities);
   const quarterlyPriorities = parseJsonArray<QuarterlyPriority>(entity.quarterlyPriorities);
-  const playbooks = parsePlaybooks(entity.playbooks);
 
   // Activity check: any non-null user-editable field
   const hasContent = !!(
     entity.name || entity.company || entity.title || entity.focus ||
-    entity.valueProposition || entity.successDefinition ||
-    entity.productContext || entity.companyBio || entity.roleDescription ||
-    entity.howImMeasured || entity.pricingModel || entity.competitiveContext ||
-    (entity.differentiators && parseJsonArray<string>(entity.differentiators).length > 0) ||
-    (entity.objections && parseJsonArray<string>(entity.objections).length > 0) ||
+    entity.companyBio || entity.roleDescription || entity.howImMeasured ||
     (entity.annualPriorities && parseJsonArray<AnnualPriority>(entity.annualPriorities).length > 0) ||
-    (entity.quarterlyPriorities && parseJsonArray<QuarterlyPriority>(entity.quarterlyPriorities).length > 0) ||
-    (entity.playbooks && entity.playbooks !== "{}")
+    (entity.quarterlyPriorities && parseJsonArray<QuarterlyPriority>(entity.quarterlyPriorities).length > 0)
   );
 
   return (
@@ -376,91 +387,7 @@ export default function MePage() {
         </div>
       </section>
 
-      {/* ═══ SECTION 2: What I Deliver ═══ */}
-      <section id="what-i-deliver" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
-        <ChapterHeading
-          title="What I Deliver"
-          epigraph="Your value proposition, product context, and competitive landscape."
-        />
-
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>Value Proposition</div>
-          <EditableText
-            value={entity.valueProposition ?? ""}
-            onChange={(v) => me.saveField("value_proposition", v)}
-            placeholder="What value do you deliver to customers?"
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
-          />
-        </div>
-
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>Success Definition</div>
-          <EditableText
-            value={entity.successDefinition ?? ""}
-            onChange={(v) => me.saveField("success_definition", v)}
-            placeholder="What does success look like for your customers?"
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
-          />
-        </div>
-
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>Product Context</div>
-          <EditableText
-            value={entity.productContext ?? ""}
-            onChange={(v) => me.saveField("product_context", v)}
-            placeholder="Product, platform, or service you support..."
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
-          />
-        </div>
-
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>Pricing Model</div>
-          <EditableText
-            value={entity.pricingModel ?? ""}
-            onChange={(v) => me.saveField("pricing_model", v)}
-            placeholder="How your product/service is priced..."
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
-          />
-        </div>
-
-        <hr className={s.thinRule} />
-
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>Differentiators</div>
-          <EditableList
-            items={differentiators}
-            onChange={(items) => me.saveField("differentiators", JSON.stringify(items))}
-            placeholder="Add differentiator..."
-            fieldId="differentiators"
-          />
-        </div>
-
-        <hr className={s.thinRule} />
-
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>Objections</div>
-          <EditableList
-            items={objections}
-            onChange={(items) => me.saveField("objections", JSON.stringify(items))}
-            placeholder="Add common objection..."
-            fieldId="objections"
-          />
-        </div>
-
-        <hr className={s.thinRule} />
-
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>Competitive Context</div>
-          <EditableText
-            value={entity.competitiveContext ?? ""}
-            onChange={(v) => me.saveField("competitive_context", v)}
-            placeholder="Key competitors, positioning, win themes..."
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
-          />
-        </div>
-      </section>
-
-      {/* ═══ SECTION 3: My Priorities ═══ */}
+      {/* ═══ SECTION 2: My Priorities ═══ */}
       <section id="my-priorities" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
         <ChapterHeading
           title="My Priorities"
@@ -482,24 +409,11 @@ export default function MePage() {
         />
       </section>
 
-      {/* ═══ SECTION 4: My Playbooks ═══ */}
-      <section id="my-playbooks" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
-        <ChapterHeading
-          title="My Playbooks"
-          epigraph="Your approaches and methodologies."
-        />
-
-        <PlaybooksSection
-          playbooks={playbooks}
-          onSave={(updated) => me.saveField("playbooks", JSON.stringify(updated))}
-        />
-      </section>
-
-      {/* ═══ SECTION 5: Context Entries ═══ */}
+      {/* ═══ SECTION 3: Context & Knowledge ═══ */}
       <section id="context-entries" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
         <ChapterHeading
           title="Context"
-          epigraph="Professional knowledge that enriches your briefings. Embedding happens in the background."
+          epigraph="Professional knowledge that shapes your briefings. Embedding happens in the background."
         />
 
         <ContextEntryList
@@ -510,7 +424,7 @@ export default function MePage() {
         />
       </section>
 
-      {/* ═══ SECTION 6: Attachments ═══ */}
+      {/* ═══ SECTION 4: Attachments ═══ */}
       <section id="attachments" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
         <ChapterHeading
           title="Attachments"
@@ -624,56 +538,3 @@ function AttachmentsSection() {
   );
 }
 
-// ─── Playbooks sub-component ─────────────────────────────────────────
-
-function PlaybooksSection({
-  playbooks,
-  onSave,
-}: {
-  playbooks: Record<string, string>;
-  onSave: (updated: Record<string, string>) => void;
-}) {
-  // CS preset: three named sections. Default: single methodology field.
-  const csFields = [
-    { key: "at_risk_accounts", label: "At-Risk Accounts", placeholder: "Your approach to at-risk accounts..." },
-    { key: "renewal_approach", label: "Renewal Approach", placeholder: "How you manage renewals..." },
-    { key: "ebr_qbr_prep", label: "EBR / QBR Preparation", placeholder: "Your EBR/QBR process..." },
-  ];
-
-  const hasCSContent = csFields.some((f) => playbooks[f.key]);
-  const hasMethodology = !!playbooks.methodology;
-
-  // Show CS fields if any CS content exists or no methodology exists
-  const showCS = hasCSContent || !hasMethodology;
-
-  return (
-    <div>
-      {showCS ? (
-        <>
-          {csFields.map((field) => (
-            <div key={field.key} className={s.fieldRow}>
-              <div className={s.fieldLabel}>{field.label}</div>
-              <EditableText
-                value={playbooks[field.key] ?? ""}
-                onChange={(v) => onSave({ ...playbooks, [field.key]: v })}
-                placeholder={field.placeholder}
-                style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
-              />
-              {field.key !== csFields[csFields.length - 1].key && <hr className={s.thinRule} />}
-            </div>
-          ))}
-        </>
-      ) : (
-        <div className={s.fieldRow}>
-          <div className={s.fieldLabel}>My Methodology</div>
-          <EditableText
-            value={playbooks.methodology ?? ""}
-            onChange={(v) => onSave({ ...playbooks, methodology: v })}
-            placeholder="Describe your methodology..."
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}

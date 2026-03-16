@@ -1,0 +1,25 @@
+{
+  "surfaceId": "account_detail",
+  "commands": {
+    "get_account_detail": {
+      "id": "acc-1",
+      "name": "Acme",
+      "updatedAt": "2026-03-10T08:00:00Z",
+      "archived": false
+    },
+    "get_account_team": [
+      {
+        "personId": "person-1",
+        "personName": "Sam Lee",
+        "role": "champion"
+      }
+    ]
+  },
+  "errors": {
+    "get_account_detail": {
+      "code": "ACCOUNT_NOT_FOUND",
+      "message": "Account not found",
+      "retryable": false
+    }
+  }
+}

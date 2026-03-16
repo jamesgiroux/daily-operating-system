@@ -99,7 +99,7 @@ pub async fn get_person_detail(
     person_id: &str,
     state: &AppState,
 ) -> Result<PersonDetailResult, String> {
-    let config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
+    let _config = state.config.read().map_err(|_| "Lock poisoned")?.clone();
 
     let person_id = person_id.to_string();
     state
@@ -141,14 +141,8 @@ pub async fn get_person_detail(
                 .list_recent_email_signals_for_entity(&person_id, 12)
                 .unwrap_or_default();
 
-            // Load intelligence from person dir (if exists)
-            let intelligence = if let Some(ref config) = config {
-                let person_dir =
-                    crate::people::person_dir(Path::new(&config.workspace_path), &person.name);
-                crate::intelligence::read_intelligence_json(&person_dir).ok()
-            } else {
-                None
-            };
+            // Load intelligence from DB (I513)
+            let intelligence = db.get_entity_intelligence(&person_id).ok().flatten();
 
             let open_actions = db
                 .get_person_actions(&person_id)
@@ -189,6 +183,19 @@ pub fn update_person_field(
     field: &str,
     value: &str,
 ) -> Result<(), String> {
+    let prior_source = db
+        .get_person(person_id)
+        .ok()
+        .flatten()
+        .and_then(|person| person.enrichment_sources)
+        .and_then(|sources_json| serde_json::from_str::<serde_json::Value>(&sources_json).ok())
+        .and_then(|sources| {
+            sources[field]
+                .get("source")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        });
+
     db.update_person_field(person_id, field, value)
         .map_err(|e| e.to_string())?;
 
@@ -210,10 +217,28 @@ pub fn update_person_field(
     );
 
     // Self-healing: record user correction for Clay-enrichable fields (I409)
-    if matches!(field, "linkedin_url" | "title" | "company" | "name") {
+    if matches!(field, "linkedin_url" | "role" | "organization" | "name") {
         crate::self_healing::feedback::record_enrichment_correction(
             db, person_id, "person", "clay",
         );
+    }
+
+    // Mark this field as user-owned so lower-priority enrichment sources cannot overwrite it.
+    if let Err(e) = db.set_person_field_source(person_id, field, "user") {
+        log::warn!(
+            "I507: Failed to stamp user provenance for person {} field {}: {}",
+            person_id,
+            field,
+            e
+        );
+    }
+
+    // I507: Source-attributed correction feedback — penalize the prior source that
+    // wrote the field, then mark user as the new owner in provenance.
+    if let Some(prior_source) = prior_source.as_deref() {
+        if prior_source != "user" {
+            let _ = db.upsert_signal_weight(prior_source, "person", "profile_enrichment", 0.0, 1.0);
+        }
     }
 
     // Regenerate workspace files

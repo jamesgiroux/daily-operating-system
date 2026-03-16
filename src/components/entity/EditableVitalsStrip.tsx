@@ -455,7 +455,8 @@ export function EditableVitalsStrip({
   return (
     <div
       style={{
-        marginTop: 48,
+        marginTop: 24,
+        marginBottom: 24,
         borderTop: "1px solid var(--color-rule-heavy)",
         borderBottom: "1px solid var(--color-rule-heavy)",
         padding: "14px 0",

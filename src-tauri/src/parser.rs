@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use chrono::Timelike;
+
 use crate::types::{
     Action, ActionStatus, ActionWithContext, AlertSeverity, DayOverview, DayStats, Email,
     EmailDetail, EmailPriority, EmailStats, EmailSummaryData, FullMeetingPrep, HygieneAlert,
@@ -155,18 +157,9 @@ pub fn parse_overview(path: &Path) -> Result<DayOverview, String> {
     })
 }
 
-/// Get greeting based on current time
+/// Get greeting based on current local time
 fn get_time_based_greeting() -> String {
-    use std::time::SystemTime;
-
-    // Simple hour extraction (rough approximation)
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| ((d.as_secs() % 86400) / 3600) as u32)
-        .unwrap_or(12);
-
-    // Adjust for EST (UTC-5) roughly
-    let hour = (now + 19) % 24; // UTC to EST adjustment
+    let hour = chrono::Local::now().hour();
 
     if hour < 12 {
         "Good morning".to_string()
@@ -1570,6 +1563,8 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         entity_readiness: None,
         stakeholder_insights: None,
         recent_email_signals: None,
+        consistency_status: None,
+        consistency_findings: Vec::new(),
     })
 }
 

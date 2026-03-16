@@ -19,13 +19,23 @@ pub struct ReportGeneratorInput {
     pub prompt: String,
     pub ai_models: AiModelConfig,
     pub intel_hash: String,
+    /// Optional serialized extra data for multi-phase reports (e.g. BookMetrics).
+    #[allow(dead_code)]
+    pub extra_data: Option<String>,
 }
 
 /// Phase 2: Run the PTY call for report generation.
 /// No DB lock held — this is the long-running operation.
 pub fn run_report_generation(input: &ReportGeneratorInput) -> Result<String, String> {
+    let timeout_secs = match input.report_type.as_str() {
+        "monthly_wrapped" | "weekly_impact" | "ebr_qbr" => 180,
+        "account_health" => 120,
+        // BoB monolithic fallback needs time for large portfolios (10+ accounts)
+        "book_of_business" => 180,
+        _ => 60,
+    };
     let pty = PtyManager::for_tier(ModelTier::Synthesis, &input.ai_models)
-        .with_timeout(300)
+        .with_timeout(timeout_secs)
         .with_nice_priority(10);
 
     let output = pty

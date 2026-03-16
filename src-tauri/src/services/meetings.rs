@@ -11,6 +11,79 @@ use crate::db::ActionDb;
 use crate::state::AppState;
 use crate::types::{CapturedOutcome, IntelligenceQuality, MeetingIntelligence};
 
+pub fn upsert_meeting_for_reconcile(
+    db: &ActionDb,
+    meeting: &crate::db::DbMeeting,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.upsert_meeting(meeting).map_err(|e| e.to_string())?;
+        crate::services::signals::emit(
+            tx,
+            "meeting",
+            &meeting.id,
+            "meeting_upserted",
+            "reconcile",
+            None,
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+pub fn set_meeting_prep_context(
+    db: &ActionDb,
+    meeting_id: &str,
+    updated_json: &str,
+) -> Result<(), String> {
+    db.update_meeting_prep_context(meeting_id, updated_json)
+        .map_err(|e| e.to_string())
+}
+
+pub fn update_capture_content(
+    db: &ActionDb,
+    capture_id: &str,
+    content: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.update_capture(capture_id, content)
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit(
+            tx,
+            "capture",
+            capture_id,
+            "capture_updated",
+            "user_edit",
+            None,
+            0.8,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
+pub fn clear_meeting_prep_frozen(db: &ActionDb, meeting_id: &str) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id],
+            )
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit(
+            tx,
+            "meeting",
+            meeting_id,
+            "prep_invalidated",
+            "ai_enrichment",
+            None,
+            0.7,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
+}
+
 /// Hydrate attendee context by matching calendar attendee emails to person entities.
 ///
 /// For external meetings: scoped to non-internal attendees (customers, prospects, etc.).
@@ -181,9 +254,9 @@ pub fn collect_meeting_outcomes_from_db(
     })
 }
 
-/// Load meeting prep from DB first (mechanical assembly), then disk file fallback.
+/// Load meeting prep from DB sources (mechanical assembly).
 pub fn load_meeting_prep_from_sources(
-    today_dir: &Path,
+    _today_dir: &Path,
     meeting: &crate::db::DbMeeting,
 ) -> Option<crate::types::FullMeetingPrep> {
     // Source 1: prep_frozen_json — mechanical assembly from entity intelligence (ADR-0086)
@@ -209,10 +282,7 @@ pub fn load_meeting_prep_from_sources(
     if rebuild_in_progress {
         return None;
     }
-    // Source 2: disk prep file (daily pipeline output)
-    if let Ok(prep) = crate::json_loader::load_prep_json(today_dir, &meeting.id) {
-        return Some(prep);
-    }
+    // Source 2: prep_context_json from DB (I513 — no disk prep file fallback)
     if let Some(ref prep_json) = meeting.prep_context_json {
         // Try direct deserialization first
         if let Ok(prep) = serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
@@ -254,6 +324,8 @@ pub fn load_meeting_prep_from_sources(
                     entity_readiness: None,
                     stakeholder_insights: None,
                     recent_email_signals: None,
+                    consistency_status: None,
+                    consistency_findings: Vec::new(),
                 };
                 // Extract AI narrative into intelligenceSummary
                 if let Some(narrative) = ai.get("narrative").and_then(|v| v.as_str()) {
@@ -525,24 +597,51 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     entities_to_refresh.dedup();
     if !entities_to_refresh.is_empty() {
         for (entity_id, entity_type) in entities_to_refresh {
-            state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-                entity_id,
-                entity_type,
-                priority: crate::intel_queue::IntelPriority::CalendarChange,
-                requested_at: std::time::Instant::now(),
-                retry_count: 0,
-            });
+            state
+                .intel_queue
+                .enqueue(crate::intel_queue::IntelRequest::new(
+                    entity_id,
+                    entity_type,
+                    crate::intel_queue::IntelPriority::CalendarChange,
+                ));
         }
         state.integrations.intel_queue_wake.notify_one();
     }
 
-    let prep_rebuilt_sync = match tokio::task::block_in_place(|| {
-        crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_s)
-    }) {
-        Ok(_) => true,
+    let prep_rebuilt_sync = match crate::meeting_prep_queue::meeting_prep_blocking_inputs(state) {
+        Ok((workspace, embedding_model)) => match tauri::async_runtime::spawn_blocking({
+            let meeting_id = meeting_id_s.clone();
+            move || {
+                crate::meeting_prep_queue::generate_mechanical_prep_now_blocking(
+                    workspace,
+                    embedding_model,
+                    meeting_id,
+                )
+            }
+        })
+        .await
+        {
+            Ok(Ok(())) => true,
+            Ok(Err(err)) => {
+                log::warn!(
+                    "mutate_meeting_entities_and_refresh_briefing: immediate prep rebuild failed for {}: {}",
+                    meeting_id_s,
+                    err
+                );
+                false
+            }
+            Err(err) => {
+                log::warn!(
+                    "mutate_meeting_entities_and_refresh_briefing: prep rebuild task panicked for {}: {}",
+                    meeting_id_s,
+                    err
+                );
+                false
+            }
+        },
         Err(err) => {
             log::warn!(
-                "mutate_meeting_entities_and_refresh_briefing: immediate prep rebuild failed for {}: {}",
+                "mutate_meeting_entities_and_refresh_briefing: prep rebuild inputs failed for {}: {}",
                 meeting_id_s,
                 err
             );
@@ -580,11 +679,10 @@ async fn mutate_meeting_entities_and_refresh_briefing(
         // will emit prep-ready when it completes.
         state
             .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: meeting_id_s,
-                priority: crate::meeting_prep_queue::PrepPriority::Manual,
-                requested_at: std::time::Instant::now(),
-            });
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                meeting_id_s,
+                crate::meeting_prep_queue::PrepPriority::Manual,
+            ));
         state.integrations.prep_queue_wake.notify_one();
     }
 
@@ -753,17 +851,20 @@ pub async fn search_meetings(
         .db_read(move |db| {
             let pattern = format!("%{}%", query.as_str().trim());
             let mut stmt = db
-        .conn_ref()
-        .prepare(
-            "SELECT id, title, meeting_type, start_time, account_id, summary, prep_context_json
-             FROM meetings_history
-             WHERE title LIKE ?1
-                OR summary LIKE ?1
-                OR prep_context_json LIKE ?1
-             ORDER BY start_time DESC
+                .conn_ref()
+                .prepare(
+                    "SELECT m.id, m.title, m.meeting_type, m.start_time,
+                    mt.summary, mp.prep_context_json
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+             WHERE m.title LIKE ?1
+                OR mt.summary LIKE ?1
+                OR mp.prep_context_json LIKE ?1
+             ORDER BY m.start_time DESC
              LIMIT 50",
-        )
-        .map_err(|e| e.to_string())?;
+                )
+                .map_err(|e| e.to_string())?;
 
             let rows = stmt
                 .query_map(rusqlite::params![&pattern], |row| {
@@ -774,14 +875,13 @@ pub async fn search_meetings(
                         row.get::<_, String>(3)?,
                         row.get::<_, Option<String>>(4)?,
                         row.get::<_, Option<String>>(5)?,
-                        row.get::<_, Option<String>>(6)?,
                     ))
                 })
                 .map_err(|e| e.to_string())?;
 
             let mut results = Vec::new();
             for row in rows {
-                let (id, title, meeting_type, start_time, account_id, summary, prep_json) =
+                let (id, title, meeting_type, start_time, summary, prep_json) =
                     row.map_err(|e| e.to_string())?;
 
                 // Extract snippet: prefer summary, fall back to intelligence summary from prep
@@ -796,11 +896,15 @@ pub async fn search_meetings(
                     })
                 });
 
-                // Resolve account name
-                let account_name = account_id
-                    .as_ref()
-                    .and_then(|aid| db.get_account(aid).ok().flatten())
-                    .map(|a| a.name);
+                // Resolve account name from meeting_entities junction table
+                let account_name = db
+                    .get_meeting_entities(&id)
+                    .ok()
+                    .and_then(|ents| {
+                        ents.into_iter()
+                            .find(|e| e.entity_type == crate::entity::EntityType::Account)
+                    })
+                    .map(|e| e.name);
 
                 results.push(MeetingSearchResult {
                     id,
@@ -990,14 +1094,16 @@ pub async fn get_meeting_timeline(
             // Query meetings in the date range
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, title, meeting_type, start_time, end_time, summary,
-                    transcript_processed_at, has_new_signals,
-                    (prep_frozen_json IS NOT NULL) as has_frozen_prep
-             FROM meetings_history
-             WHERE start_time >= ?1 AND start_time <= ?2
-               AND (intelligence_state IS NULL OR intelligence_state != 'archived')
-               AND meeting_type NOT IN ('personal', 'focus', 'blocked')
-             ORDER BY start_time ASC",
+                    "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    mt.summary, mt.transcript_processed_at, mt.has_new_signals,
+                    (mp.prep_frozen_json IS NOT NULL) as has_frozen_prep
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+             WHERE m.start_time >= ?1 AND m.start_time <= ?2
+               AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')
+               AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')
+             ORDER BY m.start_time ASC",
                 )
                 .map_err(|e| format!("Failed to prepare timeline query: {}", e))?;
 
@@ -1165,12 +1271,12 @@ fn find_prior_meeting(
         .map(|i| format!("?{}", i + 3))
         .collect();
     let sql = format!(
-        "SELECT DISTINCT mh.id FROM meetings_history mh
-         INNER JOIN meeting_entities me ON me.meeting_id = mh.id
+        "SELECT DISTINCT m.id FROM meetings m
+         INNER JOIN meeting_entities me ON me.meeting_id = m.id
          WHERE me.entity_id IN ({})
-           AND mh.start_time < ?1
-           AND mh.id != ?2
-         ORDER BY mh.start_time DESC
+           AND m.start_time < ?1
+           AND m.id != ?2
+         ORDER BY m.start_time DESC
          LIMIT 1",
         placeholders.join(", ")
     );
@@ -1446,7 +1552,7 @@ pub async fn link_meeting_entity_with_prep_queue(
             db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
-                "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
             );
             Ok(())
@@ -1454,11 +1560,10 @@ pub async fn link_meeting_entity_with_prep_queue(
         .await?;
     state
         .meeting_prep_queue
-        .enqueue(crate::meeting_prep_queue::PrepRequest {
-            meeting_id: meeting_id.to_string(),
-            priority: crate::meeting_prep_queue::PrepPriority::Manual,
-            requested_at: std::time::Instant::now(),
-        });
+        .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+            meeting_id.to_string(),
+            crate::meeting_prep_queue::PrepPriority::Manual,
+        ));
     state.integrations.prep_queue_wake.notify_one();
     log::info!(
         "link_meeting_entity: relinked {} to {} ({}), enqueued prep re-assembly",
@@ -1482,7 +1587,7 @@ pub async fn unlink_meeting_entity_with_prep_queue(
             db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
                 .map_err(|e| e.to_string())?;
             let _ = db.conn_ref().execute(
-                "UPDATE meetings_history SET prep_frozen_json = NULL WHERE id = ?1",
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
             );
             Ok(())
@@ -1490,11 +1595,10 @@ pub async fn unlink_meeting_entity_with_prep_queue(
         .await?;
     state
         .meeting_prep_queue
-        .enqueue(crate::meeting_prep_queue::PrepRequest {
-            meeting_id: meeting_id.to_string(),
-            priority: crate::meeting_prep_queue::PrepPriority::Manual,
-            requested_at: std::time::Instant::now(),
-        });
+        .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+            meeting_id.to_string(),
+            crate::meeting_prep_queue::PrepPriority::Manual,
+        ));
     state.integrations.prep_queue_wake.notify_one();
     log::info!(
         "unlink_meeting_entity: unlinked {} from {}, enqueued prep re-assembly",
@@ -1695,6 +1799,237 @@ pub fn update_meeting_user_notes(
     Ok(())
 }
 
+/// Update a single field in a meeting's frozen prep JSON with signal emission.
+///
+/// Supports field paths like:
+/// - `"meetingContext"` (simple key)
+/// - `"risks[0]"` (array index)
+/// - `"attendeeContext[2].assessment"` (nested array + key)
+pub fn update_meeting_prep_field(
+    db: &ActionDb,
+    state: &AppState,
+    meeting_id: &str,
+    field_path: &str,
+    value: &str,
+    target_person_id: Option<&str>,
+) -> Result<(), String> {
+    let meeting = db
+        .get_meeting_intelligence_row(meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+
+    let frozen = meeting
+        .prep_frozen_json
+        .as_deref()
+        .ok_or_else(|| "No frozen prep JSON to update".to_string())?;
+
+    let mut json: serde_json::Value =
+        serde_json::from_str(frozen).map_err(|e| format!("Invalid prep JSON: {}", e))?;
+
+    // Parse field_path and apply update
+    apply_field_path_update(&mut json, field_path, value)?;
+
+    let updated = serde_json::to_string(&json).map_err(|e| format!("Serialize error: {}", e))?;
+
+    // Distinguish curation (delete/clear) from correction (edit).
+    let is_curation = value.trim().is_empty() || value == "[]" || value == "null";
+
+    // Get linked entities for signal emission
+    let entities = db
+        .get_meeting_entities(meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    db.with_transaction(|tx| {
+        tx.update_prep_frozen_json(meeting_id, &updated)
+            .map_err(|e| e.to_string())?;
+
+        let (signal_type, source, confidence) = if is_curation {
+            ("intelligence_curated", "user_curation", 0.5)
+        } else {
+            ("user_correction", "user_edit", 1.0)
+        };
+
+        // Emit signal for each linked entity
+        for entity in &entities {
+            let entity_type_str = match entity.entity_type {
+                crate::entity::EntityType::Account => "account",
+                crate::entity::EntityType::Project => "project",
+                crate::entity::EntityType::Person => "person",
+                _ => continue,
+            };
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &state.signals.engine,
+                entity_type_str,
+                &entity.id,
+                signal_type,
+                source,
+                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                confidence,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+        }
+
+        // Attendee assessment edits: also target the specific person entity
+        if let Some(person_id) = target_person_id {
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &state.signals.engine,
+                "person",
+                person_id,
+                signal_type,
+                source,
+                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                confidence,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+        }
+
+        // Also emit a signal for the meeting itself
+        crate::services::signals::emit(
+            tx,
+            "meeting",
+            meeting_id,
+            signal_type,
+            source,
+            Some(&format!("{{\"field\":\"{}\"}}", field_path)),
+            confidence,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+/// Parse a field path and apply an update to a JSON value.
+///
+/// Supported path formats:
+/// - `"meetingContext"` → `json["meetingContext"]`
+/// - `"risks[0]"` → `json["risks"][0]`
+/// - `"attendeeContext[2].assessment"` → `json["attendeeContext"][2]["assessment"]`
+fn apply_field_path_update(
+    json: &mut serde_json::Value,
+    field_path: &str,
+    value: &str,
+) -> Result<(), String> {
+    let segments = parse_field_path(field_path)?;
+
+    if segments.is_empty() {
+        return Err("Empty field path".to_string());
+    }
+
+    // Navigate to the parent, then set the final segment
+    let mut current = json as &mut serde_json::Value;
+    for segment in &segments[..segments.len() - 1] {
+        current = navigate_segment(current, segment)?;
+    }
+
+    let new_value = if value.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::String(value.to_string())
+    };
+
+    match &segments[segments.len() - 1] {
+        PathSegment::Key(key) => {
+            current[key.as_str()] = new_value;
+        }
+        PathSegment::Index(idx) => {
+            let arr = current
+                .as_array_mut()
+                .ok_or_else(|| format!("Expected array for index [{}]", idx))?;
+            if *idx >= arr.len() {
+                return Err(format!(
+                    "Index {} out of bounds (array length {})",
+                    idx,
+                    arr.len()
+                ));
+            }
+            arr[*idx] = new_value;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+enum PathSegment {
+    Key(String),
+    Index(usize),
+}
+
+/// Parse a field path into segments.
+///
+/// Examples:
+/// - `"meetingContext"` → `[Key("meetingContext")]`
+/// - `"risks[0]"` → `[Key("risks"), Index(0)]`
+/// - `"attendeeContext[2].assessment"` → `[Key("attendeeContext"), Index(2), Key("assessment")]`
+fn parse_field_path(path: &str) -> Result<Vec<PathSegment>, String> {
+    let mut segments = Vec::new();
+    let mut remaining = path;
+
+    while !remaining.is_empty() {
+        // Strip leading dot separator
+        if remaining.starts_with('.') {
+            remaining = &remaining[1..];
+        }
+
+        if remaining.starts_with('[') {
+            // Parse index: [N]
+            let end = remaining
+                .find(']')
+                .ok_or_else(|| format!("Unclosed bracket in path: {}", path))?;
+            let idx_str = &remaining[1..end];
+            let idx: usize = idx_str
+                .parse()
+                .map_err(|_| format!("Invalid array index: {}", idx_str))?;
+            segments.push(PathSegment::Index(idx));
+            remaining = &remaining[end + 1..];
+        } else {
+            // Parse key: up to next '[' or '.' or end
+            let end = remaining
+                .find(['[', '.'])
+                .unwrap_or(remaining.len());
+            if end == 0 {
+                return Err(format!("Empty key segment in path: {}", path));
+            }
+            segments.push(PathSegment::Key(remaining[..end].to_string()));
+            remaining = &remaining[end..];
+        }
+    }
+
+    Ok(segments)
+}
+
+fn navigate_segment<'a>(
+    current: &'a mut serde_json::Value,
+    segment: &PathSegment,
+) -> Result<&'a mut serde_json::Value, String> {
+    match segment {
+        PathSegment::Key(key) => {
+            if current.get(key.as_str()).is_none() {
+                return Err(format!("Key '{}' not found in JSON", key));
+            }
+            Ok(&mut current[key.as_str()])
+        }
+        PathSegment::Index(idx) => {
+            let arr = current
+                .as_array_mut()
+                .ok_or_else(|| format!("Expected array for index [{}]", idx))?;
+            if *idx >= arr.len() {
+                return Err(format!(
+                    "Index {} out of bounds (array length {})",
+                    idx,
+                    arr.len()
+                ));
+            }
+            Ok(&mut arr[*idx])
+        }
+    }
+}
+
 // ── I453: Meeting handlers extracted from commands.rs ──────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1728,6 +2063,90 @@ pub struct MeetingBriefingRefreshResult {
     pub quality: IntelligenceQuality,
 }
 
+#[derive(Debug, Clone)]
+struct MeetingBriefingSnapshot {
+    prep_frozen_json: Option<String>,
+    prep_frozen_at: Option<String>,
+    intelligence_state: Option<String>,
+    intelligence_quality: Option<String>,
+    signal_count: Option<i32>,
+    last_enriched_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RefreshCompletionPlan {
+    restore_snapshot: bool,
+    queue_rebuild: bool,
+    return_error: bool,
+}
+
+fn plan_refresh_completion(
+    had_snapshot: bool,
+    refreshed_entities: u32,
+    prep_rebuilt_sync: bool,
+) -> RefreshCompletionPlan {
+    if prep_rebuilt_sync {
+        return RefreshCompletionPlan {
+            restore_snapshot: false,
+            queue_rebuild: false,
+            return_error: false,
+        };
+    }
+
+    if had_snapshot && refreshed_entities == 0 {
+        return RefreshCompletionPlan {
+            restore_snapshot: true,
+            queue_rebuild: true,
+            return_error: true,
+        };
+    }
+
+    RefreshCompletionPlan {
+        restore_snapshot: false,
+        queue_rebuild: true,
+        return_error: false,
+    }
+}
+
+fn restore_meeting_briefing_snapshot(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    snapshot: &MeetingBriefingSnapshot,
+) -> Result<(), String> {
+    db.conn_ref()
+        .execute(
+            "UPDATE meeting_prep
+             SET prep_frozen_json = ?1, prep_frozen_at = ?2
+             WHERE meeting_id = ?3",
+            rusqlite::params![
+                snapshot.prep_frozen_json.as_deref(),
+                snapshot.prep_frozen_at.as_deref(),
+                meeting_id
+            ],
+        )
+        .map_err(|e| format!("Failed to restore previous briefing: {}", e))?;
+
+    db.conn_ref()
+        .execute(
+            "UPDATE meeting_transcripts
+             SET intelligence_state = ?1,
+                 intelligence_quality = ?2,
+                 signal_count = ?3,
+                 last_enriched_at = ?4
+             WHERE meeting_id = ?5",
+            rusqlite::params![
+                snapshot.intelligence_state.as_deref(),
+                snapshot.intelligence_quality.as_deref(),
+                snapshot.signal_count,
+                snapshot.last_enriched_at.as_deref(),
+                meeting_id
+            ],
+        )
+        .map_err(|e| format!("Failed to restore previous meeting state: {}", e))?;
+
+    Ok(())
+}
+
 fn emit_briefing_refresh_progress(
     app_handle: Option<&tauri::AppHandle>,
     payload: MeetingBriefingRefreshProgress,
@@ -1740,7 +2159,10 @@ fn emit_briefing_refresh_progress(
 /// Single-service full briefing refresh for one meeting.
 ///
 /// This is the deterministic manual refresh path:
-/// 1) clear frozen prep, 2) refresh linked entity intelligence, 3) rebuild prep.
+/// 1) snapshot current prep,
+/// 2) refresh linked entity intelligence,
+/// 3) rebuild prep,
+/// 4) swap only when the replacement is ready.
 pub async fn refresh_meeting_briefing_full(
     state: &AppState,
     meeting_id: &str,
@@ -1762,13 +2184,13 @@ pub async fn refresh_meeting_briefing_full(
         },
     );
 
-    // Phase 1: clear current prep + collect linked entities.
+    // Phase 1: snapshot current prep + collect linked entities.
     emit_briefing_refresh_progress(
         app_handle,
         MeetingBriefingRefreshProgress {
             meeting_id: meeting_id_owned.clone(),
-            stage: "clearing_prep".to_string(),
-            message: "Clearing existing briefing snapshot".to_string(),
+            stage: "snapshotting_prep".to_string(),
+            message: "Preserving current briefing while refresh runs".to_string(),
             entity_id: None,
             entity_type: None,
             entity_name: None,
@@ -1778,27 +2200,36 @@ pub async fn refresh_meeting_briefing_full(
     );
 
     let meeting_id_for_phase1 = meeting_id_owned.clone();
-    let linked_entities = state
+    let (linked_entities, previous_snapshot) = state
         .db_write(move |db| {
-            db.get_meeting_by_id(&meeting_id_for_phase1)
+            let meeting = db
+                .get_meeting_by_id(&meeting_id_for_phase1)
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Meeting not found: {}", meeting_id_for_phase1))?;
 
+            let snapshot = MeetingBriefingSnapshot {
+                prep_frozen_json: meeting.prep_frozen_json.clone(),
+                prep_frozen_at: meeting.prep_frozen_at.clone(),
+                intelligence_state: meeting.intelligence_state.clone(),
+                intelligence_quality: meeting.intelligence_quality.clone(),
+                signal_count: meeting.signal_count,
+                last_enriched_at: meeting.last_enriched_at.clone(),
+            };
+
             let _ = db.update_intelligence_state(&meeting_id_for_phase1, "enriching", None, None);
 
-            db.conn_ref()
-                .execute(
-                    "UPDATE meetings_history
-                     SET prep_frozen_json = NULL, prep_frozen_at = NULL
-                     WHERE id = ?1",
-                    rusqlite::params![meeting_id_for_phase1.as_str()],
-                )
-                .map_err(|e| format!("Failed to clear existing briefing: {}", e))?;
+            let linked_entities = db
+                .get_meeting_entities(&meeting_id_for_phase1)
+                .map_err(|e| format!("Failed to load linked entities: {}", e))?;
 
-            db.get_meeting_entities(&meeting_id_for_phase1)
-                .map_err(|e| format!("Failed to load linked entities: {}", e))
+            Ok::<(Vec<crate::entity::DbEntity>, MeetingBriefingSnapshot), String>((
+                linked_entities,
+                snapshot,
+            ))
         })
         .await?;
+
+    let had_snapshot = previous_snapshot.prep_frozen_json.is_some();
 
     let total_entities = linked_entities.len() as u32;
     if total_entities > 0 {
@@ -1848,6 +2279,7 @@ pub async fn refresh_meeting_briefing_full(
             entity_id.clone(),
             entity_type.clone(),
             state,
+            app_handle,
         )
         .await
         {
@@ -1896,18 +2328,20 @@ pub async fn refresh_meeting_briefing_full(
     // Failed entity refreshes are queued for retry.
     if !failed_entities.is_empty() {
         for (entity_id, entity_type) in &failed_entities {
-            state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
-                entity_id: entity_id.clone(),
-                entity_type: entity_type.clone(),
-                priority: crate::intel_queue::IntelPriority::Manual,
-                requested_at: std::time::Instant::now(),
-                retry_count: 0,
-            });
+            state
+                .intel_queue
+                .enqueue(crate::intel_queue::IntelRequest::new(
+                    entity_id.clone(),
+                    entity_type.clone(),
+                    crate::intel_queue::IntelPriority::Manual,
+                ));
         }
         state.integrations.intel_queue_wake.notify_one();
     }
 
-    // Phase 3: rebuild mechanical prep now; fallback to queue if needed.
+    // Phase 3: rebuild mechanical prep now; fallback to queue only when no
+    // previous snapshot exists. Snapshot-backed refreshes keep the prior prep
+    // visible instead of queueing a no-op rebuild behind the existing snapshot.
     emit_briefing_refresh_progress(
         app_handle,
         MeetingBriefingRefreshProgress {
@@ -1922,13 +2356,40 @@ pub async fn refresh_meeting_briefing_full(
         },
     );
 
-    let prep_rebuilt_sync = match tokio::task::block_in_place(|| {
-        crate::meeting_prep_queue::generate_mechanical_prep_now(state, &meeting_id_owned)
-    }) {
-        Ok(_) => true,
+    let prep_rebuilt_sync = match crate::meeting_prep_queue::meeting_prep_blocking_inputs(state) {
+        Ok((workspace, embedding_model)) => match tauri::async_runtime::spawn_blocking({
+            let meeting_id = meeting_id_owned.clone();
+            move || {
+                crate::meeting_prep_queue::regenerate_mechanical_prep_now_blocking(
+                    workspace,
+                    embedding_model,
+                    meeting_id,
+                )
+            }
+        })
+        .await
+        {
+            Ok(Ok(wrote)) => wrote,
+            Ok(Err(err)) => {
+                log::warn!(
+                    "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
+                    meeting_id_owned,
+                    err
+                );
+                false
+            }
+            Err(err) => {
+                log::warn!(
+                    "refresh_meeting_briefing_full: prep rebuild task panicked for {}: {}",
+                    meeting_id_owned,
+                    err
+                );
+                false
+            }
+        },
         Err(err) => {
             log::warn!(
-                "refresh_meeting_briefing_full: immediate prep rebuild failed for {}: {}",
+                "refresh_meeting_briefing_full: prep rebuild inputs failed for {}: {}",
                 meeting_id_owned,
                 err
             );
@@ -1936,36 +2397,82 @@ pub async fn refresh_meeting_briefing_full(
         }
     };
 
-    let prep_queued = !prep_rebuilt_sync;
-    if prep_queued {
-        state
-            .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: meeting_id_owned.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::Manual,
-                requested_at: std::time::Instant::now(),
-            });
+    let completion_plan =
+        plan_refresh_completion(had_snapshot, refreshed_entities, prep_rebuilt_sync);
+
+    if completion_plan.queue_rebuild {
+        state.meeting_prep_queue.enqueue(
+            crate::meeting_prep_queue::PrepRequest::overwrite_existing(
+                meeting_id_owned.clone(),
+                crate::meeting_prep_queue::PrepPriority::Manual,
+            ),
+        );
         state.integrations.prep_queue_wake.notify_one();
     }
 
-    // Phase 4: finalize meeting intelligence metadata.
-    let meeting_id_for_phase4 = meeting_id_owned.clone();
-    let quality = state
-        .db_write(move |db| {
-            let quality =
-                crate::intelligence::assess_intelligence_quality(db, &meeting_id_for_phase4);
-            db.update_intelligence_state(
-                &meeting_id_for_phase4,
-                "enriched",
-                Some(&quality.level.to_string()),
-                Some(quality.signal_count as i32),
-            )
-            .map_err(|e| e.to_string())?;
-            let _ = db.clear_meeting_new_signals(&meeting_id_for_phase4);
-            Ok::<IntelligenceQuality, String>(quality)
-        })
-        .await?;
+    if completion_plan.restore_snapshot {
+        let meeting_id_for_restore = meeting_id_owned.clone();
+        let snapshot_for_restore = previous_snapshot.clone();
+        state
+            .db_write(move |db| {
+                restore_meeting_briefing_snapshot(
+                    db,
+                    &meeting_id_for_restore,
+                    &snapshot_for_restore,
+                )
+            })
+            .await?;
 
+        emit_briefing_refresh_progress(
+            app_handle,
+            MeetingBriefingRefreshProgress {
+                meeting_id: meeting_id_owned.clone(),
+                stage: "failed".to_string(),
+                message: "Update failed - showing previous briefing".to_string(),
+                entity_id: None,
+                entity_type: None,
+                entity_name: None,
+                current: Some(refreshed_entities),
+                total: Some(total_entities),
+            },
+        );
+
+        if completion_plan.return_error {
+            return Err("Update failed - showing previous briefing".to_string());
+        }
+    }
+
+    // Phase 4: finalize meeting intelligence metadata only when a new prep was written.
+    let quality = if prep_rebuilt_sync {
+        let meeting_id_for_phase4 = meeting_id_owned.clone();
+        state
+            .db_write(move |db| {
+                let quality =
+                    crate::intelligence::assess_intelligence_quality(db, &meeting_id_for_phase4);
+                db.update_intelligence_state(
+                    &meeting_id_for_phase4,
+                    "enriched",
+                    Some(&quality.level.to_string()),
+                    Some(quality.signal_count as i32),
+                )
+                .map_err(|e| e.to_string())?;
+                let _ = db.clear_meeting_new_signals(&meeting_id_for_phase4);
+                Ok::<IntelligenceQuality, String>(quality)
+            })
+            .await?
+    } else {
+        let meeting_id_for_quality = meeting_id_owned.clone();
+        state
+            .db_read(move |db| {
+                Ok(crate::intelligence::assess_intelligence_quality(
+                    db,
+                    &meeting_id_for_quality,
+                ))
+            })
+            .await?
+    };
+
+    let prep_queued = completion_plan.queue_rebuild;
     let result = MeetingBriefingRefreshResult {
         meeting_id: meeting_id_owned.clone(),
         refreshed_entities,
@@ -2012,10 +2519,11 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
         let meeting_ids: Vec<String> = db
             .conn_ref()
             .prepare(
-                "SELECT id FROM meetings_history
-                 WHERE start_time > ?1
-                   AND meeting_type NOT IN ('personal', 'focus', 'blocked')
-                   AND (intelligence_state IS NULL OR intelligence_state != 'archived')",
+                "SELECT m.id FROM meetings m
+                 LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE m.start_time > ?1
+                   AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')
+                   AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
             )
             .and_then(|mut stmt| {
                 let rows = stmt.query_map(rusqlite::params![now], |row| {
@@ -2027,7 +2535,7 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
 
         for mid in &meeting_ids {
             let _ = db.conn_ref().execute(
-                "UPDATE meetings_history SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE id = ?1",
+                "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
                 rusqlite::params![mid],
             );
         }
@@ -2042,11 +2550,10 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
     for mid in &meeting_ids {
         state
             .meeting_prep_queue
-            .enqueue(crate::meeting_prep_queue::PrepRequest {
-                meeting_id: mid.clone(),
-                priority: crate::meeting_prep_queue::PrepPriority::Manual,
-                requested_at: std::time::Instant::now(),
-            });
+            .enqueue(crate::meeting_prep_queue::PrepRequest::new(
+                mid.clone(),
+                crate::meeting_prep_queue::PrepPriority::Manual,
+            ));
     }
 
     let count = meeting_ids.len();
@@ -2101,6 +2608,7 @@ pub async fn attach_meeting_transcript(
     let meeting_id = meeting.id.clone();
     let meeting_clone = meeting.clone();
     let file_path_for_record = file_path.clone();
+    let progress_handle = app_handle.clone();
 
     let result = match tauri::async_runtime::spawn_blocking(move || {
         let workspace = std::path::Path::new(&workspace_path);
@@ -2111,6 +2619,7 @@ pub async fn attach_meeting_transcript(
             workspace,
             &file_path,
             &meeting_clone,
+            Some(&progress_handle),
             db.as_ref(),
             &profile,
             Some(&ai_config),
@@ -2180,44 +2689,201 @@ pub async fn attach_meeting_transcript(
             let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);
             let _ = app_handle.emit("transcript-processed", &outcome_data);
 
-            // Emit transcript_outcomes signal via the main DB connection so the
-            // propagation engine can invalidate linked meeting preps. The signal
-            // emitted inside process_transcript uses a dedicated connection and the
-            // wrong entity fallback (meeting.id instead of account_id) — this
-            // corrects both issues.
+            // Emit transcript signals via the main DB connection so the
+            // propagation engine can invalidate linked meeting preps.
             {
                 let mid = meeting_id.clone();
                 let wins = result.wins.len();
                 let risks = result.risks.len();
                 let decisions = result.decisions.len();
                 let engine = std::sync::Arc::clone(&state.signals.engine);
+                let sentiment_json = result
+                    .sentiment
+                    .as_ref()
+                    .and_then(|s| serde_json::to_string(s).ok());
+                let competitor_mentions: Vec<String> = result
+                    .sentiment
+                    .as_ref()
+                    .map(|s| s.competitor_mentions.clone())
+                    .unwrap_or_default();
+                let escalation_signals: Vec<String> = result
+                    .interaction_dynamics
+                    .as_ref()
+                    .map(|d| {
+                        d.escalation_signals
+                            .iter()
+                            .map(|e| e.quote.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let decision_maker_inactive = result
+                    .interaction_dynamics
+                    .as_ref()
+                    .and_then(|d| d.engagement_signals.as_ref())
+                    .and_then(|e| e.decision_maker_active.as_deref())
+                    .map(|v| v == "no")
+                    .unwrap_or(false);
+                // I555: Capture champion health, role changes, and risks for signal emissions
+                let champion_health = result.champion_health.clone();
+                let role_changes_data: Vec<(String, Option<String>, Option<String>)> = result
+                    .role_changes
+                    .iter()
+                    .map(|rc| (rc.person_name.clone(), rc.old_status.clone(), rc.new_status.clone()))
+                    .collect();
+                let risk_strings: Vec<String> = result.risks.clone();
+                let meeting_title = meeting.title.clone();
                 let _ = state
                     .db_write(move |db| {
-                        let account_id: Option<String> = db
-                            .conn_ref()
-                            .query_row(
-                                "SELECT account_id FROM meetings_history WHERE id = ?1",
-                                rusqlite::params![mid],
-                                |row| row.get(0),
-                            )
-                            .ok()
-                            .flatten();
-                        if let Some(aid) = account_id {
+                        let account_id: Option<String> =
+                            db.get_meeting_entities(&mid).ok().and_then(|ents| {
+                                ents.into_iter()
+                                    .find(|e| e.entity_type == crate::entity::EntityType::Account)
+                                    .map(|e| e.id)
+                            });
+                        if let Some(ref aid) = account_id {
                             let value = format!(
-                            "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
-                            mid, wins, risks, decisions
-                        );
+                                "{{\"meeting_id\":\"{}\",\"wins\":{},\"risks\":{},\"decisions\":{}}}",
+                                mid, wins, risks, decisions
+                            );
                             let _ = crate::signals::bus::emit_signal_and_propagate(
                                 db,
                                 &engine,
                                 "account",
-                                &aid,
+                                aid,
                                 "transcript_outcomes",
                                 "transcript",
                                 Some(&value),
                                 0.75,
                             );
+
+                            // I509: Emit sentiment-derived signals
+                            if let Some(ref sj) = sentiment_json {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "transcript_sentiment", "transcript",
+                                    Some(sj), 0.8,
+                                );
+                            }
+                            for competitor in &competitor_mentions {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "competitor_mentioned", "transcript",
+                                    Some(competitor), 0.7,
+                                );
+                            }
+                            for escalation in &escalation_signals {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "escalation_detected", "transcript",
+                                    Some(escalation), 0.8,
+                                );
+                            }
+                            if decision_maker_inactive {
+                                let _ = crate::signals::bus::emit_signal(
+                                    db, "account", aid,
+                                    "stakeholder_disengagement", "transcript",
+                                    Some("decision_maker_inactive"), 0.6,
+                                );
+                            }
+
+                            // I555: Champion health → person-level signal
+                            if let Some(ref ch) = champion_health {
+                                if let Ok(Some(champion_pid)) = db.get_champion_person_id(aid) {
+                                    match ch.champion_status.as_str() {
+                                        "weak" | "lost" => {
+                                            let confidence = if ch.champion_status == "lost" { 0.9 } else { 0.7 };
+                                            let value = serde_json::json!({
+                                                "champion_status": ch.champion_status,
+                                                "evidence": ch.champion_evidence,
+                                            }).to_string();
+                                            let _ = crate::signals::bus::emit_signal_and_propagate(
+                                                db, &engine,
+                                                "person", &champion_pid,
+                                                "negative_sentiment", "transcript",
+                                                Some(&value), confidence,
+                                            );
+                                        }
+                                        "strong" => {
+                                            let value = serde_json::json!({
+                                                "champion_status": "strong",
+                                                "evidence": ch.champion_evidence,
+                                            }).to_string();
+                                            let _ = crate::signals::bus::emit_signal(
+                                                db, "person", &champion_pid,
+                                                "champion_engagement_confirmed", "transcript",
+                                                Some(&value), 0.8,
+                                            );
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+
+                            // I555: Meeting frequency signal → triggers rule_meeting_frequency_drop
+                            let current_count = db.count_account_meetings_in_days(aid, 30).unwrap_or(0);
+                            let previous_count = db.count_account_meetings_in_period(aid, 30, 30).unwrap_or(0);
+                            let freq_value = serde_json::json!({
+                                "meeting_count_30d": current_count,
+                                "current_count": current_count,
+                                "previous_count": previous_count,
+                            }).to_string();
+                            let _ = crate::signals::bus::emit_signal_and_propagate(
+                                db, &engine,
+                                "account", aid,
+                                "meeting_frequency", "transcript",
+                                Some(&freq_value), 0.9,
+                            );
+
+                            // I555: Risk signals with urgency-graduated confidence
+                            for risk in &risk_strings {
+                                let (urgency, confidence) = if risk.starts_with("[RED]") {
+                                    ("red", 0.9)
+                                } else if risk.starts_with("[YELLOW]") {
+                                    ("yellow", 0.6)
+                                } else if risk.starts_with("[GREEN_WATCH]") {
+                                    ("green_watch", 0.3)
+                                } else {
+                                    ("unknown", 0.5)
+                                };
+                                let risk_value = serde_json::json!({
+                                    "urgency": urgency,
+                                    "content": risk,
+                                }).to_string();
+                                let _ = crate::signals::bus::emit_signal_and_propagate(
+                                    db, &engine,
+                                    "account", aid,
+                                    "risk_detected", "transcript",
+                                    Some(&risk_value), confidence,
+                                );
+                            }
+
+                            // I555: Role changes → stakeholder_change signal
+                            for (person_name, old_status, new_status) in &role_changes_data {
+                                let rc_value = serde_json::json!({
+                                    "person": person_name,
+                                    "old": old_status,
+                                    "new": new_status,
+                                }).to_string();
+                                let _ = crate::signals::bus::emit_signal_and_propagate(
+                                    db, &engine,
+                                    "account", aid,
+                                    "stakeholder_change", "transcript",
+                                    Some(&rc_value), 0.8,
+                                );
+                            }
                         }
+
+                        // I509: Store sentiment as DB capture
+                        if let Some(ref sj) = sentiment_json {
+                            let _ = db.insert_capture(
+                                &mid,
+                                &meeting_title,
+                                account_id.as_deref(),
+                                "sentiment",
+                                sj,
+                            );
+                        }
+
                         Ok(())
                     })
                     .await;
@@ -2235,4 +2901,45 @@ pub async fn attach_meeting_transcript(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plan_refresh_completion;
+
+    #[test]
+    fn refresh_completion_restores_snapshot_on_full_failure() {
+        let plan = plan_refresh_completion(true, 0, false);
+
+        assert!(plan.restore_snapshot);
+        assert!(plan.queue_rebuild);
+        assert!(plan.return_error);
+    }
+
+    #[test]
+    fn refresh_completion_keeps_successful_swap() {
+        let plan = plan_refresh_completion(true, 1, true);
+
+        assert!(!plan.restore_snapshot);
+        assert!(!plan.queue_rebuild);
+        assert!(!plan.return_error);
+    }
+
+    #[test]
+    fn refresh_completion_queues_when_no_snapshot_exists() {
+        let plan = plan_refresh_completion(false, 0, false);
+
+        assert!(!plan.restore_snapshot);
+        assert!(plan.queue_rebuild);
+        assert!(!plan.return_error);
+    }
+
+    #[test]
+    fn refresh_completion_queues_retry_for_partial_success() {
+        let plan = plan_refresh_completion(true, 1, false);
+
+        assert!(!plan.restore_snapshot);
+        assert!(plan.queue_rebuild);
+        assert!(!plan.return_error);
+    }
 }

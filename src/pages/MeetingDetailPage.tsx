@@ -15,6 +15,7 @@ import type {
   AccountSnapshotItem,
   MeetingOutcomeData,
   MeetingIntelligence,
+  MeetingPostIntelligence,
   CalendarEvent,
   StakeholderInsight,
   ApplyPrepPrefillResult,
@@ -25,6 +26,7 @@ import { getPrimaryEntityName } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { ActionRow } from "@/components/shared/ActionRow";
+import { HealthBadge } from "@/components/shared/HealthBadge";
 
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -34,6 +36,10 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { PostMeetingIntelligence } from "@/components/meeting/PostMeetingIntelligence";
+import { EditableText } from "@/components/ui/EditableText";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import {
   AlignLeft,
   AlertTriangle,
@@ -49,6 +55,7 @@ import {
   Target,
   Trophy,
   Users,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 import styles from "./meeting-intel.module.css";
@@ -72,6 +79,8 @@ interface UnifiedAttendee {
   temperature?: string;
   engagement?: string;
   assessment?: string;
+  /** Field path in prep_frozen_json for inline editing (I548) */
+  assessmentFieldPath?: string;
   meetingCount?: number;
   lastSeen?: string;
   notes?: string;
@@ -101,6 +110,21 @@ interface PrepReadyPayload {
   meetingId: string;
 }
 
+interface TranscriptProgressPayload {
+  meetingId: string;
+  phase: string;
+  completed: number;
+  total: number;
+  summaryReady: boolean;
+  outcomesReady: boolean;
+  postIntelReady: boolean;
+  actionsCount: number;
+  winsCount: number;
+  risksCount: number;
+  decisionsCount: number;
+  commitmentsCount: number;
+}
+
 type TranscriptProcessedPayload = MeetingOutcomeData | string;
 
 export default function MeetingDetailPage() {
@@ -111,11 +135,16 @@ export default function MeetingDetailPage() {
   const [canEditUserLayer, setCanEditUserLayer] = useState(false);
   const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
   const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
+  const [entityHealthMap, setEntityHealthMap] = useState<MeetingIntelligence["entityHealthMap"]>({});
   const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
+  const [postIntel, setPostIntel] = useState<MeetingPostIntelligence | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
   const transientRetryCount = useRef(0);
+
+  // I529: Intelligence quality feedback
+  const feedback = useIntelligenceFeedback(meetingId ?? undefined, "meeting");
 
   // Entity mutation in progress — shows "Updating briefing..." (I477)
   const [briefingUpdating, setBriefingUpdating] = useState(false);
@@ -123,6 +152,7 @@ export default function MeetingDetailPage() {
   // Transcript attach
   const [attaching, setAttaching] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [retryingExtraction, setRetryingExtraction] = useState(false);
   const draft = useAgendaDraft({ onError: setError });
   const [prefillNotice, setPrefillNotice] = useState(false);
   const [prefilling, setPrefilling] = useState(false);
@@ -159,6 +189,7 @@ export default function MeetingDetailPage() {
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
       setLinkedEntities(intel.linkedEntities ?? []);
+      setEntityHealthMap(intel.entityHealthMap ?? {});
       setIntelligenceQuality(intel.intelligenceQuality);
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
@@ -184,6 +215,26 @@ export default function MeetingDetailPage() {
         userAgenda: intel.userAgenda ?? basePrep.userAgenda,
         userNotes: intel.userNotes ?? basePrep.userNotes,
       });
+
+      // Fetch post-meeting intelligence (non-blocking — only relevant for past meetings with transcripts)
+      if (intel.outcomes || intel.transcriptProcessedAt) {
+        invoke<MeetingPostIntelligence>("get_meeting_post_intelligence", { meetingId })
+          .then((pi) => {
+            const hasPostIntelData =
+              pi.interactionDynamics != null ||
+              pi.championHealth != null ||
+              pi.roleChanges.length > 0 ||
+              pi.enrichedCaptures.length > 0;
+            setPostIntel(hasPostIntelData ? pi : null);
+          })
+          .catch(() => {
+            // Non-critical — silently fail
+            setPostIntel(null);
+          });
+      } else {
+        setPostIntel(null);
+      }
+
       transientRetryCount.current = 0;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -287,6 +338,55 @@ export default function MeetingDetailPage() {
     }
   }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
 
+  const handleRetryTranscriptExtraction = useCallback(async () => {
+    if (!meetingId || !data || !outcomes?.transcriptPath) return;
+
+    setRetryingExtraction(true);
+    try {
+      const calendarEvent: CalendarEvent = {
+        id: meetingMeta?.id || meetingId,
+        title: meetingMeta?.title || data.title,
+        start: meetingMeta?.startTime || new Date().toISOString(),
+        end:
+          meetingMeta?.endTime ||
+          meetingMeta?.startTime ||
+          new Date().toISOString(),
+        type:
+          (meetingMeta?.meetingType as CalendarEvent["type"]) ?? "internal",
+        attendees: [],
+        isAllDay: false,
+      };
+
+      const result = await invoke<{
+        status: string;
+        message?: string;
+        summary?: string;
+      }>("attach_meeting_transcript", {
+        filePath: outcomes.transcriptPath,
+        meeting: calendarEvent,
+      });
+
+      if (result.status !== "success") {
+        toast.error("Retry failed", {
+          description: result.message || result.status,
+        });
+      } else if (!result.summary) {
+        toast.warning("No outcomes extracted", {
+          description: result.message || "AI extraction returned empty",
+        });
+      } else {
+        toast.success("Outcomes extracted");
+      }
+      await loadMeetingIntelligence();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to retry transcript extraction:", msg);
+      toast.error("Retry failed", { description: msg });
+    } finally {
+      setRetryingExtraction(false);
+    }
+  }, [meetingId, data, meetingMeta, outcomes?.transcriptPath, loadMeetingIntelligence]);
+
   const handleDraftAgendaMessage = useCallback(async () => {
     if (!meetingId) return;
     await draft.openDraft(meetingId, data?.meetingContext || undefined);
@@ -318,7 +418,7 @@ export default function MeetingDetailPage() {
       await loadMeetingIntelligence();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to prefill prep context"
+        err instanceof Error ? err.message : "Failed to prefill briefing context"
       );
     } finally {
       setPrefilling(false);
@@ -383,6 +483,13 @@ export default function MeetingDetailPage() {
   }, [meetingId, loadMeetingIntelligence]);
 
   useTauriEvent<TranscriptProcessedPayload>("transcript-processed", handleTranscriptProcessed);
+
+  const handleTranscriptProgress = useCallback((payload: TranscriptProgressPayload) => {
+    if (!meetingId || payload.meetingId !== meetingId) return;
+    void loadMeetingIntelligence();
+  }, [meetingId, loadMeetingIntelligence]);
+
+  useTauriEvent<TranscriptProgressPayload>("transcript-progress", handleTranscriptProgress);
 
   // Safety timeout: clear updating banner after 15s if prep-ready never arrives (I477)
   useEffect(() => {
@@ -506,6 +613,24 @@ Thanks!`;
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
+  // Save a single field in prep_frozen_json (I548 — inline editing for briefing sections)
+  const savePrepField = useCallback(async (fieldPath: string, value: string, targetPersonId?: string) => {
+    if (!meetingId || !isEditable) return;
+    setSaveStatus("saving");
+    try {
+      await invoke("update_meeting_prep_field", {
+        meetingId, fieldPath, value,
+        targetPersonId: targetPersonId ?? null,
+      });
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (err) {
+      console.error("Save failed:", err);
+      toast.error("Failed to save change");
+      setSaveStatus("idle");
+    }
+  }, [meetingId, isEditable]);
+
   // Collaboration action visibility
   const isFutureMeeting = !isPastMeeting;
   const isReadyOrFresh = intelligenceQuality?.level === "ready" || intelligenceQuality?.level === "fresh";
@@ -532,7 +657,7 @@ Thanks!`;
           </span>
         )}
         {isFutureMeeting && isReadyOrFresh && (
-          <button onClick={handleShareIntelligence} title="Share Intelligence" className={styles.folioBtnInline}>
+          <button onClick={handleShareIntelligence} title="Share Briefing" className={styles.folioBtnInline}>
             <Copy className={styles.iconSm} />
             Share
           </button>
@@ -548,16 +673,6 @@ Thanks!`;
             Draft Agenda
           </button>
         )}
-        {isPastMeeting && quillEnabled && (
-          <button
-            onClick={handleSyncTranscript}
-            disabled={syncing}
-            className={clsx(styles.folioBtnInline, syncing && styles.folioBtnDisabled)}
-          >
-            {syncing ? <Loader2 className={styles.iconSm} style={{ animation: "spin 1s linear infinite" }} /> : <RefreshCw className={styles.iconSm} />}
-            {syncing ? "Syncing…" : "Sync Transcript"}
-          </button>
-        )}
         <FolioRefreshButton
           onClick={handleRefreshIntelligence}
           loading={refreshingIntel}
@@ -565,7 +680,7 @@ Thanks!`;
         />
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, syncing, quillEnabled, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, handleSyncTranscript, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -612,14 +727,20 @@ Thanks!`;
   );
   const hasLinkedEntities = linkedEntities.length > 0;
 
-  // Derived data
-  const topRisks = [
-    ...((data.entityRisks ?? []).map((risk) => risk.text)),
-    ...(data.risks ?? []),
+  // Derived data — track source for inline editing (I548)
+  const topRiskEntries = [
+    ...((data.entityRisks ?? []).map((risk, i) => ({
+      text: sanitizeInlineText(risk.text),
+      fieldPath: `entityRisks[${i}].text`,
+    }))),
+    ...((data.risks ?? []).map((risk, i) => ({
+      text: sanitizeInlineText(risk),
+      fieldPath: `risks[${i}]`,
+    }))),
   ]
-    .map((risk) => sanitizeInlineText(risk))
-    .filter((risk) => risk.length > 0)
+    .filter((r) => r.text.length > 0)
     .slice(0, 3);
+  const topRisks = topRiskEntries.map((r) => r.text);
   const lifecycle = getLifecycleForDisplay(data);
   const agendaItems = (data.proposedAgenda ?? [])
     .map((item) => ({
@@ -662,20 +783,43 @@ Thanks!`;
   return (
     <>
       <div className={styles.pageContainer}>
-        {/* Outcomes always at top when present */}
-        {outcomes && (
+        {/* Post-meeting intelligence — replaces flat outcomes when available */}
+        {postIntel && (
           <>
             <div className={styles.outcomesWrap}>
-              <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
+              <PostMeetingIntelligence
+                data={postIntel}
+                getItemFeedback={feedback.getFeedback}
+                onItemFeedback={feedback.submitFeedback}
+              />
             </div>
             <div className={styles.outcomesDivider} />
             <p className={styles.preMeetingLabel}>
-              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Prep"}
+              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Briefing"}
             </p>
           </>
         )}
 
-        {!hasAnyContent && !outcomes && (
+        {/* Flat outcomes — shown only when no post-meeting intelligence is available */}
+        {outcomes && !postIntel && (
+          <>
+            <div className={styles.outcomesWrap}>
+              <OutcomesSection
+                outcomes={outcomes}
+                onRefresh={loadMeetingIntelligence}
+                onSaveStatus={setSaveStatus}
+                onRetryTranscriptExtraction={handleRetryTranscriptExtraction}
+                retryingExtraction={retryingExtraction}
+              />
+            </div>
+            <div className={styles.outcomesDivider} />
+            <p className={styles.preMeetingLabel}>
+              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Briefing"}
+            </p>
+          </>
+        )}
+
+        {!hasAnyContent && !outcomes && !postIntel && (
           <div className={clsx(styles.emptyState, !hasLinkedEntities && styles.emptyStateActionable)}>
             {hasLinkedEntities && <Clock className={styles.emptyIcon} />}
             {!hasLinkedEntities ? (
@@ -698,7 +842,7 @@ Thanks!`;
               </>
             )}
             {meetingId && (
-              <div className={styles.entityChipsWrap}>
+              <div className={styles.entityChipsWrapCentered}>
                 <MeetingEntityChips
                   meetingId={meetingId}
                   meetingTitle={meetingMeta?.title ?? data.title}
@@ -723,7 +867,7 @@ Thanks!`;
           </div>
         )}
 
-        {(hasAnyContent || outcomes) && (
+        {(hasAnyContent || outcomes || postIntel) && (
           <div className={isPastMeeting && outcomes ? styles.pastMeetingOpacity : undefined}>
 
             {/* ================================================================
@@ -785,30 +929,120 @@ Thanks!`;
               </div>
             )}
 
+              {/* Account health strip — I502 */}
+              {linkedEntities.some((e) => e.entityType === "account" && entityHealthMap?.[e.id]) && (
+                <div className={styles.healthStripContainer}>
+                  {linkedEntities
+                    .filter((e) => e.entityType === "account" && entityHealthMap?.[e.id])
+                    .map((e) => {
+                      const h = entityHealthMap![e.id];
+                      return (
+                        <span key={e.id} className={styles.healthStripItem}>
+                          <span className={styles.healthStripLabel}>
+                            {e.name}
+                          </span>
+                          <HealthBadge score={h.score} band={h.band} trend={h.trend} size="compact" />
+                        </span>
+                      );
+                    })}
+                </div>
+              )}
+
               {/* New signals banner */}
               {intelligenceQuality?.hasNewSignals && (
                 <div className={styles.newSignalsBanner}>
                   <span>New information available since your last view</span>
-                  <button
+                  <FolioRefreshButton
                     onClick={handleRefreshIntelligence}
-                    disabled={refreshingIntel}
-                    className={clsx(styles.newSignalsRefreshBtn, refreshingIntel && styles.newSignalsRefreshBtnDisabled)}
-                  >
-                    {refreshingIntel ? "Refreshing…" : "Refresh"}
-                  </button>
+                    loading={refreshingIntel}
+                  />
+                </div>
+              )}
+
+              {/* I527: Deterministic consistency status banner */}
+              {data.consistencyStatus && data.consistencyStatus !== "ok" && (
+                <div
+                  className={clsx(
+                    styles.consistencyBanner,
+                    data.consistencyStatus === "flagged"
+                      ? styles.consistencyBannerFlagged
+                      : styles.consistencyBannerCorrected,
+                  )}
+                >
+                  <span>
+                    {data.consistencyStatus === "corrected"
+                      ? "Context auto-corrected against meeting records."
+                      : "Some context could not be fully verified from meeting records."}
+                  </span>
+                  {data.consistencyFindings && data.consistencyFindings.length > 0 && (
+                    <span className={styles.consistencyCount}>
+                      {data.consistencyFindings.length} check
+                      {data.consistencyFindings.length === 1 ? "" : "s"}
+                    </span>
+                  )}
                 </div>
               )}
 
               {/* The Key Insight — pull quote style */}
               {keyInsight && (
                 <blockquote className={styles.keyInsight}>
-                  <p className={styles.keyInsightText}>{keyInsight}</p>
+                  <div className={styles.intelRowBody}>
+                    {isEditable ? (
+                      <EditableText
+                        value={keyInsight}
+                        onChange={(v) => savePrepField(
+                          data.intelligenceSummary ? "intelligenceSummary" : "meetingContext",
+                          v,
+                        )}
+                        as="p"
+                        multiline
+                        className={styles.keyInsightText}
+                      />
+                    ) : (
+                      <p className={styles.keyInsightText}>{keyInsight}</p>
+                    )}
+                  </div>
+                  <span className={styles.itemActions}>
+                    <IntelligenceFeedback
+                      value={feedback.getFeedback("key_insight")}
+                      onFeedback={(type) => feedback.submitFeedback("key_insight", type)}
+                    />
+                  </span>
                 </blockquote>
               )}
               {!keyInsight && (
                 <p className={styles.keyInsightEmpty}>
                   Intelligence builds as you meet with this account.
                 </p>
+              )}
+
+              {/* Since Last Meeting — compact timeline of what changed */}
+              {data.sinceLast && data.sinceLast.length > 0 && (
+                <div className={styles.sinceLastWrap}>
+                  <p className={styles.sinceLastHeading}>Since Last Meeting</p>
+                  <ul className={styles.sinceLastList}>
+                    {data.sinceLast.map((item, i) => (
+                      <li key={i} className={styles.sinceLastItem}>
+                        <span className={styles.bulletDotTurmericMuted} />
+                        <span>{sanitizeInlineText(item)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Account Pulse — what's working / not working */}
+              {data.currentState && data.currentState.length > 0 && (
+                <div className={styles.currentStateWrap}>
+                  <p className={styles.currentStateHeading}>Account Pulse</p>
+                  <div className={styles.currentStateGrid}>
+                    {data.currentState.map((item, i) => (
+                      <span key={i} className={styles.currentStateItem}>
+                        {sanitizeInlineText(item)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {/* Entity Readiness — "Before This Meeting" checklist */}
@@ -838,22 +1072,115 @@ Thanks!`;
                 <div className={styles.risksContainer}>
                   {topRisks.map((risk, i) => {
                     const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
+                    const fieldPath = topRiskEntries[i]?.fieldPath;
+                    const riskContent = isEditable ? (
+                      <EditableText
+                        value={risk}
+                        onChange={(v) => savePrepField(fieldPath, v)}
+                        as="p"
+                        multiline
+                        className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}
+                      />
+                    ) : (
+                      <p className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}>{risk}</p>
+                    );
+                    const itemActions = (
+                      <span className={styles.itemActions}>
+                        <IntelligenceFeedback
+                          value={feedback.getFeedback(`risks[${i}]`)}
+                          onFeedback={(type) => feedback.submitFeedback(`risks[${i}]`, type)}
+                        />
+                        {isEditable && fieldPath && (
+                          <button
+                            type="button"
+                            className={styles.dismissButton}
+                            onClick={() => savePrepField(fieldPath, "")}
+                            title="Dismiss"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </span>
+                    );
                     return i === 0 ? (
                       <blockquote
                         key={i}
                         className={clsx(styles.featuredRisk, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p className={styles.featuredRiskText}>{risk}</p>
+                        <div className={styles.intelRowBody}>{riskContent}</div>
+                        {itemActions}
                       </blockquote>
                     ) : (
                       <div
                         key={i}
                         className={clsx(styles.subordinateRisk, isHighUrgency && styles.subordinateRiskHighUrgency, isHighUrgency && "risk-pulse-once")}
                       >
-                        <p className={styles.subordinateRiskText}>{risk}</p>
+                        <div className={styles.intelRowBody}>{riskContent}</div>
+                        {itemActions}
                       </div>
                     );
                   })}
+                </div>
+              </section>
+            )}
+
+            {/* Recent Wins — positive context after risks */}
+            {data.recentWins && data.recentWins.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Recent Wins" />
+                <div className={styles.recentWinsContainer}>
+                  {data.recentWins.map((win, i) => (
+                    <div key={i} className={styles.recentWinItem}>
+                      <span className={styles.bulletDotSage} />
+                      <p className={styles.recentWinText}>{cleanPrepLine(win)}</p>
+                      <span className={styles.itemActions}>
+                        <IntelligenceFeedback
+                          value={feedback.getFeedback(`recentWins[${i}]`)}
+                          onFeedback={(type) => feedback.submitFeedback(`recentWins[${i}]`, type)}
+                        />
+                        {isEditable && (
+                          <button
+                            type="button"
+                            className={styles.dismissButton}
+                            onClick={() => savePrepField(`recentWins[${i}]`, "")}
+                            title="Dismiss"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Open Items — follow-ups from previous meetings */}
+            {data.openItems && data.openItems.length > 0 && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="Open Items" />
+                <div className={styles.openItemsContainer}>
+                  {data.openItems.map((item, i) => (
+                    <div
+                      key={i}
+                      className={clsx(
+                        styles.openItemRow,
+                        item.isOverdue && styles.openItemOverdue,
+                      )}
+                    >
+                      <p className={styles.openItemTitle}>{item.title}</p>
+                      {item.dueDate && (
+                        <span
+                          className={clsx(
+                            styles.openItemDue,
+                            item.isOverdue && styles.openItemDueOverdue,
+                          )}
+                        >
+                          {item.isOverdue ? "Overdue" : "Due"}: {item.dueDate}
+                        </span>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </section>
             )}
@@ -868,6 +1195,7 @@ Thanks!`;
                   initialHiddenNames={hiddenAttendees}
                   meetingId={meetingId ?? undefined}
                   onSaveStatus={setSaveStatus}
+                  onSavePrepField={savePrepField}
                 />
               </section>
             )}
@@ -878,19 +1206,29 @@ Thanks!`;
                 <ChapterHeading title="Recent Correspondence" />
                 <div className={styles.risksContainer}>
                   {data.recentEmailSignals.map((signal, i) => (
-                    <Link key={i} to="/emails" className={styles.subordinateRisk} style={{ textDecoration: "none", display: "block" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em", color: "var(--color-text-tertiary)" }}>
-                          {signal.senderEmail}
+                    <div key={i} className={styles.subordinateRisk}>
+                      <div className={styles.intelRow}>
+                        <Link to="/emails" className={styles.emailSignalLink}>
+                          <div className={styles.emailSignalHeader}>
+                            <span className={styles.emailSignalSender}>
+                              {signal.senderEmail}
+                            </span>
+                            {signal.detectedAt && (
+                              <span className={styles.emailSignalDate}>
+                                {new Date(signal.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </span>
+                            )}
+                          </div>
+                          <p className={styles.subordinateRiskText}>{signal.signalText}</p>
+                        </Link>
+                        <span className={styles.itemActions}>
+                          <IntelligenceFeedback
+                            value={feedback.getFeedback(`correspondence[${i}]`)}
+                            onFeedback={(type) => feedback.submitFeedback(`correspondence[${i}]`, type)}
+                          />
                         </span>
-                        {signal.detectedAt && (
-                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)" }}>
-                            {new Date(signal.detectedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                          </span>
-                        )}
                       </div>
-                      <p className={styles.subordinateRiskText}>{signal.signalText}</p>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               </section>
@@ -993,12 +1331,14 @@ function UnifiedAttendeeList({
   initialHiddenNames,
   meetingId,
   onSaveStatus,
+  onSavePrepField,
 }: {
   attendees: UnifiedAttendee[];
   isEditable?: boolean;
   initialHiddenNames?: string[];
   meetingId?: string;
   onSaveStatus?: (status: "idle" | "saving" | "saved") => void;
+  onSavePrepField?: (fieldPath: string, value: string, targetPersonId?: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [hiddenNames, setHiddenNames] = useState<Set<string>>(
@@ -1008,37 +1348,44 @@ function UnifiedAttendeeList({
   const visible = showAll ? filtered : filtered.slice(0, 4);
   const remaining = filtered.length - 4;
 
-  const tempColorMap: Record<string, string> = {
-    hot: "var(--color-garden-sage)",
-    warm: "var(--color-spice-turmeric)",
-    cool: "var(--color-text-tertiary)",
-    cold: "var(--color-spice-terracotta)",
+  const tempIndicatorClass: Record<string, string> = {
+    hot: styles.tempIndicatorHot,
+    warm: styles.tempIndicatorWarm,
+    cool: styles.tempIndicatorCool,
+    cold: styles.tempIndicatorCold,
   };
 
-  const engagementColor: Record<string, string> = {
-    champion: "var(--color-garden-sage)",
-    detractor: "var(--color-spice-terracotta)",
-    neutral: "var(--color-text-tertiary)",
+  const tempLabelClass: Record<string, string> = {
+    hot: styles.tempLabelHot,
+    warm: styles.tempLabelWarm,
+    cool: styles.tempLabelCool,
+    cold: styles.tempLabelCold,
+  };
+
+  const engagementClass: Record<string, string> = {
+    champion: styles.engagementChampion,
+    detractor: styles.engagementDetractor,
+    neutral: styles.engagementNeutral,
   };
 
   return (
     <div className={styles.attendeeList}>
       {visible.map((person, i) => {
-        const tempColor = tempColorMap[person.temperature ?? ""] ?? "var(--color-text-tertiary)";
+        const tempIndCls = tempIndicatorClass[person.temperature ?? ""] ?? styles.tempIndicatorDefault;
+        const tempLblCls = tempLabelClass[person.temperature ?? ""] ?? styles.tempLabelDefault;
         const isNew = person.meetingCount === 0;
         const isCold = person.temperature === "cold";
-        const circleColor = isCold
-          ? { bg: "rgba(196, 101, 74, 0.1)", fg: "var(--color-spice-terracotta)" }
+        const avatarClass = isCold
+          ? styles.attendeeAvatarCold
           : isNew
-          ? { bg: "rgba(126, 170, 123, 0.1)", fg: "var(--color-garden-sage)" }
-          : { bg: "rgba(201, 162, 39, 0.1)", fg: "var(--color-spice-turmeric)" };
+          ? styles.attendeeAvatarNew
+          : styles.attendeeAvatarDefault;
 
         const inner = (
           <div className={styles.attendeeRow}>
             {/* Avatar */}
             <div
-              className={styles.attendeeAvatar}
-              style={{ background: circleColor.bg, color: circleColor.fg }}
+              className={clsx(styles.attendeeAvatar, avatarClass)}
             >
               {person.name.charAt(0)}
             </div>
@@ -1074,16 +1421,15 @@ function UnifiedAttendeeList({
                 )}
                 {person.temperature && (
                   <span className={styles.attendeeTempDot}>
-                    <span className={styles.attendeeTempIndicator} style={{ background: tempColor }} />
-                    <span className={styles.attendeeTempLabel} style={{ color: tempColor }}>
+                    <span className={clsx(styles.attendeeTempIndicator, tempIndCls)} />
+                    <span className={clsx(styles.attendeeTempLabel, tempLblCls)}>
                       {person.temperature}
                     </span>
                   </span>
                 )}
                 {person.engagement && (
                   <span
-                    className={styles.attendeeEngagement}
-                    style={{ color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)" }}
+                    className={clsx(styles.attendeeEngagement, engagementClass[person.engagement] ?? styles.engagementDefault)}
                   >
                     {person.engagement}
                   </span>
@@ -1095,9 +1441,19 @@ function UnifiedAttendeeList({
 
               {/* Assessment — the killer insight, serif italic, prominent */}
               {person.assessment && (
-                <p className={styles.attendeeAssessment}>
-                  {truncateText(sanitizeInlineText(person.assessment), 200)}
-                </p>
+                isEditable && onSavePrepField && person.assessmentFieldPath ? (
+                  <EditableText
+                    value={sanitizeInlineText(person.assessment)}
+                    onChange={(v) => onSavePrepField(person.assessmentFieldPath!, v, person.personId)}
+                    as="p"
+                    multiline
+                    className={styles.attendeeAssessment}
+                  />
+                ) : (
+                  <p className={styles.attendeeAssessment}>
+                    {truncateText(sanitizeInlineText(person.assessment), 200)}
+                  </p>
+                )
               )}
 
               {/* Metadata line */}
@@ -1158,6 +1514,7 @@ function UnifiedAttendeeList({
                       setTimeout(() => onSaveStatus?.("idle"), 2000);
                     } catch (err) {
                       console.error("Save failed:", err);
+                      toast.error("Failed to save attendee visibility");
                       onSaveStatus?.("idle");
                     }
                   }
@@ -1258,6 +1615,7 @@ function UnifiedPlanEditor({
       setTimeout(() => onSaveStatus("idle"), 2000);
     } catch (err) {
       console.error("Save failed:", err);
+      toast.error("Failed to save agenda");
       onSaveStatus("idle");
     }
   }
@@ -1470,10 +1828,14 @@ function OutcomesSection({
   outcomes,
   onRefresh,
   onSaveStatus: _onSaveStatus,
+  onRetryTranscriptExtraction,
+  retryingExtraction,
 }: {
   outcomes: MeetingOutcomeData;
   onRefresh: () => void;
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
+  onRetryTranscriptExtraction: () => void;
+  retryingExtraction: boolean;
 }) {
   const summary = outcomes.summary?.trim();
   const wins = outcomes.wins.filter((item) => item.trim().length > 0);
@@ -1492,9 +1854,21 @@ function OutcomesSection({
       {/* Inlined MeetingOutcomes */}
       <div className={styles.outcomesBody}>
         {!hasContent && (
-          <p className={styles.outcomesSummary}>
-            Transcript attached, but no structured outcomes were extracted yet.
-          </p>
+          <>
+            <p className={styles.outcomesSummary}>
+              Transcript attached, but no structured outcomes were extracted yet.
+            </p>
+            {outcomes.transcriptPath && (
+              <button
+                type="button"
+                onClick={onRetryTranscriptExtraction}
+                disabled={retryingExtraction}
+                className={clsx(styles.planSecondaryAction, retryingExtraction && styles.folioBtnDisabled)}
+              >
+                {retryingExtraction ? "Retrying extraction…" : "Retry extraction"}
+              </button>
+            )}
+          </>
         )}
 
         {/* Summary */}
@@ -1556,7 +1930,7 @@ function OutcomesSection({
                     catch (err) { console.error("Failed to accept action:", err); }
                   }}
                   onReject={async () => {
-                    try { await invoke("reject_proposed_action", { id: action.id }); onRefresh(); }
+                    try { await invoke("reject_proposed_action", { id: action.id, source: "meeting_detail" }); onRefresh(); }
                     catch (err) { console.error("Failed to reject action:", err); }
                   }}
                   onCyclePriority={async () => {
@@ -1633,7 +2007,8 @@ function buildUnifiedAttendees(
   const byKey = new Map<string, UnifiedAttendee>();
 
   // Start with attendeeContext (richest data)
-  for (const ctx of attendeeContext ?? []) {
+  for (let ci = 0; ci < (attendeeContext ?? []).length; ci++) {
+    const ctx = attendeeContext![ci];
     const key = normalizePersonKey(ctx.name);
     byKey.set(key, {
       name: ctx.name,
@@ -1644,6 +2019,7 @@ function buildUnifiedAttendees(
       meetingCount: ctx.meetingCount,
       lastSeen: ctx.lastSeen,
       notes: ctx.notes,
+      assessmentFieldPath: `attendeeContext[${ci}].assessment`,
     });
   }
 
@@ -1662,11 +2038,15 @@ function buildUnifiedAttendees(
   }
 
   // Merge stakeholder insights (assessment, engagement)
-  for (const insight of insights ?? []) {
+  for (let si = 0; si < (insights ?? []).length; si++) {
+    const insight = insights![si];
     const key = normalizePersonKey(insight.name);
     const existing = byKey.get(key);
     if (existing) {
-      if (insight.assessment) existing.assessment = insight.assessment;
+      if (insight.assessment) {
+        existing.assessment = insight.assessment;
+        existing.assessmentFieldPath = `stakeholderInsights[${si}].assessment`;
+      }
       if (insight.engagement) existing.engagement = insight.engagement;
       if (!existing.role && insight.role) existing.role = insight.role;
     }

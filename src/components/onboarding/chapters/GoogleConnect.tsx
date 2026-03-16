@@ -8,28 +8,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import styles from "../onboarding.module.css";
 
 interface GoogleConnectProps {
   onNext: () => void;
-}
-
-/** Mono uppercase section label */
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        fontWeight: 500,
-        textTransform: "uppercase" as const,
-        letterSpacing: "0.1em",
-        color: "var(--color-text-tertiary)",
-        marginBottom: 8,
-      }}
-    >
-      {children}
-    </div>
-  );
 }
 
 export function GoogleConnect({ onNext }: GoogleConnectProps) {
@@ -37,40 +19,21 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
   const isConnected = authStatus.status === "authenticated";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="Every meeting, prepared. Every email, triaged."
       />
 
       {/* Calendar explanation */}
-      <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-        }}
-      >
-        <SectionLabel>
-          <Calendar size={12} style={{ display: "inline", verticalAlign: "-1px", marginRight: 6 }} />
+      <div className={styles.ruleSection}>
+        <div className={styles.sectionLabel}>
+          <Calendar size={12} className={styles.iconInline} />
           Calendar Intelligence
-        </SectionLabel>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: "var(--color-text-secondary)",
-            margin: 0,
-          }}
-        >
+        </div>
+        <p className={styles.bodyText}>
           DailyOS reads your calendar overnight. For each meeting, it builds a prep: relationship
           history, open action items, talking points, risks. The lifecycle:{" "}
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--color-spice-turmeric)",
-            }}
-          >
+          <span className={styles.monoAccent}>
             Prep &rarr; Meeting &rarr; Capture &rarr; Next Prep
           </span>
           . Each meeting feeds the next.
@@ -78,25 +41,12 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
       </div>
 
       {/* Email explanation */}
-      <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-        }}
-      >
-        <SectionLabel>
-          <Mail size={12} style={{ display: "inline", verticalAlign: "-1px", marginRight: 6 }} />
+      <div className={styles.ruleSection}>
+        <div className={styles.sectionLabel}>
+          <Mail size={12} className={styles.iconInline} />
           Email Triage
-        </SectionLabel>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: "var(--color-text-secondary)",
-            margin: 0,
-          }}
-        >
+        </div>
+        <p className={styles.bodyText}>
           DailyOS triages your email by priority. Important emails surface first. Each gets an AI
           summary and a recommended action. You scan and decide — no inbox-zero required.
         </p>
@@ -104,36 +54,13 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
 
       {/* Auth status / button */}
       {isConnected ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 8 }}>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--color-garden-sage)",
-              flexShrink: 0,
-            }}
-          />
+        <div className={`${styles.flexRowMd} ${styles.pt8}`}>
+          <div className={styles.statusDot} />
           <div>
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-                margin: 0,
-              }}
-            >
+            <p className={styles.connectedLabel}>
               Connected
             </p>
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 12,
-                color: "var(--color-text-tertiary)",
-                margin: "2px 0 0",
-              }}
-            >
+            <p className={styles.connectedEmail}>
               {authStatus.status === "authenticated" ? authStatus.email : ""}
             </p>
           </div>
@@ -155,15 +82,9 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
       )}
 
       {/* Privacy note */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-        <Shield size={12} style={{ marginTop: 2, flexShrink: 0, color: "var(--color-text-tertiary)" }} />
-        <span
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-          }}
-        >
+      <div className={styles.flexRowStart}>
+        <Shield size={12} className={`${styles.mt2} ${styles.flexShrink0} ${styles.tertiaryText}`} />
+        <span className={styles.privacyNote}>
           Everything processes locally. Your data never leaves your machine.
         </span>
       </div>

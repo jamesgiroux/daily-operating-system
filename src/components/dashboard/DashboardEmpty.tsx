@@ -18,8 +18,8 @@ import type { GoogleAuthStatus } from "@/types";
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 
 const BRIEFING_PHASES = [
-  { key: "preparing", label: "Gathering your day", detail: "Pulling calendar, emails, and entity context" },
-  { key: "enriching", label: "Building context", detail: "Assembling meeting prep, priorities, and action items" },
+  { key: "preparing", label: "Gathering your day", detail: "Pulling calendar, emails, and account context" },
+  { key: "enriching", label: "Building context", detail: "Assembling meeting briefings, priorities, and action items" },
   { key: "delivering", label: "Composing the briefing", detail: "Writing your morning document" },
 ];
 

@@ -522,7 +522,9 @@ pub async fn run_glean_consent_flow(instance_url: &str) -> Result<GleanAuthResul
         endpoints.authorization_endpoint,
         oauth::urlencode(&dcr.client_id),
         oauth::urlencode(&redirect_uri),
-        oauth::urlencode("openid profile email"),
+        // Only request scopes we actually use. Requesting scopes a user doesn't
+        // have (e.g. agents, entities) can cause consent failures for non-admin users.
+        oauth::urlencode("openid profile email mcp search chat offline_access"),
         oauth::urlencode(&pkce_challenge),
         oauth::urlencode(&oauth_state),
         oauth::urlencode(&endpoints.resource),

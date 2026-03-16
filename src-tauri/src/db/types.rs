@@ -4,6 +4,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+fn default_email_signal_source() -> String {
+    "email_enrichment".to_string()
+}
+
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -122,7 +126,7 @@ pub struct DbAccount {
     pub metadata: Option<String>,
 }
 
-/// A row from `account_team`.
+/// A row from `account_stakeholders`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbAccountTeamMember {
@@ -167,7 +171,7 @@ pub struct ProjectParentAggregate {
     pub nearest_target_date: Option<String>,
 }
 
-/// A row from the `meetings_history` table.
+/// A row from the `meetings` table (joined with `meeting_prep` and `meeting_transcripts`).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbMeeting {
@@ -242,7 +246,7 @@ pub struct EnsureMeetingHistoryInput<'a> {
     pub description: Option<&'a str>,
 }
 
-/// Outcome of syncing a meeting into meetings_history.
+/// Outcome of syncing a meeting into the meetings table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeetingSyncOutcome {
     /// Meeting was newly inserted.
@@ -298,6 +302,8 @@ pub struct DbEmailSignal {
     pub sentiment: Option<String>,
     pub urgency: Option<String>,
     pub detected_at: String,
+    #[serde(default = "default_email_signal_source")]
+    pub source: String,
 }
 
 /// A row from the `emails` table (I368).
@@ -435,7 +441,7 @@ pub struct PersonListItem {
     pub archived: bool,
     pub temperature: String,
     pub trend: String,
-    /// Comma-separated names of linked account entities (from entity_people).
+    /// Comma-separated names of linked accounts (from account_stakeholders).
     pub account_names: Option<String>,
     /// Days since last past meeting (None if never met).
     pub days_since_last_meeting: Option<i64>,
@@ -647,4 +653,119 @@ pub struct MergeResult {
     pub people_moved: usize,
     pub events_moved: usize,
     pub children_moved: usize,
+}
+
+// ─── I555: Captures metadata + interaction dynamics ──────────────────────────
+
+/// Enriched transcript capture with metadata (I555).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptCapture {
+    pub capture_type: String,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub urgency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impact: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_quote: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+}
+
+/// Per-meeting interaction dynamics (I555).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionDynamics {
+    pub meeting_id: String,
+    pub talk_balance_customer_pct: Option<i32>,
+    pub talk_balance_internal_pct: Option<i32>,
+    #[serde(default)]
+    pub speaker_sentiments: Vec<SpeakerSentiment>,
+    pub question_density: Option<String>,
+    pub decision_maker_active: Option<String>,
+    pub forward_looking: Option<String>,
+    #[serde(default)]
+    pub monologue_risk: bool,
+    #[serde(default)]
+    pub competitor_mentions: Vec<CompetitorMention>,
+    #[serde(default)]
+    pub escalation_language: Vec<EscalationQuote>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeakerSentiment {
+    pub name: String,
+    pub sentiment: String,
+    pub evidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompetitorMention {
+    pub competitor: String,
+    pub context: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EscalationQuote {
+    pub quote: String,
+    pub speaker: String,
+}
+
+/// Per-meeting champion health assessment (I555).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChampionHealthAssessment {
+    pub meeting_id: String,
+    pub champion_name: Option<String>,
+    pub champion_status: String,
+    pub champion_evidence: Option<String>,
+    pub champion_risk: Option<String>,
+}
+
+/// Per-meeting stakeholder role change (I555).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleChange {
+    pub id: String,
+    pub meeting_id: String,
+    pub person_name: String,
+    pub old_status: Option<String>,
+    pub new_status: Option<String>,
+    pub evidence_quote: Option<String>,
+}
+
+/// Enriched capture for frontend display (I555/I558).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichedCapture {
+    pub id: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub account_id: Option<String>,
+    pub capture_type: String,
+    pub content: String,
+    pub sub_type: Option<String>,
+    pub urgency: Option<String>,
+    pub impact: Option<String>,
+    pub evidence_quote: Option<String>,
+    pub speaker: Option<String>,
+    pub captured_at: String,
+}
+
+/// Post-meeting intelligence bundle (I558).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingPostIntelligence {
+    pub interaction_dynamics: Option<InteractionDynamics>,
+    pub champion_health: Option<ChampionHealthAssessment>,
+    pub role_changes: Vec<RoleChange>,
+    pub enriched_captures: Vec<EnrichedCapture>,
 }

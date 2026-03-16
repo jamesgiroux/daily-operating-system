@@ -7,58 +7,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { invoke } from "@tauri-apps/api/core";
+import styles from "../onboarding.module.css";
 
 interface ClaudeCodeProps {
   workspacePath: string;
   onNext: (installed: boolean) => void;
+  onSkip?: () => void;
 }
 
 interface ClaudeStatus {
   installed: boolean;
   authenticated: boolean;
+  nodeInstalled: boolean;
 }
 
-/** Mono uppercase section label */
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        fontWeight: 500,
-        textTransform: "uppercase" as const,
-        letterSpacing: "0.1em",
-        color: "var(--color-text-tertiary)",
-        marginBottom: 8,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** Inline code block */
-function CodeBlock({ children }: { children: React.ReactNode }) {
-  return (
-    <code
-      style={{
-        display: "block",
-        fontFamily: "var(--font-mono)",
-        fontSize: 12,
-        background: "var(--color-paper-linen)",
-        borderRadius: 4,
-        padding: "8px 12px",
-        marginTop: 8,
-        color: "var(--color-text-primary)",
-        whiteSpace: "pre",
-      }}
-    >
-      {children}
-    </code>
-  );
-}
-
-export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
+export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
   const [status, setStatus] = useState<ClaudeStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [isDevMode, setIsDevMode] = useState(false);
@@ -72,13 +35,16 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
     }
   }, []);
 
-  async function checkStatus() {
+  async function checkStatus(clearCache = false) {
     setChecking(true);
     try {
+      if (clearCache) {
+        await invoke("clear_claude_status_cache");
+      }
       const result = await invoke<ClaudeStatus>("check_claude_status");
       setStatus(result);
     } catch {
-      setStatus({ installed: false, authenticated: false });
+      setStatus({ installed: false, authenticated: false, nodeInstalled: false });
     } finally {
       setChecking(false);
     }
@@ -102,31 +68,18 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
   }, [isReady, onNext]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="The AI engine behind your briefings"
       />
 
       {/* What Claude Code does */}
-      <div
-        style={{
-          borderTop: "1px solid var(--color-rule-light)",
-          paddingTop: 20,
-        }}
-      >
-        <SectionLabel>
-          <Sparkles size={12} style={{ display: "inline", verticalAlign: "-1px", marginRight: 6 }} />
+      <div className={styles.ruleSection}>
+        <div className={styles.sectionLabel}>
+          <Sparkles size={12} className={styles.iconInline} />
           Claude Code powers DailyOS intelligence
-        </SectionLabel>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            lineHeight: 1.6,
-            color: "var(--color-text-secondary)",
-            margin: 0,
-          }}
-        >
+        </div>
+        <p className={styles.bodyText}>
           Claude Code generates your briefing narrative, analyzes email summaries with
           recommended actions, and processes inbox files with AI classification. Without it,
           DailyOS still delivers your schedule, actions, and meeting preps — but AI summaries
@@ -136,28 +89,20 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
 
       {/* Status display */}
       {checking && !status && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 8 }}>
-          <Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
-          <span style={{ fontSize: 14, color: "var(--color-text-tertiary)" }}>
+        <div className={`${styles.flexRowMd} ${styles.pt8}`}>
+          <Loader2 size={18} className={`animate-spin ${styles.tertiaryText}`} />
+          <span className={`${styles.bodyText} ${styles.tertiaryText}`}>
             Checking for Claude Code...
           </span>
         </div>
       )}
 
       {status && isReady && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 8 }}>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--color-garden-sage)",
-              flexShrink: 0,
-            }}
-          />
+        <div className={`${styles.flexRowMd} ${styles.pt8}`}>
+          <div className={styles.statusDot} />
           <div>
-            <SectionLabel>Ready</SectionLabel>
-            <p style={{ fontSize: 14, color: "var(--color-text-primary)", margin: 0 }}>
+            <div className={styles.sectionLabel}>Ready</div>
+            <p className={`${styles.bodyText} ${styles.primaryText} ${styles.noMargin}`}>
               Claude Code is installed and authenticated
             </p>
           </div>
@@ -165,30 +110,25 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
       )}
 
       {status && status.installed && !status.authenticated && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div
-            style={{
-              borderTop: "1px solid var(--color-rule-light)",
-              paddingTop: 20,
-            }}
-          >
-            <SectionLabel>
-              <span style={{ color: "var(--color-spice-terracotta)" }}>Action needed</span>
-            </SectionLabel>
-            <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: 0, marginBottom: 4 }}>
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
+          <div className={styles.ruleSection}>
+            <div className={styles.sectionLabel}>
+              <span className={styles.dangerColor}>Action needed</span>
+            </div>
+            <p className={`${styles.actionText} ${styles.mb4}`}>
               Claude Code is installed but not signed in. Open your terminal and authenticate:
             </p>
-            <CodeBlock>
+            <code className={styles.codeBlock}>
               cd {workspacePath}{"\n"}claude login
-            </CodeBlock>
-            <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "8px 0 0" }}>
+            </code>
+            <p className={styles.installHint}>
               Running from your workspace directory scopes Claude's access to just that folder.
             </p>
           </div>
           <Button
             variant="outline"
             className="w-full"
-            onClick={checkStatus}
+            onClick={() => checkStatus(true)}
             disabled={checking}
           >
             {checking && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -198,31 +138,59 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
       )}
 
       {status && !status.installed && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className={`${styles.flexCol} ${styles.gap12}`}>
+          {/* Node.js not found — show install instructions first */}
+          {!status.nodeInstalled && (
+            <div className={styles.ruleSection}>
+              <div className={styles.sectionLabel}>
+                <span className={styles.dangerColor}>Node.js required</span>
+              </div>
+              <p className={`${styles.actionText} ${styles.mb4}`}>
+                Claude Code requires Node.js. Install it first:
+              </p>
+              <p className={`${styles.actionText} ${styles.mt8}`}>
+                Download from{" "}
+                <a
+                  href="https://nodejs.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.installLink}
+                >
+                  nodejs.org
+                </a>{" "}
+                (recommended: LTS version)
+              </p>
+              <p className={styles.installHint}>
+                Or via Homebrew:
+              </p>
+              <code className={styles.codeBlock}>brew install node</code>
+            </div>
+          )}
+
+          {/* Claude Code install instructions */}
           <div
-            style={{
-              borderTop: "1px solid var(--color-rule-light)",
-              paddingTop: 20,
-            }}
+            className={status.nodeInstalled ? styles.ruleSection : undefined}
           >
-            <SectionLabel>
-              <span style={{ color: "var(--color-spice-terracotta)" }}>Not found</span>
-            </SectionLabel>
-            <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: 0, marginBottom: 4 }}>
+            <div className={styles.sectionLabel}>
+              <span className={styles.dangerColor}>
+                {status.nodeInstalled ? "Not found" : "Then install Claude Code"}
+              </span>
+            </div>
+            <p className={`${styles.actionText} ${styles.mb4}`}>
               Install Claude Code from your terminal:
             </p>
-            <CodeBlock>npm install -g @anthropic-ai/claude-code</CodeBlock>
-            <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "12px 0 4px" }}>
+            <code className={styles.codeBlock}>npm install -g @anthropic-ai/claude-code</code>
+            <p className={`${styles.installHint} ${styles.mt12}`}>
               Then navigate to your workspace and sign in:
             </p>
-            <CodeBlock>
+            <code className={styles.codeBlock}>
               cd {workspacePath}{"\n"}claude login
-            </CodeBlock>
+            </code>
           </div>
           <Button
             variant="outline"
             className="w-full"
-            onClick={checkStatus}
+            onClick={() => checkStatus(true)}
             disabled={checking}
           >
             {checking && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -231,14 +199,19 @@ export function ClaudeCode({ workspacePath, onNext }: ClaudeCodeProps) {
         </div>
       )}
 
-      {/* Continue — skip only available in dev sandbox */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        {isDevMode && !isReady && (
+      {/* Continue / Skip */}
+      <div className={`${styles.flexEnd} ${styles.gap8}`}>
+        {!isReady && (onSkip ? (
+          <Button variant="outline" onClick={onSkip}>
+            Skip — connect later in Settings
+            <ArrowRight className="ml-2 size-4" />
+          </Button>
+        ) : isDevMode ? (
           <Button variant="outline" onClick={() => onNext(false)}>
             Skip (Dev Mode)
             <ArrowRight className="ml-2 size-4" />
           </Button>
-        )}
+        ) : null)}
         <Button onClick={() => onNext(isReady ?? false)} disabled={!isReady || (checking && !status)}>
           Continue
           <ArrowRight className="ml-2 size-4" />

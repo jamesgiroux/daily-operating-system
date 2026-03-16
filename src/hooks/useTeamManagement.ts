@@ -87,7 +87,7 @@ export function useTeamManagement(
       const personId = await invoke<string>("create_person", {
         email: personEmail,
         name: personName,
-        relationship: "unknown",
+        relationship: "internal",
       });
       await invoke("add_account_team_member", {
         accountId,
@@ -145,6 +145,52 @@ export function useTeamManagement(
     );
   }, [teamInlineName, teamInlineEmail, teamInlineRole, performTeamOperation, createAndAddTeamMember]);
 
+  // ── Direct methods (bypass state-driven drawer flow) ──
+
+  const addTeamMemberDirect = useCallback(
+    async (personId: string, role: string) => {
+      const normalizedRole = normalizeTeamRole(role);
+      await performTeamOperation(
+        async () => {
+          await invoke("add_account_team_member", {
+            accountId,
+            personId,
+            role: normalizedRole,
+          });
+        },
+        () => {
+          setTeamSearchQuery("");
+          setTeamSearchResults([]);
+        },
+      );
+    },
+    [accountId, performTeamOperation],
+  );
+
+  const createTeamMemberDirect = useCallback(
+    async (name: string, email: string, role: string) => {
+      if (!name.trim()) return;
+      await performTeamOperation(async () => {
+        await createAndAddTeamMember(name, email, role);
+      });
+    },
+    [performTeamOperation, createAndAddTeamMember],
+  );
+
+  const changeTeamMemberRole = useCallback(
+    async (personId: string, newRole: string) => {
+      const normalizedRole = normalizeTeamRole(newRole);
+      await performTeamOperation(async () => {
+        await invoke("add_account_team_member", {
+          accountId,
+          personId,
+          role: normalizedRole,
+        });
+      });
+    },
+    [accountId, performTeamOperation],
+  );
+
   const handleImportNoteCreateAndAdd = useCallback(
     async (noteId: number, name: string, role: string) => {
       if (!name.trim()) return;
@@ -175,5 +221,8 @@ export function useTeamManagement(
     handleRemoveTeamMember,
     handleCreateInlineTeamMember,
     handleImportNoteCreateAndAdd,
+    addTeamMemberDirect,
+    createTeamMemberDirect,
+    changeTeamMemberRole,
   };
 }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { PersonListItem } from "@/types";
+import styles from "../onboarding.module.css";
 
 interface ColleagueInput {
   _key: number;
@@ -34,48 +35,6 @@ interface SetupStatus {
 interface InternalTeamSetupProps {
   onNext: () => void;
 }
-
-/** Mono uppercase step indicator */
-function StepLabel({ step, total }: { step: number; total: number }) {
-  return (
-    <div
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        fontWeight: 500,
-        textTransform: "uppercase" as const,
-        letterSpacing: "0.1em",
-        color: "var(--color-text-tertiary)",
-      }}
-    >
-      Step {step} of {total}
-    </div>
-  );
-}
-
-/** Editorial form label */
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <label
-      style={{
-        fontFamily: "var(--font-sans)",
-        fontSize: 13,
-        fontWeight: 500,
-        color: "var(--color-text-secondary)",
-        display: "block",
-        marginBottom: 6,
-      }}
-    >
-      {children}
-    </label>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  background: "var(--color-paper-warm-white)",
-  border: "1px solid var(--color-desk-charcoal)",
-  borderRadius: 4,
-};
 
 export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
   const [loading, setLoading] = useState(true);
@@ -194,52 +153,46 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
   }
 
   if (loading) {
-    return <div style={{ height: 224 }} />;
+    return <div className={styles.loadingPlaceholder} />;
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={`${styles.flexCol} ${styles.gap24}`}>
       <ChapterHeading
         title="Internal Team Setup"
-        epigraph={`Create your internal organization under Internal/{company || "{Company}"} and seed your first team.`}
+        epigraph={`Create your internal organization under Internal/${company || "{Company}"} and seed your first team.`}
       />
 
-      <StepLabel step={step + 1} total={4} />
+      <div className={styles.stepLabel}>
+        Step {step + 1} of 4
+      </div>
 
       {step === 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div className={`${styles.flexCol} ${styles.gap20}`}>
           <div>
-            <FieldLabel>Company name</FieldLabel>
-            <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Acme Inc" style={inputStyle} />
+            <label className={styles.fieldLabel}>Company name</label>
+            <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Acme Inc" className={styles.editorialInput} />
           </div>
           <div>
-            <FieldLabel>Company domains</FieldLabel>
+            <label className={styles.fieldLabel}>Company domains</label>
             <div className="flex gap-2">
               <Input
                 value={domainInput}
                 onChange={(e) => setDomainInput(e.target.value)}
                 placeholder="acme.com"
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDomain(); } }}
-                style={inputStyle}
+                className={styles.editorialInput}
               />
               <Button type="button" variant="outline" onClick={addDomain}>Add</Button>
             </div>
             {domains.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, paddingTop: 8 }}>
+              <div className={`${styles.flexWrap} ${styles.pt8}`}>
                 {domains.map((domain) => (
                   <button
                     key={domain}
                     type="button"
                     onClick={() => setDomains((prev) => prev.filter((d) => d !== domain))}
-                    style={{
-                      border: "1px solid var(--color-rule-heavy)",
-                      borderRadius: 4,
-                      padding: "2px 8px",
-                      fontSize: 12,
-                      color: "var(--color-text-secondary)",
-                      background: "none",
-                      cursor: "pointer",
-                    }}
+                    className={styles.domainButton}
                     title="Remove"
                   >
                     {domain}
@@ -252,84 +205,59 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
       )}
 
       {step === 1 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div className={`${styles.flexCol} ${styles.gap20}`}>
           <div>
-            <FieldLabel>Your title</FieldLabel>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Engineering Manager" style={inputStyle} />
+            <label className={styles.fieldLabel}>Your title</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Engineering Manager" className={styles.editorialInput} />
           </div>
           <div>
-            <FieldLabel>Immediate team</FieldLabel>
-            <Input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="Core Team" style={inputStyle} />
+            <label className={styles.fieldLabel}>Immediate team</label>
+            <Input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="Core Team" className={styles.editorialInput} />
           </div>
         </div>
       )}
 
       {step === 2 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div className={`${styles.flexCol} ${styles.gap20}`}>
           {/* Link existing people */}
           {existingPeople.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <p style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+            <div className={`${styles.flexCol} ${styles.gap8}`}>
+              <p className={styles.labelIcon}>
                 <Link size={14} /> Link existing people
               </p>
               <Input
                 placeholder="Search people by name or email..."
                 value={peopleSearch}
                 onChange={(e) => setPeopleSearch(e.target.value)}
-                style={inputStyle}
+                className={styles.editorialInput}
               />
               {filteredPeople.length > 0 && (
-                <div style={{ maxHeight: 144, overflowY: "auto" }}>
+                <div className={styles.searchResultsContainer}>
                   {filteredPeople.slice(0, 8).map((p) => (
                     <button
                       key={p.id}
                       type="button"
-                      style={{
-                        display: "flex",
-                        width: "100%",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        padding: "8px 12px",
-                        fontSize: 14,
-                        borderBottom: "1px solid var(--color-rule-light)",
-                        background: "none",
-                        border: "none",
-                        borderBottomStyle: "solid",
-                        borderBottomWidth: 1,
-                        borderBottomColor: "var(--color-rule-light)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
+                      className={styles.searchResultButton}
                       onClick={() => linkExistingPerson(p)}
                     >
-                      <span>{p.name} <span style={{ color: "var(--color-text-tertiary)" }}>({p.email})</span></span>
-                      <Plus size={14} style={{ color: "var(--color-text-tertiary)" }} />
+                      <span>{p.name} <span className={styles.tertiaryText}>({p.email})</span></span>
+                      <Plus size={14} className={styles.tertiaryText} />
                     </button>
                   ))}
                 </div>
               )}
               {linkedPeople.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <div className={styles.flexWrap}>
                   {linkedPeople.map((lp) => (
                     <button
                       key={lp.id}
                       type="button"
                       onClick={() => unlinkPerson(lp.id)}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4,
-                        border: "1px solid var(--color-rule-heavy)",
-                        borderRadius: 4,
-                        padding: "2px 10px",
-                        fontSize: 12,
-                        background: "none",
-                        cursor: "pointer",
-                      }}
+                      className={styles.linkedPersonChip}
                       title="Remove"
                     >
                       {lp.name}
-                      <span style={{ color: "var(--color-text-tertiary)" }}>&times;</span>
+                      <span className={styles.tertiaryText}>&times;</span>
                     </button>
                   ))}
                 </div>
@@ -338,9 +266,9 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
           )}
 
           {/* Add new people */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <p style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+          <div className={`${styles.flexCol} ${styles.gap12}`}>
+            <div className={styles.flexBetween}>
+              <p className={styles.labelIcon}>
                 <UserPlus size={14} /> Add new teammates
               </p>
               <Button type="button" size="sm" variant="outline" onClick={addColleague}>
@@ -348,32 +276,18 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
               </Button>
             </div>
             {colleagues.length === 0 && linkedPeople.length === 0 && (
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontStyle: "italic",
-                  fontSize: 14,
-                  color: "var(--color-text-tertiary)",
-                  margin: 0,
-                }}
-              >
+              <p className={styles.emptyTeamText}>
                 No teammates added yet.
               </p>
             )}
             {colleagues.map((row, idx) => (
               <div
                 key={row._key}
-                style={{
-                  borderTop: "1px solid var(--color-rule-light)",
-                  paddingTop: 12,
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 8,
-                }}
+                className={styles.colleagueRow}
               >
-                <Input placeholder="Name" value={row.name} onChange={(e) => updateColleague(idx, { name: e.target.value })} style={inputStyle} />
-                <Input placeholder="Email" value={row.email} onChange={(e) => updateColleague(idx, { email: e.target.value })} style={inputStyle} />
-                <Input placeholder="Title" value={row.title ?? ""} onChange={(e) => updateColleague(idx, { title: e.target.value })} style={inputStyle} />
+                <Input placeholder="Name" value={row.name} onChange={(e) => updateColleague(idx, { name: e.target.value })} className={styles.editorialInput} />
+                <Input placeholder="Email" value={row.email} onChange={(e) => updateColleague(idx, { email: e.target.value })} className={styles.editorialInput} />
+                <Input placeholder="Title" value={row.title ?? ""} onChange={(e) => updateColleague(idx, { title: e.target.value })} className={styles.editorialInput} />
                 <Button type="button" variant="ghost" size="sm" onClick={() => removeColleague(idx)}>
                   Remove
                 </Button>
@@ -384,25 +298,16 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
       )}
 
       {step === 3 && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-light)",
-            paddingTop: 20,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            fontSize: 14,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Building2 size={16} style={{ color: "var(--color-text-tertiary)" }} />
-            <span style={{ color: "var(--color-text-primary)" }}>{company}</span>
+        <div className={styles.summarySection}>
+          <div className={`${styles.flexRow} ${styles.gap8}`}>
+            <Building2 size={16} className={styles.tertiaryText} />
+            <span className={styles.primaryText}>{company}</span>
           </div>
-          <div style={{ color: "var(--color-text-secondary)" }}>Domains: {domains.join(", ")}</div>
-          <div style={{ color: "var(--color-text-secondary)" }}>Team: {teamName}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Users size={16} style={{ color: "var(--color-text-tertiary)" }} />
-            <span style={{ color: "var(--color-text-primary)" }}>
+          <div className={styles.secondaryText}>Domains: {domains.join(", ")}</div>
+          <div className={styles.secondaryText}>Team: {teamName}</div>
+          <div className={`${styles.flexRow} ${styles.gap8}`}>
+            <Users size={16} className={styles.tertiaryText} />
+            <span className={styles.primaryText}>
               {linkedPeople.length + colleagues.filter((c) => c.name && c.email).length} teammates
               {linkedPeople.length > 0 && ` (${linkedPeople.length} existing)`}
             </span>

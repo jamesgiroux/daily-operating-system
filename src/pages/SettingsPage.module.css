@@ -1,0 +1,202 @@
+/* SettingsPage — CSS Module (I541) */
+
+.container {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Banners ── */
+
+.banner {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bannerText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.bannerAction {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0;
+}
+
+.bannerDismiss {
+  font-size: 16px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 12px;
+  line-height: 1;
+}
+
+.bannerDismiss:hover {
+  color: var(--color-text-secondary);
+}
+
+/* ── Hero ── */
+
+.hero {
+  padding-top: 80px;
+  padding-bottom: 40px;
+}
+
+.heroTitle {
+  font-family: var(--font-serif);
+  font-size: 42px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.heroRule {
+  height: 2px;
+  background: var(--color-desk-charcoal);
+  margin-top: 16px;
+}
+
+/* ── Sections ── */
+
+.section {
+  margin-bottom: 48px;
+}
+
+.sectionInset {
+  margin-top: 32px;
+}
+
+/* ── Claude Code Section ── */
+
+.claudeCodeLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0;
+  margin-bottom: 12px;
+}
+
+.claudeCodeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.claudeCodeColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.claudeCodeText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.claudeCodeTextMuted {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.claudeCodeTextTertiary {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.claudeCodeActions {
+  display: flex;
+  gap: 12px;
+}
+
+.ctaButton {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ctaButton:disabled {
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+/* ── Claude Code Wrapper ── */
+
+.claudeCodeWrapper {
+  margin-bottom: 32px;
+}
+
+.systemAction {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.systemActionButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.systemActionButton:hover {
+  background: var(--color-spice-turmeric-12, rgba(201, 162, 39, 0.08));
+}
+
+.systemActionHint {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Icon utilities ── */
+
+.iconTertiary {
+  color: var(--color-text-tertiary);
+}
+
+/* ── Spacer ── */
+
+.bottomSpacer {
+  height: 80px;
+}

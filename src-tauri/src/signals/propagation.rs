@@ -114,13 +114,11 @@ impl PropagationEngine {
         // I385: Propagated signals trigger intel enrichment for cross-entity targets
         if let Some(ref intel_q) = self.intel_queue {
             for (eid, etype) in &cross_entity_targets {
-                intel_q.enqueue(crate::intel_queue::IntelRequest {
-                    entity_id: eid.clone(),
-                    entity_type: etype.clone(),
-                    priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
-                    requested_at: std::time::Instant::now(),
-                    retry_count: 0,
-                });
+                intel_q.enqueue(crate::intel_queue::IntelRequest::new(
+                    eid.clone(),
+                    etype.clone(),
+                    crate::intel_queue::IntelPriority::ProactiveHygiene,
+                ));
             }
         }
 
@@ -144,7 +142,11 @@ pub fn default_engine() -> PropagationEngine {
         "rule_person_job_change",
         super::rules::rule_person_job_change,
     );
-    // NOTE: rule_meeting_frequency_drop removed — no code emits "meeting_frequency" signals (I377 audit)
+    // I555: Re-registered — transcript processing now emits "meeting_frequency" signals
+    engine.register(
+        "rule_meeting_frequency_drop",
+        super::rules::rule_meeting_frequency_drop,
+    );
     engine.register("rule_overdue_actions", super::rules::rule_overdue_actions);
     engine.register(
         "rule_champion_sentiment",
@@ -164,6 +166,15 @@ pub fn default_engine() -> PropagationEngine {
     engine.register(
         "rule_person_profile_discovered",
         super::rules::rule_person_profile_discovered,
+    );
+    // I535/ADR-0100: Glean-sourced signal propagation
+    engine.register(
+        "rule_glean_org_change",
+        super::rules::rule_glean_org_change,
+    );
+    engine.register(
+        "rule_glean_champion_departed",
+        super::rules::rule_glean_champion_departed,
     );
 
     engine
