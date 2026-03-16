@@ -2538,6 +2538,12 @@ pub struct FeatureFlags {
     /// When false, role preset selection is hidden from onboarding and settings.
     /// Defaults to false (bool's Default).
     pub role_presets_enabled: bool,
+    /// When false, Book of Business report is hidden from the Me page.
+    /// Defaults to false — the template-aligned rebuild is not yet validated.
+    pub book_of_business_enabled: bool,
+    /// When false, Glean account discovery and ephemeral lookup are hidden
+    /// from the Accounts page. Defaults to false.
+    pub glean_discovery_enabled: bool,
 }
 
 #[cfg(test)]
