@@ -1,0 +1,41 @@
+{
+  "executiveAssessment": "Limited data available for Beta Inc. Only one meeting recorded in the last 90 days. No email signals captured.",
+  "risks": [
+    {"text": "Low engagement — only 1 meeting in 90 days", "urgency": "watch"}
+  ],
+  "recentWins": [],
+  "currentState": {
+    "working": ["Product deployed and operational"],
+    "notWorking": [],
+    "unknowns": ["Current satisfaction level unknown", "Renewal timeline unclear"]
+  },
+  "stakeholderInsights": [
+    {"name": "John Smith", "role": "Project Lead", "assessment": "Only known contact. Engagement level unclear from single meeting.", "engagement": "unknown"}
+  ],
+  "valueDelivered": [],
+  "nextMeetingReadiness": {
+    "prepItems": ["Identify additional stakeholders beyond John Smith"]
+  },
+  "health": {
+    "score": 45,
+    "band": "yellow",
+    "source": "computed",
+    "confidence": 0.25,
+    "trend": {
+      "direction": "stable",
+      "rationale": "Insufficient data to determine trend",
+      "timeframe": "30d",
+      "confidence": 0.1
+    },
+    "dimensions": {
+      "meetingCadence": {"score": 20, "weight": 0.15, "evidence": ["1 meeting in 90 days"], "trend": "declining"},
+      "emailEngagement": {"score": 0, "weight": 0.15, "evidence": [], "trend": "stable"},
+      "stakeholderCoverage": {"score": 25, "weight": 0.20, "evidence": ["Single contact known"], "trend": "stable"},
+      "championHealth": {"score": 0, "weight": 0.20, "evidence": [], "trend": "stable"},
+      "financialProximity": {"score": 0, "weight": 0.15, "evidence": [], "trend": "stable"},
+      "signalMomentum": {"score": 30, "weight": 0.15, "evidence": ["Low activity"], "trend": "stable"}
+    },
+    "recommendedActions": ["Schedule discovery call to assess current satisfaction"]
+  },
+  "keywords": ["Beta Inc", "Beta"]
+}

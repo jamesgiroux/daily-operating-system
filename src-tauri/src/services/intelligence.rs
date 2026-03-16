@@ -919,6 +919,161 @@ pub fn get_risk_briefing(
 }
 
 #[cfg(test)]
+mod mutation_smoke_tests {
+    use crate::db::test_utils::test_db;
+    use crate::db::{AccountType, DbAccount};
+    use crate::intelligence::io::IntelligenceJson;
+    use crate::signals::propagation::PropagationEngine;
+    use rusqlite::params;
+
+    fn make_account(id: &str) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: format!("Account {id}"),
+            lifecycle: Some("active".to_string()),
+            arr: Some(100_000.0),
+            health: None,
+            contract_start: Some("2025-01-01".to_string()),
+            contract_end: Some("2027-01-01".to_string()),
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            account_type: AccountType::Customer,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+        }
+    }
+
+    fn signal_count(db: &crate::db::ActionDb, entity_id: &str, signal_type: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE entity_id = ?1 AND signal_type = ?2",
+                params![entity_id, signal_type],
+                |row| row.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn test_persist_entity_keywords() {
+        let db = test_db();
+        let account = make_account("acc-kw");
+        db.upsert_account(&account).unwrap();
+
+        let keywords_json = r#"["onboarding", "enterprise", "SaaS"]"#;
+        super::persist_entity_keywords(&db, "account", "acc-kw", keywords_json)
+            .expect("persist_entity_keywords");
+
+        // Verify keywords stored
+        let stored: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT keywords FROM accounts WHERE id = 'acc-kw'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored.as_deref(), Some(keywords_json));
+
+        // Verify signal
+        assert!(
+            signal_count(&db, "acc-kw", "keywords_updated") > 0,
+            "Expected keywords_updated signal"
+        );
+    }
+
+    #[test]
+    fn test_upsert_assessment_from_enrichment() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-intel");
+        db.upsert_account(&account).unwrap();
+
+        let mut intel = IntelligenceJson::default();
+        intel.entity_id = "acc-intel".to_string();
+        intel.entity_type = "account".to_string();
+        intel.enriched_at = chrono::Utc::now().to_rfc3339();
+        intel.executive_assessment = Some("Strong account with growing adoption.".to_string());
+
+        super::upsert_assessment_from_enrichment(&db, &engine, "account", "acc-intel", &intel)
+            .expect("upsert_assessment_from_enrichment");
+
+        // Verify entity_assessment row exists
+        let exists: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM entity_assessment WHERE entity_id = 'acc-intel'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(exists, "entity_assessment row should exist");
+
+        // Verify signal
+        assert!(
+            signal_count(&db, "acc-intel", "entity_intelligence_updated") > 0,
+            "Expected entity_intelligence_updated signal"
+        );
+    }
+
+    #[test]
+    fn test_recompute_entity_health() {
+        let db = test_db();
+        let account = make_account("acc-health");
+        db.upsert_account(&account).unwrap();
+
+        // Seed minimal intelligence so recompute has something to work with
+        let mut intel = IntelligenceJson::default();
+        intel.entity_id = "acc-health".to_string();
+        intel.entity_type = "account".to_string();
+        intel.enriched_at = chrono::Utc::now().to_rfc3339();
+        db.upsert_entity_intelligence(&intel).unwrap();
+
+        super::recompute_entity_health(&db, "acc-health", "account")
+            .expect("recompute_entity_health");
+
+        // Verify entity_quality updated with health_score
+        let score: Option<f64> = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_score FROM entity_quality WHERE entity_id = 'acc-health'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        assert!(score.is_some(), "entity_quality should have a health_score");
+    }
+
+    #[test]
+    fn test_recompute_health_skips_non_account() {
+        let db = test_db();
+
+        // Should silently succeed for non-account types
+        let result = super::recompute_entity_health(&db, "proj-1", "project");
+        assert!(result.is_ok(), "Should be Ok for non-account entity type");
+    }
+
+    #[test]
+    fn test_persist_keywords_skips_unsupported_type() {
+        let db = test_db();
+
+        // Should silently succeed for unsupported entity types
+        let result = super::persist_entity_keywords(&db, "person", "p-1", r#"["test"]"#);
+        assert!(result.is_ok(), "Should be Ok for unsupported entity type");
+
+        // No signal should be emitted
+        assert_eq!(
+            signal_count(&db, "p-1", "keywords_updated"),
+            0,
+            "No signal for unsupported type"
+        );
+    }
+}
+
+#[cfg(test)]
 mod inferred_relationship_tests {
     use super::upsert_inferred_relationships_from_enrichment;
     use crate::db::person_relationships::UpsertRelationship;

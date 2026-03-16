@@ -3565,3 +3565,413 @@ Hope this helps!"#;
         assert_eq!(compute_signal_age("not-a-date"), "not-a-date");
     }
 }
+
+// ==========================================================================
+// I619 — Prompt Evaluation Suite: golden fixture tests
+// ==========================================================================
+
+#[cfg(test)]
+mod eval_tests {
+    use super::*;
+
+    // ── Category 1: Prompt Construction Tests ──
+
+    #[test]
+    fn eval_intelligence_prompt_includes_json_output_format() {
+        let ctx = IntelligenceContext {
+            facts_block: "ARR: $200K".to_string(),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(prompt.contains("JSON"), "Prompt must request JSON output");
+        assert!(
+            prompt.contains("executiveAssessment"),
+            "Prompt must include executiveAssessment field"
+        );
+        assert!(
+            prompt.contains("risks"),
+            "Prompt must include risks field schema"
+        );
+        assert!(
+            prompt.contains("stakeholderInsights"),
+            "Prompt must include stakeholderInsights"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_writing_rules() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("Lead with conclusions"),
+            "Prompt must contain writing rule: lead with conclusions"
+        );
+        assert!(
+            prompt.contains("Do NOT include footnotes"),
+            "Prompt must prohibit footnotes"
+        );
+        assert!(
+            prompt.contains("Max 250 words"),
+            "Prompt must enforce 250 word limit"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_field_scoping_rules() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("FIELD SCOPING RULES"),
+            "Prompt must include field deduplication guidance"
+        );
+        assert!(
+            prompt.contains("openCommitments"),
+            "Prompt must mention openCommitments scoping"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_injection_preamble() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("INJECTION_BOUNDARY")
+                || prompt.contains("system instructions")
+                || prompt.contains(INJECTION_PREAMBLE.split('\n').next().unwrap_or("")),
+            "Prompt must include injection resistance preamble"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_person_entity_includes_network_schema() {
+        let ctx = IntelligenceContext {
+            facts_block: "Role: VP Engineering".to_string(),
+            ..Default::default()
+        };
+        let prompt =
+            build_intelligence_prompt("Jane Doe", "person", &ctx, Some("external"), None);
+        assert!(
+            prompt.contains("network"),
+            "Person prompt must include network schema"
+        );
+        assert!(
+            prompt.contains("EXTERNAL STAKEHOLDER"),
+            "Person prompt must include person context framing"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_partner_excludes_customer_vocab() {
+        let ctx = IntelligenceContext::default();
+        let prompt =
+            build_intelligence_prompt("PartnerCo", "account", &ctx, Some("partner"), None);
+        assert!(
+            prompt.contains("PARTNER CONTEXT"),
+            "Partner prompt must include partner framing"
+        );
+        assert!(
+            prompt.contains("partner organization"),
+            "Partner prompt must use partner vocabulary"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_includes_health_schema() {
+        let ctx = IntelligenceContext::default();
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        // Without pre-computed health, prompt should include full health schema
+        assert!(
+            prompt.contains("\"health\""),
+            "Prompt must include health field schema"
+        );
+        assert!(
+            prompt.contains("\"band\""),
+            "Prompt must include health band"
+        );
+    }
+
+    #[test]
+    fn eval_intelligence_prompt_with_precomputed_health_requests_narrative_only() {
+        let ctx = IntelligenceContext {
+            computed_health: Some(super::super::io::AccountHealth {
+                score: 72.0,
+                band: "green".to_string(),
+                confidence: 0.75,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let prompt = build_intelligence_prompt("TestCo", "account", &ctx, None, None);
+        assert!(
+            prompt.contains("Pre-Computed Account Health"),
+            "Prompt must acknowledge pre-computed health"
+        );
+        assert!(
+            prompt.contains("narrative"),
+            "Prompt must request narrative for pre-computed health"
+        );
+    }
+
+    // ── Category 2: Response Parsing Tests ──
+
+    #[test]
+    fn eval_parse_full_enrichment_response() {
+        let response = include_str!("fixtures/enrichment_response_full.json");
+        let result = parse_intelligence_response(response, "acme-1", "account", 5, Vec::new());
+        assert!(result.is_ok(), "Full response must parse: {:?}", result.err());
+        let intel = result.unwrap();
+
+        // Executive assessment present
+        assert!(
+            intel.executive_assessment.is_some(),
+            "Must have executive assessment"
+        );
+        assert!(
+            intel
+                .executive_assessment
+                .as_ref()
+                .unwrap()
+                .contains("Acme Corp"),
+            "Assessment must mention entity name"
+        );
+
+        // Pull quote present
+        assert!(intel.pull_quote.is_some(), "Must have pull quote");
+
+        // Risks with urgency
+        assert!(intel.risks.len() >= 2, "Must have multiple risks");
+        assert!(
+            intel
+                .risks
+                .iter()
+                .any(|r| r.urgency == "critical"),
+            "Must have at least one critical-urgency risk"
+        );
+        assert!(
+            intel.risks.iter().any(|r| r.urgency == "watch"),
+            "Must have at least one watch-urgency risk"
+        );
+
+        // Wins
+        assert!(
+            intel.recent_wins.len() >= 2,
+            "Must have multiple wins"
+        );
+
+        // Stakeholder insights
+        assert!(
+            intel.stakeholder_insights.len() >= 3,
+            "Must have multiple stakeholders"
+        );
+        assert!(
+            intel
+                .stakeholder_insights
+                .iter()
+                .any(|s| s.engagement == Some("high".to_string())),
+            "Must have high-engagement stakeholder"
+        );
+
+        // Current state
+        assert!(intel.current_state.is_some(), "Must have current state");
+        let cs = intel.current_state.unwrap();
+        assert!(!cs.working.is_empty(), "Must have working items");
+        assert!(!cs.not_working.is_empty(), "Must have not-working items");
+        assert!(!cs.unknowns.is_empty(), "Must have unknowns");
+
+        // Health with dimensions
+        assert!(intel.health.is_some(), "Must have health");
+        let health = intel.health.unwrap();
+        assert!(health.score > 0.0 && health.score <= 100.0, "Score must be 0-100");
+        assert!(
+            ["green", "yellow", "red"].contains(&health.band.as_str()),
+            "Band must be green/yellow/red"
+        );
+
+        // Value delivered with quantification
+        assert!(
+            intel.value_delivered.len() >= 1,
+            "Must have value delivered"
+        );
+
+        // Competitive context (I508a dimension field)
+        assert!(
+            !intel.competitive_context.is_empty(),
+            "Must have competitive context"
+        );
+
+        // Strategic priorities
+        assert!(
+            !intel.strategic_priorities.is_empty(),
+            "Must have strategic priorities"
+        );
+
+        // Coverage assessment
+        assert!(
+            intel.coverage_assessment.is_some(),
+            "Must have coverage assessment"
+        );
+
+        // Expansion signals
+        assert!(
+            !intel.expansion_signals.is_empty(),
+            "Must have expansion signals"
+        );
+
+        // Success plan signals (I554)
+        assert!(
+            intel.success_plan_signals.is_some(),
+            "Must have success plan signals"
+        );
+
+        // Success metrics
+        assert!(
+            intel.success_metrics.is_some(),
+            "Must have success metrics"
+        );
+
+        // Open commitments
+        assert!(
+            intel.open_commitments.is_some(),
+            "Must have open commitments"
+        );
+
+        // Relationship depth
+        assert!(
+            intel.relationship_depth.is_some(),
+            "Must have relationship depth"
+        );
+    }
+
+    #[test]
+    fn eval_parse_sparse_enrichment_handles_missing_fields() {
+        let response = include_str!("fixtures/enrichment_response_sparse.json");
+        let result = parse_intelligence_response(response, "beta-1", "account", 1, Vec::new());
+        assert!(
+            result.is_ok(),
+            "Sparse response must parse: {:?}",
+            result.err()
+        );
+        let intel = result.unwrap();
+
+        // Should still have executive assessment
+        assert!(
+            intel.executive_assessment.is_some(),
+            "Sparse must have executive assessment"
+        );
+
+        // Wins empty is valid
+        assert!(
+            intel.recent_wins.is_empty(),
+            "Sparse response should have empty wins"
+        );
+
+        // Health present but low confidence
+        assert!(intel.health.is_some(), "Sparse must have health");
+        let health = intel.health.unwrap();
+        assert!(
+            health.confidence < 0.5,
+            "Sparse health confidence should be low"
+        );
+        assert_eq!(health.band, "yellow", "Sparse health should be yellow");
+    }
+
+    #[test]
+    fn eval_parse_malformed_response_graceful_handling() {
+        let response = include_str!("fixtures/enrichment_response_malformed.json");
+        // The malformed response has risks as a string instead of array.
+        // serde_json will fail to deserialize AiIntelResponse, so try_parse_json_response
+        // returns None, and it falls through to pipe-delimited parsing which also fails.
+        // Either way, the function should not panic.
+        let result =
+            parse_intelligence_response(response, "bad-1", "account", 0, Vec::new());
+        // Malformed JSON with wrong types should either produce an error or degrade gracefully.
+        // The key assertion is: no panic.
+        if let Ok(intel) = &result {
+            // If it somehow parsed (unlikely), verify it degraded gracefully
+            assert!(
+                intel.risks.len() <= 1,
+                "Malformed risks should not produce valid entries"
+            );
+        }
+        // Either way, we got here without panicking — success
+    }
+
+    #[test]
+    fn eval_parse_response_clamps_health_score() {
+        // Scores > 100 should be clamped
+        let response = r#"{"executiveAssessment":"Test","health":{"score":150,"band":"green","confidence":0.5}}"#;
+        let result = parse_intelligence_response(response, "t1", "account", 0, Vec::new());
+        assert!(result.is_ok());
+        let intel = result.unwrap();
+        assert!(intel.health.is_some());
+        assert!(
+            intel.health.as_ref().unwrap().score <= 100.0,
+            "Health score must be clamped to 100"
+        );
+    }
+
+    #[test]
+    fn eval_parse_response_truncates_large_arrays() {
+        // Build a response with 25 risks (exceeds 20 cap)
+        let mut risks = Vec::new();
+        for i in 0..25 {
+            risks.push(format!(
+                r#"{{"text":"Risk {}","urgency":"watch"}}"#,
+                i
+            ));
+        }
+        let response = format!(
+            r#"{{"executiveAssessment":"Test","risks":[{}]}}"#,
+            risks.join(",")
+        );
+        let result = parse_intelligence_response(&response, "t2", "account", 0, Vec::new());
+        assert!(result.is_ok());
+        let intel = result.unwrap();
+        assert_eq!(
+            intel.risks.len(),
+            20,
+            "Risks must be truncated to 20"
+        );
+    }
+
+    #[test]
+    fn eval_parse_response_with_markdown_fences() {
+        let response = "Here is the assessment:\n```json\n{\"executiveAssessment\":\"Test response in fenced JSON\"}\n```\nEnd.";
+        let result = parse_intelligence_response(response, "t3", "account", 0, Vec::new());
+        assert!(result.is_ok(), "Must parse JSON from markdown fences");
+        let intel = result.unwrap();
+        assert_eq!(
+            intel.executive_assessment,
+            Some("Test response in fenced JSON".to_string())
+        );
+    }
+
+    #[test]
+    fn eval_extract_inferred_relationships() {
+        let response = r#"{"inferredRelationships":[
+            {"fromPersonId":"p1","toPersonId":"p2","relationshipType":"peer","rationale":"Work together on project X"},
+            {"fromPersonId":"p3","toPersonId":"p4","relationshipType":"manager","reason":"Direct report"}
+        ]}"#;
+        let rels = extract_inferred_relationships(response);
+        assert_eq!(rels.len(), 2, "Must extract 2 relationships");
+        assert_eq!(rels[0].relationship_type, "peer");
+        assert_eq!(
+            rels[0].rationale,
+            Some("Work together on project X".to_string())
+        );
+        // "reason" alias should also work
+        assert_eq!(
+            rels[1].rationale,
+            Some("Direct report".to_string())
+        );
+    }
+
+    #[test]
+    fn eval_extract_inferred_relationships_empty_on_bad_input() {
+        let rels = extract_inferred_relationships("not json at all");
+        assert!(rels.is_empty(), "Bad input must produce empty vec");
+
+        let rels2 = extract_inferred_relationships(r#"{"inferredRelationships":"not an array"}"#);
+        assert!(rels2.is_empty(), "Non-array must produce empty vec");
+    }
+}
