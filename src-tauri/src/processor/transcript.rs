@@ -25,8 +25,8 @@ use crate::util::{
 use super::enrich::parse_enrichment_response;
 use super::hooks;
 
-/// Per-phase timeout for phased transcript processing (30s each, 3 phases = 90s max)
-const TRANSCRIPT_PHASE_TIMEOUT_SECS: u64 = 30;
+/// Per-phase timeout for phased transcript processing (60s each, 3 phases = 180s max)
+const TRANSCRIPT_PHASE_TIMEOUT_SECS: u64 = 60;
 
 /// Maximum transcript content sent to AI (covers ~75 min calls).
 const TRANSCRIPT_MAX_CHARS: usize = 60_000;
