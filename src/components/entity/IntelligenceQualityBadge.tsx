@@ -74,8 +74,8 @@ export function IntelligenceQualityBadge({
     const color = QUALITY_DOT_COLORS[quality.level];
     const label = QUALITY_LABELS[quality.level];
     const tooltip = quality.lastEnriched
-      ? `${label} — Last enriched: ${new Date(quality.lastEnriched).toLocaleString()}`
-      : `${label} — Not yet enriched`;
+      ? `${label} — Last updated: ${new Date(quality.lastEnriched).toLocaleString()}`
+      : `${label} — Not yet updated`;
 
     return (
       <span
@@ -146,7 +146,7 @@ export function IntelligenceQualityBadge({
         alignItems: "center",
         gap: 6,
       }}
-      title={enrichedAt ? `${LABELS[freshness]} — Last enriched: ${new Date(enrichedAt).toLocaleString()}` : "Not yet enriched"}
+      title={enrichedAt ? `${LABELS[freshness]} — Last updated: ${new Date(enrichedAt).toLocaleString()}` : "Not yet updated"}
     >
       <span
         style={{

@@ -7,11 +7,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { Calendar, Target, CheckSquare, Eye, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { CoverSlide } from "@/components/weekly-impact/CoverSlide";
@@ -21,6 +24,7 @@ import { WatchSlide } from "@/components/weekly-impact/WatchSlide";
 import { IntoNextWeekSlide } from "@/components/weekly-impact/IntoNextWeekSlide";
 import type { WeeklyImpactContent, WeeklyImpactMove, WeeklyImpactItem } from "@/types/reports";
 import type { ReportRow } from "@/types/reports";
+import slides from "./report-slides.module.css";
 
 // =============================================================================
 // Normalization — guards against cached reports with old schema
@@ -61,7 +65,7 @@ const SLIDES = [
 // =============================================================================
 
 const ANALYSIS_PHASES = [
-  { key: "gathering", label: "Gathering this week's data", detail: "Reading meetings, actions, and signals from the past 7 days" },
+  { key: "gathering", label: "Gathering this week's data", detail: "Reading meetings, actions, and activity from the past 7 days" },
   { key: "priorities", label: "Checking priority movement", detail: "Finding what actually moved forward this week" },
   { key: "patterns", label: "Spotting patterns", detail: "Looking for wins and things worth watching" },
   { key: "finalizing", label: "Finalizing", detail: "Building your weekly view" },
@@ -118,7 +122,10 @@ export default function WeeklyImpactPage() {
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save weekly impact report:", e));
+          .catch((e) => {
+            console.error("Failed to save weekly impact report:", e);
+            toast.error("Failed to save");
+          });
       }, 500);
     },
     [userId],
@@ -131,6 +138,8 @@ export default function WeeklyImpactPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(userId ?? undefined, "user");
 
   useRevealObserver(!loading && !!content);
 
@@ -201,27 +210,13 @@ export default function WeeklyImpactPage() {
           window.history.length > 1 ? window.history.back() : navigate({ to: "/me" }),
       },
       chapters: content ? SLIDES : undefined,
-      folioStatusText: saveStatus === "saved" ? "✓ Saved" : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: content ? (
         <button
           onClick={handleGenerate}
           disabled={generating}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: generating
-              ? "var(--color-text-tertiary)"
-              : "var(--color-garden-eucalyptus)",
-            background: "none",
-            border: `1px solid ${generating ? "var(--color-rule-light)" : "var(--color-garden-eucalyptus)"}`,
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: generating ? "not-allowed" : "pointer",
-            opacity: generating ? 0.5 : 1,
-          }}
+          className={`${slides.folioAction} ${generating ? slides.folioActionDisabled : ""}`}
+          style={{ "--report-accent": "var(--color-garden-eucalyptus)" } as React.CSSProperties}
         >
           {generating ? "Generating..." : "Regenerate"}
         </button>
@@ -281,13 +276,10 @@ export default function WeeklyImpactPage() {
   // Loading state — wait for userId + report fetch
   if (loading || (!userId && !error)) {
     return (
-      <div style={{ padding: "120px 120px 80px" }}>
-        <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-2 h-12 w-96" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton
-          className="mb-8 h-5 w-full max-w-2xl"
-          style={{ background: "var(--color-rule-light)" }}
-        />
+      <div className={slides.loadingSkeleton}>
+        <Skeleton className={`mb-4 h-4 w-24 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-2 h-12 w-96 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-8 h-5 w-full max-w-2xl ${slides.skeletonBg}`} />
       </div>
     );
   }
@@ -296,61 +288,20 @@ export default function WeeklyImpactPage() {
   if (!content && !generating) {
     return (
       <div
-        style={{
-          padding: "120px 120px 80px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "60vh",
-          textAlign: "center",
-        }}
+        className={slides.emptyState}
+        style={{ "--report-accent": "var(--color-garden-eucalyptus)" } as React.CSSProperties}
       >
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--color-garden-eucalyptus)",
-            marginBottom: 24,
-          }}
-        >
+        <div className={slides.emptyOverline}>
           Weekly Impact
         </div>
-        <h2
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 32,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            margin: "0 0 16px",
-          }}
-        >
+        <h2 className={slides.emptyTitle}>
           No weekly impact report yet
         </h2>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            color: "var(--color-text-secondary)",
-            maxWidth: 420,
-            lineHeight: 1.6,
-            marginBottom: 32,
-          }}
-        >
+        <p className={slides.emptyDescription}>
           No weekly impact report yet for last week. Generate to see how your week looked.
         </p>
         {error && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-spice-terracotta)",
-              marginBottom: 16,
-            }}
-          >
+          <p className={slides.emptyError}>
             {error}
           </p>
         )}
@@ -379,30 +330,50 @@ export default function WeeklyImpactPage() {
 
   // Render the 5-slide report with scroll-snap
   return (
-    <div style={{ scrollSnapType: "y proximity" }}>
+    <div className={slides.slideContainer}>
       {/* Slide 1: Cover */}
-      <section id="cover" style={{ scrollMarginTop: 60 }}>
+      <section id="cover" className={slides.slideSection}>
         <CoverSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("headline")}
+          onFeedback={(type) => feedback.submitFeedback("headline", type)}
+        />
       </section>
 
       {/* Slide 2: Priorities Moved */}
       <div className="editorial-reveal">
         <PrioritiesMovedSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("priorities_moved")}
+          onFeedback={(type) => feedback.submitFeedback("priorities_moved", type)}
+        />
       </div>
 
       {/* Slide 3: The Work */}
       <div className="editorial-reveal">
         <TheWorkSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("the_work")}
+          onFeedback={(type) => feedback.submitFeedback("the_work", type)}
+        />
       </div>
 
       {/* Slide 4: Watch */}
       <div className="editorial-reveal">
         <WatchSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("watch")}
+          onFeedback={(type) => feedback.submitFeedback("watch", type)}
+        />
       </div>
 
       {/* Slide 5: Into Next Week */}
       <div className="editorial-reveal">
         <IntoNextWeekSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("into_next_week")}
+          onFeedback={(type) => feedback.submitFeedback("into_next_week", type)}
+        />
       </div>
 
       {/* Finis marker */}

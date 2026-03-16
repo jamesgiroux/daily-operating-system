@@ -177,7 +177,7 @@ impl ActionDb {
                     ) as end_time,
                     COALESCE(mh.attendees, '') as attendees,
                     me.entity_id as account_id
-             FROM meetings_history mh
+             FROM meetings mh
              LEFT JOIN meeting_entities me ON me.meeting_id = mh.id AND me.entity_type = 'account'
              WHERE mh.start_time <= datetime('now', '-1 hour')
                AND mh.start_time >= datetime('now', ?1)

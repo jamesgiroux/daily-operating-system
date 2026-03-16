@@ -250,9 +250,8 @@ pub fn write_account_markdown(
         }
     }
 
-    // Read intelligence.json once (used for Company Overview skip + intelligence sections)
-    let intel_data =
-        crate::intelligence::read_intelligence_json(&resolve_account_dir(workspace, account)).ok();
+    // Read intelligence from DB (I513)
+    let intel_data = db.get_entity_intelligence(&account.id).ok().flatten();
 
     // Company Overview (from JSON — skipped when intelligence.json has company_context)
     let intel_has_company = intel_data

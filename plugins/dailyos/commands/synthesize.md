@@ -24,7 +24,7 @@ Read across multiple entities to detect cross-cutting patterns and generate port
 - Example: "at-risk" filters to entities with Red or Yellow health
 
 **Named list:**
-- Load only the specified entities: "Nexus Analytics, Datadog, Snowflake"
+- Load only the specified entities: "Acme Corp, Atlas Analytics, CloudVault"
 
 ### Step 2: Portfolio-Wide Data Read
 
@@ -82,7 +82,7 @@ Move from data patterns to strategic insights. Each observation should:
 **Example observations:**
 
 - "3 of 4 enterprise accounts showing expansion signals have a dedicated CSM and monthly EBR cadence. The 2 enterprise accounts at risk have quarterly cadence. Cadence appears to be a leading indicator."
-- "Competitive mentions increased 40% in Q1 across mid-market accounts. Datadog appears in 3 separate entity intelligence files. This is no longer an isolated competitive threat — it is a segment-wide pattern."
+- "Competitive mentions increased 40% in Q1 across mid-market accounts. Atlas Analytics appears in 3 separate entity intelligence files. This is no longer an isolated competitive threat — it is a segment-wide pattern."
 - "Action completion rate is 87% for accounts owned by Sarah, 52% for accounts owned by Marcus. The performance gap is driving the health distribution — Marcus's accounts are disproportionately Yellow."
 
 ### Step 5: Generate Synthesis
@@ -147,7 +147,7 @@ Structure the output:
 ### Step 6: Quality Check
 
 Before presenting:
-- Every pattern claim is backed by specific entity evidence (not "some accounts are declining" but "Nexus Analytics, Datadog, and CoreLogic all moved from Green to Yellow in January")
+- Every pattern claim is backed by specific entity evidence (not "some accounts are declining" but "Acme Corp, Atlas Analytics, and Meridian all moved from Green to Yellow in January")
 - Recommendations are specific and actionable, not generic ("increase engagement")
 - Emerging patterns are distinguished from established trends
 - Data gaps are flagged ("3 entities have not had intelligence updates in 30+ days — synthesis may be incomplete for those")

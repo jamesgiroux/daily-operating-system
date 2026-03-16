@@ -1,26 +1,46 @@
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
 // ─── Node.js Binary Resolution ─────────────────────────────────────────────
 //
 // macOS apps launched from Finder/DMG don't inherit the user's shell PATH,
 // so bare `node` / `npx` fails even when installed via nvm or Homebrew.
-// These helpers resolve the absolute path once and cache it for the process
-// lifetime. Used by Quill, Clay, and Gravatar MCP clients.
+// These helpers resolve the absolute path and cache `Some` results. `None`
+// results are re-checked on every call so that installing Node while the
+// app is running gets detected on the next probe.
 
-static NODE_BINARY: OnceLock<Option<PathBuf>> = OnceLock::new();
-static NPX_BINARY: OnceLock<Option<PathBuf>> = OnceLock::new();
+static NODE_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
+static NPX_BINARY: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Resolve the absolute path to the `node` binary.
-pub fn resolve_node_binary() -> Option<&'static PathBuf> {
-    NODE_BINARY
-        .get_or_init(|| resolve_node_tool("node"))
-        .as_ref()
+///
+/// Caches successful lookups. Re-probes on every call if not yet found,
+/// so installing Node while the app is running will be detected.
+pub fn resolve_node_binary() -> Option<PathBuf> {
+    let mut guard = NODE_BINARY.lock().ok()?;
+    if let Some(ref path) = *guard {
+        return Some(path.clone());
+    }
+    let found = resolve_node_tool("node");
+    if found.is_some() {
+        *guard = found.clone();
+    }
+    found
 }
 
 /// Resolve the absolute path to the `npx` binary.
-pub fn resolve_npx_binary() -> Option<&'static PathBuf> {
-    NPX_BINARY.get_or_init(|| resolve_node_tool("npx")).as_ref()
+///
+/// Caches successful lookups. Re-probes if not yet found.
+pub fn resolve_npx_binary() -> Option<PathBuf> {
+    let mut guard = NPX_BINARY.lock().ok()?;
+    if let Some(ref path) = *guard {
+        return Some(path.clone());
+    }
+    let found = resolve_node_tool("npx");
+    if found.is_some() {
+        *guard = found.clone();
+    }
+    found
 }
 
 /// Shared resolution logic for node ecosystem binaries (`node`, `npx`, `npm`).
@@ -728,7 +748,7 @@ mod tests {
 
     #[test]
     fn test_slugify_preserves_hyphens() {
-        assert_eq!(slugify("Bring-a-Trailer"), "autoco");
+        assert_eq!(slugify("Acme-Motors"), "acme-motors");
     }
 
     #[test]

@@ -1,0 +1,19 @@
+/**
+ * Keyframe animations for Monthly Wrapped slides.
+ * Imported once by the page orchestrator — no need for the WrappedKeyframes component.
+ */
+
+@keyframes wrappedSlideUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wrappedFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes wrappedScaleReveal {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}

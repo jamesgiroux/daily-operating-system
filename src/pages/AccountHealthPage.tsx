@@ -7,11 +7,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { Activity, Users, BarChart2, Star, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { AccountHealthCover } from "@/components/account-health/AccountHealthCover";
@@ -21,6 +24,7 @@ import { ValueDeliveredSlide } from "@/components/account-health/ValueDeliveredS
 import { WhatAheadSlide } from "@/components/account-health/WhatAheadSlide";
 import type { AccountHealthContent, AccountHealthSignal, AccountHealthRisk } from "@/components/account-health/types";
 import type { ReportRow } from "@/types/reports";
+import slides from "./report-slides.module.css";
 
 // Normalize DB data to the current schema — guards against old cached reports
 // whose JSON predates field additions (I397 schema evolution).
@@ -58,17 +62,17 @@ const ANALYSIS_PHASES = [
   {
     key: "gathering",
     label: "Gathering account data",
-    detail: "Reading meeting history, signals, and stakeholder records",
+    detail: "Reading meeting history, stakeholder records, and recent activity",
   },
   {
     key: "assessing",
-    label: "Assessing health signals",
+    label: "Assessing relationship health",
     detail: "Analyzing engagement patterns and risk indicators",
   },
   {
     key: "building",
     label: "Synthesizing insights",
-    detail: "Identifying what's working, what's struggling, expansion signals",
+    detail: "Identifying what's working, what's struggling, and expansion opportunities",
   },
   {
     key: "finalizing",
@@ -118,7 +122,10 @@ export default function AccountHealthPage() {
             if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
             fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
           })
-          .catch((e) => console.error("Failed to save account health report:", e));
+          .catch((e) => {
+            console.error("Failed to save account health report:", e);
+            toast.error("Failed to save");
+          });
       }, 500);
     },
     [accountId],
@@ -131,6 +138,8 @@ export default function AccountHealthPage() {
     },
     [debouncedSave],
   );
+
+  const feedback = useIntelligenceFeedback(accountId, "account");
 
   useRevealObserver(!loading && !!content);
 
@@ -214,27 +223,13 @@ export default function AccountHealthPage() {
               }),
       },
       chapters: content ? SLIDES : undefined,
-      folioStatusText: saveStatus === "saved" ? "✓ Saved" : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
       folioActions: content ? (
         <button
           onClick={handleGenerate}
           disabled={generating}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: generating
-              ? "var(--color-text-tertiary)"
-              : "var(--color-spice-turmeric)",
-            background: "none",
-            border: `1px solid ${generating ? "var(--color-rule-light)" : "var(--color-spice-turmeric)"}`,
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: generating ? "not-allowed" : "pointer",
-            opacity: generating ? 0.5 : 1,
-          }}
+          className={`${slides.folioAction} ${generating ? slides.folioActionDisabled : ""}`}
+          style={{ "--report-accent": "var(--color-spice-turmeric)" } as React.CSSProperties}
         >
           {generating ? "Generating..." : "Regenerate"}
         </button>
@@ -294,13 +289,10 @@ export default function AccountHealthPage() {
   // Loading state
   if (loading) {
     return (
-      <div style={{ padding: "120px 120px 80px" }}>
-        <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-2 h-12 w-96" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton
-          className="mb-8 h-5 w-full max-w-2xl"
-          style={{ background: "var(--color-rule-light)" }}
-        />
+      <div className={slides.loadingSkeleton}>
+        <Skeleton className={`mb-4 h-4 w-24 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-2 h-12 w-96 ${slides.skeletonBg}`} />
+        <Skeleton className={`mb-8 h-5 w-full max-w-2xl ${slides.skeletonBg}`} />
       </div>
     );
   }
@@ -309,62 +301,21 @@ export default function AccountHealthPage() {
   if (!content && !generating) {
     return (
       <div
-        style={{
-          padding: "120px 120px 80px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "60vh",
-          textAlign: "center",
-        }}
+        className={slides.emptyState}
+        style={{ "--report-accent": "var(--color-spice-turmeric)" } as React.CSSProperties}
       >
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "var(--color-spice-turmeric)",
-            marginBottom: 24,
-          }}
-        >
+        <div className={slides.emptyOverline}>
           Account Review
         </div>
-        <h2
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 32,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
-            margin: "0 0 16px",
-          }}
-        >
+        <h2 className={slides.emptyTitle}>
           No review generated yet
         </h2>
-        <p
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            color: "var(--color-text-secondary)",
-            maxWidth: 420,
-            lineHeight: 1.6,
-            marginBottom: 32,
-          }}
-        >
+        <p className={slides.emptyDescription}>
           Generate a 5-slide account health review. This will analyze meeting history, stakeholder
-          data, signals, and relationship context to build a complete account picture.
+          data, recent activity, and relationship context to build a complete account picture.
         </p>
         {error && (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-spice-terracotta)",
-              marginBottom: 16,
-            }}
-          >
+          <p className={slides.emptyError}>
             {error}
           </p>
         )}
@@ -393,34 +344,54 @@ export default function AccountHealthPage() {
 
   // Render the 5-slide review with scroll-snap
   return (
-    <div style={{ scrollSnapType: "y proximity" }}>
+    <div className={slides.slideContainer}>
       {/* Slide 1: Cover */}
-      <section id="cover" style={{ scrollMarginTop: 60 }}>
+      <section id="cover" className={slides.slideSection}>
         <AccountHealthCover
           accountName={accountName}
           content={content!}
           onUpdate={updateContent}
+        />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("overall_assessment")}
+          onFeedback={(type) => feedback.submitFeedback("overall_assessment", type)}
         />
       </section>
 
       {/* Slide 2: The Partnership */}
       <div className="editorial-reveal">
         <PartnershipSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("partnership")}
+          onFeedback={(type) => feedback.submitFeedback("partnership", type)}
+        />
       </div>
 
       {/* Slide 3: Where We Stand */}
       <div className="editorial-reveal">
         <WhereWeStandSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("where_we_stand")}
+          onFeedback={(type) => feedback.submitFeedback("where_we_stand", type)}
+        />
       </div>
 
       {/* Slide 4: Value Delivered */}
       <div className="editorial-reveal">
         <ValueDeliveredSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("value_delivered")}
+          onFeedback={(type) => feedback.submitFeedback("value_delivered", type)}
+        />
       </div>
 
       {/* Slide 5: What's Ahead */}
       <div className="editorial-reveal">
         <WhatAheadSlide content={content!} onUpdate={updateContent} />
+        <IntelligenceFeedback
+          value={feedback.getFeedback("whats_ahead")}
+          onFeedback={(type) => feedback.submitFeedback("whats_ahead", type)}
+        />
       </div>
 
       {/* Finis marker */}

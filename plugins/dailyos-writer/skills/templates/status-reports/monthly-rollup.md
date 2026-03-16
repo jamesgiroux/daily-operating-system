@@ -114,9 +114,9 @@ Don't list what you did—show what changed because of what you did. Transform t
 
 | Activity | Outcome |
 |----------|---------|
-| "Had weekly calls with Crestview Media" | "Crestview Media approved Agentforce pilot expansion (50 dealers, Feb launch)" |
-| "Worked on renewal prep" | "Harbor Group renewal secured ($450K, 2-year term) with 15% uplift" |
-| "Attended Agentforce meetings" | "Defined co-sell motion with Salesforce for Q1 pipeline" |
+| "Had weekly calls with Keystone" | "Keystone approved Agentforce pilot expansion (50 dealers, Feb launch)" |
+| "Worked on renewal prep" | "Meridian Hotels renewal secured ($450K, 2-year term) with 15% uplift" |
+| "Attended Agentforce meetings" | "Defined co-sell motion with Globex for Q1 pipeline" |
 | "Responded to support escalations" | "Zero revenue-impacting issues across Summit accounts" |
 
 ## Template
@@ -169,30 +169,30 @@ Dreamforce validated the Agentforce strategy with live customer demo and three e
 ## Impact Highlights
 
 ### Agentforce Launched Successfully at Dreamforce
-Led live demo at Dreamforce booth with Crestview Media use case. Generated immediate interest from three enterprise prospects (NXP, Broadcom, ServiceNow). Partnership positioning with Salesforce team confirmed for Q1 formalization.
+Led live demo at Dreamforce booth with Keystone Automotive use case. Generated immediate interest from three enterprise prospects (Vertex, Crestline, ServiceNow). Partnership positioning with Globex team confirmed for Q1 formalization.
 
-### Crestview Media POC Moved to Production-Ready
-POC environment validated all core use cases. 60% reduction in dealer inquiry time demonstrated. Crestview Media committed to February pilot with 50 dealers and identified internal budget sponsor.
+### Keystone Automotive POC Moved to Production-Ready
+POC environment validated all core use cases. 60% reduction in dealer inquiry time demonstrated. Keystone committed to February pilot with 50 dealers and identified internal budget sponsor.
 
 ### Foundation Ring Health Improved
 Implemented proactive quarterly touchpoint model for 26 Foundation accounts. Zero escalations in October (down from 3 in September). Early warning indicators now tracked for all accounts.
 
-### Harbor Group Renewal Closed with Expansion
+### Meridian Hotels Renewal Closed with Expansion
 Two-year renewal closed at $450K (15% uplift from previous term). Added newsroom BU to contract. Executive sponsor relationship strengthened through strategic review process.
 
 ---
 
 ## Themes & Patterns
 
-Agentforce is creating new conversation opportunities with Salesforce-invested accounts. Three of my top expansion targets (NXP, Broadcom, Crestview Media) are engaging specifically because of AI capabilities. This validates the strategic bet and suggests we should probe Salesforce investment early in account discovery.
+Agentforce is creating new conversation opportunities with Globex-invested accounts. Three of my top expansion targets (Vertex, Crestline, Keystone) are engaging specifically because of AI capabilities. This validates the strategic bet and suggests we should probe Globex investment early in account discovery.
 
 Foundation ring proactive model is working. The shift from reactive to quarterly proactive touchpoints reduced noise (fewer surprise escalations) and is creating early expansion signals in accounts we'd previously ignored.
 
 ## Looking Ahead: November
 
-Key priorities: Close NXP opportunity ($400K), prepare Crestview Media for pilot kickoff, complete Q4 renewals for Infocalc and Salesforce BUs.
+Key priorities: Close Vertex opportunity ($400K), prepare Keystone for pilot kickoff, complete Q4 renewals for Pinnacle and Globex BUs.
 
-Risk to watch: Broadcom stakeholder change—new VP of Digital starting, need to rebuild relationship.
+Risk to watch: Crestline stakeholder change—new VP of Digital starting, need to rebuild relationship.
 
-Opportunity: NADA Conference (January) could be significant for Crestview Media visibility if pilot goes well.
+Opportunity: NADA Conference (January) could be significant for Keystone visibility if pilot goes well.
 ```

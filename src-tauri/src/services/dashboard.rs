@@ -4,9 +4,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_directive, load_schedule_json, DataFreshness,
-};
+use chrono::Datelike;
+
+use crate::json_loader::DataFreshness;
 use crate::parser::count_inbox;
 use crate::state::AppState;
 use crate::types::{
@@ -78,24 +78,32 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
         intelligence_qualities: HashMap<String, crate::types::IntelligenceQuality>,
     }
 
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let tomorrow = (chrono::Local::now() + chrono::Duration::days(1))
-        .format("%Y-%m-%d")
-        .to_string();
+    let tz_for_live: chrono_tz::Tz = state
+        .config
+        .read()
+        .ok()
+        .and_then(|c| c.as_ref().map(|c| c.schedules.today.timezone.clone()))
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(chrono_tz::America::New_York);
+    let tf_live = crate::helpers::today_meeting_filter(&tz_for_live);
+    let today = tf_live.date;
+    let tomorrow = tf_live.next_date;
 
     let snap = match state
         .db_read(move |db| {
             let conn = db.conn_ref();
 
-            // 1. Query today's meetings from meetings_history
+            // 1. Query today's meetings from meetings + LEFT JOINs for prep/transcript columns
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, title, meeting_type, start_time, end_time, attendees,
-                        notes_path, summary, created_at, calendar_event_id, description,
-                        prep_context_json, intelligence_state
-                 FROM meetings_history
-                 WHERE start_time >= ?1 AND start_time < ?2
-                 ORDER BY start_time ASC",
+                    "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time, m.attendees,
+                        m.notes_path, mt.summary, m.created_at, m.calendar_event_id, m.description,
+                        mp.prep_context_json, mt.intelligence_state
+                 FROM meetings m
+                 LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+                 LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE m.start_time >= ?1 AND m.start_time < ?2
+                 ORDER BY m.start_time ASC",
                 )
                 .map_err(|e| e.to_string())?;
             let meeting_rows = stmt
@@ -408,46 +416,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         };
 
     let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
 
-    // Check if _today directory exists
-    let today_dir_exists = today_dir.exists();
-    let data_dir = today_dir.join("data");
-    let data_dir_exists = today_dir_exists && data_dir.exists();
-
-    // Load from JSON (happy path)
-    let schedule_result = if data_dir_exists {
-        load_schedule_json(&today_dir).ok()
-    } else {
-        None
-    };
-
-    // If schedule.json is unavailable, try building from live SQLite data
-    let (overview, briefing_meetings) = match schedule_result {
-        Some(data) => data,
-        None => {
-            // Fallback: build dashboard from SQLite meetings_history
-            if let Some(live_data) = build_live_dashboard_data(state).await {
-                if !live_data.meetings.is_empty() {
-                    log::info!(
-                        "schedule.json unavailable — serving {} meetings from SQLite",
-                        live_data.meetings.len()
-                    );
-                    return DashboardResult::Success {
-                        data: live_data,
-                        freshness: DataFreshness::Unknown,
-                        google_auth,
-                    };
-                }
-            }
-            return DashboardResult::Empty {
-                message: "Your daily briefing will appear here once generated.".to_string(),
-                google_auth,
-            };
-        }
-    };
-
-    // Merge briefing meetings with live calendar events (ADR-0032)
+    // Build meetings from SQLite (DB-first, I513)
     let live_events = state
         .calendar
         .events
@@ -460,6 +430,137 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .timezone
         .parse()
         .unwrap_or(chrono_tz::America::New_York);
+
+    // Query today's meetings from DB.
+    // start_time is stored in two formats (RFC3339 UTC from calendar poller,
+    // local "YYYY-MM-DD HH:MM AM" from pipeline). Bare date comparison works
+    // for both. Evening UTC edge cases are caught by live calendar merge below.
+    let tf = crate::helpers::today_meeting_filter(&tz);
+    let today_clone = tf.date.clone();
+    let tomorrow_clone = tf.next_date.clone();
+    let db_meetings: Vec<crate::db::DbMeeting> = match state
+        .db_read(move |db| {
+            let conn = db.conn_ref();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time, m.attendees,
+                        m.notes_path, mt.summary, m.created_at, m.calendar_event_id, m.description,
+                        mp.prep_context_json, mt.intelligence_state
+                     FROM meetings m
+                     LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
+                     LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                     WHERE m.start_time >= ?1 AND m.start_time < ?2
+                     ORDER BY m.start_time ASC",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(rusqlite::params![today_clone, tomorrow_clone], |row| {
+                    Ok(crate::db::DbMeeting {
+                        id: row.get(0)?,
+                        title: row.get(1)?,
+                        meeting_type: row.get(2)?,
+                        start_time: row.get(3)?,
+                        end_time: row.get(4)?,
+                        attendees: row.get(5)?,
+                        notes_path: row.get(6)?,
+                        summary: row.get(7)?,
+                        created_at: row.get(8)?,
+                        calendar_event_id: row.get(9)?,
+                        description: row.get(10)?,
+                        prep_context_json: row.get(11)?,
+                        user_agenda_json: None,
+                        user_notes: None,
+                        prep_frozen_json: None,
+                        prep_frozen_at: None,
+                        prep_snapshot_path: None,
+                        prep_snapshot_hash: None,
+                        transcript_path: None,
+                        transcript_processed_at: None,
+                        intelligence_state: row.get(12)?,
+                        intelligence_quality: None,
+                        last_enriched_at: None,
+                        signal_count: None,
+                        has_new_signals: None,
+                        last_viewed_at: None,
+                    })
+                })
+                .map_err(|e| e.to_string())?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .await
+    {
+        Ok(meetings) => meetings,
+        Err(e) => {
+            log::warn!("Dashboard DB query failed: {e}");
+            *db_busy = true;
+            Vec::new()
+        }
+    };
+
+    if db_meetings.is_empty() && live_events.is_empty() {
+        return DashboardResult::Empty {
+            message: "Your daily briefing will appear here once generated.".to_string(),
+            google_auth,
+        };
+    }
+
+    // Convert DB meetings to frontend Meeting structs
+    let briefing_meetings: Vec<Meeting> = db_meetings
+        .into_iter()
+        .map(|dbm| {
+            let meeting_type = crate::parser::parse_meeting_type(&dbm.meeting_type);
+            let has_prep = dbm.prep_context_json.is_some();
+
+            let time = chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%dT%H:%M:%S")
+                .map(|dt| dt.format("%-I:%M %p").to_string())
+                .or_else(|_| {
+                    chrono::NaiveDateTime::parse_from_str(&dbm.start_time, "%Y-%m-%d %H:%M:%S")
+                        .map(|dt| dt.format("%-I:%M %p").to_string())
+                })
+                .or_else(|_| {
+                    chrono::DateTime::parse_from_rfc3339(&dbm.start_time)
+                        .map(|dt| dt.format("%-I:%M %p").to_string())
+                })
+                .unwrap_or_else(|_| dbm.start_time.clone());
+
+            let end_time = dbm.end_time.as_ref().and_then(|et| {
+                chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%dT%H:%M:%S")
+                    .map(|dt| dt.format("%-I:%M %p").to_string())
+                    .or_else(|_| {
+                        chrono::NaiveDateTime::parse_from_str(et, "%Y-%m-%d %H:%M:%S")
+                            .map(|dt| dt.format("%-I:%M %p").to_string())
+                    })
+                    .or_else(|_| {
+                        chrono::DateTime::parse_from_rfc3339(et)
+                            .map(|dt| dt.format("%-I:%M %p").to_string())
+                    })
+                    .ok()
+            });
+
+            Meeting {
+                id: dbm.id,
+                calendar_event_id: dbm.calendar_event_id,
+                time,
+                end_time,
+                start_iso: Some(dbm.start_time),
+                title: dbm.title,
+                meeting_type,
+                prep: None,
+                is_current: None,
+                prep_file: None,
+                has_prep,
+                overlay_status: None,
+                prep_reviewed: None,
+                linked_entities: None,
+                suggested_unarchive_account_id: None,
+                intelligence_quality: None,
+                calendar_attendees: None,
+                calendar_description: None,
+            }
+        })
+        .collect();
+
+    // Merge DB meetings with live calendar events (ADR-0032)
     let mut meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
 
     // Consolidate all dashboard DB reads into a single lock acquisition (I235).
@@ -627,23 +728,20 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         }
     }
 
-    let mut actions = load_actions_json(&today_dir).unwrap_or_default();
-
-    // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
-    if let Some(ref snap) = db_snapshot {
-        if let Some(ref db_actions) = snap.non_briefing_actions {
-            let json_titles: HashSet<String> = actions
+    // Load actions from DB (I513 — DB is sole source)
+    let actions: Vec<Action> = db_snapshot
+        .as_ref()
+        .and_then(|snap| snap.non_briefing_actions.as_ref())
+        .map(|db_actions| {
+            db_actions
                 .iter()
-                .map(|a| a.title.to_lowercase().trim().to_string())
-                .collect();
-            for dba in db_actions {
-                if !json_titles.contains(dba.title.to_lowercase().trim()) {
+                .map(|dba| {
                     let priority = match dba.priority.as_str() {
                         "P1" => Priority::P1,
                         "P3" => Priority::P3,
                         _ => Priority::P2,
                     };
-                    actions.push(Action {
+                    Action {
                         id: dba.id.clone(),
                         title: dba.title.clone(),
                         account: dba.account_id.clone(),
@@ -654,11 +752,11 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                         context: dba.context.clone(),
                         source: dba.source_label.clone(),
                         days_overdue: None,
-                    });
-                }
-            }
-        }
-    }
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     // I368: Try DB first for enriched emails, fall back to JSON
     let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
@@ -797,22 +895,122 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         .iter()
         .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
         .collect();
+    let total_meetings = active_meetings.len();
+    let customer_meetings = active_meetings
+        .iter()
+        .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
+        .count();
     let stats = DayStats {
-        total_meetings: active_meetings.len(),
-        customer_meetings: active_meetings
-            .iter()
-            .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
-            .count(),
+        total_meetings,
+        customer_meetings,
         actions_due: actions.len(),
         inbox_count,
     };
 
-    let freshness = check_data_freshness(&today_dir);
+    // Build overview from live state (I513 — no JSON overview source)
+    let hour = chrono::Timelike::hour(&chrono::Local::now());
+    let greeting = if hour < 12 {
+        "Good morning"
+    } else if hour < 17 {
+        "Good afternoon"
+    } else {
+        "Good evening"
+    };
+    let mut overview = DayOverview {
+        greeting: greeting.to_string(),
+        date: chrono::Local::now().format("%A, %B %e").to_string(),
+        summary: String::new(),
+        focus: None,
+    };
+    let mut parts = vec![format!(
+        "You have {} meeting{} today",
+        total_meetings,
+        if total_meetings == 1 { "" } else { "s" }
+    )];
+    if customer_meetings > 0 {
+        parts.push(format!(
+            "{} customer call{}",
+            customer_meetings,
+            if customer_meetings != 1 { "s" } else { "" }
+        ));
+    }
+    overview.summary = parts.join(" with ");
 
-    // Load replies_needed from directive (I355).
-    // I448: Directive narrative is baked into the file — build dynamically from real data.
-    let replies_needed = load_directive(&today_dir)
-        .map(|d| d.emails.replies_needed)
+    // DB-based freshness: check app_state_kv for briefing timestamp, fall back to meeting existence
+    let freshness_today = tf.date.clone();
+    let freshness_tomorrow = tf.next_date.clone();
+    let freshness = match state
+        .db_read(move |db| {
+            let conn = db.conn_ref();
+            // Try app_state_kv briefing_freshness key first
+            let kv_result: Result<Option<String>, _> = conn.query_row(
+                "SELECT value_json FROM app_state_kv WHERE key = 'briefing_freshness'",
+                [],
+                |row| row.get(0),
+            );
+            if let Ok(Some(json_str)) = kv_result {
+                if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                    let date = manifest.get("date").and_then(|v| v.as_str()).unwrap_or("");
+                    let generated_at = manifest
+                        .get("generatedAt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let today_str = chrono::Local::now().format("%Y-%m-%d").to_string();
+                    if date == today_str {
+                        return Ok(DataFreshness::Fresh { generated_at });
+                    } else {
+                        return Ok(DataFreshness::Stale {
+                            data_date: date.to_string(),
+                            generated_at,
+                        });
+                    }
+                }
+            }
+            // Fallback: if meetings exist for today, consider it fresh
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM meetings WHERE start_time >= ?1 AND start_time < ?2",
+                    rusqlite::params![freshness_today, freshness_tomorrow],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if count > 0 {
+                Ok(DataFreshness::Fresh {
+                    generated_at: chrono::Utc::now().to_rfc3339(),
+                })
+            } else {
+                Ok(DataFreshness::Unknown)
+            }
+        })
+        .await
+    {
+        Ok(f) => f,
+        Err(_) => DataFreshness::Unknown,
+    };
+
+    // I513: Build replies_needed from DB instead of directive file.
+    let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
+        .db_read(|db| {
+            let now = chrono::Utc::now();
+            Ok(db
+                .get_threads_awaiting_reply()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(thread_id, subject, from, date)| {
+                    let wait_duration =
+                        crate::prepare::orchestrate::compute_wait_duration_public(&date, &now);
+                    crate::json_loader::DirectiveReplyNeeded {
+                        thread_id,
+                        subject,
+                        from,
+                        date: Some(date),
+                        wait_duration: Some(wait_duration),
+                    }
+                })
+                .collect())
+        })
+        .await
         .unwrap_or_default();
 
     let email_narrative: Option<String> = {
@@ -834,17 +1032,16 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let meeting_linked = if entity_ids.is_empty() {
                 0usize
             } else {
+                let email_today = tf.date.clone();
+                let email_tomorrow = tf.next_date.clone();
                 state.db_read(move |db| {
-                        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                        let start = format!("{}T00:00:00", today);
-                        let end = format!("{}T23:59:59", today);
                         let count = entity_ids.iter().filter(|eid| {
                             db.conn_ref()
                                 .query_row(
                                     "SELECT COUNT(*) FROM meeting_entities me
-                                     JOIN meetings_history mh ON me.meeting_id = mh.id
-                                     WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
-                                    rusqlite::params![eid, start, end],
+                                     JOIN meetings m ON me.meeting_id = m.id
+                                     WHERE me.entity_id = ?1 AND m.start_time >= ?2 AND m.start_time < ?3",
+                                    rusqlite::params![eid, email_today, email_tomorrow],
                                     |row| row.get::<_, i64>(0),
                                 )
                                 .unwrap_or(0) > 0
@@ -918,59 +1115,152 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     }
 }
 
-/// Get week overview data from workspace _today/data/ JSON files.
-pub fn get_week_data(state: &AppState) -> WeekResult {
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return WeekResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
+/// Get week overview data from DB (I513: no JSON file reads).
+pub fn get_week_data(_state: &AppState) -> WeekResult {
+    let started = std::time::Instant::now();
+
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
             return WeekResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
+                message: format!("Failed to open DB: {}", e),
             }
         }
     };
 
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
+    // Compute Monday..Sunday of current week
+    let today = chrono::Local::now().date_naive();
+    let weekday = today.weekday().num_days_from_monday(); // Mon=0 .. Sun=6
+    let monday = today - chrono::Duration::days(weekday as i64);
+    let next_monday = monday + chrono::Duration::days(7);
 
-    let started = std::time::Instant::now();
+    let week_number = format!("W{:02}", today.iso_week().week());
+    let friday = monday + chrono::Duration::days(4);
+    let date_range = format!(
+        "{} – {}",
+        monday.format("%b %d"),
+        friday.format("%b %d, %Y")
+    );
 
-    let mut week = match crate::json_loader::load_week_json(&today_dir) {
-        Ok(w) => w,
-        Err(e) => {
-            return WeekResult::NotFound {
-                message: format!("No week data: {}", e),
-            }
-        }
+    // Query all meetings Mon–Sun
+    let meetings_raw = db
+        .get_meetings_in_range(&monday.to_string(), &next_monday.to_string())
+        .unwrap_or_default();
+
+    // Group by day
+    static DAY_NAMES: [&str; 7] = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+    let mut days = Vec::new();
+    for i in 0..7 {
+        let day_date = monday + chrono::Duration::days(i);
+        let day_str = day_date.to_string();
+        let day_meetings: Vec<crate::types::WeekMeeting> = meetings_raw
+            .iter()
+            .filter(|(_, _, _, start, _, _)| start.starts_with(&day_str))
+            .filter_map(|(id, title, mtype, start, _, has_prep)| {
+                // Skip personal meetings
+                if mtype == "personal" {
+                    return None;
+                }
+                let time = chrono::NaiveDateTime::parse_from_str(start, "%Y-%m-%dT%H:%M:%S")
+                    .or_else(|_| chrono::NaiveDateTime::parse_from_str(start, "%Y-%m-%d %H:%M:%S"))
+                    .map(|dt| dt.format("%l:%M %p").to_string().trim().to_string())
+                    .unwrap_or_else(|_| {
+                        // Try parsing with timezone info
+                        chrono::DateTime::parse_from_rfc3339(start)
+                            .map(|dt| {
+                                dt.with_timezone(&chrono::Local)
+                                    .format("%l:%M %p")
+                                    .to_string()
+                                    .trim()
+                                    .to_string()
+                            })
+                            .unwrap_or_default()
+                    });
+                let meeting_type = match mtype.as_str() {
+                    "customer" => MeetingType::Customer,
+                    "qbr" => MeetingType::Qbr,
+                    "training" => MeetingType::Training,
+                    "team_sync" => MeetingType::TeamSync,
+                    "one_on_one" => MeetingType::OneOnOne,
+                    "partnership" => MeetingType::Partnership,
+                    "all_hands" => MeetingType::AllHands,
+                    "external" => MeetingType::External,
+                    "personal" => MeetingType::Personal,
+                    _ => MeetingType::Internal,
+                };
+                let prep_status = if *has_prep {
+                    crate::types::PrepStatus::PrepReady
+                } else {
+                    crate::types::PrepStatus::PrepNeeded
+                };
+                Some(crate::types::WeekMeeting {
+                    time,
+                    title: title.clone(),
+                    meeting_id: Some(id.clone()),
+                    meeting_type,
+                    prep_status,
+                    linked_entities: None,
+                })
+            })
+            .collect();
+        days.push(crate::types::WeekDay {
+            date: day_str,
+            day_name: DAY_NAMES[i as usize].to_string(),
+            meetings: day_meetings,
+        });
+    }
+
+    // Action summary from DB
+    let action_summary = db.get_pending_action_counts().ok().map(
+        |(total, _p1, _p2, overdue)| crate::types::WeekActionSummary {
+            overdue_count: overdue as usize,
+            due_this_week: total as usize,
+            critical_items: Vec::new(),
+            overdue: None,
+            due_this_week_items: None,
+        },
+    );
+
+    let mut week = WeekOverview {
+        week_number,
+        date_range,
+        days,
+        action_summary,
+        hygiene_alerts: None,
+        focus_areas: None,
+        available_time_blocks: None,
+        week_narrative: None,
+        top_priority: None,
+        readiness_checks: None,
+        day_shapes: None,
     };
 
     // Enrich dayShapes with live per-day action priorities (I279)
     if let Some(ref mut shapes) = week.day_shapes {
-        if let Ok(db) = crate::db::ActionDb::open() {
-            if let Ok(candidates) = db.get_focus_candidate_actions(7) {
-                for shape in shapes.iter_mut() {
-                    let available_minutes: u32 = shape
-                        .available_blocks
-                        .iter()
-                        .map(|b| b.duration_minutes)
-                        .sum();
+        if let Ok(candidates) = db.get_focus_candidate_actions(7) {
+            for shape in shapes.iter_mut() {
+                let available_minutes: u32 = shape
+                    .available_blocks
+                    .iter()
+                    .map(|b| b.duration_minutes)
+                    .sum();
 
-                    let (prioritized, _top_three, implications) =
-                        crate::focus_prioritization::prioritize_actions(
-                            candidates.clone(),
-                            available_minutes,
-                        );
+                let (prioritized, _top_three, implications) =
+                    crate::focus_prioritization::prioritize_actions(
+                        candidates.clone(),
+                        available_minutes,
+                    );
 
-                    shape.prioritized_actions = Some(prioritized);
-                    shape.focus_implications = Some(implications);
-                }
+                shape.prioritized_actions = Some(prioritized);
+                shape.focus_implications = Some(implications);
             }
         }
     }

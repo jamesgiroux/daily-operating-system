@@ -10,7 +10,7 @@ import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { GoogleDriveImportModal } from "@/components/inbox/GoogleDriveImportModal";
-import type { InboxFile, InboxFileType } from "@/types";
+import type { CopyToInboxReport, InboxFile, InboxFileType } from "@/types";
 
 // =============================================================================
 // Types
@@ -144,7 +144,7 @@ const processingQuotes = [
   "Doing the boring parts. You're welcome.",
   "AI is reading your files so you don't have to.",
   "Crunching the hard stuff...",
-  "Filing, sorting, enriching. Living the dream.",
+  "Filing, sorting, processing. Living the dream.",
   "This is what peak productivity looks like.",
 ];
 
@@ -226,10 +226,10 @@ export default function InboxPage() {
               }
               lastDropRef.current = { signature, at: now };
 
-              invoke<number>("copy_to_inbox", { paths: uniquePaths })
-                .then((count) => {
-                  if (count > 0) {
-                    setDropResult({ count });
+              invoke<CopyToInboxReport>("copy_to_inbox", { paths: uniquePaths })
+                .then((report) => {
+                  if (report.copiedCount > 0) {
+                    setDropResult({ count: report.copiedCount });
                     setTimeout(() => setDropResult(null), 3000);
                     refresh();
                   }
@@ -691,7 +691,7 @@ export default function InboxPage() {
             borderRadius: 8,
             textAlign: "center",
             transition: "border-color 0.2s ease, background 0.2s ease",
-            background: isDragging ? "rgba(201, 162, 39, 0.04)" : "transparent",
+            background: isDragging ? "var(--color-spice-turmeric-4)" : "transparent",
           }}
         >
           <p
@@ -881,7 +881,7 @@ export default function InboxPage() {
           border: `1px dashed ${isDragging ? "var(--color-spice-turmeric)" : "var(--color-rule-heavy)"}`,
           borderRadius: 6,
           transition: "border-color 0.2s ease, background 0.2s ease",
-          background: isDragging ? "rgba(201, 162, 39, 0.04)" : "transparent",
+          background: isDragging ? "var(--color-spice-turmeric-4)" : "transparent",
         }}
       >
         <span
@@ -970,7 +970,7 @@ export default function InboxPage() {
       </section>
 
       {/* ═══ END MARK ═══ */}
-      {visibleFiles.length > 0 && <FinisMarker />}
+      <FinisMarker />
 
       <GoogleDriveImportModal
         open={driveModalOpen}

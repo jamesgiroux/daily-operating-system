@@ -73,6 +73,7 @@ pub struct PersonRelationship {
     pub context_entity_type: Option<String>,
     pub context_entity_name: Option<String>,
     pub source: String,
+    pub rationale: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub last_reinforced_at: Option<String>,
@@ -121,6 +122,7 @@ pub struct UpsertRelationship<'a> {
     pub context_entity_id: Option<&'a str>,
     pub context_entity_type: Option<&'a str>,
     pub source: &'a str,
+    pub rationale: Option<&'a str>,
 }
 
 impl ActionDb {
@@ -128,15 +130,18 @@ impl ActionDb {
     pub fn upsert_person_relationship(&self, rel: &UpsertRelationship<'_>) -> Result<(), DbError> {
         self.conn_ref().execute(
             "INSERT INTO person_relationships (id, from_person_id, to_person_id, relationship_type,
-             direction, confidence, context_entity_id, context_entity_type, source)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             direction, confidence, context_entity_id, context_entity_type, source, rationale)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
+                from_person_id = excluded.from_person_id,
+                to_person_id = excluded.to_person_id,
                 relationship_type = excluded.relationship_type,
                 direction = excluded.direction,
                 confidence = excluded.confidence,
                 context_entity_id = excluded.context_entity_id,
                 context_entity_type = excluded.context_entity_type,
                 source = excluded.source,
+                rationale = excluded.rationale,
                 updated_at = datetime('now'),
                 last_reinforced_at = datetime('now')",
             params![
@@ -148,7 +153,8 @@ impl ActionDb {
                 rel.confidence,
                 rel.context_entity_id,
                 rel.context_entity_type,
-                rel.source
+                rel.source,
+                rel.rationale,
             ],
         )?;
         Ok(())
@@ -184,7 +190,7 @@ impl ActionDb {
     const RELATIONSHIP_SELECT: &'static str =
         "SELECT pr.id, pr.from_person_id, pr.to_person_id, pr.relationship_type, pr.direction,
                 pr.confidence, pr.context_entity_id, pr.context_entity_type, pr.source,
-                pr.created_at, pr.updated_at, pr.last_reinforced_at,
+                pr.rationale, pr.created_at, pr.updated_at, pr.last_reinforced_at,
                 fp.name AS from_name, tp.name AS to_name,
                 e.name AS context_entity_name
          FROM person_relationships pr
@@ -236,8 +242,9 @@ impl ActionDb {
     ) -> Result<PersonRelationship, rusqlite::Error> {
         let confidence: f64 = row.get(5)?;
         let source: String = row.get(8)?;
-        let created_at: String = row.get(9)?;
-        let last_reinforced_at: Option<String> = row.get(11)?;
+        let rationale: Option<String> = row.get(9)?;
+        let created_at: String = row.get(10)?;
+        let last_reinforced_at: Option<String> = row.get(12)?;
         let eff = effective_confidence(
             confidence,
             &source,
@@ -251,18 +258,19 @@ impl ActionDb {
             id: row.get(0)?,
             from_person_id: row.get(1)?,
             to_person_id: row.get(2)?,
-            from_person_name: row.get(12)?,
-            to_person_name: row.get(13)?,
+            from_person_name: row.get(13)?,
+            to_person_name: row.get(14)?,
             relationship_type,
             direction: row.get(4)?,
             confidence,
             effective_confidence: eff,
             context_entity_id: row.get(6)?,
             context_entity_type: row.get(7)?,
-            context_entity_name: row.get(14)?,
+            context_entity_name: row.get(15)?,
             source,
+            rationale,
             created_at,
-            updated_at: row.get(10)?,
+            updated_at: row.get(11)?,
             last_reinforced_at,
         })
     }
@@ -338,6 +346,7 @@ mod tests {
             context_entity_id: None,
             context_entity_type: None,
             source: "user_confirmed",
+            rationale: None,
         })
         .expect("upsert");
 
@@ -382,6 +391,7 @@ mod tests {
             context_entity_id: None,
             context_entity_type: None,
             source: "inferred",
+            rationale: None,
         })
         .unwrap();
         assert_eq!(db.get_relationships_for_person("p1").unwrap().len(), 1);
@@ -415,6 +425,7 @@ mod tests {
             context_entity_id: Some("proj-1"),
             context_entity_type: Some("project"),
             source: "inferred",
+            rationale: None,
         })
         .unwrap();
 

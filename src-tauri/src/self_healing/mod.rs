@@ -53,13 +53,11 @@ pub fn evaluate_portfolio(
             continue;
         }
 
-        queue.enqueue(crate::intel_queue::IntelRequest {
-            entity_id: entity_id.clone(),
-            entity_type: entity_type.clone(),
-            priority: crate::intel_queue::IntelPriority::ProactiveHygiene,
-            requested_at: std::time::Instant::now(),
-            retry_count: 0,
-        });
+        queue.enqueue(crate::intel_queue::IntelRequest::new(
+            entity_id.clone(),
+            entity_type.clone(),
+            crate::intel_queue::IntelPriority::ProactiveHygiene,
+        ));
         enqueued += 1;
     }
 

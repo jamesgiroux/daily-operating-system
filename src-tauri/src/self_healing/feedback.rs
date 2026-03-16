@@ -35,9 +35,9 @@ pub fn record_enrichment_success(db: &ActionDb, entity_id: &str) {
     // Ensure the row exists (entities may not have been initialized yet)
     let _ = db.conn_ref().execute(
         "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type)
-         SELECT entity_id, entity_type FROM entity_intelligence WHERE entity_id = ?1
+         SELECT entity_id, entity_type FROM entity_assessment WHERE entity_id = ?1
          UNION ALL
-         SELECT ?1, 'unknown' WHERE NOT EXISTS (SELECT 1 FROM entity_intelligence WHERE entity_id = ?1)
+         SELECT ?1, 'unknown' WHERE NOT EXISTS (SELECT 1 FROM entity_assessment WHERE entity_id = ?1)
          LIMIT 1",
         rusqlite::params![entity_id],
     );

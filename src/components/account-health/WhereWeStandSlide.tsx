@@ -271,7 +271,7 @@ export function WhereWeStandSlide({ content, onUpdate }: WhereWeStandSlideProps)
         </div>
       </div>
 
-      {/* Expansion Signals */}
+      {/* Expansion Indicators */}
       {content.expansionSignals.length > 0 && (
         <div style={{ maxWidth: 900, marginTop: 32 }}>
           <div
@@ -285,7 +285,7 @@ export function WhereWeStandSlide({ content, onUpdate }: WhereWeStandSlideProps)
               marginBottom: 12,
             }}
           >
-            Expansion Signals
+            Expansion Indicators
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {content.expansionSignals.map((signal, i) => (
