@@ -1,8 +1,7 @@
 /* PersonNetwork — "Their Orbit" chapter (I392, ADR-0088) */
 
 .section {
-  scroll-margin-top: var(--page-margin-top);
-  padding-top: var(--space-2xl);
+  /* scroll-margin and spacing handled by page-level chapterSectionWithPadding wrapper */
 }
 
 .emptyState {

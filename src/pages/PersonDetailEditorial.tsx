@@ -278,7 +278,7 @@ export default function PersonDetailEditorial() {
       </section>
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
-      <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className={`editorial-reveal ${shared.chapterSection}`}>
+      <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <PersonInsightChapter
           detail={detail}
           intelligence={intelligence}
@@ -293,7 +293,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 3: Their Orbit */}
-      <div id="their-orbit" className={`editorial-reveal ${shared.chapterSection}`}>
+      <div id="their-orbit" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <PersonNetwork
           entities={detail.entities}
           onLink={person.handleLinkEntity}
@@ -303,7 +303,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 4: Their Network */}
-      <div id="their-network" className={`editorial-reveal ${shared.chapterSection}`}>
+      <div id="their-network" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <PersonRelationships
           personId={personId ?? ""}
           network={intelligence?.network}
@@ -315,7 +315,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Landscape */}
-      <div id="the-landscape" className={`editorial-reveal ${shared.chapterSection}`}>
+      <div id="the-landscape" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
@@ -326,8 +326,8 @@ export default function PersonDetailEditorial() {
         />
       </div>
 
-      {/* Chapter 5: The Record */}
-      <div id="the-record" className={`editorial-reveal ${shared.chapterSection}`}>
+      {/* Chapter 6: The Record */}
+      <div id="the-record" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <UnifiedTimeline
           data={{
             recentMeetings: detail.recentMeetings ?? [],
@@ -342,7 +342,7 @@ export default function PersonDetailEditorial() {
 
       {/* Chapter 6: The Work (suppressed when empty per I351) */}
       {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0) && (
-        <div id="the-work" className={`editorial-reveal ${shared.chapterSection}`}>
+        <div id="the-work" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
           <TheWork
             data={detail}
             addingAction={person.addingAction}

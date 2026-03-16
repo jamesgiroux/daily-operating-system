@@ -1,7 +1,7 @@
 /* PersonRelationships — "Their Network" chapter (I392, ADR-0088) */
 
 .chapter {
-  padding-top: var(--space-2xl);
+  /* Spacing handled by page-level chapterSectionWithPadding wrapper */
 }
 
 .clusterSummary {
@@ -118,6 +118,47 @@
 
 .edgeDate {
   opacity: 0.7;
+}
+
+/* Accept button on suggested edge rows */
+.acceptBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-garden-sage);
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.edgeRow:hover .acceptBtn {
+  opacity: 1;
+}
+
+.acceptBtn:hover {
+  color: var(--color-garden-eucalyptus);
+}
+
+/* Confirm button (inline confirm flow) */
+.confirmBtn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-paper-warm-white);
+  background: var(--color-garden-sage);
+  border: none;
+  border-radius: var(--radius-editorial-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.confirmBtn:hover {
+  opacity: 0.9;
 }
 
 /* Delete button on edge rows */
