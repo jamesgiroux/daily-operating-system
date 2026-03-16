@@ -272,28 +272,6 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 
   return (
     <div>
-      {/* Stale data indicator — non-blocking, shows refresh is in progress */}
-      {isStale && (
-        <div
-          style={{
-            padding: "8px 16px",
-            borderBottom: "1px solid var(--color-rule-light)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "var(--color-text-tertiary)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <Loader2 className="h-3 w-3 animate-spin" style={{ width: 12, height: 12 }} />
-          Refresh in progress
-        </div>
-      )}
-
       {/* ═══ DAY FRAME (Hero + Focus) ═══ */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{heroHeadline}</h1>
