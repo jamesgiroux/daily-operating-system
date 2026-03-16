@@ -1271,3 +1271,264 @@ pub fn backfill_internal_meeting_associations(db: &ActionDb) -> Result<usize, St
 
     Ok(updated)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::db::test_utils::test_db;
+    use crate::db::{AccountType, DbAccount};
+    use crate::signals::propagation::PropagationEngine;
+    use rusqlite::params;
+
+    fn make_account(id: &str, name: &str) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: name.to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: Some(format!("Accounts/{name}")),
+            parent_id: None,
+            account_type: AccountType::Customer,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+            metadata: None,
+        }
+    }
+
+    fn signal_count(db: &crate::db::ActionDb, entity_id: &str, signal_type: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE entity_id = ?1 AND signal_type = ?2",
+                params![entity_id, signal_type],
+                |row| row.get(0),
+            )
+            .unwrap_or(0)
+    }
+
+    /// Test account creation at the DB level (create_account needs AppState for workspace files,
+    /// so we test the underlying upsert + signal emission pattern directly).
+    #[test]
+    fn test_create_account_db_level() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-new", "New Corp");
+
+        // Use the mutations service which wraps upsert + signal
+        crate::services::mutations::upsert_account(&db, &engine, &account)
+            .expect("upsert_account");
+
+        let name: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT name FROM accounts WHERE id = 'acc-new'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query account name");
+        assert_eq!(name, "New Corp");
+    }
+
+    /// Test archive + restore toggle at DB level with signal verification.
+    #[test]
+    fn test_archive_restore_account() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-ar", "Archive Me");
+        db.upsert_account(&account).unwrap();
+
+        // Archive via DB transaction (mirrors archive_account service without AppState)
+        db.with_transaction(|tx| {
+            tx.archive_account("acc-ar", true)
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &engine,
+                "account",
+                "acc-ar",
+                "entity_archived",
+                "user_action",
+                None,
+                0.9,
+            )
+            .map_err(|e| format!("{e}"))?;
+            Ok(())
+        })
+        .expect("archive");
+
+        let archived: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT archived FROM accounts WHERE id = 'acc-ar'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(archived, "Account should be archived");
+        assert!(
+            signal_count(&db, "acc-ar", "entity_archived") > 0,
+            "Expected entity_archived signal"
+        );
+
+        // Restore
+        super::restore_account(&db, "acc-ar", false).expect("restore");
+        let archived_after: bool = db
+            .conn_ref()
+            .query_row(
+                "SELECT archived FROM accounts WHERE id = 'acc-ar'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!archived_after, "Account should be restored");
+    }
+
+    /// Test team member add/remove at DB level with signal emission.
+    #[test]
+    fn test_add_remove_team_member() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-tm", "Team Corp");
+        db.upsert_account(&account).unwrap();
+
+        // Seed a person
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-tm', 'tm@x.com', 'TeamPerson', '2026-01-01T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+
+        // Add team member via DB transaction (mirrors add_account_team_member without AppState)
+        db.with_transaction(|tx| {
+            tx.add_account_team_member("acc-tm", "p-tm", "csm")
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &engine,
+                "account",
+                "acc-tm",
+                "team_member_added",
+                "user_action",
+                None,
+                0.8,
+            )
+            .map_err(|e| format!("{e}"))?;
+            Ok(())
+        })
+        .expect("add team member");
+
+        let member_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = 'acc-tm'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(member_count, 1, "Should have 1 team member");
+        assert!(
+            signal_count(&db, "acc-tm", "team_member_added") > 0,
+            "Expected team_member_added signal"
+        );
+
+        // Remove
+        db.with_transaction(|tx| {
+            tx.remove_account_team_member("acc-tm", "p-tm", "csm")
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &engine,
+                "account",
+                "acc-tm",
+                "team_member_removed",
+                "user_action",
+                None,
+                0.7,
+            )
+            .map_err(|e| format!("{e}"))?;
+            Ok(())
+        })
+        .expect("remove team member");
+
+        let member_count_after: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = 'acc-tm'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(member_count_after, 0, "Team member should be removed");
+        assert!(
+            signal_count(&db, "acc-tm", "team_member_removed") > 0,
+            "Expected team_member_removed signal"
+        );
+    }
+
+    /// Test account event recording at DB level with signal emission.
+    #[test]
+    fn test_record_account_event() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-ev", "Event Corp");
+        db.upsert_account(&account).unwrap();
+
+        db.with_transaction(|tx| {
+            tx.record_account_event("acc-ev", "renewal", "2026-06-15", Some(50000.0), Some("Renewed for 1 year"))
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &engine,
+                "account",
+                "acc-ev",
+                "account_event_recorded",
+                "user_action",
+                Some(r#"{"event_type":"renewal","event_date":"2026-06-15"}"#),
+                0.8,
+            )
+            .map_err(|e| format!("{e}"))?;
+            Ok(())
+        })
+        .expect("record event");
+
+        let event_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_events WHERE account_id = 'acc-ev'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(event_count, 1, "Should have 1 account event");
+        assert!(
+            signal_count(&db, "acc-ev", "account_event_recorded") > 0,
+            "Expected account_event_recorded signal"
+        );
+    }
+
+    /// Test set_account_domains.
+    #[test]
+    fn test_set_account_domains() {
+        let db = test_db();
+        let account = make_account("acc-dom", "Domain Corp");
+        db.upsert_account(&account).unwrap();
+
+        let domains = vec!["example.com".to_string(), "example.org".to_string()];
+        super::set_account_domains(&db, "acc-dom", &domains).expect("set_account_domains");
+
+        let domain_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_domains WHERE account_id = 'acc-dom'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(domain_count, 2, "Should have 2 domains");
+    }
+}
