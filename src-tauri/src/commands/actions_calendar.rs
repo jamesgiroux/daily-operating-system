@@ -127,10 +127,13 @@ pub async fn unarchive_email(
 pub async fn pin_email(
     email_id: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
-    state
+    let result = state
         .db_write(move |db| crate::services::emails::pin_email(db, &email_id))
-        .await
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(result)
 }
 
 // =============================================================================
@@ -681,12 +684,8 @@ pub async fn reprocess_meeting_transcript(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
-    crate::services::meetings::reprocess_meeting_transcript(
-        &meeting_id,
-        state.inner(),
-        app_handle,
-    )
-    .await
+    crate::services::meetings::reprocess_meeting_transcript(&meeting_id, state.inner(), app_handle)
+        .await
 }
 
 /// Get meeting outcomes (from transcript processing or manual capture).

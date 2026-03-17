@@ -470,6 +470,7 @@ pub async fn update_email_entity(
     email_id: String,
     entity_id: Option<String>,
     entity_type: Option<String>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     state
         .db_write(move |db| {
@@ -480,7 +481,9 @@ pub async fn update_email_entity(
                 entity_type.as_deref(),
             )
         })
-        .await
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
 }
 
 /// Dismiss a single email signal by ID. Sets `deactivated_at` to now.
@@ -501,10 +504,13 @@ pub async fn dismiss_email_signal(
 pub async fn mark_reply_sent(
     state: State<'_, Arc<AppState>>,
     email_id: String,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     state
         .db_write(move |db| crate::services::emails::mark_reply_sent(db, &email_id))
-        .await
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
 }
 
 /// Dismiss a gone-quiet cadence alert for an account (I581).
