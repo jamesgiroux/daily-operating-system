@@ -99,10 +99,14 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                     recommended_action: None,
                     conversation_arc: None,
                     email_type: None,
-                    commitments: dbe.commitments.as_ref()
+                    commitments: dbe
+                        .commitments
+                        .as_ref()
                         .and_then(|c| serde_json::from_str::<Vec<String>>(c).ok())
                         .unwrap_or_default(),
-                    questions: dbe.questions.as_ref()
+                    questions: dbe
+                        .questions
+                        .as_ref()
                         .and_then(|q| serde_json::from_str::<Vec<String>>(q).ok())
                         .unwrap_or_default(),
                     sentiment: dbe.sentiment.clone(),
@@ -162,8 +166,7 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                         chrono::NaiveDateTime::parse_from_str(received_at, "%Y-%m-%d %H:%M:%S")
                     })
                     .or_else(|_| {
-                        chrono::DateTime::parse_from_rfc3339(received_at)
-                            .map(|dt| dt.naive_utc())
+                        chrono::DateTime::parse_from_rfc3339(received_at).map(|dt| dt.naive_utc())
                     })
                     .ok()?;
             let age_hours = (now_utc.naive_utc() - received_dt).num_minutes() as f64 / 60.0;
@@ -403,15 +406,18 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     // ── I581: Gone-quiet accounts from entity_email_cadence ──────────────
     let gone_quiet: Vec<GoneQuietAccount> = state
         .db_read(|db| {
-            let mut stmt = db.conn_ref().prepare(
-                "SELECT ec.entity_id, ec.entity_type, ec.message_count, ec.rolling_avg,
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT ec.entity_id, ec.entity_type, ec.message_count, ec.rolling_avg,
                         CAST(julianday('now') - julianday(ec.updated_at) AS INTEGER) as age_days
                  FROM entity_email_cadence ec
                  WHERE ec.rolling_avg > 0
                    AND ec.message_count < ec.rolling_avg * 0.5
                  ORDER BY (ec.rolling_avg / MAX(ec.message_count, 0.1)) DESC
-                 LIMIT 10"
-            ).map_err(|e| e.to_string())?;
+                 LIMIT 10",
+                )
+                .map_err(|e| e.to_string())?;
 
             let rows: Vec<(String, String, i32, f64, Option<i64>)> = stmt
                 .query_map([], |row| {
@@ -472,11 +478,14 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                 let cutoff = chrono::Utc::now() + chrono::Duration::days(7);
                 let now_str = chrono::Utc::now().to_rfc3339();
                 let cutoff_str = cutoff.to_rfc3339();
-                let mut stmt = db.conn_ref().prepare(
-                    "SELECT id, title, start_time, attendees FROM meetings
+                let mut stmt = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT id, title, start_time, attendees FROM meetings
                      WHERE start_time >= ?1 AND start_time <= ?2
-                     ORDER BY start_time ASC"
-                ).map_err(|e| e.to_string())?;
+                     ORDER BY start_time ASC",
+                    )
+                    .map_err(|e| e.to_string())?;
 
                 let meetings: Vec<(String, String, String, Option<String>)> = stmt
                     .query_map(rusqlite::params![now_str, cutoff_str], |row| {
@@ -490,16 +499,22 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                 let sender_set: HashSet<&str> = sender_list.iter().map(|s| s.as_str()).collect();
                 for (mid, title, start_time, attendees_json) in &meetings {
                     if let Some(json) = attendees_json {
-                        if let Ok(attendees) = serde_json::from_str::<Vec<serde_json::Value>>(json) {
+                        if let Ok(attendees) = serde_json::from_str::<Vec<serde_json::Value>>(json)
+                        {
                             for att in &attendees {
                                 if let Some(email) = att.get("email").and_then(|v| v.as_str()) {
                                     let email_lower = email.to_lowercase();
-                                    if sender_set.contains(email_lower.as_str()) && !map.contains_key(&email_lower) {
-                                        map.insert(email_lower, LinkedMeeting {
-                                            meeting_id: mid.clone(),
-                                            title: title.clone(),
-                                            start_time: start_time.clone(),
-                                        });
+                                    if sender_set.contains(email_lower.as_str())
+                                        && !map.contains_key(&email_lower)
+                                    {
+                                        map.insert(
+                                            email_lower,
+                                            LinkedMeeting {
+                                                meeting_id: mid.clone(),
+                                                title: title.clone(),
+                                                start_time: start_time.clone(),
+                                            },
+                                        );
                                     }
                                 }
                             }
@@ -512,7 +527,11 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
             .unwrap_or_default();
 
         // Apply meeting links to enriched emails
-        for enriched in high.iter_mut().chain(medium.iter_mut()).chain(low.iter_mut()) {
+        for enriched in high
+            .iter_mut()
+            .chain(medium.iter_mut())
+            .chain(low.iter_mut())
+        {
             let sender_lower = enriched.email.sender_email.to_lowercase();
             if let Some(link) = meeting_links.get(&sender_lower) {
                 enriched.email.meeting_linked = Some(link.clone());
@@ -540,7 +559,9 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
     })
 }
 
-fn collapse_to_latest_thread_emails(db_emails: &[crate::db::DbEmail]) -> Vec<crate::db::DbEmail> {
+pub fn collapse_to_latest_thread_emails(
+    db_emails: &[crate::db::DbEmail],
+) -> Vec<crate::db::DbEmail> {
     let mut seen_threads: HashSet<String> = HashSet::new();
     let mut collapsed = Vec::new();
 
@@ -650,7 +671,7 @@ pub fn get_entity_emails(
                             last_sender_email, message_count, created_at, updated_at,
                             relevance_score, score_reason,
                             pinned_at, commitments, questions
-                     FROM emails WHERE sender_email = ?1 ORDER BY received_at DESC",
+                     FROM emails WHERE sender_email = ?1 AND resolved_at IS NULL ORDER BY received_at DESC",
                 )
                 .map_err(|e| format!("query error: {e}"))?;
             let rows = stmt
@@ -723,7 +744,7 @@ pub fn get_entity_emails(
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
                             pinned_at, commitments, questions
-                 FROM emails WHERE sender_email IN ({}) ORDER BY received_at DESC",
+                 FROM emails WHERE sender_email IN ({}) AND resolved_at IS NULL ORDER BY received_at DESC",
                 placeholders.join(",")
             );
             let mut stmt = db
@@ -855,10 +876,7 @@ pub fn mark_reply_sent(db: &crate::db::ActionDb, email_id: &str) -> Result<(), S
 
 /// Archive an email: set resolved_at locally AND archive in Gmail.
 /// Signal emission for Intelligence Loop compliance.
-pub async fn archive_email(
-    state: &AppState,
-    email_id: &str,
-) -> Result<String, String> {
+pub async fn archive_email(state: &AppState, email_id: &str) -> Result<String, String> {
     let eid = email_id.to_string();
     state
         .db_write(move |db| {
@@ -892,14 +910,9 @@ pub async fn archive_email(
 }
 
 /// Unarchive an email: clear resolved_at locally AND move back to Gmail inbox.
-pub async fn unarchive_email(
-    state: &AppState,
-    email_id: &str,
-) -> Result<(), String> {
+pub async fn unarchive_email(state: &AppState, email_id: &str) -> Result<(), String> {
     let eid = email_id.to_string();
-    state
-        .db_write(move |db| db.unarchive_email(&eid))
-        .await?;
+    state.db_write(move |db| db.unarchive_email(&eid)).await?;
 
     // Move back to INBOX in Gmail
     if let Ok(token) = crate::google_api::get_valid_access_token().await {
@@ -1022,7 +1035,10 @@ pub fn dismiss_gone_quiet(
         entity_id,
         "cadence_silence_dismissed",
         "user_correction",
-        Some(&format!("{{\"entity_id\":\"{}\",\"action\":\"dismissed_gone_quiet\"}}", entity_id)),
+        Some(&format!(
+            "{{\"entity_id\":\"{}\",\"action\":\"dismissed_gone_quiet\"}}",
+            entity_id
+        )),
         0.3,
     )
     .map_err(|e| e.to_string())?;
@@ -1201,6 +1217,12 @@ pub async fn archive_low_priority_emails(state: &AppState) -> Result<usize, Stri
     let archived = crate::google_api::gmail::archive_emails(&access_token, &ids)
         .await
         .map_err(|e| format!("Gmail archive failed: {}", e))?;
+
+    // Also mark as resolved in DB so they don't reappear on any page
+    let ids_clone = ids.clone();
+    let _ = state
+        .db_write(move |db| db.mark_emails_resolved(&ids_clone))
+        .await;
 
     data["lowPriority"] = serde_json::json!([]);
     if let Some(stats) = data.get_mut("stats") {
