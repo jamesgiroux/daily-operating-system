@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useTransition } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-shell";
 import { useNavigate } from "@tanstack/react-router";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { EmptyState } from "@/components/editorial/EmptyState";
@@ -11,7 +12,8 @@ import { usePersonality } from "@/hooks/usePersonality";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
-import { X } from "lucide-react";
+import { Archive, Check, Clock, ExternalLink, Pin, X } from "lucide-react";
+import { toast } from "sonner";
 import clsx from "clsx";
 import s from "@/styles/editorial-briefing.module.css";
 import e from "./EmailsPage.module.css";
@@ -37,7 +39,7 @@ function EmailRefreshButton() {
     <FolioRefreshButton
       onClick={handleRefresh}
       loading={refreshing}
-      loadingLabel="Refreshing…"
+      loadingLabel="Refreshing..."
       title={refreshing ? "Refreshing emails..." : "Check for new emails"}
     />
   );
@@ -56,6 +58,7 @@ export default function EmailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
+  const [dismissedQuiet, setDismissedQuiet] = useState<Set<string>>(new Set());
   const [, startTransition] = useTransition();
   const inboxSyncInFlight = useRef(false);
 
@@ -160,6 +163,16 @@ export default function EmailsPage() {
     }
   }, []);
 
+  // I581: Dismiss gone-quiet cadence alert
+  const handleDismissQuiet = useCallback(async (entityId: string) => {
+    setDismissedQuiet((prev) => new Set(prev).add(entityId));
+    try {
+      await invoke("dismiss_gone_quiet", { entityId });
+    } catch (err) {
+      console.error("Dismiss gone quiet failed:", err);
+    }
+  }, []);
+
   const handleDismissSignal = useCallback(async (signalId: number) => {
     setDismissedSignals((prev) => new Set(prev).add(signalId));
     try {
@@ -192,7 +205,7 @@ export default function EmailsPage() {
   const { allCommitments, allQuestions } = useMemo(() => {
     if (!data) return { allCommitments: [] as ContextualItem[], allQuestions: [] as ContextualItem[] };
 
-    // Build email-id → entity-name lookup from entity threads
+    // Build email-id -> entity-name lookup from entity threads
     const emailEntityMap = new Map<string, string>();
     for (const thread of data.entityThreads) {
       for (const sig of thread.signals) {
@@ -237,16 +250,23 @@ export default function EmailsPage() {
     return { allCommitments: commitments, allQuestions: questions };
   }, [data, dismissed]);
 
-  // I395: "Your Move" derived from scored emails, not stale directive data.
-  // Top scored emails with summaries are the ones worth the user's attention.
+  // I395: "Priority" derived from scored, unread, enriched emails.
+  // Only show emails with intelligence (summary) that are still unread.
   const yourMoveEmails = useMemo(() => {
     if (!data) return [];
     return [...data.highPriority, ...data.mediumPriority, ...data.lowPriority]
       .filter((e) => e.summary && e.summary.trim().length > 0)
+      .filter((e) => e.isUnread !== false) // only unread (or unknown)
       .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
       .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0))
       .slice(0, 5);
   }, [data]);
+
+  // I577/I578: Reply debt data is still computed by the backend for future use,
+  // but the section is hidden until email classification can distinguish real
+  // conversations from calendar invites/notifications.
+
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
   const entityThreads = data?.entityThreads ?? [];
   const riskSignalCount = useMemo(() => {
     if (!entityThreads.length) return 0;
@@ -258,6 +278,12 @@ export default function EmailsPage() {
       return count + risks.length;
     }, 0);
   }, [entityThreads]);
+
+  // I581: Gone-quiet accounts — filtered by user dismissals
+  const goneQuietAccounts = useMemo(() => {
+    if (!data?.goneQuiet) return [];
+    return data.goneQuiet.filter((a) => !dismissedQuiet.has(a.entityId));
+  }, [data, dismissedQuiet]);
 
   // All emails with intelligence for the correspondence section (I395: sorted by relevance score)
   const allEnrichedEmails = useMemo(() => {
@@ -323,7 +349,7 @@ export default function EmailsPage() {
     // Take first sentence if it's short enough, else hard cap
     const firstSentence = rawNarrative.split(/\.\s/)[0];
     if (firstSentence.split(/\s+/).length <= 12) return firstSentence + (firstSentence.endsWith(".") ? "" : ".");
-    return words.slice(0, 12).join(" ") + "…";
+    return words.slice(0, 12).join(" ") + "\u2026";
   })();
 
   const hasExtracted = allCommitments.length > 0 || allQuestions.length > 0;
@@ -332,7 +358,7 @@ export default function EmailsPage() {
 
   return (
     <div className={e.pageContainer}>
-      {/* ═══ HERO ═══ */}
+      {/* === HERO === */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{headline}</h1>
 
@@ -400,16 +426,16 @@ export default function EmailsPage() {
         );
       })()}
 
-      {/* ═══ YOUR MOVE — Top scored emails with intelligence ═══ */}
+      {/* === PRIORITY -- Top scored emails with intelligence === */}
       {hasYourMove && (
         <section className={e.sectionSpacing}>
           <div className={s.marginGrid}>
             <div className={clsx(s.marginLabel, e.marginLabelYourMove)}>
-              YOUR MOVE
+              PRIORITY
             </div>
             <div className={s.marginContent}>
-              {yourMoveEmails.map((email) => (
-                <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+              {yourMoveEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
               ))}
             </div>
           </div>
@@ -417,7 +443,12 @@ export default function EmailsPage() {
         </section>
       )}
 
-      {/* ═══ EXTRACTED ═══ */}
+      {/* I577/I578: Reply debt section REMOVED — "user_is_last_sender = 0" doesn't
+         distinguish genuine reply-debt conversations from calendar invites, newsletters,
+         notifications, etc. The INBOX PRIORITY/MONITORING bands serve this purpose better.
+         Reply debt will return when email classification can filter to real conversations. */}
+
+      {/* === EXTRACTED === */}
       {hasExtracted && (
         <section className={e.sectionSpacing}>
           {allCommitments.length > 0 && (
@@ -430,7 +461,7 @@ export default function EmailsPage() {
                       {c.text}{!c.text.endsWith(".") ? "." : ""}
                     </p>
                     <span className={e.extractedItemMeta}>
-                      {c.entityName ? `${c.entityName} · ` : ""}{c.sender}{c.subject ? ` · ${c.subject}` : ""}
+                      {c.entityName ? `${c.entityName} \u00b7 ` : ""}{c.sender}{c.subject ? ` \u00b7 ${c.subject}` : ""}
                     </span>
                     <button
                       onClick={() => handleDismiss("commitment", c.emailId, c.text, c.senderDomain, c.emailType, c.entityId)}
@@ -454,7 +485,7 @@ export default function EmailsPage() {
                       {q.text}{!q.text.endsWith("?") && !q.text.endsWith(".") ? "?" : ""}
                     </p>
                     <span className={e.extractedItemMeta}>
-                      {q.entityName ? `${q.entityName} · ` : ""}{q.sender}{q.subject ? ` · ${q.subject}` : ""}
+                      {q.entityName ? `${q.entityName} \u00b7 ` : ""}{q.sender}{q.subject ? ` \u00b7 ${q.subject}` : ""}
                     </span>
                     <button
                       onClick={() => handleDismiss("question", q.emailId, q.text, q.senderDomain, q.emailType, q.entityId)}
@@ -472,7 +503,45 @@ export default function EmailsPage() {
         </section>
       )}
 
-      {/* ═══ UPDATES ═══ */}
+      {/* === GONE QUIET -- Accounts with declining email cadence (I581) === */}
+      {goneQuietAccounts.length > 0 && (
+        <section className={e.sectionSpacing}>
+          <div className={s.marginGrid}>
+            <div className={clsx(s.marginLabel, e.marginLabelQuiet)}>
+              GONE QUIET
+            </div>
+            <div className={s.marginContent}>
+              {goneQuietAccounts.map((acct) => (
+                <div key={acct.entityId} className={e.quietItem}>
+                  <div className={e.quietRow}>
+                    <div>
+                      <div className={e.quietAccountName}>{acct.entityName}</div>
+                      <div className={e.quietCadenceText}>
+                        {acct.currentCount === 0
+                          ? `Usually ~${Math.round(acct.rollingAvg)} emails/week, none recently`
+                          : `Usually ~${Math.round(acct.rollingAvg)} emails/week, only ${acct.currentCount} this period`}
+                        {acct.lastEmailAgeDays != null && acct.lastEmailAgeDays > 0 && (
+                          <span> — last update {acct.lastEmailAgeDays}d ago</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDismissQuiet(acct.entityId)}
+                      className={e.quietDismissButton}
+                      title="Acknowledge — won't show again this session"
+                    >
+                      Noted
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className={clsx(s.sectionRule, e.sectionRuleTop)} />
+        </section>
+      )}
+
+      {/* === UPDATES === */}
       {hasSignals && (() => {
         // Filter threads: keep only those with visible (non-dismissed) signals
         const liveThreads = entityThreads.filter((thread) =>
@@ -526,7 +595,7 @@ export default function EmailsPage() {
               {overflow.length > 0 && (
                 <div className={e.overflowText}>
                   {overflow.map((t) => t.entityName).join(", ")}
-                  {" — routine correspondence."}
+                  {" -- routine correspondence."}
                 </div>
               )}
             </div>
@@ -535,7 +604,7 @@ export default function EmailsPage() {
         );
       })()}
 
-      {/* ═══ ALL CORRESPONDENCE — Intelligence-first email list ═══ */}
+      {/* === ALL CORRESPONDENCE -- Intelligence-first email list === */}
       {allEnrichedEmails.length > 0 && (
         <section className={e.sectionSpacing}>
           <div className={s.marginGrid}>
@@ -546,35 +615,35 @@ export default function EmailsPage() {
             <div className={s.marginContent}>
               {hasScores ? (
                 <>
-                  {priorityEmails.length > 0 && (
+                  {priorityEmails.filter((em) => !archivedIds.has(em.id)).length > 0 && (
                     <>
                       <div className={s.emailScoreBandLabel}>PRIORITY</div>
-                      {priorityEmails.map((email) => (
-                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                      {priorityEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
-                  {monitoringEmails.length > 0 && (
+                  {monitoringEmails.filter((em) => !archivedIds.has(em.id)).length > 0 && (
                     <>
                       <div className={s.emailScoreBandLabel}>MONITORING</div>
-                      {monitoringEmails.map((email) => (
-                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                      {monitoringEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
-                  {otherEmails.length > 0 && (
+                  {otherEmails.filter((em) => !archivedIds.has(em.id)).length > 0 && (
                     <>
                       <div className={s.emailScoreBandLabel}>OTHER</div>
-                      {otherEmails.map((email) => (
-                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                      {otherEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
                 </>
               ) : (
-                /* No scores yet — flat list */
-                allEnrichedEmails.map((email) => (
-                  <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} />
+                /* No scores yet -- flat list */
+                allEnrichedEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                  <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                 ))
               )}
             </div>
@@ -589,24 +658,100 @@ export default function EmailsPage() {
 }
 
 // =============================================================================
-// Email Intel Item — Extracted component for grouped INBOX rendering (I395)
+// Email Intel Item -- Extracted component for grouped INBOX rendering (I395)
+// With triage actions (I579), commitment promotion (I580), meeting linkage (I582)
 // =============================================================================
 
 function EmailIntelItem({
   email,
-  dismissed: _dismissed,
+  dismissed,
   onDismiss: _onDismiss,
   sentimentColor,
   onEntityChanged,
+  onArchived,
+  archivedIds: _archivedIds,
+  setArchivedIds,
 }: {
   email: EnrichedEmail;
   dismissed: Set<string>;
   onDismiss: (itemType: string, emailId: string, itemText: string, senderDomain?: string, emailType?: string, entityId?: string) => void;
   sentimentColor: (s: string | undefined) => string;
   onEntityChanged?: () => void;
+  onArchived?: () => void;
+  archivedIds?: Set<string>;
+  setArchivedIds?: React.Dispatch<React.SetStateAction<Set<string>>>;
 }) {
+  const navigate = useNavigate();
+  const [isPinned, setIsPinned] = useState(!!email.pinnedAt);
+  const [promotedCommitments, setPromotedCommitments] = useState<Set<string>>(new Set());
+
+  const handleArchive = useCallback(async () => {
+    // Optimistic: hide immediately via local state so refresh doesn't bring it back
+    setArchivedIds?.((prev) => new Set(prev).add(email.id));
+    try {
+      const archivedId = await invoke<string>("archive_email", { emailId: email.id });
+      toast("Archived", {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              await invoke("unarchive_email", { emailId: archivedId });
+              setArchivedIds?.((prev) => { const next = new Set(prev); next.delete(archivedId); return next; });
+              onArchived?.();
+            } catch (err) {
+              console.error("Unarchive failed:", err);
+            }
+          },
+        },
+      });
+      onArchived?.();
+    } catch (err) {
+      console.error("Archive failed:", err);
+      toast.error("Failed to archive");
+      setArchivedIds?.((prev) => { const next = new Set(prev); next.delete(email.id); return next; });
+    }
+  }, [email.id, onArchived, setArchivedIds]);
+
+  const handleOpenInGmail = useCallback(async () => {
+    try {
+      await open(`https://mail.google.com/mail/u/0/#inbox/${email.id}`);
+    } catch (err) {
+      console.error("Open in Gmail failed:", err);
+    }
+  }, [email.id]);
+
+  const handlePin = useCallback(async () => {
+    try {
+      const nowPinned = await invoke<boolean>("pin_email", { emailId: email.id });
+      setIsPinned(nowPinned);
+    } catch (err) {
+      console.error("Pin failed:", err);
+    }
+  }, [email.id]);
+
+  const handlePromoteCommitment = useCallback(async (commitmentText: string) => {
+    try {
+      await invoke<string>("promote_commitment_to_action", {
+        emailId: email.id,
+        commitmentText,
+        entityId: email.entityId ?? null,
+        entityType: email.entityType ?? null,
+        dueDate: null,
+      });
+      setPromotedCommitments((prev) => new Set(prev).add(commitmentText));
+      toast.success("Commitment tracked as action");
+    } catch (err) {
+      console.error("Promote commitment failed:", err);
+      toast.error("Failed to track commitment");
+    }
+  }, [email.id, email.entityId, email.entityType]);
+
+  const commitments = (email.commitments ?? []).filter(
+    (c) => !dismissed.has(`commitment:${c}`)
+  );
+
   return (
-    <div className={s.emailIntelItem}>
+    <div className={clsx(s.emailIntelItem, e.emailIntelItemHoverable)}>
       {email.urgency === "high" && (
         <span className={s.emailIntelUrgencyBadge}>urgent</span>
       )}
@@ -638,16 +783,100 @@ function EmailIntelItem({
         {(!email.entityName || email.sender !== email.entityName) && (
           <span>{email.sender || email.senderEmail}</span>
         )}
-        {email.subject && <span>{email.subject.length > 40 ? email.subject.slice(0, 40) + "…" : email.subject}</span>}
+        {email.subject && <span>{email.subject.length > 40 ? email.subject.slice(0, 40) + "\u2026" : email.subject}</span>}
       </div>
+      {/* I582: Meeting linkage badge */}
+      {email.meetingLinked && (
+        <button
+          className={e.meetingLinkBadge}
+          onClick={() => navigate({ to: "/meeting/$meetingId", params: { meetingId: email.meetingLinked!.meetingId } })}
+          title={`View briefing for ${email.meetingLinked.title}`}
+        >
+          <Clock size={12} />
+          <span>Briefing: {email.meetingLinked.title}</span>
+          <span className={e.meetingLinkTime}>{formatMeetingTime(email.meetingLinked.startTime)}</span>
+        </button>
+      )}
       {email.scoreReason && (() => {
         const reason = email.entityName
-          ? email.scoreReason.replace(email.entityName, "").replace(/^[\s·]+|[\s·]+$/g, "")
+          ? email.scoreReason.replace(email.entityName, "").replace(/^[\s\u00b7]+|[\s\u00b7]+$/g, "")
           : email.scoreReason;
         return reason ? <div className={s.emailScoreReason}>{reason}</div> : null;
       })()}
+
+      {/* I580: Inline commitments with Track button */}
+      {commitments.length > 0 && (
+        <div className={e.inlineCommitments}>
+          <span className={e.inlineCommitmentsLabel}>COMMITMENTS</span>
+          {commitments.map((c, i) => (
+            <div key={i} className={e.inlineCommitmentRow}>
+              {promotedCommitments.has(c) ? (
+                <>
+                  <Check size={12} className={e.inlineCommitmentCheck} />
+                  <span className={e.inlineCommitmentTextPromoted}>{c}</span>
+                </>
+              ) : (
+                <>
+                  <span className={e.inlineCommitmentText}>{c}</span>
+                  <button
+                    onClick={() => handlePromoteCommitment(c)}
+                    className={e.trackButton}
+                    title="Track as action"
+                  >
+                    Track
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* I579: Triage action bar */}
+      <div className={e.triageBar}>
+        <button
+          onClick={handleArchive}
+          className={e.triageButton}
+          title="Archive"
+        >
+          <Archive size={14} />
+        </button>
+        <button
+          onClick={handleOpenInGmail}
+          className={e.triageButton}
+          title="Open in Gmail"
+        >
+          <ExternalLink size={14} />
+        </button>
+        <button
+          onClick={handlePin}
+          className={clsx(e.triageButton, isPinned && e.triageButtonActive)}
+          title={isPinned ? "Unpin" : "Pin"}
+        >
+          <Pin size={14} />
+        </button>
+      </div>
     </div>
   );
+}
+
+/** Format a meeting start time as a relative label: "Tomorrow at 2pm", "Wed at 10am", etc. */
+function formatMeetingTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    const diffDays = Math.floor(diffMs / 86_400_000);
+    const timeStr = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+    if (diffDays < 0) return timeStr;
+    if (diffDays === 0) return `Today at ${timeStr}`;
+    if (diffDays === 1) return `Tomorrow at ${timeStr}`;
+    const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
+    return `${dayName} at ${timeStr}`;
+  } catch {
+    return "";
+  }
 }
 
 /** Format an ISO timestamp as relative time: "2 min ago", "1h ago", etc. */

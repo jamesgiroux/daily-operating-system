@@ -7,6 +7,7 @@ use tauri::Emitter;
 use crate::state::AppState;
 use crate::types::{
     EmailBriefingData, EmailBriefingStats, EmailSignal, EnrichedEmail, EntityEmailThread,
+    GoneQuietAccount, LinkedMeeting, ReplyDebtItem,
 };
 
 /// Get enriched email data for the emails page.
@@ -92,13 +93,18 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                         Some("low") => crate::types::EmailPriority::Low,
                         _ => crate::types::EmailPriority::Medium,
                     },
+                    is_unread: dbe.is_unread,
                     avatar_url: None,
                     summary: dbe.contextual_summary.clone(),
                     recommended_action: None,
                     conversation_arc: None,
                     email_type: None,
-                    commitments: Vec::new(),
-                    questions: Vec::new(),
+                    commitments: dbe.commitments.as_ref()
+                        .and_then(|c| serde_json::from_str::<Vec<String>>(c).ok())
+                        .unwrap_or_default(),
+                    questions: dbe.questions.as_ref()
+                        .and_then(|q| serde_json::from_str::<Vec<String>>(q).ok())
+                        .unwrap_or_default(),
                     sentiment: dbe.sentiment.clone(),
                     urgency: dbe.urgency.clone(),
                     entity_id: dbe.entity_id.clone(),
@@ -106,6 +112,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
                     entity_name,
                     relevance_score: dbe.relevance_score,
                     score_reason: dbe.score_reason.clone(),
+                    pinned_at: dbe.pinned_at.clone(),
+                    meeting_linked: None,
                 }
             })
             .collect()
@@ -129,6 +137,62 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
             let _ = std::fs::write(&json_path, json);
         }
     }
+
+    // I577: Build reply debt from active emails where user hasn't replied yet
+    // and the email is linked to a tracked entity.
+    let email_entity_names: HashMap<String, String> = emails
+        .iter()
+        .filter_map(|em| em.entity_name.as_ref().map(|n| (em.id.clone(), n.clone())))
+        .collect();
+    let now_utc = chrono::Utc::now();
+    let reply_debt: Vec<ReplyDebtItem> = thread_emails
+        .iter()
+        .filter(|dbe| {
+            !dbe.user_is_last_sender
+                && dbe.resolved_at.is_none()
+                && dbe.entity_id.is_some()
+                && dbe.enrichment_state == "enriched" // only show enriched emails
+                && dbe.contextual_summary.is_some() // must have AI context
+        })
+        .filter_map(|dbe| {
+            let received_at = dbe.received_at.as_deref()?;
+            let received_dt =
+                chrono::NaiveDateTime::parse_from_str(received_at, "%Y-%m-%dT%H:%M:%S%.fZ")
+                    .or_else(|_| {
+                        chrono::NaiveDateTime::parse_from_str(received_at, "%Y-%m-%d %H:%M:%S")
+                    })
+                    .or_else(|_| {
+                        chrono::DateTime::parse_from_rfc3339(received_at)
+                            .map(|dt| dt.naive_utc())
+                    })
+                    .ok()?;
+            let age_hours = (now_utc.naive_utc() - received_dt).num_minutes() as f64 / 60.0;
+            let age_bucket = if age_hours < 24.0 {
+                "today"
+            } else if age_hours < 48.0 {
+                "1-2 days"
+            } else if age_hours < 120.0 {
+                "3-5 days"
+            } else {
+                "overdue"
+            };
+
+            Some(ReplyDebtItem {
+                email_id: dbe.email_id.clone(),
+                sender_name: dbe.sender_name.clone().unwrap_or_default(),
+                sender_email: dbe.sender_email.clone().unwrap_or_default(),
+                subject: dbe.subject.clone().unwrap_or_default(),
+                summary: dbe.contextual_summary.clone(),
+                entity_id: dbe.entity_id.clone(),
+                entity_name: email_entity_names.get(&dbe.email_id).cloned(),
+                entity_type: dbe.entity_type.clone(),
+                age_hours,
+                age_bucket: age_bucket.to_string(),
+                urgency: dbe.urgency.clone(),
+                sentiment: dbe.sentiment.clone(),
+            })
+        })
+        .collect();
 
     // I513: Build replies_needed from DB instead of directive file.
     let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
@@ -336,6 +400,126 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         Some(format!("{} threads in your inbox.", total))
     };
 
+    // ── I581: Gone-quiet accounts from entity_email_cadence ──────────────
+    let gone_quiet: Vec<GoneQuietAccount> = state
+        .db_read(|db| {
+            let mut stmt = db.conn_ref().prepare(
+                "SELECT ec.entity_id, ec.entity_type, ec.message_count, ec.rolling_avg,
+                        CAST(julianday('now') - julianday(ec.updated_at) AS INTEGER) as age_days
+                 FROM entity_email_cadence ec
+                 WHERE ec.rolling_avg > 0
+                   AND ec.message_count < ec.rolling_avg * 0.5
+                 ORDER BY (ec.rolling_avg / MAX(ec.message_count, 0.1)) DESC
+                 LIMIT 10"
+            ).map_err(|e| e.to_string())?;
+
+            let rows: Vec<(String, String, i32, f64, Option<i64>)> = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let mut results = Vec::new();
+            for (entity_id, entity_type, count, avg, age) in rows {
+                let name = if entity_type == "account" {
+                    db.get_account(&entity_id).ok().flatten().map(|a| a.name)
+                } else if entity_type == "person" {
+                    db.get_person(&entity_id).ok().flatten().map(|p| p.name)
+                } else {
+                    db.get_project(&entity_id).ok().flatten().map(|p| p.name)
+                };
+                let entity_name = match name {
+                    Some(n) => n,
+                    None => continue, // skip orphaned cadence rows
+                };
+                let silence_ratio = avg / (count as f64).max(0.1);
+                results.push(GoneQuietAccount {
+                    entity_id,
+                    entity_name,
+                    entity_type,
+                    current_count: count,
+                    rolling_avg: avg,
+                    silence_ratio,
+                    last_email_age_days: age,
+                });
+            }
+            Ok(results)
+        })
+        .await
+        .unwrap_or_default();
+
+    // ── I582: Link emails to upcoming meetings by sender-attendee match ──
+    let all_sender_emails: HashSet<String> = high
+        .iter()
+        .chain(medium.iter())
+        .chain(low.iter())
+        .map(|ee| ee.email.sender_email.clone())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if !all_sender_emails.is_empty() {
+        let sender_list: Vec<String> = all_sender_emails.into_iter().collect();
+        let meeting_links: HashMap<String, LinkedMeeting> = state
+            .db_read(move |db| {
+                let cutoff = chrono::Utc::now() + chrono::Duration::days(7);
+                let now_str = chrono::Utc::now().to_rfc3339();
+                let cutoff_str = cutoff.to_rfc3339();
+                let mut stmt = db.conn_ref().prepare(
+                    "SELECT id, title, start_time, attendees FROM meetings
+                     WHERE start_time >= ?1 AND start_time <= ?2
+                     ORDER BY start_time ASC"
+                ).map_err(|e| e.to_string())?;
+
+                let meetings: Vec<(String, String, String, Option<String>)> = stmt
+                    .query_map(rusqlite::params![now_str, cutoff_str], |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                    })
+                    .map_err(|e| e.to_string())?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                let mut map: HashMap<String, LinkedMeeting> = HashMap::new();
+                let sender_set: HashSet<&str> = sender_list.iter().map(|s| s.as_str()).collect();
+                for (mid, title, start_time, attendees_json) in &meetings {
+                    if let Some(json) = attendees_json {
+                        if let Ok(attendees) = serde_json::from_str::<Vec<serde_json::Value>>(json) {
+                            for att in &attendees {
+                                if let Some(email) = att.get("email").and_then(|v| v.as_str()) {
+                                    let email_lower = email.to_lowercase();
+                                    if sender_set.contains(email_lower.as_str()) && !map.contains_key(&email_lower) {
+                                        map.insert(email_lower, LinkedMeeting {
+                                            meeting_id: mid.clone(),
+                                            title: title.clone(),
+                                            start_time: start_time.clone(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(map)
+            })
+            .await
+            .unwrap_or_default();
+
+        // Apply meeting links to enriched emails
+        for enriched in high.iter_mut().chain(medium.iter_mut()).chain(low.iter_mut()) {
+            let sender_lower = enriched.email.sender_email.to_lowercase();
+            if let Some(link) = meeting_links.get(&sender_lower) {
+                enriched.email.meeting_linked = Some(link.clone());
+            }
+        }
+    }
+
     Ok(EmailBriefingData {
         stats: EmailBriefingStats {
             total,
@@ -351,6 +535,8 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         has_enrichment,
         email_narrative,
         replies_needed,
+        reply_debt,
+        gone_quiet,
     })
 }
 
@@ -462,7 +648,8 @@ pub fn get_entity_emails(
                             last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
                             contextual_summary, sentiment, urgency, user_is_last_sender,
                             last_sender_email, message_count, created_at, updated_at,
-                            relevance_score, score_reason
+                            relevance_score, score_reason,
+                            pinned_at, commitments, questions
                      FROM emails WHERE sender_email = ?1 ORDER BY received_at DESC",
                 )
                 .map_err(|e| format!("query error: {e}"))?;
@@ -495,6 +682,9 @@ pub fn get_entity_emails(
                         updated_at: row.get(23)?,
                         relevance_score: row.get(24).ok(),
                         score_reason: row.get(25).ok(),
+                        pinned_at: row.get(26).ok(),
+                        commitments: row.get(27).ok(),
+                        questions: row.get(28).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -531,7 +721,8 @@ pub fn get_entity_emails(
                         last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
-                        relevance_score, score_reason
+                        relevance_score, score_reason,
+                            pinned_at, commitments, questions
                  FROM emails WHERE sender_email IN ({}) ORDER BY received_at DESC",
                 placeholders.join(",")
             );
@@ -572,6 +763,9 @@ pub fn get_entity_emails(
                         updated_at: row.get(23)?,
                         relevance_score: row.get(24).ok(),
                         score_reason: row.get(25).ok(),
+                        pinned_at: row.get(26).ok(),
+                        commitments: row.get(27).ok(),
+                        questions: row.get(28).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -633,6 +827,209 @@ pub fn dismiss_email_signal(db: &crate::db::ActionDb, signal_id: i64) -> Result<
     Ok(())
 }
 
+/// Mark an email as replied to (I577 reply debt).
+/// Sets `user_is_last_sender` and emits a `reply_debt_cleared` signal via the bus
+/// with propagation so downstream effects (health scoring, prep invalidation) fire.
+pub fn mark_reply_sent(db: &crate::db::ActionDb, email_id: &str) -> Result<(), String> {
+    let entity_info = db.mark_reply_sent(email_id)?;
+
+    // Emit engagement signal if the email is linked to an entity
+    if let Some((entity_id, entity_type)) = entity_info {
+        let engine = crate::signals::propagation::PropagationEngine::default();
+        let _ = crate::signals::bus::emit_signal_and_propagate(
+            db,
+            &engine,
+            &entity_type,
+            &entity_id,
+            "reply_debt_cleared",
+            "user_action",
+            Some(&format!("{{\"email_id\":\"{}\"}}", email_id)),
+            0.8,
+        );
+    }
+
+    Ok(())
+}
+
+// ── I579: Per-email triage actions ────────────────────────────────────
+
+/// Archive an email: set resolved_at locally AND archive in Gmail.
+/// Signal emission for Intelligence Loop compliance.
+pub async fn archive_email(
+    state: &AppState,
+    email_id: &str,
+) -> Result<String, String> {
+    let eid = email_id.to_string();
+    state
+        .db_write(move |db| {
+            db.archive_email(&eid)?;
+
+            let engine = crate::signals::propagation::PropagationEngine::default();
+            let (entity_type, entity_id) = email_entity_context(db, &eid);
+            let _ = crate::services::signals::emit_and_propagate(
+                db,
+                &engine,
+                &entity_type,
+                &entity_id,
+                "email_archived",
+                "user_action",
+                Some(&format!("{{\"email_id\":\"{}\"}}", eid)),
+                0.5,
+            );
+            Ok(())
+        })
+        .await?;
+
+    // Also archive in Gmail (remove INBOX label) so sync doesn't bring it back
+    if let Ok(token) = crate::google_api::get_valid_access_token().await {
+        let ids = vec![email_id.to_string()];
+        if let Err(e) = crate::google_api::gmail::archive_emails(&token, &ids).await {
+            log::warn!("Gmail archive failed for {email_id}: {e:?} — archived locally only");
+        }
+    }
+
+    Ok(email_id.to_string())
+}
+
+/// Unarchive an email: clear resolved_at locally AND move back to Gmail inbox.
+pub async fn unarchive_email(
+    state: &AppState,
+    email_id: &str,
+) -> Result<(), String> {
+    let eid = email_id.to_string();
+    state
+        .db_write(move |db| db.unarchive_email(&eid))
+        .await?;
+
+    // Move back to INBOX in Gmail
+    if let Ok(token) = crate::google_api::get_valid_access_token().await {
+        let client = reqwest::Client::new();
+        let url = format!(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/{}/modify",
+            email_id
+        );
+        let body = serde_json::json!({ "addLabelIds": ["INBOX"] });
+        if let Err(e) = client
+            .post(&url)
+            .bearer_auth(&token)
+            .json(&body)
+            .send()
+            .await
+        {
+            log::warn!("Gmail unarchive failed for {email_id}: {e} — unarchived locally only");
+        }
+    }
+
+    Ok(())
+}
+
+/// Toggle pin on an email. Returns the new pinned state.
+pub fn pin_email(db: &crate::db::ActionDb, email_id: &str) -> Result<bool, String> {
+    db.toggle_pin_email(email_id)
+}
+
+// ── I580: Commitment -> Action promotion ──────────────────────────────
+
+/// Promote an email commitment to a tracked action.
+pub fn promote_commitment_to_action(
+    db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    email_id: &str,
+    commitment_text: &str,
+    entity_id: Option<&str>,
+    entity_type: Option<&str>,
+    due_date: Option<&str>,
+) -> Result<String, String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let action_id = uuid::Uuid::new_v4().to_string();
+
+    let (account_id, project_id) = match entity_type {
+        Some("account") => (entity_id.map(|s| s.to_string()), None),
+        Some("project") => (None, entity_id.map(|s| s.to_string())),
+        _ => (None, None),
+    };
+
+    let action = crate::db::DbAction {
+        id: action_id.clone(),
+        title: commitment_text.to_string(),
+        priority: "P2".to_string(),
+        status: "pending".to_string(),
+        created_at: now.clone(),
+        due_date: due_date.map(|s| s.to_string()),
+        completed_at: None,
+        account_id,
+        project_id,
+        source_type: Some("email".to_string()),
+        source_id: Some(email_id.to_string()),
+        source_label: Some("Email commitment".to_string()),
+        context: None,
+        waiting_on: None,
+        updated_at: now,
+        person_id: None,
+        account_name: None,
+        next_meeting_title: None,
+        next_meeting_start: None,
+    };
+
+    db.upsert_action(&action).map_err(|e| e.to_string())?;
+
+    let sig_entity_type = entity_type.unwrap_or("email");
+    let sig_entity_id = entity_id.unwrap_or(email_id);
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        engine,
+        sig_entity_type,
+        sig_entity_id,
+        "action_promoted_from_email",
+        "email",
+        Some(&format!(
+            "{{\"action_id\":\"{}\",\"email_id\":\"{}\"}}",
+            action_id, email_id
+        )),
+        0.7,
+    );
+
+    Ok(action_id)
+}
+
+/// Helper: resolve entity type and ID from an email for signal context.
+fn email_entity_context(db: &crate::db::ActionDb, email_id: &str) -> (String, String) {
+    let result: Option<(Option<String>, Option<String>)> = db
+        .conn_ref()
+        .query_row(
+            "SELECT entity_type, entity_id FROM emails WHERE email_id = ?1",
+            rusqlite::params![email_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
+    match result {
+        Some((Some(etype), Some(eid))) => (etype, eid),
+        _ => ("email".to_string(), email_id.to_string()),
+    }
+}
+
+/// Dismiss a gone-quiet cadence alert for an account (I581).
+pub fn dismiss_gone_quiet(
+    db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    entity_id: &str,
+) -> Result<(), String> {
+    let _ = crate::services::signals::emit_and_propagate(
+        db,
+        engine,
+        "account",
+        entity_id,
+        "cadence_silence_dismissed",
+        "user_correction",
+        Some(&format!("{{\"entity_id\":\"{}\",\"action\":\"dismissed_gone_quiet\"}}", entity_id)),
+        0.3,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 /// Dismiss an email item (commitment, question, etc.) with signal emission.
 pub fn dismiss_email_item(
     db: &crate::db::ActionDb,
@@ -687,7 +1084,30 @@ fn reconcile_inbox_presence_from_ids(
         .collect();
 
     let vanished: Vec<String> = db_ids.difference(inbox_ids).cloned().collect();
-    let reappeared_or_new: Vec<String> = inbox_ids.difference(&db_ids).cloned().collect();
+
+    // Only treat as "reappeared" if the email is truly new (not in our DB at all).
+    // Emails that are in Gmail but resolved locally (user-archived via I579) should
+    // NOT be unmarked — the user explicitly archived them. We query ALL known email
+    // IDs (including resolved) to distinguish "genuinely new" from "user-archived but
+    // still in Gmail inbox".
+    let all_known_ids: HashSet<String> = db
+        .conn_ref()
+        .prepare("SELECT email_id FROM emails")
+        .and_then(|mut stmt| {
+            let ids = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(ids)
+        })
+        .unwrap_or_default();
+
+    // Only IDs that Gmail has AND we've never seen before are truly new
+    let genuinely_new: Vec<String> = inbox_ids
+        .iter()
+        .filter(|id| !all_known_ids.contains(*id))
+        .cloned()
+        .collect();
 
     let mut changed = false;
 
@@ -706,20 +1126,12 @@ fn reconcile_inbox_presence_from_ids(
         }
     }
 
-    if !reappeared_or_new.is_empty() {
-        let reopened = db.unmark_resolved(&reappeared_or_new)?;
-        if reopened > 0 {
-            changed = true;
-            log::info!(
-                "Email inbox reconcile: unmarked {} reappeared emails",
-                reopened
-            );
-        }
-    }
+    // Don't unmark_resolved for known emails — they were user-archived.
+    // Only wake poller for genuinely new messages we haven't seen.
 
     Ok(InboxPresenceReconcileResult {
         changed,
-        reappeared_or_new_count: reappeared_or_new.len(),
+        reappeared_or_new_count: genuinely_new.len(),
     })
 }
 
