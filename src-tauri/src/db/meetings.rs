@@ -1046,6 +1046,46 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Clear all transcript extraction data for a meeting so it can be reprocessed.
+    ///
+    /// Removes captures, transcript-sourced actions, interaction dynamics,
+    /// champion health, role changes, and captured commitments. Resets the
+    /// meeting's summary and transcript_processed_at so the pipeline treats
+    /// it as a fresh extraction.
+    pub fn clear_meeting_extraction_data(&self, meeting_id: &str) -> Result<usize, DbError> {
+        let mut cleared = 0usize;
+        cleared += self.conn.execute(
+            "DELETE FROM captures WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )? as usize;
+        cleared += self.conn.execute(
+            "DELETE FROM actions WHERE source_id = ?1 AND source_type IN ('transcript', 'post_meeting')",
+            rusqlite::params![meeting_id],
+        )? as usize;
+        cleared += self.conn.execute(
+            "DELETE FROM meeting_interaction_dynamics WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )? as usize;
+        cleared += self.conn.execute(
+            "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )? as usize;
+        cleared += self.conn.execute(
+            "DELETE FROM meeting_role_changes WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )? as usize;
+        cleared += self.conn.execute(
+            "DELETE FROM captured_commitments WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )? as usize;
+        // Reset transcript metadata so pipeline treats this as fresh
+        self.conn.execute(
+            "UPDATE meetings SET summary = NULL, transcript_processed_at = NULL WHERE id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        Ok(cleared)
+    }
+
     /// Get role changes for a meeting.
     pub fn get_role_changes(
         &self,

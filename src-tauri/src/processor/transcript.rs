@@ -266,7 +266,19 @@ pub fn process_transcript_with_kind(
 
     // Persist Phase 1: actions to SQLite
     let mut extracted_actions = Vec::new();
+    if parsed_p1.actions_text.is_none() {
+        log::info!(
+            "Phase 1 for '{}': no ACTIONS section found in AI output (may be expected for internal meetings)",
+            meeting.title
+        );
+    }
     if let Some(ref actions_text) = parsed_p1.actions_text {
+        log::info!(
+            "Phase 1 for '{}': found ACTIONS section ({} bytes, {} lines)",
+            meeting.title,
+            actions_text.len(),
+            actions_text.lines().count()
+        );
         if let Some(db) = db {
             extract_transcript_actions(
                 actions_text,
