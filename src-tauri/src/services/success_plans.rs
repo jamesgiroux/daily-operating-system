@@ -739,4 +739,72 @@ mod tests {
         assert_eq!(ms.objective_id, obj.id);
         assert_eq!(ms.status, "pending");
     }
+
+    #[test]
+    fn test_complete_all_milestones_auto_completes_objective() {
+        let db = test_db();
+        seed_account(&db, "acc-auto");
+        let engine = crate::signals::propagation::PropagationEngine::default();
+
+        let obj = create_objective(&db, "acc-auto", "Onboard", None, None, "user").unwrap();
+        let ms1 = create_milestone(&db, &obj.id, "Kickoff", None, None).unwrap();
+        let ms2 = create_milestone(&db, &obj.id, "Go-live", None, None).unwrap();
+
+        // Complete first milestone — objective should stay active
+        db.with_transaction(|tx| {
+            let (_, auto_obj) = tx
+                .complete_milestone(&ms1.id)
+                .map_err(|e: crate::db::DbError| e.to_string())?;
+            assert!(auto_obj.is_none(), "Objective should not auto-complete with pending milestones");
+            Ok(())
+        })
+        .unwrap();
+
+        // Complete second (last) milestone — objective should auto-complete
+        db.with_transaction(|tx| {
+            let (_, auto_obj) = tx
+                .complete_milestone(&ms2.id)
+                .map_err(|e: crate::db::DbError| e.to_string())?;
+            assert!(auto_obj.is_some(), "Objective should auto-complete when all milestones done");
+            let completed_obj = auto_obj.unwrap();
+            assert_eq!(completed_obj.status, "completed");
+
+            // Emit signal as the service layer would
+            crate::services::signals::emit_and_propagate(
+                tx,
+                &engine,
+                "account",
+                "acc-auto",
+                "objective_completed",
+                "user_action",
+                Some(&format!("{{\"objective_id\":\"{}\"}}", completed_obj.id)),
+                0.95,
+            )
+            .map_err(|e| format!("{e}"))?;
+            Ok(())
+        })
+        .unwrap();
+
+        // Verify objective status in DB
+        let status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status FROM account_objectives WHERE id = ?1",
+                params![obj.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "completed", "Objective should be completed in DB");
+
+        // Verify signal emitted
+        let signal_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE entity_id = 'acc-auto' AND signal_type = 'objective_completed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        assert!(signal_count > 0, "Expected objective_completed signal");
+    }
 }

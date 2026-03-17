@@ -234,6 +234,8 @@ export interface Email {
   subject: string;
   snippet?: string;
   priority: EmailPriority;
+  /** Whether this email is unread in Gmail */
+  isUnread?: boolean;
   avatarUrl?: string;
   /** AI-generated one-line summary of the email */
   summary?: string;
@@ -261,6 +263,17 @@ export interface Email {
   relevanceScore?: number;
   /** Human-readable score reason (I395) */
   scoreReason?: string;
+  /** When this email was pinned for triage sort boost (I579) */
+  pinnedAt?: string;
+  /** Meeting this email's sender is attending (upcoming only) (I582) */
+  meetingLinked?: LinkedMeeting;
+}
+
+/** An upcoming meeting linked to an email via sender-attendee match (I582). */
+export interface LinkedMeeting {
+  meetingId: string;
+  title: string;
+  startTime: string;
 }
 
 export type InboxFileType =
@@ -296,6 +309,24 @@ export interface ReplyNeeded {
   from: string;
   date?: string;
   waitDuration?: string;
+}
+
+/** I577: Reply debt item — an email where the ball is in the user's court. */
+export interface ReplyDebtItem {
+  emailId: string;
+  senderName: string;
+  senderEmail: string;
+  subject: string;
+  /** AI-generated contextual summary */
+  summary?: string;
+  entityId?: string;
+  entityName?: string;
+  entityType?: string;
+  ageHours: number;
+  /** "today", "1-2 days", "3-5 days", "overdue" */
+  ageBucket: string;
+  urgency?: string;
+  sentiment?: string;
 }
 
 export interface DashboardData {
@@ -566,6 +597,22 @@ export interface EmailBriefingData {
   emailNarrative?: string;
   /** Threads awaiting user reply — "ball in your court" (I355) */
   repliesNeeded?: ReplyNeeded[];
+  /** I577: Reply debt — entity-linked emails awaiting user reply. */
+  replyDebt?: ReplyDebtItem[];
+  /** Accounts whose email cadence has dropped significantly (I581) */
+  goneQuiet?: GoneQuietAccount[];
+}
+
+/** An account whose email cadence has gone quiet (I581). */
+export interface GoneQuietAccount {
+  entityId: string;
+  entityName: string;
+  entityType: string;
+  currentCount: number;
+  rollingAvg: number;
+  /** Higher means more quiet — rolling_avg / max(current_count, 0.1) */
+  silenceRatio: number;
+  lastEmailAgeDays?: number;
 }
 
 // =============================================================================

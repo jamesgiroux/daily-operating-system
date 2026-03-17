@@ -1531,4 +1531,35 @@ mod tests {
             .unwrap();
         assert_eq!(domain_count, 2, "Should have 2 domains");
     }
+
+    /// Test bulk account creation with duplicate handling.
+    #[test]
+    fn test_bulk_create_accounts() {
+        let db = test_db();
+        let tmp_dir = tempfile::tempdir().expect("tmp workspace");
+        let workspace = tmp_dir.path();
+
+        let names = vec![
+            "Alpha Corp".to_string(),
+            "Beta Inc".to_string(),
+            "Alpha Corp".to_string(), // duplicate
+        ];
+
+        let created = super::bulk_create_accounts(&db, workspace, &names)
+            .expect("bulk_create_accounts");
+
+        // First call: 2 unique accounts created, duplicate skipped
+        assert_eq!(created.len(), 2, "Should create 2 unique accounts");
+
+        let total: i64 = db
+            .conn_ref()
+            .query_row("SELECT COUNT(*) FROM accounts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 2, "DB should have 2 accounts");
+
+        // Second call with same names: all skipped as duplicates
+        let created_again = super::bulk_create_accounts(&db, workspace, &names)
+            .expect("bulk_create_accounts second run");
+        assert_eq!(created_again.len(), 0, "Duplicates should be skipped");
+    }
 }
