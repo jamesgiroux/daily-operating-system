@@ -224,7 +224,7 @@ impl ActionDb {
                         relevance_score, score_reason,
                         pinned_at, commitments, questions
                  FROM emails
-                 WHERE entity_id = ?1
+                 WHERE entity_id = ?1 AND resolved_at IS NULL
                  ORDER BY received_at DESC",
             )
             .map_err(|e| format!("Failed to prepare entity emails query: {e}"))?;
@@ -510,7 +510,8 @@ impl ActionDb {
         Ok(results)
     }
 
-    /// Get threads awaiting reply (unread, not resolved, user is not last sender).
+    /// Get threads awaiting reply (not resolved, user is not last sender).
+    /// Does NOT require is_unread — a thread can be read but still awaiting reply.
     pub fn get_emails_awaiting_reply(&self) -> Result<Vec<DbEmail>, String> {
         let mut stmt = self
             .conn
@@ -525,7 +526,6 @@ impl ActionDb {
                  FROM emails
                  WHERE user_is_last_sender = 0
                    AND resolved_at IS NULL
-                   AND is_unread = 1
                  ORDER BY received_at DESC",
             )
             .map_err(|e| format!("Failed to prepare awaiting reply query: {e}"))?;
