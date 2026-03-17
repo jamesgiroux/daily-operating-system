@@ -286,11 +286,13 @@ export default function EmailsPage() {
   }, [data, dismissedQuiet]);
 
   // All emails with intelligence for the correspondence section (I395: sorted by relevance score)
+  // Excludes locally-archived emails so archive propagates across all sections instantly.
   const allEnrichedEmails = useMemo(() => {
     if (!data) return [];
     return [...data.highPriority, ...data.mediumPriority, ...data.lowPriority]
+      .filter((e) => !archivedIds.has(e.id))
       .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
-  }, [data]);
+  }, [data, archivedIds]);
 
   // I395: Group by score bands (only when scores have been computed)
   const hasScores = useMemo(() =>
@@ -434,7 +436,7 @@ export default function EmailsPage() {
               PRIORITY
             </div>
             <div className={s.marginContent}>
-              {yourMoveEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+              {yourMoveEmails.map((email) => (
                 <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
               ))}
             </div>
@@ -615,26 +617,26 @@ export default function EmailsPage() {
             <div className={s.marginContent}>
               {hasScores ? (
                 <>
-                  {priorityEmails.filter((em) => !archivedIds.has(em.id)).length > 0 && (
+                  {priorityEmails.length > 0 && (
                     <>
                       <div className={s.emailScoreBandLabel}>PRIORITY</div>
-                      {priorityEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                      {priorityEmails.map((email) => (
                         <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
-                  {monitoringEmails.filter((em) => !archivedIds.has(em.id)).length > 0 && (
+                  {monitoringEmails.length > 0 && (
                     <>
                       <div className={s.emailScoreBandLabel}>MONITORING</div>
-                      {monitoringEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                      {monitoringEmails.map((email) => (
                         <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
-                  {otherEmails.filter((em) => !archivedIds.has(em.id)).length > 0 && (
+                  {otherEmails.length > 0 && (
                     <>
                       <div className={s.emailScoreBandLabel}>OTHER</div>
-                      {otherEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                      {otherEmails.map((email) => (
                         <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
@@ -642,7 +644,7 @@ export default function EmailsPage() {
                 </>
               ) : (
                 /* No scores yet -- flat list */
-                allEnrichedEmails.filter((em) => !archivedIds.has(em.id)).map((email) => (
+                allEnrichedEmails.map((email) => (
                   <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                 ))
               )}
