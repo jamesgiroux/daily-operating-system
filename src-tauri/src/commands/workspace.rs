@@ -495,6 +495,33 @@ pub async fn dismiss_email_signal(
         .await
 }
 
+/// Mark an email as replied to (I577 reply debt).
+/// Sets `user_is_last_sender = 1` and emits a `reply_debt_cleared` signal.
+#[tauri::command]
+pub async fn mark_reply_sent(
+    state: State<'_, Arc<AppState>>,
+    email_id: String,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| crate::services::emails::mark_reply_sent(db, &email_id))
+        .await
+}
+
+/// Dismiss a gone-quiet cadence alert for an account (I581).
+/// Emits a signal via propagation that feeds the engagement dimension.
+#[tauri::command]
+pub async fn dismiss_gone_quiet(
+    state: State<'_, Arc<AppState>>,
+    entity_id: String,
+) -> Result<(), String> {
+    state
+        .db_write(move |db| {
+            let engine = crate::signals::propagation::PropagationEngine::new();
+            crate::services::emails::dismiss_gone_quiet(db, &engine, &entity_id)
+        })
+        .await
+}
+
 /// Get email sync status: last fetch time, enrichment progress, failure count (I373).
 #[tauri::command]
 pub async fn get_email_sync_status(
