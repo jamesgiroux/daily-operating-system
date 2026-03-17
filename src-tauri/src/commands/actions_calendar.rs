@@ -129,8 +129,9 @@ pub async fn pin_email(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
+    let engine = state.signals.engine.clone();
     let result = state
-        .db_write(move |db| crate::services::emails::pin_email(db, &email_id))
+        .db_write(move |db| crate::services::emails::pin_email(db, &engine, &email_id))
         .await?;
     let _ = app_handle.emit("emails-updated", ());
     Ok(result)
@@ -143,28 +144,36 @@ pub async fn pin_email(
 /// Promote an email commitment to a tracked action.
 /// Returns the new action ID.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn promote_commitment_to_action(
     email_id: String,
     commitment_text: String,
+    action_title: Option<String>,
     entity_id: Option<String>,
     entity_type: Option<String>,
+    owner: Option<String>,
     due_date: Option<String>,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     let engine = state.signals.engine.clone();
-    state
+    let action_id = state
         .db_write(move |db| {
             crate::services::emails::promote_commitment_to_action(
                 db,
                 &engine,
                 &email_id,
                 &commitment_text,
+                action_title.as_deref(),
                 entity_id.as_deref(),
                 entity_type.as_deref(),
+                owner.as_deref(),
                 due_date.as_deref(),
             )
         })
-        .await
+        .await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(action_id)
 }
 
 // =============================================================================
