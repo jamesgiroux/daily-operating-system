@@ -3,7 +3,7 @@
    Extends editorial-briefing.module.css for page-specific patterns.
    ============================================================================= */
 
-/* ── Page Container ─────────────────────────────────────────────────────── */
+/* -- Page Container --------------------------------------------------------- */
 
 .pageContainer {
   max-width: 900px;
@@ -11,7 +11,7 @@
   margin-right: auto;
 }
 
-/* ── Hero Stat Line ─────────────────────────────────────────────────────── */
+/* -- Hero Stat Line --------------------------------------------------------- */
 
 .heroStatLine {
   display: flex;
@@ -26,7 +26,7 @@
   color: var(--color-spice-terracotta);
 }
 
-/* ── Sync Status ────────────────────────────────────────────────────────── */
+/* -- Sync Status ------------------------------------------------------------ */
 
 .syncStatus {
   display: flex;
@@ -42,7 +42,7 @@
   color: var(--color-spice-terracotta);
 }
 
-/* ── Section Spacing ────────────────────────────────────────────────────── */
+/* -- Section Spacing -------------------------------------------------------- */
 
 .sectionSpacing {
   margin-bottom: var(--space-2xl);
@@ -52,13 +52,17 @@
   margin-top: var(--space-lg);
 }
 
-/* ── Margin Label Color Variants ────────────────────────────────────────── */
+/* -- Margin Label Color Variants -------------------------------------------- */
 
 .marginLabelYourMove {
   color: var(--color-spice-terracotta);
 }
 
-/* ── Extracted Items (Commitments / Questions) ──────────────────────────── */
+.marginLabelReplyDebt {
+  color: var(--color-spice-turmeric);
+}
+
+/* -- Extracted Items (Commitments / Questions) ------------------------------ */
 
 .extractedItem {
   position: relative;
@@ -96,13 +100,13 @@
   padding: var(--space-xs);
 }
 
-/* ── Commitment Grid Spacing ────────────────────────────────────────────── */
+/* -- Commitment Grid Spacing ------------------------------------------------ */
 
 .commitmentGridSpacing {
   margin-bottom: 28px;
 }
 
-/* ── Updates Section ────────────────────────────────────────────────────── */
+/* -- Updates Section -------------------------------------------------------- */
 
 .updateEntityName {
   font-family: var(--font-serif);
@@ -168,7 +172,315 @@
   margin-bottom: var(--space-md);
 }
 
-/* ── Overflow Threads ───────────────────────────────────────────────────── */
+/* -- Reply Debt (I577/I578) ------------------------------------------------- */
+
+.replyDebtItem {
+  margin-bottom: var(--space-md);
+  max-width: 640px;
+}
+
+.replyDebtHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: 2px;
+}
+
+.replyDebtSender {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.replyDebtAgeBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 2px;
+  color: var(--color-text-tertiary);
+  background: var(--color-surface-subtle, rgba(0, 0, 0, 0.04));
+}
+
+.ageBadge_today {
+  color: var(--color-text-tertiary);
+}
+
+.ageBadge_1_2_days {
+  color: var(--color-spice-turmeric);
+  background: rgba(208, 168, 60, 0.1);
+}
+
+.ageBadge_3_5_days {
+  color: var(--color-spice-terracotta);
+  background: rgba(194, 107, 74, 0.1);
+}
+
+.ageBadge_overdue {
+  color: var(--color-editorial-error, #b91c1c);
+  background: rgba(185, 28, 28, 0.08);
+}
+
+.ageBadge_fallback {
+  color: var(--color-text-tertiary);
+}
+
+.replyDebtSubject {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0 0 4px 0;
+}
+
+.replyDebtMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.replyDebtSentiment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.replyDebtSentimentDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.markRepliedButton {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.1));
+  border-radius: 2px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-left: auto;
+}
+
+.markRepliedButton:hover {
+  color: var(--color-garden-sage);
+  border-color: var(--color-garden-sage);
+}
+
+/* -- I579: Triage Action Bar ------------------------------------------------ */
+
+.emailIntelItemHoverable {
+  position: relative;
+}
+
+.triageBar {
+  display: flex;
+  gap: var(--space-xs);
+  margin-top: 6px;
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+
+.emailIntelItemHoverable:hover .triageBar {
+  opacity: 1;
+}
+
+.triageButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.triageButton:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+  background: var(--color-surface-secondary);
+}
+
+.triageButtonActive {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+}
+
+.triageButtonActive:hover {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+}
+
+/* -- I580: Inline Commitments ----------------------------------------------- */
+
+.inlineCommitments {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.inlineCommitmentsLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.inlineCommitmentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: 3px;
+}
+
+.inlineCommitmentText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  flex: 1;
+}
+
+.inlineCommitmentTextPromoted {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+  flex: 1;
+}
+
+.inlineCommitmentCheck {
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+.trackButton {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.trackButton:hover {
+  background: var(--color-spice-turmeric);
+  color: var(--color-cream);
+}
+
+/* -- Gone Quiet Section (I581) ---------------------------------------------- */
+
+.marginLabelQuiet {
+  color: var(--color-text-tertiary);
+}
+
+.quietItem {
+  margin-bottom: var(--space-md);
+}
+
+.quietRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.quietDismissButton {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.1));
+  border-radius: 2px;
+  padding: 4px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.quietDismissButton:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-text-tertiary);
+}
+
+.quietAccountName {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
+.quietCadenceText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+/* -- Meeting Linkage Badge (I582) ------------------------------------------- */
+
+.meetingLinkBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: 4px;
+  padding: 3px 8px;
+  margin-top: 4px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.meetingLinkBadge:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-border, rgba(0, 0, 0, 0.15));
+}
+
+.meetingLinkTime {
+  opacity: 0.7;
+}
+
+/* -- Overflow Threads ------------------------------------------------------- */
 
 .overflowText {
   font-family: var(--font-sans);
