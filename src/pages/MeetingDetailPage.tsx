@@ -338,6 +338,41 @@ export default function MeetingDetailPage() {
     }
   }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
 
+  const handleReprocessTranscript = useCallback(async () => {
+    if (!meetingId) return;
+
+    setRetryingExtraction(true);
+    toast.loading("Reprocessing transcript…", { id: "reprocess-transcript" });
+    try {
+      const result = await invoke<{
+        status: string;
+        message?: string;
+        summary?: string;
+      }>("reprocess_meeting_transcript", { meetingId });
+
+      if (result.status !== "success") {
+        toast.error("Reprocessing failed", {
+          id: "reprocess-transcript",
+          description: result.message || result.status,
+        });
+      } else if (!result.summary) {
+        toast.warning("No outcomes extracted", {
+          id: "reprocess-transcript",
+          description: result.message || "AI extraction returned empty",
+        });
+      } else {
+        toast.success("Transcript reprocessed", { id: "reprocess-transcript" });
+      }
+      await loadMeetingIntelligence();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to reprocess transcript:", msg);
+      toast.error("Reprocessing failed", { id: "reprocess-transcript", description: msg });
+    } finally {
+      setRetryingExtraction(false);
+    }
+  }, [meetingId, loadMeetingIntelligence]);
+
   const handleRetryTranscriptExtraction = useCallback(async () => {
     if (!meetingId || !data || !outcomes?.transcriptPath) return;
 
@@ -673,6 +708,17 @@ Thanks!`;
             Draft Agenda
           </button>
         )}
+        {outcomes?.transcriptPath && (
+          <button
+            onClick={handleReprocessTranscript}
+            disabled={retryingExtraction}
+            className={styles.folioBtnInline}
+            title="Clear extraction data and reprocess transcript from scratch"
+          >
+            <RefreshCw className={clsx(styles.iconSm, retryingExtraction && "animate-spin")} />
+            {retryingExtraction ? "Reprocessing…" : "Reprocess"}
+          </button>
+        )}
         <FolioRefreshButton
           onClick={handleRefreshIntelligence}
           loading={refreshingIntel}
@@ -680,7 +726,7 @@ Thanks!`;
         />
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, refreshingIntel, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, handleRefreshIntelligence, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, refreshingIntel, retryingExtraction, isPastMeeting, isFutureMeeting, isReadyOrFresh, isThreeDaysOut, copiedAction, meetingId, handleRefreshIntelligence, handleReprocessTranscript, handleDraftAgendaMessage, handleShareIntelligence, handleRequestInput, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──

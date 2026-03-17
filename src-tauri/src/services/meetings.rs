@@ -2636,6 +2636,74 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
     Ok(format!("Refreshing {} meeting preps", count))
 }
 
+/// Reprocess an already-attached transcript: clear all extraction data, remove
+/// the TOCTOU guard, then re-run the full pipeline as a fresh extraction.
+pub async fn reprocess_meeting_transcript(
+    meeting_id: &str,
+    state: &std::sync::Arc<AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    // Look up the meeting and its transcript path
+    let mid = meeting_id.to_string();
+    let meeting_data = state
+        .db_read(move |db| {
+            let meeting = db
+                .get_meeting_intelligence_row(&mid)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", mid))?;
+            let transcript_path = meeting
+                .transcript_path
+                .clone()
+                .ok_or_else(|| format!("No transcript attached to meeting {}", mid))?;
+            Ok((meeting, transcript_path))
+        })
+        .await?;
+
+    let (meeting_row, transcript_path) = meeting_data;
+
+    // Clear all existing extraction data
+    let clear_mid = meeting_id.to_string();
+    let cleared = state
+        .db_write(move |db| {
+            db.clear_meeting_extraction_data(&clear_mid)
+                .map_err(|e| e.to_string())
+        })
+        .await?;
+    log::info!(
+        "Reprocess: cleared {} extraction records for meeting {}",
+        cleared,
+        meeting_id
+    );
+
+    // Remove the TOCTOU guard so attach_meeting_transcript doesn't reject
+    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+        guard.remove(meeting_id);
+    }
+
+    // Build a CalendarEvent from the DB row for the pipeline
+    let cal_event = crate::types::CalendarEvent {
+        id: meeting_row.id.clone(),
+        title: meeting_row.title.clone(),
+        start: chrono::DateTime::parse_from_rfc3339(&meeting_row.start_time)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now()),
+        end: meeting_row
+            .end_time
+            .as_deref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(chrono::Utc::now),
+        meeting_type: crate::parser::parse_meeting_type(&meeting_row.meeting_type),
+        attendees: Vec::new(),
+        is_all_day: false,
+        account: None, // Resolved by transcript pipeline from meeting_entities
+        linked_entities: None,
+    };
+
+    // Re-run the full pipeline via the existing attach path
+    attach_meeting_transcript(transcript_path, cal_event, state, app_handle).await
+}
+
 /// Attach a meeting transcript with TOCTOU guard, async processing, and event emission.
 pub async fn attach_meeting_transcript(
     file_path: String,
