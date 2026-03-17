@@ -1057,30 +1057,30 @@ impl ActionDb {
         cleared += self.conn.execute(
             "DELETE FROM captures WHERE meeting_id = ?1",
             rusqlite::params![meeting_id],
-        )? as usize;
+        )?;
         cleared += self.conn.execute(
             "DELETE FROM actions WHERE source_id = ?1 AND source_type IN ('transcript', 'post_meeting')",
             rusqlite::params![meeting_id],
-        )? as usize;
+        )?;
         cleared += self.conn.execute(
             "DELETE FROM meeting_interaction_dynamics WHERE meeting_id = ?1",
             rusqlite::params![meeting_id],
-        )? as usize;
+        )?;
         cleared += self.conn.execute(
             "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",
             rusqlite::params![meeting_id],
-        )? as usize;
+        )?;
         cleared += self.conn.execute(
             "DELETE FROM meeting_role_changes WHERE meeting_id = ?1",
             rusqlite::params![meeting_id],
-        )? as usize;
+        )?;
         cleared += self.conn.execute(
             "DELETE FROM captured_commitments WHERE meeting_id = ?1",
             rusqlite::params![meeting_id],
-        )? as usize;
+        )?;
         // Reset transcript metadata so pipeline treats this as fresh
         self.conn.execute(
-            "UPDATE meetings SET summary = NULL, transcript_processed_at = NULL WHERE id = ?1",
+            "UPDATE meeting_transcripts SET summary = NULL, transcript_processed_at = NULL WHERE meeting_id = ?1",
             rusqlite::params![meeting_id],
         )?;
         Ok(cleared)
