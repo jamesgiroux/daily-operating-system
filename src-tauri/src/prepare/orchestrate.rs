@@ -254,6 +254,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                         updated_at: chrono::Utc::now().to_rfc3339(),
                         relevance_score: None,
                         score_reason: None,
+                        pinned_at: None,
+                        commitments: None,
+                        questions: None,
                     };
                     if let Err(e) = db.upsert_email(&db_email) {
                         log::warn!("Failed to persist email {}: {}", raw.id, e);
@@ -1424,6 +1427,9 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
                     updated_at: chrono::Utc::now().to_rfc3339(),
                     relevance_score: None,
                     score_reason: None,
+                    pinned_at: None,
+                    commitments: None,
+                    questions: None,
                 };
                 if let Err(e) = db.upsert_email(&db_email) {
                     log::warn!("Failed to persist email {}: {}", raw.id, e);

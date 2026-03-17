@@ -819,8 +819,12 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             recommended_action: None,
                             conversation_arc: None,
                             email_type: None,
-                            commitments: Vec::new(),
-                            questions: Vec::new(),
+                            commitments: dbe.commitments.as_ref()
+                                .and_then(|c| serde_json::from_str::<Vec<String>>(c).ok())
+                                .unwrap_or_default(),
+                            questions: dbe.questions.as_ref()
+                                .and_then(|q| serde_json::from_str::<Vec<String>>(q).ok())
+                                .unwrap_or_default(),
                             sentiment: dbe.sentiment.clone(),
                             urgency: dbe.urgency.clone(),
                             entity_id: dbe.entity_id.clone(),
@@ -828,6 +832,9 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             entity_name,
                             relevance_score: dbe.relevance_score,
                             score_reason: dbe.score_reason.clone(),
+                            is_unread: dbe.is_unread,
+                            pinned_at: dbe.pinned_at.clone(),
+                            meeting_linked: None,
                         }
                     })
                     .collect())
