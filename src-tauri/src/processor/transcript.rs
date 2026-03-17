@@ -264,6 +264,16 @@ pub fn process_transcript_with_kind(
     let discussion = parsed_p1.discussion.clone();
     let analysis = parsed_p1.analysis.clone();
 
+    // Clear any prior extraction data on THIS connection to avoid dedup guard
+    // rejecting re-inserted actions during reprocessing (WAL visibility issue
+    // between db_write and dedicated ActionDb::open connections).
+    if let Some(db) = db {
+        let _ = db.conn.execute(
+            "DELETE FROM actions WHERE source_id = ?1 AND source_type IN ('transcript', 'post_meeting')",
+            rusqlite::params![meeting.id],
+        );
+    }
+
     // Persist Phase 1: actions to SQLite
     let mut extracted_actions = Vec::new();
     if parsed_p1.actions_text.is_none() {

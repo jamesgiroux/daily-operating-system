@@ -177,7 +177,7 @@ fn default_synthesis_model() -> String {
 }
 
 fn default_extraction_model() -> String {
-    "haiku".to_string()
+    "sonnet".to_string()
 }
 
 fn default_mechanical_model() -> String {
@@ -972,6 +972,21 @@ pub struct Email {
     /// Human-readable score reason (I395)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score_reason: Option<String>,
+    /// When this email was pinned for triage sort boost (I579)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
+    /// Meeting this email's sender is attending (upcoming only) (I582)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_linked: Option<LinkedMeeting>,
+}
+
+/// An upcoming meeting linked to an email via sender-attendee match (I582).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedMeeting {
+    pub meeting_id: String,
+    pub title: String,
+    pub start_time: String,
 }
 
 /// Complete dashboard data payload
@@ -1399,6 +1414,38 @@ pub struct EmailBriefingStats {
     pub needs_action: usize,
 }
 
+/// A single reply-debt item: an email where the ball is in the user's court.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyDebtItem {
+    pub email_id: String,
+    pub sender_name: String,
+    pub sender_email: String,
+    pub subject: String,
+    pub entity_id: Option<String>,
+    pub entity_name: Option<String>,
+    pub entity_type: Option<String>,
+    pub age_hours: f64,
+    /// "today", "1-2 days", "3-5 days", "overdue" (>5 days)
+    pub age_bucket: String,
+    pub urgency: Option<String>,
+    pub sentiment: Option<String>,
+}
+
+/// An account whose email cadence has gone quiet (I581).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoneQuietAccount {
+    pub entity_id: String,
+    pub entity_name: String,
+    pub entity_type: String,
+    pub current_count: i32,
+    pub rolling_avg: f64,
+    /// rolling_avg / max(current_count, 0.1) — higher means more quiet
+    pub silence_ratio: f64,
+    pub last_email_age_days: Option<i64>,
+}
+
 /// Full enriched email briefing data returned by get_emails_enriched.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1415,6 +1462,12 @@ pub struct EmailBriefingData {
     /// Threads awaiting user reply from directive (I318/I355)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded>,
+    /// Reply debt: entity-linked emails where someone else sent the last message (I577)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub reply_debt: Vec<ReplyDebtItem>,
+    /// Accounts whose email cadence has dropped significantly (I581)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub gone_quiet: Vec<GoneQuietAccount>,
 }
 
 // =============================================================================
