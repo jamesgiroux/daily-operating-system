@@ -1400,6 +1400,78 @@ pub async fn get_meeting_intelligence(
 
     let meeting_id_owned = meeting_id.to_string();
 
+    // Pre-check: if meeting doesn't exist in DB, try to persist it from the
+    // live calendar cache. This covers the race where calendar_merge shows a
+    // "New" event on the briefing before the poller has written it to SQLite.
+    let mid_check = meeting_id_owned.clone();
+    let exists = state
+        .db_read(move |db| {
+            let found = db
+                .get_meeting_by_id(&mid_check)
+                .map_err(|e| e.to_string())?
+                .is_some();
+            if !found {
+                let raw = mid_check.replace("_at_", "@");
+                Ok(db
+                    .get_meeting_by_calendar_event_id(&raw)
+                    .map_err(|e| e.to_string())?
+                    .is_some())
+            } else {
+                Ok(true)
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+    if !exists {
+        // Look for matching event in the live calendar cache
+        let live_event = state
+            .calendar
+            .events
+            .read()
+            .ok()
+            .and_then(|events| {
+                let raw_id = meeting_id.replace("_at_", "@");
+                events.iter().find(|e| e.id == raw_id || e.id == meeting_id).cloned()
+            });
+
+        if let Some(event) = live_event {
+            let primary_id =
+                crate::workflow::deliver::meeting_primary_id(
+                    Some(&event.id),
+                    &event.title,
+                    &event.start.to_rfc3339(),
+                    event.meeting_type.as_str(),
+                );
+            let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
+            let start_rfc = event.start.to_rfc3339();
+            let end_rfc = event.end.to_rfc3339();
+            let mtype = event.meeting_type.as_str().to_string();
+            let title = event.title.clone();
+            let eid = event.id.clone();
+            let _ = state
+                .db_write(move |db| {
+                    db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+                        id: &primary_id,
+                        title: &title,
+                        meeting_type: &mtype,
+                        start_time: &start_rfc,
+                        end_time: Some(&end_rfc),
+                        calendar_event_id: Some(&eid),
+                        attendees: Some(&attendees_json),
+                        description: None,
+                    })
+                    .map_err(|e| e.to_string())?;
+                    Ok(())
+                })
+                .await;
+            log::info!(
+                "Auto-persisted meeting from live calendar cache: {}",
+                meeting_id
+            );
+        }
+    }
+
     // Phase 1: Read-only — all queries, prep loading, quality assessment
     let intel = state
         .db_read(move |db| {
