@@ -931,6 +931,9 @@ pub struct Email {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
     pub priority: EmailPriority,
+    /// Whether this email is unread in Gmail
+    #[serde(default)]
+    pub is_unread: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
     /// AI-generated one-line summary of the email
@@ -1422,6 +1425,9 @@ pub struct ReplyDebtItem {
     pub sender_name: String,
     pub sender_email: String,
     pub subject: String,
+    /// AI-generated contextual summary of the email
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
     pub entity_id: Option<String>,
     pub entity_name: Option<String>,
     pub entity_type: Option<String>,

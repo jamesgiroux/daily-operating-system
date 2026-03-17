@@ -592,6 +592,16 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     let n = delete_mock("meeting_prep", "meeting_id");
     summary.push(format!("meeting_prep: {}", n));
 
+    // --- Email tables ---
+    let n = delete_mock("emails", "email_id");
+    summary.push(format!("emails: {}", n));
+
+    let n = delete_mock("email_signals", "email_id");
+    summary.push(format!("email_signals: {}", n));
+
+    let n = delete_mock("entity_email_cadence", "entity_id");
+    summary.push(format!("entity_email_cadence: {}", n));
+
     let total: usize = summary
         .iter()
         .filter_map(|s| s.split(": ").nth(1)?.parse::<usize>().ok())
@@ -3149,43 +3159,83 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // =========================================================================
 
     // email_signals: email_id, sender_email, person_id, entity_id, entity_type,
-    //                signal_type, signal_text, confidence, sentiment, urgency
-    let email_signals: Vec<(&str, &str, &str, &str, &str, &str, &str, f64, &str, &str)> = vec![
+    //                signal_type, signal_text, confidence, sentiment, urgency, detected_days_ago
+    let email_signals: Vec<(&str, &str, &str, &str, &str, &str, &str, f64, &str, &str, i64)> = vec![
+        // Acme signals
         (
             "mock-email-acme-1", "sarah.chen@acme.com", "mock-sarah-chen",
             "mock-acme-corp", "account",
-            "follow_up", "Sarah Chen is following up on Phase 2 SOW status — legal has had it for a week",
-            0.85, "neutral", "medium",
+            "follow_up", "Sarah Chen following up on platform migration timeline — waiting 3 days for response",
+            0.85, "neutral", "medium", 3,
         ),
         (
-            "mock-email-acme-2", "alex.torres@acme.com", "mock-alex-torres",
+            "mock-email-acme-2", "sarah.chen@acme.com", "mock-sarah-chen",
             "mock-acme-corp", "account",
-            "handoff", "Alex Torres shared Phase 1 knowledge transfer documentation before departure",
-            0.9, "positive", "high",
+            "status_update", "Sarah Chen opened Q2 planning discussion — needs alignment on roadmap priorities",
+            0.80, "neutral", "medium", 1,
         ),
+        (
+            "mock-email-acme-3", "alex.torres@acme.com", "mock-alex-torres",
+            "mock-acme-corp", "account",
+            "positive_signal", "Alex Torres shared positive POC results — performance exceeded targets by 15%",
+            0.90, "positive", "low", 2,
+        ),
+        (
+            "mock-email-acme-4", "sarah.chen@acme.com", "mock-sarah-chen",
+            "mock-acme-corp", "account",
+            "commitment", "Will confirm Phase 2 budget by Friday — needs finance sign-off",
+            0.90, "positive", "high", 0,
+        ),
+        // Globex signals
         (
             "mock-email-globex-1", "jamie.morrison@globex.com", "mock-jamie-morrison",
             "mock-globex-industries", "account",
-            "positive_signal", "Jamie Morrison reports Team A usage up 40% since January — offers to present at QBR",
-            0.9, "positive", "low",
+            "commitment", "Will send updated contract terms by EOW — renewal discussion in progress",
+            0.85, "neutral", "high", 5,
         ),
         (
-            "mock-email-globex-2", "casey.lee@globex.com", "mock-casey-lee",
+            "mock-email-globex-2", "lisa.park@globex.com", "mock-lisa-park",
             "mock-globex-industries", "account",
-            "risk_signal", "Casey Lee raising concerns about Team B ROI — questioning whether tool fits their workflow",
-            0.85, "negative", "high",
+            "org_change", "New contact Lisa Park taking over account management from Jamie Morrison",
+            0.88, "neutral", "high", 2,
         ),
+        (
+            "mock-email-globex-3", "jamie.morrison@globex.com", "mock-jamie-morrison",
+            "mock-globex-industries", "account",
+            "status_update", "Jamie Morrison shared QBR deck for review — standard prep for quarterly business review",
+            0.75, "neutral", "low", 3,
+        ),
+        (
+            "mock-email-globex-4", "casey.lee@globex.com", "mock-casey-lee",
+            "mock-globex-industries", "account",
+            "risk_signal", "Casey Lee questioning Team B ROI — may become a churn argument during renewal",
+            0.90, "negative", "high", 0,
+        ),
+        (
+            "mock-email-globex-5", "jamie.morrison@globex.com", "mock-jamie-morrison",
+            "mock-globex-industries", "account",
+            "question", "Requesting schedule change for Thursday review — needs confirmation",
+            0.75, "neutral", "low", 1,
+        ),
+        // Initech signals
         (
             "mock-email-initech-1", "dana.patel@initech.com", "mock-dana-patel",
             "mock-initech", "account",
-            "status_update", "Dana Patel confirms Phase 2 budget request still with finance — escalated, hoping for approval next week",
-            0.8, "neutral", "medium",
+            "positive_signal", "Dana Patel reports onboarding kickoff went well — team is engaged and progressing",
+            0.80, "positive", "low", 2,
         ),
         (
-            "mock-email-globex-3", "pat.reynolds@globex.com", "mock-pat-reynolds",
+            "mock-email-initech-2", "dana.patel@initech.com", "mock-dana-patel",
+            "mock-initech", "account",
+            "follow_up", "Dana Patel requesting team access provisioning — routine onboarding follow-up",
+            0.70, "neutral", "low", 4,
+        ),
+        // Competitive intelligence signal (Globex)
+        (
+            "mock-email-globex-1", "jamie.morrison@globex.com", "mock-jamie-morrison",
             "mock-globex-industries", "account",
-            "transition", "Pat Reynolds requesting handoff session before Q2 departure — wants successor to have full context",
-            0.85, "neutral", "high",
+            "competitive_mention", "Jamie Morrison mentions competitive pressure during contract renewal discussion",
+            0.80, "neutral", "high", 5,
         ),
     ];
 
@@ -3200,12 +3250,17 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         confidence,
         sentiment,
         urgency,
+        detected_days,
     ) in &email_signals
     {
+        // Skip signals with empty entity_id (internal emails) — email_signals requires entity_id NOT NULL
+        if entity_id.is_empty() {
+            continue;
+        }
         conn.execute(
             "INSERT OR IGNORE INTO email_signals (email_id, sender_email, person_id, entity_id, entity_type, signal_type, signal_text, confidence, sentiment, urgency, detected_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            rusqlite::params![email_id, sender, person_id, entity_id, entity_type, sig_type, sig_text, confidence, sentiment, urgency, days_ago(2)],
+            rusqlite::params![email_id, sender, person_id, entity_id, entity_type, sig_type, sig_text, confidence, sentiment, urgency, days_ago(*detected_days)],
         ).map_err(|e| format!("Email signal {}: {}", email_id, e))?;
     }
 
@@ -3258,88 +3313,165 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let ago_4 = days_ago(4);
     let ago_5 = days_ago(5);
 
-    let email_rows: Vec<(&str, &str, &str, &str, &str, &str, &str, i32, &str, &str, &str, Option<&str>, Option<&str>, &str, &str, &str, Option<f64>)> = vec![
-        // (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, entity_id, entity_type, contextual_summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score)
+    // (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread,
+    //  received_at, entity_id, entity_type, contextual_summary, sentiment, urgency,
+    //  enrichment_state, last_seen_at, relevance_score, user_is_last_sender, message_count)
+    let email_rows: Vec<(&str, &str, &str, &str, &str, &str, &str, i32, &str, &str, &str, Option<&str>, Option<&str>, &str, &str, &str, Option<f64>, i32, i32)> = vec![
+        // --- Acme Corp (5 emails) ---
         (
-            "mock-email-acme-1", "thread-acme-sow", "sarah.chen@acme.com", "Sarah Chen",
-            "Re: Phase 2 SOW — Legal Status?",
-            "Hi — just checking in on the SOW status. Legal has had it for over a week now and we need to…",
+            "mock-email-acme-1", "thread-acme-migration", "sarah.chen@acme.com", "Sarah Chen",
+            "Re: Platform Migration Timeline",
+            "Hi — just circling back on the migration timeline. We need to lock down dates for Phase 2 before…",
+            "high", 1, &ago_3,
+            "mock-acme-corp", "account",
+            Some("Sarah Chen following up on platform migration timeline. Needs dates locked for Phase 2 before end of quarter. Reply debt — 3 days without response."),
+            Some("neutral"), "medium", "enriched", &ago_0,
+            Some(0.92), 0, 4,
+        ),
+        (
+            "mock-email-acme-2", "thread-acme-q2", "sarah.chen@acme.com", "Sarah Chen",
+            "Re: Q2 Planning Discussion",
+            "Thanks for the roadmap overview. A few questions on the timeline for the analytics module and…",
             "high", 1, &ago_1,
             "mock-acme-corp", "account",
-            Some("Sarah Chen is following up on the Phase 2 SOW. Legal has had it for over a week. She needs movement before scoping can proceed."),
+            Some("Sarah Chen has questions about Q2 roadmap — specifically analytics module timeline and resource allocation. Needs response to keep planning on track."),
             Some("neutral"), "medium", "enriched", &ago_0,
-            Some(0.92),
+            Some(0.88), 0, 3,
         ),
         (
-            "mock-email-acme-2", "thread-acme-kt", "alex.torres@acme.com", "Alex Torres",
-            "Knowledge Transfer Documentation — Final Draft",
-            "Attached the final KT documentation covering Phase 1 architecture, deployment playbook, and…",
-            "high", 0, &ago_2,
+            "mock-email-acme-3", "thread-acme-poc", "alex.torres@acme.com", "Alex Torres",
+            "POC Results Summary",
+            "Great news — the POC exceeded all benchmarks. Performance was 15% above target across the board…",
+            "medium", 0, &ago_2,
             "mock-acme-corp", "account",
-            Some("Alex Torres shared comprehensive Phase 1 knowledge transfer documentation before his departure. Covers architecture, deployment, and operational procedures."),
-            Some("positive"), "high", "enriched", &ago_1,
-            Some(0.88),
+            Some("Alex Torres reports POC results exceeded all benchmarks — 15% above target. Strong validation for Phase 2 business case. We replied with next steps."),
+            Some("positive"), "low", "enriched", &ago_1,
+            Some(0.35), 1, 5,
         ),
         (
-            "mock-email-globex-1", "thread-globex-usage", "jamie.morrison@globex.com", "Jamie Morrison",
-            "Team A Usage Report — 40% Growth!",
-            "Great news — Team A usage is up 40% since January. Happy to present these numbers at the QBR if…",
-            "medium", 1, &ago_1,
+            "mock-email-acme-4", "thread-acme-budget", "sarah.chen@acme.com", "Sarah Chen",
+            "Budget Approval for Phase 2",
+            "Quick update — I'm pushing for budget approval this week. Will confirm by Friday once finance…",
+            "high", 1, &ago_0,
+            "mock-acme-corp", "account",
+            Some("Sarah Chen committing to confirm Phase 2 budget by Friday. Finance sign-off in progress. High-priority commitment that needs tracking."),
+            Some("positive"), "high", "enriched", &ago_0,
+            Some(0.94), 0, 2,
+        ),
+        (
+            "mock-email-acme-5", "thread-acme-support", "noreply@acme.com", "Acme Support",
+            "Your Acme Support Ticket #4521",
+            "Your ticket #4521 has been updated. Status: In Progress. A technician has been assigned to…",
+            "low", 0, &ago_1,
+            "", "",
+            None,
+            None, "low", "pending", &ago_1,
+            None, 0, 1,
+        ),
+        // --- Globex Industries (5 emails) ---
+        (
+            "mock-email-globex-1", "thread-globex-renewal", "jamie.morrison@globex.com", "Jamie Morrison",
+            "Re: Contract Renewal Discussion",
+            "I've been reviewing the renewal terms internally. A few sticking points on pricing that I want to…",
+            "high", 1, &ago_5,
             "mock-globex-industries", "account",
-            Some("Jamie Morrison reports Team A usage up 40% since January and offers to present at the upcoming QBR. Strong champion signal."),
-            Some("positive"), "low", "enriched", &ago_0,
-            Some(0.85),
+            Some("Jamie Morrison reviewing renewal terms — pricing concerns flagged internally. 5 days without reply. Competitive pressure from Contoso makes this urgent."),
+            Some("neutral"), "high", "enriched", &ago_0,
+            Some(0.96), 0, 6,
         ),
         (
-            "mock-email-globex-2", "thread-globex-teamb", "casey.lee@globex.com", "Casey Lee",
+            "mock-email-globex-2", "thread-globex-intro", "lisa.park@globex.com", "Lisa Park",
+            "Intro from Jamie — Taking Over Account",
+            "Hi! Jamie introduced me — I'll be your primary contact going forward. Looking forward to getting…",
+            "high", 1, &ago_2,
+            "mock-globex-industries", "account",
+            Some("Lisa Park introduced as new primary contact, taking over from Jamie Morrison. Org change signal — relationship continuity at risk. Needs welcome and context transfer."),
+            Some("positive"), "medium", "enriched", &ago_1,
+            Some(0.90), 0, 1,
+        ),
+        (
+            "mock-email-globex-3", "thread-globex-qbr", "jamie.morrison@globex.com", "Jamie Morrison",
+            "QBR Deck Review",
+            "Attached the latest QBR deck with Team A metrics and adoption trends. Let me know if you want…",
+            "medium", 0, &ago_3,
+            "mock-globex-industries", "account",
+            Some("Jamie Morrison shared QBR deck with Team A metrics and adoption data. We've reviewed and provided feedback. Standard quarterly prep."),
+            Some("neutral"), "low", "enriched", &ago_2,
+            Some(0.30), 1, 3,
+        ),
+        (
+            "mock-email-globex-4", "thread-globex-teamb", "casey.lee@globex.com", "Casey Lee",
             "Re: Team B Engagement — Concerns",
             "I've been reviewing Team B's numbers and I'm not convinced the tool fits their workflow. We need…",
             "high", 1, &ago_0,
             "mock-globex-industries", "account",
-            Some("Casey Lee is questioning Team B's ROI and whether the tool fits their workflow. This could become a churn argument during renewal."),
+            Some("Casey Lee questioning Team B ROI — not convinced the tool fits their workflow. Could become a churn argument during renewal. Needs immediate attention."),
             Some("negative"), "high", "enriched", &ago_0,
-            Some(0.94),
+            Some(0.94), 0, 4,
         ),
         (
-            "mock-email-initech-1", "thread-initech-budget", "dana.patel@initech.com", "Dana Patel",
-            "Phase 2 Budget — Finance Update",
-            "Quick update: I escalated the budget request to our CFO yesterday. Hoping for approval by next…",
+            "mock-email-globex-5", "thread-globex-schedule", "jamie.morrison@globex.com", "Jamie Morrison",
+            "Can we reschedule Thursday?",
+            "Something came up — can we move Thursday's review to next week? I'll have better numbers by…",
             "medium", 1, &ago_1,
-            "mock-initech", "account",
-            Some("Dana Patel escalated the Phase 2 budget request to the CFO. Expecting approval within a week. Positive signal for expansion."),
-            Some("neutral"), "medium", "enriched", &ago_0,
-            Some(0.80),
-        ),
-        (
-            "mock-email-globex-3", "thread-globex-handoff", "pat.reynolds@globex.com", "Pat Reynolds",
-            "Executive Handoff Planning — Q2 Departure",
-            "As discussed, I'd like to schedule a formal handoff session before my departure. Want to make sure…",
-            "high", 0, &ago_3,
             "mock-globex-industries", "account",
-            Some("Pat Reynolds requesting formal handoff session before Q2 departure. Wants successor to have full context on our partnership."),
-            Some("neutral"), "high", "enriched", &ago_2,
-            Some(0.90),
+            Some("Jamie Morrison requesting to reschedule Thursday review to next week. Says he'll have better metrics data. Low urgency but needs response."),
+            Some("neutral"), "low", "enriched", &ago_0,
+            Some(0.45), 0, 2,
         ),
+        // --- Initech (3 emails) ---
         (
-            "mock-email-acme-3", "thread-acme-nps", "pat.kim@acme.com", "Pat Kim",
-            "NPS Results — Engineering Team Feedback",
-            "Sharing the latest NPS results for your review. We have 3 detractors in engineering that I think…",
-            "medium", 1, &ago_4,
-            "mock-acme-corp", "account",
-            Some("Pat Kim flagged 3 NPS detractors in engineering. Wants a joint call to understand concerns before the quarterly review."),
-            Some("negative"), "medium", "enriched", &ago_3,
-            Some(0.78),
-        ),
-        (
-            "mock-email-initech-2", "thread-initech-phase1", "priya.sharma@initech.com", "Priya Sharma",
-            "Phase 1 Wrap-Up — Outstanding Items",
-            "A few Phase 1 items still need closure: documentation updates, final training session, and the…",
-            "low", 0, &ago_5,
+            "mock-email-initech-1", "thread-initech-onboarding", "dana.patel@initech.com", "Dana Patel",
+            "Onboarding Kickoff Follow-up",
+            "Thanks for the kickoff session! The team is excited. A few follow-up items on access and…",
+            "medium", 0, &ago_2,
             "mock-initech", "account",
-            Some("Priya Sharma listing Phase 1 closure items: documentation, training, and performance report. Routine wrap-up with no blockers."),
-            Some("neutral"), "low", "enriched", &ago_4,
-            Some(0.65),
+            Some("Dana Patel following up after onboarding kickoff. Team is engaged and progressing. Routine follow-up items on access provisioning. We replied with setup instructions."),
+            Some("positive"), "low", "enriched", &ago_1,
+            Some(0.40), 1, 3,
         ),
+        (
+            "mock-email-initech-2", "thread-initech-access", "dana.patel@initech.com", "Dana Patel",
+            "Team Access Requests",
+            "Can you provision access for three additional team members? Here are the details…",
+            "low", 0, &ago_4,
+            "mock-initech", "account",
+            Some("Dana Patel requesting access provisioning for 3 additional team members. Routine onboarding task — 4 days without response."),
+            Some("neutral"), "low", "enriched", &ago_3,
+            Some(0.20), 0, 2,
+        ),
+        (
+            "mock-email-initech-3", "thread-initech-digest", "admin@initech.com", "Initech Admin",
+            "Weekly Digest",
+            "Here's your weekly summary of activity across the Initech workspace. 12 active users, 3 new…",
+            "low", 0, &ago_1,
+            "mock-initech", "account",
+            None,
+            None, "low", "pending", &ago_1,
+            None, 0, 1,
+        ),
+        // --- Unlinked (2 emails) ---
+        (
+            "mock-email-unknown-1", "thread-unknown-recruiter", "recruiter@somecompany.com", "Tech Recruiter",
+            "Exciting Opportunity at TechCo",
+            "Hi! I came across your profile and think you'd be a great fit for our Senior Engineering…",
+            "low", 0, &ago_2,
+            "", "",
+            None,
+            None, "low", "pending", &ago_2,
+            None, 0, 1,
+        ),
+        (
+            "mock-email-unknown-2", "thread-unknown-startup", "hello@newstartup.io", "New Startup Team",
+            "Interested in DailyOS for our team",
+            "We're a 15-person team and just discovered DailyOS. Would love to learn more about how it could…",
+            "medium", 1, &ago_1,
+            "", "",
+            None,
+            None, "low", "pending", &ago_1,
+            None, 0, 1,
+        ),
+        // --- Internal (1 email) ---
         (
             "mock-email-internal-1", "thread-internal-sprint", "mike.chen@dailyos.test", "Mike Chen",
             "Sprint Review Prep — Agenda Items",
@@ -3348,17 +3480,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "", "",
             Some("Mike Chen sharing sprint review agenda for tomorrow. Standard internal coordination."),
             Some("positive"), "low", "enriched", &ago_0,
-            Some(0.45),
-        ),
-        (
-            "mock-email-globex-4", "thread-globex-competitor", "jamie.morrison@globex.com", "Jamie Morrison",
-            "FYI: Contoso Pitch to Leadership",
-            "Heads up — Contoso presented to our VP last week. I wasn't impressed but Casey seemed interested…",
-            "high", 1, &ago_2,
-            "mock-globex-industries", "account",
-            Some("Jamie Morrison alerting us that Contoso pitched to Globex leadership. He wasn't impressed but Casey Lee showed interest. Competitive threat needs monitoring."),
-            Some("negative"), "high", "enriched", &ago_1,
-            Some(0.96),
+            Some(0.10), 1, 2,
         ),
     ];
 
@@ -3380,16 +3502,70 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         enrichment_state,
         last_seen_at,
         relevance_score,
+        user_is_last_sender,
+        message_count,
     ) in &email_rows
     {
         conn.execute(
-            "INSERT OR REPLACE INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, entity_id, entity_type, contextual_summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+            "INSERT OR REPLACE INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, entity_id, entity_type, contextual_summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, user_is_last_sender, message_count, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             rusqlite::params![email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at,
                 if entity_id.is_empty() { &None::<&str> as &dyn rusqlite::types::ToSql } else { entity_id as &dyn rusqlite::types::ToSql },
                 if entity_type.is_empty() { &None::<&str> as &dyn rusqlite::types::ToSql } else { entity_type as &dyn rusqlite::types::ToSql },
-                summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, &today, &today],
+                summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, user_is_last_sender, message_count, &today, &today],
         ).map_err(|e| format!("Email {}: {}", email_id, e))?;
+    }
+
+    // --- Email triage & extraction fields (I579, I580) ---
+    // Set pinned_at on 2 emails
+    conn.execute(
+        "UPDATE emails SET pinned_at = ?2 WHERE email_id = ?1",
+        rusqlite::params!["mock-email-acme-4", &today],
+    ).map_err(|e| format!("Pin acme-4: {e}"))?;
+    conn.execute(
+        "UPDATE emails SET pinned_at = ?2 WHERE email_id = ?1",
+        rusqlite::params!["mock-email-globex-3", &ago_2],
+    ).map_err(|e| format!("Pin globex-3: {e}"))?;
+
+    // Set commitments (JSON arrays) on 2 emails
+    conn.execute(
+        "UPDATE emails SET commitments = ?2 WHERE email_id = ?1",
+        rusqlite::params!["mock-email-acme-4", r#"["Will confirm Phase 2 budget by Friday"]"#],
+    ).map_err(|e| format!("Commitments acme-4: {e}"))?;
+    conn.execute(
+        "UPDATE emails SET commitments = ?2 WHERE email_id = ?1",
+        rusqlite::params!["mock-email-globex-1", r#"["Will send updated contract terms by EOW"]"#],
+    ).map_err(|e| format!("Commitments globex-1: {e}"))?;
+
+    // Set questions (JSON arrays) on 2 emails
+    conn.execute(
+        "UPDATE emails SET questions = ?2 WHERE email_id = ?1",
+        rusqlite::params!["mock-email-acme-2", r#"["What is the timeline for the analytics module?","How will resource allocation change for Q2?"]"#],
+    ).map_err(|e| format!("Questions acme-2: {e}"))?;
+    conn.execute(
+        "UPDATE emails SET questions = ?2 WHERE email_id = ?1",
+        rusqlite::params!["mock-email-globex-5", r#"["Can we move Thursday's review to next week?"]"#],
+    ).map_err(|e| format!("Questions globex-5: {e}"))?;
+
+    // =========================================================================
+    // Phase 11b: Entity Email Cadence (cadence monitoring per account)
+    // =========================================================================
+
+    let cadence_rows: Vec<(&str, &str, &str, i32, f64)> = vec![
+        // Acme: normal cadence — ~4 emails this week, rolling avg 3.5
+        ("mock-acme-corp", "account", "weekly", 4, 3.5),
+        // Globex: gone quiet — 0 emails this week, was averaging ~2/week
+        ("mock-globex-industries", "account", "weekly", 0, 2.0),
+        // Initech: new account, low baseline — 1 email this week, avg 0.8
+        ("mock-initech", "account", "weekly", 1, 0.8),
+    ];
+
+    for (entity_id, entity_type, period, message_count, rolling_avg) in &cadence_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO entity_email_cadence (entity_id, entity_type, period, message_count, rolling_avg, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![entity_id, entity_type, period, message_count, rolling_avg, &today],
+        ).map_err(|e| format!("Email cadence {}: {}", entity_id, e))?;
     }
 
     // =========================================================================
