@@ -2188,8 +2188,12 @@ fn update_thread_positions_from_sent(
 /// I366: Reconcile inbox state — mark vanished emails as resolved, reappear resolved ones.
 ///
 /// Compares the current inbox email IDs against active (non-resolved) emails in the DB.
-/// Emails in DB but not in inbox are marked resolved. Emails in inbox but previously
-/// resolved are unmarked. Also deactivates signals for vanished emails.
+/// Emails in DB but not in inbox are marked resolved. Also deactivates signals for vanished emails.
+///
+/// NOTE: We intentionally do NOT unmark_resolved for emails that are in Gmail but
+/// resolved locally. The user may have archived them via the UI (I579) — un-resolving
+/// would undo their explicit action. Only genuinely new emails (never seen before) are
+/// treated as new, and those are handled by the normal persist path above.
 fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate::db::ActionDb) {
     let inbox_ids: std::collections::HashSet<String> =
         raw_emails.iter().map(|e| e.id.clone()).collect();
@@ -2211,12 +2215,8 @@ fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate
         .map(|e| e.email_id.clone())
         .collect();
 
-    // Vanished: in DB but not in inbox
+    // Vanished: in DB active set but not in Gmail inbox → mark resolved
     let vanished: Vec<String> = db_ids.difference(&inbox_ids).cloned().collect();
-
-    // Reappeared: in inbox but resolved in DB (need a separate query)
-    // We check against all emails with resolved_at set
-    let reappeared: Vec<String> = inbox_ids.difference(&db_ids).cloned().collect();
 
     if !vanished.is_empty() {
         match db.mark_emails_resolved(&vanished) {
@@ -2235,18 +2235,6 @@ fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate
             }
             Err(e) => {
                 log::warn!("I366: Failed to deactivate signals: {}", e);
-            }
-            _ => {}
-        }
-    }
-
-    if !reappeared.is_empty() {
-        match db.unmark_resolved(&reappeared) {
-            Ok(count) if count > 0 => {
-                log::info!("I366: Unmarked {} reappeared emails", count);
-            }
-            Err(e) => {
-                log::warn!("I366: Failed to unmark resolved: {}", e);
             }
             _ => {}
         }
