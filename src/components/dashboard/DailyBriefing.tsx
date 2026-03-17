@@ -24,7 +24,7 @@ import {
   getTemporalState,
 } from "./BriefingMeetingCard";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
-import { Loader2 } from "lucide-react";
+
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";

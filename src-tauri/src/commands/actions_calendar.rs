@@ -597,6 +597,22 @@ pub async fn attach_meeting_transcript(
     .await
 }
 
+/// Reprocess an already-attached transcript: clear all extraction data then
+/// re-run the full 3-phase pipeline as if the transcript were freshly attached.
+#[tauri::command]
+pub async fn reprocess_meeting_transcript(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    crate::services::meetings::reprocess_meeting_transcript(
+        &meeting_id,
+        state.inner(),
+        app_handle,
+    )
+    .await
+}
+
 /// Get meeting outcomes (from transcript processing or manual capture).
 ///
 /// Returns `None` only when no outcomes/transcript metadata exist in SQLite.
