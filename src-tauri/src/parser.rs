@@ -996,6 +996,9 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                     entity_name: None,
                     relevance_score: None,
                     score_reason: None,
+                    is_unread: true,
+                    pinned_at: None,
+                    meeting_linked: None,
                 });
                 id_counter += 1;
             }
@@ -1126,6 +1129,9 @@ impl EmailBuilder {
             entity_name: None,
             relevance_score: None,
             score_reason: None,
+            is_unread: true,
+            pinned_at: None,
+            meeting_linked: None,
         })
     }
 }

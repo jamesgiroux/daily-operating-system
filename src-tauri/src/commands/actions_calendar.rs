@@ -92,6 +92,74 @@ pub async fn reject_proposed_action(
         .await
 }
 
+// =============================================================================
+// I579: Per-email triage actions
+// =============================================================================
+
+/// Archive an email — sets resolved_at locally + archives in Gmail. Returns email ID for undo.
+#[tauri::command]
+pub async fn archive_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    crate::services::emails::archive_email(&state, &email_id).await
+}
+
+/// Unarchive an email — clears resolved_at + moves back to Gmail inbox (undo for archive).
+#[tauri::command]
+pub async fn unarchive_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    crate::services::emails::unarchive_email(&state, &email_id).await
+}
+
+/// Toggle pin on an email. Returns the new pinned state (true = pinned).
+#[tauri::command]
+pub async fn pin_email(
+    email_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    state
+        .db_write(move |db| crate::services::emails::pin_email(db, &email_id))
+        .await
+}
+
+// =============================================================================
+// I580: Commitment -> Action promotion
+// =============================================================================
+
+/// Promote an email commitment to a tracked action.
+/// Returns the new action ID.
+#[tauri::command]
+pub async fn promote_commitment_to_action(
+    email_id: String,
+    commitment_text: String,
+    entity_id: Option<String>,
+    entity_type: Option<String>,
+    due_date: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let engine = state.signals.engine.clone();
+    state
+        .db_write(move |db| {
+            crate::services::emails::promote_commitment_to_action(
+                db,
+                &engine,
+                &email_id,
+                &commitment_text,
+                entity_id.as_deref(),
+                entity_type.as_deref(),
+                due_date.as_deref(),
+            )
+        })
+        .await
+}
+
+// =============================================================================
+// Email dismissals
+// =============================================================================
+
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
 /// The Correspondent. Records the dismissal in SQLite for relevance learning.
 #[tauri::command]

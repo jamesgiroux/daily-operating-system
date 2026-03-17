@@ -338,6 +338,12 @@ pub struct DbEmail {
     pub relevance_score: Option<f64>,
     /// Human-readable score reason (I395).
     pub score_reason: Option<String>,
+    /// When this email was pinned by user for triage sort boost (I579).
+    pub pinned_at: Option<String>,
+    /// JSON array of extracted commitments (I580).
+    pub commitments: Option<String>,
+    /// JSON array of extracted questions (I580).
+    pub questions: Option<String>,
 }
 
 /// Email sync statistics for the frontend sync status indicator (I373).
