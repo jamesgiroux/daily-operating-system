@@ -489,6 +489,7 @@ pub fn run() {
             commands::refresh_meeting_preps,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
+            commands::reprocess_meeting_transcript,
             commands::get_meeting_outcomes,
             commands::get_meeting_post_intelligence,
             commands::update_capture,
