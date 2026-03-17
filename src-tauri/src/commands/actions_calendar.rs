@@ -97,21 +97,29 @@ pub async fn reject_proposed_action(
 // =============================================================================
 
 /// Archive an email — sets resolved_at locally + archives in Gmail. Returns email ID for undo.
+/// Emits `emails-updated` so all pages (dashboard, emails) refresh.
 #[tauri::command]
 pub async fn archive_email(
     email_id: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    crate::services::emails::archive_email(&state, &email_id).await
+    let result = crate::services::emails::archive_email(&state, &email_id).await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(result)
 }
 
 /// Unarchive an email — clears resolved_at + moves back to Gmail inbox (undo for archive).
+/// Emits `emails-updated` so all pages refresh.
 #[tauri::command]
 pub async fn unarchive_email(
     email_id: String,
     state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    crate::services::emails::unarchive_email(&state, &email_id).await
+    crate::services::emails::unarchive_email(&state, &email_id).await?;
+    let _ = app_handle.emit("emails-updated", ());
+    Ok(())
 }
 
 /// Toggle pin on an email. Returns the new pinned state (true = pinned).
