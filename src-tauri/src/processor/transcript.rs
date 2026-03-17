@@ -4,10 +4,11 @@
 //! (summary, wins, risks, decisions, actions) and routing the file to its
 //! proper workspace location.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::db::{ActionDb, DbProcessingLog};
@@ -33,6 +34,8 @@ const TRANSCRIPT_MAX_CHARS: usize = 60_000;
 
 /// Head portion kept for tail-biased truncation (attendee context, meeting opening).
 const TRANSCRIPT_HEAD_KEEP: usize = 3_000;
+/// Timeout for the post-extraction role-attribution review pass.
+const TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptContentKind {
@@ -55,6 +58,32 @@ struct TranscriptProgressPayload {
     risks_count: usize,
     decisions_count: usize,
     commitments_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AttendeeRoleHint {
+    name: String,
+    email: String,
+    side: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptRoleReviewPayload {
+    summary: String,
+    #[serde(default)]
+    discussion: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    analysis: Option<String>,
+    #[serde(default)]
+    wins: Vec<String>,
+    #[serde(default)]
+    risks: Vec<String>,
+    #[serde(default)]
+    decisions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    champion_health: Option<ChampionHealth>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -260,9 +289,9 @@ pub fn process_transcript_with_kind(
 
     // Parse Phase 1
     let parsed_p1 = parse_enrichment_response(&phase1_output);
-    let summary = parsed_p1.summary.clone();
-    let discussion = parsed_p1.discussion.clone();
-    let analysis = parsed_p1.analysis.clone();
+    let mut summary = parsed_p1.summary.clone();
+    let mut discussion = parsed_p1.discussion.clone();
+    let mut analysis = parsed_p1.analysis.clone();
 
     // Clear any prior extraction data on THIS connection to avoid dedup guard
     // rejecting re-inserted actions during reprocessing (WAL visibility issue
@@ -354,7 +383,7 @@ pub fn process_transcript_with_kind(
     let pty2 = PtyManager::for_tier(ModelTier::Extraction, effective_config)
         .with_timeout(TRANSCRIPT_PHASE_TIMEOUT_SECS);
 
-    let (wins, risks, decisions, sentiment, champion_health) =
+    let (mut wins, mut risks, mut decisions, sentiment, mut champion_health) =
         match pty2.spawn_claude(workspace, &phase2_prompt) {
             Ok(o) => {
                 let phase2_output = o.stdout;
@@ -506,6 +535,85 @@ pub fn process_transcript_with_kind(
                 (None, Vec::new(), Vec::new())
             }
         };
+
+    if let Some(reviewed) = review_transcript_role_attribution(
+        workspace,
+        meeting,
+        db,
+        effective_config,
+        &summary,
+        &discussion,
+        analysis.as_deref(),
+        &wins,
+        &risks,
+        &decisions,
+        champion_health.as_ref(),
+    ) {
+        summary = reviewed.summary;
+        discussion = reviewed.discussion;
+        analysis = reviewed.analysis;
+        wins = reviewed.wins;
+        risks = reviewed.risks;
+        decisions = reviewed.decisions;
+        champion_health = reviewed.champion_health;
+
+        if let Some(db) = db {
+            let processed_at = Utc::now().to_rfc3339();
+            let summary_ref = (!summary.trim().is_empty()).then_some(summary.as_str());
+            if let Err(e) = db.update_meeting_transcript_metadata(
+                &meeting.id,
+                &destination.display().to_string(),
+                &processed_at,
+                summary_ref,
+            ) {
+                log::warn!(
+                    "Failed to persist reviewed transcript summary for {}: {}",
+                    meeting.id,
+                    e
+                );
+            }
+            if let Err(e) = replace_transcript_outcome_captures(
+                db,
+                &meeting.id,
+                &meeting.title,
+                meeting.account.as_deref(),
+                &wins,
+                &risks,
+                &decisions,
+            ) {
+                log::warn!(
+                    "Failed to persist reviewed transcript outcomes for {}: {}",
+                    meeting.id,
+                    e
+                );
+            }
+            if let Some(ref health) = champion_health {
+                let db_health = crate::db::types::ChampionHealthAssessment {
+                    meeting_id: meeting.id.clone(),
+                    champion_name: Some(health.champion_name.clone()),
+                    champion_status: health.champion_status.clone(),
+                    champion_evidence: health.champion_evidence.clone(),
+                    champion_risk: health.champion_risk.clone(),
+                };
+                if let Err(e) = db.upsert_champion_health(&meeting.id, &db_health) {
+                    log::warn!(
+                        "Failed to persist reviewed champion health for {}: {}",
+                        meeting.id,
+                        e
+                    );
+                }
+            } else if let Err(e) = db.conn_ref().execute(
+                "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",
+                rusqlite::params![&meeting.id],
+            ) {
+                log::warn!(
+                    "Failed to clear reviewed champion health for {}: {}",
+                    meeting.id,
+                    e
+                );
+            }
+        }
+    }
 
     // Persist Phase 3: dynamics, role changes, commitments
     if let Some(db) = db {
@@ -694,6 +802,293 @@ fn resolve_account_id(db: &ActionDb, candidate: &str) -> Option<String> {
                 .flatten()
                 .map(|a| a.id)
         })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn review_transcript_role_attribution(
+    workspace: &Path,
+    meeting: &CalendarEvent,
+    db: Option<&ActionDb>,
+    ai_config: &AiModelConfig,
+    summary: &str,
+    discussion: &[String],
+    analysis: Option<&str>,
+    wins: &[String],
+    risks: &[String],
+    decisions: &[String],
+    champion_health: Option<&ChampionHealth>,
+) -> Option<TranscriptRoleReviewPayload> {
+    let config = crate::state::load_config().ok()?;
+    let user_domains = config.resolved_user_domains();
+    if user_domains.is_empty() {
+        return None;
+    }
+
+    let attendee_hints = build_attendee_role_hints(db, meeting, &user_domains);
+    if attendee_hints.is_empty() {
+        return None;
+    }
+
+    let has_internal = attendee_hints.iter().any(|hint| hint.side == "internal");
+    let has_external = attendee_hints.iter().any(|hint| hint.side == "external");
+    if !has_internal || !has_external {
+        return None;
+    }
+
+    let payload = TranscriptRoleReviewPayload {
+        summary: summary.to_string(),
+        discussion: discussion.to_vec(),
+        analysis: analysis.map(|s| s.to_string()),
+        wins: wins.to_vec(),
+        risks: risks.to_vec(),
+        decisions: decisions.to_vec(),
+        champion_health: champion_health.cloned(),
+    };
+
+    let context_json = serde_json::json!({
+        "meetingTitle": meeting.title,
+        "internalDomains": user_domains,
+        "attendees": attendee_hints,
+        "extracted": payload,
+    });
+    let wrapped_context = wrap_user_data(&serde_json::to_string_pretty(&context_json).ok()?);
+    let prompt = format!(
+        r#"{preamble}You are reviewing extracted meeting intelligence for attendee-role accuracy only.
+
+Correct only obvious mistakes where a person was assigned to the wrong side
+(internal team vs customer/external attendee), or where the attendee roster makes
+the intended person's name obvious.
+
+Rules:
+- Treat attendees whose email domains match `internalDomains` as internal.
+- Treat all other human attendees as external/customer-side.
+- Preserve the original meaning and wording as much as possible.
+- Do NOT add new facts, re-summarize, or rewrite for style.
+- Do NOT change actions, dates, priorities, or business claims unless they depend on the wrong person being named.
+- If uncertain, leave the text unchanged.
+- Return ONLY valid JSON matching the `extracted` object schema.
+
+Review context:
+{context}
+"#,
+        preamble = INJECTION_PREAMBLE,
+        context = wrapped_context,
+    );
+
+    let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config)
+        .with_timeout(TRANSCRIPT_ROLE_REVIEW_TIMEOUT_SECS);
+    let output = match pty.spawn_claude(workspace, &prompt) {
+        Ok(o) => o.stdout,
+        Err(e) => {
+            log::warn!(
+                "Transcript role review failed for '{}': {}",
+                meeting.title,
+                e
+            );
+            return None;
+        }
+    };
+
+    let parsed = parse_transcript_role_review_response(&output);
+    if parsed.is_none() {
+        log::warn!(
+            "Transcript role review returned unparseable output for '{}'",
+            meeting.title
+        );
+    }
+    parsed
+}
+
+fn build_attendee_role_hints(
+    db: Option<&ActionDb>,
+    meeting: &CalendarEvent,
+    user_domains: &[String],
+) -> Vec<AttendeeRoleHint> {
+    let mut seen = HashSet::new();
+    meeting
+        .attendees
+        .iter()
+        .filter_map(|email| {
+            let email = email.trim().to_lowercase();
+            if email.is_empty()
+                || !email.contains('@')
+                || email.ends_with("@group.calendar.google.com")
+                || !seen.insert(email.clone())
+            {
+                return None;
+            }
+
+            let name = db
+                .and_then(|db| db.get_person_by_email_or_alias(&email).ok().flatten())
+                .and_then(|person| {
+                    let trimmed = person.name.trim();
+                    (!trimmed.is_empty()).then_some(trimmed.to_string())
+                })
+                .unwrap_or_else(|| humanize_attendee_email(&email));
+
+            Some(AttendeeRoleHint {
+                name,
+                side: crate::util::classify_relationship_multi(&email, user_domains),
+                email,
+            })
+        })
+        .collect()
+}
+
+fn humanize_attendee_email(email: &str) -> String {
+    let local = email.split('@').next().unwrap_or(email);
+    local
+        .split(['.', '_', '-'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn parse_transcript_role_review_response(output: &str) -> Option<TranscriptRoleReviewPayload> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+
+    serde_json::from_str(&trimmed[start..=end]).ok()
+}
+
+fn parse_reviewed_win_metadata(raw: &str) -> (&str, Option<&str>, Option<&str>) {
+    let (text, evidence) = parse_reviewed_evidence_quote(raw);
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let sub_type = &rest[..end];
+            let content = rest[end + 1..].trim();
+            let sub_type_lower = sub_type.to_lowercase();
+            let valid = matches!(
+                sub_type_lower.as_str(),
+                "adoption"
+                    | "expansion"
+                    | "value_realized"
+                    | "relationship"
+                    | "commercial"
+                    | "advocacy"
+            );
+            if valid {
+                return (content, Some(sub_type), evidence);
+            }
+        }
+    }
+
+    (text, None, evidence)
+}
+
+fn parse_reviewed_risk_metadata(raw: &str) -> (&str, Option<String>, Option<&str>) {
+    let (text, evidence) = parse_reviewed_evidence_quote(raw);
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            let urgency = rest[..end].trim().to_lowercase();
+            let content = rest[end + 1..].trim();
+            let valid = matches!(urgency.as_str(), "red" | "yellow" | "green_watch");
+            if valid {
+                return (content, Some(urgency), evidence);
+            }
+        }
+    }
+
+    (text, None, evidence)
+}
+
+fn parse_reviewed_evidence_quote(raw: &str) -> (&str, Option<&str>) {
+    if let Some(hash_idx) = raw.rfind("#\"") {
+        let main = raw[..hash_idx].trim();
+        let quote_start = hash_idx + 2;
+        if let Some(end_idx) = raw[quote_start..].find('"') {
+            let quote = &raw[quote_start..quote_start + end_idx];
+            (main, Some(quote))
+        } else {
+            let quote = raw[quote_start..].trim_end_matches('"');
+            (main, Some(quote))
+        }
+    } else {
+        (raw, None)
+    }
+}
+
+fn replace_transcript_outcome_captures(
+    db: &ActionDb,
+    meeting_id: &str,
+    meeting_title: &str,
+    account_id: Option<&str>,
+    wins: &[String],
+    risks: &[String],
+    decisions: &[String],
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn
+            .execute(
+                "DELETE FROM captures
+             WHERE meeting_id = ?1
+               AND capture_type IN ('win', 'risk', 'decision')",
+                rusqlite::params![meeting_id],
+            )
+            .map_err(|e| format!("clear reviewed captures failed: {e}"))?;
+
+        for win in wins {
+            let (content, sub_type, evidence_quote) = parse_reviewed_win_metadata(win);
+            tx.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                "win",
+                content,
+                sub_type,
+                None,
+                evidence_quote,
+            )
+            .map_err(|e| format!("reinsert reviewed win failed: {e}"))?;
+        }
+        for risk in risks {
+            let (content, urgency, evidence_quote) = parse_reviewed_risk_metadata(risk);
+            tx.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                "risk",
+                content,
+                None,
+                urgency.as_deref(),
+                evidence_quote,
+            )
+            .map_err(|e| format!("reinsert reviewed risk failed: {e}"))?;
+        }
+        for decision in decisions {
+            let (content, evidence_quote) = parse_reviewed_evidence_quote(decision);
+            tx.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                "decision",
+                content,
+                None,
+                None,
+                evidence_quote,
+            )
+            .map_err(|e| format!("reinsert reviewed decision failed: {e}"))?;
+        }
+
+        Ok(())
+    })
 }
 
 /// Extract actions from AI output, using meeting ID as source_id for meeting-scoped queries.
