@@ -86,10 +86,7 @@ pub async fn abandon_objective(
 }
 
 #[tauri::command]
-pub async fn delete_objective(
-    id: String,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub async fn delete_objective(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state
         .db_write(move |db| crate::services::success_plans::delete_objective(db, &id))
         .await
@@ -160,10 +157,7 @@ pub async fn skip_milestone(
 }
 
 #[tauri::command]
-pub async fn delete_milestone(
-    id: String,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub async fn delete_milestone(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state
         .db_write(move |db| crate::services::success_plans::delete_milestone(db, &id))
         .await
@@ -176,7 +170,9 @@ pub async fn link_action_to_objective(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state
-        .db_write(move |db| crate::services::success_plans::link_action_to_objective(db, &action_id, &objective_id))
+        .db_write(move |db| {
+            crate::services::success_plans::link_action_to_objective(db, &action_id, &objective_id)
+        })
         .await
 }
 
@@ -187,7 +183,13 @@ pub async fn unlink_action_from_objective(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state
-        .db_write(move |db| crate::services::success_plans::unlink_action_from_objective(db, &action_id, &objective_id))
+        .db_write(move |db| {
+            crate::services::success_plans::unlink_action_from_objective(
+                db,
+                &action_id,
+                &objective_id,
+            )
+        })
         .await
 }
 
@@ -198,7 +200,9 @@ pub async fn reorder_objectives(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state
-        .db_write(move |db| crate::services::success_plans::reorder_objectives(db, &account_id, &ordered_ids))
+        .db_write(move |db| {
+            crate::services::success_plans::reorder_objectives(db, &account_id, &ordered_ids)
+        })
         .await
 }
 
@@ -209,7 +213,9 @@ pub async fn reorder_milestones(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state
-        .db_write(move |db| crate::services::success_plans::reorder_milestones(db, &objective_id, &ordered_ids))
+        .db_write(move |db| {
+            crate::services::success_plans::reorder_milestones(db, &objective_id, &ordered_ids)
+        })
         .await
 }
 
@@ -219,7 +225,9 @@ pub async fn get_objective_suggestions(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::types::SuggestedObjective>, String> {
     state
-        .db_read(move |db| crate::services::success_plans::get_objective_suggestions(db, &account_id))
+        .db_read(move |db| {
+            crate::services::success_plans::get_objective_suggestions(db, &account_id)
+        })
         .await
 }
 
@@ -229,10 +237,16 @@ pub async fn create_objective_from_suggestion(
     suggestion_json: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::types::AccountObjective, String> {
-    let suggestion: crate::types::SuggestedObjective =
-        serde_json::from_str(&suggestion_json).map_err(|e| format!("Invalid suggestion JSON: {e}"))?;
+    let suggestion: crate::types::SuggestedObjective = serde_json::from_str(&suggestion_json)
+        .map_err(|e| format!("Invalid suggestion JSON: {e}"))?;
     state
-        .db_write(move |db| crate::services::success_plans::create_objective_from_suggestion(db, &account_id, &suggestion))
+        .db_write(move |db| {
+            crate::services::success_plans::create_objective_from_suggestion(
+                db,
+                &account_id,
+                &suggestion,
+            )
+        })
         .await
 }
 
@@ -248,6 +262,12 @@ pub async fn apply_success_plan_template(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::types::AccountObjective>, String> {
     state
-        .db_write(move |db| crate::services::success_plans::apply_success_plan_template(db, &account_id, &template_id))
+        .db_write(move |db| {
+            crate::services::success_plans::apply_success_plan_template(
+                db,
+                &account_id,
+                &template_id,
+            )
+        })
         .await
 }
