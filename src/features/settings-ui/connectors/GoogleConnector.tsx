@@ -29,7 +29,7 @@ export default function GoogleConnection() {
       const s = await invoke<DriveStatusData>("get_google_drive_status");
       setDriveStatus(s);
     } catch (err) {
-      console.error("get_google_drive_status failed:", err);
+      console.error("get_google_drive_status failed:", err); // Expected: background init
     }
   }, []);
 
@@ -38,7 +38,7 @@ export default function GoogleConnection() {
       const items = await invoke<DriveWatchedSource[]>("get_google_drive_watches");
       setDriveSources(items);
     } catch (err) {
-      console.error("get_google_drive_watches failed:", err);
+      console.error("get_google_drive_watches failed:", err); // Expected: background init
     }
   }, []);
 
@@ -74,6 +74,7 @@ export default function GoogleConnection() {
       );
     } catch (err) {
       console.error("Failed to remove source:", err);
+      toast.error("Failed to remove source");
     }
   }
 

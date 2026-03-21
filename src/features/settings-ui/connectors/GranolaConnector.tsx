@@ -23,7 +23,7 @@ export default function GranolaConnection() {
   useEffect(() => {
     invoke<GranolaStatusData>("get_granola_status")
       .then(setStatus)
-      .catch((err) => console.error("get_granola_status failed:", err));
+      .catch((err) => console.error("get_granola_status failed:", err)); // Expected: background init on mount
   }, []);
 
   async function toggleEnabled() {
@@ -35,6 +35,7 @@ export default function GranolaConnection() {
       setStatus(refreshed);
     } catch (err) {
       console.error("Failed to toggle Granola:", err);
+      toast.error("Failed to toggle Granola");
     }
   }
 
@@ -167,6 +168,7 @@ export default function GranolaConnection() {
                   setStatus({ ...status, pollIntervalMinutes: minutes });
                 } catch (err) {
                   console.error("Failed to set poll interval:", err);
+                  toast.error("Failed to update poll interval");
                 }
               }}
               style={{

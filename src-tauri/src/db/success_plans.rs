@@ -24,11 +24,15 @@ impl ActionDb {
             sort_order: row.get("sort_order")?,
             milestones: Vec::new(),
             linked_actions: Vec::new(),
-            linked_action_count: row.get::<_, Option<i32>>("linked_action_count")?.unwrap_or(0),
+            linked_action_count: row
+                .get::<_, Option<i32>>("linked_action_count")?
+                .unwrap_or(0),
             completed_milestone_count: row
                 .get::<_, Option<i32>>("completed_milestone_count")?
                 .unwrap_or(0),
-            total_milestone_count: row.get::<_, Option<i32>>("total_milestone_count")?.unwrap_or(0),
+            total_milestone_count: row
+                .get::<_, Option<i32>>("total_milestone_count")?
+                .unwrap_or(0),
         })
     }
 
@@ -48,7 +52,10 @@ impl ActionDb {
         })
     }
 
-    pub fn get_account_objectives(&self, account_id: &str) -> Result<Vec<AccountObjective>, DbError> {
+    pub fn get_account_objectives(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<AccountObjective>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT o.*,
                     (SELECT COUNT(*) FROM action_objective_links aol WHERE aol.objective_id = o.id) AS linked_action_count,
@@ -138,7 +145,9 @@ impl ActionDb {
             existing.description.clone()
         };
         let next_target_date = if target_date.is_some() {
-            target_date.map(str::to_string).filter(|v| !v.trim().is_empty())
+            target_date
+                .map(str::to_string)
+                .filter(|v| !v.trim().is_empty())
         } else {
             existing.target_date.clone()
         };
@@ -201,7 +210,10 @@ impl ActionDb {
         Ok(())
     }
 
-    pub fn get_objective_milestones(&self, objective_id: &str) -> Result<Vec<AccountMilestone>, DbError> {
+    pub fn get_objective_milestones(
+        &self,
+        objective_id: &str,
+    ) -> Result<Vec<AccountMilestone>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT *
              FROM account_milestones
@@ -217,7 +229,8 @@ impl ActionDb {
     }
 
     pub fn get_milestone(&self, milestone_id: &str) -> Result<Option<AccountMilestone>, DbError> {
-        Ok(self.conn
+        Ok(self
+            .conn
             .query_row(
                 "SELECT * FROM account_milestones WHERE id = ?1",
                 params![milestone_id],
@@ -270,7 +283,9 @@ impl ActionDb {
             .ok_or_else(|| DbError::Migration(format!("Milestone not found: {milestone_id}")))?;
         let next_title = title.unwrap_or(&existing.title);
         let next_target_date = if target_date.is_some() {
-            target_date.map(str::to_string).filter(|v| !v.trim().is_empty())
+            target_date
+                .map(str::to_string)
+                .filter(|v| !v.trim().is_empty())
         } else {
             existing.target_date.clone()
         };
@@ -318,9 +333,9 @@ impl ActionDb {
              WHERE id = ?1",
             params![milestone_id, now],
         )?;
-        let milestone = self
-            .get_milestone(milestone_id)?
-            .ok_or_else(|| DbError::Migration("Milestone not found after completion".to_string()))?;
+        let milestone = self.get_milestone(milestone_id)?.ok_or_else(|| {
+            DbError::Migration("Milestone not found after completion".to_string())
+        })?;
         let objective = self.auto_complete_objective_if_ready(&milestone.objective_id)?;
         Ok((milestone, objective))
     }
@@ -371,7 +386,11 @@ impl ActionDb {
         Ok(None)
     }
 
-    pub fn link_action_to_objective(&self, action_id: &str, objective_id: &str) -> Result<(), DbError> {
+    pub fn link_action_to_objective(
+        &self,
+        action_id: &str,
+        objective_id: &str,
+    ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT OR IGNORE INTO action_objective_links (action_id, objective_id)
              VALUES (?1, ?2)",
@@ -380,7 +399,11 @@ impl ActionDb {
         Ok(())
     }
 
-    pub fn unlink_action_from_objective(&self, action_id: &str, objective_id: &str) -> Result<(), DbError> {
+    pub fn unlink_action_from_objective(
+        &self,
+        action_id: &str,
+        objective_id: &str,
+    ) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM action_objective_links WHERE action_id = ?1 AND objective_id = ?2",
             params![action_id, objective_id],
@@ -388,7 +411,10 @@ impl ActionDb {
         Ok(())
     }
 
-    pub fn get_linked_actions_for_objective(&self, objective_id: &str) -> Result<Vec<DbAction>, DbError> {
+    pub fn get_linked_actions_for_objective(
+        &self,
+        objective_id: &str,
+    ) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.title, a.priority, a.status, a.created_at, a.due_date, a.completed_at,
                     a.account_id, a.project_id, a.source_type, a.source_id, a.source_label,
@@ -408,32 +434,54 @@ impl ActionDb {
         Ok(actions)
     }
 
-    pub fn reorder_objectives(&self, account_id: &str, ordered_ids: &[String]) -> Result<(), DbError> {
+    pub fn reorder_objectives(
+        &self,
+        account_id: &str,
+        ordered_ids: &[String],
+    ) -> Result<(), DbError> {
         for (idx, objective_id) in ordered_ids.iter().enumerate() {
             self.conn.execute(
                 "UPDATE account_objectives
                  SET sort_order = ?1, updated_at = ?3
                  WHERE id = ?2 AND account_id = ?4",
-                params![idx as i32, objective_id, Utc::now().to_rfc3339(), account_id],
+                params![
+                    idx as i32,
+                    objective_id,
+                    Utc::now().to_rfc3339(),
+                    account_id
+                ],
             )?;
         }
         Ok(())
     }
 
-    pub fn reorder_milestones(&self, objective_id: &str, ordered_ids: &[String]) -> Result<(), DbError> {
+    pub fn reorder_milestones(
+        &self,
+        objective_id: &str,
+        ordered_ids: &[String],
+    ) -> Result<(), DbError> {
         for (idx, milestone_id) in ordered_ids.iter().enumerate() {
             self.conn.execute(
                 "UPDATE account_milestones
                  SET sort_order = ?1, updated_at = ?3
                  WHERE id = ?2 AND objective_id = ?4",
-                params![idx as i32, milestone_id, Utc::now().to_rfc3339(), objective_id],
+                params![
+                    idx as i32,
+                    milestone_id,
+                    Utc::now().to_rfc3339(),
+                    objective_id
+                ],
             )?;
         }
         Ok(())
     }
 
-    pub fn get_success_plan_signals_json(&self, account_id: &str) -> Result<Option<String>, DbError> {
-        Ok(self.conn
+    pub fn get_success_plan_signals_json(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<String>, DbError> {
+        Ok(self
+            .conn
             .query_row(
                 "SELECT success_plan_signals_json
                  FROM entity_assessment
@@ -448,8 +496,17 @@ impl ActionDb {
     pub fn get_unconsumed_commitments(
         &self,
         account_id: &str,
-    ) -> Result<Vec<(String, String, Option<String>, Option<String>, String, Option<String>)>, DbError>
-    {
+    ) -> Result<
+        Vec<(
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+        )>,
+        DbError,
+    > {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, owner, target_date, confidence, source
              FROM captured_commitments

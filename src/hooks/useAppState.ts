@@ -66,7 +66,7 @@ export function useAppStateProvider(): AppStateContext {
       const state = await invoke<AppState>("get_app_state");
       setAppState(state);
     } catch (err) {
-      console.error("get_app_state failed:", err);
+      console.error("get_app_state failed:", err); // Expected: background init on mount
     } finally {
       setLoading(false);
     }
@@ -81,7 +81,7 @@ export function useAppStateProvider(): AppStateContext {
       await invoke("install_demo_data");
       await refresh();
     } catch (err) {
-      console.error("install_demo_data failed:", err);
+      console.error("install_demo_data failed:", err); // Expected: demo install can fail gracefully
     }
   }, [refresh]);
 
@@ -92,7 +92,7 @@ export function useAppStateProvider(): AppStateContext {
       // After clearing demo data, re-enter the wizard so the user can connect real data
       setForceOnboarding(true);
     } catch (err) {
-      console.error("clear_demo_data failed:", err);
+      console.error("clear_demo_data failed:", err); // Expected: demo clear can fail gracefully
     }
   }, [refresh]);
 
@@ -101,7 +101,7 @@ export function useAppStateProvider(): AppStateContext {
       await invoke("set_tour_completed");
       setAppState((prev) => ({ ...prev, hasCompletedTour: true }));
     } catch (err) {
-      console.error("set_tour_completed failed:", err);
+      console.error("set_tour_completed failed:", err); // Expected: tour state best-effort
     }
   }, []);
 
@@ -114,7 +114,7 @@ export function useAppStateProvider(): AppStateContext {
       await invoke("set_wizard_completed");
       setAppState((prev) => ({ ...prev, wizardCompletedAt: new Date().toISOString() }));
     } catch (err) {
-      console.error("set_wizard_completed failed:", err);
+      console.error("set_wizard_completed failed:", err); // Expected: wizard state best-effort
     }
   }, []);
 

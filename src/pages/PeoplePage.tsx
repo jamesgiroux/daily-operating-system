@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { useNavigate, useSearch, Link } from "@tanstack/react-router";
 import {
@@ -84,7 +85,7 @@ export default function PeoplePage() {
     invoke<DuplicateCandidate[]>("get_duplicate_people")
       .then(setDuplicates)
       .catch((err) => {
-        console.error("get_duplicate_people failed:", err);
+        console.error("get_duplicate_people failed:", err); // Expected: background data fetch on mount
         setDuplicates([]);
       });
   }, []);
@@ -506,6 +507,7 @@ export default function PeoplePage() {
                                   loadDuplicates();
                                 } catch (err) {
                                   console.error("Merge failed:", err);
+                                  toast.error("Failed to merge contacts");
                                 }
                               }}
                             >

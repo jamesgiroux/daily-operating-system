@@ -157,13 +157,14 @@ export default function AccountHealthPage() {
         try {
           setContent(normalizeAccountHealth(JSON.parse(data.contentJson)));
         } catch (e) {
-          console.error("Failed to parse account health content:", e);
+          console.error("Failed to parse account health content:", e); // Expected: corrupted report JSON
           setContent(null);
         }
         setError(null);
       })
       .catch((err) => {
         console.error("get_report (account_health) failed:", err);
+        toast.error("Failed to load health report");
         setReport(null);
         setContent(null);
       })
@@ -175,7 +176,7 @@ export default function AccountHealthPage() {
     if (!accountId) return;
     invoke<{ name: string }>("get_account_detail", { accountId })
       .then((acct) => setAccountName(acct.name))
-      .catch((err) => console.error("get_account_detail failed:", err));
+      .catch((err) => console.error("get_account_detail failed:", err)); // Expected: background data fetch on mount
   }, [accountId]);
 
   // Generate handler

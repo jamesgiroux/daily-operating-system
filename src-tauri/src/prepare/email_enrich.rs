@@ -254,10 +254,9 @@ pub fn enrich_pending_emails_two_phase(
 ) -> usize {
     // Phase 1: Get pending emails + resolve entities (short DB lock)
     let pending: Vec<(DbEmail, Option<String>, Option<String>)> = {
-        let guard = state.db.lock().ok();
-        let db = match guard.as_ref().and_then(|g| g.as_ref()) {
-            Some(db) => db,
-            None => return 0,
+        let db = match crate::db::ActionDb::open() {
+            Ok(d) => d,
+            Err(_) => return 0,
         };
         let emails = match db.get_pending_enrichment(limit) {
             Ok(e) => e,
@@ -269,7 +268,7 @@ pub fn enrich_pending_emails_two_phase(
         emails
             .into_iter()
             .map(|email| {
-                let (eid, etype) = resolve_entity(db, &email);
+                let (eid, etype) = resolve_entity(&db, &email);
                 (email, eid, etype)
             })
             .collect()
@@ -283,7 +282,7 @@ pub fn enrich_pending_emails_two_phase(
     let mut enriched_count = 0usize;
     let total_pending = pending.len();
 
-    // Phase 2: AI enrichment via PTY (no DB lock held)
+    // Step 2: AI enrichment via PTY (no DB lock held)
     for (email, entity_id, entity_type) in &pending {
         // Check for injection attempts in email fields (I466)
         let fields_to_check: [(&str, &str); 4] = [
@@ -305,13 +304,12 @@ pub fn enrich_pending_emails_two_phase(
         }
         // Build context prompt — needs DB for relationship context
         let prompt = {
-            let guard = state.db.lock().ok();
-            let db = match guard.as_ref().and_then(|g| g.as_ref()) {
-                Some(db) => db,
-                None => continue,
+            let db = match crate::db::ActionDb::open() {
+                Ok(d) => d,
+                Err(_) => continue,
             };
-            build_enrichment_prompt(db, email, entity_id.as_deref(), entity_type.as_deref())
-        }; // DB lock released before PTY call
+            build_enrichment_prompt(&db, email, entity_id.as_deref(), entity_type.as_deref())
+        };
 
         let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config)
             .with_timeout(30)
@@ -332,8 +330,7 @@ pub fn enrich_pending_emails_two_phase(
         };
 
         // Phase 3: Persist result (short DB lock per email)
-        let guard = state.db.lock().ok();
-        if let Some(db) = guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             match ai_result {
                 Ok(result) => {
                     let update = result.as_db_update();

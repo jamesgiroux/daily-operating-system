@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 
 interface FeedbackRow {
   id: string;
@@ -51,7 +52,7 @@ export function useIntelligenceFeedback(
         }
         setFeedbackState(state);
       })
-      .catch((e) => console.error("Failed to load feedback:", e))
+      .catch((e) => console.error("Failed to load feedback:", e)) // Expected: background data fetch on mount
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
@@ -90,6 +91,7 @@ export function useIntelligenceFeedback(
         });
       } catch (e) {
         console.error("Failed to submit feedback:", e);
+        toast.error("Failed to submit feedback");
         // Revert optimistic update
         setFeedbackState((prev) => ({ ...prev, [field]: current ?? null }));
       }

@@ -53,16 +53,10 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
         }
 
         // Get watched sources
-        let sources = match state.db.lock() {
-            Ok(db_guard) => {
-                if let Some(db) = db_guard.as_ref() {
-                    sync::get_all_watched_sources(db).unwrap_or_default()
-                } else {
-                    Vec::new()
-                }
-            }
-            Err(_) => {
-                log::warn!("GoogleDrivePoller: DB lock poisoned");
+        let sources = match crate::db::ActionDb::open() {
+            Ok(db) => sync::get_all_watched_sources(&db).unwrap_or_default(),
+            Err(e) => {
+                log::warn!("GoogleDrivePoller: DB open failed: {e}");
                 Vec::new()
             }
         };
@@ -120,10 +114,8 @@ async fn sync_watched_source(
 
         // Get a start page token so future polls use the Changes API
         let start_token = client::get_start_page_token().await?;
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                let _ = sync::mark_synced(db, &source.id, &start_token);
-            }
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let _ = sync::mark_synced(&db, &source.id, &start_token);
         }
 
         return Ok(());
@@ -171,10 +163,8 @@ async fn sync_watched_source(
 
     // Update the changes token
     if !next_token.is_empty() {
-        if let Ok(db_guard) = state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                let _ = sync::mark_synced(db, &source.id, &next_token);
-            }
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let _ = sync::mark_synced(&db, &source.id, &next_token);
         }
     }
 

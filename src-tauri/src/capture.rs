@@ -377,15 +377,9 @@ fn build_auto_outcome(
     result: &crate::types::TranscriptResult,
     state: &AppState,
 ) -> crate::types::MeetingOutcomeData {
-    let actions = state
-        .db
-        .lock()
+    let actions = crate::db::ActionDb::open()
         .ok()
-        .and_then(|guard| {
-            guard
-                .as_ref()
-                .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
-        })
+        .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
         .unwrap_or_default();
 
     let transcript_path = state

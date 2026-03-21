@@ -92,8 +92,10 @@ pub fn compute_account_health(
     }
     for ev in &dims.stakeholder_coverage.evidence {
         if ev.starts_with("Missing:") {
-            recommended_actions
-                .push(format!("Map a {} stakeholder for this account", ev.trim_start_matches("Missing: ")));
+            recommended_actions.push(format!(
+                "Map a {} stakeholder for this account",
+                ev.trim_start_matches("Missing: ")
+            ));
         }
     }
 
@@ -268,27 +270,38 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
     // I555: Quality modifier from interaction dynamics
     let quality_multiplier = {
         let mut q = 1.0f64;
-        if let Ok(dynamics_rows) = db.conn.prepare(
-            "SELECT mid.question_density, mid.decision_maker_active, mid.forward_looking
+        if let Ok(dynamics_rows) = db
+            .conn
+            .prepare(
+                "SELECT mid.question_density, mid.decision_maker_active, mid.forward_looking
              FROM meeting_interaction_dynamics mid
              JOIN meeting_entities me ON me.meeting_id = mid.meeting_id AND me.entity_id = ?1
-             ORDER BY mid.created_at DESC LIMIT 3"
-        ).and_then(|mut stmt| {
-            stmt.query_map(rusqlite::params![account_id], |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                ))
-            }).map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
-        }) {
+             ORDER BY mid.created_at DESC LIMIT 3",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map(rusqlite::params![account_id], |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+        {
             if !dynamics_rows.is_empty() {
                 let mut quality_score = 0.0f64;
                 let n = dynamics_rows.len() as f64;
                 for (qd, dma, fl) in &dynamics_rows {
-                    if qd.as_deref() == Some("high") { quality_score += 1.0; }
-                    if dma.as_deref() == Some("yes") { quality_score += 1.0; }
-                    if fl.as_deref() == Some("high") { quality_score += 1.0; }
+                    if qd.as_deref() == Some("high") {
+                        quality_score += 1.0;
+                    }
+                    if dma.as_deref() == Some("yes") {
+                        quality_score += 1.0;
+                    }
+                    if fl.as_deref() == Some("high") {
+                        quality_score += 1.0;
+                    }
                 }
                 let avg_quality = quality_score / (n * 3.0);
                 q = 0.7 + (avg_quality * 0.5); // Range: 0.7 to 1.2
@@ -310,7 +323,9 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
     DimensionScore {
         score,
         weight: 1.0,
-        evidence: vec![format!("{count_30d:.0} meetings in 30d, ratio={ratio:.2}, quality={quality_multiplier:.2}")],
+        evidence: vec![format!(
+            "{count_30d:.0} meetings in 30d, ratio={ratio:.2}, quality={quality_multiplier:.2}"
+        )],
         trend,
     }
 }
@@ -375,18 +390,22 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
         }
 
         // I555: Verify attendance recency via meeting_attendees
-        let weight = if let Some(person_id) = team.iter()
+        let weight = if let Some(person_id) = team
+            .iter()
             .find(|t| t.role.to_lowercase().contains(role))
             .map(|t| t.person_id.as_str())
         {
-            let last_seen_days = db.conn.query_row(
-                "SELECT CAST(julianday('now') - julianday(MAX(m.start_time)) AS INTEGER)
+            let last_seen_days = db
+                .conn
+                .query_row(
+                    "SELECT CAST(julianday('now') - julianday(MAX(m.start_time)) AS INTEGER)
                  FROM meeting_attendees ma
                  JOIN meetings m ON m.id = ma.meeting_id
                  WHERE ma.person_id = ?1",
-                rusqlite::params![person_id],
-                |row| row.get::<_, Option<i64>>(0),
-            ).unwrap_or(None);
+                    rusqlite::params![person_id],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .unwrap_or(None);
 
             match last_seen_days {
                 Some(d) if d <= 90 => {
@@ -494,7 +513,10 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
                 evidence: vec![
                     format!(
                         "No named champion — {} attended {}/{} meetings ({:.0}%)",
-                        att.person_name, att.attended, total_meetings, att.pct * 100.0,
+                        att.person_name,
+                        att.attended,
+                        total_meetings,
+                        att.pct * 100.0,
                     ),
                     format!("Consider tagging {} as champion", att.person_name),
                 ],
@@ -509,9 +531,15 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
                 evidence: vec![
                     format!(
                         "No named champion — {} attended {}/{} meetings ({:.0}%)",
-                        att.person_name, att.attended, total_meetings, att.pct * 100.0,
+                        att.person_name,
+                        att.attended,
+                        total_meetings,
+                        att.pct * 100.0,
                     ),
-                    format!("Strong engagement from {} — consider as champion candidate", att.person_name),
+                    format!(
+                        "Strong engagement from {} — consider as champion candidate",
+                        att.person_name
+                    ),
                 ],
                 trend: "stable".to_string(),
             }
@@ -523,7 +551,10 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
                 weight: 0.5, // Reduced weight — we're less sure
                 evidence: vec![format!(
                     "No named champion — best attendee {} at {}/{} meetings ({:.0}%)",
-                    att.person_name, att.attended, total_meetings, att.pct * 100.0,
+                    att.person_name,
+                    att.attended,
+                    total_meetings,
+                    att.pct * 100.0,
                 )],
                 trend: String::new(),
             }
@@ -545,18 +576,23 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     }
 
     // I555: Query per-champion meeting engagement from meeting_champion_health
-    let champion_assessments: Vec<(String, String, Option<String>)> = db.conn.prepare(
-        "SELECT m.start_time, mch.champion_status, mch.champion_evidence
+    let champion_assessments: Vec<(String, String, Option<String>)> = db
+        .conn
+        .prepare(
+            "SELECT m.start_time, mch.champion_status, mch.champion_evidence
          FROM meeting_champion_health mch
          JOIN meetings m ON m.id = mch.meeting_id
          JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
          WHERE mch.champion_name IS NOT NULL
-         ORDER BY m.start_time DESC LIMIT 5"
-    ).and_then(|mut stmt| {
-        stmt.query_map(rusqlite::params![account_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        }).map(|rows| rows.filter_map(|r| r.ok()).collect())
-    }).unwrap_or_default();
+         ORDER BY m.start_time DESC LIMIT 5",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![account_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
 
     if champion_assessments.is_empty() {
         // Fallback to structural check (pre-I555 behavior)
@@ -579,15 +615,16 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     }
 
     // Score based on recent champion engagement
-    let status_scores: Vec<f64> = champion_assessments.iter().map(|(_, status, _)| {
-        match status.as_str() {
+    let status_scores: Vec<f64> = champion_assessments
+        .iter()
+        .map(|(_, status, _)| match status.as_str() {
             "strong" => 90.0,
             "weak" => 40.0,
             "lost" => 10.0,
             "none" => 20.0,
             _ => 50.0,
-        }
-    }).collect();
+        })
+        .collect();
 
     let avg_score = status_scores.iter().sum::<f64>() / status_scores.len() as f64;
 
@@ -595,15 +632,21 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
     let trend = if status_scores.len() >= 2 {
         let recent = status_scores[0];
         let older = status_scores[status_scores.len() - 1];
-        if recent > older + 10.0 { "improving" }
-        else if recent < older - 10.0 { "declining" }
-        else { "stable" }
+        if recent > older + 10.0 {
+            "improving"
+        } else if recent < older - 10.0 {
+            "declining"
+        } else {
+            "stable"
+        }
     } else {
         "stable"
     };
 
     // Build evidence with specific meeting dates and statuses
-    let champion_name = champion.map(|c| c.person_name.as_str()).unwrap_or("Champion");
+    let champion_name = champion
+        .map(|c| c.person_name.as_str())
+        .unwrap_or("Champion");
     let mut evidence = vec![format!(
         "{champion_name}: {} across {} meetings",
         champion_assessments[0].1,
@@ -639,8 +682,8 @@ fn compute_champion_health(db: &ActionDb, account_id: &str) -> DimensionScore {
 
     if !glean_gong_signals.is_empty() {
         // Gong data shows champion engagement patterns we can't see locally
-        let avg_confidence: f64 =
-            glean_gong_signals.iter().map(|(_, c)| c).sum::<f64>() / glean_gong_signals.len() as f64;
+        let avg_confidence: f64 = glean_gong_signals.iter().map(|(_, c)| c).sum::<f64>()
+            / glean_gong_signals.len() as f64;
         if avg_confidence >= 0.7 {
             // High-confidence Gong data — boost or reduce based on signal content
             final_score = (final_score + avg_confidence * 100.0) / 2.0; // Blend
@@ -795,7 +838,8 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
         let cadence_boost = (zendesk_signals.len().min(4) as f64) * 6.0;
         zendesk_velocity += cadence_boost;
 
-        if let Some((latest_value, latest_confidence, latest_created_at)) = zendesk_signals.first() {
+        if let Some((latest_value, latest_confidence, latest_created_at)) = zendesk_signals.first()
+        {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(latest_value) {
                 let trend = parsed
                     .get("trend")
@@ -850,8 +894,8 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
             ));
         }
 
-        momentum = (base_momentum * 0.65 + zendesk_velocity.clamp(10.0, 100.0) * 0.35)
-            .clamp(10.0, 100.0);
+        momentum =
+            (base_momentum * 0.65 + zendesk_velocity.clamp(10.0, 100.0) * 0.35).clamp(10.0, 100.0);
     }
 
     DimensionScore {

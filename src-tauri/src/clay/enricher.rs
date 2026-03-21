@@ -41,8 +41,7 @@ pub async fn enrich_person_from_clay_with_client(
 ) -> Result<EnrichmentResult, String> {
     // Phase 1: Load person under lock, then release
     let (email, name, org, old_title_history, old_org, old_linkedin, old_twitter) = {
-        let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
         let person = db
             .get_person(person_id)
             .map_err(|e| e.to_string())?
@@ -58,7 +57,7 @@ pub async fn enrich_person_from_clay_with_client(
         )
     };
 
-    // Phase 2: Async Clay calls (no lock held)
+    // Step 2: Async Clay calls (no lock held)
     let mut search_results = client
         .search_contact(&email)
         .await
@@ -163,8 +162,7 @@ pub async fn enrich_person_from_clay_with_client(
     };
 
     let fields_updated = {
-        let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
         let result = db
             .update_person_profile(person_id, &update, "clay")
             .map_err(|e| e.to_string())?;
@@ -174,8 +172,7 @@ pub async fn enrich_person_from_clay_with_client(
     // Emit change signals to the signal bus
     let signal_names: Vec<String> = signals.iter().map(|s| s.signal_type.clone()).collect();
     {
-        let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
         for signal in &signals {
             let value = serde_json::json!({
                 "description": signal.description,
@@ -184,7 +181,7 @@ pub async fn enrich_person_from_clay_with_client(
             })
             .to_string();
             let _ = crate::services::signals::emit_and_propagate(
-                db,
+                &db,
                 &state.signals.engine,
                 "person",
                 person_id,

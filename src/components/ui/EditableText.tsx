@@ -19,7 +19,7 @@ interface EditableTextProps {
   /** Current text value */
   value: string;
   /** Called when user commits an edit (blur or Enter) */
-  onChange: (value: string) => void;
+  onChange: (value: string) => void | Promise<unknown>;
   /** HTML element to render in display mode */
   as?: "span" | "p" | "h1" | "h2" | "h3" | "div";
   /** Inline styles applied to both display and edit mode */
@@ -61,13 +61,27 @@ export function EditableText({
 }: EditableTextProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+  const [committedValue, setCommittedValue] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLElement>(null);
+  const previousValueRef = useRef(value);
+  const displayValue = committedValue ?? value;
 
   // Sync draft when external value changes (e.g. regenerate)
   useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
+    if (value !== previousValueRef.current) {
+      previousValueRef.current = value;
+      setCommittedValue(null);
+      if (!editing) {
+        setDraft(value);
+      }
+      return;
+    }
+
+    if (!editing && committedValue === null) {
+      setDraft(value);
+    }
+  }, [value, editing, committedValue]);
 
   // Focus + select on enter edit mode
   useEffect(() => {
@@ -77,11 +91,18 @@ export function EditableText({
     }
   }, [editing]);
 
-  const commit = useCallback(() => {
+  const commit = useCallback(async () => {
     setEditing(false);
     const trimmed = draft.trim();
     if (trimmed !== value) {
-      onChange(trimmed);
+      setDraft(trimmed);
+      setCommittedValue(trimmed);
+      try {
+        await Promise.resolve(onChange(trimmed));
+      } catch {
+        setCommittedValue(null);
+        setDraft(value);
+      }
     }
   }, [draft, value, onChange]);
 
@@ -153,7 +174,9 @@ export function EditableText({
             setDraft(e.target.value);
             autoResize(e.target);
           }}
-          onBlur={commit}
+          onBlur={() => {
+            void commit();
+          }}
           onKeyDown={handleKeyDown}
           onFocus={(e) => autoResize(e.target)}
           style={inputStyle}
@@ -168,7 +191,9 @@ export function EditableText({
         ref={inputRef as React.RefObject<HTMLInputElement>}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => {
+          void commit();
+        }}
         onKeyDown={handleKeyDown}
         style={inputStyle}
         {...{ [EDITABLE_ATTR]: "" }}
@@ -179,13 +204,16 @@ export function EditableText({
   return (
     <Tag
       ref={wrapperRef as unknown as React.Ref<HTMLDivElement>}
-      onClick={() => setEditing(true)}
+      onClick={() => {
+        setDraft(displayValue);
+        setEditing(true);
+      }}
       className={`${styles.editable}${className ? ` ${className}` : ""}`}
       style={style}
       title="Click to edit"
       {...{ [EDITABLE_ATTR]: "" }}
     >
-      {value || placeholder}
+      {displayValue || placeholder}
     </Tag>
   );
 }

@@ -19,8 +19,8 @@ use crate::db::ActionDb;
 use crate::intelligence::IntelligenceContext;
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::{
-    AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover, RiskStakes, RiskTheAsk,
-    RiskThePlan, RiskWhatHappened,
+    AiModelConfig, RiskBottomLine, RiskBriefing, RiskCover, RiskStakes, RiskTheAsk, RiskThePlan,
+    RiskWhatHappened,
 };
 use crate::util::{atomic_write_str, sanitize_external_field, wrap_user_data, INJECTION_PREAMBLE};
 
@@ -184,7 +184,9 @@ fn build_risk_section_prompt(context_prompt: &str, section: &str) -> String {
                 r#"{ "whatHappened": { "narrative": "EXACTLY 3 SENTENCES, MAX 60 WORDS TOTAL", "healthArc": [{"period": "Q3 2025", "status": "green|yellow|red", "detail": "2-3 words"}], "keyLosses": ["Max 3 items, 10 words each"] } }"#,
             );
             prompt.push_str("\n\nRules:\n");
-            prompt.push_str("- Sentence 1 baseline, sentence 2 disruption, sentence 3 current state.\n");
+            prompt.push_str(
+                "- Sentence 1 baseline, sentence 2 disruption, sentence 3 current state.\n",
+            );
             prompt.push_str("- Cite dates and names.\n");
             prompt.push_str("- healthArc.detail must be 2-3 words, never a sentence.\n");
         }
@@ -269,24 +271,27 @@ fn empty_risk_briefing(input: &GatheredRiskInput) -> RiskBriefing {
     }
 }
 
-fn merge_risk_section(briefing: &mut RiskBriefing, section: &str, value: serde_json::Value) -> Result<(), String> {
+fn merge_risk_section(
+    briefing: &mut RiskBriefing,
+    section: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
     match section {
         "bottomLine" => {
-            briefing.bottom_line = serde_json::from_value(
-                value.get("bottomLine").cloned().unwrap_or_default(),
-            )
-            .map_err(|e| format!("Failed to parse bottomLine: {}", e))?;
+            briefing.bottom_line =
+                serde_json::from_value(value.get("bottomLine").cloned().unwrap_or_default())
+                    .map_err(|e| format!("Failed to parse bottomLine: {}", e))?;
             briefing.cover.risk_level = briefing.bottom_line.risk_level.clone();
         }
         "whatHappened" => {
-            briefing.what_happened = serde_json::from_value(
-                value.get("whatHappened").cloned().unwrap_or_default(),
-            )
-            .map_err(|e| format!("Failed to parse whatHappened: {}", e))?;
+            briefing.what_happened =
+                serde_json::from_value(value.get("whatHappened").cloned().unwrap_or_default())
+                    .map_err(|e| format!("Failed to parse whatHappened: {}", e))?;
         }
         "stakes" => {
-            briefing.stakes = serde_json::from_value(value.get("stakes").cloned().unwrap_or_default())
-                .map_err(|e| format!("Failed to parse stakes: {}", e))?;
+            briefing.stakes =
+                serde_json::from_value(value.get("stakes").cloned().unwrap_or_default())
+                    .map_err(|e| format!("Failed to parse stakes: {}", e))?;
         }
         "thePlan" => {
             briefing.the_plan =
@@ -294,8 +299,9 @@ fn merge_risk_section(briefing: &mut RiskBriefing, section: &str, value: serde_j
                     .map_err(|e| format!("Failed to parse thePlan: {}", e))?;
         }
         "theAsk" => {
-            briefing.the_ask = serde_json::from_value(value.get("theAsk").cloned().unwrap_or_default())
-                .map_err(|e| format!("Failed to parse theAsk: {}", e))?;
+            briefing.the_ask =
+                serde_json::from_value(value.get("theAsk").cloned().unwrap_or_default())
+                    .map_err(|e| format!("Failed to parse theAsk: {}", e))?;
         }
         _ => return Err(format!("Unknown risk briefing section: {}", section)),
     }
@@ -449,7 +455,7 @@ pub fn gather_risk_input(
     })
 }
 
-/// Phase 2: Run PTY enrichment + parse + write (no DB lock needed).
+/// Step 2: Run PTY enrichment + parse + write (no DB lock needed).
 ///
 /// This is the long-running operation. Keep the AI call bounded to 30s
 /// so it cannot monopolize a worker indefinitely.

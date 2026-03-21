@@ -154,7 +154,10 @@ fn build_ebr_qbr_prompt(
                 let captured: String = row.get(4)?;
                 let date = captured.split('T').next().unwrap_or(&captured).to_string();
                 let src = mtitle.unwrap_or_else(|| "unknown".to_string());
-                Ok(format!("- \"{}\" — {} ({}) [context: {} — {}]", quote, src, date, ctype, content))
+                Ok(format!(
+                    "- \"{}\" — {} ({}) [context: {} — {}]",
+                    quote, src, date, ctype, content
+                ))
             })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))
         })

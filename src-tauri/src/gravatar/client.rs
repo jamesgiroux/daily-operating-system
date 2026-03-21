@@ -226,10 +226,9 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
 
         // Get people needing fetch
         let emails_to_fetch: Vec<(String, Option<String>)> = {
-            let db_guard = state.db.lock().ok();
-            match db_guard.as_ref().and_then(|g| g.as_ref()) {
-                Some(db) => super::cache::get_stale_emails(db.conn_ref(), 50).unwrap_or_default(),
-                None => Vec::new(),
+            match crate::db::ActionDb::open() {
+                Ok(db) => super::cache::get_stale_emails(db.conn_ref(), 50).unwrap_or_default(),
+                Err(_) => Vec::new(),
             }
         };
 
@@ -296,40 +295,38 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                         person_id: person_id.clone(),
                     };
 
-                    if let Ok(db_guard) = state.db.lock() {
-                        if let Some(db) = db_guard.as_ref() {
-                            let _ = super::cache::upsert_cache(db.conn_ref(), &cache_entry);
+                    if let Ok(db) = crate::db::ActionDb::open() {
+                        let _ = super::cache::upsert_cache(db.conn_ref(), &cache_entry);
 
-                            // Write gravatar data to people table via unified profile update
-                            if has_gravatar {
-                                if let Some(ref pid) = person_id {
-                                    let update = crate::db::people::ProfileUpdate {
-                                        photo_url: cache_entry.avatar_url.clone(),
-                                        bio: cache_entry.bio.clone(),
-                                        organization: cache_entry.company.clone(),
-                                        role: cache_entry.job_title.clone(),
-                                        ..Default::default()
-                                    };
-                                    let _ = db.update_person_profile(pid, &update, "gravatar");
+                        // Write gravatar data to people table via unified profile update
+                        if has_gravatar {
+                            if let Some(ref pid) = person_id {
+                                let update = crate::db::people::ProfileUpdate {
+                                    photo_url: cache_entry.avatar_url.clone(),
+                                    bio: cache_entry.bio.clone(),
+                                    organization: cache_entry.company.clone(),
+                                    role: cache_entry.job_title.clone(),
+                                    ..Default::default()
+                                };
+                                let _ = db.update_person_profile(pid, &update, "gravatar");
 
-                                    // Emit profile_discovered signal with propagation
-                                    let value = serde_json::json!({
-                                        "display_name": cache_entry.display_name,
-                                        "company": cache_entry.company,
-                                        "job_title": cache_entry.job_title,
-                                    })
-                                    .to_string();
-                                    let _ = crate::signals::bus::emit_signal_and_propagate(
-                                        db,
-                                        &state.signals.engine,
-                                        "person",
-                                        pid,
-                                        "profile_discovered",
-                                        "gravatar",
-                                        Some(&value),
-                                        0.7,
-                                    );
-                                }
+                                // Emit profile_discovered signal with propagation
+                                let value = serde_json::json!({
+                                    "display_name": cache_entry.display_name,
+                                    "company": cache_entry.company,
+                                    "job_title": cache_entry.job_title,
+                                })
+                                .to_string();
+                                let _ = crate::signals::bus::emit_signal_and_propagate(
+                                    &db,
+                                    &state.signals.engine,
+                                    "person",
+                                    pid,
+                                    "profile_discovered",
+                                    "gravatar",
+                                    Some(&value),
+                                    0.7,
+                                );
                             }
                         }
                     }

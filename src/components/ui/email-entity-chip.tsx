@@ -11,6 +11,7 @@
 
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { Building2, FolderKanban, User } from "lucide-react";
 import { EntityPicker } from "./entity-picker";
 
@@ -58,6 +59,7 @@ export function EmailEntityChip({
         onEntityChanged?.();
       } catch (err) {
         console.error("Failed to update email entity:", err);
+        toast.error("Failed to update assignment");
       }
       setEditing(false);
     },

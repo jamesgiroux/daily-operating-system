@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import type {
   AccountDetail,
   AccountEvent,
@@ -21,6 +22,15 @@ import type {
 import { useAccountFields } from "./useAccountFields";
 import { useEnrichmentProgress } from "./useEnrichmentProgress";
 import { useTeamManagement } from "./useTeamManagement";
+
+interface BackgroundWorkStatusEvent {
+  phase: "started" | "completed" | "failed";
+  message: string;
+  entityId?: string;
+  entityType?: string;
+  stage?: string;
+  error?: string;
+}
 
 export function useAccountDetail(accountId: string | undefined) {
   const navigate = useNavigate();
@@ -148,6 +158,19 @@ export function useAccountDetail(accountId: string | undefined) {
   }, [accountId, load]);
 
   useEffect(() => {
+    const unlisten = listen<BackgroundWorkStatusEvent>(
+      "background-work-status",
+      (event) => {
+        if (event.payload.phase !== "failed") return;
+        if (!accountId || event.payload.entityId !== accountId) return;
+        setEnriching(false);
+        setError(event.payload.error ?? event.payload.message);
+      },
+    );
+    return () => { unlisten.then((fn) => fn()); };
+  }, [accountId]);
+
+  useEffect(() => {
     const unlisten = listen<{ entityIds: string[]; count: number }>(
       "content-changed",
       (event) => {
@@ -202,11 +225,34 @@ export function useAccountDetail(accountId: string | undefined) {
   async function handleEnrich() {
     if (!detail) return;
     setEnriching(true);
+    const refreshPromise = invoke("enrich_account", { accountId: detail.id });
     try {
-      await invoke("enrich_account", { accountId: detail.id });
-      await load();
+      const completed = await Promise.race([
+        refreshPromise.then(() => true),
+        new Promise<boolean>((resolve) => {
+          setTimeout(() => resolve(false), 90_000);
+        }),
+      ]);
+
+      if (completed) {
+        await load();
+      } else {
+        toast("Refresh is still running in the background. This page will update when it finishes.", {
+          duration: 8000,
+          id: "account-refresh-background",
+        });
+        void refreshPromise
+          .then(() => load())
+          .catch((e) => {
+            const message = String(e);
+            setError(message);
+            toast.error(message, { id: "account-refresh-error", duration: 8000 });
+          });
+      }
     } catch (e) {
-      setError(String(e));
+      const message = String(e);
+      setError(message);
+      toast.error(message, { id: "account-refresh-error", duration: 8000 });
     } finally {
       setEnriching(false);
     }
@@ -248,6 +294,7 @@ export function useAccountDetail(accountId: string | undefined) {
           });
         } catch (e) {
           console.error("Failed to save programs:", e);
+          toast.error("Failed to save programs");
         }
       }, 400);
     },

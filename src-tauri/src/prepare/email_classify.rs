@@ -278,6 +278,7 @@ const BOOST_SIGNAL_TYPES: &[&str] = &[
     "escalation",
     "expansion_opportunity",
     "cadence_anomaly",
+    "email_cadence_drop",
     "project_health_warning",
 ];
 

@@ -199,7 +199,7 @@ export default function PersonDetailEditorial() {
         try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
       })
       .catch((err) => {
-        console.error("get_entity_metadata (person) failed:", err);
+        console.error("get_entity_metadata (person) failed:", err); // Expected: background data fetch on mount
         setMetadataValues({});
       });
   }, [personId]);

@@ -180,7 +180,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         await invoke("set_workspace_path", { path: absPath });
       }
     } catch (e) {
-      console.error("Auto-create workspace failed:", e);
+      console.error("Auto-create workspace failed:", e); // Expected: best-effort workspace creation
     }
   }, []);
 
@@ -202,7 +202,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       await autoCreateWorkspace();
       await invoke("install_demo_data");
     } catch (e) {
-      console.error("Demo install failed:", e);
+      console.error("Demo install failed:", e); // Expected: best-effort demo install
     }
     onComplete();
   }
@@ -214,7 +214,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       const accounts = await invoke<DiscoveredAccount[]>("discover_accounts_from_glean");
       setDiscoveredAccounts(accounts);
     } catch (e) {
-      console.error("Glean discovery failed:", e);
+      console.error("Glean discovery failed:", e); // Expected: best-effort discovery
     } finally {
       setDiscoveryLoading(false);
     }
@@ -238,7 +238,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         // Non-fatal
       }
     } catch (e) {
-      console.error("Wizard completion failed:", e);
+      console.error("Wizard completion failed:", e); // Expected: best-effort wizard completion
     }
     onComplete();
   }

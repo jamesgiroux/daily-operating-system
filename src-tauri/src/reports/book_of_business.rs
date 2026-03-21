@@ -565,17 +565,9 @@ pub fn build_risk_accounts(
                 })
                 .unwrap_or_default();
 
-            let renewal_timing = s
-                .renewal_date
-                .as_deref()
-                .unwrap_or("N/A")
-                .to_string();
+            let renewal_timing = s.renewal_date.as_deref().unwrap_or("N/A").to_string();
 
-            let risk_level = s
-                .health_band
-                .as_deref()
-                .unwrap_or("unknown")
-                .to_string();
+            let risk_level = s.health_band.as_deref().unwrap_or("unknown").to_string();
 
             RiskAccountRow {
                 account_name: s.account_name.clone(),
@@ -587,7 +579,11 @@ pub fn build_risk_accounts(
         })
         .collect();
 
-    rows.sort_by(|a, b| b.arr.partial_cmp(&a.arr).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.arr
+            .partial_cmp(&a.arr)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     rows
 }
 
@@ -633,7 +629,11 @@ pub fn build_expansion_accounts(
         }
     }
 
-    rows.sort_by(|a, b| b.arr.partial_cmp(&a.arr).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        b.arr
+            .partial_cmp(&a.arr)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     rows
 }
 
@@ -642,8 +642,8 @@ pub fn build_year_end_outlook(total_arr: f64, at_risk_arr: f64) -> YearEndOutloo
     YearEndOutlook {
         starting_arr: total_arr,
         at_risk_arr,
-        committed_expansion: 0.0, // User edits this
-        expected_churn: 0.0,      // AI fills or user edits
+        committed_expansion: 0.0,                   // User edits this
+        expected_churn: 0.0,                        // AI fills or user edits
         projected_eoy_arr: total_arr - at_risk_arr, // Conservative default
     }
 }
@@ -655,7 +655,12 @@ fn build_top_risks_summary(risk_accounts: &[RiskAccountRow]) -> Vec<String> {
         .take(3)
         .map(|r| {
             if r.primary_risk_driver.is_empty() {
-                format!("{} — ${:.0}k {}", r.account_name, r.arr / 1000.0, r.risk_level)
+                format!(
+                    "{} — ${:.0}k {}",
+                    r.account_name,
+                    r.arr / 1000.0,
+                    r.risk_level
+                )
             } else {
                 format!("{} — {}", r.account_name, r.primary_risk_driver)
             }
@@ -1069,7 +1074,13 @@ pub fn gather_book_of_business_input(
     active_preset: &str,
     spotlight_account_ids: Option<&[String]>,
 ) -> Result<ReportGeneratorInput, String> {
-    let gather = gather_book_of_business_data(workspace, db, ai_models, active_preset, spotlight_account_ids)?;
+    let gather = gather_book_of_business_data(
+        workspace,
+        db,
+        ai_models,
+        active_preset,
+        spotlight_account_ids,
+    )?;
     gather_to_report_input(&gather)
 }
 
@@ -1117,15 +1128,19 @@ fn build_account_data_block(
     let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut tier_idx = 0usize;
 
-    let emit_account = |prompt: &mut String, snap: &AccountSnapshotRow, tier: usize, indent: &str| {
-        let raw = raw_accounts
-            .iter()
-            .find(|r| r.id == snap.account_id);
+    let emit_account = |prompt: &mut String,
+                        snap: &AccountSnapshotRow,
+                        tier: usize,
+                        indent: &str| {
+        let raw = raw_accounts.iter().find(|r| r.id == snap.account_id);
         let assessment = raw
             .and_then(|r| r.executive_assessment.as_deref())
             .unwrap_or("");
 
-        let arr_str = snap.arr.map(|a| format!("${:.0}", a)).unwrap_or_else(|| "N/A".to_string());
+        let arr_str = snap
+            .arr
+            .map(|a| format!("${:.0}", a))
+            .unwrap_or_else(|| "N/A".to_string());
         let renewal_str = snap.renewal_date.as_deref().unwrap_or("N/A");
         let lifecycle_str = snap.lifecycle.as_deref().unwrap_or("N/A");
         let contact_str = snap.key_contact.as_deref().unwrap_or("N/A");
@@ -1155,28 +1170,49 @@ fn build_account_data_block(
             // Rich intelligence from entity_assessment (already computed by Intelligence Loop)
             if let Some(r) = raw {
                 if let Some(ref risks) = r.risks_json {
-                    if risks.len() > 2 { // not empty "[]"
-                        prompt.push_str(&format!("{}Known risks: {}\n", indent, truncate(risks, 300)));
+                    if risks.len() > 2 {
+                        // not empty "[]"
+                        prompt.push_str(&format!(
+                            "{}Known risks: {}\n",
+                            indent,
+                            truncate(risks, 300)
+                        ));
                     }
                 }
                 if let Some(ref wins) = r.recent_wins_json {
                     if wins.len() > 2 {
-                        prompt.push_str(&format!("{}Recent wins: {}\n", indent, truncate(wins, 300)));
+                        prompt.push_str(&format!(
+                            "{}Recent wins: {}\n",
+                            indent,
+                            truncate(wins, 300)
+                        ));
                     }
                 }
                 if let Some(ref val) = r.value_delivered {
                     if !val.is_empty() {
-                        prompt.push_str(&format!("{}Value delivered: {}\n", indent, truncate(val, 200)));
+                        prompt.push_str(&format!(
+                            "{}Value delivered: {}\n",
+                            indent,
+                            truncate(val, 200)
+                        ));
                     }
                 }
                 if let Some(ref commits) = r.open_commitments {
                     if !commits.is_empty() {
-                        prompt.push_str(&format!("{}Open commitments: {}\n", indent, truncate(commits, 200)));
+                        prompt.push_str(&format!(
+                            "{}Open commitments: {}\n",
+                            indent,
+                            truncate(commits, 200)
+                        ));
                     }
                 }
                 if let Some(ref stakeholders) = r.stakeholder_insights_json {
                     if stakeholders.len() > 2 {
-                        prompt.push_str(&format!("{}Stakeholder insights: {}\n", indent, truncate(stakeholders, 300)));
+                        prompt.push_str(&format!(
+                            "{}Stakeholder insights: {}\n",
+                            indent,
+                            truncate(stakeholders, 300)
+                        ));
                     }
                 }
             }
@@ -1187,7 +1223,10 @@ fn build_account_data_block(
                 "{}**{}** ({}) | ARR: {} | Renewal: {} | Meetings: {}\n",
                 indent,
                 crate::util::sanitize_external_field(&snap.account_name),
-                band_str, arr_str, renewal_str, snap.meeting_count_90d,
+                band_str,
+                arr_str,
+                renewal_str,
+                snap.meeting_count_90d,
             ));
             let para = first_paragraph(assessment, 200);
             if !para.is_empty() {
@@ -1213,7 +1252,8 @@ fn build_account_data_block(
                 "{}- {} | {} | ARR: {}\n",
                 indent,
                 crate::util::sanitize_external_field(&snap.account_name),
-                band_str, arr_str,
+                band_str,
+                arr_str,
             ));
         }
     };
@@ -1234,7 +1274,8 @@ fn build_account_data_block(
         prompt.push_str(&format!(
             "## {} (Parent — {} business units, ${:.0} combined ARR)\n\n",
             crate::util::sanitize_external_field(&snap.account_name),
-            bu_count, total_arr,
+            bu_count,
+            total_arr,
         ));
         emit_account(&mut prompt, snap, tier_idx, "");
         emitted.insert(snap.account_id.clone());
@@ -1282,7 +1323,9 @@ fn build_spotlight_detail_block(
 ) -> String {
     let mut prompt = String::new();
     prompt.push_str("## Spotlight Account Details\n\n");
-    prompt.push_str("Below is the full intelligence context for each account that needs a deep dive.\n");
+    prompt.push_str(
+        "Below is the full intelligence context for each account that needs a deep dive.\n",
+    );
     prompt.push_str("Use this data to write the statusNarrative, renewalOrGrowthImpact, activeWorkstreams, and risksAndGaps.\n\n");
 
     for id in spotlight_ids {
@@ -1292,7 +1335,10 @@ fn build_spotlight_detail_block(
         };
         let raw = raw_accounts.iter().find(|r| r.id == *id);
 
-        let arr_str = snap.arr.map(|a| format!("${:.0}", a)).unwrap_or_else(|| "N/A".to_string());
+        let arr_str = snap
+            .arr
+            .map(|a| format!("${:.0}", a))
+            .unwrap_or_else(|| "N/A".to_string());
         let band_str = snap.health_band.as_deref().unwrap_or("unknown");
         let renewal_str = snap.renewal_date.as_deref().unwrap_or("N/A");
         let lifecycle_str = snap.lifecycle.as_deref().unwrap_or("N/A");
@@ -1472,7 +1518,11 @@ fn build_synthesis_prompt(
                 r.arr,
                 r.renewal_timing,
                 r.risk_level,
-                if r.primary_risk_driver.is_empty() { "—" } else { &r.primary_risk_driver },
+                if r.primary_risk_driver.is_empty() {
+                    "—"
+                } else {
+                    &r.primary_risk_driver
+                },
             ));
         }
         prompt.push('\n');
@@ -1486,7 +1536,11 @@ fn build_synthesis_prompt(
                 "- {} | ARR: ${:.0} | Type: {}\n",
                 crate::util::sanitize_external_field(&e.account_name),
                 e.arr,
-                if e.expansion_type.is_empty() { "Growth" } else { &e.expansion_type },
+                if e.expansion_type.is_empty() {
+                    "Growth"
+                } else {
+                    &e.expansion_type
+                },
             ));
         }
         prompt.push('\n');
@@ -1606,14 +1660,20 @@ fn build_single_deep_dive_prompt(
     account_id: &str,
     glean_ctx: &GleanPortfolioContext,
 ) -> Option<String> {
-    let snap = gather.snapshot.iter().find(|s| s.account_id == account_id)?;
+    let snap = gather
+        .snapshot
+        .iter()
+        .find(|s| s.account_id == account_id)?;
     let raw = gather.raw_accounts.iter().find(|r| r.id == account_id);
 
     let mut prompt = String::with_capacity(4096);
     prompt.push_str("You are a senior customer success strategist preparing a deep dive slide for a leadership presentation.\n");
     prompt.push_str("Ground every claim in the data provided. Use executive-ready language.\n\n");
 
-    let arr_str = snap.arr.map(|a| format!("${:.0}", a)).unwrap_or_else(|| "N/A".to_string());
+    let arr_str = snap
+        .arr
+        .map(|a| format!("${:.0}", a))
+        .unwrap_or_else(|| "N/A".to_string());
     let band_str = snap.health_band.as_deref().unwrap_or("unknown");
     let renewal_str = snap.renewal_date.as_deref().unwrap_or("N/A");
     let lifecycle_str = snap.lifecycle.as_deref().unwrap_or("N/A");
@@ -1686,7 +1746,11 @@ fn build_single_deep_dive_prompt(
     let glean_parts: Vec<&str> = [
         glean_ctx.risk_pulse.as_deref(),
         glean_ctx.pipeline_signals.as_deref(),
-    ].iter().copied().flatten().collect();
+    ]
+    .iter()
+    .copied()
+    .flatten()
+    .collect();
     if !glean_parts.is_empty() {
         prompt.push_str("## Enterprise Context (Glean)\n");
         for part in glean_parts {
@@ -1814,7 +1878,8 @@ pub fn run_bob_generation(
     let expansion_accounts = build_expansion_accounts(&gather.snapshot, &gather.raw_accounts);
     emit_progress(app_handle, "expansionAccounts", 3);
 
-    let _year_end_outlook = build_year_end_outlook(gather.metrics.total_arr, gather.metrics.at_risk_arr);
+    let _year_end_outlook =
+        build_year_end_outlook(gather.metrics.total_arr, gather.metrics.at_risk_arr);
     emit_progress(app_handle, "yearEndOutlook", 4);
 
     log::info!(
@@ -1827,9 +1892,10 @@ pub fn run_bob_generation(
         expansion_accounts.len(),
     );
 
-    // Phase 2: One AI synthesis call for all narrative sections
+    // Step 2: One AI synthesis call for all narrative sections
     let synthesis_start = Instant::now();
-    let synthesis_prompt = build_synthesis_prompt(gather, glean_ctx, &risk_accounts, &expansion_accounts);
+    let synthesis_prompt =
+        build_synthesis_prompt(gather, glean_ctx, &risk_accounts, &expansion_accounts);
 
     let pty = PtyManager::for_tier(ModelTier::Synthesis, &gather.ai_models)
         .with_timeout(90)
@@ -1837,17 +1903,16 @@ pub fn run_bob_generation(
 
     let response = match pty.spawn_claude(&gather.workspace, &synthesis_prompt) {
         Ok(output) => {
-            let json_str = crate::risk_briefing::extract_json_object(&output.stdout)
-                .ok_or_else(|| {
+            let json_str =
+                crate::risk_briefing::extract_json_object(&output.stdout).ok_or_else(|| {
                     format!(
                         "No JSON in BoB synthesis response ({}ms)",
                         synthesis_start.elapsed().as_millis()
                     )
                 })?;
 
-            let ai: AiBookResponse = serde_json::from_str(&json_str).map_err(|e| {
-                format!("Failed to parse BoB synthesis JSON: {}", e)
-            })?;
+            let ai: AiBookResponse = serde_json::from_str(&json_str)
+                .map_err(|e| format!("Failed to parse BoB synthesis JSON: {}", e))?;
 
             log::info!(
                 "[BoB] Synthesis completed in {}ms — themes: {}, asks: {}, focus: {}",
@@ -1863,7 +1928,8 @@ pub fn run_bob_generation(
             log::warn!("[BoB] Synthesis PTY failed: {}", e);
             // Return a default response with mechanical data only
             AiBookResponse {
-                executive_summary: "Portfolio review generated — AI synthesis unavailable.".to_string(),
+                executive_summary: "Portfolio review generated — AI synthesis unavailable."
+                    .to_string(),
                 ..Default::default()
             }
         }
@@ -1952,8 +2018,7 @@ pub fn prefetch_glean_portfolio_context(
             };
 
             let result = rt.block_on(async {
-                let client =
-                    crate::context_provider::glean::GleanMcpClient::new(&ep);
+                let client = crate::context_provider::glean::GleanMcpClient::new(&ep);
                 tokio::time::timeout(
                     std::time::Duration::from_secs(15),
                     client.chat(&query, None),
@@ -1963,11 +2028,7 @@ pub fn prefetch_glean_portfolio_context(
 
             let text = match result {
                 Ok(Ok(text)) => {
-                    log::info!(
-                        "[I547] Glean {} pre-fetch: {} chars",
-                        key,
-                        text.len()
-                    );
+                    log::info!("[I547] Glean {} pre-fetch: {} chars", key, text.len());
                     Some(text)
                 }
                 Ok(Err(e)) => {
