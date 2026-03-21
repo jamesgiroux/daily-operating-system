@@ -9,7 +9,7 @@ HOTSPOT_FILES=(
   "src-tauri/src/processor/transcript.rs"
   "src-tauri/src/workflow/deliver.rs"
   "src-tauri/src/workflow/reconcile.rs"
-  "src-tauri/src/hygiene.rs"
+  "src-tauri/src/hygiene/mod.rs"
 )
 
 while IFS= read -r command_file; do
@@ -29,7 +29,7 @@ for rel_path in "${HOTSPOT_FILES[@]}"; do
     continue
   fi
 
-  cutoff_line="$(rg -n '#\[cfg\(test\)\]' "$file_path" | head -n1 | cut -d: -f1 || true)"
+  cutoff_line="$(grep -n '#\[cfg(test)\]' "$file_path" | head -n1 | cut -d: -f1 || true)"
   if [[ -z "$cutoff_line" ]]; then
     cutoff_line=999999
   fi
