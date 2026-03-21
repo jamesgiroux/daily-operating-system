@@ -3,6 +3,7 @@ use rusqlite::params;
 use serde_json::Value;
 
 use crate::db::person_relationships::UpsertRelationship;
+use crate::db::types::ChampionHealthAssessment;
 use crate::db::{ActionDb, DbAction, DbChatSession, DbMeeting, DbProcessingLog};
 use crate::signals::propagation::PropagationEngine;
 
@@ -685,6 +686,88 @@ fn action_signal_target(action: &DbAction) -> (&'static str, String) {
         return ("project", project_id.to_string());
     }
     ("action", action.id.clone())
+}
+
+// ---------------------------------------------------------------------------
+// Transcript-processor mutations (service boundary for processor/transcript.rs)
+// ---------------------------------------------------------------------------
+
+pub fn persist_transcript_metadata(
+    db: &ActionDb,
+    meeting_id: &str,
+    transcript_path: &str,
+    processed_at: &str,
+    summary: Option<&str>,
+) -> Result<(), String> {
+    db.update_meeting_transcript_metadata(meeting_id, transcript_path, processed_at, summary)
+        .map_err(|e| e.to_string())
+}
+
+pub fn persist_champion_health(
+    db: &ActionDb,
+    meeting_id: &str,
+    assessment: &ChampionHealthAssessment,
+) -> Result<(), String> {
+    db.upsert_champion_health(meeting_id, assessment)
+        .map_err(|e| e.to_string())
+}
+
+pub fn clear_champion_health(db: &ActionDb, meeting_id: &str) -> Result<(), String> {
+    db.conn_ref()
+        .execute(
+            "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Parsed capture ready for service-layer insertion.
+pub struct ParsedCapture<'a> {
+    pub capture_type: &'a str,
+    pub content: &'a str,
+    pub sub_type: Option<&'a str>,
+    /// Owned because `parse_reviewed_risk_metadata` lowercases the urgency tag.
+    pub urgency: Option<String>,
+    pub evidence_quote: Option<&'a str>,
+}
+
+/// Delete existing win/risk/decision captures for a meeting and reinsert
+/// with reviewed data. Wraps the transactional DB writes for
+/// `processor::transcript` so the processor stays out of the DB layer.
+pub fn replace_transcript_outcome_captures(
+    db: &ActionDb,
+    meeting_id: &str,
+    meeting_title: &str,
+    account_id: Option<&str>,
+    captures: &[ParsedCapture<'_>],
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.conn
+            .execute(
+                "DELETE FROM captures
+             WHERE meeting_id = ?1
+               AND capture_type IN ('win', 'risk', 'decision')",
+                rusqlite::params![meeting_id],
+            )
+            .map_err(|e| format!("clear reviewed captures failed: {e}"))?;
+
+        for c in captures {
+            tx.insert_capture_enriched(
+                meeting_id,
+                meeting_title,
+                account_id,
+                c.capture_type,
+                c.content,
+                c.sub_type,
+                c.urgency.as_deref(),
+                c.evidence_quote,
+            )
+            .map_err(|e| format!("reinsert reviewed capture failed: {e}"))?;
+        }
+
+        Ok(())
+    })
 }
 
 #[cfg(test)]
