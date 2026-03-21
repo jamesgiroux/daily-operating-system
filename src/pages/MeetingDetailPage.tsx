@@ -21,6 +21,8 @@ import type {
   ApplyPrepPrefillResult,
   LinkedEntity,
   MeetingStage,
+  ContinuityThread,
+  PredictionScorecard,
 } from "@/types";
 import { parseDate, formatRelativeDateLong, stripHtml } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
@@ -173,6 +175,8 @@ export default function MeetingDetailPage() {
   const [entityHealthMap, setEntityHealthMap] = useState<MeetingIntelligence["entityHealthMap"]>({});
   const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
   const [postIntel, setPostIntel] = useState<MeetingPostIntelligence | null>(null);
+  const [continuityThread, setContinuityThread] = useState<ContinuityThread | null>(null);
+  const [scorecard, setScorecard] = useState<PredictionScorecard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshingIntel, setRefreshingIntel] = useState(false);
@@ -280,6 +284,20 @@ export default function MeetingDetailPage() {
           });
       } else {
         setPostIntel(null);
+      }
+
+      // I637: Fetch continuity thread (non-blocking)
+      if (intel.outcomes || intel.transcriptProcessedAt) {
+        invoke<ContinuityThread | null>("get_meeting_continuity_thread", { meetingId })
+          .then(setContinuityThread)
+          .catch(() => setContinuityThread(null));
+      }
+
+      // I635: Fetch prediction scorecard (non-blocking)
+      if (intel.outcomes || intel.transcriptProcessedAt) {
+        invoke<PredictionScorecard | null>("get_prediction_scorecard", { meetingId })
+          .then(setScorecard)
+          .catch(() => setScorecard(null));
       }
 
       transientRetryCount.current = 0;
@@ -1028,20 +1046,111 @@ Thanks!`;
               </section>
             )}
 
-            {/* The Thread placeholder — I637 */}
-            {data.sinceLast && data.sinceLast.length > 0 ? (
+            {/* I637: The Thread — meeting-to-meeting continuity */}
+            {continuityThread && (
               <section className={clsx("editorial-reveal", styles.chapterSection)}>
-                <ChapterHeading title="Since Last Meeting" />
-                <ul className={styles.sinceLastList}>
-                  {data.sinceLast.map((item, i) => (
-                    <li key={i} className={styles.sinceLastItem}>
-                      <span className={styles.bulletDotTurmericMuted} />
-                      <span>{sanitizeInlineText(item)}</span>
-                    </li>
-                  ))}
-                </ul>
+                <ChapterHeading title="The Thread" />
+                {continuityThread.isFirstMeeting ? (
+                  <p className={styles.threadFirstMeeting}>
+                    First meeting with {continuityThread.entityName ?? "this account"}.
+                  </p>
+                ) : (
+                  <div className={styles.threadSection}>
+                    <p className={styles.threadIntro}>
+                      Since your last meeting
+                      {continuityThread.entityName ? ` with ${continuityThread.entityName}` : ""}
+                      {continuityThread.previousMeetingDate
+                        ? ` on ${new Date(continuityThread.previousMeetingDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                        : ""}
+                      ...
+                    </p>
+                    {continuityThread.actionsCompleted.map((a, i) => (
+                      <div key={`c-${i}`} className={styles.threadItem}>
+                        <span className={styles.threadIconConfirmed}>✓</span>
+                        <span>{a.title}</span>
+                      </div>
+                    ))}
+                    {continuityThread.actionsOpen.map((a, i) => (
+                      <div key={`o-${i}`} className={clsx(styles.threadItem, a.isOverdue && styles.threadItemOverdue)}>
+                        <span className={styles.threadIconOpen}>○</span>
+                        <span>{a.title}</span>
+                        {a.isOverdue && <span className={styles.threadOverdueTag}>overdue</span>}
+                      </div>
+                    ))}
+                    {continuityThread.healthDelta && (
+                      <div className={styles.threadItem}>
+                        <span className={styles.threadIconNeutral}>◆</span>
+                        <span>
+                          Health: {continuityThread.healthDelta.previous.toFixed(0)} → {continuityThread.healthDelta.current.toFixed(0)}
+                          {" "}
+                          <span className={continuityThread.healthDelta.current > continuityThread.healthDelta.previous ? styles.threadDeltaPositive : styles.threadDeltaNegative}>
+                            ({continuityThread.healthDelta.current > continuityThread.healthDelta.previous ? "+" : ""}
+                            {(continuityThread.healthDelta.current - continuityThread.healthDelta.previous).toFixed(0)})
+                          </span>
+                        </span>
+                      </div>
+                    )}
+                    {continuityThread.newAttendees.map((name, i) => (
+                      <div key={`n-${i}`} className={styles.threadItem}>
+                        <span className={styles.threadIconNew}>★</span>
+                        <span>New face: {name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
-            ) : null}
+            )}
+
+            {/* I635: Prediction Scorecard — What We Predicted vs What Happened */}
+            {scorecard && scorecard.hasData && (
+              <section className={clsx("editorial-reveal", styles.chapterSection)}>
+                <ChapterHeading title="What We Predicted vs What Happened" />
+                {scorecard.riskPredictions.length > 0 && (
+                  <div className={styles.scorecardCategory}>
+                    <p className={styles.scorecardCategoryLabel}>Risks</p>
+                    {scorecard.riskPredictions.map((p, i) => (
+                      <div key={`r-${i}`} className={clsx(
+                        styles.predictionItem,
+                        p.category === "confirmed" && styles.predictionConfirmed,
+                        p.category === "notRaised" && styles.predictionNotRaised,
+                        p.category === "surprise" && styles.predictionSurprise,
+                      )}>
+                        <span className={styles.predictionIcon}>
+                          {p.category === "confirmed" ? "✓" : p.category === "notRaised" ? "✗" : "⚡"}
+                        </span>
+                        <div>
+                          <span>{p.text}</span>
+                          {p.matchText && <span className={styles.predictionMatchText}> — {p.matchText}</span>}
+                          {p.source && <span className={styles.predictionSource}>{p.source}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {scorecard.winPredictions.length > 0 && (
+                  <div className={styles.scorecardCategory}>
+                    <p className={styles.scorecardCategoryLabel}>Wins</p>
+                    {scorecard.winPredictions.map((p, i) => (
+                      <div key={`w-${i}`} className={clsx(
+                        styles.predictionItem,
+                        p.category === "confirmed" && styles.predictionConfirmed,
+                        p.category === "notRaised" && styles.predictionNotRaised,
+                        p.category === "surprise" && styles.predictionSurprise,
+                      )}>
+                        <span className={styles.predictionIcon}>
+                          {p.category === "confirmed" ? "✓" : p.category === "notRaised" ? "✗" : "⚡"}
+                        </span>
+                        <div>
+                          <span>{p.text}</span>
+                          {p.matchText && <span className={styles.predictionMatchText}> — {p.matchText}</span>}
+                          {p.source && <span className={styles.predictionSource}>{p.source}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* Key Findings — PostMeetingIntelligence */}
             {postIntel && (
