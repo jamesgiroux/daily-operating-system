@@ -10,6 +10,22 @@ Write like you're telling a customer what got better and how to get started.
 
 ---
 
+## v1.0.1 — Your inbox, under control
+
+The Correspondent got smarter. DailyOS now understands what's happening in your inbox — not just what arrived, but what needs your attention, what you committed to, and which accounts have gone quiet.
+
+**Archive from anywhere, and it sticks.** Archive an email on The Correspondent or the daily briefing and it disappears from every page instantly — and from Gmail too. Undo if you change your mind. Pin important emails to keep them at the top of their priority band. Open any email in Gmail with one click.
+
+**Commitments get tracked.** When DailyOS spots a commitment in an email ("Will confirm budget by Friday"), you can track it as an action right there — with a title, due date, owner, and the account it belongs to. Tracked commitments show up in your action queue and stay visible on the email even after you reload.
+
+**Know when accounts go quiet.** If an account that normally emails you weekly suddenly goes silent, a "Gone Quiet" notice appears on The Correspondent. Dismiss it if the silence is expected — your dismissal teaches the system what matters. Gone-quiet alerts also surface in your daily briefing.
+
+**Emails connect to meetings.** When someone who emailed you is in an upcoming meeting, you'll see a meeting badge on their email. Click it to jump straight to the briefing. Meeting detail pages now show recent correspondence from attendees.
+
+**Behind the scenes.** Your database now monitors its own growth and cleans up old data automatically — resolved emails after 60 days, deactivated signals after 30, old signal events after 180. User corrections are never deleted. A storage card in Settings → Diagnostics shows your current DB size.
+
+---
+
 ## v1.0.0 — Your chief of staff is ready
 
 DailyOS is a personal chief of staff that runs entirely on your Mac. Connect your Google Calendar and Gmail, and it prepares your workday before you open the app — daily briefings, meeting prep, account insights, and action tracking. No servers, no subscriptions beyond Claude. Your data never leaves your machine.
