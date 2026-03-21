@@ -1634,177 +1634,154 @@ details[open] .detailsChevron {
 
 /* ─────────────────────────────────────────────────────────────────────────────
    THE THREAD — Meeting-to-Meeting Continuity (I637)
+   Editorial style: clean list with semantic icons, generous whitespace.
+   No colored left borders — uses dot/icon hierarchy matching the design system.
    ───────────────────────────────────────────────────────────────────────────── */
 .threadSection {
-  margin: var(--space-2xl) 0 var(--space-xl);
-  padding: var(--space-lg) var(--space-xl);
-  border-left: 3px solid var(--color-spice-turmeric);
-  background: var(--color-surface-raised, rgba(0, 0, 0, 0.02));
-  border-radius: 0 4px 4px 0;
+  margin: 0;
+  padding: 0;
 }
-.threadHeading {
+.threadIntro {
   font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 400;
-  color: var(--color-text-primary);
-  margin: 0 0 var(--space-sm);
-  letter-spacing: -0.01em;
-}
-.threadSubheading {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin: 0 0 var(--space-md);
+  font-size: 15px;
+  font-style: italic;
   line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-lg);
 }
 .threadFirstMeeting {
-  font-family: var(--font-sans);
-  font-size: 14px;
+  font-family: var(--font-serif);
+  font-size: 15px;
   font-style: italic;
   color: var(--color-text-secondary);
   margin: 0;
 }
-.threadList {
-  list-style: none;
-  margin: 0 0 var(--space-md);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 .threadItem {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: 14px;
   line-height: 1.5;
   color: var(--color-text-primary);
+  padding: var(--space-xs) 0;
 }
 .threadItemOverdue {
   color: var(--color-spice-terracotta);
 }
-.threadIconComplete {
-  color: var(--color-signal-green);
+.threadIconConfirmed {
+  color: var(--color-garden-sage);
   flex-shrink: 0;
-  margin-top: 2px;
+  font-weight: 600;
+  margin-top: 1px;
 }
 .threadIconOpen {
   color: var(--color-spice-turmeric);
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 1px;
+}
+.threadIconNeutral {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-size: 10px;
 }
 .threadIconNew {
-  color: var(--color-text-secondary);
+  color: var(--color-spice-saffron);
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .threadOverdueTag {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   color: var(--color-spice-terracotta);
-  margin-left: 4px;
+  margin-left: var(--space-xs);
 }
-.threadHealthDelta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-md);
-}
-.threadHealthArrow {
-  color: var(--color-text-tertiary);
-}
-.threadHealthChange {
+.threadDeltaPositive {
+  color: var(--color-garden-sage);
   font-weight: 600;
 }
-.threadHealthUp {
-  color: var(--color-signal-green);
-}
-.threadHealthDown {
+.threadDeltaNegative {
   color: var(--color-spice-terracotta);
+  font-weight: 600;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
    I635: Prediction Scorecard
+   Editorial style: subtle background panels for each category, icon + text rows.
+   Confirmed items use sage accent. Surprises use turmeric. Not-raised is muted.
    ───────────────────────────────────────────────────────────────────────────── */
-.scorecardSection {
-  margin: 24px 0;
-  padding: 0;
-}
-.scorecardTitle {
-  font-family: var(--font-serif);
-  font-size: 20px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  color: var(--color-text-primary);
-  margin: 0 0 16px;
-}
 .scorecardCategory {
-  font-family: var(--font-sans);
-  font-size: 11px;
+  margin: 0 0 var(--space-lg);
+}
+.scorecardCategory + .scorecardCategory {
+  margin-top: var(--space-xl);
+}
+.scorecardCategoryLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
-  margin: 16px 0 8px;
-}
-.scorecardCategory:first-of-type {
-  margin-top: 0;
+  margin: 0 0 var(--space-sm);
 }
 .predictionItem {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px 0 8px 12px;
-  border-left: 3px solid transparent;
-  margin: 0 0 2px;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-xs);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--color-text-primary);
+  background: transparent;
+  transition: background 150ms ease;
 }
 .predictionIcon {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-}
-.predictionContent {
-  flex: 1;
-  min-width: 0;
+  width: 16px;
+  text-align: center;
+  margin-top: 2px;
+  font-weight: 600;
 }
 .predictionConfirmed {
-  border-left-color: var(--color-semantic-sage, #6b8a6b);
+  background: var(--color-garden-sage-5, rgba(107, 138, 107, 0.05));
 }
 .predictionConfirmed .predictionIcon {
-  color: var(--color-semantic-sage, #6b8a6b);
+  color: var(--color-garden-sage);
 }
 .predictionNotRaised {
-  opacity: 0.55;
-  border-left-color: var(--color-border-subtle, #e0e0e0);
+  opacity: 0.5;
 }
 .predictionNotRaised .predictionIcon {
   color: var(--color-text-quaternary, #bbb);
 }
 .predictionSurprise {
-  border-left-color: var(--color-spice-turmeric, #c9952e);
+  background: var(--color-spice-turmeric-5, rgba(201, 149, 46, 0.05));
 }
 .predictionSurprise .predictionIcon {
-  color: var(--color-spice-turmeric, #c9952e);
+  color: var(--color-spice-turmeric);
 }
 .predictionMatchText {
   display: block;
-  font-size: 12px;
+  font-family: var(--font-serif);
+  font-size: 13px;
   line-height: 1.4;
   color: var(--color-text-tertiary);
-  margin-top: 2px;
+  margin-top: var(--space-xs);
   font-style: italic;
 }
 .predictionSource {
-  display: inline-block;
-  font-size: 11px;
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
   color: var(--color-text-quaternary, #999);
-  margin-top: 2px;
+  margin-top: var(--space-xs);
+  letter-spacing: 0.02em;
 }
