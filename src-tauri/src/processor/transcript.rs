@@ -560,7 +560,8 @@ pub fn process_transcript_with_kind(
         if let Some(db) = db {
             let processed_at = Utc::now().to_rfc3339();
             let summary_ref = (!summary.trim().is_empty()).then_some(summary.as_str());
-            if let Err(e) = db.update_meeting_transcript_metadata(
+            if let Err(e) = crate::services::mutations::persist_transcript_metadata(
+                db,
                 &meeting.id,
                 &destination.display().to_string(),
                 &processed_at,
@@ -572,14 +573,43 @@ pub fn process_transcript_with_kind(
                     e
                 );
             }
-            if let Err(e) = replace_transcript_outcome_captures(
+            let mut captures = Vec::new();
+            for win in &wins {
+                let (content, sub_type, evidence_quote) = parse_reviewed_win_metadata(win);
+                captures.push(crate::services::mutations::ParsedCapture {
+                    capture_type: "win",
+                    content,
+                    sub_type,
+                    urgency: None,
+                    evidence_quote,
+                });
+            }
+            for risk in &risks {
+                let (content, urgency, evidence_quote) = parse_reviewed_risk_metadata(risk);
+                captures.push(crate::services::mutations::ParsedCapture {
+                    capture_type: "risk",
+                    content,
+                    sub_type: None,
+                    urgency,
+                    evidence_quote,
+                });
+            }
+            for decision in &decisions {
+                let (content, evidence_quote) = parse_reviewed_evidence_quote(decision);
+                captures.push(crate::services::mutations::ParsedCapture {
+                    capture_type: "decision",
+                    content,
+                    sub_type: None,
+                    urgency: None,
+                    evidence_quote,
+                });
+            }
+            if let Err(e) = crate::services::mutations::replace_transcript_outcome_captures(
                 db,
                 &meeting.id,
                 &meeting.title,
                 meeting.account.as_deref(),
-                &wins,
-                &risks,
-                &decisions,
+                &captures,
             ) {
                 log::warn!(
                     "Failed to persist reviewed transcript outcomes for {}: {}",
@@ -595,17 +625,20 @@ pub fn process_transcript_with_kind(
                     champion_evidence: health.champion_evidence.clone(),
                     champion_risk: health.champion_risk.clone(),
                 };
-                if let Err(e) = db.upsert_champion_health(&meeting.id, &db_health) {
+                if let Err(e) = crate::services::mutations::persist_champion_health(
+                    db,
+                    &meeting.id,
+                    &db_health,
+                ) {
                     log::warn!(
                         "Failed to persist reviewed champion health for {}: {}",
                         meeting.id,
                         e
                     );
                 }
-            } else if let Err(e) = db.conn_ref().execute(
-                "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",
-                rusqlite::params![&meeting.id],
-            ) {
+            } else if let Err(e) =
+                crate::services::mutations::clear_champion_health(db, &meeting.id)
+            {
                 log::warn!(
                     "Failed to clear reviewed champion health for {}: {}",
                     meeting.id,
@@ -1023,72 +1056,6 @@ fn parse_reviewed_evidence_quote(raw: &str) -> (&str, Option<&str>) {
     } else {
         (raw, None)
     }
-}
-
-fn replace_transcript_outcome_captures(
-    db: &ActionDb,
-    meeting_id: &str,
-    meeting_title: &str,
-    account_id: Option<&str>,
-    wins: &[String],
-    risks: &[String],
-    decisions: &[String],
-) -> Result<(), String> {
-    db.with_transaction(|tx| {
-        tx.conn
-            .execute(
-                "DELETE FROM captures
-             WHERE meeting_id = ?1
-               AND capture_type IN ('win', 'risk', 'decision')",
-                rusqlite::params![meeting_id],
-            )
-            .map_err(|e| format!("clear reviewed captures failed: {e}"))?;
-
-        for win in wins {
-            let (content, sub_type, evidence_quote) = parse_reviewed_win_metadata(win);
-            tx.insert_capture_enriched(
-                meeting_id,
-                meeting_title,
-                account_id,
-                "win",
-                content,
-                sub_type,
-                None,
-                evidence_quote,
-            )
-            .map_err(|e| format!("reinsert reviewed win failed: {e}"))?;
-        }
-        for risk in risks {
-            let (content, urgency, evidence_quote) = parse_reviewed_risk_metadata(risk);
-            tx.insert_capture_enriched(
-                meeting_id,
-                meeting_title,
-                account_id,
-                "risk",
-                content,
-                None,
-                urgency.as_deref(),
-                evidence_quote,
-            )
-            .map_err(|e| format!("reinsert reviewed risk failed: {e}"))?;
-        }
-        for decision in decisions {
-            let (content, evidence_quote) = parse_reviewed_evidence_quote(decision);
-            tx.insert_capture_enriched(
-                meeting_id,
-                meeting_title,
-                account_id,
-                "decision",
-                content,
-                None,
-                None,
-                evidence_quote,
-            )
-            .map_err(|e| format!("reinsert reviewed decision failed: {e}"))?;
-        }
-
-        Ok(())
-    })
 }
 
 /// Extract actions from AI output, using meeting ID as source_id for meeting-scoped queries.
