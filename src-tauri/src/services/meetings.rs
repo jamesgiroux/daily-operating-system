@@ -324,6 +324,7 @@ pub fn load_meeting_prep_from_sources(
                     entity_readiness: None,
                     stakeholder_insights: None,
                     recent_email_signals: None,
+                    email_digest: None,
                     consistency_status: None,
                     consistency_findings: Vec::new(),
                 };
@@ -1400,6 +1401,75 @@ pub async fn get_meeting_intelligence(
 
     let meeting_id_owned = meeting_id.to_string();
 
+    // Pre-check: if meeting doesn't exist in DB, try to persist it from the
+    // live calendar cache. This covers the race where calendar_merge shows a
+    // "New" event on the briefing before the poller has written it to SQLite.
+    let mid_check = meeting_id_owned.clone();
+    let exists = state
+        .db_read(move |db| {
+            let found = db
+                .get_meeting_by_id(&mid_check)
+                .map_err(|e| e.to_string())?
+                .is_some();
+            if !found {
+                let raw = mid_check.replace("_at_", "@");
+                Ok(db
+                    .get_meeting_by_calendar_event_id(&raw)
+                    .map_err(|e| e.to_string())?
+                    .is_some())
+            } else {
+                Ok(true)
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+    if !exists {
+        // Look for matching event in the live calendar cache
+        let live_event = state.calendar.events.read().ok().and_then(|events| {
+            let raw_id = meeting_id.replace("_at_", "@");
+            events
+                .iter()
+                .find(|e| e.id == raw_id || e.id == meeting_id)
+                .cloned()
+        });
+
+        if let Some(event) = live_event {
+            let primary_id = crate::workflow::deliver::meeting_primary_id(
+                Some(&event.id),
+                &event.title,
+                &event.start.to_rfc3339(),
+                event.meeting_type.as_str(),
+            );
+            let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
+            let start_rfc = event.start.to_rfc3339();
+            let end_rfc = event.end.to_rfc3339();
+            let mtype = event.meeting_type.as_str().to_string();
+            let title = event.title.clone();
+            let eid = event.id.clone();
+            let _ = state
+                .db_write(move |db| {
+                    db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+                        id: &primary_id,
+                        title: &title,
+                        meeting_type: &mtype,
+                        start_time: &start_rfc,
+                        end_time: Some(&end_rfc),
+                        calendar_event_id: Some(&eid),
+                        attendees: Some(&attendees_json),
+                        description: None,
+                    })
+                    .map_err(|e| e.to_string())?;
+                    Ok(())
+                })
+                .await;
+            log::info!(
+                "Auto-persisted meeting from live calendar cache: {}",
+                meeting_id
+            );
+        }
+    }
+
     // Phase 1: Read-only — all queries, prep loading, quality assessment
     let intel = state
         .db_read(move |db| {
@@ -1511,7 +1581,7 @@ pub async fn get_meeting_intelligence(
         })
         .await?;
 
-    // Phase 2: Lightweight writes — mark reviewed + clear new-signal flag
+    // Step 2: Lightweight writes — mark reviewed + clear new-signal flag
     let write_meeting_id = intel.meeting.id.clone();
     let write_prep_event_id = intel
         .prep
@@ -1864,7 +1934,10 @@ pub fn update_meeting_prep_field(
                 &entity.id,
                 signal_type,
                 source,
-                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                Some(&format!(
+                    "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
+                    field_path, meeting_id
+                )),
                 confidence,
             )
             .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -1879,7 +1952,10 @@ pub fn update_meeting_prep_field(
                 person_id,
                 signal_type,
                 source,
-                Some(&format!("{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}", field_path, meeting_id)),
+                Some(&format!(
+                    "{{\"field\":\"{}\",\"meeting_id\":\"{}\"}}",
+                    field_path, meeting_id
+                )),
                 confidence,
             )
             .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -1989,9 +2065,7 @@ fn parse_field_path(path: &str) -> Result<Vec<PathSegment>, String> {
             remaining = &remaining[end + 1..];
         } else {
             // Parse key: up to next '[' or '.' or end
-            let end = remaining
-                .find(['[', '.'])
-                .unwrap_or(remaining.len());
+            let end = remaining.find(['[', '.']).unwrap_or(remaining.len());
             if end == 0 {
                 return Err(format!("Empty key segment in path: {}", path));
             }
@@ -2248,7 +2322,7 @@ pub async fn refresh_meeting_briefing_full(
         );
     }
 
-    // Phase 2: refresh linked entity intelligence synchronously.
+    // Step 2: refresh linked entity intelligence synchronously.
     let mut refreshed_entities = 0u32;
     let mut failed_entities: Vec<(String, String)> = Vec::new();
 
@@ -2564,6 +2638,74 @@ pub async fn refresh_meeting_preps(state: &AppState) -> Result<String, String> {
     Ok(format!("Refreshing {} meeting preps", count))
 }
 
+/// Reprocess an already-attached transcript: clear all extraction data, remove
+/// the TOCTOU guard, then re-run the full pipeline as a fresh extraction.
+pub async fn reprocess_meeting_transcript(
+    meeting_id: &str,
+    state: &std::sync::Arc<AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    // Look up the meeting and its transcript path
+    let mid = meeting_id.to_string();
+    let meeting_data = state
+        .db_read(move |db| {
+            let meeting = db
+                .get_meeting_intelligence_row(&mid)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Meeting not found: {}", mid))?;
+            let transcript_path = meeting
+                .transcript_path
+                .clone()
+                .ok_or_else(|| format!("No transcript attached to meeting {}", mid))?;
+            Ok((meeting, transcript_path))
+        })
+        .await?;
+
+    let (meeting_row, transcript_path) = meeting_data;
+
+    // Clear all existing extraction data
+    let clear_mid = meeting_id.to_string();
+    let cleared = state
+        .db_write(move |db| {
+            db.clear_meeting_extraction_data(&clear_mid)
+                .map_err(|e| e.to_string())
+        })
+        .await?;
+    log::info!(
+        "Reprocess: cleared {} extraction records for meeting {}",
+        cleared,
+        meeting_id
+    );
+
+    // Remove the TOCTOU guard so attach_meeting_transcript doesn't reject
+    if let Ok(mut guard) = state.capture.transcript_processed.lock() {
+        guard.remove(meeting_id);
+    }
+
+    // Build a CalendarEvent from the DB row for the pipeline
+    let cal_event = crate::types::CalendarEvent {
+        id: meeting_row.id.clone(),
+        title: meeting_row.title.clone(),
+        start: chrono::DateTime::parse_from_rfc3339(&meeting_row.start_time)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now()),
+        end: meeting_row
+            .end_time
+            .as_deref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(chrono::Utc::now),
+        meeting_type: crate::parser::parse_meeting_type(&meeting_row.meeting_type),
+        attendees: Vec::new(),
+        is_all_day: false,
+        account: None, // Resolved by transcript pipeline from meeting_entities
+        linked_entities: None,
+    };
+
+    // Re-run the full pipeline via the existing attach path
+    attach_meeting_transcript(transcript_path, cal_event, state, app_handle).await
+}
+
 /// Attach a meeting transcript with TOCTOU guard, async processing, and event emission.
 pub async fn attach_meeting_transcript(
     file_path: String,
@@ -2728,7 +2870,13 @@ pub async fn attach_meeting_transcript(
                 let role_changes_data: Vec<(String, Option<String>, Option<String>)> = result
                     .role_changes
                     .iter()
-                    .map(|rc| (rc.person_name.clone(), rc.old_status.clone(), rc.new_status.clone()))
+                    .map(|rc| {
+                        (
+                            rc.person_name.clone(),
+                            rc.old_status.clone(),
+                            rc.new_status.clone(),
+                        )
+                    })
                     .collect();
                 let risk_strings: Vec<String> = result.risks.clone();
                 let meeting_title = meeting.title.clone();

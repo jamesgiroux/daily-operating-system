@@ -364,8 +364,8 @@ pub fn run() {
                         let _ = window_clone.hide();
                     }
                     tauri::WindowEvent::Focused(true) => {
-                        if let Ok(mut guard) = activity_tracker.last_activity.lock() {
-                            *guard = std::time::Instant::now();
+                        if let Ok(mut ls) = activity_tracker.lock_state.lock() {
+                            ls.last_activity = std::time::Instant::now();
                         }
                     }
                     _ => {}
@@ -392,24 +392,24 @@ pub fn run() {
                         continue; // Disabled
                     }
 
-                    if lock_state_timer
-                        .is_locked
-                        .load(std::sync::atomic::Ordering::Relaxed)
-                    {
-                        continue; // Already locked
-                    }
-
-                    let elapsed = {
-                        match lock_state_timer.last_activity.lock() {
-                            Ok(guard) => guard.elapsed(),
+                    // I610: Single lock acquisition for read + conditional write
+                    let should_lock = {
+                        let ls = match lock_state_timer.lock_state.lock() {
+                            Ok(g) => g,
                             Err(_) => continue,
+                        };
+                        if ls.is_locked {
+                            false // Already locked
+                        } else {
+                            ls.last_activity.elapsed()
+                                >= std::time::Duration::from_secs(u64::from(timeout_mins) * 60)
                         }
                     };
 
-                    if elapsed >= std::time::Duration::from_secs(u64::from(timeout_mins) * 60) {
-                        lock_state_timer
-                            .is_locked
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                    if should_lock {
+                        if let Ok(mut ls) = lock_state_timer.lock_state.lock() {
+                            ls.is_locked = true;
+                        }
                         let _ = lock_handle_timer.emit("app-locked", ());
                         log::info!("App locked after {} minutes idle", timeout_mins);
                     }
@@ -460,6 +460,12 @@ pub fn run() {
             commands::reopen_action,
             commands::accept_proposed_action,
             commands::reject_proposed_action,
+            commands::mark_reply_sent,
+            commands::dismiss_gone_quiet,
+            commands::archive_email,
+            commands::unarchive_email,
+            commands::pin_email,
+            commands::promote_commitment_to_action,
             commands::dismiss_email_item,
             commands::list_dismissed_email_items,
             commands::reset_email_preferences,
@@ -489,6 +495,7 @@ pub fn run() {
             commands::refresh_meeting_preps,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
+            commands::reprocess_meeting_transcript,
             commands::get_meeting_outcomes,
             commands::get_meeting_post_intelligence,
             commands::update_capture,
@@ -696,6 +703,7 @@ pub fn run() {
             commands::trigger_quill_sync_for_meeting,
             // Granola Integration (I226)
             commands::get_granola_status,
+            commands::trigger_granola_sync_for_meeting,
             commands::set_granola_enabled,
             commands::set_granola_poll_interval,
             commands::start_granola_backfill,
@@ -805,6 +813,8 @@ pub fn run() {
             commands::delete_all_data,
             // I537: Feature Flags
             commands::get_feature_flags,
+            // I614: DB Growth Monitoring
+            commands::get_db_growth_report,
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,

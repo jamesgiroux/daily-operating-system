@@ -105,7 +105,7 @@ export function FirstAccountStep({
       // Auto-advance after brief delay to show result
       setTimeout(() => onNext(), 1000);
     } catch (e) {
-      console.error("Import failed:", e);
+      console.error("Import failed:", e); // Expected: best-effort onboarding import
     } finally {
       setSaving(false);
     }
@@ -133,7 +133,7 @@ export function FirstAccountStep({
         });
         successes++;
       } catch (e) {
-        console.error(`Create account failed for "${accountName}":`, e);
+        console.error(`Create account failed for "${accountName}":`, e); // Expected: individual account creation can fail
       }
     }
 
@@ -146,7 +146,7 @@ export function FirstAccountStep({
     try {
       await invoke("set_wizard_step", { step: "first-account" });
     } catch (e) {
-      console.error("set_wizard_step failed:", e);
+      console.error("set_wizard_step failed:", e); // Expected: wizard state best-effort
     }
 
     setSaving(false);

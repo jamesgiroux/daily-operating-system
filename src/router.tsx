@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
@@ -92,7 +93,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/reports/risk_briefing", "/accounts/$accountId/reports/$reportType", "/accounts/$accountId/reports/account_health", "/accounts/$accountId/reports/ebr_qbr", "/accounts/$accountId/reports/swot", "/me/reports/weekly_impact", "/me/reports/monthly_wrapped", "/me/reports/book_of_business", "/me/reports/$reportType", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/me", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
 const WELCOME_MIN_MS = 1500;
 const WELCOME_MAX_MS = 5000;
@@ -327,6 +328,19 @@ function RootLayout() {
     if (htmlWelcome) htmlWelcome.remove();
   }, [showWelcomeOverlay, showWelcomeShellOnly]);
 
+  // I614: Show toast when DB size exceeds 500MB
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<number>("db-size-warning", (event) => {
+      const sizeMb = Math.round((event.payload ?? 0) / 1_048_576);
+      toast.warning(`Database is ${sizeMb} MB. Old data is automatically purged daily.`, {
+        duration: 10_000,
+        id: "db-size-warning",
+      });
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
   useEffect(() => {
     if (startupGate !== "checking" && startupGate !== "app") {
       setWelcomeVisible(false);
@@ -534,7 +548,7 @@ const accountDetailRoute = createRoute({
 
 const riskBriefingRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/accounts/$accountId/risk-briefing",
+  path: "/accounts/$accountId/reports/risk_briefing",
   component: RiskBriefingPage,
 });
 

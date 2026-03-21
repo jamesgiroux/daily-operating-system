@@ -39,7 +39,7 @@ export function PersonalityProvider({ children }: { children: React.ReactNode })
         setUserName(c.userName ?? null);
       })
       .catch((err) => {
-        console.error("get_config (personality) failed:", err);
+        console.error("get_config (personality) failed:", err); // Expected: background init on mount
       });
   }, []);
 

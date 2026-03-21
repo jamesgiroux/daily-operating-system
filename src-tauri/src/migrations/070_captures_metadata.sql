@@ -81,8 +81,8 @@ CREATE TABLE captures_new (
     speaker TEXT
 );
 
-INSERT INTO captures_new (id, meeting_id, meeting_title, account_id, project_id, capture_type, content, owner, due_date, captured_at, sub_type, urgency, impact, evidence_quote, speaker)
-    SELECT id, meeting_id, meeting_title, account_id, project_id, capture_type, content, owner, due_date, captured_at, sub_type, urgency, impact, evidence_quote, speaker
+INSERT INTO captures_new (id, meeting_id, meeting_title, account_id, project_id, capture_type, content, owner, due_date, captured_at)
+    SELECT id, meeting_id, meeting_title, account_id, project_id, capture_type, content, owner, due_date, captured_at
     FROM captures;
 
 DROP TABLE captures;

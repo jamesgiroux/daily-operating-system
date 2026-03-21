@@ -10,7 +10,7 @@ export function useCalendar() {
 
   const fetchEvents = useCallback(() => {
     invoke<CalendarEvent[]>("get_calendar_events").then(setEvents).catch((err) => {
-      console.error("get_calendar_events failed:", err);
+      console.error("get_calendar_events failed:", err); // Expected: background calendar fetch
     });
   }, []);
 
@@ -18,7 +18,7 @@ export function useCalendar() {
     invoke<CalendarEvent[]>("get_calendar_events").then((data) => {
       startTransition(() => setEvents(data));
     }).catch((err) => {
-      console.error("get_calendar_events failed:", err);
+      console.error("get_calendar_events failed:", err); // Expected: background calendar fetch
     });
   }, []);
 

@@ -446,7 +446,10 @@ pub async fn get_valid_access_token() -> Result<String, GoogleApiError> {
                 Ok(refreshed.token)
             }
             Err(e) => {
-                log::warn!("[audit:security] oauth_token_refresh_failed provider=google error={}", e);
+                log::warn!(
+                    "[audit:security] oauth_token_refresh_failed provider=google error={}",
+                    e
+                );
                 Err(e)
             }
         }

@@ -1,55 +1,57 @@
-//! I319: Entity-level email cadence monitoring + anomaly surfacing.
+//! I319 / I581: Entity-level email cadence monitoring + silence surfacing.
 //!
-//! Aggregates email_signals by entity per week, computes a 30-day rolling
-//! average, and flags anomalies (gone_quiet <50%, activity_spike >200%).
-//! Runs cheaply via SQL aggregation during hygiene or after email fetch.
+//! Keeps `entity_email_cadence` fresh from recent email signals, then emits
+//! `email_cadence_drop` once per threshold crossing when an account has gone
+//! quiet relative to its historical cadence.
+
+use chrono::{DateTime, Utc};
 
 use super::propagation::PropagationEngine;
 use crate::db::ActionDb;
 
-/// A cadence anomaly for a single entity.
+/// A cadence drop for a single entity.
 #[derive(Debug, Clone)]
 pub struct CadenceAnomaly {
     pub entity_id: String,
     pub entity_type: String,
-    pub anomaly_type: String, // "gone_quiet" or "activity_spike"
-    pub current_count: i64,
-    pub rolling_avg: f64,
+    pub anomaly_type: String,
+    pub days_since_last_email: i64,
+    pub normal_interval_days: f64,
     pub confidence: f64,
 }
 
-/// Compute entity email cadence and detect anomalies.
-///
-/// 1. Aggregate email_signals by (entity_id, entity_type) for the current week.
-/// 2. Compute 30-day rolling average from entity_email_cadence history.
-/// 3. Upsert current week's count into entity_email_cadence.
-/// 4. Flag anomalies: <50% of avg = gone_quiet, >200% of avg = activity_spike.
-/// 5. Emit cadence_anomaly signals for flagged entities.
-pub fn compute_and_emit_cadence_anomalies(db: &ActionDb) -> Vec<CadenceAnomaly> {
-    compute_and_emit_cadence_anomalies_with_engine(db, None)
+fn parse_datetime(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .or_else(|_| DateTime::parse_from_rfc2822(value).map(|dt| dt.with_timezone(&Utc)))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+                .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+        })
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
+                .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
+        })
+        .ok()
 }
 
-/// Compute cadence anomalies and optionally propagate via the signal engine.
-pub fn compute_and_emit_cadence_anomalies_with_engine(
-    db: &ActionDb,
-    engine: Option<&PropagationEngine>,
-) -> Vec<CadenceAnomaly> {
+fn sync_weekly_cadence_rows(db: &ActionDb) {
     let conn = db.conn_ref();
-
-    // Step 1: Aggregate this week's email signals by entity
-    let current_week = chrono::Utc::now().format("%G-W%V").to_string();
+    let current_week = Utc::now().format("%G-W%V").to_string();
 
     let mut stmt = match conn.prepare(
         "SELECT entity_id, entity_type, COUNT(*) as cnt
          FROM email_signals
          WHERE detected_at >= datetime('now', '-7 days')
+           AND entity_id IS NOT NULL
+           AND entity_type IS NOT NULL
          GROUP BY entity_id, entity_type
          HAVING cnt >= 1",
     ) {
-        Ok(s) => s,
-        Err(e) => {
-            log::warn!("cadence: failed to query email_signals: {}", e);
-            return Vec::new();
+        Ok(stmt) => stmt,
+        Err(err) => {
+            log::warn!("cadence: failed to query email_signals: {}", err);
+            return;
         }
     };
 
@@ -64,13 +66,10 @@ pub fn compute_and_emit_cadence_anomalies_with_engine(
         .ok()
         .into_iter()
         .flatten()
-        .filter_map(|r| r.ok())
+        .filter_map(|row| row.ok())
         .collect();
 
-    let mut anomalies = Vec::new();
-
-    for (entity_id, entity_type, current_count) in &weekly_counts {
-        // Step 2: Get rolling average from historical cadence data (last 4 weeks)
+    for (entity_id, entity_type, current_count) in weekly_counts {
         let rolling_avg: f64 = conn
             .query_row(
                 "SELECT COALESCE(AVG(message_count), 0.0)
@@ -83,7 +82,6 @@ pub fn compute_and_emit_cadence_anomalies_with_engine(
             )
             .unwrap_or(0.0);
 
-        // Step 3: Upsert current week
         let _ = conn.execute(
             "INSERT INTO entity_email_cadence (entity_id, entity_type, period, message_count, rolling_avg, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
@@ -99,91 +97,77 @@ pub fn compute_and_emit_cadence_anomalies_with_engine(
                 rolling_avg,
             ],
         );
-
-        // Step 4: Detect anomalies (only if we have enough history)
-        if rolling_avg < 2.0 {
-            continue; // Not enough baseline to detect anomalies
-        }
-
-        let ratio = *current_count as f64 / rolling_avg;
-
-        if ratio < 0.5 {
-            let confidence = (1.0 - ratio).min(0.95);
-            anomalies.push(CadenceAnomaly {
-                entity_id: entity_id.clone(),
-                entity_type: entity_type.clone(),
-                anomaly_type: "gone_quiet".to_string(),
-                current_count: *current_count,
-                rolling_avg,
-                confidence,
-            });
-        } else if ratio > 2.0 {
-            let confidence = ((ratio - 1.0) / 3.0).min(0.95);
-            anomalies.push(CadenceAnomaly {
-                entity_id: entity_id.clone(),
-                entity_type: entity_type.clone(),
-                anomaly_type: "activity_spike".to_string(),
-                current_count: *current_count,
-                rolling_avg,
-                confidence,
-            });
-        }
     }
+}
 
-    // Step 4b: Detect completely silent entities (had baseline activity but zero this week)
-    let active_entity_ids: std::collections::HashSet<(String, String)> = weekly_counts
-        .iter()
-        .map(|(eid, etype, _)| (eid.clone(), etype.clone()))
-        .collect();
+/// Compute cadence anomalies and optionally propagate via the signal engine.
+pub fn compute_and_emit_cadence_anomalies(db: &ActionDb) -> Vec<CadenceAnomaly> {
+    compute_and_emit_cadence_anomalies_with_engine(db, None)
+}
 
-    if let Ok(mut silent_stmt) = conn.prepare(
-        "SELECT entity_id, entity_type, AVG(message_count) as avg_count
-         FROM entity_email_cadence
-         WHERE updated_at >= datetime('now', '-30 days')
-           AND period != ?1
-         GROUP BY entity_id, entity_type
-         HAVING avg_count >= 3.0",
-    ) {
-        let silent_entities: Vec<(String, String, f64)> = silent_stmt
-            .query_map(rusqlite::params![current_week], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, f64>(2)?,
-                ))
-            })
+/// Compute cadence anomalies and optionally propagate via the signal engine.
+pub fn compute_and_emit_cadence_anomalies_with_engine(
+    db: &ActionDb,
+    engine: Option<&PropagationEngine>,
+) -> Vec<CadenceAnomaly> {
+    sync_weekly_cadence_rows(db);
+
+    let quiet_accounts = crate::services::emails::detect_gone_quiet_accounts(db).unwrap_or_default();
+    let mut anomalies = Vec::new();
+
+    for account in quiet_accounts {
+        let last_email_at = account
+            .last_email_date
+            .as_deref()
+            .and_then(parse_datetime);
+
+        let active_signal_at = db
+            .conn_ref()
+            .query_row(
+                "SELECT created_at
+                 FROM signal_events
+                 WHERE entity_type = 'account'
+                   AND entity_id = ?1
+                   AND signal_type = 'email_cadence_drop'
+                   AND superseded_by IS NULL
+                 ORDER BY created_at DESC
+                 LIMIT 1",
+                rusqlite::params![account.entity_id],
+                |row| row.get::<_, String>(0),
+            )
             .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(|r| r.ok())
-            .collect();
+            .and_then(|created_at| parse_datetime(&created_at));
 
-        for (entity_id, entity_type, avg) in silent_entities {
-            if active_entity_ids.contains(&(entity_id.clone(), entity_type.clone())) {
-                continue; // Already processed above
+        if let (Some(active_signal_at), Some(last_email_at)) = (active_signal_at, last_email_at) {
+            if active_signal_at >= last_email_at {
+                continue;
             }
-            anomalies.push(CadenceAnomaly {
-                entity_id,
-                entity_type,
-                anomaly_type: "gone_quiet".to_string(),
-                current_count: 0,
-                rolling_avg: avg,
-                confidence: 0.90,
-            });
         }
+
+        anomalies.push(CadenceAnomaly {
+            entity_id: account.entity_id,
+            entity_type: account.entity_type,
+            anomaly_type: "gone_quiet".to_string(),
+            days_since_last_email: account.days_since_last_email,
+            normal_interval_days: account.normal_interval_days,
+            confidence: 0.6,
+        });
     }
 
-    // Step 5: Emit signals for anomalies (with propagation when engine available)
     for anomaly in &anomalies {
-        if let Some(eng) = engine {
+        let value = format!(
+            r#"{{"days_since_last_email":{},"normal_interval_days":{:.2}}}"#,
+            anomaly.days_since_last_email, anomaly.normal_interval_days
+        );
+        if let Some(engine) = engine {
             let _ = super::bus::emit_signal_and_propagate(
                 db,
-                eng,
+                engine,
                 &anomaly.entity_type,
                 &anomaly.entity_id,
-                "cadence_anomaly",
+                "email_cadence_drop",
                 "email_cadence",
-                Some(&anomaly.anomaly_type),
+                Some(&value),
                 anomaly.confidence,
             );
         } else {
@@ -191,19 +175,19 @@ pub fn compute_and_emit_cadence_anomalies_with_engine(
                 db,
                 &anomaly.entity_type,
                 &anomaly.entity_id,
-                "cadence_anomaly",
+                "email_cadence_drop",
                 "email_cadence",
-                Some(&anomaly.anomaly_type),
+                Some(&value),
                 anomaly.confidence,
             );
         }
         log::info!(
-            "cadence: {} for {} {} (count={}, avg={:.1})",
+            "cadence: {} for {} {} (days_since_last_email={}, normal_interval_days={:.1})",
             anomaly.anomaly_type,
             anomaly.entity_type,
             anomaly.entity_id,
-            anomaly.current_count,
-            anomaly.rolling_avg,
+            anomaly.days_since_last_email,
+            anomaly.normal_interval_days,
         );
     }
 
@@ -225,7 +209,6 @@ mod tests {
     #[test]
     fn test_cadence_with_signals_no_baseline() {
         let db = test_db();
-        // Insert some email signals
         db.conn_ref()
             .execute(
                 "INSERT INTO email_signals (email_id, entity_id, entity_type, signal_type, signal_text)
@@ -235,7 +218,6 @@ mod tests {
             .unwrap();
 
         let anomalies = compute_and_emit_cadence_anomalies(&db);
-        // No baseline (rolling_avg < 2.0), so no anomalies
         assert!(anomalies.is_empty());
     }
 
@@ -244,30 +226,34 @@ mod tests {
         let db = test_db();
         let conn = db.conn_ref();
 
-        // Set up historical baseline: 10 emails/week for past weeks
-        for week_offset in 1..=4 {
+        conn.execute(
+            "INSERT INTO accounts (id, name, account_type, updated_at)
+             VALUES ('acct1', 'Acme', 'customer', datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        for week_offset in 1..=3 {
             let period = format!("2025-W{:02}", 50 - week_offset);
             conn.execute(
                 "INSERT INTO entity_email_cadence (entity_id, entity_type, period, message_count, rolling_avg, updated_at)
-                 VALUES ('acct1', 'account', ?1, 10, 10.0, datetime('now', ?2))",
+                 VALUES ('acct1', 'account', ?1, 2, 2.0, datetime('now', ?2))",
                 rusqlite::params![period, format!("-{} days", week_offset * 7)],
             )
             .unwrap();
         }
 
-        // Current week: only 2 signals (< 50% of avg 10)
-        for i in 0..2 {
-            conn.execute(
-                "INSERT INTO email_signals (email_id, entity_id, entity_type, signal_type, signal_text)
-                 VALUES (?1, 'acct1', 'account', 'inbound', 'test')",
-                rusqlite::params![format!("e{}", i)],
-            )
-            .unwrap();
-        }
+        conn.execute(
+            "INSERT INTO emails (email_id, thread_id, sender_email, sender_name, subject, snippet, priority, is_unread, received_at, entity_id, entity_type, created_at, updated_at)
+             VALUES ('e1', 'thread-1', 'owner@acme.test', 'Owner', 'Check-in', '', 'high', 1, datetime('now', '-18 days'), 'acct1', 'account', datetime('now', '-18 days'), datetime('now', '-18 days'))",
+            [],
+        )
+        .unwrap();
 
         let anomalies = compute_and_emit_cadence_anomalies(&db);
         assert_eq!(anomalies.len(), 1);
         assert_eq!(anomalies[0].anomaly_type, "gone_quiet");
         assert_eq!(anomalies[0].entity_id, "acct1");
+        assert!(anomalies[0].days_since_last_email >= 18);
     }
 }

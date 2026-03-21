@@ -960,9 +960,7 @@ pub trait HasSource {
     /// Effective confidence for health scoring.
     /// Returns the source confidence if present, or a default baseline.
     fn effective_confidence(&self) -> f64 {
-        self.item_source()
-            .map(|s| s.confidence)
-            .unwrap_or(0.5) // default: pty_synthesis baseline
+        self.item_source().map(|s| s.confidence).unwrap_or(0.5) // default: pty_synthesis baseline
     }
 }
 
@@ -1350,7 +1348,10 @@ pub fn apply_intelligence_field_update(
     // set the itemSource on that item.
     if let Ok(segments) = parse_path_segments(field_path) {
         if let Some(PathSegment::Index(arr_name, idx)) = segments.last() {
-            if let Some(arr) = json_val.get_mut(arr_name.as_str()).and_then(|v| v.as_array_mut()) {
+            if let Some(arr) = json_val
+                .get_mut(arr_name.as_str())
+                .and_then(|v| v.as_array_mut())
+            {
                 if let Some(item) = arr.get_mut(*idx) {
                     if item.is_object() {
                         item["itemSource"] = serde_json::json!({
@@ -1409,7 +1410,10 @@ pub fn apply_intelligence_field_update_in_memory(
     // I576: Tag edited items with user_correction source attribution.
     if let Ok(segments) = parse_path_segments(field_path) {
         if let Some(PathSegment::Index(arr_name, idx)) = segments.last() {
-            if let Some(arr) = json_val.get_mut(arr_name.as_str()).and_then(|v| v.as_array_mut()) {
+            if let Some(arr) = json_val
+                .get_mut(arr_name.as_str())
+                .and_then(|v| v.as_array_mut())
+            {
                 if let Some(item) = arr.get_mut(*idx) {
                     if item.is_object() {
                         item["itemSource"] = serde_json::json!({
@@ -1742,6 +1746,14 @@ impl ActionDb {
                 dimensions_json,
                 intel.success_plan_signals.as_ref().and_then(|v| serde_json::to_string(v).ok()),
             ],
+        )?;
+
+        // 1b. Clear stale feedback — feedback is keyed by field path (e.g.
+        // "riskFactors[0]"), which is positional. Re-enrichment produces new content
+        // at the same positions, so old votes don't apply to new analysis.
+        conn.execute(
+            "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2",
+            rusqlite::params![intel.entity_id, intel.entity_type],
         )?;
 
         // 2. entity_quality — keep scalar health mirrors for transitional compatibility.

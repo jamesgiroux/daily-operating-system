@@ -999,7 +999,8 @@ pub fn reconcile_enrichment(
         result.strategic_priorities = new_output.strategic_priorities;
     }
     if !new_output.internal_team.is_empty() {
-        result.internal_team = new_output.internal_team;
+        result.internal_team =
+            reconcile_internal_team(&existing.internal_team, &new_output.internal_team);
     }
     if !new_output.blockers.is_empty() {
         result.blockers = new_output.blockers;
@@ -1027,6 +1028,29 @@ pub fn reconcile_enrichment(
     }
 
     result
+}
+
+fn reconcile_internal_team(
+    existing: &[super::io::InternalTeamMember],
+    new_items: &[super::io::InternalTeamMember],
+) -> Vec<super::io::InternalTeamMember> {
+    let mut merged = existing
+        .iter()
+        .filter(|member| member.source.as_deref() == Some("user"))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for item in new_items {
+        let duplicate = merged.iter().any(|existing_item| {
+            existing_item.name.eq_ignore_ascii_case(&item.name)
+                && existing_item.role.eq_ignore_ascii_case(&item.role)
+        });
+        if !duplicate {
+            merged.push(item.clone());
+        }
+    }
+
+    merged
 }
 
 /// I576: Reconcile a Vec of source-attributed items.

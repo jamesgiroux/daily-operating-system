@@ -398,7 +398,13 @@ pub async fn enrich_person(
     person_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    crate::services::intelligence::enrich_entity(person_id, "person".to_string(), &state, Some(&app_handle)).await
+    crate::services::intelligence::enrich_entity(
+        person_id,
+        "person".to_string(),
+        &state,
+        Some(&app_handle),
+    )
+    .await
 }
 
 // =========================================================================
@@ -437,8 +443,6 @@ pub async fn get_entity_feedback(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::db::intelligence_feedback::FeedbackRow>, String> {
     state
-        .db_read(move |db| {
-            db.get_entity_feedback(&entity_id, &entity_type)
-        })
+        .db_read(move |db| db.get_entity_feedback(&entity_id, &entity_type))
         .await
 }

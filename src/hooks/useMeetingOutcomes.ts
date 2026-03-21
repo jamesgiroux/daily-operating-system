@@ -17,7 +17,7 @@ export function useMeetingOutcomes(meetingId: string) {
       );
       setOutcomes(result);
     } catch (err) {
-      console.error("Failed to load meeting outcomes:", err);
+      console.error("Failed to load meeting outcomes:", err); // Expected: background data fetch on mount
     } finally {
       setLoading(false);
     }

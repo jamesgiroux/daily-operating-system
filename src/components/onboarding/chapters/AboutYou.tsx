@@ -49,7 +49,7 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
       { userEmail: email }
     )
       .then((result) => setSuggestions(result))
-      .catch((err) => console.error("get_frequent_correspondents failed:", err));
+      .catch((err) => console.error("get_frequent_correspondents failed:", err)); // Expected: background data fetch
   }, [email]);
 
   const filteredSuggestions = suggestions.filter(
@@ -132,7 +132,7 @@ export function AboutYou({ formData, onFormChange, onNext }: AboutYouProps) {
         }
       }
     } catch (e) {
-      console.error("set_user_profile failed:", e);
+      console.error("set_user_profile failed:", e); // Expected: best-effort profile save during onboarding
     } finally {
       setSaving(false);
     }

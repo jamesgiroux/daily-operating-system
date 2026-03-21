@@ -219,9 +219,7 @@ pub fn build_glean_dimension_prompt(
 
     prompt.push_str("IMPORTANT:\n");
     prompt.push_str("- Return ONLY valid JSON. No markdown, no commentary before or after.\n");
-    prompt.push_str(
-        "- Omit any field you don't have data for — do not fabricate.\n",
-    );
+    prompt.push_str("- Omit any field you don't have data for — do not fabricate.\n");
     prompt.push_str(
         "- Use the local context above as ground truth. Supplement with org knowledge, don't contradict.\n\n",
     );
@@ -425,14 +423,30 @@ fn inject_dimension_context(prompt: &mut String, dimension: &str, ctx: &Intellig
         "core_assessment" => {
             // Needs broad context for overall assessment
             push_section(prompt, "## Current Facts", &ctx.facts_block);
-            push_section(prompt, "## Meeting History (last 90 days)", &ctx.meeting_history);
-            push_section(prompt, "## Recent Captures (wins/risks/decisions)", &ctx.recent_captures);
+            push_section(
+                prompt,
+                "## Meeting History (last 90 days)",
+                &ctx.meeting_history,
+            );
+            push_section(
+                prompt,
+                "## Recent Captures (wins/risks/decisions)",
+                &ctx.recent_captures,
+            );
             push_opt_section(prompt, "## User Professional Context", &ctx.user_context);
-            push_opt_section(prompt, "## User Notes About This Entity", &ctx.entity_context);
+            push_opt_section(
+                prompt,
+                "## User Notes About This Entity",
+                &ctx.entity_context,
+            );
         }
         "stakeholder_champion" => {
             push_section(prompt, "## Known Stakeholders", &ctx.stakeholders);
-            push_section(prompt, "## Meeting History (last 90 days)", &ctx.meeting_history);
+            push_section(
+                prompt,
+                "## Meeting History (last 90 days)",
+                &ctx.meeting_history,
+            );
             push_opt_section(
                 prompt,
                 "## Known Contacts (canonical names)",
@@ -452,7 +466,11 @@ fn inject_dimension_context(prompt: &mut String, dimension: &str, ctx: &Intellig
         "commercial_financial" => {
             push_section(prompt, "## Current Facts", &ctx.facts_block);
             push_section(prompt, "## Recent Captures", &ctx.recent_captures);
-            push_opt_section(prompt, "## User Notes About This Entity", &ctx.entity_context);
+            push_opt_section(
+                prompt,
+                "## User Notes About This Entity",
+                &ctx.entity_context,
+            );
             if let Some(ref computed) = ctx.computed_health {
                 prompt.push_str(&format!(
                     "## Pre-Computed Account Health (Algorithmic)\n\
@@ -465,7 +483,11 @@ fn inject_dimension_context(prompt: &mut String, dimension: &str, ctx: &Intellig
         }
         "strategic_context" => {
             push_section(prompt, "## Current Facts", &ctx.facts_block);
-            push_section(prompt, "## Meeting History (last 90 days)", &ctx.meeting_history);
+            push_section(
+                prompt,
+                "## Meeting History (last 90 days)",
+                &ctx.meeting_history,
+            );
             push_section(prompt, "## Recent Captures", &ctx.recent_captures);
             if !ctx.file_contents.is_empty() {
                 prompt.push_str("## Workspace Files [source: local_file, confidence: 0.85]\n");
@@ -476,12 +498,20 @@ fn inject_dimension_context(prompt: &mut String, dimension: &str, ctx: &Intellig
         }
         "value_success" => {
             push_section(prompt, "## Current Facts", &ctx.facts_block);
-            push_section(prompt, "## Meeting History (last 90 days)", &ctx.meeting_history);
+            push_section(
+                prompt,
+                "## Meeting History (last 90 days)",
+                &ctx.meeting_history,
+            );
             push_section(prompt, "## Open Actions", &ctx.open_actions);
             push_section(prompt, "## Recent Captures", &ctx.recent_captures);
         }
         "engagement_signals" => {
-            push_section(prompt, "## Meeting History (last 90 days)", &ctx.meeting_history);
+            push_section(
+                prompt,
+                "## Meeting History (last 90 days)",
+                &ctx.meeting_history,
+            );
             push_section(prompt, "## Recent Email Signals", &ctx.recent_email_signals);
             if !ctx.recent_transcripts.is_empty() {
                 prompt.push_str("## Recent Call Transcripts\n");
@@ -537,11 +567,7 @@ RECONCILIATION RULES:\n\
 ///
 /// When `prior_intelligence` is available, deserializes it and formats each
 /// item with source/confidence tags so the LLM knows what to preserve.
-fn inject_existing_intelligence(
-    prompt: &mut String,
-    dimension: &str,
-    ctx: &IntelligenceContext,
-) {
+fn inject_existing_intelligence(prompt: &mut String, dimension: &str, ctx: &IntelligenceContext) {
     use super::io::HasSource;
 
     let prior_str = match ctx.prior_intelligence {
@@ -623,11 +649,7 @@ fn inject_existing_intelligence(
         }
         "value_success" => {
             for v in &prior.value_delivered {
-                items_block.push_str(&format_tagged_item(
-                    "Value",
-                    &v.statement,
-                    v.item_source(),
-                ));
+                items_block.push_str(&format_tagged_item("Value", &v.statement, v.item_source()));
             }
         }
         _ => {}
@@ -653,7 +675,11 @@ fn format_tagged_item(
     }
     match item_source {
         Some(src) => {
-            let ref_part = src.reference.as_deref().map(|r| format!(", {r}")).unwrap_or_default();
+            let ref_part = src
+                .reference
+                .as_deref()
+                .map(|r| format!(", {r}"))
+                .unwrap_or_default();
             format!(
                 "[{}, {:.1}{ref_part}] {label}: \"{text}\"\n",
                 src.source, src.confidence,
@@ -667,11 +693,7 @@ fn format_tagged_item(
 }
 
 /// Build the JSON schema snippet for a single dimension group.
-fn dimension_json_schema(
-    dimension: &str,
-    entity_type: &str,
-    ctx: &IntelligenceContext,
-) -> String {
+fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceContext) -> String {
     let mut s = String::from("```json\n{\n");
 
     match dimension {
@@ -921,10 +943,7 @@ mod tests {
         assert_eq!(existing.blockers.len(), 1);
 
         // Other fields untouched
-        assert_eq!(
-            existing.executive_assessment,
-            Some("Keep me".to_string())
-        );
+        assert_eq!(existing.executive_assessment, Some("Keep me".to_string()));
         assert_eq!(existing.strategic_priorities.len(), 1);
     }
 
@@ -1019,10 +1038,7 @@ mod tests {
         assert!(existing.meeting_cadence.is_some());
         assert!(existing.email_responsiveness.is_some());
         // Other fields untouched
-        assert_eq!(
-            existing.executive_assessment,
-            Some("Keep me".to_string())
-        );
+        assert_eq!(existing.executive_assessment, Some("Keep me".to_string()));
         assert_eq!(existing.value_delivered.len(), 1);
     }
 
@@ -1043,10 +1059,7 @@ mod tests {
         merge_dimension_into(&mut existing, "core_assessment", &partial).unwrap();
 
         // Should NOT wipe because partial is empty
-        assert_eq!(
-            existing.executive_assessment,
-            Some("Existing".to_string())
-        );
+        assert_eq!(existing.executive_assessment, Some("Existing".to_string()));
         assert_eq!(existing.risks.len(), 1);
     }
 
@@ -1189,8 +1202,7 @@ mod eval_tests {
     fn eval_dimension_prompt_includes_evidence_guidance() {
         let ctx = make_ctx();
         for dim in DIMENSION_NAMES {
-            let prompt =
-                build_dimension_prompt(dim, "TestCo", "account", None, &ctx, false);
+            let prompt = build_dimension_prompt(dim, "TestCo", "account", None, &ctx, false);
             assert!(
                 prompt.contains("itemSource") || prompt.contains("source"),
                 "Dimension '{}' prompt must request source attribution",
@@ -1292,9 +1304,16 @@ mod eval_tests {
         assert_eq!(existing.recent_wins.len(), 1);
 
         // Unrelated fields preserved
-        assert_eq!(existing.stakeholder_insights.len(), 1, "Stakeholders must be preserved");
+        assert_eq!(
+            existing.stakeholder_insights.len(),
+            1,
+            "Stakeholders must be preserved"
+        );
         assert_eq!(existing.stakeholder_insights[0].name, "Alice");
-        assert!(existing.contract_context.is_some(), "Contract context must be preserved");
+        assert!(
+            existing.contract_context.is_some(),
+            "Contract context must be preserved"
+        );
     }
 
     #[test]
@@ -1415,9 +1434,17 @@ mod eval_tests {
         // All fields from all dimensions should be present
         assert!(existing.executive_assessment.is_some(), "Core: assessment");
         assert_eq!(existing.risks.len(), 1, "Core: risks");
-        assert_eq!(existing.stakeholder_insights.len(), 1, "Stakeholder: insights");
+        assert_eq!(
+            existing.stakeholder_insights.len(),
+            1,
+            "Stakeholder: insights"
+        );
         assert!(existing.contract_context.is_some(), "Commercial: contract");
-        assert_eq!(existing.competitive_context.len(), 1, "Strategic: competitive");
+        assert_eq!(
+            existing.competitive_context.len(),
+            1,
+            "Strategic: competitive"
+        );
         assert!(existing.success_metrics.is_some(), "Value: metrics");
         assert!(existing.meeting_cadence.is_some(), "Engagement: cadence");
     }
@@ -1427,9 +1454,6 @@ mod eval_tests {
         let mut existing = empty_intel();
         let partial = empty_intel();
         let result = merge_dimension_into(&mut existing, "nonexistent_dimension", &partial);
-        assert!(
-            result.is_err(),
-            "Unknown dimension must return an error"
-        );
+        assert!(result.is_err(), "Unknown dimension must return an error");
     }
 }

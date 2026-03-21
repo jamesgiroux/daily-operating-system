@@ -32,7 +32,7 @@ export function useGleanAuth() {
 
   useEffect(() => {
     invoke<GleanAuthStatus>("get_glean_auth_status").then(setStatus).catch((err) => {
-      console.error("get_glean_auth_status failed:", err);
+      console.error("get_glean_auth_status failed:", err); // Expected: background auth check on mount
     });
 
     const unlistenChanged = listen<GleanAuthStatus>("glean-auth-changed", (event) => {

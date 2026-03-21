@@ -32,11 +32,11 @@ export default function ClayConnection() {
   useEffect(() => {
     invoke<ClayStatusData>("get_clay_status")
       .then(setStatus)
-      .catch((err) => console.error("get_clay_status failed:", err));
+      .catch((err) => console.error("get_clay_status failed:", err)); // Expected: background init on mount
 
     invoke<SmitheryStatus>("get_smithery_status")
       .then(setSmithery)
-      .catch((err) => console.error("get_smithery_status failed:", err));
+      .catch((err) => console.error("get_smithery_status failed:", err)); // Expected: background init on mount
   }, []);
 
   async function toggleEnabled() {
@@ -187,6 +187,7 @@ export default function ClayConnection() {
       setStatus({ ...status, autoEnrichOnCreate: newValue });
     } catch (err) {
       console.error("Failed to toggle auto-enrich:", err);
+      toast.error("Failed to toggle auto-enrich");
     }
   }
 

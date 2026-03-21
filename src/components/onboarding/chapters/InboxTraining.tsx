@@ -67,7 +67,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
         .then((fn) => {
           unlisten = fn;
         })
-        .catch((err) => console.error("listen drag-drop failed:", err));
+        .catch((err) => console.error("listen drag-drop failed:", err)); // Expected: system event listener setup
     } catch {
       // Drag-drop not available outside Tauri
     }
@@ -151,7 +151,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
                 : f
             )
           );
-          invoke("enrich_inbox_file", { filename }).catch((err) => console.error("enrich_inbox_file failed:", err));
+          invoke("enrich_inbox_file", { filename }).catch((err) => console.error("enrich_inbox_file failed:", err)); // Expected: background enrichment
         } else if (result.status === "error") {
           setFiles((prev) =>
             prev.map((f, idx) =>

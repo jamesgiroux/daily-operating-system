@@ -149,7 +149,7 @@ export default function BookOfBusinessPage() {
   useEffect(() => {
     invoke<{ id: string | number }>("get_user_entity")
       .then((u) => setUserId(String(u.id)))
-      .catch((err) => console.error("get_user_entity failed:", err));
+      .catch((err) => console.error("get_user_entity failed:", err)); // Expected: background init on mount
   }, []);
 
   // Fetch accounts for spotlight picker (parents + all children)
@@ -169,7 +169,7 @@ export default function BookOfBusinessPage() {
         const allChildren = childLists.flat();
         setAccounts([...customers, ...allChildren]);
       } catch (err) {
-        console.error("Failed to fetch accounts for picker:", err);
+        console.error("Failed to fetch accounts for picker:", err); // Expected: background data fetch on mount
       }
     })();
   }, []);
@@ -267,13 +267,14 @@ export default function BookOfBusinessPage() {
         try {
           setContent(normalizeBookOfBusiness(JSON.parse(data.contentJson)));
         } catch (e) {
-          console.error("Failed to parse book of business content:", e);
+          console.error("Failed to parse book of business content:", e); // Expected: corrupted report JSON
           setContent(null);
         }
         setError(null);
       })
       .catch((err) => {
         console.error("get_report (book_of_business) failed:", err);
+        toast.error("Failed to load report");
         setReport(null);
         setContent(null);
       })
