@@ -64,8 +64,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 2: Fetch calendar events + classify (I336: entity-generic)
     let entity_hints = {
-        let db_guard = state.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_ref = db_guard_owned.as_ref();
         match db_ref {
             Some(db) => crate::helpers::build_entity_hints(db),
             None => {
@@ -115,14 +115,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
         .unwrap_or_default();
     // I374: Load dismissed domains for relevance learning penalty
-    let dismissed_domains: HashSet<String> = state
-        .db
-        .lock()
+    let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
-        })
+        .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
         .unwrap_or_default();
     if !dismissed_domains.is_empty() {
         log::info!(
@@ -156,8 +151,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4a2: Signal-context boosting (I320 — boost medium emails with entity signals)
     {
-        let boost_guard = state.db.lock().ok();
-        if let Some(db) = boost_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let mut boosted_count = 0u32;
             let mut new_high = Vec::new();
             let mut new_all = Vec::new();
@@ -173,7 +167,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     .unwrap_or("");
 
                 if let Some(boost) =
-                    email_classify::boost_with_entity_context(from_email, priority, db)
+                    email_classify::boost_with_entity_context(from_email, priority, &db)
                 {
                     // Clone and update priority
                     let mut boosted = email_val.clone();
@@ -208,69 +202,67 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // I365: Persist fetched emails to DB (after classification + boosting)
     {
-        if let Ok(guard) = state.db.lock() {
-            if let Some(db) = guard.as_ref() {
-                let mut persisted = 0usize;
-                for raw in &email_result.raw_emails {
-                    let sender_email = email_classify::extract_email_address(&raw.from);
-                    let sender_name = extract_display_name(&raw.from);
-                    // Use boosted priority from all array if available
-                    let priority = email_result
-                        .all
-                        .iter()
-                        .find(|v| v.get("id").and_then(|i| i.as_str()) == Some(&raw.id))
-                        .and_then(|v| v.get("priority").and_then(|p| p.as_str()))
-                        .unwrap_or(
-                            email_result
-                                .priorities
-                                .get(&raw.id)
-                                .map(|s| s.as_str())
-                                .unwrap_or("medium"),
-                        );
-                    let db_email = crate::db::DbEmail {
-                        email_id: raw.id.clone(),
-                        thread_id: Some(raw.thread_id.clone()),
-                        sender_email: Some(sender_email),
-                        sender_name: Some(sender_name),
-                        subject: Some(raw.subject.clone()),
-                        snippet: Some(raw.snippet.clone()),
-                        priority: Some(priority.to_string()),
-                        is_unread: raw.is_unread,
-                        received_at: Some(raw.date.clone()),
-                        enrichment_state: "pending".to_string(),
-                        enrichment_attempts: 0,
-                        last_enrichment_at: None,
-                        last_seen_at: None,
-                        resolved_at: None,
-                        entity_id: None,
-                        entity_type: None,
-                        contextual_summary: None,
-                        sentiment: None,
-                        urgency: None,
-                        user_is_last_sender: false,
-                        last_sender_email: Some(sender_name_fallback(&raw.from)),
-                        message_count: 1,
-                        created_at: chrono::Utc::now().to_rfc3339(),
-                        updated_at: chrono::Utc::now().to_rfc3339(),
-                        relevance_score: None,
-                        score_reason: None,
-                        pinned_at: None,
-                        commitments: None,
-                        questions: None,
-                    };
-                    if let Err(e) = db.upsert_email(&db_email) {
-                        log::warn!("Failed to persist email {}: {}", raw.id, e);
-                    } else {
-                        persisted += 1;
-                    }
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let mut persisted = 0usize;
+            for raw in &email_result.raw_emails {
+                let sender_email = email_classify::extract_email_address(&raw.from);
+                let sender_name = extract_display_name(&raw.from);
+                // Use boosted priority from all array if available
+                let priority = email_result
+                    .all
+                    .iter()
+                    .find(|v| v.get("id").and_then(|i| i.as_str()) == Some(&raw.id))
+                    .and_then(|v| v.get("priority").and_then(|p| p.as_str()))
+                    .unwrap_or(
+                        email_result
+                            .priorities
+                            .get(&raw.id)
+                            .map(|s| s.as_str())
+                            .unwrap_or("medium"),
+                    );
+                let db_email = crate::db::DbEmail {
+                    email_id: raw.id.clone(),
+                    thread_id: Some(raw.thread_id.clone()),
+                    sender_email: Some(sender_email),
+                    sender_name: Some(sender_name),
+                    subject: Some(raw.subject.clone()),
+                    snippet: Some(raw.snippet.clone()),
+                    priority: Some(priority.to_string()),
+                    is_unread: raw.is_unread,
+                    received_at: Some(raw.date.clone()),
+                    enrichment_state: "pending".to_string(),
+                    enrichment_attempts: 0,
+                    last_enrichment_at: None,
+                    last_seen_at: None,
+                    resolved_at: None,
+                    entity_id: None,
+                    entity_type: None,
+                    contextual_summary: None,
+                    sentiment: None,
+                    urgency: None,
+                    user_is_last_sender: false,
+                    last_sender_email: Some(sender_name_fallback(&raw.from)),
+                    message_count: 1,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                    relevance_score: None,
+                    score_reason: None,
+                    pinned_at: None,
+                    commitments: None,
+                    questions: None,
+                };
+                if let Err(e) = db.upsert_email(&db_email) {
+                    log::warn!("Failed to persist email {}: {}", raw.id, e);
+                } else {
+                    persisted += 1;
                 }
-                if persisted > 0 {
-                    log::info!("prepare_today: persisted {} emails to DB", persisted);
-                }
-
-                // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
-                reconcile_inbox_emails(&email_result.raw_emails, db);
             }
+            if persisted > 0 {
+                log::info!("prepare_today: persisted {} emails to DB", persisted);
+            }
+
+            // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
+            reconcile_inbox_emails(&email_result.raw_emails, &db);
         }
     }
 
@@ -284,10 +276,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         .await
         .unwrap_or_default();
         if !sent_thread_ids.is_empty() {
-            if let Ok(guard) = state.db.lock() {
-                if let Some(db) = guard.as_ref() {
-                    update_thread_positions_from_sent(&sent_thread_ids, db);
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                update_thread_positions_from_sent(&sent_thread_ids, &db);
             }
         }
     }
@@ -308,10 +298,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             log::info!("prepare_today: enriched {} emails", enriched);
         }
         // I372: Emit entity signals from enriched emails
-        let signal_guard = state.db.lock().ok();
-        if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
-                db,
+                &db,
                 &state.signals.engine,
             );
             if emitted > 0 {
@@ -325,8 +314,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
         let active = {
-            let score_guard = state.db.lock().ok();
-            if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
+            if let Ok(db) = crate::db::ActionDb::open() {
                 db.get_all_active_emails().unwrap_or_default()
             } else {
                 Vec::new()
@@ -349,11 +337,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         };
 
         if !scores.is_empty() {
-            if let Ok(score_guard) = state.db.lock() {
-                if let Some(db) = score_guard.as_ref() {
-                    for (email_id, score, reason) in &scores {
-                        let _ = db.set_relevance_score(email_id, *score, reason);
-                    }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                for (email_id, score, reason) in &scores {
+                    let _ = db.set_relevance_score(email_id, *score, reason);
                 }
             }
             log::info!("prepare_today: scored {} emails", scores.len());
@@ -422,13 +408,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                             .map(|c| c.ai_models.clone())
                             .unwrap_or_default()
                     };
-                    let commitment_guard = state.db.lock().ok();
-                    if let Some(db) = commitment_guard.as_ref().and_then(|g| g.as_ref()) {
+                    if let Ok(db) = crate::db::ActionDb::open() {
                         let mut total_commitments = 0usize;
                         for (email_id, subject, from_email, body) in &fetched_bodies {
                             let commitments =
                                 crate::processor::email_actions::extract_email_commitments(
-                                    workspace, &ai_config, body, email_id, subject, from_email, db,
+                                    workspace, &ai_config, body, email_id, subject, from_email, &db,
                                 );
                             total_commitments += commitments.len();
                         }
@@ -447,9 +432,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4b: Email-meeting bridge (I306 — correlate email signals with upcoming meetings)
     {
-        let bridge_guard = state.db.lock().ok();
-        if let Some(db) = bridge_guard.as_ref().and_then(|g| g.as_ref()) {
-            match crate::signals::email_bridge::run_email_meeting_bridge(db, &state.signals.engine)
+        if let Ok(db) = crate::db::ActionDb::open() {
+            match crate::signals::email_bridge::run_email_meeting_bridge(&db, &state.signals.engine)
             {
                 Ok(correlations) if !correlations.is_empty() => {
                     log::info!(
@@ -467,10 +451,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4b2: Email cadence monitoring (I319 — anomaly detection)
     let cadence_anomalies = {
-        let cadence_guard = state.db.lock().ok();
-        if let Some(db) = cadence_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies_with_engine(
-                db,
+                &db,
                 Some(&state.signals.engine),
             );
             if !anomalies.is_empty() {
@@ -484,6 +467,54 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             Vec::new()
         }
     };
+
+    // Step 4b2a: Gone-quiet account detection (Gap 3 — email_cadence_drop signals)
+    {
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let gone_quiet = crate::services::emails::detect_gone_quiet_accounts(&db);
+            match gone_quiet {
+                Ok(accounts) if !accounts.is_empty() => {
+                    // Emit signals with 7-day dedup
+                    let engine = &state.signals.engine;
+                    for acct in &accounts {
+                        let recent_exists: bool = db
+                            .conn_ref()
+                            .query_row(
+                                "SELECT COUNT(*) FROM signal_events
+                                 WHERE entity_id = ?1
+                                   AND signal_type = 'email_cadence_drop'
+                                   AND created_at > datetime('now', '-7 days')",
+                                rusqlite::params![acct.entity_id],
+                                |row| row.get::<_, i64>(0).map(|c| c > 0),
+                            )
+                            .unwrap_or(false);
+                        if !recent_exists {
+                            let value_json = format!(
+                                "{{\"normal_interval_days\":{:.1},\"days_since_last\":{:.0}}}",
+                                acct.normal_interval_days, acct.days_since_last_email
+                            );
+                            let _ = crate::signals::bus::emit_signal_and_propagate(
+                                &db,
+                                engine,
+                                &acct.entity_type,
+                                &acct.entity_id,
+                                "email_cadence_drop",
+                                "system",
+                                Some(&value_json),
+                                0.6,
+                            );
+                        }
+                    }
+                    log::info!(
+                        "prepare_today: {} gone-quiet accounts detected",
+                        accounts.len()
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("prepare_today: gone-quiet detection failed: {}", e),
+            }
+        }
+    }
 
     // Step 4b3: Auto-archive low-priority emails (I323)
     let mut archived_count = 0u64;
@@ -562,15 +593,14 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 4c: Thread position tracking (I318 — "ball in your court")
     // Only track high-priority email threads for "ball in your court" detection
     let replies_needed = {
-        let thread_guard = state.db.lock().ok();
-        if let Some(db) = thread_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let high_priority_emails: Vec<Value> = email_result
                 .all
                 .iter()
                 .filter(|e| e.get("priority").and_then(|v| v.as_str()) == Some("high"))
                 .cloned()
                 .collect();
-            let tracked = track_thread_positions(&high_priority_emails, &primary_user_domain, db);
+            let tracked = track_thread_positions(&high_priority_emails, &primary_user_domain, &db);
             log::info!(
                 "prepare_today: tracked {} high-priority threads, {} awaiting reply",
                 tracked.0,
@@ -599,8 +629,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 5: Collect actions (workspace markdown + SQLite)
     let actions_dict = {
-        let db_guard = state.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_ref = db_guard_owned.as_ref();
         let action_result = actions::collect_all_actions(workspace, db_ref);
         action_result.to_value()
     };
@@ -609,8 +639,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Fixes first-run gap: calendar poller may not have run yet, so prepare_today
     // must upsert meetings itself. Pattern ported from prepare_week (lines 707-783).
     {
-        let ensure_guard = state.db.lock().ok();
-        if let Some(db) = ensure_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let mut ensured = 0u32;
             for cm in &classified {
                 let tier = cm
@@ -725,8 +754,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
             // Look up the meeting row to check intelligence state
             let needs_refresh = {
-                let guard = state.db.lock().ok();
-                let db_opt = guard.as_ref().and_then(|g| g.as_ref());
+                let guard_owned = crate::db::ActionDb::open().ok();
+                let db_opt = guard_owned.as_ref();
                 match db_opt {
                     Some(db) => {
                         match db.get_meeting_by_calendar_event_id(calendar_event_id) {
@@ -798,8 +827,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     }
 
     // Step 6: Meeting contexts (I305: thread embedding model for entity resolution)
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+    let db_guard_owned = crate::db::ActionDb::open().ok();
+    let db_ref = db_guard_owned.as_ref();
     let embedding_ref = state.embedding_model.as_ref();
     let mut meeting_contexts = meeting_context::gather_all_meeting_contexts(
         &classified,
@@ -838,13 +867,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Drop DB guard before any further awaits
-    drop(db_guard);
+    // DB connection dropped when scope ends — no persistent handle to manage.
 
     // Step 6a: Run proactive detection scan (I260)
     {
-        let scan_guard = state.db.lock().ok();
-        if let Some(db) = scan_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let (profile, user_domains, _) = get_config(state);
             let scan_ctx = crate::proactive::engine::DetectorContext {
                 today,
@@ -852,7 +879,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 profile,
             };
             let engine = crate::proactive::engine::default_engine();
-            match engine.run_scan(db, &scan_ctx) {
+            match engine.run_scan(&db, &scan_ctx) {
                 Ok(n) if n > 0 => log::info!("prepare_today: {} proactive insights detected", n),
                 Err(e) => log::warn!("prepare_today: proactive scan failed: {}", e),
                 _ => {}
@@ -862,8 +889,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 6b: Signal-driven briefing callouts (I308)
     let callouts = {
-        let callout_guard = state.db.lock().ok();
-        let callout_db = callout_guard.as_ref().and_then(|g| g.as_ref());
+        let callout_guard_owned = crate::db::ActionDb::open().ok();
+        let callout_db = callout_guard_owned.as_ref();
         match callout_db {
             Some(db) => {
                 let model_ref = state.embedding_model.as_ref();
@@ -881,9 +908,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 6c: Person intelligence enrichment triggers (I338)
     {
-        let person_guard = state.db.lock().ok();
-        if let Some(db) = person_guard.as_ref().and_then(|g| g.as_ref()) {
-            let n = queue_person_intelligence(&meeting_contexts, workspace, db, &state.intel_queue);
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let n = queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
             if n > 0 {
                 log::info!(
                     "prepare_today: queued {} person intelligence enrichments",
@@ -1018,8 +1044,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Fetch and classify calendar events for the week (I336: entity-generic)
     let entity_hints = {
-        let db_guard = state.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_ref = db_guard_owned.as_ref();
         match db_ref {
             Some(db) => crate::helpers::build_entity_hints(db),
             None => Vec::new(),
@@ -1030,8 +1056,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Ensure classified meetings exist in meetings table and generate intelligence (ADR-0081)
     {
-        let intel_guard = state.db.lock().ok();
-        if let Some(db) = intel_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             for cm in &classified {
                 let tier = cm
                     .get("intelligence_tier")
@@ -1155,8 +1180,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
         // Look up the DB meeting ID
         let meeting_id = {
-            let guard = state.db.lock().ok();
-            let db = guard.as_ref().and_then(|g| g.as_ref());
+            let guard_owned = crate::db::ActionDb::open().ok();
+            let db = guard_owned.as_ref();
             match db {
                 Some(db) => db
                     .get_meeting_by_calendar_event_id(calendar_event_id)
@@ -1197,8 +1222,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     }
 
     // Actions from SQLite
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+    let db_guard_owned = crate::db::ActionDb::open().ok();
+    let db_ref = db_guard_owned.as_ref();
     let actions_data = match db_ref {
         Some(db) => actions::fetch_actions_from_db(db),
         None => json!({"overdue": [], "thisWeek": []}),
@@ -1212,7 +1237,6 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         db_ref,
         Some(embedding_ref_week),
     );
-    drop(db_guard);
 
     // Gap analysis — resolve user timezone from schedule config for accurate UTC→local conversion
     let user_tz: Option<chrono_tz::Tz> = state.config.read().ok().and_then(|g| {
@@ -1251,8 +1275,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Proactive scan + callouts for week view (I260)
     let week_callouts = {
-        let callout_guard = state.db.lock().ok();
-        let callout_db = callout_guard.as_ref().and_then(|g| g.as_ref());
+        let callout_guard_owned = crate::db::ActionDb::open().ok();
+        let callout_db = callout_guard_owned.as_ref();
         match callout_db {
             Some(db) => {
                 // Run proactive scan first
@@ -1280,9 +1304,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Person intelligence enrichment triggers (I338)
     {
-        let person_guard = state.db.lock().ok();
-        if let Some(db) = person_guard.as_ref().and_then(|g| g.as_ref()) {
-            let n = queue_person_intelligence(&meeting_contexts, workspace, db, &state.intel_queue);
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let n = queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
             if n > 0 {
                 log::info!("prepare_week: queued {} person intelligence enrichments", n);
             }
@@ -1328,8 +1351,8 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
     let (_profile, user_domains, _user_focus) = get_config(state);
     let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
     let account_hints = {
-        let db_guard = state.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_ref = db_guard_owned.as_ref();
         match db_ref {
             Some(db) => crate::helpers::build_external_account_hints(db),
             None => build_account_domain_hints(workspace),
@@ -1366,14 +1389,9 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
         .unwrap_or_default();
     // I374: Load dismissed domains for relevance learning penalty
-    let dismissed_domains: HashSet<String> = state
-        .db
-        .lock()
+    let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
-        })
+        .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
         .unwrap_or_default();
 
     let email_result = fetch_and_classify_emails(
@@ -1389,61 +1407,59 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
     }
 
     // I365: Persist fetched emails to DB
-    if let Ok(guard) = state.db.lock() {
-        if let Some(db) = guard.as_ref() {
-            let mut persisted = 0usize;
-            for raw in &email_result.raw_emails {
-                let sender_email = email_classify::extract_email_address(&raw.from);
-                let sender_name = extract_display_name(&raw.from);
-                let priority = email_result
-                    .priorities
-                    .get(&raw.id)
-                    .map(|s| s.as_str())
-                    .unwrap_or("medium");
-                let db_email = crate::db::DbEmail {
-                    email_id: raw.id.clone(),
-                    thread_id: Some(raw.thread_id.clone()),
-                    sender_email: Some(sender_email),
-                    sender_name: Some(sender_name),
-                    subject: Some(raw.subject.clone()),
-                    snippet: Some(raw.snippet.clone()),
-                    priority: Some(priority.to_string()),
-                    is_unread: raw.is_unread,
-                    received_at: Some(raw.date.clone()),
-                    enrichment_state: "pending".to_string(),
-                    enrichment_attempts: 0,
-                    last_enrichment_at: None,
-                    last_seen_at: None,
-                    resolved_at: None,
-                    entity_id: None,
-                    entity_type: None,
-                    contextual_summary: None,
-                    sentiment: None,
-                    urgency: None,
-                    user_is_last_sender: false,
-                    last_sender_email: Some(sender_name_fallback(&raw.from)),
-                    message_count: 1,
-                    created_at: chrono::Utc::now().to_rfc3339(),
-                    updated_at: chrono::Utc::now().to_rfc3339(),
-                    relevance_score: None,
-                    score_reason: None,
-                    pinned_at: None,
-                    commitments: None,
-                    questions: None,
-                };
-                if let Err(e) = db.upsert_email(&db_email) {
-                    log::warn!("Failed to persist email {}: {}", raw.id, e);
-                } else {
-                    persisted += 1;
-                }
+    if let Ok(db) = crate::db::ActionDb::open() {
+        let mut persisted = 0usize;
+        for raw in &email_result.raw_emails {
+            let sender_email = email_classify::extract_email_address(&raw.from);
+            let sender_name = extract_display_name(&raw.from);
+            let priority = email_result
+                .priorities
+                .get(&raw.id)
+                .map(|s| s.as_str())
+                .unwrap_or("medium");
+            let db_email = crate::db::DbEmail {
+                email_id: raw.id.clone(),
+                thread_id: Some(raw.thread_id.clone()),
+                sender_email: Some(sender_email),
+                sender_name: Some(sender_name),
+                subject: Some(raw.subject.clone()),
+                snippet: Some(raw.snippet.clone()),
+                priority: Some(priority.to_string()),
+                is_unread: raw.is_unread,
+                received_at: Some(raw.date.clone()),
+                enrichment_state: "pending".to_string(),
+                enrichment_attempts: 0,
+                last_enrichment_at: None,
+                last_seen_at: None,
+                resolved_at: None,
+                entity_id: None,
+                entity_type: None,
+                contextual_summary: None,
+                sentiment: None,
+                urgency: None,
+                user_is_last_sender: false,
+                last_sender_email: Some(sender_name_fallback(&raw.from)),
+                message_count: 1,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+                relevance_score: None,
+                score_reason: None,
+                pinned_at: None,
+                commitments: None,
+                questions: None,
+            };
+            if let Err(e) = db.upsert_email(&db_email) {
+                log::warn!("Failed to persist email {}: {}", raw.id, e);
+            } else {
+                persisted += 1;
             }
-            if persisted > 0 {
-                log::info!("I365: Persisted {} emails to DB", persisted);
-            }
-
-            // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
-            reconcile_inbox_emails(&email_result.raw_emails, db);
         }
+        if persisted > 0 {
+            log::info!("I365: Persisted {} emails to DB", persisted);
+        }
+
+        // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
+        reconcile_inbox_emails(&email_result.raw_emails, &db);
     }
 
     // I370: Refresh thread positions from sent messages
@@ -1456,10 +1472,8 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         .await
         .unwrap_or_default();
         if !sent_thread_ids.is_empty() {
-            if let Ok(guard) = state.db.lock() {
-                if let Some(db) = guard.as_ref() {
-                    update_thread_positions_from_sent(&sent_thread_ids, db);
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                update_thread_positions_from_sent(&sent_thread_ids, &db);
             }
         }
     }
@@ -1485,10 +1499,9 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
             log::info!("refresh_emails: enriched {} emails", enriched);
         }
         // I372: Emit entity signals from enriched emails
-        let signal_guard = state.db.lock().ok();
-        if let Some(db) = signal_guard.as_ref().and_then(|g| g.as_ref()) {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
-                db,
+                &db,
                 &state.signals.engine,
             );
             if emitted > 0 {
@@ -1502,8 +1515,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
         let active = {
-            let score_guard = state.db.lock().ok();
-            if let Some(db) = score_guard.as_ref().and_then(|g| g.as_ref()) {
+            if let Ok(db) = crate::db::ActionDb::open() {
                 db.get_all_active_emails().unwrap_or_default()
             } else {
                 Vec::new()
@@ -1526,11 +1538,9 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         };
 
         if !scores.is_empty() {
-            if let Ok(score_guard) = state.db.lock() {
-                if let Some(db) = score_guard.as_ref() {
-                    for (email_id, score, reason) in &scores {
-                        let _ = db.set_relevance_score(email_id, *score, reason);
-                    }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                for (email_id, score, reason) in &scores {
+                    let _ = db.set_relevance_score(email_id, *score, reason);
                 }
             }
             log::info!("refresh_emails: scored {} emails", scores.len());
@@ -2185,13 +2195,13 @@ fn update_thread_positions_from_sent(
     }
 }
 
-/// I366: Reconcile inbox state — mark vanished emails as resolved, reappear resolved ones.
+/// I366: Reconcile inbox state -- mark vanished emails as resolved.
 ///
 /// Compares the current inbox email IDs against active (non-resolved) emails in the DB.
 /// Emails in DB but not in inbox are marked resolved. Also deactivates signals for vanished emails.
 ///
 /// NOTE: We intentionally do NOT unmark_resolved for emails that are in Gmail but
-/// resolved locally. The user may have archived them via the UI (I579) — un-resolving
+/// resolved locally. The user may have archived them via the UI (I579) -- un-resolving
 /// would undo their explicit action. Only genuinely new emails (never seen before) are
 /// treated as new, and those are handled by the normal persist path above.
 fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate::db::ActionDb) {
@@ -2215,7 +2225,7 @@ fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate
         .map(|e| e.email_id.clone())
         .collect();
 
-    // Vanished: in DB active set but not in Gmail inbox → mark resolved
+    // Vanished: in DB active set but not in Gmail inbox -> mark resolved
     let vanished: Vec<String> = db_ids.difference(&inbox_ids).cloned().collect();
 
     if !vanished.is_empty() {
@@ -2239,6 +2249,7 @@ fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate
             _ => {}
         }
     }
+
 }
 
 /// Extract display name from a From header like "Jane Doe <jane@example.com>".
