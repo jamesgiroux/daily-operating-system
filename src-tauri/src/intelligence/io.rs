@@ -3511,4 +3511,92 @@ mod tests {
         assert_eq!(files[1].content_type, "notes"); // priority 7
         assert_eq!(files[2].content_type, "general"); // priority 5
     }
+
+    #[test]
+    fn test_resolve_array_path_identity_reorder() {
+        // Existing: [Alice, Bob]  New: [Bob, Alice] — path should remap
+        let existing = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "champion"},
+                {"name": "Bob", "role": "technical"}
+            ]
+        });
+        let new = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Bob", "role": "from_ai"},
+                {"name": "Alice", "role": "from_ai"}
+            ]
+        });
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "stakeholderInsights[0].role",
+        );
+        // Alice was at [0] in existing, now at [1] in new
+        assert_eq!(result, Some("stakeholderInsights[1].role".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_array_path_identity_same_index() {
+        // Same order → returns None (no remap needed)
+        let existing = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "champion"},
+                {"name": "Bob", "role": "technical"}
+            ]
+        });
+        let new = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "from_ai"},
+                {"name": "Bob", "role": "from_ai"}
+            ]
+        });
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "stakeholderInsights[0].role",
+        );
+        // Same index → None (fallback to direct path)
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_array_path_identity_missing_element() {
+        // Element removed in new array → returns None
+        let existing = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Alice", "role": "champion"},
+                {"name": "Bob", "role": "technical"}
+            ]
+        });
+        let new = serde_json::json!({
+            "stakeholderInsights": [
+                {"name": "Charlie", "role": "from_ai"}
+            ]
+        });
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "stakeholderInsights[0].role",
+        );
+        // Alice not in new → None (fallback)
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_array_path_identity_non_array_path() {
+        // Non-array path → returns None
+        let existing = serde_json::json!({"executiveAssessment": "text"});
+        let new = serde_json::json!({"executiveAssessment": "new text"});
+
+        let result = resolve_array_path_by_identity(
+            &existing,
+            &new,
+            "executiveAssessment",
+        );
+        assert_eq!(result, None);
+    }
 }
