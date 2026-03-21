@@ -67,7 +67,7 @@ export const PHASE3_SURFACE_OWNERSHIP: SurfaceOwnership[] = [
     id: "reports",
     label: "Reports",
     routes: [
-      "/accounts/$accountId/risk-briefing",
+      "/accounts/$accountId/reports/risk_briefing",
       "/accounts/$accountId/reports/$reportType",
       "/accounts/$accountId/reports/account_health",
       "/accounts/$accountId/reports/ebr_qbr",
