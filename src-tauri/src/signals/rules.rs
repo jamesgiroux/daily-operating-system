@@ -59,10 +59,9 @@ pub fn rule_person_job_change(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
 /// When an account's meeting frequency signal indicates a >50% drop,
 /// emit `engagement_warning`.
 ///
-/// NOTE (I377): This rule is currently dead — no code emits "meeting_frequency"
-/// signals. The meeting frequency data is computed as SQL aggregates
-/// (`meeting_frequency_30d`, `meeting_frequency_90d`) but never emitted as
-/// signal_events. Unregistered from PropagationEngine in I377.
+/// I555: Re-activated — `services::meetings::process_transcript` now emits
+/// `meeting_frequency` signals after each transcript is processed.
+/// Re-registered in `default_engine()`.
 pub fn rule_meeting_frequency_drop(signal: &SignalEvent, _db: &ActionDb) -> Vec<DerivedSignal> {
     if signal.entity_type != "account" || signal.signal_type != "meeting_frequency" {
         return Vec::new();

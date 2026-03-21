@@ -295,7 +295,7 @@
   color: var(--color-text-secondary);
   margin: 0;
   padding-left: 12px;
-  border-left: 2px solid var(--color-rule-light);
+  border-left: 2px solid var(--color-spice-saffron-30);
 }
 
 .captureSpeaker {
@@ -303,6 +303,16 @@
   font-size: 10px;
   color: var(--color-text-tertiary);
   letter-spacing: 0.04em;
+}
+
+/* Speaker attribution — positioned after content/evidence */
+.captureSpeakerAttribution {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  display: block;
+  margin-top: 2px;
 }
 
 /* Sub-type badge */

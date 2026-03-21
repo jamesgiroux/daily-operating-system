@@ -368,9 +368,9 @@ export function BriefingMeetingCard({
   meeting,
   now,
   currentMeeting,
-  meetingActions: _meetingActions = [],
-  onComplete: _onComplete,
-  completedIds: _completedIds,
+  meetingActions = [],
+  onComplete,
+  completedIds,
   onEntitiesChanged: _onEntitiesChanged,
   capturedActionCount,
   proposedActionCount,
@@ -535,6 +535,16 @@ export function BriefingMeetingCard({
                 stakeholders={meeting.prep?.stakeholders}
               />
             ) : null}
+
+            {/* Prep grid: Discuss, Watch, Wins */}
+            <PrepGrid meeting={meeting} />
+
+            {/* Before this meeting: action checklist */}
+            <MeetingActionChecklist
+              actions={meetingActions}
+              completedIds={completedIds}
+              onComplete={onComplete}
+            />
 
             {/* Bridge link */}
             <div className={s.meetingLinks}>

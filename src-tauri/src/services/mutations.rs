@@ -650,13 +650,13 @@ pub fn insert_processing_log(db: &ActionDb, log_entry: &DbProcessingLog) -> Resu
         .map_err(|e| e.to_string())
 }
 
-pub fn upsert_action_if_not_completed(db: &ActionDb, action: &DbAction) -> Result<(), String> {
+pub fn upsert_action_if_not_completed(db: &ActionDb, action: &DbAction) -> Result<bool, String> {
     db.with_transaction(|tx| {
         let wrote = tx
             .upsert_action_if_not_completed_with_status(action)
             .map_err(|e| e.to_string())?;
         if !wrote {
-            return Ok(());
+            return Ok(false);
         }
 
         let (entity_type, entity_id) = action_signal_target(action);
@@ -674,7 +674,7 @@ pub fn upsert_action_if_not_completed(db: &ActionDb, action: &DbAction) -> Resul
             0.7,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        Ok(())
+        Ok(true)
     })
 }
 
