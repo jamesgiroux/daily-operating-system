@@ -200,7 +200,6 @@ impl DailyOsMcp {
         };
         let query_lower = params.query.to_lowercase();
         let entity_type = params.entity_type.as_deref().unwrap_or("all");
-        let workspace = &self.config.workspace_path;
 
         let mut result: Option<EntityResult> = None;
 
@@ -213,8 +212,11 @@ impl DailyOsMcp {
                         let meetings = db
                             .get_upcoming_meetings_for_account(&acct.id, 5)
                             .unwrap_or_default();
-                        let intel =
-                            read_entity_intelligence(workspace, acct.tracker_path.as_deref());
+                        let intel = db
+                            .get_entity_intelligence(&acct.id)
+                            .ok()
+                            .flatten()
+                            .and_then(|i| i.executive_assessment);
 
                         result = Some(build_entity_result(
                             &acct.id,
@@ -240,8 +242,11 @@ impl DailyOsMcp {
                     if proj.id == params.query || proj.name.to_lowercase().contains(&query_lower) {
                         let actions = db.get_project_actions(&proj.id).unwrap_or_default();
                         let meetings = db.get_meetings_for_project(&proj.id, 5).unwrap_or_default();
-                        let intel =
-                            read_entity_intelligence(workspace, proj.tracker_path.as_deref());
+                        let intel = db
+                            .get_entity_intelligence(&proj.id)
+                            .ok()
+                            .flatten()
+                            .and_then(|i| i.executive_assessment);
 
                         result = Some(build_entity_result(
                             &proj.id,
@@ -268,8 +273,11 @@ impl DailyOsMcp {
                         || person.name.to_lowercase().contains(&query_lower)
                         || person.email.to_lowercase().contains(&query_lower)
                     {
-                        let intel =
-                            read_entity_intelligence(workspace, person.tracker_path.as_deref());
+                        let intel = db
+                            .get_entity_intelligence(&person.id)
+                            .ok()
+                            .flatten()
+                            .and_then(|i| i.executive_assessment);
                         result = Some(EntityResult {
                             id: person.id.clone(),
                             name: person.name.clone(),
@@ -572,15 +580,6 @@ fn read_json_file(path: &std::path::Path) -> Option<serde_json::Value> {
     std::fs::read_to_string(path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-}
-
-fn read_entity_intelligence(workspace: &str, tracker_path: Option<&str>) -> Option<String> {
-    tracker_path.and_then(|tp| {
-        let dir = PathBuf::from(workspace).join(tp);
-        dailyos_lib::intelligence::read_intelligence_json(&dir)
-            .ok()
-            .and_then(|i| i.executive_assessment)
-    })
 }
 
 #[allow(clippy::too_many_arguments)]
