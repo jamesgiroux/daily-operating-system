@@ -125,7 +125,10 @@ pub async fn get_valid_access_token() -> Result<String, GleanAuthError> {
             Ok(access_token)
         }
         Err(e) => {
-            log::warn!("[audit:security] oauth_token_refresh_failed provider=glean error={}", e);
+            log::warn!(
+                "[audit:security] oauth_token_refresh_failed provider=glean error={}",
+                e
+            );
             Err(e)
         }
     }

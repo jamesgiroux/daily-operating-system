@@ -10,9 +10,11 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 
 interface BackgroundStatus {
-  phase: "started" | "completed";
+  phase: "started" | "completed" | "failed";
   message: string;
   count?: number;
+  error?: string;
+  stage?: string;
 }
 
 const TOAST_ID = "background-work-status";
@@ -20,12 +22,14 @@ const TOAST_ID = "background-work-status";
 export function useBackgroundStatus() {
   useEffect(() => {
     const unlisten = listen<BackgroundStatus>("background-work-status", (event) => {
-      const { phase, message } = event.payload;
+      const { phase, message, error } = event.payload;
 
       if (phase === "started") {
         toast.loading(message, { id: TOAST_ID, duration: 30000 });
       } else if (phase === "completed") {
         toast.success(message, { id: TOAST_ID, duration: 3000 });
+      } else if (phase === "failed") {
+        toast.error(error ? `${message}: ${error}` : message, { id: TOAST_ID, duration: 8000 });
       }
     });
 

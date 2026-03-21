@@ -68,7 +68,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           setData(result.data);
         }
       } catch (err) {
-        console.error("Failed to load dashboard data:", err);
+        console.error("Failed to load dashboard data:", err); // Expected: background data fetch on mount
       } finally {
         if (!cancelled) setLoading(false);
       }
