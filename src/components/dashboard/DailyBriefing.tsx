@@ -13,6 +13,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useProposedActions } from "@/hooks/useProposedActions";
 import { ProposedActionRow } from "@/components/shared/ProposedActionRow";
 import clsx from "clsx";
@@ -24,13 +25,14 @@ import {
   getTemporalState,
 } from "./BriefingMeetingCard";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
-import { Loader2 } from "lucide-react";
+
 import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import type { DashboardData, DataFreshness, Meeting, Action, Email, PrioritizedAction } from "@/types";
 import { HealthBadge } from "@/components/shared/HealthBadge";
+import { compareEmailRank } from "@/lib/email-ranking";
 import s from "@/styles/editorial-briefing.module.css";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -131,15 +133,16 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
   // that didn't meet the score threshold (avoids hiding useful intelligence).
   const briefingEmails = isStale ? [] : (() => {
-    const scored = emails
+    const ranked = [...emails].sort(compareEmailRank);
+    const scored = ranked
       .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
-      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
+      .slice(0, 5);
     const scoredIds = new Set(scored.map((e) => e.id));
     // Fill remaining slots with enriched emails that have summaries but scored below threshold
-    const enrichedFill = emails
+    const enrichedFill = ranked
       .filter((e) => !scoredIds.has(e.id) && e.summary && e.summary.trim().length > 0)
       .slice(0, Math.max(0, 5 - scored.length));
-    return [...scored.slice(0, 5), ...enrichedFill].slice(0, 5);
+    return [...scored, ...enrichedFill].slice(0, 5);
   })();
   const emailSectionLabel = briefingEmails.length > 0 ? "WORTH YOUR ATTENTION" : "";
 
@@ -240,6 +243,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     setCompletedIds((prev) => new Set(prev).add(id));
     invoke("complete_action", { id }).catch((err) => {
       console.error("complete_action failed:", err);
+      toast.error("Failed to complete action");
     });
   }, []);
 
@@ -272,28 +276,6 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
 
   return (
     <div>
-      {/* Stale data indicator — non-blocking, shows refresh is in progress */}
-      {isStale && (
-        <div
-          style={{
-            padding: "8px 16px",
-            borderBottom: "1px solid var(--color-rule-light)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "var(--color-text-tertiary)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <Loader2 className="h-3 w-3 animate-spin" style={{ width: 12, height: 12 }} />
-          Refresh in progress
-        </div>
-      )}
-
       {/* ═══ DAY FRAME (Hero + Focus) ═══ */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{heroHeadline}</h1>

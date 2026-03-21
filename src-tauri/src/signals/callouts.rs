@@ -51,6 +51,7 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "proactive_prep_gap",
     "proactive_no_contact",
     "cadence_anomaly",
+    "email_cadence_drop",
     "risk_detected",
     // I535/ADR-0100: Glean-sourced signal types
     "renewal_data_updated",
@@ -419,7 +420,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             };
             (headline, content.to_string())
         }
-        "cadence_anomaly" => {
+        "cadence_anomaly" | "email_cadence_drop" => {
             // I319: value is the anomaly type string ("gone_quiet" or "activity_spike")
             let anomaly_type = signal.value.as_deref().unwrap_or("unknown");
             match anomaly_type {
@@ -430,6 +431,25 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                         signal.entity_id
                     ),
                 ),
+                _value if signal.signal_type == "email_cadence_drop" => {
+                    let normal = parsed
+                        .get("normal_interval_days")
+                        .and_then(|v| v.as_f64())
+                        .map(|d| format!("{:.0}", d))
+                        .unwrap_or_else(|| "?".to_string());
+                    let since = parsed
+                        .get("days_since_last")
+                        .and_then(|v| v.as_f64())
+                        .map(|d| format!("{:.0}", d))
+                        .unwrap_or_else(|| "?".to_string());
+                    (
+                        "Account has gone quiet".to_string(),
+                        format!(
+                            "No emails in {} days (normally every {} days)",
+                            since, normal
+                        ),
+                    )
+                }
                 "activity_spike" => (
                     "Email activity surge".to_string(),
                     format!("Unusual spike in email volume from {}", signal.entity_id),
@@ -486,10 +506,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 .get("change")
                 .and_then(|v| v.as_str())
                 .unwrap_or("changed role");
-            (
-                format!("{} — org change", person),
-                change.to_string(),
-            )
+            (format!("{} — org change", person), change.to_string())
         }
         "glean_champion_departed" => {
             let name = parsed
@@ -502,10 +519,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 .or_else(|| parsed.get("evidence"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("No longer at the company per org directory");
-            (
-                format!("Champion departure: {}", name),
-                detail.to_string(),
-            )
+            (format!("Champion departure: {}", name), detail.to_string())
         }
         _ => (
             format!("Signal: {}", signal.signal_type),

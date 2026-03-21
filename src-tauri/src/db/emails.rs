@@ -125,7 +125,8 @@ impl ActionDb {
                         last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
-                        relevance_score, score_reason
+                        relevance_score, score_reason,
+                        pinned_at, commitments, questions
                  FROM emails
                  WHERE enrichment_state IN ('pending', 'failed')
                    AND enrichment_attempts < 3
@@ -191,7 +192,8 @@ impl ActionDb {
                         last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
-                        relevance_score, score_reason
+                        relevance_score, score_reason,
+                        pinned_at, commitments, questions
                  FROM emails
                  WHERE resolved_at IS NULL
                  ORDER BY received_at DESC",
@@ -219,9 +221,10 @@ impl ActionDb {
                         last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
-                        relevance_score, score_reason
+                        relevance_score, score_reason,
+                        pinned_at, commitments, questions
                  FROM emails
-                 WHERE entity_id = ?1
+                 WHERE entity_id = ?1 AND resolved_at IS NULL
                  ORDER BY received_at DESC",
             )
             .map_err(|e| format!("Failed to prepare entity emails query: {e}"))?;
@@ -361,6 +364,154 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Mark an email as replied to by the user (I577 reply debt).
+    /// Sets `user_is_last_sender = 1` on the email row and the corresponding
+    /// email_threads row (if any).
+    pub fn mark_reply_sent(&self, email_id: &str) -> Result<Option<(String, String)>, String> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let entity_info: Option<(String, String)> = self
+            .conn
+            .query_row(
+                "SELECT entity_id, entity_type FROM emails WHERE email_id = ?1",
+                rusqlite::params![email_id],
+                |row| {
+                    let eid: Option<String> = row.get(0)?;
+                    let etype: Option<String> = row.get(1)?;
+                    Ok(eid.zip(etype))
+                },
+            )
+            .ok()
+            .flatten();
+
+        self.conn
+            .execute(
+                "UPDATE emails SET user_is_last_sender = 1, updated_at = ?1 WHERE email_id = ?2",
+                rusqlite::params![now, email_id],
+            )
+            .map_err(|e| format!("Failed to mark reply sent for {email_id}: {e}"))?;
+
+        self.conn
+            .execute(
+                "UPDATE email_threads SET user_is_last_sender = 1, updated_at = datetime('now')
+                 WHERE thread_id = (SELECT thread_id FROM emails WHERE email_id = ?1)",
+                rusqlite::params![email_id],
+            )
+            .map_err(|e| format!("Failed to update email_threads for {email_id}: {e}"))?;
+
+        Ok(entity_info)
+    }
+
+    /// Archive an email thread by setting resolved_at on every row in the thread.
+    /// The inbox UI is thread-collapsed, so archiving only one message can let an
+    /// older unresolved message in the same thread leak back into view.
+    pub fn archive_email(&self, email_id: &str) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        let thread_id = self.get_thread_id(email_id)?;
+
+        self.conn
+            .execute(
+                "UPDATE emails
+                 SET resolved_at = ?1, updated_at = ?1
+                 WHERE email_id = ?2
+                    OR (thread_id IS NOT NULL AND thread_id = ?3)",
+                params![now, email_id, thread_id],
+            )
+            .map_err(|e| format!("Failed to archive email {email_id}: {e}"))?;
+        Ok(())
+    }
+
+    /// Unarchive an email thread by clearing resolved_at on every row in the thread.
+    pub fn unarchive_email(&self, email_id: &str) -> Result<(), String> {
+        let now = Utc::now().to_rfc3339();
+        let thread_id = self.get_thread_id(email_id)?;
+
+        self.conn
+            .execute(
+                "UPDATE emails
+                 SET resolved_at = NULL, updated_at = ?1
+                 WHERE email_id = ?2
+                    OR (thread_id IS NOT NULL AND thread_id = ?3)",
+                params![now, email_id, thread_id],
+            )
+            .map_err(|e| format!("Failed to unarchive email {email_id}: {e}"))?;
+        Ok(())
+    }
+
+    /// Return all known email IDs in the same thread as the given email.
+    /// Falls back to the single email ID when thread metadata is absent.
+    pub fn get_thread_email_ids(&self, email_id: &str) -> Result<Vec<String>, String> {
+        let thread_id = self.get_thread_id(email_id)?;
+        let Some(thread_id) = thread_id.filter(|id| !id.trim().is_empty()) else {
+            return Ok(vec![email_id.to_string()]);
+        };
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT email_id
+                 FROM emails
+                 WHERE email_id = ?1 OR thread_id = ?2
+                 ORDER BY received_at DESC",
+            )
+            .map_err(|e| format!("Failed to prepare thread email lookup for {email_id}: {e}"))?;
+
+        let rows = stmt
+            .query_map(params![email_id, thread_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Failed to query thread email IDs for {email_id}: {e}"))?;
+
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row.map_err(|e| format!("Failed to read thread email ID: {e}"))?);
+        }
+        if ids.is_empty() {
+            ids.push(email_id.to_string());
+        }
+        Ok(ids)
+    }
+
+    fn get_thread_id(&self, email_id: &str) -> Result<Option<String>, String> {
+        self.conn
+            .query_row(
+                "SELECT thread_id FROM emails WHERE email_id = ?1",
+                params![email_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to load thread for {email_id}: {e}"))
+    }
+
+    /// Toggle pin on an email (I579). If pinned, clears; if not pinned, sets to now.
+    /// Returns the new pinned state (true = pinned).
+    pub fn toggle_pin_email(&self, email_id: &str) -> Result<bool, String> {
+        let now = Utc::now().to_rfc3339();
+        let current_pinned: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT pinned_at FROM emails WHERE email_id = ?1",
+                params![email_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Failed to read pin state for {email_id}: {e}"))?;
+
+        let is_now_pinned = current_pinned.is_none();
+        if is_now_pinned {
+            self.conn
+                .execute(
+                    "UPDATE emails SET pinned_at = ?1, updated_at = ?1 WHERE email_id = ?2",
+                    params![now, email_id],
+                )
+                .map_err(|e| format!("Failed to pin email {email_id}: {e}"))?;
+        } else {
+            self.conn
+                .execute(
+                    "UPDATE emails SET pinned_at = NULL, updated_at = ?1 WHERE email_id = ?2",
+                    params![now, email_id],
+                )
+                .map_err(|e| format!("Failed to unpin email {email_id}: {e}"))?;
+        }
+        Ok(is_now_pinned)
+    }
+
     /// Set the relevance score and reason for an email (I395).
     pub fn set_relevance_score(
         &self,
@@ -392,7 +543,8 @@ impl ActionDb {
                         last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
-                        relevance_score, score_reason
+                        relevance_score, score_reason,
+                        pinned_at, commitments, questions
                  FROM emails
                  WHERE resolved_at IS NULL
                    AND relevance_score >= ?1
@@ -412,7 +564,8 @@ impl ActionDb {
         Ok(results)
     }
 
-    /// Get threads awaiting reply (unread, not resolved, user is not last sender).
+    /// Get threads awaiting reply (not resolved, user is not last sender).
+    /// Does NOT require is_unread — a thread can be read but still awaiting reply.
     pub fn get_emails_awaiting_reply(&self) -> Result<Vec<DbEmail>, String> {
         let mut stmt = self
             .conn
@@ -422,11 +575,11 @@ impl ActionDb {
                         last_enrichment_at, last_seen_at, resolved_at, entity_id, entity_type,
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
-                        relevance_score, score_reason
+                        relevance_score, score_reason,
+                        pinned_at, commitments, questions
                  FROM emails
                  WHERE user_is_last_sender = 0
                    AND resolved_at IS NULL
-                   AND is_unread = 1
                  ORDER BY received_at DESC",
             )
             .map_err(|e| format!("Failed to prepare awaiting reply query: {e}"))?;
@@ -452,7 +605,7 @@ pub struct EmailEnrichmentUpdate<'a> {
     pub urgency: Option<&'a str>,
 }
 
-/// Row mapper for emails SELECT queries (26 columns).
+/// Row mapper for emails SELECT queries (29 columns).
 fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
     Ok(DbEmail {
         email_id: row.get(0)?,
@@ -481,5 +634,8 @@ fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
         updated_at: row.get(23)?,
         relevance_score: row.get(24).ok(),
         score_reason: row.get(25).ok(),
+        pinned_at: row.get(26).ok(),
+        commitments: row.get(27).ok(),
+        questions: row.get(28).ok(),
     })
 }
