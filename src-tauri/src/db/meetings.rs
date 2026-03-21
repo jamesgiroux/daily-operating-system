@@ -95,10 +95,7 @@ impl ActionDb {
     }
 
     /// Get the champion's person_id for an account from account_stakeholders (I555).
-    pub fn get_champion_person_id(
-        &self,
-        account_id: &str,
-    ) -> Result<Option<String>, DbError> {
+    pub fn get_champion_person_id(&self, account_id: &str) -> Result<Option<String>, DbError> {
         let result = self.conn.query_row(
             "SELECT person_id FROM account_stakeholders
              WHERE account_id = ?1 AND role = 'champion'
@@ -950,17 +947,20 @@ impl ActionDb {
                 meeting_id: row.get(0)?,
                 talk_balance_customer_pct: row.get(1)?,
                 talk_balance_internal_pct: row.get(2)?,
-                speaker_sentiments: row.get::<_, Option<String>>(3)?
+                speaker_sentiments: row
+                    .get::<_, Option<String>>(3)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
                 question_density: row.get(4)?,
                 decision_maker_active: row.get(5)?,
                 forward_looking: row.get(6)?,
                 monologue_risk: row.get::<_, Option<i32>>(7)?.unwrap_or(0) != 0,
-                competitor_mentions: row.get::<_, Option<String>>(8)?
+                competitor_mentions: row
+                    .get::<_, Option<String>>(8)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
-                escalation_language: row.get::<_, Option<String>>(9)?
+                escalation_language: row
+                    .get::<_, Option<String>>(9)?
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
             })
@@ -1044,6 +1044,46 @@ impl ActionDb {
             )?;
         }
         Ok(())
+    }
+
+    /// Clear all transcript extraction data for a meeting so it can be reprocessed.
+    ///
+    /// Removes captures, transcript-sourced actions, interaction dynamics,
+    /// champion health, role changes, and captured commitments. Resets the
+    /// meeting's summary and transcript_processed_at so the pipeline treats
+    /// it as a fresh extraction.
+    pub fn clear_meeting_extraction_data(&self, meeting_id: &str) -> Result<usize, DbError> {
+        let mut cleared = 0usize;
+        cleared += self.conn.execute(
+            "DELETE FROM captures WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        cleared += self.conn.execute(
+            "DELETE FROM actions WHERE source_id = ?1 AND source_type IN ('transcript', 'post_meeting')",
+            rusqlite::params![meeting_id],
+        )?;
+        cleared += self.conn.execute(
+            "DELETE FROM meeting_interaction_dynamics WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        cleared += self.conn.execute(
+            "DELETE FROM meeting_champion_health WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        cleared += self.conn.execute(
+            "DELETE FROM meeting_role_changes WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        cleared += self.conn.execute(
+            "DELETE FROM captured_commitments WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        // Reset transcript metadata so pipeline treats this as fresh
+        self.conn.execute(
+            "UPDATE meeting_transcripts SET summary = NULL, transcript_processed_at = NULL WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+        )?;
+        Ok(cleared)
     }
 
     /// Get role changes for a meeting.

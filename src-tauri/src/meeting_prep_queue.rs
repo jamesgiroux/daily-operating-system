@@ -262,16 +262,12 @@ pub struct PrepReadyPayload {
 /// 6. Writes result to `prep_frozen_json` in DB
 /// 7. Emits `prep-ready` event
 pub fn sweep_meetings_needing_prep(state: &AppState) {
-    let db_guard = match state.db.lock() {
-        Ok(g) => g,
-        Err(_) => {
-            log::warn!("MeetingPrepSweep: DB lock poisoned");
+    let db = match crate::db::ActionDb::open() {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("MeetingPrepSweep: DB open failed: {e}");
             return;
         }
-    };
-    let db = match db_guard.as_ref() {
-        Some(d) => d,
-        None => return,
     };
 
     // Find future meetings that have at least one linked entity but no prep
@@ -309,8 +305,8 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
         meeting_ids.len()
     );
 
-    // Drop DB lock before enqueuing
-    drop(db_guard);
+    // db connection dropped automatically when `db` goes out of scope
+    drop(db);
 
     for mid in &meeting_ids {
         state
@@ -486,7 +482,7 @@ fn generate_mechanical_prep_with_inputs(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    // Phase 2: Check if prep already exists and is fresh
+    // Step 2: Check if prep already exists and is fresh
     if meeting.prep_frozen_json.is_some() && !overwrite_existing {
         log::debug!(
             "MeetingPrepQueue: {} already has prep_frozen_json, skipping",

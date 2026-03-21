@@ -181,7 +181,7 @@ pub fn build_intelligence_context(
     // --- Meeting history (last 90 days) ---
     let meetings = match entity_type {
         "account" => db
-            .get_meetings_for_account(entity_id, 20)
+            .get_meeting_history(entity_id, 90, 20)
             .unwrap_or_default(),
         "project" => db
             .get_meetings_for_project(entity_id, 20)
@@ -293,19 +293,24 @@ pub fn build_intelligence_context(
              JOIN meetings m ON m.id = mch.meeting_id
              JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
              WHERE mch.champion_name IS NOT NULL
-             ORDER BY m.start_time DESC LIMIT 5"
+             ORDER BY m.start_time DESC LIMIT 5",
         ) {
-            let rows: Vec<(String, String, String, Option<String>)> =
-                stmt.query_map(rusqlite::params![entity_id], |row| {
+            let rows: Vec<(String, String, String, Option<String>)> = stmt
+                .query_map(rusqlite::params![entity_id], |row| {
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+                })
+                .map(|r| r.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default();
 
             if !rows.is_empty() {
                 let champion_name = &rows[0].1;
-                let statuses: Vec<String> = rows.iter().map(|(d, _, s, _)| {
-                    let short = d.split('T').next().unwrap_or(d);
-                    format!("{s} ({short})")
-                }).collect();
+                let statuses: Vec<String> = rows
+                    .iter()
+                    .map(|(d, _, s, _)| {
+                        let short = d.split('T').next().unwrap_or(d);
+                        format!("{s} ({short})")
+                    })
+                    .collect();
                 let mut lines = vec![
                     "## Champion Health Trend".to_string(),
                     format!("{champion_name} — {}", statuses.join(", ")),
@@ -314,7 +319,10 @@ pub fn build_intelligence_context(
                 for (date, _, status, evidence) in &rows {
                     if (status == "weak" || status == "lost") && evidence.is_some() {
                         let short = date.split('T').next().unwrap_or(date);
-                        lines.push(format!("  {short} ({status}): {}", evidence.as_deref().unwrap_or("")));
+                        lines.push(format!(
+                            "  {short} ({status}): {}",
+                            evidence.as_deref().unwrap_or("")
+                        ));
                     }
                 }
                 ctx.extra_blocks.push(lines.join("\n"));
@@ -326,21 +334,29 @@ pub fn build_intelligence_context(
             "SELECT title, owner, target_date, source
              FROM captured_commitments
              WHERE account_id = ?1 AND consumed = 0
-             ORDER BY created_at DESC LIMIT 10"
+             ORDER BY created_at DESC LIMIT 10",
         ) {
-            let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> =
-                stmt.query_map(rusqlite::params![entity_id], |row| {
+            let rows: Vec<(String, Option<String>, Option<String>, Option<String>)> = stmt
+                .query_map(rusqlite::params![entity_id], |row| {
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-                }).map(|r| r.filter_map(|r| r.ok()).collect()).unwrap_or_default();
+                })
+                .map(|r| r.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default();
 
             if !rows.is_empty() {
                 let mut lines = vec!["## Open Commitments (from prior meetings)".to_string()];
                 for (title, owner, target, source) in &rows {
                     let owner_str = owner.as_deref().unwrap_or("unassigned");
                     let target_str = target.as_deref().unwrap_or("no target date");
-                    let source_str = source.as_deref().map(|s| format!(", from {s}")).unwrap_or_default();
+                    let source_str = source
+                        .as_deref()
+                        .map(|s| format!(", from {s}"))
+                        .unwrap_or_default();
                     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-                    let overdue = target.as_deref().map(|t| t < today.as_str()).unwrap_or(false);
+                    let overdue = target
+                        .as_deref()
+                        .map(|t| t < today.as_str())
+                        .unwrap_or(false);
                     let tag = if overdue { " [OVERDUE]" } else { "" };
                     lines.push(format!("- \"{title}\" — owned_by: {owner_str}, target: {target_str}{source_str}{tag}"));
                 }
@@ -737,7 +753,12 @@ pub fn build_intelligence_context(
         });
 
         let mut transcript_parts: Vec<String> = Vec::new();
-        for tf in transcript_files.into_iter().take(2) {
+        let transcript_cutoff = (Utc::now() - chrono::Duration::days(365)).to_rfc3339();
+        for tf in transcript_files
+            .into_iter()
+            .filter(|f| content_date_rfc3339(&f.filename, &f.modified_at) >= transcript_cutoff)
+            .take(3)
+        {
             let path = std::path::Path::new(&tf.absolute_path);
             if let Ok(text) = crate::processor::extract::extract_text(path) {
                 let capped = if text.len() > 5000 {
@@ -3086,7 +3107,7 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
 
-    // ─── Phase 2 tests: prompt builder + response parser ───
+    // ─── Step 2 tests: prompt builder + response parser ───
 
     #[test]
     fn test_build_intelligence_prompt_initial() {
@@ -3648,8 +3669,7 @@ mod eval_tests {
             facts_block: "Role: VP Engineering".to_string(),
             ..Default::default()
         };
-        let prompt =
-            build_intelligence_prompt("Jane Doe", "person", &ctx, Some("external"), None);
+        let prompt = build_intelligence_prompt("Jane Doe", "person", &ctx, Some("external"), None);
         assert!(
             prompt.contains("network"),
             "Person prompt must include network schema"
@@ -3663,8 +3683,7 @@ mod eval_tests {
     #[test]
     fn eval_intelligence_prompt_partner_excludes_customer_vocab() {
         let ctx = IntelligenceContext::default();
-        let prompt =
-            build_intelligence_prompt("PartnerCo", "account", &ctx, Some("partner"), None);
+        let prompt = build_intelligence_prompt("PartnerCo", "account", &ctx, Some("partner"), None);
         assert!(
             prompt.contains("PARTNER CONTEXT"),
             "Partner prompt must include partner framing"
@@ -3718,7 +3737,11 @@ mod eval_tests {
     fn eval_parse_full_enrichment_response() {
         let response = include_str!("fixtures/enrichment_response_full.json");
         let result = parse_intelligence_response(response, "acme-1", "account", 5, Vec::new());
-        assert!(result.is_ok(), "Full response must parse: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Full response must parse: {:?}",
+            result.err()
+        );
         let intel = result.unwrap();
 
         // Executive assessment present
@@ -3741,10 +3764,7 @@ mod eval_tests {
         // Risks with urgency
         assert!(intel.risks.len() >= 2, "Must have multiple risks");
         assert!(
-            intel
-                .risks
-                .iter()
-                .any(|r| r.urgency == "critical"),
+            intel.risks.iter().any(|r| r.urgency == "critical"),
             "Must have at least one critical-urgency risk"
         );
         assert!(
@@ -3753,10 +3773,7 @@ mod eval_tests {
         );
 
         // Wins
-        assert!(
-            intel.recent_wins.len() >= 2,
-            "Must have multiple wins"
-        );
+        assert!(intel.recent_wins.len() >= 2, "Must have multiple wins");
 
         // Stakeholder insights
         assert!(
@@ -3781,7 +3798,10 @@ mod eval_tests {
         // Health with dimensions
         assert!(intel.health.is_some(), "Must have health");
         let health = intel.health.unwrap();
-        assert!(health.score > 0.0 && health.score <= 100.0, "Score must be 0-100");
+        assert!(
+            health.score > 0.0 && health.score <= 100.0,
+            "Score must be 0-100"
+        );
         assert!(
             ["green", "yellow", "red"].contains(&health.band.as_str()),
             "Band must be green/yellow/red"
@@ -3824,10 +3844,7 @@ mod eval_tests {
         );
 
         // Success metrics
-        assert!(
-            intel.success_metrics.is_some(),
-            "Must have success metrics"
-        );
+        assert!(intel.success_metrics.is_some(), "Must have success metrics");
 
         // Open commitments
         assert!(
@@ -3882,8 +3899,7 @@ mod eval_tests {
         // serde_json will fail to deserialize AiIntelResponse, so try_parse_json_response
         // returns None, and it falls through to pipe-delimited parsing which also fails.
         // Either way, the function should not panic.
-        let result =
-            parse_intelligence_response(response, "bad-1", "account", 0, Vec::new());
+        let result = parse_intelligence_response(response, "bad-1", "account", 0, Vec::new());
         // Malformed JSON with wrong types should either produce an error or degrade gracefully.
         // The key assertion is: no panic.
         if let Ok(intel) = &result {
@@ -3915,10 +3931,7 @@ mod eval_tests {
         // Build a response with 25 risks (exceeds 20 cap)
         let mut risks = Vec::new();
         for i in 0..25 {
-            risks.push(format!(
-                r#"{{"text":"Risk {}","urgency":"watch"}}"#,
-                i
-            ));
+            risks.push(format!(r#"{{"text":"Risk {}","urgency":"watch"}}"#, i));
         }
         let response = format!(
             r#"{{"executiveAssessment":"Test","risks":[{}]}}"#,
@@ -3927,11 +3940,7 @@ mod eval_tests {
         let result = parse_intelligence_response(&response, "t2", "account", 0, Vec::new());
         assert!(result.is_ok());
         let intel = result.unwrap();
-        assert_eq!(
-            intel.risks.len(),
-            20,
-            "Risks must be truncated to 20"
-        );
+        assert_eq!(intel.risks.len(), 20, "Risks must be truncated to 20");
     }
 
     #[test]
@@ -3960,10 +3969,7 @@ mod eval_tests {
             Some("Work together on project X".to_string())
         );
         // "reason" alias should also work
-        assert_eq!(
-            rels[1].rationale,
-            Some("Direct report".to_string())
-        );
+        assert_eq!(rels[1].rationale, Some("Direct report".to_string()));
     }
 
     #[test]

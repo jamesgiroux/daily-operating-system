@@ -795,6 +795,7 @@ mod tests {
             entity_readiness: None,
             stakeholder_insights: None,
             recent_email_signals: None,
+            email_digest: None,
             consistency_status: None,
             consistency_findings: Vec::new(),
         };

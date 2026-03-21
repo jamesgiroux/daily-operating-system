@@ -20,9 +20,7 @@ pub fn build_glean_enrichment_prompt(
     let mut prompt = String::with_capacity(8192);
 
     // System role
-    prompt.push_str(
-        "You are a customer success intelligence system. Analyze the ",
-    );
+    prompt.push_str("You are a customer success intelligence system. Analyze the ");
     prompt.push_str(match entity_type {
         "account" => "customer account",
         "project" => "project",
@@ -36,10 +34,7 @@ pub fn build_glean_enrichment_prompt(
 
     // Relationship context
     if let Some(rel) = relationship {
-        prompt.push_str(&format!(
-            "This is a {} relationship.\n\n",
-            rel
-        ));
+        prompt.push_str(&format!("This is a {} relationship.\n\n", rel));
     }
 
     // Mode
@@ -133,8 +128,13 @@ pub fn build_glean_enrichment_prompt(
     // Instructions — format enforcement at the end for recency bias
     prompt.push_str("## Task\n\n");
     prompt.push_str("Search ALL available data sources in the organization for this ");
-    prompt.push_str(if entity_type == "account" { "account" } else { "entity" });
-    prompt.push_str(". Supplement the local context above with org-level knowledge.\n\n");
+    prompt.push_str(if entity_type == "account" {
+        "account"
+    } else {
+        "entity"
+    });
+    prompt.push_str(". Supplement the local context above with org-level knowledge.\n");
+    prompt.push_str("When recent local meeting, transcript, attendee, or user-edited context conflicts with older enterprise documents, prefer the recent local context.\n\n");
 
     prompt.push_str("## Required Output Format\n\n");
     prompt.push_str("You MUST respond with a single JSON object. No prose, no markdown fences, no commentary before or after the JSON. Your entire response must be parseable by `JSON.parse()`.\n\n");
@@ -220,6 +220,7 @@ fn build_json_schema(entity_type: &str) -> String {
     schema.push_str("- For championHealth: strong = power + vested interest + actively advocates internally. weak = helpful but lacks influence. lost = departed or disengaged.\n");
     schema.push_str("- Omit any field you don't have data for — do not fabricate.\n");
     schema.push_str("- Use the local context above as ground truth. Supplement with org knowledge, don't contradict.\n");
+    schema.push_str("- Prefer evidence from the last 12 months. Do not treat older snippets as the current state when newer local meeting evidence exists.\n");
 
     schema
 }
