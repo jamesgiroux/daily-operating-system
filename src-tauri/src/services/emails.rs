@@ -441,6 +441,49 @@ pub async fn get_emails_enriched(state: &AppState) -> Result<EmailBriefingData, 
         .await
         .unwrap_or_default();
 
+    // Gap 3: Emit email_cadence_drop signals for detected gone-quiet accounts,
+    // with 7-day deduplication so the callout system can surface them.
+    if !gone_quiet.is_empty() {
+        let gq_accounts = gone_quiet.clone();
+        let _ = state
+            .db_read(move |db| {
+                let engine = crate::signals::propagation::PropagationEngine::default();
+                for acct in &gq_accounts {
+                    // Dedup: skip if a recent email_cadence_drop signal already exists
+                    let recent_exists: bool = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*) FROM signal_events
+                             WHERE entity_id = ?1
+                               AND signal_type = 'email_cadence_drop'
+                               AND created_at > datetime('now', '-7 days')",
+                            rusqlite::params![acct.entity_id],
+                            |row| row.get::<_, i64>(0).map(|c| c > 0),
+                        )
+                        .unwrap_or(false);
+                    if recent_exists {
+                        continue;
+                    }
+                    let value_json = format!(
+                        "{{\"normal_interval_days\":{:.1},\"days_since_last\":{:.0}}}",
+                        acct.normal_interval_days, acct.days_since_last_email
+                    );
+                    let _ = crate::signals::bus::emit_signal_and_propagate(
+                        db,
+                        &engine,
+                        &acct.entity_type,
+                        &acct.entity_id,
+                        "email_cadence_drop",
+                        "system",
+                        Some(&value_json),
+                        0.6,
+                    );
+                }
+                Ok::<(), String>(())
+            })
+            .await;
+    }
+
     // ── I582: Link emails to upcoming meetings via pre_meeting_context bridge ──
     let all_sender_emails: HashSet<String> = high
         .iter()
