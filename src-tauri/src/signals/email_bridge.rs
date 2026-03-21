@@ -290,6 +290,22 @@ pub fn emit_enriched_email_signals(
                     {
                         emitted += 1;
                     }
+
+                    // I633: Also populate email_signals table for health scoring
+                    let _ = db.upsert_email_signal_with_source(
+                        email_id,
+                        sender.as_deref(),
+                        None,
+                        entity_id,
+                        entity_type,
+                        "sentiment",
+                        &format!("{} sentiment: {}", s, ctx),
+                        Some(0.7),
+                        Some(s.as_str()),
+                        urgency.as_deref(),
+                        None,
+                        Some("email_enrichment"),
+                    );
                 }
             }
 
@@ -334,6 +350,22 @@ pub fn emit_enriched_email_signals(
                         {
                             emitted += 1;
                         }
+
+                        // I633: Also populate email_signals for health scoring
+                        let _ = db.upsert_email_signal_with_source(
+                            email_id,
+                            sender.as_deref(),
+                            None,
+                            entity_id,
+                            entity_type,
+                            "timeline",
+                            &format!("Commitment: {}", ctx),
+                            Some(0.65),
+                            sentiment.as_deref(),
+                            urgency.as_deref(),
+                            None,
+                            Some("email_enrichment"),
+                        );
                     }
                 }
             }
@@ -360,6 +392,42 @@ pub fn emit_enriched_email_signals(
                 {
                     emitted += 1;
                 }
+
+                // I633: Also populate email_signals for health scoring
+                let _ = db.upsert_email_signal_with_source(
+                    email_id,
+                    sender.as_deref(),
+                    None,
+                    entity_id,
+                    entity_type,
+                    "feedback",
+                    &format!("High urgency: {}", ctx),
+                    Some(0.8),
+                    sentiment.as_deref(),
+                    Some("high"),
+                    None,
+                    Some("email_enrichment"),
+                );
+            }
+
+            // I633: For ALL enriched emails (even neutral sentiment), create a
+            // baseline email_signal so health scoring sees email activity.
+            // Uses "relationship" type — the email demonstrates active relationship.
+            if sentiment.as_deref() == Some("neutral") || sentiment.is_none() {
+                let _ = db.upsert_email_signal_with_source(
+                    email_id,
+                    sender.as_deref(),
+                    None,
+                    entity_id,
+                    entity_type,
+                    "relationship",
+                    &format!("Email activity: {}", ctx),
+                    Some(0.5),
+                    sentiment.as_deref(),
+                    urgency.as_deref(),
+                    None,
+                    Some("email_enrichment"),
+                );
             }
         } // end !skip_direct
 
@@ -410,6 +478,22 @@ pub fn emit_enriched_email_signals(
                             0.42, // 0.7 * 0.6
                         );
                         emitted += 1;
+
+                        // I633: Propagate to account email_signals for health scoring
+                        let _ = db.upsert_email_signal_with_source(
+                            email_id,
+                            sender.as_deref(),
+                            Some(entity_id),
+                            account_id,
+                            "account",
+                            "sentiment",
+                            &format!("{} sentiment via {}: {}", s, entity_id, ctx),
+                            Some(0.42),
+                            Some(s.as_str()),
+                            urgency.as_deref(),
+                            None,
+                            Some("email_enrichment"),
+                        );
                     }
                 }
                 if urgency.as_deref() == Some("high") {
@@ -424,7 +508,39 @@ pub fn emit_enriched_email_signals(
                         0.48, // 0.8 * 0.6
                     );
                     emitted += 1;
+
+                    // I633: Propagate to account email_signals for health scoring
+                    let _ = db.upsert_email_signal_with_source(
+                        email_id,
+                        sender.as_deref(),
+                        Some(entity_id),
+                        account_id,
+                        "account",
+                        "feedback",
+                        &format!("High urgency via {}: {}", entity_id, ctx),
+                        Some(0.48),
+                        sentiment.as_deref(),
+                        Some("high"),
+                        None,
+                        Some("email_enrichment"),
+                    );
                 }
+
+                // I633: Baseline relationship signal for all propagated emails
+                let _ = db.upsert_email_signal_with_source(
+                    email_id,
+                    sender.as_deref(),
+                    Some(entity_id),
+                    account_id,
+                    "account",
+                    "relationship",
+                    &format!("Email via {}: {}", entity_id, ctx),
+                    Some(0.4),
+                    sentiment.as_deref(),
+                    urgency.as_deref(),
+                    None,
+                    Some("email_enrichment"),
+                );
             }
         }
     }
