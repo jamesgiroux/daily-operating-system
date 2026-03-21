@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { useActions } from "@/hooks/useActions";
 import { useProposedActions } from "@/hooks/useProposedActions";
@@ -13,6 +13,7 @@ import type { CreateActionParams } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
+import { toast } from "sonner";
 import { EmptyState } from "@/components/editorial/EmptyState";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -174,6 +175,9 @@ export default function ActionsPage() {
 
   // Smart default: proposed tab when suggestions exist, else pending
   const [hasSetDefault, setHasSetDefault] = useState(false);
+  const prevProposedCountRef = useRef(0);
+  const userManuallySelectedTab = useRef(false);
+
   if (!hasSetDefault && !loading && proposedCount > 0 && statusFilter !== "proposed") {
     setStatusFilter("proposed");
     setHasSetDefault(true);
@@ -183,6 +187,20 @@ export default function ActionsPage() {
   } else if (!hasSetDefault && !loading) {
     setHasSetDefault(true);
   }
+
+  // Auto-switch to proposed tab when new proposals arrive (0 -> >0 transition)
+  useEffect(() => {
+    if (
+      hasSetDefault &&
+      prevProposedCountRef.current === 0 &&
+      proposedCount > 0 &&
+      !userManuallySelectedTab.current
+    ) {
+      setStatusFilter("proposed");
+      toast.info(`${proposedCount} new suggested action${proposedCount !== 1 ? "s" : ""} to review`);
+    }
+    prevProposedCountRef.current = proposedCount;
+  }, [proposedCount, hasSetDefault, setStatusFilter]);
 
   // FolioBar readiness stats
   const folioStats = useMemo((): ReadinessStat[] => {
@@ -242,7 +260,10 @@ export default function ActionsPage() {
           {statusTabs.map((tab) => (
             <button
               key={tab}
-              onClick={() => setStatusFilter(tab)}
+              onClick={() => {
+                userManuallySelectedTab.current = true;
+                setStatusFilter(tab);
+              }}
               className={`${s.tabButton} ${statusFilter === tab ? s.tabButtonActive : ""}`}
             >
               <span className={s.statusTabInner}>
