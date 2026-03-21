@@ -1483,3 +1483,151 @@ details[open] .detailsChevron {
 .dismissButton:hover {
   color: var(--color-spice-terracotta);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   I634: MEETING STAGE LIFECYCLE STYLES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Record Header — processed stage headline + metadata */
+.recordHeader {
+  padding-top: var(--space-5xl);
+  scroll-margin-top: 60px;
+}
+
+.recordMetadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.recordMetadata span:not(:last-child)::after {
+  content: "\00b7";
+  margin-left: var(--space-sm);
+  color: var(--color-text-quaternary);
+}
+
+/* Just-Ended container — processing progress */
+.justEndedContainer {
+  padding-top: var(--space-5xl);
+  padding-bottom: var(--space-xl);
+  scroll-margin-top: 60px;
+}
+
+.justEndedStatus {
+  margin-top: var(--space-2xl);
+  padding: var(--space-xl) var(--space-2xl);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial);
+  background: var(--color-surface-secondary);
+}
+
+.justEndedHeading {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-lg);
+}
+
+.justEndedWaiting {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+/* Processing phase lines */
+.processingPhases {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.processingPhase {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.processingPhaseDone {
+  color: var(--color-spice-sage);
+}
+
+.processingPhaseActive {
+  color: var(--color-spice-turmeric);
+  animation: spin 1.2s linear infinite;
+}
+
+.processingPhasePending {
+  color: var(--color-text-quaternary);
+}
+
+/* In-Progress badge */
+.inProgressBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-sage);
+  margin-bottom: var(--space-md);
+}
+
+.inProgressDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-spice-sage);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Pre-Meeting Appendix — collapsed details for processed stage */
+.preMeetingAppendix {
+  margin-top: var(--space-3xl);
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-lg);
+}
+
+.preMeetingAppendixSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: var(--space-sm) 0;
+}
+
+.preMeetingAppendixSummary::-webkit-details-marker {
+  display: none;
+}
+
+.preMeetingAppendixSummary::marker {
+  display: none;
+  content: "";
+}
