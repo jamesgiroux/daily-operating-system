@@ -748,6 +748,22 @@ pub fn process_transcript_with_kind(
         }
     }
 
+    // I636: Generate structured meeting record markdown
+    if let Some(db) = db {
+        generate_and_persist_meeting_record(
+            workspace,
+            meeting,
+            &summary,
+            &destination,
+            &wins,
+            &risks,
+            &decisions,
+            &extracted_actions,
+            &commitments,
+            db,
+        );
+    }
+
     // Append wins to impact log
     if !wins.is_empty() {
         append_to_impact_log(workspace, meeting, &wins);
@@ -781,6 +797,348 @@ pub fn process_transcript_with_kind(
         champion_health,
         role_changes,
         commitments,
+    }
+}
+
+/// I636: Generate a structured meeting record markdown file.
+///
+/// Produces a consolidated intelligence output document with YAML frontmatter,
+/// executive summary, key findings, commitments, actions, and attendees.
+fn generate_meeting_record_markdown(
+    meeting: &CalendarEvent,
+    summary: &str,
+    wins: &[String],
+    risks: &[String],
+    decisions: &[String],
+    actions: &[CapturedAction],
+    commitments: &[TranscriptCommitment],
+) -> String {
+    let date = meeting.end.format("%Y-%m-%d").to_string();
+    let time = meeting.start.format("%H:%M").to_string();
+    let duration_mins = (meeting.end - meeting.start).num_minutes();
+    let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
+    let now = Utc::now().to_rfc3339();
+
+    let entity_name = meeting.account.as_deref().unwrap_or("");
+    let attendees_yaml = if meeting.attendees.is_empty() {
+        "  - (none recorded)".to_string()
+    } else {
+        meeting
+            .attendees
+            .iter()
+            .map(|a| format!("  - \"{}\"", a.replace('"', "\\\"")))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let mut md = String::with_capacity(2048);
+
+    // YAML frontmatter
+    md.push_str("---\n");
+    md.push_str(&format!("meeting_id: \"{}\"\n", meeting.id));
+    md.push_str(&format!(
+        "title: \"{}\"\n",
+        meeting.title.replace('"', "\\\"")
+    ));
+    if !entity_name.is_empty() {
+        md.push_str(&format!(
+            "entity: \"{}\"\n",
+            entity_name.replace('"', "\\\"")
+        ));
+    }
+    md.push_str(&format!("date: \"{}\"\n", date));
+    md.push_str(&format!("time: \"{}\"\n", time));
+    md.push_str(&format!("duration_minutes: {}\n", duration_mins));
+    md.push_str(&format!("type: \"{}\"\n", meeting_type));
+    md.push_str("attendees:\n");
+    md.push_str(&attendees_yaml);
+    md.push('\n');
+    md.push_str(&format!("generated_at: \"{}\"\n", now));
+    md.push_str("---\n\n");
+
+    // Title heading
+    let entity_suffix = if entity_name.is_empty() {
+        String::new()
+    } else {
+        format!(" | {}", entity_name)
+    };
+    md.push_str(&format!(
+        "# {}\n\n{} {} UTC{}\n\n",
+        meeting.title, date, time, entity_suffix
+    ));
+
+    // Summary
+    md.push_str("## Summary\n\n");
+    if summary.is_empty() {
+        md.push_str("*No summary available.*\n\n");
+    } else {
+        md.push_str(summary);
+        md.push_str("\n\n");
+    }
+
+    // Key Findings (grouped by type)
+    let has_findings = !wins.is_empty() || !risks.is_empty() || !decisions.is_empty();
+    if has_findings {
+        md.push_str("## Key Findings\n\n");
+
+        if !wins.is_empty() {
+            md.push_str("### Wins\n\n");
+            for win in wins {
+                md.push_str(&format!("- {}\n", win));
+            }
+            md.push('\n');
+        }
+
+        if !risks.is_empty() {
+            md.push_str("### Risks\n\n");
+            for risk in risks {
+                md.push_str(&format!("- {}\n", risk));
+            }
+            md.push('\n');
+        }
+
+        if !decisions.is_empty() {
+            md.push_str("### Decisions\n\n");
+            for decision in decisions {
+                md.push_str(&format!("- {}\n", decision));
+            }
+            md.push('\n');
+        }
+    }
+
+    // Commitments
+    if !commitments.is_empty() {
+        md.push_str("## Commitments\n\n");
+        for c in commitments {
+            let mut line = format!("- {}", c.commitment);
+            if let Some(ref owner) = c.owned_by {
+                line.push_str(&format!(" ({})", owner));
+            }
+            if let Some(ref target) = c.target_date {
+                line.push_str(&format!(" — by {}", target));
+            }
+            md.push_str(&line);
+            md.push('\n');
+            if let Some(ref criteria) = c.success_criteria {
+                md.push_str(&format!("  - Success criteria: {}\n", criteria));
+            }
+        }
+        md.push('\n');
+    }
+
+    // Actions
+    if !actions.is_empty() {
+        md.push_str("## Actions\n\n");
+        for action in actions {
+            let mut line = format!("- [ ] {}", action.title);
+            if let Some(ref owner) = action.owner {
+                line.push_str(&format!(" @{}", owner));
+            }
+            if let Some(ref due) = action.due_date {
+                line.push_str(&format!(" (due: {})", due));
+            }
+            md.push_str(&line);
+            md.push('\n');
+        }
+        md.push('\n');
+    }
+
+    // Attendees
+    md.push_str("## Attendees\n\n");
+    if meeting.attendees.is_empty() {
+        md.push_str("*No attendees recorded.*\n");
+    } else {
+        for attendee in &meeting.attendees {
+            md.push_str(&format!("- {}\n", attendee));
+        }
+    }
+
+    md
+}
+
+/// I636: Determine the meeting record destination path, mirroring transcript
+/// routing (account > project > person > archive) but under `Meeting-Records/`.
+fn compute_meeting_record_path(
+    workspace: &Path,
+    meeting: &CalendarEvent,
+    db: &crate::db::ActionDb,
+) -> PathBuf {
+    let date = meeting.end.format("%Y-%m-%d").to_string();
+    let slug = crate::util::slugify(&meeting.title);
+    let record_filename = format!("{}-{}-record.md", date, slug);
+
+    // Same priority routing as transcript: account > project > person > archive
+    if let Some(ref account) = meeting.account {
+        let account_exists = db.get_account_by_name(account).ok().flatten().is_some();
+        if account_exists {
+            let account_dir = sanitize_account_dir(account);
+            return workspace
+                .join("Accounts")
+                .join(&account_dir)
+                .join("Meeting-Records")
+                .join(&record_filename);
+        }
+    }
+
+    // Project routing
+    if let Some(ref entities) = meeting.linked_entities {
+        if let Some(project) = entities.iter().find(|e| e.entity_type == "project") {
+            if db.get_project(&project.id).ok().flatten().is_some() {
+                let project_dir = sanitize_account_dir(&project.name);
+                return workspace
+                    .join("Projects")
+                    .join(&project_dir)
+                    .join("Meeting-Records")
+                    .join(&record_filename);
+            }
+        }
+    }
+
+    // Person routing (1:1 only)
+    if meeting.meeting_type == MeetingType::OneOnOne {
+        if let Some(ref entities) = meeting.linked_entities {
+            if let Some(person) = entities.iter().find(|e| e.entity_type == "person") {
+                if db.get_person(&person.id).ok().flatten().is_some() {
+                    let person_dir = sanitize_account_dir(&person.name);
+                    return workspace
+                        .join("People")
+                        .join(&person_dir)
+                        .join("Meeting-Records")
+                        .join(&record_filename);
+                }
+            }
+        }
+    }
+
+    // Archive fallback
+    workspace
+        .join("_archive")
+        .join(&date)
+        .join(&record_filename)
+}
+
+/// I636: Generate, write, persist, and index the meeting record.
+#[allow(clippy::too_many_arguments)]
+fn generate_and_persist_meeting_record(
+    workspace: &Path,
+    meeting: &CalendarEvent,
+    summary: &str,
+    _transcript_destination: &Path,
+    wins: &[String],
+    risks: &[String],
+    decisions: &[String],
+    actions: &[CapturedAction],
+    commitments: &[TranscriptCommitment],
+    db: &crate::db::ActionDb,
+) {
+    let record_path = compute_meeting_record_path(workspace, meeting, db);
+
+    // Generate markdown content
+    let markdown = generate_meeting_record_markdown(
+        meeting,
+        summary,
+        wins,
+        risks,
+        decisions,
+        actions,
+        commitments,
+    );
+
+    // Create directory and write file
+    if let Some(parent) = record_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            log::warn!(
+                "I636: Failed to create Meeting-Records dir for {}: {}",
+                meeting.id,
+                e
+            );
+            return;
+        }
+    }
+
+    if let Err(e) = std::fs::write(&record_path, &markdown) {
+        log::warn!(
+            "I636: Failed to write meeting record for {}: {}",
+            meeting.id,
+            e
+        );
+        return;
+    }
+
+    let record_path_str = record_path.display().to_string();
+    log::info!(
+        "I636: Meeting record for '{}' written to '{}'",
+        meeting.title,
+        record_path_str
+    );
+
+    // Store record_path in DB
+    // DIRECT_DB_ALLOWED: Transcript processor pipeline owns meeting record persistence.
+    if let Err(e) = db.conn.execute(
+        "UPDATE meeting_transcripts SET record_path = ?1 WHERE meeting_id = ?2",
+        rusqlite::params![record_path_str, meeting.id],
+    ) {
+        log::warn!(
+            "I636: Failed to persist record_path for {}: {}",
+            meeting.id,
+            e
+        );
+    }
+
+    // Content indexing for MCP search_content
+    let entity_type = meeting
+        .linked_entities
+        .as_ref()
+        .and_then(|e| e.first())
+        .map(|e| e.entity_type.as_str())
+        .unwrap_or("account");
+    let entity_id = meeting
+        .linked_entities
+        .as_ref()
+        .and_then(|e| e.first())
+        .map(|e| e.id.as_str())
+        .or(meeting.account.as_deref())
+        .unwrap_or(&meeting.id);
+
+    let now = Utc::now().to_rfc3339();
+    let file_size = markdown.len() as i64;
+    let filename = record_path
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let relative_path = record_path
+        .strip_prefix(workspace)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| record_path_str.clone());
+
+    let record = crate::db::types::DbContentFile {
+        id: format!("meeting-record-{}", meeting.id),
+        entity_id: entity_id.to_string(),
+        entity_type: entity_type.to_string(),
+        filename,
+        relative_path,
+        absolute_path: record_path_str,
+        format: "Markdown".to_string(),
+        file_size,
+        modified_at: now.clone(),
+        indexed_at: now.clone(),
+        extracted_at: Some(now),
+        summary: if summary.is_empty() {
+            None
+        } else {
+            Some(summary.to_string())
+        },
+        embeddings_generated_at: None,
+        content_type: "meeting_record".to_string(),
+        priority: 8, // High priority — intelligence output
+    };
+
+    if let Err(e) = db.upsert_content_file(&record) {
+        log::warn!(
+            "I636: Failed to index meeting record for {}: {}",
+            meeting.id,
+            e
+        );
     }
 }
 
