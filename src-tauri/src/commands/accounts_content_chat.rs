@@ -1024,5 +1024,11 @@ pub async fn enrich_account(
     account_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
-    crate::services::intelligence::enrich_entity(account_id, "account".to_string(), &state, Some(&app_handle)).await
+    crate::services::intelligence::enrich_entity(
+        account_id,
+        "account".to_string(),
+        &state,
+        Some(&app_handle),
+    )
+    .await
 }

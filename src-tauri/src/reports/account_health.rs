@@ -150,12 +150,19 @@ fn build_account_health_prompt(
         for cap in enriched_captures.iter().take(20) {
             let urg = cap.urgency.as_deref().unwrap_or("none");
             let sub = cap.sub_type.as_deref().unwrap_or("");
-            let date = cap.captured_at.split('T').next().unwrap_or(&cap.captured_at);
-            let quote = cap.evidence_quote.as_ref()
+            let date = cap
+                .captured_at
+                .split('T')
+                .next()
+                .unwrap_or(&cap.captured_at);
+            let quote = cap
+                .evidence_quote
+                .as_ref()
                 .map(|q| format!(" #\"{}\"", q))
                 .unwrap_or_default();
             lines.push(format!(
-                "- [{}] {} | [{}] {} ({}){}", urg, cap.capture_type, sub, cap.content, date, quote
+                "- [{}] {} | [{}] {} ({}){}",
+                urg, cap.capture_type, sub, cap.content, date, quote
             ));
         }
         lines.join("\n")

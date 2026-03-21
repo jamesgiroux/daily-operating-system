@@ -3121,8 +3121,8 @@ pub fn enrich_briefing(
 
     // I137: Gather entity intelligence for accounts with meetings today (brief DB lock)
     let intel_context = {
-        let db_guard = state.db.lock().ok();
-        match db_guard.as_ref().and_then(|g| g.as_ref()) {
+        let db_guard = crate::db::ActionDb::open().ok();
+        match db_guard.as_ref() {
             Some(db) => build_entity_intel_for_briefing(&schedule, db),
             None => String::new(),
         }
@@ -4309,8 +4309,8 @@ pub fn enrich_week(
 
     // I137: Gather entity intelligence for accounts with meetings this week (brief DB lock)
     let week_intel_context = {
-        let db_guard = state.db.lock().ok();
-        match db_guard.as_ref().and_then(|g| g.as_ref()) {
+        let db_guard = crate::db::ActionDb::open().ok();
+        match db_guard.as_ref() {
             Some(db) => build_entity_intel_for_week(&overview, db),
             None => String::new(),
         }
@@ -4723,7 +4723,7 @@ mod tests {
                 .unwrap();
         let meetings = updated["meetings"].as_array().unwrap();
         assert_eq!(meetings[0]["hasPrep"], true); // substantive
-        assert_eq!(meetings[1]["hasPrep"], false); // stub
+        assert_eq!(meetings[1]["hasPrep"], false); // expected: no prep
     }
 
     #[test]

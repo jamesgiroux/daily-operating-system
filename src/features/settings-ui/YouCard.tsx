@@ -156,13 +156,13 @@ function RoleSection() {
     invoke<[string, string, string][]>("get_available_presets")
       .then(setPresets)
       .catch((err) => {
-        console.error("get_available_presets failed:", err);
+        console.error("get_available_presets failed:", err); // Expected: background init on mount
         setPresets([]);
       });
     invoke<{ id: string } | null>("get_active_preset")
       .then((p) => setActiveId(p?.id ?? null))
       .catch((err) => {
-        console.error("get_active_preset failed:", err);
+        console.error("get_active_preset failed:", err); // Expected: background init on mount
         setActiveId(null);
       });
   }, []);
@@ -471,7 +471,7 @@ export default function YouCard() {
       };
     }>("get_config")
       .then(setConfig)
-      .catch((err) => console.error("get_config (you) failed:", err))
+      .catch((err) => console.error("get_config (you) failed:", err)) // Expected: background init on mount
       .finally(() => setLoading(false));
     invoke<FeatureFlags>("get_feature_flags")
       .then((flags) => setRolePresetsEnabled(flags.role_presets_enabled))
