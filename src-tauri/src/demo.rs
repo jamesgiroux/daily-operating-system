@@ -354,9 +354,15 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
             rusqlite::params![id, summary],
         )
         .map_err(|e| format!("Demo historical meeting transcript: {}", e))?;
+        // I635: Historical meetings need prep_frozen_json for prediction scorecard
+        let hist_prep = account_id.and_then(|acct| {
+            let acct_name = account_names.get(acct).copied();
+            build_prep_json(acct_name, *summary)
+        });
         conn.execute(
-            "INSERT OR IGNORE INTO meeting_prep (meeting_id) VALUES (?1)",
-            rusqlite::params![id],
+            "INSERT OR REPLACE INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at) \
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![id, hist_prep, &today],
         )
         .map_err(|e| format!("Demo historical meeting prep: {}", e))?;
 
@@ -367,6 +373,75 @@ pub fn install_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), Strin
                 rusqlite::params![id, acct],
             )
             .map_err(|e| format!("Demo historical meeting-entity link: {}", e))?;
+        }
+    }
+
+    // I636: Mark historical meetings as transcript-processed so they show as Meeting Records
+    for hist_id in &["demo-mh-acme-7d", "demo-mh-globex-14d", "demo-mh-initech-21d"] {
+        conn.execute(
+            "UPDATE meeting_transcripts SET transcript_processed_at = datetime('now', '-1 hour') \
+             WHERE meeting_id = ?1",
+            rusqlite::params![hist_id],
+        )
+        .ok();
+    }
+
+    // I635: Seed enriched captures for historical meetings (scorecard + postIntel data)
+    for (meeting_id, captures) in &[
+        (
+            "demo-mh-acme-7d",
+            vec![
+                ("win", "adoption", "Migration completed ahead of schedule"),
+                ("risk", "red", "NPS trending down with 3 detractors"),
+                ("decision", "", "Proceed with Phase 2 scoping next quarter"),
+            ],
+        ),
+        (
+            "demo-mh-globex-14d",
+            vec![
+                ("win", "engagement", "New dashboard features well received"),
+                ("risk", "yellow", "Team B engagement declining — needs intervention"),
+                ("decision", "", "Schedule dedicated Team B enablement session"),
+            ],
+        ),
+    ] {
+        for (i, (capture_type, sub_type, content)) in captures.iter().enumerate() {
+            conn.execute(
+                "INSERT OR IGNORE INTO enriched_captures \
+                 (id, meeting_id, capture_type, sub_type, content, confidence, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0.85, datetime('now'))",
+                rusqlite::params![
+                    format!("demo-cap-{}-{}", meeting_id, i),
+                    meeting_id,
+                    capture_type,
+                    if sub_type.is_empty() { None } else { Some(sub_type) },
+                    content,
+                ],
+            )
+            .ok();
+        }
+    }
+
+    // I637: Seed meeting attendees for continuity thread "new attendees" detection
+    for (meeting_id, attendees) in &[
+        ("demo-mh-acme-7d", vec![("demo-sarah", "sarah@acme.com")]),
+        (
+            "demo-mtg-acme",
+            vec![
+                ("demo-sarah", "sarah@acme.com"),
+                ("demo-alex", "alex@acme.com"),
+            ],
+        ),
+        ("demo-mh-globex-14d", vec![("demo-jamie", "jamie@globex.com")]),
+        ("demo-mtg-globex", vec![("demo-jamie", "jamie@globex.com")]),
+    ] {
+        for (person_id, email) in attendees {
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id, email) \
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![meeting_id, person_id, email],
+            )
+            .ok();
         }
     }
 
