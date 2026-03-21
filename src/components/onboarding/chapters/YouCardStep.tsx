@@ -123,7 +123,7 @@ export function YouCardStep({ formData, onFormChange, onNext, onSkip, gleanConne
       // Persist wizard step
       await invoke("set_wizard_step", { step: "youcard" });
     } catch (e) {
-      console.error("set_user_profile failed:", e);
+      console.error("set_user_profile failed:", e); // Expected: best-effort profile save during onboarding
     } finally {
       setSaving(false);
     }

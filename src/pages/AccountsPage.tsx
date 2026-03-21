@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
 import {
@@ -26,6 +27,7 @@ import { formatArr } from "@/lib/utils";
 import type { AccountListItem, DiscoveredAccount, EphemeralBriefing as EphemeralBriefingType, FeatureFlags } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { HealthBadge } from "@/components/shared/HealthBadge";
+import styles from "./AccountsPage.module.css";
 
 /** Lightweight shape returned by get_archived_accounts (DbAccount from Rust). */
 interface ArchivedAccount {
@@ -159,7 +161,7 @@ export default function AccountsPage() {
             .catch(() => setGleanConnected(false));
         }
       })
-      .catch(() => setDiscoveryEnabled(false));
+      .catch(() => setDiscoveryEnabled(false)); // Expected: feature flag check on init
   }, []);
 
   // I494: Discover accounts from Glean
@@ -171,6 +173,8 @@ export default function AccountsPage() {
       const result = await invoke<DiscoveredAccount[]>("discover_accounts_from_glean");
       setDiscoveredAccounts(result);
     } catch (e) {
+      console.error("discover_accounts_from_glean failed:", e);
+      toast.error("Failed to discover accounts");
       setError(String(e));
     } finally {
       setDiscoveryLoading(false);
@@ -196,6 +200,8 @@ export default function AccountsPage() {
       setAddedNames((prev) => new Set(prev).add(account.name.toLowerCase()));
       await loadAccounts();
     } catch (e) {
+      console.error("import_account_from_glean failed:", e);
+      toast.error("Failed to add account");
       setError(String(e));
     }
   }
@@ -213,6 +219,8 @@ export default function AccountsPage() {
       });
       setEphemeralBriefing(result);
     } catch (e) {
+      console.error("query_ephemeral_account failed:", e);
+      toast.error("Account lookup failed");
       setError(String(e));
     } finally {
       setEphemeralLoading(false);
@@ -239,6 +247,8 @@ export default function AccountsPage() {
       setEphemeralAdded(true);
       await loadAccounts();
     } catch (e) {
+      console.error("import_account_from_glean (briefing) failed:", e);
+      toast.error("Failed to add account");
       setError(String(e));
     }
   }
@@ -259,6 +269,8 @@ export default function AccountsPage() {
       setCreating(false);
       await loadAccounts();
     } catch (e) {
+      console.error("create_account failed:", e);
+      toast.error("Failed to create account");
       setError(String(e));
     }
   }
@@ -297,6 +309,8 @@ export default function AccountsPage() {
       setBulkMode(false);
       await loadAccounts();
     } catch (e) {
+      console.error("bulk_create_accounts failed:", e);
+      toast.error("Failed to create accounts");
       setError(String(e));
     }
   }
@@ -316,6 +330,8 @@ export default function AccountsPage() {
           );
           setChildrenCache((prev) => ({ ...prev, [parentId]: children }));
         } catch (e) {
+          console.error("get_child_accounts_list failed:", e);
+          toast.error("Failed to load sub-accounts");
           setError(String(e));
           return;
         }
@@ -422,42 +438,18 @@ export default function AccountsPage() {
 
   // Folio actions: archive toggle + new button + Glean buttons
   const folioActions = useMemo(() => {
-    const archiveButtonStyle = {
-      fontFamily: "var(--font-mono)",
-      fontSize: 11,
-      fontWeight: 500,
-      letterSpacing: "0.06em",
-      background: "none",
-      border: "none",
-      padding: 0,
-      cursor: "pointer",
-    } as const;
-
     return (
       <>
         <button
           onClick={() => setArchiveTab(isArchived ? "active" : "archived")}
-          style={{
-            ...archiveButtonStyle,
-            color: isArchived ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
-          }}
+          className={isArchived ? styles.folioButtonArchiveActive : styles.folioButtonArchive}
         >
           {isArchived ? "\u2190 Active" : "Archive"}
         </button>
         {!isArchived && discoveryEnabled && gleanConnected && (
           <button
             onClick={handleDiscoverAccounts}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 500,
-              letterSpacing: "0.06em",
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-            }}
+            className={styles.folioButtonDiscover}
           >
             Discover
           </button>
@@ -465,19 +457,7 @@ export default function AccountsPage() {
         {!isArchived && (
           <button
             onClick={() => setCreating(true)}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: "var(--color-spice-turmeric)",
-              background: "none",
-              border: "1px solid var(--color-spice-turmeric)",
-              borderRadius: 4,
-              padding: "2px 10px",
-              cursor: "pointer",
-            }}
+            className={styles.folioButtonNew}
           >
             + New
           </button>
@@ -513,19 +493,8 @@ export default function AccountsPage() {
   // Empty state
   if (!isArchived && accounts.length === 0) {
     return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
-        <h1
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 36,
-            fontWeight: 400,
-            letterSpacing: "-0.02em",
-            color: "var(--color-text-primary)",
-            margin: "0 0 24px 0",
-          }}
-        >
-          Your Book
-        </h1>
+      <div className={styles.emptyContainer}>
+        <h1 className={styles.emptyTitle}>Your Book</h1>
         {(() => {
           const copy = getPersonalityCopy("accounts-empty", personality);
           return (
@@ -536,7 +505,7 @@ export default function AccountsPage() {
               action={!creating ? { label: "Create your first account", onClick: () => setCreating(true) } : undefined}
             >
               {creating && (
-                <div style={{ maxWidth: 400, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12, textAlign: "left" }}>
+                <div className={styles.emptyCreateForm}>
                   <AccountTypeSelector
                     value={newAccountType}
                     onChange={(v) => { setNewAccountType(v); setNewParentId(null); }}
@@ -565,7 +534,7 @@ export default function AccountsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+    <div className={styles.pageContainer}>
       <EntityListHeader
         headline="Your Book"
         count={isArchived ? filteredArchived.length : filtered.length}
@@ -586,54 +555,25 @@ export default function AccountsPage() {
 
       {/* I494: Discovery panel */}
       {discoveryOpen && !isArchived && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <h3
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 20,
-                fontWeight: 400,
-                color: "var(--color-text-primary)",
-                margin: 0,
-              }}
-            >
+        <div className={styles.discoveryPanel}>
+          <div className={styles.discoveryHeader}>
+            <h3 className={styles.discoveryTitle}>
               Discovered Accounts
             </h3>
             <button
               onClick={() => { setDiscoveryOpen(false); setDiscoveredAccounts([]); setDiscoveryFilter(""); }}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
+              className={styles.discoveryCloseButton}
             >
               Close
             </button>
           </div>
 
           {discoveryLoading ? (
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                color: "var(--color-text-tertiary)",
-                fontStyle: "italic",
-              }}
-            >
+            <p className={styles.discoveryLoading}>
               Searching your organization...
             </p>
           ) : discoveredAccounts.length === 0 ? (
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                color: "var(--color-text-tertiary)",
-              }}
-            >
+            <p className={styles.discoveryEmpty}>
               No accounts discovered. Try the search below for a specific account.
             </p>
           ) : (
@@ -644,21 +584,9 @@ export default function AccountsPage() {
                 value={discoveryFilter}
                 onChange={(e) => setDiscoveryFilter(e.target.value)}
                 placeholder="Filter discovered accounts..."
-                style={{
-                  width: "100%",
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 13,
-                  color: "var(--color-text-primary)",
-                  background: "var(--color-paper-warm-white)",
-                  border: "1px solid var(--color-paper-linen)",
-                  borderRadius: 4,
-                  padding: "6px 10px",
-                  marginBottom: 12,
-                  boxSizing: "border-box",
-                  outline: "none",
-                }}
+                className={styles.discoveryFilterInput}
               />
-              <div style={{ display: "flex", flexDirection: "column" }}>
+              <div className={styles.discoveryList}>
                 {discoveredAccounts
                   .filter((a) => {
                     if (!discoveryFilter) return true;
@@ -675,93 +603,39 @@ export default function AccountsPage() {
                     return (
                       <div
                         key={account.name + i}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "10px 0",
-                          borderBottom: i < arr.length - 1 ? "1px solid var(--color-rule-light)" : "none",
-                        }}
+                        className={`${styles.discoveryRow} ${i < arr.length - 1 ? styles.discoveryRowBorder : ""}`}
                       >
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                            <span
-                              style={{
-                                fontFamily: "var(--font-sans)",
-                                fontSize: 14,
-                                fontWeight: 500,
-                                color: "var(--color-text-primary)",
-                              }}
-                            >
+                        <div className={styles.discoveryRowContent}>
+                          <div className={styles.discoveryRowHeader}>
+                            <span className={styles.discoveryAccountName}>
                               {account.name}
                             </span>
                             {account.domain && (
-                              <span
-                                style={{
-                                  fontFamily: "var(--font-mono)",
-                                  fontSize: 11,
-                                  color: "var(--color-text-tertiary)",
-                                }}
-                              >
+                              <span className={styles.discoveryDomain}>
                                 {account.domain}
                               </span>
                             )}
                             {account.industry && (
-                              <span
-                                style={{
-                                  fontFamily: "var(--font-mono)",
-                                  fontSize: 10,
-                                  letterSpacing: "0.06em",
-                                  textTransform: "uppercase",
-                                  color: "var(--color-text-tertiary)",
-                                }}
-                              >
+                              <span className={styles.discoveryIndustry}>
                                 {account.industry}
                               </span>
                             )}
                           </div>
                           {account.contextPreview && (
-                            <p
-                              style={{
-                                fontFamily: "var(--font-sans)",
-                                fontSize: 13,
-                                lineHeight: 1.5,
-                                color: "var(--color-text-secondary)",
-                                margin: "4px 0 0 0",
-                              }}
-                            >
+                            <p className={styles.discoveryContextPreview}>
                               {account.contextPreview}
                             </p>
                           )}
                         </div>
-                        <div style={{ marginLeft: 16, flexShrink: 0 }}>
+                        <div className={styles.discoveryRowActions}>
                           {isAdded ? (
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 11,
-                                fontWeight: 500,
-                                color: "var(--color-garden-sage)",
-                              }}
-                            >
+                            <span className={styles.discoveryAddedLabel}>
                               Added
                             </span>
                           ) : (
                             <button
                               onClick={() => handleAddDiscovered(account)}
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                letterSpacing: "0.06em",
-                                textTransform: "uppercase",
-                                color: "var(--color-spice-turmeric)",
-                                background: "none",
-                                border: "1px solid var(--color-spice-turmeric)",
-                                borderRadius: 4,
-                                padding: "3px 10px",
-                                cursor: "pointer",
-                              }}
+                              className={styles.discoveryAddButton}
                             >
                               Add
                             </button>
@@ -780,63 +654,32 @@ export default function AccountsPage() {
                   (a.industry ?? "").toLowerCase().includes(q)
                 );
               }).length > 50 && (
-                <p
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--color-text-tertiary)",
-                    margin: "10px 0 0 0",
-                  }}
-                >
+                <p className={styles.discoveryOverflowHint}>
                   Showing first 50. Use search to narrow the list.
                 </p>
               )}
             </>
           )}
 
-          <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-heavy)", margin: "20px 0" }} />
+          <hr className={styles.discoveryDivider} />
         </div>
       )}
 
       {/* I495: Ephemeral account query */}
       {discoveryEnabled && gleanConnected && !isArchived && (
-        <div style={{ marginBottom: 20 }}>
-          <form onSubmit={handleEphemeralQuery} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className={styles.ephemeralContainer}>
+          <form onSubmit={handleEphemeralQuery} className={styles.ephemeralForm}>
             <input
               type="text"
               value={ephemeralQuery}
               onChange={(e) => setEphemeralQuery(e.target.value)}
               placeholder="Tell me about..."
-              style={{
-                flex: 1,
-                fontFamily: "var(--font-sans)",
-                fontSize: 13,
-                color: "var(--color-text-primary)",
-                background: "var(--color-paper-warm-white)",
-                border: "1px solid var(--color-paper-linen)",
-                borderRadius: 4,
-                padding: "6px 10px",
-                outline: "none",
-              }}
+              className={styles.ephemeralInput}
             />
             <button
               type="submit"
               disabled={ephemeralLoading || !ephemeralQuery.trim()}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: ephemeralLoading || !ephemeralQuery.trim() ? "var(--color-text-tertiary)" : "var(--color-spice-turmeric)",
-                background: "none",
-                border: "1px solid",
-                borderColor: ephemeralLoading || !ephemeralQuery.trim() ? "var(--color-paper-linen)" : "var(--color-spice-turmeric)",
-                borderRadius: 4,
-                padding: "5px 12px",
-                cursor: ephemeralLoading || !ephemeralQuery.trim() ? "default" : "pointer",
-                whiteSpace: "nowrap",
-              }}
+              className={`${styles.ephemeralSubmitButton} ${ephemeralLoading || !ephemeralQuery.trim() ? styles.ephemeralSubmitDisabled : styles.ephemeralSubmitActive}`}
             >
               {ephemeralLoading ? "Searching..." : "Look up"}
             </button>
@@ -852,14 +695,14 @@ export default function AccountsPage() {
           )}
 
           {ephemeralBriefing && (
-            <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-heavy)", margin: "0 0 16px 0" }} />
+            <hr className={styles.ephemeralDivider} />
           )}
         </div>
       )}
 
       {/* Create form */}
       {creating && !isArchived && (
-        <div style={{ marginBottom: 16 }}>
+        <div className={styles.createForm}>
           {bulkMode ? (
             <BulkCreateForm
               value={bulkValue}
@@ -870,7 +713,7 @@ export default function AccountsPage() {
               placeholder="One account name per line"
             />
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className={styles.createFormRow}>
               <AccountTypeSelector
                 value={newAccountType}
                 onChange={(v) => { setNewAccountType(v); setNewParentId(null); }}
@@ -882,7 +725,7 @@ export default function AccountsPage() {
                   options={parentOptions}
                 />
               )}
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className={styles.createFormInlineRow}>
                 <InlineCreateForm
                   value={newName}
                   onChange={setNewName}
@@ -892,14 +735,7 @@ export default function AccountsPage() {
                 />
                 <button
                   onClick={() => setBulkMode(true)}
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--color-text-tertiary)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
+                  className={styles.bulkButton}
                 >
                   Bulk
                 </button>
@@ -918,7 +754,7 @@ export default function AccountsPage() {
               message="Archived accounts will appear here."
             />
           ) : (
-            <div style={{ display: "flex", flexDirection: "column" }}>
+            <div className={styles.archivedList}>
               {filteredArchived.map((account, i) => (
                 <EntityRow
                   key={account.id}
@@ -930,7 +766,7 @@ export default function AccountsPage() {
                   subtitle={account.lifecycle}
                 >
                   {account.arr != null && (
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                    <span className={styles.archivedArrLabel}>
                       ${formatArr(account.arr)}
                     </span>
                   )}
@@ -953,9 +789,9 @@ export default function AccountsPage() {
           if (sectionAccounts.length === 0) return null;
 
           return (
-            <section key={type} style={{ marginBottom: "var(--space-2xl)" }}>
+            <section key={type} className={styles.accountSection}>
               <ChapterHeading title={title} />
-              <div style={{ display: "flex", flexDirection: "column" }}>
+              <div className={styles.accountSectionList}>
                 {sectionAccounts.map((account, i) => (
                   <AccountTreeNode
                     key={account.id}
@@ -978,7 +814,7 @@ export default function AccountsPage() {
   );
 }
 
-// ─── Recursive Account Tree Node ─────────────────────────────────────────────
+// --- Recursive Account Tree Node ---
 
 function AccountTreeNode({
   account,
@@ -1025,7 +861,7 @@ function AccountTreeNode({
   );
 }
 
-// ─── Account Row ────────────────────────────────────────────────────────────
+// --- Account Row ---
 
 function AccountRow({
   account,
@@ -1044,16 +880,7 @@ function AccountRow({
   const nameSuffix = (
     <>
       {account.accountType !== "customer" && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: account.accountType === "partner" ? "var(--color-garden-rosemary)" : "var(--color-text-tertiary)",
-          }}
-        >
+        <span className={`${styles.accountTypeBadge} ${account.accountType === "partner" ? styles.accountTypeBadgePartner : styles.accountTypeBadgeInternal}`}>
           {account.accountType === "partner" ? "Partner" : "Internal"}
         </span>
       )}
@@ -1064,15 +891,7 @@ function AccountRow({
             e.stopPropagation();
             onToggleExpand();
           }}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: 0,
-          }}
+          className={styles.expandToggle}
         >
           {isExpanded ? "\u25BE" : "\u25B8"} {account.childCount} BU{account.childCount !== 1 ? "s" : ""}
         </button>
@@ -1098,7 +917,7 @@ function AccountRow({
       avatar={healthAvatar}
     >
       {account.arr != null && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+        <span className={styles.archivedArrLabel}>
           ${formatArr(account.arr)}
         </span>
       )}
@@ -1106,7 +925,7 @@ function AccountRow({
   );
 }
 
-// ─── Account Type Selector ──────────────────────────────────────────────────
+// --- Account Type Selector ---
 
 const TYPE_OPTIONS: { value: "customer" | "internal" | "partner"; label: string; color: string }[] = [
   { value: "customer", label: "Customer", color: "var(--color-spice-turmeric)" },
@@ -1122,28 +941,15 @@ function AccountTypeSelector({
   onChange: (v: "customer" | "internal" | "partner") => void;
 }) {
   return (
-    <div style={{ display: "flex", gap: 0, borderRadius: 4, overflow: "hidden", border: "1px solid var(--color-paper-linen)" }}>
-      {TYPE_OPTIONS.map((opt) => {
+    <div className={styles.typeSelectorContainer}>
+      {TYPE_OPTIONS.map((opt, idx) => {
         const isActive = value === opt.value;
         return (
           <button
             key={opt.value}
             onClick={() => onChange(opt.value)}
-            style={{
-              flex: 1,
-              padding: "6px 12px",
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              fontWeight: isActive ? 600 : 400,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: isActive ? opt.color : "var(--color-text-tertiary)",
-              background: isActive ? "var(--color-desk-charcoal-4)" : "transparent",
-              border: "none",
-              borderRight: opt.value !== "partner" ? "1px solid var(--color-paper-linen)" : "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-            }}
+            className={`${styles.typeSelectorButton} ${isActive ? styles.typeSelectorButtonActive : styles.typeSelectorButtonInactive} ${idx < TYPE_OPTIONS.length - 1 ? styles.typeSelectorDivider : ""}`}
+            style={{ color: isActive ? opt.color : undefined }}
           >
             {opt.label}
           </button>
@@ -1153,7 +959,7 @@ function AccountTypeSelector({
   );
 }
 
-// ─── Parent Account Selector ────────────────────────────────────────────────
+// --- Parent Account Selector ---
 
 function ParentSelector({
   value,
@@ -1165,68 +971,35 @@ function ParentSelector({
   options: (AccountListItem & { _depth: number })[];
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <label
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 10,
-          fontWeight: 500,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "var(--color-text-tertiary)",
-          whiteSpace: "nowrap",
-        }}
-      >
+    <div className={styles.parentSelectorRow}>
+      <label className={styles.parentSelectorLabel}>
         Parent
       </label>
       <Select value={value ?? "__none__"} onValueChange={(v) => onChange(v === "__none__" ? null : v)}>
         <SelectTrigger
-          className=""
-          style={{
-            flex: 1,
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            color: value ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-            background: "var(--color-paper-warm-white)",
-            border: "1px solid var(--color-paper-linen)",
-            borderRadius: 4,
-            padding: "5px 8px",
-            height: "auto",
-            boxShadow: "none",
-          }}
+          className={`${styles.parentSelectorTrigger} ${value ? styles.parentSelectorTriggerActive : styles.parentSelectorTriggerPlaceholder}`}
         >
           <SelectValue />
         </SelectTrigger>
         <SelectContent
           position="popper"
-          style={{
-            background: "var(--color-paper-warm-white)",
-            border: "1px solid var(--color-paper-linen)",
-            borderRadius: 6,
-            fontFamily: "var(--font-sans)",
-            fontSize: 13,
-            maxHeight: 240,
-          }}
+          className={styles.parentSelectorContent}
         >
           <SelectItem
             value="__none__"
-            style={{ color: "var(--color-text-tertiary)", fontFamily: "var(--font-sans)", fontSize: 13 }}
+            className={styles.parentSelectorItemNone}
           >
             None (top-level)
           </SelectItem>
           {options.map((acct) => {
             const indent = acct._depth > 0 ? 12 + acct._depth * 16 : undefined;
-            const prefix = acct._depth > 0 ? "└ " : "";
+            const prefix = acct._depth > 0 ? "\u2514 " : "";
             return (
               <SelectItem
                 key={acct.id}
                 value={acct.id}
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 13,
-                  paddingLeft: indent,
-                  color: acct._depth > 0 ? "var(--color-text-secondary)" : undefined,
-                }}
+                className={acct._depth > 0 ? styles.parentSelectorItemChild : styles.parentSelectorItem}
+                style={indent ? { paddingLeft: indent } : undefined}
               >
                 {prefix}{acct.name}
               </SelectItem>

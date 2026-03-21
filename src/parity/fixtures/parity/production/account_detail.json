@@ -1,0 +1,28 @@
+{
+  "surfaceId": "account_detail",
+  "commands": {
+    "get_account_detail": {
+      "id": "acc-91",
+      "name": "Globex Europe",
+      "updatedAt": "2026-03-10T07:58:33Z",
+      "archived": false,
+      "accountType": "customer",
+      "health": "at-risk"
+    },
+    "get_account_team": [
+      {
+        "personId": "person-441",
+        "personName": "Nina Kurt",
+        "role": "executive_sponsor",
+        "personEmail": "nina.kurt@globex.com"
+      }
+    ]
+  },
+  "errors": {
+    "get_account_detail": {
+      "code": "ACCOUNT_NOT_FOUND",
+      "message": "Account not found",
+      "retryable": false
+    }
+  }
+}
