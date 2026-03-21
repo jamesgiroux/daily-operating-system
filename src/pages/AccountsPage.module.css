@@ -1,0 +1,467 @@
+/* =============================================================================
+   AccountsPage — CSS Module for the Accounts list surface
+   Uses design tokens from design-tokens.css. No hardcoded values.
+   ============================================================================= */
+
+/* ── Page Container ─────────────────────────────────────────────────────── */
+
+.pageContainer {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Empty State ────────────────────────────────────────────────────────── */
+
+.emptyContainer {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: 80px;
+}
+
+.emptyTitle {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-lg) 0;
+}
+
+.emptyCreateForm {
+  max-width: 400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+/* ── Folio Actions ──────────────────────────────────────────────────────── */
+
+.folioButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.folioButtonArchive {
+  composes: folioButton;
+  color: var(--color-text-tertiary);
+}
+
+.folioButtonArchiveActive {
+  composes: folioButton;
+  color: var(--color-spice-turmeric);
+}
+
+.folioButtonDiscover {
+  composes: folioButton;
+  color: var(--color-text-tertiary);
+}
+
+.folioButtonNew {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+/* ── Discovery Panel ────────────────────────────────────────────────────── */
+
+.discoveryPanel {
+  margin-bottom: var(--space-lg);
+}
+
+.discoveryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.discoveryTitle {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.discoveryCloseButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.discoveryLoading {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.discoveryEmpty {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.discoveryFilterInput {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.discoveryList {
+  display: flex;
+  flex-direction: column;
+}
+
+.discoveryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.discoveryRowBorder {
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.discoveryRowContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.discoveryRowHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.discoveryAccountName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.discoveryDomain {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.discoveryIndustry {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.discoveryContextPreview {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 4px 0 0 0;
+}
+
+.discoveryRowActions {
+  margin-left: var(--space-md);
+  flex-shrink: 0;
+}
+
+.discoveryAddedLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-garden-sage);
+}
+
+.discoveryAddButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.discoveryOverflowHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin: 10px 0 0 0;
+}
+
+.discoveryDivider {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin: 20px 0;
+}
+
+/* ── Ephemeral Query ────────────────────────────────────────────────────── */
+
+.ephemeralContainer {
+  margin-bottom: 20px;
+}
+
+.ephemeralForm {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.ephemeralInput {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 10px;
+  outline: none;
+}
+
+.ephemeralSubmitButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid;
+  border-radius: var(--radius-editorial-sm);
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+
+.ephemeralSubmitActive {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+  cursor: pointer;
+}
+
+.ephemeralSubmitDisabled {
+  color: var(--color-text-tertiary);
+  border-color: var(--color-paper-linen);
+  cursor: default;
+}
+
+.ephemeralDivider {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin: 0 0 var(--space-md) 0;
+}
+
+/* ── Create Form ────────────────────────────────────────────────────────── */
+
+.createForm {
+  margin-bottom: var(--space-md);
+}
+
+.createFormRow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.createFormInlineRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.bulkButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ── Section Spacing ────────────────────────────────────────────────────── */
+
+.accountSection {
+  margin-bottom: var(--space-2xl);
+}
+
+.accountSectionList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Archived List ──────────────────────────────────────────────────────── */
+
+.archivedList {
+  display: flex;
+  flex-direction: column;
+}
+
+.archivedArrLabel {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ── Account Type Selector ──────────────────────────────────────────────── */
+
+.typeSelectorContainer {
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius-editorial-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-paper-linen);
+}
+
+.typeSelectorButton {
+  flex: 1;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.typeSelectorButtonActive {
+  font-weight: 600;
+  background: var(--color-desk-charcoal-4);
+}
+
+.typeSelectorButtonInactive {
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+
+.typeSelectorDivider {
+  border-right: 1px solid var(--color-paper-linen);
+}
+
+/* ── Account Row ────────────────────────────────────────────────────────── */
+
+.accountTypeBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.accountTypeBadgePartner {
+  color: var(--color-garden-rosemary);
+}
+
+.accountTypeBadgeInternal {
+  color: var(--color-text-tertiary);
+}
+
+.expandToggle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ── Parent Selector ────────────────────────────────────────────────────── */
+
+.parentSelectorRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.parentSelectorLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.parentSelectorTrigger {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: 5px 8px;
+  height: auto;
+  box-shadow: none;
+}
+
+.parentSelectorTriggerActive {
+  color: var(--color-text-primary);
+}
+
+.parentSelectorTriggerPlaceholder {
+  color: var(--color-text-tertiary);
+}
+
+.parentSelectorContent {
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  max-height: 240px;
+}
+
+.parentSelectorItem {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.parentSelectorItemNone {
+  composes: parentSelectorItem;
+  color: var(--color-text-tertiary);
+}
+
+.parentSelectorItemChild {
+  composes: parentSelectorItem;
+  color: var(--color-text-secondary);
+}
