@@ -499,9 +499,15 @@ fn build_monthly_wrapped_prompt(
                 let talk_pct: Option<f64> = row.get(1)?;
                 let q_density: Option<f64> = row.get(2)?;
                 let dm_active: Option<bool> = row.get(3)?;
-                let talk = talk_pct.map(|p| format!(" | customer talk: {:.0}%", p)).unwrap_or_default();
-                let qd = q_density.map(|d| format!(" | question density: {:.1}", d)).unwrap_or_default();
-                let dm = dm_active.map(|a| format!(" | decision-maker active: {}", a)).unwrap_or_default();
+                let talk = talk_pct
+                    .map(|p| format!(" | customer talk: {:.0}%", p))
+                    .unwrap_or_default();
+                let qd = q_density
+                    .map(|d| format!(" | question density: {:.1}", d))
+                    .unwrap_or_default();
+                let dm = dm_active
+                    .map(|a| format!(" | decision-maker active: {}", a))
+                    .unwrap_or_default();
                 Ok(format!("- {}{}{}{}", title, talk, qd, dm))
             })?;
             Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>().join("\n"))

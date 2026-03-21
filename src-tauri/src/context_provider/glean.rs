@@ -10,6 +10,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::context_provider::cache::{CacheKind, GleanCache};
@@ -25,6 +26,8 @@ const GLEAN_CHAT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Maximum documents to fetch per entity context gather.
 const MAX_DOCUMENTS_PER_ENTITY: usize = 10;
+/// Hard recency window for Glean documents used in account intelligence.
+const GLEAN_DOCUMENT_RECENCY_DAYS: i64 = 365;
 
 // ---------------------------------------------------------------------------
 // Glean MCP response types
@@ -55,6 +58,35 @@ pub struct GleanPersonResult {
     pub manager: Option<String>,
     pub location: Option<String>,
     pub start_date: Option<String>,
+}
+
+fn parse_glean_updated_at(updated_at: Option<&str>) -> Option<DateTime<Utc>> {
+    updated_at
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.with_timezone(&Utc))
+}
+
+fn prioritize_recent_results(mut results: Vec<GleanSearchResult>) -> Vec<GleanSearchResult> {
+    results.sort_by(|a, b| {
+        parse_glean_updated_at(b.updated_at.as_deref())
+            .cmp(&parse_glean_updated_at(a.updated_at.as_deref()))
+            .then_with(|| a.title.cmp(&b.title))
+    });
+
+    let cutoff = Utc::now() - chrono::Duration::days(GLEAN_DOCUMENT_RECENCY_DAYS);
+    let has_recent_dated = results.iter().any(|result| {
+        parse_glean_updated_at(result.updated_at.as_deref()).is_some_and(|ts| ts >= cutoff)
+    });
+    if !has_recent_dated {
+        return results;
+    }
+
+    results
+        .into_iter()
+        .filter(|result| {
+            parse_glean_updated_at(result.updated_at.as_deref()).is_some_and(|ts| ts >= cutoff)
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +148,9 @@ impl GleanMcpClient {
             let result = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| ContextError::Other(format!("Failed to build Glean token runtime: {}", e)))
+                .map_err(|e| {
+                    ContextError::Other(format!("Failed to build Glean token runtime: {}", e))
+                })
                 .and_then(|rt| {
                     rt.block_on(crate::glean::get_valid_access_token())
                         .map_err(|e| ContextError::Auth(format!("Glean token error: {}", e)))
@@ -695,6 +729,8 @@ impl GleanContextProvider {
             }
         }
 
+        let all_results = prioritize_recent_results(all_results);
+
         // I487: Emit Glean document signals for new/updated results
         for result in &all_results {
             let Some(ref snippet) = result.snippet else {
@@ -896,6 +932,8 @@ async fn gather_glean_context_standalone(
         }
     }
 
+    let all_results = prioritize_recent_results(all_results);
+
     // I487: Emit Glean document signals for new/updated results
     for result in &all_results {
         let Some(ref snippet) = result.snippet else {
@@ -916,7 +954,10 @@ async fn gather_glean_context_standalone(
                 Err(e) => {
                     log::warn!(
                         "I487: failed dedupe check for {} {} url={}: {}",
-                        entity_type, entity_id, url, e
+                        entity_type,
+                        entity_id,
+                        url,
+                        e
                     );
                     false
                 }
@@ -932,8 +973,13 @@ async fn gather_glean_context_standalone(
             url,
         );
         let _ = crate::signals::bus::emit_signal(
-            db, entity_type, entity_id, "glean_document", "glean_search",
-            Some(&value), 0.7,
+            db,
+            entity_type,
+            entity_id,
+            "glean_document",
+            "glean_search",
+            Some(&value),
+            0.7,
         );
     }
 
@@ -961,7 +1007,10 @@ async fn gather_glean_context_standalone(
         let snippet = result.snippet.as_deref().unwrap_or("");
         let updated = result.updated_at.as_deref().unwrap_or("unknown");
 
-        let entry = format!("--- {} [{}] ({}) ---\n{}", title, doc_type, updated, snippet);
+        let entry = format!(
+            "--- {} [{}] ({}) ---\n{}",
+            title, doc_type, updated, snippet
+        );
         let entry_bytes = entry.len();
 
         if total_bytes + entry_bytes > max_bytes {
@@ -1049,7 +1098,7 @@ fn process_glean_contacts(
     db: &ActionDb,
     entity_id: &str,
     people: &[GleanPersonResult],
-    user_domain: Option<&str>,
+    user_domains: &[String],
 ) -> usize {
     use crate::db::people::ProfileUpdate;
 
@@ -1065,11 +1114,8 @@ fn process_glean_contacts(
         };
         let title_raw = contact.title.as_deref().unwrap_or("").trim();
         let mapped_role = map_glean_role(title_raw);
-        let is_internal = user_domain.is_some_and(|domain| {
-            email
-                .to_ascii_lowercase()
-                .ends_with(&format!("@{}", domain.to_ascii_lowercase()))
-        });
+        let is_internal =
+            crate::util::classify_relationship_multi(email, user_domains).as_str() == "internal";
         let role_for_link = if is_internal && !title_raw.is_empty() {
             title_raw.to_string()
         } else {
@@ -1273,7 +1319,9 @@ impl ContextProvider for GleanContextProvider {
                 let result = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .map_err(|e| ContextError::Other(format!("Failed to build Glean runtime: {}", e)))
+                    .map_err(|e| {
+                        ContextError::Other(format!("Failed to build Glean runtime: {}", e))
+                    })
                     .and_then(|rt| {
                         rt.block_on(async {
                             // Open a fresh DB connection for this thread (ActionDb is !Send)
@@ -1299,7 +1347,9 @@ impl ContextProvider for GleanContextProvider {
                 Ok(Err(ContextError::Timeout(msg))) => {
                     log::warn!(
                         "Glean timeout for {} {}, using local-only context: {}",
-                        entity_type, entity_id, msg
+                        entity_type,
+                        entity_id,
+                        msg
                     );
                     None
                 }
@@ -1320,6 +1370,10 @@ impl ContextProvider for GleanContextProvider {
 
         // Merge Glean data into the context
         if let Some(glean) = glean_data {
+            let has_recent_local_stakeholder_context = !ctx.meeting_history.is_empty()
+                || ctx.verified_stakeholder_presence.is_some()
+                || !ctx.stakeholders.trim().is_empty();
+
             // Merge Glean documents with local file contents (always additive)
             if !glean.file_contents.is_empty() {
                 if ctx.file_contents.is_empty() {
@@ -1333,11 +1387,14 @@ impl ContextProvider for GleanContextProvider {
             }
 
             // I505: Process Glean contacts into DB (person records, account links, relationships)
-            if !glean.people.is_empty() && entity_type == "account" {
-                let user_domain = crate::google_api::token_store::peek_account_email()
-                    .and_then(|email| email.split('@').nth(1).map(|d| d.to_string()));
-                let new_count =
-                    process_glean_contacts(db, entity_id, &glean.people, user_domain.as_deref());
+            if !glean.people.is_empty()
+                && entity_type == "account"
+                && !has_recent_local_stakeholder_context
+            {
+                let user_domains = crate::state::load_config()
+                    .map(|config| config.resolved_user_domains())
+                    .unwrap_or_default();
+                let new_count = process_glean_contacts(db, entity_id, &glean.people, &user_domains);
                 if new_count > 0 {
                     log::info!(
                         "I505: Created {} new contacts from Glean for {} {}",
@@ -1349,7 +1406,7 @@ impl ContextProvider for GleanContextProvider {
             }
 
             // Enrich stakeholders with Glean org graph data
-            if !glean.people.is_empty() {
+            if !glean.people.is_empty() && !has_recent_local_stakeholder_context {
                 let glean_people_lines: Vec<String> = glean
                     .people
                     .iter()

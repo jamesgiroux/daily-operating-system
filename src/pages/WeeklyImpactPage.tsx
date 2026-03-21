@@ -102,7 +102,7 @@ export default function WeeklyImpactPage() {
   useEffect(() => {
     invoke<{ id: string | number }>("get_user_entity")
       .then((u) => setUserId(String(u.id)))
-      .catch((err) => console.error("get_user_entity failed:", err));
+      .catch((err) => console.error("get_user_entity failed:", err)); // Expected: background init on mount
   }, []);
 
   // Debounced save — persists edited content to the report row
@@ -157,13 +157,14 @@ export default function WeeklyImpactPage() {
         try {
           setContent(normalizeWeeklyImpact(JSON.parse(data.contentJson)));
         } catch (e) {
-          console.error("Failed to parse weekly impact content:", e);
+          console.error("Failed to parse weekly impact content:", e); // Expected: corrupted report JSON
           setContent(null);
         }
         setError(null);
       })
       .catch((err) => {
         console.error("get_report (weekly_impact) failed:", err);
+        toast.error("Failed to load report");
         setReport(null);
         setContent(null);
       })

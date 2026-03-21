@@ -53,7 +53,7 @@ export function AccountMergeDialog({
     invoke<PickerAccount[]>("get_accounts_for_picker")
       .then((all) => setAccounts(all.filter((a) => a.id !== sourceAccountId)))
       .catch((err) => {
-        console.error("get_accounts_for_picker failed:", err);
+        console.error("get_accounts_for_picker failed:", err); // Expected: background data fetch on dialog open
         setAccounts([]);
       });
   }, [open, sourceAccountId]);
