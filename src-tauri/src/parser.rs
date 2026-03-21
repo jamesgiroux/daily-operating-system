@@ -998,6 +998,7 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                     score_reason: None,
                     is_unread: true,
                     pinned_at: None,
+                    tracked_commitments: Vec::new(),
                     meeting_linked: None,
                 });
                 id_counter += 1;
@@ -1131,6 +1132,7 @@ impl EmailBuilder {
             score_reason: None,
             is_unread: true,
             pinned_at: None,
+            tracked_commitments: Vec::new(),
             meeting_linked: None,
         })
     }
@@ -1569,6 +1571,7 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         entity_readiness: None,
         stakeholder_insights: None,
         recent_email_signals: None,
+        email_digest: None,
         consistency_status: None,
         consistency_findings: Vec::new(),
     })
