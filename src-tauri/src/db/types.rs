@@ -775,3 +775,35 @@ pub struct MeetingPostIntelligence {
     pub role_changes: Vec<RoleChange>,
     pub enriched_captures: Vec<EnrichedCapture>,
 }
+
+/// A single action item in a continuity thread (I637).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadAction {
+    pub title: String,
+    pub date: Option<String>,
+    pub is_overdue: bool,
+}
+
+/// Health score delta between two points in time (I637).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthDelta {
+    pub previous: f64,
+    pub current: f64,
+}
+
+/// Meeting-to-meeting continuity thread: what changed between two meetings
+/// with the same entity (I637).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinuityThread {
+    pub previous_meeting_date: Option<String>,
+    pub previous_meeting_title: Option<String>,
+    pub entity_name: Option<String>,
+    pub actions_completed: Vec<ThreadAction>,
+    pub actions_open: Vec<ThreadAction>,
+    pub health_delta: Option<HealthDelta>,
+    pub new_attendees: Vec<String>,
+    pub is_first_meeting: bool,
+}

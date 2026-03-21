@@ -817,6 +817,9 @@ pub fn run() {
             commands::get_db_growth_report,
             // I633: Health Scoring Recalibration
             commands::bulk_recompute_health,
+            // I635 + I637: Meeting Intelligence
+            commands::get_prediction_scorecard,
+            commands::get_meeting_continuity_thread,
             // I529: Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,
