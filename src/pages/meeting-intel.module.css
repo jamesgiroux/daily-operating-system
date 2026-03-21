@@ -1631,3 +1631,180 @@ details[open] .detailsChevron {
   display: none;
   content: "";
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE THREAD — Meeting-to-Meeting Continuity (I637)
+   ───────────────────────────────────────────────────────────────────────────── */
+.threadSection {
+  margin: var(--space-2xl) 0 var(--space-xl);
+  padding: var(--space-lg) var(--space-xl);
+  border-left: 3px solid var(--color-spice-turmeric);
+  background: var(--color-surface-raised, rgba(0, 0, 0, 0.02));
+  border-radius: 0 4px 4px 0;
+}
+.threadHeading {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-sm);
+  letter-spacing: -0.01em;
+}
+.threadSubheading {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-md);
+  line-height: 1.5;
+}
+.threadFirstMeeting {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+.threadList {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.threadItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.threadItemOverdue {
+  color: var(--color-spice-terracotta);
+}
+.threadIconComplete {
+  color: var(--color-signal-green);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.threadIconOpen {
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.threadIconNew {
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.threadOverdueTag {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-spice-terracotta);
+  margin-left: 4px;
+}
+.threadHealthDelta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-md);
+}
+.threadHealthArrow {
+  color: var(--color-text-tertiary);
+}
+.threadHealthChange {
+  font-weight: 600;
+}
+.threadHealthUp {
+  color: var(--color-signal-green);
+}
+.threadHealthDown {
+  color: var(--color-spice-terracotta);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   I635: Prediction Scorecard
+   ───────────────────────────────────────────────────────────────────────────── */
+.scorecardSection {
+  margin: 24px 0;
+  padding: 0;
+}
+.scorecardTitle {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+.scorecardCategory {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 16px 0 8px;
+}
+.scorecardCategory:first-of-type {
+  margin-top: 0;
+}
+.predictionItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0 8px 12px;
+  border-left: 3px solid transparent;
+  margin: 0 0 2px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}
+.predictionIcon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+.predictionContent {
+  flex: 1;
+  min-width: 0;
+}
+.predictionConfirmed {
+  border-left-color: var(--color-semantic-sage, #6b8a6b);
+}
+.predictionConfirmed .predictionIcon {
+  color: var(--color-semantic-sage, #6b8a6b);
+}
+.predictionNotRaised {
+  opacity: 0.55;
+  border-left-color: var(--color-border-subtle, #e0e0e0);
+}
+.predictionNotRaised .predictionIcon {
+  color: var(--color-text-quaternary, #bbb);
+}
+.predictionSurprise {
+  border-left-color: var(--color-spice-turmeric, #c9952e);
+}
+.predictionSurprise .predictionIcon {
+  color: var(--color-spice-turmeric, #c9952e);
+}
+.predictionMatchText {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+  font-style: italic;
+}
+.predictionSource {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--color-text-quaternary, #999);
+  margin-top: 2px;
+}
