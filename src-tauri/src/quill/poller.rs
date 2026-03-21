@@ -108,17 +108,13 @@ async fn process_sync_row(
 ) {
     // Step 1: Get meeting details and attendee emails from DB
     let (meeting, attendee_emails) = {
-        let db_guard = match state.db.lock() {
-            Ok(g) => g,
+        let db = match crate::db::ActionDb::open() {
+            Ok(d) => d,
             Err(_) => return,
-        };
-        let db = match db_guard.as_ref() {
-            Some(db) => db,
-            None => return,
         };
 
         // Transition to polling state
-        let _ = sync::transition_state(db, &row.id, "polling", None, None, None, None);
+        let _ = sync::transition_state(&db, &row.id, "polling", None, None, None, None);
 
         let meeting = match db.get_meeting_by_id(&row.meeting_id) {
             Ok(Some(m)) => m,
@@ -128,7 +124,7 @@ async fn process_sync_row(
                     row.meeting_id
                 );
                 let _ = sync::transition_state(
-                    db,
+                    &db,
                     &row.id,
                     "abandoned",
                     None,
@@ -144,7 +140,7 @@ async fn process_sync_row(
                     row.meeting_id,
                     e
                 );
-                let _ = sync::advance_attempt(db, &row.id);
+                let _ = sync::advance_attempt(&db, &row.id);
                 return;
             }
         };
@@ -169,18 +165,16 @@ async fn process_sync_row(
         Ok(c) => c,
         Err(e) => {
             log::warn!("Quill sync: failed to connect: {}", e);
-            if let Ok(g) = state.db.lock() {
-                if let Some(db) = g.as_ref() {
-                    let _ = sync::transition_state(
-                        db,
-                        &row.id,
-                        "failed",
-                        None,
-                        None,
-                        None,
-                        Some(&format!("Connection failed: {}", e)),
-                    );
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                let _ = sync::transition_state(
+                    &db,
+                    &row.id,
+                    "failed",
+                    None,
+                    None,
+                    None,
+                    Some(&format!("Connection failed: {}", e)),
+                );
             }
             return;
         }
@@ -201,10 +195,8 @@ async fn process_sync_row(
         Err(e) => {
             log::warn!("Quill sync: search_meetings failed: {}", e);
             client.disconnect().await;
-            if let Ok(g) = state.db.lock() {
-                if let Some(db) = g.as_ref() {
-                    let _ = sync::advance_attempt(db, &row.id);
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
         }
@@ -227,10 +219,8 @@ async fn process_sync_row(
                 meeting.title
             );
             client.disconnect().await;
-            if let Ok(g) = state.db.lock() {
-                if let Some(db) = g.as_ref() {
-                    let _ = sync::advance_attempt(db, &row.id);
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
         }
@@ -245,13 +235,9 @@ async fn process_sync_row(
 
     // Step 4: Fetch transcript
     {
-        let db_guard = match state.db.lock() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
-        if let Some(db) = db_guard.as_ref() {
+        if let Ok(db) = crate::db::ActionDb::open() {
             let _ = sync::transition_state(
-                db,
+                &db,
                 &row.id,
                 "fetching",
                 Some(&matched.quill_meeting_id),
@@ -267,19 +253,17 @@ async fn process_sync_row(
         Err(e) => {
             log::warn!("Quill sync: get_transcript failed: {}", e);
             client.disconnect().await;
-            if let Ok(g) = state.db.lock() {
-                if let Some(db) = g.as_ref() {
-                    let _ = sync::transition_state(
-                        db,
-                        &row.id,
-                        "polling",
-                        Some(&matched.quill_meeting_id),
-                        Some(matched.confidence),
-                        None,
-                        Some(&format!("Transcript fetch failed: {}", e)),
-                    );
-                    let _ = sync::advance_attempt(db, &row.id);
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                let _ = sync::transition_state(
+                    &db,
+                    &row.id,
+                    "polling",
+                    Some(&matched.quill_meeting_id),
+                    Some(matched.confidence),
+                    None,
+                    Some(&format!("Transcript fetch failed: {}", e)),
+                );
+                let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
         }
@@ -301,35 +285,28 @@ async fn process_sync_row(
             ),
             None => {
                 log::warn!("Quill sync: config not available for transcript processing");
-                if let Ok(g) = state.db.lock() {
-                    if let Some(db) = g.as_ref() {
-                        let _ = sync::transition_state(
-                            db,
-                            &row.id,
-                            "failed",
-                            Some(&matched.quill_meeting_id),
-                            Some(matched.confidence),
-                            None,
-                            Some("Config not available"),
-                        );
-                    }
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let _ = sync::transition_state(
+                        &db,
+                        &row.id,
+                        "failed",
+                        Some(&matched.quill_meeting_id),
+                        Some(matched.confidence),
+                        None,
+                        Some("Config not available"),
+                    );
                 }
                 return;
             }
         }
     };
 
-    // Transition to "processing" state (brief lock, then release)
+    // Transition to "processing" state
     {
-        let db_guard = match state.db.lock() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
-        if let Some(db) = db_guard.as_ref() {
-            let _ = sync::transition_state(db, &row.id, "processing", None, None, None, None);
+        if let Ok(db) = crate::db::ActionDb::open() {
+            let _ = sync::transition_state(&db, &row.id, "processing", None, None, None, None);
         }
     }
-    // DB lock released — run the AI pipeline WITHOUT holding the mutex.
     // This was the critical hang: the pipeline (AI calls, file I/O) ran
     // while holding db.lock(), blocking the entire app.
     let result = sync::process_fetched_transcript_without_db(
@@ -341,13 +318,9 @@ async fn process_sync_row(
         ai_config.as_ref(),
     );
 
-    // Re-acquire lock briefly to write results + captures
+    // Write results + captures
     {
-        let db_guard = match state.db.lock() {
-            Ok(g) => g,
-            Err(_) => return,
-        };
-        if let Some(db) = db_guard.as_ref() {
+        if let Ok(db) = crate::db::ActionDb::open() {
             match &result {
                 Ok(tr) => {
                     let dest = tr.destination.as_deref().unwrap_or("");
@@ -361,7 +334,7 @@ async fn process_sync_row(
 
                     // Write captures (wins, risks, decisions) that were extracted by AI
                     // but couldn't be written during pipeline (db was None).
-                    let meeting_account_id = resolve_meeting_account_id(db, &calendar_event.id);
+                    let meeting_account_id = resolve_meeting_account_id(&db, &calendar_event.id);
                     let account = calendar_event.account.as_deref();
                     for win in &tr.wins {
                         let _ = db.insert_capture(
@@ -433,7 +406,7 @@ async fn process_sync_row(
                     }
 
                     let _ = sync::transition_state(
-                        db,
+                        &db,
                         &row.id,
                         "completed",
                         None,
@@ -444,7 +417,7 @@ async fn process_sync_row(
                 }
                 Err(error) => {
                     let _ = sync::transition_state(
-                        db,
+                        &db,
                         &row.id,
                         "failed",
                         None,
@@ -485,23 +458,16 @@ async fn process_sync_row(
 }
 
 /// Get pending quill sync rows from DB.
-fn get_pending_syncs(state: &AppState) -> Option<Vec<DbQuillSyncState>> {
-    let db_guard = state.db.lock().ok()?;
-    let db = db_guard.as_ref()?;
+fn get_pending_syncs(_state: &AppState) -> Option<Vec<DbQuillSyncState>> {
+    let db = crate::db::ActionDb::open().ok()?;
     db.get_pending_quill_syncs().ok()
 }
 
 /// Emit transcript-processed event with full MeetingOutcomeData payload when available.
-fn emit_transcript_processed(state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
-    let payload = state.db.lock().ok().and_then(|guard| {
-        guard.as_ref().and_then(|db| {
-            db.get_meeting_by_id(meeting_id)
-                .ok()
-                .flatten()
-                .and_then(|meeting| {
-                    crate::services::meetings::collect_meeting_outcomes_from_db(db, &meeting)
-                })
-        })
+fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
+    let payload = crate::db::ActionDb::open().ok().and_then(|db| {
+        let meeting = db.get_meeting_by_id(meeting_id).ok()??;
+        crate::services::meetings::collect_meeting_outcomes_from_db(&db, &meeting)
     });
 
     match payload {
@@ -554,13 +520,9 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
         Err(_) => return,
     };
 
-    let db_guard = match state.db.lock() {
-        Ok(g) => g,
+    let db = match crate::db::ActionDb::open() {
+        Ok(d) => d,
         Err(_) => return,
-    };
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return,
     };
 
     let mut created = 0;
@@ -587,7 +549,7 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
             event.meeting_type.as_str(),
         );
 
-        if let Ok(_id) = sync::create_sync_for_meeting(db, &meeting_id) {
+        if let Ok(_id) = sync::create_sync_for_meeting(&db, &meeting_id) {
             created += 1;
         }
     }

@@ -158,13 +158,14 @@ export default function SwotPage() {
         try {
           setContent(normalizeSwot(JSON.parse(data.contentJson)));
         } catch (e) {
-          console.error("Failed to parse SWOT content:", e);
+          console.error("Failed to parse SWOT content:", e); // Expected: corrupted report JSON
           setContent(null);
         }
         setError(null);
       })
       .catch((err) => {
         console.error("get_report (swot) failed:", err);
+        toast.error("Failed to load SWOT report");
         setReport(null);
         setContent(null);
       })
@@ -176,7 +177,7 @@ export default function SwotPage() {
     if (!accountId) return;
     invoke<{ name: string }>("get_account_detail", { accountId })
       .then((acct) => setAccountName(acct.name))
-      .catch((err) => console.error("get_account_detail failed:", err));
+      .catch((err) => console.error("get_account_detail failed:", err)); // Expected: background data fetch on mount
   }, [accountId]);
 
   // Generate handler

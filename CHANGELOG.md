@@ -5,6 +5,39 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.0.1] — 2026-03-21
+
+### Added
+
+- **Email triage actions** — archive (syncs to Gmail with undo), open in Gmail (deep link), and pin (sort boost within score band) on every email item. All actions emit signals for the Intelligence Loop.
+- **Commitment tracking** — extracted commitments show inline with a "Track" form (title, due date, owner, entity). Promoted commitments persist as tracked Actions visible on reload.
+- **Gone Quiet detection** — accounts whose email cadence drops below 2× their historical norm surface in a "GONE QUIET" section with dismiss capability. Emits `email_cadence_drop` signal for briefing callouts with 7-day dedup.
+- **Email-meeting linkage** — emails from upcoming meeting attendees show a meeting badge with click-to-navigate. Meeting detail page shows linked correspondence digest.
+- **DB growth monitoring** — startup size logging (warn at 300MB, error at 500MB), Settings → Diagnostics storage card, persistent toast at 500MB+, daily age-based purge (180d signals, 30d deactivated email signals, 60d resolved emails). User corrections never purged.
+- **RiskBriefingPage in reports framework** — route moved to `/accounts/$accountId/reports/risk_briefing`, loads via `get_report`, all 6 slides and feedback preserved.
+- **Migration 071** — `pinned_at`, `commitments`, `questions` columns on emails table.
+
+### Changed
+
+- **AppState cleanup (I609/I610)** — removed sync `Mutex<Option<ActionDb>>`, migrated 100+ callers to `ActionDb::open()`. Consolidated 4 lock fields into single `AppLockState` struct.
+- **hygiene.rs decomposed** — 3,463-line monolith split into `hygiene/` directory with 6 sub-modules (detectors, fixers, matcher, narrative, loop_runner, mod). Phase-level `catch_unwind` error isolation.
+- **Console.error → toast sweep** — all user-initiated action catch blocks now show toast.error. Background errors annotated. 55+ files updated.
+- **InboxPage + AccountsPage inline styles** — migrated to CSS modules with design token variables.
+- **Email ranking** — pinned emails sort to top of their score band (not globally). `compare_email_rank` in both Rust and TypeScript.
+- **Intelligence feedback cleared on re-enrichment** — old votes no longer stick to new content at the same field position.
+
+### Fixed
+
+- **Archived emails resurrecting** — two reconciliation paths (`services/emails.rs` + `prepare/orchestrate.rs`) were un-resolving user-archived emails. Both fixed: vanished emails still resolved, known emails never un-resolved.
+- **Archive not syncing to Gmail** — `archive_email` now removes INBOX label via Gmail API. `unarchive_email` restores it. Gmail failure is non-fatal (warn-only).
+- **Cross-page archive propagation** — all email mutations (archive, pin, reply, entity change) now emit `emails-updated` event. Dashboard, Correspondent, and entity pages all refresh.
+- **Entity email queries showed archived emails** — added `resolved_at IS NULL` to `get_emails_for_entity` + both fallback paths.
+- **Dashboard thread count inflated** — dashboard now calls `collapse_to_latest_thread_emails()` matching Correspondent behavior.
+- **`archive_low_priority_emails` DB-blind** — was mutating `emails.json` only. Now also sets `resolved_at` in DB.
+- **Read emails in PRIORITY** — added `is_unread` field to Email struct, PRIORITY section filters to unread only.
+- **Awaiting reply dropped read threads** — removed `is_unread` requirement from `get_emails_awaiting_reply`.
+- **Pre-existing clippy fixes** — removed unnecessary `usize` casts in `db/meetings.rs`, `too_many_arguments` allows on service functions.
+
 ## [1.0.0] — 2026-03-16
 
 ### Added

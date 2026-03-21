@@ -1,12 +1,12 @@
 //! SQLite upsert functions for Linear data.
 
+use crate::db::ActionDb;
 use crate::linear::client::{LinearIssue, LinearProject};
 use crate::state::AppState;
 
 /// Upsert Linear issues into the database and emit signals for state changes.
-pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database unavailable")?;
+pub fn upsert_issues(_state: &AppState, issues: &[LinearIssue]) -> Result<(), String> {
+    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
 
     for issue in issues {
@@ -60,7 +60,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
             // Signal: issue completed
             if new_state == Some("completed") && old_state_type.as_deref() != Some("completed") {
                 let _ = crate::signals::bus::emit_signal(
-                    db,
+                    &db,
                     entity_type,
                     entity_id,
                     "linear_issue_completed",
@@ -76,7 +76,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                     && old_state_type.as_deref() != new_state
                 {
                     let _ = crate::signals::bus::emit_signal(
-                        db,
+                        &db,
                         entity_type,
                         entity_id,
                         "linear_issue_blocked",
@@ -93,7 +93,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                 if due < &today && new_state != Some("completed") && new_state != Some("cancelled")
                 {
                     let _ = crate::signals::bus::emit_signal(
-                        db,
+                        &db,
                         entity_type,
                         entity_id,
                         "linear_issue_overdue",
@@ -110,9 +110,8 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 }
 
 /// Upsert Linear projects into the database.
-pub fn upsert_projects(state: &AppState, projects: &[LinearProject]) -> Result<(), String> {
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database unavailable")?;
+pub fn upsert_projects(_state: &AppState, projects: &[LinearProject]) -> Result<(), String> {
+    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
 
     for project in projects {

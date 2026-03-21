@@ -92,11 +92,9 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 }
 
 /// Build entity hints from DB for meeting classification (I336).
-fn build_entity_hints_from_state(state: &AppState) -> Vec<google_api::classify::EntityHint> {
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            return crate::helpers::build_entity_hints(db);
-        }
+fn build_entity_hints_from_state(_state: &AppState) -> Vec<google_api::classify::EntityHint> {
+    if let Ok(db) = crate::db::ActionDb::open() {
+        return crate::helpers::build_entity_hints(&db);
     }
     Vec::new()
 }
@@ -105,15 +103,11 @@ fn build_entity_hints_from_state(state: &AppState) -> Vec<google_api::classify::
 /// for hygiene name resolution. Upserts into `attendee_display_names`.
 fn save_attendee_display_names(
     raw_events: &[google_api::calendar::GoogleCalendarEvent],
-    state: &AppState,
+    _state: &AppState,
 ) {
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return,
-    };
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return,
+    let db = match crate::db::ActionDb::open() {
+        Ok(d) => d,
+        Err(_) => return,
     };
 
     let mut saved = 0;
@@ -272,30 +266,26 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 // Pre-meeting intelligence refresh (I147 — ADR-0058)
                 let cfg_for_hygiene = state.config.read().ok().and_then(|g| g.clone());
-                if let Ok(db_guard) = state.db.lock() {
-                    if let Some(db) = db_guard.as_ref() {
-                        let refreshed = crate::hygiene::check_upcoming_meeting_readiness(
-                            db,
-                            &state.intel_queue,
-                            cfg_for_hygiene.as_ref(),
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let refreshed = crate::hygiene::check_upcoming_meeting_readiness(
+                        &db,
+                        &state.intel_queue,
+                        cfg_for_hygiene.as_ref(),
+                    );
+                    if !refreshed.is_empty() {
+                        log::info!(
+                            "Calendar poll: enqueued {} pre-meeting intelligence refreshes",
+                            refreshed.len()
                         );
-                        if !refreshed.is_empty() {
-                            log::info!(
-                                "Calendar poll: enqueued {} pre-meeting intelligence refreshes",
-                                refreshed.len()
-                            );
-                        }
                     }
                 }
 
                 // I428: Record successful calendar sync
-                if let Ok(guard) = state.db.lock() {
-                    if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_success(
-                            conn.conn_ref(),
-                            "google_calendar",
-                        );
-                    }
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let _ = crate::connectivity::record_sync_success(
+                        db.conn_ref(),
+                        "google_calendar",
+                    );
                 }
 
                 let _ = app_handle.emit("calendar-updated", ());
@@ -314,14 +304,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
                 // I428: Record calendar sync failure
-                if let Ok(guard) = state.db.lock() {
-                    if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_failure(
-                            conn.conn_ref(),
-                            "google_calendar",
-                            "Auth token expired",
-                        );
-                    }
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let _ = crate::connectivity::record_sync_failure(
+                        db.conn_ref(),
+                        "google_calendar",
+                        "Auth token expired",
+                    );
                 }
                 if let Ok(mut guard) = state.calendar.google_auth.lock() {
                     *guard = GoogleAuthStatus::TokenExpired;
@@ -336,14 +324,12 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::ApiError(ref e)) => {
                 // I428: Record calendar sync failure
-                if let Ok(guard) = state.db.lock() {
-                    if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_failure(
-                            conn.conn_ref(),
-                            "google_calendar",
-                            e,
-                        );
-                    }
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let _ = crate::connectivity::record_sync_failure(
+                        db.conn_ref(),
+                        "google_calendar",
+                        e,
+                    );
                 }
                 log::warn!("Calendar poll error: {}", e);
             }
@@ -394,7 +380,7 @@ const PREP_ELIGIBLE_TYPES: &[MeetingType] = &[
 /// account data in SQLite.
 fn generate_preps_for_new_meetings(
     events: &[CalendarEvent],
-    state: &AppState,
+    _state: &AppState,
     workspace: &Path,
 ) -> usize {
     let preps_dir = workspace.join("_today").join("data").join("preps");
@@ -450,10 +436,8 @@ fn generate_preps_for_new_meetings(
             }
 
             // Try to pull account data from SQLite
-            if let Ok(db_guard) = state.db.lock() {
-                if let Some(db) = db_guard.as_ref() {
-                    enrich_prep_from_db(&mut prep, account, db);
-                }
+            if let Ok(db) = crate::db::ActionDb::open() {
+                enrich_prep_from_db(&mut prep, account, &db);
             }
         }
 
@@ -603,13 +587,9 @@ fn populate_people_from_events(
         changed_meetings: Vec::new(),
     };
 
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return empty_result,
-    };
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return empty_result,
+    let db = match crate::db::ActionDb::open() {
+        Ok(d) => d,
+        Err(_) => return empty_result,
     };
 
     let mut new_people = 0;
@@ -772,18 +752,18 @@ fn populate_people_from_events(
             };
 
             if let Ok(is_new) = db.upsert_person(&person) {
-                if let Err(e) = people::write_person_json(workspace, &person, db) {
+                if let Err(e) = people::write_person_json(workspace, &person, &db) {
                     log::warn!("Failed to write person.json for '{}': {}", person.name, e);
                 }
-                if let Err(e) = people::write_person_markdown(workspace, &person, db) {
+                if let Err(e) = people::write_person_markdown(workspace, &person, &db) {
                     log::warn!("Failed to write person.md for '{}': {}", person.name, e);
                 }
                 new_people += 1;
 
-                // I353 Phase 2: Emit person_created signal for hygiene feedback loop
+                // I353 Step 2: Emit person_created signal for hygiene feedback loop
                 if is_new {
                     let _ = crate::services::signals::emit_and_propagate(
-                        db,
+                        &db,
                         &state.signals.engine,
                         "person",
                         &person.id,
@@ -832,13 +812,9 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
     let range_start = today.to_string(); // "YYYY-MM-DD"
     let range_end = (today + chrono::Duration::days(8)).to_string();
 
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return,
-    };
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return,
+    let db = match crate::db::ActionDb::open() {
+        Ok(d) => d,
+        Err(_) => return,
     };
 
     // Build set of current calendar event IDs from this poll
@@ -884,7 +860,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
         }
         // Emit cancellation signal (I308) with propagation
         let _ = crate::services::signals::emit_and_propagate(
-            db,
+            &db,
             &state.signals.engine,
             "meeting",
             meeting_id,
@@ -1133,13 +1109,11 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             );
                         }
                         // I428: Record successful gmail sync
-                        if let Ok(guard) = state.db.lock() {
-                            if let Some(conn) = guard.as_ref() {
-                                let _ = crate::connectivity::record_sync_success(
-                                    conn.conn_ref(),
-                                    "gmail",
-                                );
-                            }
+                        if let Ok(db) = crate::db::ActionDb::open() {
+                            let _ = crate::connectivity::record_sync_success(
+                                db.conn_ref(),
+                                "gmail",
+                            );
                         }
 
                         // Emit mechanical update immediately
@@ -1228,14 +1202,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             // Scoring involves embedding inference which is CPU-heavy (100-500ms/email).
                             // Holding the DB lock during inference blocks all UI commands (I457).
                             let scores = {
-                                let active = if let Ok(guard) = state.db.lock() {
-                                    guard
-                                        .as_ref()
-                                        .and_then(|db| db.get_all_active_emails().ok())
-                                        .unwrap_or_default()
-                                } else {
-                                    Vec::new()
-                                };
+                                let active = crate::db::ActionDb::open()
+                                    .ok()
+                                    .and_then(|db| db.get_all_active_emails().ok())
+                                    .unwrap_or_default();
                                 if !active.is_empty() {
                                     // Open a separate DB connection for scoring so the main lock is free.
                                     // score_emails needs DB for entity linkage + meeting context queries.
@@ -1262,12 +1232,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             };
                             // Write scores back under the main lock (fast — just UPDATEs).
                             if !scores.is_empty() {
-                                if let Ok(guard) = state.db.lock() {
-                                    if let Some(db) = guard.as_ref() {
-                                        for (email_id, score, reason) in &scores {
-                                            let _ =
-                                                db.set_relevance_score(email_id, *score, reason);
-                                        }
+                                if let Ok(db) = crate::db::ActionDb::open() {
+                                    for (email_id, score, reason) in &scores {
+                                        let _ = db.set_relevance_score(email_id, *score, reason);
                                     }
                                 }
                                 log::info!("Email poll: scored {} emails", scores.len());
@@ -1282,14 +1249,12 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     }
                     Err(ref e) => {
                         // I428: Record gmail sync failure (delivery)
-                        if let Ok(guard) = state.db.lock() {
-                            if let Some(conn) = guard.as_ref() {
-                                let _ = crate::connectivity::record_sync_failure(
-                                    conn.conn_ref(),
-                                    "gmail",
-                                    &e.to_string(),
-                                );
-                            }
+                        if let Ok(db) = crate::db::ActionDb::open() {
+                            let _ = crate::connectivity::record_sync_failure(
+                                db.conn_ref(),
+                                "gmail",
+                                &e.to_string(),
+                            );
                         }
                         log::warn!("Email poll: delivery failed: {}", e);
                     }
@@ -1297,14 +1262,12 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(ref e) => {
                 // I428: Record gmail sync failure (fetch)
-                if let Ok(guard) = state.db.lock() {
-                    if let Some(conn) = guard.as_ref() {
-                        let _ = crate::connectivity::record_sync_failure(
-                            conn.conn_ref(),
-                            "gmail",
-                            &e.to_string(),
-                        );
-                    }
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let _ = crate::connectivity::record_sync_failure(
+                        db.conn_ref(),
+                        "gmail",
+                        &e.to_string(),
+                    );
                 }
                 log::warn!("Email poll: fetch failed: {}", e);
             }

@@ -26,7 +26,7 @@ export default function QuillConnection() {
   useEffect(() => {
     invoke<QuillStatusData>("get_quill_status")
       .then(setStatus)
-      .catch((err) => console.error("get_quill_status failed:", err));
+      .catch((err) => console.error("get_quill_status failed:", err)); // Expected: background init on mount
   }, []);
 
   async function toggleEnabled() {
@@ -37,6 +37,7 @@ export default function QuillConnection() {
       setStatus({ ...status, enabled: newEnabled });
     } catch (err) {
       console.error("Failed to toggle Quill:", err);
+      toast.error("Failed to toggle Quill");
     }
   }
 
@@ -237,6 +238,7 @@ export default function QuillConnection() {
                   setStatus({ ...status, pollIntervalMinutes: minutes });
                 } catch (err) {
                   console.error("Failed to set poll interval:", err);
+                  toast.error("Failed to update poll interval");
                 }
               }}
               style={{
