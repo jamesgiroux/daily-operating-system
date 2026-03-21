@@ -350,6 +350,12 @@ impl ActionDb {
         };
 
         if title_exists {
+            log::debug!(
+                "Action dedup: '{}' already exists for source {}:{}",
+                action.title,
+                action.source_type.as_deref().unwrap_or("none"),
+                action.source_id.as_deref().unwrap_or("none")
+            );
             return Ok(false);
         }
 

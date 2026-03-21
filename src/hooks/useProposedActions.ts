@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { useTauriEvent } from "./useTauriEvent";
 import type { DbAction } from "@/types";
 
 interface UseProposedActionsReturn {
@@ -30,6 +31,10 @@ export function useProposedActions(): UseProposedActionsReturn {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Re-fetch proposed actions when transcripts are processed or intelligence updates
+  useTauriEvent("transcript-processed", refresh);
+  useTauriEvent("intelligence-updated", refresh);
 
   const acceptAction = useCallback(
     async (id: string) => {
